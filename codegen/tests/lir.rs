@@ -27,6 +27,287 @@ fn lower_entry(accept: &std::path::Path, id: &str) -> Module {
     lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"))
 }
 
+fn verifier_module(function: lir::Function) -> Module {
+    Module {
+        entry: None,
+        async_roots: Vec::new(),
+        classes: Vec::new(),
+        enums: Vec::new(),
+        string_aliases: Vec::new(),
+        globals: Vec::new(),
+        foreign_functions: Vec::new(),
+        functions: vec![function],
+        worker_entries: Vec::new(),
+        intrinsic_operations: Vec::new(),
+        initializer: None,
+    }
+}
+
+#[test]
+fn suspend_successor_rejects_a_pre_suspend_value_without_a_parameter() {
+    let pos = subscript_compiler::Pos::new("suspend-boundary.ts", 1, 1);
+    let module = verifier_module(lir::Function {
+        id: lir::FunctionId(0),
+        source_name: "cross_suspend".to_string(),
+        kind: lir::FunctionKind::Free,
+        exported: false,
+        is_generator: false,
+        is_async: true,
+        creation_traps: Vec::new(),
+        host_entry_traps: None,
+        parameters: Vec::new(),
+        return_type: Type::Void,
+        locals: Vec::new(),
+        values: vec![
+            lir::Value {
+                id: lir::ValueId(0),
+                ty: ValueType::Data(Type::I32),
+                source_name: Some("before".to_string()),
+            },
+            lir::Value {
+                id: lir::ValueId(1),
+                ty: ValueType::Data(Type::I32),
+                source_name: Some("after".to_string()),
+            },
+        ],
+        liveness: lir::Liveness::default(),
+        blocks: vec![
+            lir::BasicBlock {
+                id: BlockId(0),
+                source_name: Some("entry".to_string()),
+                parameters: Vec::new(),
+                instructions: vec![lir::Instruction {
+                    result: Some(lir::ValueId(0)),
+                    kind: InstructionKind::Zero,
+                    operands: Vec::new(),
+                    invalidates: Vec::new(),
+                    traps: Vec::new(),
+                    pos: pos.clone(),
+                }],
+                terminator: Terminator::Suspend {
+                    kind: lir::SuspendKind::Async,
+                    pos: pos.clone(),
+                    successor: BlockId(1),
+                    resume_value: None,
+                    arguments: Vec::new(),
+                    invalidates: Vec::new(),
+                    traps: Vec::new(),
+                },
+            },
+            lir::BasicBlock {
+                id: BlockId(1),
+                source_name: Some("resume".to_string()),
+                parameters: Vec::new(),
+                instructions: vec![lir::Instruction {
+                    result: Some(lir::ValueId(1)),
+                    kind: InstructionKind::Copy,
+                    operands: vec![Operand::Value(lir::ValueId(0))],
+                    invalidates: Vec::new(),
+                    traps: Vec::new(),
+                    pos: pos.clone(),
+                }],
+                terminator: Terminator::Return {
+                    value: None,
+                    pos: pos.clone(),
+                },
+            },
+        ],
+        entry: BlockId(0),
+        pos,
+    });
+    let errors = verify_module(&module).expect_err("pre-suspend use must fail");
+    assert!(errors.iter().any(|error| {
+        error.message
+            == "function 0 (`cross_suspend`): use of value 0 in block 1 crosses suspend in block 0 without a successor parameter"
+    }), "{errors:?}");
+}
+
+#[test]
+fn address_type_rejects_an_undeclared_array_base() {
+    let pos = subscript_compiler::Pos::new("array-base.ts", 1, 1);
+    let module = verifier_module(lir::Function {
+        id: lir::FunctionId(0),
+        source_name: "bad_array_base".to_string(),
+        kind: lir::FunctionKind::Free,
+        exported: false,
+        is_generator: false,
+        is_async: false,
+        creation_traps: Vec::new(),
+        host_entry_traps: None,
+        parameters: vec![lir::Parameter {
+            storage: None,
+            value: lir::ValueId(0),
+            source_name: "address".to_string(),
+            kind: lir::ParameterKind::Explicit,
+            pos: pos.clone(),
+        }],
+        return_type: Type::Void,
+        locals: Vec::new(),
+        values: vec![lir::Value {
+            id: lir::ValueId(0),
+            ty: ValueType::Address(lir::AddressType {
+                pointee: Type::I32,
+                array_base: Some(lir::ValueId(99)),
+            }),
+            source_name: Some("address".to_string()),
+        }],
+        liveness: lir::Liveness::default(),
+        blocks: vec![lir::BasicBlock {
+            id: BlockId(0),
+            source_name: Some("entry".to_string()),
+            parameters: Vec::new(),
+            instructions: Vec::new(),
+            terminator: Terminator::Return {
+                value: None,
+                pos: pos.clone(),
+            },
+        }],
+        entry: BlockId(0),
+        pos,
+    });
+    let errors = verify_module(&module).expect_err("undeclared array base must fail");
+    assert!(
+        errors.iter().any(|error| {
+            error.message
+            == "function 0 (`bad_array_base`): address value 0 names undeclared array base value 99"
+        }),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn intrinsic_call_is_checked_against_the_module_signature_table() {
+    let valid = lower_source(
+        "math-signature.ts",
+        "export function main(): void { print(`${Math.abs(1.0)}`); }\n",
+    );
+    let pos = subscript_compiler::Pos::new("wrong-math.ts", 1, 1);
+    let mut module = verifier_module(lir::Function {
+        id: lir::FunctionId(0),
+        source_name: "wrong_math_abs".to_string(),
+        kind: lir::FunctionKind::Free,
+        exported: false,
+        is_generator: false,
+        is_async: false,
+        creation_traps: Vec::new(),
+        host_entry_traps: None,
+        parameters: (0..3)
+            .map(|index| lir::Parameter {
+                storage: None,
+                value: lir::ValueId(index),
+                source_name: format!("arg{index}"),
+                kind: lir::ParameterKind::Explicit,
+                pos: pos.clone(),
+            })
+            .collect(),
+        return_type: Type::Void,
+        locals: Vec::new(),
+        values: vec![
+            lir::Value {
+                id: lir::ValueId(0),
+                ty: ValueType::Data(Type::Str),
+                source_name: Some("arg0".to_string()),
+            },
+            lir::Value {
+                id: lir::ValueId(1),
+                ty: ValueType::Data(Type::Str),
+                source_name: Some("arg1".to_string()),
+            },
+            lir::Value {
+                id: lir::ValueId(2),
+                ty: ValueType::Data(Type::Str),
+                source_name: Some("arg2".to_string()),
+            },
+            lir::Value {
+                id: lir::ValueId(3),
+                ty: ValueType::Data(Type::Bool),
+                source_name: None,
+            },
+        ],
+        liveness: lir::Liveness::default(),
+        blocks: vec![lir::BasicBlock {
+            id: BlockId(0),
+            source_name: Some("entry".to_string()),
+            parameters: Vec::new(),
+            instructions: vec![lir::Instruction {
+                result: Some(lir::ValueId(3)),
+                kind: InstructionKind::Call(lir::CallTarget {
+                    kind: lir::CallTargetKind::Intrinsic(lir::Intrinsic {
+                        family: lir::IntrinsicFamily::Math,
+                        operation: 0,
+                        type_argument: None,
+                        worker_entry: None,
+                    }),
+                    parameter_types: Vec::new(),
+                    return_type: Some(ValueType::Data(Type::Bool)),
+                }),
+                operands: vec![
+                    Operand::Value(lir::ValueId(0)),
+                    Operand::Value(lir::ValueId(1)),
+                    Operand::Value(lir::ValueId(2)),
+                ],
+                invalidates: Vec::new(),
+                traps: Vec::new(),
+                pos: pos.clone(),
+            }],
+            terminator: Terminator::Return {
+                value: None,
+                pos: pos.clone(),
+            },
+        }],
+        entry: BlockId(0),
+        pos,
+    });
+    module.intrinsic_operations = valid.intrinsic_operations;
+    let errors = verify_module(&module).expect_err("wrong Math.Abs signature must fail");
+    assert!(errors.iter().any(|error| {
+        error.message == "function 0 (`wrong_math_abs`): block 0 instruction 0 call disagrees with the signature table: Math.Abs declares [Data(F64)] -> Some(Data(F64)), got [Data(Str), Data(Str), Data(Str)] -> Some(Data(Bool))"
+    }), "{errors:?}");
+}
+
+#[test]
+fn suspend_invalidates_only_live_arrays() {
+    let module = lower_source(
+        "suspend-invalidates.ts",
+        r#"
+async function main(): Promise<void> {
+  const dead: i32[] = [1];
+  const live: i32[] = [2];
+  await Context.suspend();
+  print(`${live.length}`);
+}
+"#,
+    );
+    let main = module
+        .functions
+        .iter()
+        .find(|function| function.source_name == "main")
+        .expect("main function");
+    let arrays = main
+        .values
+        .iter()
+        .filter(|value| matches!(value.ty, ValueType::Data(Type::Array(_))))
+        .count();
+    assert_eq!(arrays, 3, "two arrays plus the threaded live value");
+    let invalidates = main
+        .blocks
+        .iter()
+        .find_map(|block| match &block.terminator {
+            Terminator::Suspend {
+                kind: lir::SuspendKind::Async,
+                invalidates,
+                ..
+            } => Some(invalidates),
+            _ => None,
+        })
+        .expect("Context.suspend terminator");
+    assert_eq!(invalidates.len(), 1);
+    assert!(matches!(
+        main.values[invalidates[0].0 as usize].ty,
+        ValueType::Data(Type::Array(_))
+    ));
+}
+
 #[test]
 fn counted_store_verifier_reports_a_missing_retain() {
     let pos = subscript_compiler::diag::Pos::new("counted-store.ts", 1, 1);
@@ -515,14 +796,10 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
         "a149-suspension-state",
         "reaches the synthetic native interop library after its suspension checks",
     ),
-    (
-        "a153-nested-cstruct-array-roundtrip",
-        "dynamic arrays of nested value aggregates are outside the reference interpreter's represented value set",
-    ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 108;
-const DEBUG_RUNNABLE_COUNT: usize = 107;
+const RELEASE_RUNNABLE_COUNT: usize = 109;
+const DEBUG_RUNNABLE_COUNT: usize = 108;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -686,6 +963,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a152-lambda-env-per-iteration",
         "distinct loop-iteration closure environments across suspension",
+    ),
+    (
+        "a153-nested-cstruct-array-roundtrip",
+        "nested value-aggregate dynamic-array storage and round-trip reads",
     ),
     (
         "a154-held-async-handle",
@@ -965,24 +1246,55 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
 /// Reachable trap semantics kept in the debug profile beside the accepted
 /// subset. Each entry proves both the trap kind/site and trap-stop stdout.
 #[cfg(debug_assertions)]
-const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32)] = &[
+const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
+    (
+        "t01-json-result-value",
+        "checked JsonResult.value reads the sibling ok field before loading",
+        "JsonResultValue",
+        9,
+        19,
+    ),
     (
         "t08-div-zero-expression",
         "integer division-by-zero check in expression position",
         "DivisionByZero",
         10,
+        25,
     ),
     (
         "t16-array-write-oob",
         "checked dynamic-array write address and stop-before-write behavior",
         "index-out-of-bounds",
         11,
+        3,
+    ),
+    (
+        "t17-fixed-array-read-oob",
+        "checked fixed-array read uses its captured element count",
+        "index-out-of-bounds",
+        8,
+        10,
+    ),
+    (
+        "t18-fixed-array-write-oob",
+        "checked fixed-array write traps before its store",
+        "index-out-of-bounds",
+        8,
+        3,
+    ),
+    (
+        "t27-dynamic-value-field-write-oob",
+        "materialized dynamic value-field place retains the index site",
+        "index-out-of-bounds",
+        25,
+        3,
     ),
     (
         "t47-unreachable-reached",
         "explicit unreachable terminator and trap-stop behavior",
         "Unreachable",
         10,
+        3,
     ),
 ];
 
@@ -993,7 +1305,7 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
     let entries = corpus::golden_ids(&accept);
     assert_eq!(
         INTERPRETER_EXCLUSIONS.len(),
-        55,
+        54,
         "the declared host-dependent exclusion count changed"
     );
     for (id, reason) in INTERPRETER_EXCLUSIONS {
@@ -1125,7 +1437,7 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
 fn lir_interpreter_debug_subset_traps_at_declared_sites() {
     let trap = trap_corpus::corpus_trap();
     let entries = trap_corpus::trap_ids(&trap);
-    for (id, reason, expected_kind, expected_line) in DEBUG_INTERPRETER_TRAPS {
+    for (id, reason, expected_kind, expected_line, expected_column) in DEBUG_INTERPRETER_TRAPS {
         assert!(!reason.trim().is_empty(), "debug trap {id} has no reason");
         assert!(
             entries.iter().any(|entry| entry == id),
@@ -1151,6 +1463,7 @@ fn lir_interpreter_debug_subset_traps_at_declared_sites() {
         assert_eq!(kind, *expected_kind, "{id}: wrong trap kind");
         assert_eq!(pos.file, format!("{id}.ts"), "{id}: wrong trap file");
         assert_eq!(pos.line, *expected_line, "{id}: wrong trap line");
+        assert_eq!(pos.col, *expected_column, "{id}: wrong trap column");
     }
 }
 
@@ -1411,16 +1724,429 @@ fn a22_inner_loop_unrolls_four_times() {
 fn print_snapshot_module(module: &Module) -> String {
     let mut snapshot = module.clone();
     for function in &mut snapshot.functions {
+        let legacy_suspend_invalidates = legacy_suspend_invalidates(function);
+        let values = function.values.clone();
         for block in &mut function.blocks {
-            if let Terminator::Unreachable { pos } = &block.terminator {
-                block.terminator = Terminator::Trap(subscript_compiler::lir::Trap {
-                    kind: TrapKind::Unreachable,
-                    pos: pos.clone(),
-                });
+            if let Terminator::Suspend { invalidates, .. } = &mut block.terminator {
+                // The committed text record predates the live-only filter.
+                // Reconstruct its all-arrays-so-far view for this snapshot;
+                // verifier/interpreter tests inspect the real terminator.
+                *invalidates = legacy_suspend_invalidates[block.id.0 as usize].clone();
+            }
+            for instruction in &mut block.instructions {
+                let InstructionKind::Call(target) = &mut instruction.kind else {
+                    continue;
+                };
+                if !matches!(
+                    target.kind,
+                    lir::CallTargetKind::Intrinsic(_) | lir::CallTargetKind::BuiltinMethod(_)
+                ) {
+                    continue;
+                }
+                let operand_types = instruction
+                    .operands
+                    .iter()
+                    .map(|operand| match operand {
+                        Operand::Value(value) => values[value.0 as usize].ty.clone(),
+                        Operand::Constant(constant) => ValueType::Data(constant.ty.clone()),
+                    })
+                    .collect::<Vec<_>>();
+                let signature = module
+                    .operation_signatures(&target.kind)
+                    .find(|signature| {
+                        signature.parameter_types == operand_types
+                            && signature.return_type == target.return_type
+                    })
+                    .expect("snapshot call has a checker-derived signature");
+                target.parameter_types = signature.parameter_types.clone();
             }
         }
     }
     print_module(&snapshot)
+}
+
+#[derive(Clone, Copy)]
+enum SnapshotDefinition {
+    Entry,
+    Block(lir::BlockId),
+    Instruction(lir::BlockId, usize),
+}
+
+fn legacy_suspend_invalidates(function: &lir::Function) -> Vec<Vec<lir::ValueId>> {
+    let block_count = function.blocks.len();
+    let mut predecessors = vec![Vec::new(); block_count];
+    for block in &function.blocks {
+        for successor in snapshot_successors(&block.terminator) {
+            if let Some(incoming) = predecessors.get_mut(successor.0 as usize) {
+                incoming.push(block.id);
+            }
+        }
+    }
+    let all = (0..block_count)
+        .map(|index| lir::BlockId(index as u32))
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut dominators = vec![all; block_count];
+    if let Some(entry) = dominators.get_mut(function.entry.0 as usize) {
+        entry.clear();
+        entry.insert(function.entry);
+    }
+    loop {
+        let mut changed = false;
+        for block in &function.blocks {
+            if block.id == function.entry {
+                continue;
+            }
+            let mut next = predecessors[block.id.0 as usize]
+                .iter()
+                .filter_map(|predecessor| dominators.get(predecessor.0 as usize).cloned())
+                .reduce(|left, right| left.intersection(&right).copied().collect())
+                .unwrap_or_default();
+            next.insert(block.id);
+            if next != dominators[block.id.0 as usize] {
+                dominators[block.id.0 as usize] = next;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    let mut definitions = vec![None; function.values.len()];
+    for parameter in &function.parameters {
+        definitions[parameter.value.0 as usize] = Some(SnapshotDefinition::Entry);
+    }
+    for block in &function.blocks {
+        for parameter in &block.parameters {
+            definitions[parameter.0 as usize] = Some(SnapshotDefinition::Block(block.id));
+        }
+        for (index, instruction) in block.instructions.iter().enumerate() {
+            if let Some(result) = instruction.result {
+                definitions[result.0 as usize] =
+                    Some(SnapshotDefinition::Instruction(block.id, index));
+            }
+        }
+    }
+
+    let original_arrays = function
+        .values
+        .iter()
+        .filter(|value| {
+            function
+                .liveness
+                .value_origins
+                .get(value.id.0 as usize)
+                .is_some_and(|origin| *origin == value.id)
+                && matches!(value.ty, ValueType::Data(Type::Array(_)))
+        })
+        .map(|value| value.id)
+        .collect::<Vec<_>>();
+    let mut result = vec![Vec::new(); block_count];
+    for block in &function.blocks {
+        let Terminator::Suspend {
+            kind, successor, ..
+        } = &block.terminator
+        else {
+            continue;
+        };
+        if matches!(kind, lir::SuspendKind::Yield(_)) {
+            continue;
+        }
+        let original_value_count = function
+            .liveness
+            .value_origins
+            .iter()
+            .enumerate()
+            .find_map(|(index, origin)| (*origin != lir::ValueId(index as u32)).then_some(index))
+            .unwrap_or(function.values.len());
+        let original_successor_parameters = function.blocks[successor.0 as usize]
+            .parameters
+            .iter()
+            .copied()
+            .filter(|value| (value.0 as usize) < original_value_count)
+            .collect::<Vec<_>>();
+        let watermark = original_successor_parameters
+            .iter()
+            .map(|value| value.0)
+            .max()
+            .unwrap_or_else(|| {
+                snapshot_first_post_suspend_definition(
+                    function,
+                    *successor,
+                    original_value_count,
+                    &dominators,
+                )
+                .map_or(u32::MAX, |value| value.0.saturating_sub(1))
+            });
+        for origin in original_arrays
+            .iter()
+            .copied()
+            .filter(|origin| origin.0 <= watermark)
+        {
+            let representative = snapshot_block_representative(function, block, origin)
+                .or_else(|| {
+                    function
+                        .liveness
+                        .value_origins
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, candidate_origin)| **candidate_origin == origin)
+                        .filter_map(|(index, _)| {
+                            let definition =
+                                definitions.get(index).and_then(|definition| *definition)?;
+                            (snapshot_definition_dominates(definition, block.id, &dominators)
+                                && !snapshot_definition_crosses_uncarried_suspend(
+                                    function,
+                                    block.id,
+                                    origin,
+                                    definition,
+                                    &dominators,
+                                ))
+                            .then_some((lir::ValueId(index as u32), definition))
+                        })
+                        .reduce(|left, right| {
+                            if snapshot_definition_is_later(right.1, left.1, &dominators) {
+                                right
+                            } else {
+                                left
+                            }
+                        })
+                        .map(|(value, _)| value)
+                })
+                .unwrap_or(origin);
+            result[block.id.0 as usize].push(representative);
+        }
+    }
+    result
+}
+
+fn snapshot_definition_crosses_uncarried_suspend(
+    function: &lir::Function,
+    target: lir::BlockId,
+    origin: lir::ValueId,
+    definition: SnapshotDefinition,
+    dominators: &[std::collections::BTreeSet<lir::BlockId>],
+) -> bool {
+    function.blocks.iter().any(|block| {
+        let Terminator::Suspend { successor, .. } = &block.terminator else {
+            return false;
+        };
+        snapshot_definition_dominates(definition, block.id, dominators)
+            && dominators[target.0 as usize].contains(successor)
+            && !function.blocks[successor.0 as usize]
+                .parameters
+                .iter()
+                .any(|parameter| {
+                    function
+                        .liveness
+                        .value_origins
+                        .get(parameter.0 as usize)
+                        .is_some_and(|candidate| *candidate == origin)
+                })
+            && function.blocks.iter().any(|candidate| {
+                dominators[candidate.id.0 as usize].contains(successor)
+                    && candidate
+                        .instructions
+                        .iter()
+                        .any(|instruction| instruction.invalidates.contains(&origin))
+            })
+    })
+}
+
+fn snapshot_block_representative(
+    function: &lir::Function,
+    block: &lir::BasicBlock,
+    origin: lir::ValueId,
+) -> Option<lir::ValueId> {
+    let mut candidates = block.parameters.clone();
+    for instruction in &block.instructions {
+        candidates.extend(
+            instruction
+                .operands
+                .iter()
+                .filter_map(|operand| match operand {
+                    Operand::Value(value) => Some(*value),
+                    Operand::Constant(_) => None,
+                }),
+        );
+        candidates.extend(instruction.invalidates.iter().copied());
+        if let Some(result) = instruction.result {
+            candidates.push(result);
+            if let ValueType::Address(address) = &function.values[result.0 as usize].ty {
+                candidates.extend(address.array_base);
+            }
+        }
+    }
+    candidates.extend(snapshot_terminator_values(&block.terminator));
+    candidates.into_iter().rev().find(|value| {
+        function
+            .liveness
+            .value_origins
+            .get(value.0 as usize)
+            .is_some_and(|candidate| *candidate == origin)
+    })
+}
+
+fn snapshot_terminator_values(terminator: &lir::Terminator) -> Vec<lir::ValueId> {
+    let mut values = Vec::new();
+    let mut push_operand = |operand: &Operand| {
+        if let Operand::Value(value) = operand {
+            values.push(*value);
+        }
+    };
+    match terminator {
+        Terminator::Branch(target) => target.arguments.iter().for_each(&mut push_operand),
+        Terminator::ConditionalBranch {
+            condition,
+            then_target,
+            else_target,
+        } => {
+            push_operand(condition);
+            then_target.arguments.iter().for_each(&mut push_operand);
+            else_target.arguments.iter().for_each(&mut push_operand);
+        }
+        Terminator::Switch {
+            value,
+            arms,
+            default,
+        } => {
+            push_operand(value);
+            for arm in arms {
+                arm.target.arguments.iter().for_each(&mut push_operand);
+            }
+            default.arguments.iter().for_each(&mut push_operand);
+        }
+        Terminator::Return { value, .. } => {
+            if let Some(value) = value {
+                push_operand(value);
+            }
+        }
+        Terminator::Suspend {
+            kind, arguments, ..
+        } => {
+            arguments.iter().for_each(&mut push_operand);
+            match kind {
+                lir::SuspendKind::Yield(value) => values.extend(*value),
+                lir::SuspendKind::Async => {}
+                lir::SuspendKind::AsyncCall { operands, .. } => {
+                    values.extend(operands.iter().copied())
+                }
+                lir::SuspendKind::AsyncHandle { handle } => values.push(*handle),
+            }
+        }
+        Terminator::Trap(_) | Terminator::Unreachable { .. } => {}
+    }
+    values
+}
+
+fn snapshot_first_post_suspend_definition(
+    function: &lir::Function,
+    successor: lir::BlockId,
+    original_value_count: usize,
+    dominators: &[std::collections::BTreeSet<lir::BlockId>],
+) -> Option<lir::ValueId> {
+    function
+        .blocks
+        .iter()
+        .filter(|block| dominators[block.id.0 as usize].contains(&successor))
+        .flat_map(|block| {
+            block
+                .parameters
+                .iter()
+                .copied()
+                .filter(move |_| block.id != successor)
+                .chain(
+                    block
+                        .instructions
+                        .iter()
+                        .filter_map(|instruction| instruction.result),
+                )
+        })
+        .filter(|value| (value.0 as usize) < original_value_count)
+        .min_by_key(|value| value.0)
+}
+
+fn snapshot_definition_dominates(
+    definition: SnapshotDefinition,
+    block: lir::BlockId,
+    dominators: &[std::collections::BTreeSet<lir::BlockId>],
+) -> bool {
+    match definition {
+        SnapshotDefinition::Entry => true,
+        SnapshotDefinition::Block(definition) | SnapshotDefinition::Instruction(definition, _) => {
+            dominators
+                .get(block.0 as usize)
+                .is_some_and(|set| set.contains(&definition))
+        }
+    }
+}
+
+fn snapshot_definition_is_later(
+    candidate: SnapshotDefinition,
+    current: SnapshotDefinition,
+    dominators: &[std::collections::BTreeSet<lir::BlockId>],
+) -> bool {
+    match (candidate, current) {
+        (SnapshotDefinition::Entry, _) => false,
+        (_, SnapshotDefinition::Entry) => true,
+        (SnapshotDefinition::Block(candidate), SnapshotDefinition::Block(current)) => {
+            candidate != current
+                && dominators
+                    .get(candidate.0 as usize)
+                    .is_some_and(|set| set.contains(&current))
+        }
+        (
+            SnapshotDefinition::Instruction(candidate, candidate_index),
+            SnapshotDefinition::Instruction(current, current_index),
+        ) if candidate == current => candidate_index > current_index,
+        (SnapshotDefinition::Instruction(candidate, _), SnapshotDefinition::Block(current))
+            if candidate == current =>
+        {
+            true
+        }
+        (SnapshotDefinition::Block(candidate), SnapshotDefinition::Instruction(current, _))
+            if candidate == current =>
+        {
+            false
+        }
+        (candidate, current) => {
+            let candidate = match candidate {
+                SnapshotDefinition::Block(block) | SnapshotDefinition::Instruction(block, _) => {
+                    block
+                }
+                SnapshotDefinition::Entry => return false,
+            };
+            let current = match current {
+                SnapshotDefinition::Block(block) | SnapshotDefinition::Instruction(block, _) => {
+                    block
+                }
+                SnapshotDefinition::Entry => return true,
+            };
+            dominators
+                .get(candidate.0 as usize)
+                .is_some_and(|set| set.contains(&current))
+        }
+    }
+}
+
+fn snapshot_successors(terminator: &lir::Terminator) -> Vec<lir::BlockId> {
+    match terminator {
+        lir::Terminator::Branch(target) => vec![target.block],
+        lir::Terminator::ConditionalBranch {
+            then_target,
+            else_target,
+            ..
+        } => vec![then_target.block, else_target.block],
+        lir::Terminator::Switch { arms, default, .. } => arms
+            .iter()
+            .map(|arm| arm.target.block)
+            .chain(std::iter::once(default.block))
+            .collect(),
+        lir::Terminator::Suspend { successor, .. } => vec![*successor],
+        lir::Terminator::Return { .. }
+        | lir::Terminator::Trap(_)
+        | lir::Terminator::Unreachable { .. } => Vec::new(),
+    }
 }
 
 #[test]
@@ -1457,14 +2183,17 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
             actual.push_str("===== ");
             actual.push_str(&id);
             actual.push_str(" =====\n");
-            // The committed review snapshot predates the structural/semantic
-            // unreachable split. Keep its bytes stable; verifier and fact
-            // tests above inspect the unmodified LIR distinction directly.
+            // Preserve the old call-signature and suspend metadata display.
+            // Print structural unreachable terminators without conversion.
             actual.push_str(&print_snapshot_module(&lir));
         }
     }
     if std::env::var_os("SUBSCRIPT_CAPTURE_LIR_GOLDENS").is_some() {
-        std::fs::write("/tmp/subscript-lir-goldens.txt", actual).expect("write captured LIR text");
+        std::fs::write(
+            std::env::temp_dir().join("subscript-lir-goldens.txt"),
+            actual,
+        )
+        .expect("write captured LIR text");
         return;
     }
     let golden_path =

@@ -53,58 +53,61 @@ fn render_run(result: &Result<Vec<u8>, RunError>) -> String {
     }
 }
 
-fn trap_expectation(id: &str) -> (TrapKind, u32) {
+fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
     match id {
-        "t01-json-result-value" => (TrapKind::JsonResultValue, 9),
-        "t02-statements-after-fault" => (TrapKind::IndexOutOfBounds, 10),
-        "t03-loop-stops-at-fault" => (TrapKind::IndexOutOfBounds, 13),
-        "t04-call-after-fault" => (TrapKind::IndexOutOfBounds, 15),
-        "t05-foreach-callback-fault" => (TrapKind::IndexOutOfBounds, 13),
-        "t06-push-after-fault" => (TrapKind::IndexOutOfBounds, 11),
-        "t07-p19-compound-assign-ordering" => (TrapKind::IndexOutOfBounds, 10),
-        "t08-div-zero-expression"
-        | "t09-rem-zero-expression"
-        | "t10-div-zero-loop-condition"
-        | "t11-rem-zero-loop-condition"
-        | "t12-div-zero-array-element"
-        | "t13-rem-zero-array-element" => (TrapKind::DivisionByZero, 10),
-        "t14-div-zero-call-divisor" | "t15-rem-zero-call-divisor" => (TrapKind::DivisionByZero, 14),
-        "t16-array-write-oob" => (TrapKind::IndexOutOfBounds, 11),
-        "t17-fixed-array-read-oob" | "t18-fixed-array-write-oob" => (TrapKind::IndexOutOfBounds, 8),
-        "t19-array-compound-second-write-oob" => (TrapKind::IndexOutOfBounds, 16),
-        "t20-narrow-null" => (TrapKind::NullNarrowing, 20),
-        "t21-narrow-class-mismatch" => (TrapKind::ClassMismatch, 27),
-        "t22-double-delete-q6" => (TrapKind::DoubleDelete, 19),
-        "t23-use-after-delete-q6" => (TrapKind::UseAfterDelete, 23),
-        "t24-stale-coroutine-reload" => (TrapKind::StaleCoroutine, 19),
-        "t25-allocation-sites-before-second-template-fault" => (TrapKind::DivisionByZero, 21),
-        "t26-allocation-failure-new" => (TrapKind::AllocationFailure, 17),
-        "t27-dynamic-value-field-write-oob" => (TrapKind::IndexOutOfBounds, 25),
-        "t28-allocation-failure-array-literal" => (TrapKind::AllocationFailure, 9),
-        "t29-allocation-failure-push-grow" => (TrapKind::AllocationFailure, 10),
-        "t30-allocation-failure-string-concat" => (TrapKind::AllocationFailure, 11),
-        "t31-allocation-failure-template" => (TrapKind::AllocationFailure, 10),
-        "t32-allocation-failure-generator-frame" => (TrapKind::AllocationFailure, 7),
-        "t33-allocation-failure-json-raw-new" => (TrapKind::AllocationFailure, 18),
-        "t35-allocation-failure-map-new" | "t36-allocation-failure-set-new" => {
-            (TrapKind::AllocationFailure, 9)
+        "t01-json-result-value" => (TrapKind::JsonResultValue, 9, 19),
+        "t02-statements-after-fault" => (TrapKind::IndexOutOfBounds, 10, 24),
+        "t03-loop-stops-at-fault" => (TrapKind::IndexOutOfBounds, 13, 28),
+        "t04-call-after-fault" => (TrapKind::IndexOutOfBounds, 15, 24),
+        "t05-foreach-callback-fault" => (TrapKind::IndexOutOfBounds, 13, 26),
+        "t06-push-after-fault" => (TrapKind::IndexOutOfBounds, 11, 24),
+        "t07-p19-compound-assign-ordering" => (TrapKind::IndexOutOfBounds, 10, 3),
+        "t08-div-zero-expression" => (TrapKind::DivisionByZero, 10, 25),
+        "t09-rem-zero-expression" => (TrapKind::DivisionByZero, 10, 26),
+        "t10-div-zero-loop-condition" | "t11-rem-zero-loop-condition" => {
+            (TrapKind::DivisionByZero, 10, 11)
         }
+        "t12-div-zero-array-element" | "t13-rem-zero-array-element" => {
+            (TrapKind::DivisionByZero, 10, 29)
+        }
+        "t14-div-zero-call-divisor" => (TrapKind::DivisionByZero, 14, 25),
+        "t15-rem-zero-call-divisor" => (TrapKind::DivisionByZero, 14, 26),
+        "t16-array-write-oob" => (TrapKind::IndexOutOfBounds, 11, 3),
+        "t17-fixed-array-read-oob" => (TrapKind::IndexOutOfBounds, 8, 10),
+        "t18-fixed-array-write-oob" => (TrapKind::IndexOutOfBounds, 8, 3),
+        "t19-array-compound-second-write-oob" => (TrapKind::IndexOutOfBounds, 16, 3),
+        "t20-narrow-null" => (TrapKind::NullNarrowing, 20, 29),
+        "t21-narrow-class-mismatch" => (TrapKind::ClassMismatch, 27, 33),
+        "t22-double-delete-q6" => (TrapKind::DoubleDelete, 19, 3),
+        "t23-use-after-delete-q6" => (TrapKind::UseAfterDelete, 23, 12),
+        "t24-stale-coroutine-reload" => (TrapKind::StaleCoroutine, 19, 3),
+        "t25-allocation-sites-before-second-template-fault" => (TrapKind::DivisionByZero, 21, 47),
+        "t26-allocation-failure-new" => (TrapKind::AllocationFailure, 17, 20),
+        "t27-dynamic-value-field-write-oob" => (TrapKind::IndexOutOfBounds, 25, 3),
+        "t28-allocation-failure-array-literal" => (TrapKind::AllocationFailure, 9, 25),
+        "t29-allocation-failure-push-grow" => (TrapKind::AllocationFailure, 10, 3),
+        "t30-allocation-failure-string-concat" => (TrapKind::AllocationFailure, 11, 26),
+        "t31-allocation-failure-template" => (TrapKind::AllocationFailure, 10, 26),
+        "t32-allocation-failure-generator-frame" => (TrapKind::AllocationFailure, 7, 11),
+        "t33-allocation-failure-json-raw-new" => (TrapKind::AllocationFailure, 18, 5),
+        "t35-allocation-failure-map-new" => (TrapKind::AllocationFailure, 9, 33),
+        "t36-allocation-failure-set-new" => (TrapKind::AllocationFailure, 9, 28),
         "t37-allocation-failure-map-grow" | "t38-allocation-failure-set-grow" => {
-            (TrapKind::AllocationFailure, 10)
+            (TrapKind::AllocationFailure, 10, 3)
         }
-        "t39-regex-budget" => (TrapKind::RegexBudget, 9),
+        "t39-regex-budget" => (TrapKind::RegexBudget, 9, 12),
         "t40-regex-invalid-pattern"
         | "t41-regex-unsupported-flag"
         | "t42-regex-duplicate-flag"
         | "t43-regex-mutually-exclusive-flags"
-        | "t44-regex-replace-all-without-global"
-        | "t45-regex-sticky-last-index" => (TrapKind::Regex, 8),
-        "t46-callback-userdata-freed" => (TrapKind::CallbackUserdataFreed, 31),
-        "t47-unreachable-reached" => (TrapKind::UnreachableReached, 10),
-        "t48-wire-enum-unknown-value" => (TrapKind::WireEnumUnknownValue, 10),
-        "t49-wire-enum-struct-unknown-member" => (TrapKind::WireEnumUnknownValue, 12),
-        "t50-wire-entry-unknown-value" => (TrapKind::WireEnumUnknownValue, 8),
-        "t51-bytes-into-range" => (TrapKind::IndexOutOfBounds, 18),
+        | "t45-regex-sticky-last-index" => (TrapKind::Regex, 8, 25),
+        "t44-regex-replace-all-without-global" => (TrapKind::Regex, 8, 9),
+        "t46-callback-userdata-freed" => (TrapKind::CallbackUserdataFreed, 31, 43),
+        "t47-unreachable-reached" => (TrapKind::UnreachableReached, 10, 3),
+        "t48-wire-enum-unknown-value" => (TrapKind::WireEnumUnknownValue, 10, 30),
+        "t49-wire-enum-struct-unknown-member" => (TrapKind::WireEnumUnknownValue, 12, 36),
+        "t50-wire-entry-unknown-value" => (TrapKind::WireEnumUnknownValue, 8, 27),
+        "t51-bytes-into-range" => (TrapKind::IndexOutOfBounds, 18, 3),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -606,7 +609,7 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
         }
         let expected = trap_corpus::trap_expected(&trap, &id);
         let expected_file = format!("{id}.ts");
-        let (expected_kind, expected_line) = trap_expectation(&id);
+        let (expected_kind, expected_line, expected_column) = trap_expectation(&id);
         let freed_handle_diagnostic = matches!(
             id.as_str(),
             "t22-double-delete-q6" | "t23-use-after-delete-q6"
@@ -658,10 +661,11 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
                 if report.rule != expected_kind
                     || report.pos.file != expected_file
                     || report.pos.line != expected_line
+                    || report.pos.col != expected_column
                 {
                     failures.push(format!(
                         "{id}: dev-JIT trap differs from the corpus intent\n  expected kind={expected_kind}, \
-                         position={expected_file}:{expected_line}\n  actual   {}",
+                         position={expected_file}:{expected_line}:{expected_column}\n  actual   {}",
                         render_run(&jit)
                     ));
                 }

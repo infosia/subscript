@@ -242,6 +242,57 @@ impl<'p> Checker<'p> {
         }
     }
 
+    pub(super) fn register_operation_signature(&self, expr: &hir::Expr) {
+        let ExprKind::Call { callee, args } = &expr.kind else {
+            return;
+        };
+        let (target, receiver) = match callee {
+            Callee::Ambient(function) => (hir::OperationSignatureTarget::Ambient(*function), None),
+            Callee::ContextBytes { function, ty } => (
+                hir::OperationSignatureTarget::ContextBytes(*function, ty.clone()),
+                None,
+            ),
+            Callee::Math(function) => (hir::OperationSignatureTarget::Math(*function), None),
+            Callee::Num(function) => (hir::OperationSignatureTarget::Num(*function), None),
+            Callee::Date(function) => (hir::OperationSignatureTarget::Date(*function), None),
+            Callee::Json(function) => (hir::OperationSignatureTarget::Json(*function), None),
+            Callee::Str(function) => (hir::OperationSignatureTarget::Str(*function), None),
+            Callee::Regex(function) => (hir::OperationSignatureTarget::Regex(*function), None),
+            Callee::Arr(function) => (hir::OperationSignatureTarget::Arr(*function), None),
+            Callee::Map(function) => (hir::OperationSignatureTarget::Map(*function), None),
+            Callee::Set(function) => (hir::OperationSignatureTarget::Set(*function), None),
+            Callee::Worker(function) => (hir::OperationSignatureTarget::Worker(*function), None),
+            Callee::Method { recv, name } => {
+                let method = match (&recv.ty, name.as_str()) {
+                    (Type::Array(_), "push") => hir::BuiltinMethod::ArrayPush,
+                    (Type::Array(_), "pop") => hir::BuiltinMethod::ArrayPop,
+                    (Type::Str, "slice") => hir::BuiltinMethod::StringSlice,
+                    (Type::Generator(_), "next") => hir::BuiltinMethod::GeneratorNext,
+                    (Type::Class(_), _) => return,
+                    _ => return,
+                };
+                (
+                    hir::OperationSignatureTarget::BuiltinMethod(method),
+                    Some(recv.ty.clone()),
+                )
+            }
+            Callee::Func(_) | Callee::Foreign(_) | Callee::Value(_) => return,
+        };
+        let parameter_types = receiver
+            .into_iter()
+            .chain(args.iter().map(|argument| argument.ty.clone()))
+            .collect();
+        let signature = hir::OperationSignature {
+            target,
+            parameter_types,
+            return_type: (expr.ty != Type::Void).then(|| expr.ty.clone()),
+        };
+        let mut signatures = self.operation_signatures.borrow_mut();
+        if !signatures.contains(&signature) {
+            signatures.push(signature);
+        }
+    }
+
     /// Checks one expression. `ctx` is the contextual type used to type
     /// suffix-less numeric literals (C4); it never coerces non-literals.
     pub(crate) fn check_expr(
@@ -251,7 +302,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
     ) -> hir::Expr {
         let pos = self.pos(e.span());
-        match e {
+        let checked = match e {
             ast::Expr::Paren(p) => self.check_expr(&p.expr, ctx, fx),
             ast::Expr::Lit(lit) => self.check_lit(lit, ctx, pos),
             ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
@@ -334,7 +385,9 @@ impl<'p> Checker<'p> {
                 );
                 self.err_expr(p)
             }
-        }
+        };
+        self.register_operation_signature(&checked);
+        checked
     }
 
     /// Checks an expression statement, admitting the ambient
@@ -679,6 +732,7 @@ impl<'p> Checker<'p> {
                         ty: Type::RegExp,
                         pos: pos.clone(),
                     };
+                    self.register_operation_signature(&init);
                     self.globals.push(hir::Global {
                         name: name.clone(),
                         ty: Type::RegExp,

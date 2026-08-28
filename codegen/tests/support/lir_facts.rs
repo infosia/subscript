@@ -276,7 +276,39 @@ fn compare_boundary_pointer_addresses(
                     require_address(&field.ty, argument);
                 }
             }
-            _ => {}
+            hir::ExprKind::Call { .. }
+            | hir::ExprKind::Int(_)
+            | hir::ExprKind::Float(_)
+            | hir::ExprKind::Bool(_)
+            | hir::ExprKind::Str(_)
+            | hir::ExprKind::Null
+            | hir::ExprKind::This
+            | hir::ExprKind::Local(_)
+            | hir::ExprKind::Global(_)
+            | hir::ExprKind::FuncRef(_)
+            | hir::ExprKind::EnumMember { .. }
+            | hir::ExprKind::Unary { .. }
+            | hir::ExprKind::Binary { .. }
+            | hir::ExprKind::Assign { .. }
+            | hir::ExprKind::Cast(_)
+            | hir::ExprKind::DescriptorLit { .. }
+            | hir::ExprKind::Zero
+            | hir::ExprKind::RawNew { .. }
+            | hir::ExprKind::Field { .. }
+            | hir::ExprKind::JsonResultValue(_)
+            | hir::ExprKind::Length(_)
+            | hir::ExprKind::Index { .. }
+            | hir::ExprKind::ArrayLit(_)
+            | hir::ExprKind::ArraySpreadLit(_)
+            | hir::ExprKind::Template(_)
+            | hir::ExprKind::Lambda { .. }
+            | hir::ExprKind::Yield(_)
+            | hir::ExprKind::AsyncSuspend
+            | hir::ExprKind::AsyncCall { .. }
+            | hir::ExprKind::AsyncHandleCreate { .. }
+            | hir::ExprKind::AsyncHandleAwait(_)
+            | hir::ExprKind::AsyncHandleTransfer { .. }
+            | hir::ExprKind::Cond { .. } => {}
         }
     });
 }
@@ -309,7 +341,21 @@ fn compare_terminator_positions(hir: &hir::Module, lir: &l::Module, findings: &m
     let mut actual = BTreeMap::<(String, u32, u32), usize>::new();
     for function in &lir.functions {
         for block in &function.blocks {
-            if let Some(pos) = block.terminator.trap_site_position() {
+            let carries_fact_position = match &block.terminator {
+                l::Terminator::Suspend { .. } | l::Terminator::Trap(_) => true,
+                l::Terminator::Return { .. } => {
+                    matches!(&function.return_type, subscript_compiler::Type::Class(class)
+                        if lir_boundary_class_contains_pointer(lir, *class, &mut Vec::new()))
+                }
+                l::Terminator::Branch(_)
+                | l::Terminator::ConditionalBranch { .. }
+                | l::Terminator::Switch { .. }
+                | l::Terminator::Unreachable { .. } => false,
+            };
+            if let Some(pos) = carries_fact_position
+                .then(|| block.terminator.trap_site_position())
+                .flatten()
+            {
                 *actual
                     .entry((pos.file.clone(), pos.line, pos.col))
                     .or_default() += 1;
@@ -319,22 +365,7 @@ fn compare_terminator_positions(hir: &hir::Module, lir: &l::Module, findings: &m
 
     let mut expected = Vec::<Pos>::new();
     walk_module_expressions(hir, &mut |expr| {
-        if matches!(
-            &expr.kind,
-            hir::ExprKind::Yield(_)
-                | hir::ExprKind::AsyncSuspend
-                | hir::ExprKind::AsyncCall { .. }
-                | hir::ExprKind::AsyncHandleAwait(_)
-        ) {
-            expected.push(expr.pos.clone());
-        }
-        if matches!(
-            &expr.kind,
-            hir::ExprKind::Call {
-                callee: hir::Callee::Ambient(hir::AmbientFn::Unreachable),
-                ..
-            }
-        ) {
+        if expression_owns_terminator_position(expr) {
             expected.push(expr.pos.clone());
         }
         if let hir::ExprKind::Lambda { ret, body, .. } = &expr.kind {
@@ -369,6 +400,54 @@ fn compare_terminator_positions(hir: &hir::Module, lir: &l::Module, findings: &m
             )),
         }
     }
+    for ((file, line, col), count) in actual {
+        for _ in 0..count {
+            findings.push(format!(
+                "{file}:{line}:{col}: LIR terminator trap-site position is absent from HIR"
+            ));
+        }
+    }
+}
+
+fn expression_owns_terminator_position(expr: &hir::Expr) -> bool {
+    use hir::ExprKind as K;
+    match &expr.kind {
+        K::Yield(_) | K::AsyncSuspend | K::AsyncCall { .. } | K::AsyncHandleAwait(_) => true,
+        K::Call {
+            callee: hir::Callee::Ambient(hir::AmbientFn::Unreachable),
+            ..
+        } => true,
+        K::Call { .. }
+        | K::Int(_)
+        | K::Float(_)
+        | K::Bool(_)
+        | K::Str(_)
+        | K::Null
+        | K::This
+        | K::Local(_)
+        | K::Global(_)
+        | K::FuncRef(_)
+        | K::EnumMember { .. }
+        | K::Unary { .. }
+        | K::Binary { .. }
+        | K::Assign { .. }
+        | K::Cast(_)
+        | K::New { .. }
+        | K::DescriptorLit { .. }
+        | K::Zero
+        | K::RawNew { .. }
+        | K::Field { .. }
+        | K::JsonResultValue(_)
+        | K::Length(_)
+        | K::Index { .. }
+        | K::ArrayLit(_)
+        | K::ArraySpreadLit(_)
+        | K::Template(_)
+        | K::Lambda { .. }
+        | K::AsyncHandleCreate { .. }
+        | K::AsyncHandleTransfer { .. }
+        | K::Cond { .. } => false,
+    }
 }
 
 fn hir_boundary_class_contains_pointer(
@@ -397,6 +476,42 @@ fn hir_boundary_class_contains_pointer(
                 subscript_compiler::Type::Array(inner) => match &**inner {
                     subscript_compiler::Type::Class(inner) => {
                         hir_boundary_class_contains_pointer(hir, *inner, visiting)
+                    }
+                    _ => false,
+                },
+                _ => false,
+            })
+        });
+    visiting.pop();
+    contains
+}
+
+fn lir_boundary_class_contains_pointer(
+    lir: &l::Module,
+    class: ClassId,
+    visiting: &mut Vec<ClassId>,
+) -> bool {
+    if visiting.contains(&class) {
+        return false;
+    }
+    visiting.push(class);
+    let contains = lir
+        .classes
+        .get(class.0)
+        .filter(|definition| definition.is_value)
+        .is_some_and(|definition| {
+            definition.fields.iter().any(|field| match &field.ty {
+                subscript_compiler::Type::Nullable(inner) => matches!(
+                    &**inner,
+                    subscript_compiler::Type::Class(inner)
+                        if lir.classes.get(inner.0).is_some_and(|class| class.is_value)
+                ),
+                subscript_compiler::Type::Class(inner) => {
+                    lir_boundary_class_contains_pointer(lir, *inner, visiting)
+                }
+                subscript_compiler::Type::Array(inner) => match &**inner {
+                    subscript_compiler::Type::Class(inner) => {
+                        lir_boundary_class_contains_pointer(lir, *inner, visiting)
                     }
                     _ => false,
                 },
@@ -899,62 +1014,116 @@ fn collect_trap_expression(
                 }
             }
             hir::ExprKind::Call { callee, args } => {
-                let parameters = match callee {
-                    hir::Callee::Func(name) => hir
-                        .functions
-                        .iter()
-                        .find(|function| function.name == *name)
-                        .map(|function| function.params.as_slice()),
-                    hir::Callee::Foreign(name) => hir
-                        .foreign_fns
-                        .iter()
-                        .find(|function| function.name == *name)
-                        .map(|function| function.params.as_slice()),
-                    hir::Callee::Method { recv, name } => match &recv.ty {
-                        subscript_compiler::Type::Class(class) => hir
-                            .classes
-                            .get(class.0)
-                            .and_then(|definition| {
-                                definition
-                                    .methods
-                                    .iter()
-                                    .find(|method| method.name == *name)
-                            })
-                            .map(|function| function.params.as_slice()),
-                        _ => None,
-                    },
-                    _ => None,
-                };
+                let parameters = declared_callee_parameters(hir, callee);
                 if let Some(parameters) = parameters {
                     collect_missing_parameter_defaults(parameters, args.len(), hir, expected);
                 }
             }
             hir::ExprKind::AsyncCall { callee, args }
             | hir::ExprKind::AsyncHandleCreate { callee, args, .. } => {
-                let parameters = match callee {
-                    hir::AsyncCallee::Function(name) => hir
-                        .functions
-                        .iter()
-                        .find(|function| function.name == *name)
-                        .map(|function| function.params.as_slice()),
-                    hir::AsyncCallee::Method { class, name, .. } => hir
-                        .classes
-                        .get(class.0)
-                        .and_then(|definition| {
-                            definition
-                                .methods
-                                .iter()
-                                .find(|method| method.name == *name)
-                        })
-                        .map(|function| function.params.as_slice()),
-                    _ => None,
-                };
+                let parameters = declared_async_callee_parameters(hir, callee);
                 if let Some(parameters) = parameters {
                     collect_missing_parameter_defaults(parameters, args.len(), hir, expected);
                 }
             }
-            _ => {}
+            hir::ExprKind::Int(_)
+            | hir::ExprKind::Float(_)
+            | hir::ExprKind::Bool(_)
+            | hir::ExprKind::Str(_)
+            | hir::ExprKind::Null
+            | hir::ExprKind::This
+            | hir::ExprKind::Local(_)
+            | hir::ExprKind::Global(_)
+            | hir::ExprKind::FuncRef(_)
+            | hir::ExprKind::EnumMember { .. }
+            | hir::ExprKind::Unary { .. }
+            | hir::ExprKind::Binary { .. }
+            | hir::ExprKind::Assign { .. }
+            | hir::ExprKind::Cast(_)
+            | hir::ExprKind::Zero
+            | hir::ExprKind::RawNew { .. }
+            | hir::ExprKind::Field { .. }
+            | hir::ExprKind::JsonResultValue(_)
+            | hir::ExprKind::Length(_)
+            | hir::ExprKind::Index { .. }
+            | hir::ExprKind::ArrayLit(_)
+            | hir::ExprKind::ArraySpreadLit(_)
+            | hir::ExprKind::Template(_)
+            | hir::ExprKind::Lambda { .. }
+            | hir::ExprKind::Yield(_)
+            | hir::ExprKind::AsyncSuspend
+            | hir::ExprKind::AsyncHandleAwait(_)
+            | hir::ExprKind::AsyncHandleTransfer { .. }
+            | hir::ExprKind::Cond { .. } => {}
         }
+    }
+}
+
+fn declared_callee_parameters<'a>(
+    hir: &'a hir::Module,
+    callee: &'a hir::Callee,
+) -> Option<&'a [hir::Param]> {
+    match callee {
+        hir::Callee::Func(name) => hir
+            .functions
+            .iter()
+            .find(|function| function.name == *name)
+            .map(|function| function.params.as_slice()),
+        hir::Callee::Foreign(name) => hir
+            .foreign_fns
+            .iter()
+            .find(|function| function.name == *name)
+            .map(|function| function.params.as_slice()),
+        hir::Callee::Method { recv, name } => {
+            let subscript_compiler::Type::Class(class) = &recv.ty else {
+                return None;
+            };
+            hir.classes
+                .get(class.0)
+                .and_then(|definition| {
+                    definition
+                        .methods
+                        .iter()
+                        .find(|method| method.name == *name)
+                })
+                .map(|function| function.params.as_slice())
+        }
+        hir::Callee::Ambient(_)
+        | hir::Callee::ContextBytes { .. }
+        | hir::Callee::Math(_)
+        | hir::Callee::Num(_)
+        | hir::Callee::Date(_)
+        | hir::Callee::Json(_)
+        | hir::Callee::Str(_)
+        | hir::Callee::Regex(_)
+        | hir::Callee::Arr(_)
+        | hir::Callee::Map(_)
+        | hir::Callee::Set(_)
+        | hir::Callee::Worker(_)
+        | hir::Callee::Value(_) => None,
+    }
+}
+
+fn declared_async_callee_parameters<'a>(
+    hir: &'a hir::Module,
+    callee: &'a hir::AsyncCallee,
+) -> Option<&'a [hir::Param]> {
+    match callee {
+        hir::AsyncCallee::Function(name) => hir
+            .functions
+            .iter()
+            .find(|function| function.name == *name)
+            .map(|function| function.params.as_slice()),
+        hir::AsyncCallee::Method { class, name, .. } => hir
+            .classes
+            .get(class.0)
+            .and_then(|definition| {
+                definition
+                    .methods
+                    .iter()
+                    .find(|method| method.name == *name)
+            })
+            .map(|function| function.params.as_slice()),
     }
 }
 
@@ -1042,7 +1211,6 @@ fn walk_statement_expression_roots<'a>(
             }
             hir::Stmt::Block(body) => walk_statement_expression_roots(body, visit),
             hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
-            _ => {}
         }
         if stops_statement_sequence(statement) {
             break;
@@ -1182,7 +1350,18 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
                         .sum()
                 }),
             hir::Callee::Value(_) | hir::Callee::Method { .. } => Some(args.len() + 1),
-            _ => Some(args.len()),
+            hir::Callee::Ambient(_)
+            | hir::Callee::ContextBytes { .. }
+            | hir::Callee::Math(_)
+            | hir::Callee::Num(_)
+            | hir::Callee::Date(_)
+            | hir::Callee::Json(_)
+            | hir::Callee::Str(_)
+            | hir::Callee::Regex(_)
+            | hir::Callee::Arr(_)
+            | hir::Callee::Map(_)
+            | hir::Callee::Set(_)
+            | hir::Callee::Worker(_) => Some(args.len()),
         },
         hir::ExprKind::New { class, .. } => hir
             .classes
@@ -1201,9 +1380,37 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
                 .get(class.0)
                 .and_then(|class| class.methods.iter().find(|method| method.name == *name))
                 .map(|method| method.params.len() + 1),
-            _ => None,
         },
-        _ => None,
+        hir::ExprKind::Int(_)
+        | hir::ExprKind::Float(_)
+        | hir::ExprKind::Bool(_)
+        | hir::ExprKind::Str(_)
+        | hir::ExprKind::Null
+        | hir::ExprKind::This
+        | hir::ExprKind::Local(_)
+        | hir::ExprKind::Global(_)
+        | hir::ExprKind::FuncRef(_)
+        | hir::ExprKind::EnumMember { .. }
+        | hir::ExprKind::Unary { .. }
+        | hir::ExprKind::Binary { .. }
+        | hir::ExprKind::Assign { .. }
+        | hir::ExprKind::Cast(_)
+        | hir::ExprKind::DescriptorLit { .. }
+        | hir::ExprKind::Zero
+        | hir::ExprKind::RawNew { .. }
+        | hir::ExprKind::Field { .. }
+        | hir::ExprKind::JsonResultValue(_)
+        | hir::ExprKind::Length(_)
+        | hir::ExprKind::Index { .. }
+        | hir::ExprKind::ArrayLit(_)
+        | hir::ExprKind::ArraySpreadLit(_)
+        | hir::ExprKind::Template(_)
+        | hir::ExprKind::Lambda { .. }
+        | hir::ExprKind::Yield(_)
+        | hir::ExprKind::AsyncSuspend
+        | hir::ExprKind::AsyncHandleAwait(_)
+        | hir::ExprKind::AsyncHandleTransfer { .. }
+        | hir::ExprKind::Cond { .. } => None,
     }
 }
 
@@ -1286,9 +1493,18 @@ fn instruction_arity(
                 .unwrap_or(usize::MAX);
             Arity::Exact(captures)
         }
-        K::Call(target) | K::AsyncHandleCreate(target) => {
-            Arity::MatchesPayload(target.parameter_types.len())
-        }
+        K::Call(target) | K::AsyncHandleCreate(target) => Arity::MatchesPayload(
+            if matches!(
+                target.kind,
+                l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_)
+            ) {
+                lir.operation_signatures(&target.kind)
+                    .next()
+                    .map_or(usize::MAX, |signature| signature.parameter_types.len())
+            } else {
+                target.parameter_types.len()
+            },
+        ),
         K::AsyncHandleRetain
         | K::AsyncHandleRelease
         | K::AsyncHandleArrayRetain
@@ -1328,7 +1544,6 @@ fn collect_return_positions<'a>(statements: &'a [hir::Stmt], visit: &mut impl Fn
             | hir::Stmt::Expr(_)
             | hir::Stmt::Break(_)
             | hir::Stmt::Continue(_) => {}
-            _ => {}
         }
         if stops_statement_sequence(statement) {
             break;
@@ -1449,7 +1664,6 @@ fn walk_statements<'a>(statements: &'a [hir::Stmt], visit: &mut impl FnMut(&'a h
             }
             hir::Stmt::Block(body) => walk_statements(body, visit),
             hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
-            _ => {}
         }
         if stops_statement_sequence(statement) {
             break;
@@ -1467,7 +1681,13 @@ fn stops_statement_sequence(statement: &hir::Stmt) -> bool {
                 ..
             }
         ),
-        _ => false,
+        hir::Stmt::Let { .. }
+        | hir::Stmt::If { .. }
+        | hir::Stmt::While { .. }
+        | hir::Stmt::For { .. }
+        | hir::Stmt::ForOf { .. }
+        | hir::Stmt::Switch { .. }
+        | hir::Stmt::Block(_) => false,
     }
 }
 
@@ -1491,7 +1711,20 @@ fn walk_expr<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::Expr)) {
             match callee {
                 hir::Callee::Value(value) => walk_expr(value, visit),
                 hir::Callee::Method { recv, .. } => walk_expr(recv, visit),
-                _ => {}
+                hir::Callee::Func(_)
+                | hir::Callee::Foreign(_)
+                | hir::Callee::Ambient(_)
+                | hir::Callee::ContextBytes { .. }
+                | hir::Callee::Math(_)
+                | hir::Callee::Num(_)
+                | hir::Callee::Date(_)
+                | hir::Callee::Json(_)
+                | hir::Callee::Str(_)
+                | hir::Callee::Regex(_)
+                | hir::Callee::Arr(_)
+                | hir::Callee::Map(_)
+                | hir::Callee::Set(_)
+                | hir::Callee::Worker(_) => {}
             }
             for argument in args {
                 walk_expr(argument, visit);
@@ -1572,7 +1805,6 @@ fn walk_expr<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::Expr)) {
         | K::Zero
         | K::RawNew { .. }
         | K::AsyncSuspend => {}
-        _ => {}
     }
 }
 
@@ -1584,6 +1816,34 @@ fn walk_place_children<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::
             walk_expr(index, visit);
         }
         hir::ExprKind::Local(_) | hir::ExprKind::Global(_) | hir::ExprKind::This => {}
-        _ => walk_expr(expr, visit),
+        hir::ExprKind::Int(_)
+        | hir::ExprKind::Float(_)
+        | hir::ExprKind::Bool(_)
+        | hir::ExprKind::Str(_)
+        | hir::ExprKind::Null
+        | hir::ExprKind::FuncRef(_)
+        | hir::ExprKind::EnumMember { .. }
+        | hir::ExprKind::Unary { .. }
+        | hir::ExprKind::Binary { .. }
+        | hir::ExprKind::Assign { .. }
+        | hir::ExprKind::Cast(_)
+        | hir::ExprKind::Call { .. }
+        | hir::ExprKind::New { .. }
+        | hir::ExprKind::DescriptorLit { .. }
+        | hir::ExprKind::Zero
+        | hir::ExprKind::RawNew { .. }
+        | hir::ExprKind::JsonResultValue(_)
+        | hir::ExprKind::Length(_)
+        | hir::ExprKind::ArrayLit(_)
+        | hir::ExprKind::ArraySpreadLit(_)
+        | hir::ExprKind::Template(_)
+        | hir::ExprKind::Lambda { .. }
+        | hir::ExprKind::Yield(_)
+        | hir::ExprKind::AsyncSuspend
+        | hir::ExprKind::AsyncCall { .. }
+        | hir::ExprKind::AsyncHandleCreate { .. }
+        | hir::ExprKind::AsyncHandleAwait(_)
+        | hir::ExprKind::AsyncHandleTransfer { .. }
+        | hir::ExprKind::Cond { .. } => walk_expr(expr, visit),
     }
 }

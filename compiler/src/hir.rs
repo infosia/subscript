@@ -33,6 +33,8 @@ pub struct Module {
     /// Q35 worker-entry adapters required by `Worker.spawn` call sites,
     /// deduplicated by directly named function and message-class pair.
     pub worker_entries: Vec<WorkerEntry>,
+    /// Checker-derived signatures for intrinsic and built-in calls.
+    pub operation_signatures: Vec<OperationSignature>,
     /// Foreign (C-ABI) functions declared by an ingested ambient mirror
     /// (`declare function` in a `.d.ts`, P5.2). They carry a signature
     /// but no body; lowering a call to one is P5.2b, not P5.2a.
@@ -43,6 +45,61 @@ pub struct Module {
     /// Checked top-level non-declaration statements, in source order
     /// (the accept corpus has none; kept for completeness).
     pub top_level: Vec<Stmt>,
+}
+
+/// One checker-derived intrinsic or built-in call signature.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OperationSignature {
+    /// Semantic operation identity.
+    pub target: OperationSignatureTarget,
+    /// Normalized operand types in execution order.
+    pub parameter_types: Vec<Type>,
+    /// Result type, absent for a void operation.
+    pub return_type: Option<Type>,
+}
+
+/// An intrinsic or built-in operation identity from the checker.
+#[derive(Debug, Clone, PartialEq)]
+pub enum OperationSignatureTarget {
+    /// An ambient prelude function.
+    Ambient(AmbientFn),
+    /// A typed Context storage-byte operation.
+    ContextBytes(ContextBytesFn, Type),
+    /// A Math operation.
+    Math(MathFn),
+    /// A Number operation.
+    Num(NumFn),
+    /// A Date operation.
+    Date(DateFn),
+    /// A JSON operation.
+    Json(JsonFn),
+    /// A String operation.
+    Str(StrFn),
+    /// A regular-expression operation.
+    Regex(RegexFn),
+    /// An Array operation.
+    Arr(ArrFn),
+    /// A Map operation.
+    Map(MapFn),
+    /// A Set operation.
+    Set(SetFn),
+    /// A worker or channel-endpoint operation.
+    Worker(WorkerFn),
+    /// A built-in receiver method.
+    BuiltinMethod(BuiltinMethod),
+}
+
+/// A built-in receiver method whose signature the checker declares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltinMethod {
+    /// `Array.push`.
+    ArrayPush,
+    /// `Array.pop`.
+    ArrayPop,
+    /// `String.slice`.
+    StringSlice,
+    /// `Generator.next`.
+    GeneratorNext,
 }
 
 /// One import statement of an absent module, accepted during a discovery check.
@@ -417,7 +474,6 @@ pub struct Capture {
 
 /// A checked statement.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub enum Stmt {
     /// Local variable declaration.
     Let {
@@ -2815,7 +2871,6 @@ impl ArrFmtKind {
 
 /// What a call dispatches to.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub enum Callee {
     /// A module function by (possibly monomorphized) name.
     Func(String),
@@ -2931,7 +2986,6 @@ pub enum TplPart {
 
 /// Expression payloads.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub enum ExprKind {
     /// Integer literal (value fits the expression's sized integer type).
     Int(i64),
@@ -3116,7 +3170,6 @@ pub enum ExprKind {
 /// before `ExprKind::AsyncCall::args`, and becomes the first payload slot of
 /// the callee frame.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub enum AsyncCallee {
     /// A module async function by HIR name.
     Function(String),
@@ -3521,6 +3574,7 @@ mod tests {
             globals: Vec::new(),
             functions: vec![function.clone()],
             worker_entries: Vec::new(),
+            operation_signatures: Vec::new(),
             foreign_fns: Vec::new(),
             foreign_mirrors: Vec::new(),
             top_level: Vec::new(),
@@ -3904,6 +3958,7 @@ mod tests {
             globals: Vec::new(),
             functions: Vec::new(),
             worker_entries: Vec::new(),
+            operation_signatures: Vec::new(),
             foreign_fns: Vec::new(),
             foreign_mirrors: Vec::new(),
             top_level: Vec::new(),

@@ -13,6 +13,7 @@ mod layout;
 mod stmt;
 mod tyres;
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use swc_common::Spanned;
@@ -424,6 +425,7 @@ pub(crate) struct Checker<'p> {
     pub fn_sigs: HashMap<String, FnSig>,
     pub functions: Vec<hir::Function>,
     pub worker_entries: Vec<hir::WorkerEntry>,
+    pub operation_signatures: RefCell<Vec<hir::OperationSignature>>,
     pub global_sigs: HashMap<String, GlobalSig>,
     pub globals: Vec<hir::Global>,
     pub generic_fns: HashMap<String, GenericFn>,
@@ -519,6 +521,7 @@ pub(crate) fn run(
         fn_sigs: HashMap::new(),
         functions: Vec::new(),
         worker_entries: Vec::new(),
+        operation_signatures: RefCell::new(Vec::new()),
         global_sigs: HashMap::new(),
         globals: Vec::new(),
         generic_fns: HashMap::new(),
@@ -621,6 +624,7 @@ pub(crate) fn run(
             globals: ck.globals,
             functions: ck.functions,
             worker_entries: ck.worker_entries,
+            operation_signatures: ck.operation_signatures.into_inner(),
             foreign_fns: ck.foreign_defs,
             foreign_mirrors: ck.foreign_mirrors,
             top_level: ck.top_level,

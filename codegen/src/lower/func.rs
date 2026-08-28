@@ -5864,6 +5864,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         &mut self,
         target: &l::CallTarget,
         operands: &[RV],
+        parameter_types: &[l::ValueType],
         traps: &[l::Trap],
         pos: &Pos,
     ) -> Result<RV, String> {
@@ -5883,26 +5884,24 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::CallTargetKind::Function(function) => self.script_call(
                 *function,
                 operands,
-                &target.parameter_types,
+                parameter_types,
                 target.return_type.as_ref(),
                 false,
             )?,
             l::CallTargetKind::Method(method) => self.script_call(
                 self.method_function(*method)?,
                 operands,
-                &target.parameter_types,
+                parameter_types,
                 target.return_type.as_ref(),
                 true,
             )?,
-            l::CallTargetKind::Indirect => self.indirect_call(
-                operands,
-                &target.parameter_types,
-                target.return_type.as_ref(),
-            )?,
+            l::CallTargetKind::Indirect => {
+                self.indirect_call(operands, parameter_types, target.return_type.as_ref())?
+            }
             l::CallTargetKind::Foreign(function) => self.foreign_call(
                 *function,
                 operands,
-                &target.parameter_types,
+                parameter_types,
                 target.return_type.as_ref(),
                 traps,
                 pos,
@@ -5910,7 +5909,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::CallTargetKind::Intrinsic(intrinsic) => self.intrinsic_call(
                 intrinsic,
                 operands,
-                &target.parameter_types,
+                parameter_types,
                 target.return_type.as_ref(),
                 traps,
                 pos,
@@ -5918,7 +5917,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::CallTargetKind::BuiltinMethod(method) => self.builtin_call(
                 *method,
                 operands,
-                &target.parameter_types,
+                parameter_types,
                 target.return_type.as_ref(),
                 traps,
                 pos,
@@ -6296,9 +6295,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::InstructionKind::MakeClosure(function) => {
                 Some(self.make_closure(*function, &operands)?)
             }
-            l::InstructionKind::Call(target) => {
-                Some(self.call(target, &operands, &instruction.traps, &instruction.pos)?)
-            }
+            l::InstructionKind::Call(target) => Some(self.call(
+                target,
+                &operands,
+                &operand_types,
+                &instruction.traps,
+                &instruction.pos,
+            )?),
             l::InstructionKind::AsyncHandleCreate(target) => Some(RV::Scalar(
                 self.create_async_child_from_values(target, &operands, &instruction.traps)?,
             )),

@@ -46,7 +46,7 @@ pub struct Module {
     pub functions: Vec<Function>,
     /// Worker adapters requested by checked worker-spawn sites.
     pub worker_entries: Vec<WorkerEntry>,
-    /// Closed intrinsic-operation table carried by this LIR module.
+    /// Closed intrinsic and built-in operation/signature table.
     pub intrinsic_operations: Vec<IntrinsicOperation>,
     /// Optional synthetic module-initializer function.
     pub initializer: Option<FunctionId>,
@@ -418,7 +418,7 @@ pub struct Instruction {
     pub kind: InstructionKind,
     /// Flat operands in evaluation order.
     pub operands: Vec<Operand>,
-    /// Dynamic-array values whose storage may move after the operands are
+    /// Dynamic-array values whose storage can move after the operands are
     /// consumed and before the following instruction.
     pub invalidates: Vec<ValueId>,
     /// Ordered semantic trap sites owned by the operation.
@@ -531,13 +531,15 @@ pub enum TemplatePart {
     Operand(u32),
 }
 
-/// A resolved call target. The attached signature is the complete typed
-/// calling contract and includes any receiver or indirect-callee operand.
+/// A resolved call target. Declared functions carry their complete typed
+/// calling contract here; intrinsic and built-in targets use the module's
+/// checker-derived signature table instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallTarget {
     /// Executable target identity.
     pub kind: CallTargetKind,
-    /// Flat operand types, including receiver/callee when applicable.
+    /// Flat operand types for declared targets, including a receiver or
+    /// indirect callee when applicable. Empty for intrinsics and built-ins.
     pub parameter_types: Vec<ValueType>,
     /// Result type, absent for void calls.
     pub return_type: Option<ValueType>,
@@ -583,6 +585,28 @@ pub struct IntrinsicOperation {
     pub operation: u16,
     /// Stable semantic variant name carried by LIR.
     pub semantic_name: String,
+    /// Shard of the checker-derived intrinsic and built-in signature table.
+    pub signatures: Vec<CallSignature>,
+}
+
+/// One checker-derived intrinsic or built-in call signature.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallSignature {
+    /// Operation whose call contract this row declares.
+    pub target: CallSignatureTarget,
+    /// Operand types in execution order.
+    pub parameter_types: Vec<ValueType>,
+    /// Result type, absent for a void operation.
+    pub return_type: Option<ValueType>,
+}
+
+/// An operation identity in the checker-derived call signature table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CallSignatureTarget {
+    /// Checker/runtime intrinsic.
+    Intrinsic(Intrinsic),
+    /// Built-in receiver method.
+    BuiltinMethod(BuiltinMethod),
 }
 
 /// Closed intrinsic families.
@@ -625,6 +649,31 @@ pub enum BuiltinMethod {
     StringSlice,
     /// Generator `next`.
     GeneratorNext,
+}
+
+impl Module {
+    /// Returns the table signatures for an intrinsic or built-in target.
+    pub fn operation_signatures(
+        &self,
+        kind: &CallTargetKind,
+    ) -> impl Iterator<Item = &CallSignature> {
+        let target = match kind {
+            CallTargetKind::Intrinsic(intrinsic) => {
+                Some(CallSignatureTarget::Intrinsic(intrinsic.clone()))
+            }
+            CallTargetKind::BuiltinMethod(method) => {
+                Some(CallSignatureTarget::BuiltinMethod(*method))
+            }
+            CallTargetKind::Function(_)
+            | CallTargetKind::Method(_)
+            | CallTargetKind::Foreign(_)
+            | CallTargetKind::Indirect => None,
+        };
+        self.intrinsic_operations
+            .iter()
+            .flat_map(|operation| &operation.signatures)
+            .filter(move |signature| target.as_ref() == Some(&signature.target))
+    }
 }
 
 /// A value use or typed constant.

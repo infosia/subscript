@@ -486,6 +486,15 @@ impl<'a> Lowering<'a> {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        let mut intrinsic_operations = intrinsic_operations();
+        if let Some(row) = intrinsic_operations.first_mut() {
+            row.signatures.extend(
+                self.hir
+                    .operation_signatures
+                    .iter()
+                    .map(lower_operation_signature),
+            );
+        }
         Ok(l::Module {
             entry,
             async_roots,
@@ -532,7 +541,7 @@ impl<'a> Lowering<'a> {
             foreign_functions: self.foreign,
             functions,
             worker_entries,
-            intrinsic_operations: intrinsic_operations(),
+            intrinsic_operations,
             initializer,
         })
     }
@@ -743,6 +752,7 @@ fn intrinsic_operations() -> Vec<l::IntrinsicOperation> {
                     family,
                     operation: operation as u16,
                     semantic_name: format!("{value:?}"),
+                    signatures: Vec::new(),
                 }),
         );
     }
@@ -784,9 +794,117 @@ fn intrinsic_operations() -> Vec<l::IntrinsicOperation> {
             family: l::IntrinsicFamily::Worker,
             operation: operation as u16,
             semantic_name: semantic_name.to_string(),
+            signatures: Vec::new(),
         }),
     );
     table
+}
+
+fn lower_operation_signature(signature: &hir::OperationSignature) -> l::CallSignature {
+    let intrinsic = |family, operation, type_argument, worker_entry| {
+        l::CallSignatureTarget::Intrinsic(l::Intrinsic {
+            family,
+            operation,
+            type_argument,
+            worker_entry,
+        })
+    };
+    let target = match &signature.target {
+        hir::OperationSignatureTarget::Ambient(function) => intrinsic(
+            l::IntrinsicFamily::Ambient,
+            intrinsic_index(&hir::AmbientFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::ContextBytes(function, ty) => intrinsic(
+            l::IntrinsicFamily::ContextBytes,
+            intrinsic_index(&hir::ContextBytesFn::ALL, function),
+            Some(ty.clone()),
+            None,
+        ),
+        hir::OperationSignatureTarget::Math(function) => intrinsic(
+            l::IntrinsicFamily::Math,
+            intrinsic_index(&hir::MathFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::Num(function) => intrinsic(
+            l::IntrinsicFamily::Number,
+            intrinsic_index(&hir::NumFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::Date(function) => intrinsic(
+            l::IntrinsicFamily::Date,
+            intrinsic_index(&hir::DateFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::Json(function) => intrinsic(
+            l::IntrinsicFamily::Json,
+            intrinsic_index(&hir::JsonFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::Str(function) => intrinsic(
+            l::IntrinsicFamily::String,
+            intrinsic_index(&hir::StrFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::Regex(function) => intrinsic(
+            l::IntrinsicFamily::Regex,
+            intrinsic_index(&hir::RegexFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::Arr(function) => intrinsic(
+            l::IntrinsicFamily::Array,
+            intrinsic_index(&hir::ArrFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::Map(function) => intrinsic(
+            l::IntrinsicFamily::Map,
+            intrinsic_index(&hir::MapFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::Set(function) => intrinsic(
+            l::IntrinsicFamily::Set,
+            intrinsic_index(&hir::SetFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::Worker(function) => intrinsic(
+            l::IntrinsicFamily::Worker,
+            worker_operation(*function),
+            None,
+            match function {
+                hir::WorkerFn::Spawn(index) => Some(*index as u32),
+                _ => None,
+            },
+        ),
+        hir::OperationSignatureTarget::BuiltinMethod(method) => {
+            let method = match method {
+                hir::BuiltinMethod::ArrayPush => l::BuiltinMethod::ArrayPush,
+                hir::BuiltinMethod::ArrayPop => l::BuiltinMethod::ArrayPop,
+                hir::BuiltinMethod::StringSlice => l::BuiltinMethod::StringSlice,
+                hir::BuiltinMethod::GeneratorNext => l::BuiltinMethod::GeneratorNext,
+            };
+            l::CallSignatureTarget::BuiltinMethod(method)
+        }
+    };
+    l::CallSignature {
+        target,
+        parameter_types: signature
+            .parameter_types
+            .iter()
+            .cloned()
+            .map(l::ValueType::Data)
+            .collect(),
+        return_type: signature.return_type.clone().map(l::ValueType::Data),
+    }
 }
 
 fn convert_provenance(value: &hir::ForeignTypeProvenance) -> l::ForeignTypeProvenance {
@@ -1026,7 +1144,6 @@ impl AddressTaken<'_> {
             }
             hir::Stmt::Block(statements) => self.scoped(statements),
             hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
-            _ => {}
         }
     }
 
@@ -1202,7 +1319,6 @@ impl AddressTaken<'_> {
             | K::RawNew { .. }
             | K::Lambda { .. }
             | K::AsyncSuspend => {}
-            _ => {}
         }
     }
 
@@ -2245,12 +2361,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 self.terminate(l::Terminator::Branch(edge), pos)?;
             }
             hir::Stmt::Block(statements) => self.lower_scoped(statements)?,
-            other => {
-                return Err(self.error(
-                    &stmt_pos(other),
-                    format!("unrecognized HIR statement form: {other:?}"),
-                ));
-            }
         }
         Ok(())
     }
@@ -3101,12 +3211,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             K::AsyncHandleAwait(handle) => self.lower_async_handle_await(handle, expr)?,
             K::AsyncHandleTransfer { value, .. } => self.lower_expr(value)?,
             K::Cond { cond, then, els } => Some(self.lower_cond(cond, then, els, expr)?),
-            other => {
-                return Err(self.error(
-                    &expr.pos,
-                    format!("unrecognized HIR expression form: {other:?}"),
-                ));
-            }
         };
         Ok(result)
     }
@@ -3349,9 +3453,17 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         let deleted_field_owners =
             self.owners_destroyed_by_unsafe_delete(callee, args, &operands, explicit_offset)?;
+        let table_signature = matches!(
+            kind,
+            l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_)
+        );
         let target = l::CallTarget {
             kind,
-            parameter_types,
+            parameter_types: if table_signature {
+                Vec::new()
+            } else {
+                parameter_types
+            },
             return_type: return_type.clone(),
         };
         let stored = if foreign {
@@ -3690,10 +3802,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     hir::WorkerFn::Spawn(index) => Some(*index as u32),
                     _ => None,
                 },
-            )),
-            other => Err(self.error(
-                &expr.pos,
-                format!("unrecognized HIR callee form: {other:?}"),
             )),
         }
     }
@@ -4307,9 +4415,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         .collect::<Vec<_>>(),
                 )
             }
-            other => {
-                return Err(self.error(&expr.pos, format!("unrecognized async callee: {other:?}")));
-            }
         };
         let mut parameter_types = if let hir::AsyncCallee::Method { class, .. } = callee {
             vec![l::ValueType::Data(Type::Class(*class))]
@@ -4429,9 +4534,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         .map(CallParam::from)
                         .collect::<Vec<_>>(),
                 )
-            }
-            other => {
-                return Err(self.error(&expr.pos, format!("unrecognized async callee: {other:?}")));
             }
         };
         let mut parameter_types = if let hir::AsyncCallee::Method { class, .. } = callee {
@@ -5229,7 +5331,6 @@ fn stmt_pos(statement: &hir::Stmt) -> Pos {
             .first()
             .map(stmt_pos)
             .unwrap_or_else(|| Pos::new("<block>", 1, 1)),
-        _ => Pos::new("<statement>", 1, 1),
     }
 }
 
@@ -5254,6 +5355,21 @@ fn address_base(ty: &l::ValueType) -> Option<l::ValueId> {
 fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(), LowerError> {
     let original_value_count = function.values.len();
     let live_in = lir_live_ins(function, original_value_count);
+    for block in &mut function.blocks {
+        let l::Terminator::Suspend {
+            successor,
+            invalidates,
+            ..
+        } = &mut block.terminator
+        else {
+            continue;
+        };
+        let successor_live_in = live_in
+            .get(successor.0 as usize)
+            .cloned()
+            .unwrap_or_default();
+        invalidates.retain(|value| successor_live_in.contains(value));
+    }
     let mut value_origins = (0..original_value_count)
         .map(|index| l::ValueId(index as u32))
         .collect::<Vec<_>>();
@@ -6525,21 +6641,53 @@ fn verify_instruction_contract(
             }
         }
         l::InstructionKind::Call(target) => {
-            if !call_parameters_match(&operand_types, &target.parameter_types)
-                || result_type != target.return_type
-            {
-                bad("call signature disagrees with its target", errors);
-            }
-            if let Some((parameters, result)) =
-                declared_call_signature(module, &target.kind, &operand_types)
-            {
-                if !call_parameters_match(&target.parameter_types, &parameters)
-                    || target.return_type != result
-                {
+            if is_operation_table_target(&target.kind) {
+                if !target.parameter_types.is_empty() {
                     bad(
-                        "call signature disagrees with the target declaration",
+                        "intrinsic or built-in target restates table parameter types",
                         errors,
                     );
+                }
+                let matching = module.operation_signatures(&target.kind).find(|signature| {
+                    call_parameters_match(&operand_types, &signature.parameter_types)
+                        && target.return_type == signature.return_type
+                });
+                if matching.is_none() || result_type != target.return_type {
+                    let name = operation_name(module, &target.kind);
+                    let declared = module
+                        .operation_signatures(&target.kind)
+                        .map(|signature| {
+                            format!(
+                                "{:?} -> {:?}",
+                                signature.parameter_types, signature.return_type
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" or ");
+                    errors.push(finding(
+                        function,
+                        format!(
+                            "{context} call disagrees with the signature table: {name} declares {declared}, got {operand_types:?} -> {result_type:?}"
+                        ),
+                    ));
+                }
+            } else {
+                if !call_parameters_match(&operand_types, &target.parameter_types)
+                    || result_type != target.return_type
+                {
+                    bad("call signature disagrees with its target", errors);
+                }
+                if let Some((parameters, result)) =
+                    declared_call_signature(module, &target.kind, &operand_types)
+                {
+                    if !call_parameters_match(&target.parameter_types, &parameters)
+                        || target.return_type != result
+                    {
+                        bad(
+                            "call signature disagrees with the target declaration",
+                            errors,
+                        );
+                    }
                 }
             }
             let target_exists = match &target.kind {
@@ -6561,7 +6709,9 @@ fn verify_instruction_contract(
                                 && operation.operation == intrinsic.operation
                         })
                 }
-                l::CallTargetKind::BuiltinMethod(_) => !target.parameter_types.is_empty(),
+                l::CallTargetKind::BuiltinMethod(_) => {
+                    module.operation_signatures(&target.kind).next().is_some()
+                }
             };
             if !target_exists {
                 bad("call target identity/signature is invalid", errors);
@@ -6932,6 +7082,34 @@ fn call_parameters_match(actual: &[l::ValueType], declared: &[l::ValueType]) -> 
             .all(|(actual, declared)| call_type_matches(actual, declared))
 }
 
+fn is_operation_table_target(kind: &l::CallTargetKind) -> bool {
+    matches!(
+        kind,
+        l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_)
+    )
+}
+
+fn operation_name(module: &l::Module, kind: &l::CallTargetKind) -> String {
+    match kind {
+        l::CallTargetKind::Intrinsic(intrinsic) => {
+            let name = module
+                .intrinsic_operations
+                .iter()
+                .find(|operation| {
+                    operation.family == intrinsic.family
+                        && operation.operation == intrinsic.operation
+                })
+                .map_or("<unknown>", |operation| operation.semantic_name.as_str());
+            format!("{:?}.{name}", intrinsic.family)
+        }
+        l::CallTargetKind::BuiltinMethod(method) => format!("BuiltinMethod.{method:?}"),
+        l::CallTargetKind::Function(_)
+        | l::CallTargetKind::Method(_)
+        | l::CallTargetKind::Foreign(_)
+        | l::CallTargetKind::Indirect => "<declared call>".to_string(),
+    }
+}
+
 fn declared_call_signature(
     module: &l::Module,
     kind: &l::CallTargetKind,
@@ -6979,7 +7157,15 @@ fn declared_call_signature(
                 (signature.ret != Type::Void).then(|| l::ValueType::Data(signature.ret.clone())),
             ))
         }
-        l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_) => None,
+        l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_) => module
+            .operation_signatures(kind)
+            .find(|signature| call_parameters_match(operand_types, &signature.parameter_types))
+            .map(|signature| {
+                (
+                    signature.parameter_types.clone(),
+                    signature.return_type.clone(),
+                )
+            }),
     }
 }
 
@@ -6990,7 +7176,7 @@ fn verify_terminator_types(
     errors: &mut Vec<VerifyError>,
 ) {
     match &block.terminator {
-        l::Terminator::Branch(target) => verify_edge(function, block, target, false, errors),
+        l::Terminator::Branch(target) => verify_edge(function, block, target, errors),
         l::Terminator::ConditionalBranch {
             condition,
             then_target,
@@ -7003,8 +7189,8 @@ fn verify_terminator_types(
                 &format!("block {} conditional", block.id.0),
                 errors,
             );
-            verify_edge(function, block, then_target, false, errors);
-            verify_edge(function, block, else_target, false, errors);
+            verify_edge(function, block, then_target, errors);
+            verify_edge(function, block, else_target, errors);
         }
         l::Terminator::Switch {
             value,
@@ -7022,9 +7208,9 @@ fn verify_terminator_types(
                         ),
                     ));
                 }
-                verify_edge(function, block, &arm.target, false, errors);
+                verify_edge(function, block, &arm.target, errors);
             }
-            verify_edge(function, block, default, false, errors);
+            verify_edge(function, block, default, errors);
         }
         l::Terminator::Return { value: None, .. } if function.is_generator => {}
         l::Terminator::Return { value, .. } => match (value, &function.return_type) {
@@ -7202,7 +7388,6 @@ fn verify_edge(
     function: &l::Function,
     source: &l::BasicBlock,
     edge: &l::BlockTarget,
-    skip_resume: bool,
     errors: &mut Vec<VerifyError>,
 ) {
     let Some(destination) = function.blocks.get(edge.block.0 as usize) else {
@@ -7215,11 +7400,7 @@ fn verify_edge(
         ));
         return;
     };
-    let parameters = if skip_resume {
-        destination.parameters.get(1..).unwrap_or(&[])
-    } else {
-        destination.parameters.as_slice()
-    };
+    let parameters = destination.parameters.as_slice();
     if edge.arguments.len() != parameters.len() {
         errors.push(finding(
             function,
@@ -7303,6 +7484,171 @@ fn verify_dominance(function: &l::Function, errors: &mut Vec<VerifyError>) {
                 &dominators,
                 errors,
             );
+        }
+    }
+    verify_array_base_dominance(function, &definitions, &dominators, errors);
+    verify_suspend_definition_boundaries(function, &definitions, &dominators, errors);
+}
+
+fn verify_array_base_dominance(
+    function: &l::Function,
+    definitions: &[Option<DefinitionSite>],
+    dominators: &[BTreeSet<l::BlockId>],
+    errors: &mut Vec<VerifyError>,
+) {
+    for value in &function.values {
+        let l::ValueType::Address(address) = &value.ty else {
+            continue;
+        };
+        let Some(base) = address.array_base else {
+            continue;
+        };
+        let Some(base_value) = function.values.get(base.0 as usize) else {
+            errors.push(finding(
+                function,
+                format!(
+                    "address value {} names undeclared array base value {}",
+                    value.id.0, base.0
+                ),
+            ));
+            continue;
+        };
+        if !matches!(base_value.ty, l::ValueType::Data(Type::Array(_))) {
+            errors.push(finding(
+                function,
+                format!(
+                    "address value {} names non-array base value {}",
+                    value.id.0, base.0
+                ),
+            ));
+            continue;
+        }
+        let Some(address_definition) = definitions
+            .get(value.id.0 as usize)
+            .and_then(|definition| *definition)
+        else {
+            continue;
+        };
+        let Some(base_definition) = definitions
+            .get(base.0 as usize)
+            .and_then(|definition| *definition)
+        else {
+            errors.push(finding(
+                function,
+                format!(
+                    "address value {} names array base value {} without a definition",
+                    value.id.0, base.0
+                ),
+            ));
+            continue;
+        };
+        if !definition_dominates_definition(base_definition, address_definition, dominators) {
+            errors.push(finding(
+                function,
+                format!(
+                    "array base value {} does not dominate address value {}",
+                    base.0, value.id.0
+                ),
+            ));
+        }
+    }
+}
+
+fn verify_suspend_definition_boundaries(
+    function: &l::Function,
+    definitions: &[Option<DefinitionSite>],
+    dominators: &[BTreeSet<l::BlockId>],
+    errors: &mut Vec<VerifyError>,
+) {
+    for suspend_block in &function.blocks {
+        let l::Terminator::Suspend { successor, .. } = suspend_block.terminator else {
+            continue;
+        };
+        for block in &function.blocks {
+            if !dominators
+                .get(block.id.0 as usize)
+                .is_some_and(|set| set.contains(&successor))
+            {
+                continue;
+            }
+            let mut uses = block
+                .instructions
+                .iter()
+                .flat_map(|instruction| &instruction.operands)
+                .filter_map(|operand| match operand {
+                    l::Operand::Value(value) => Some(*value),
+                    l::Operand::Constant(_) => None,
+                })
+                .collect::<Vec<_>>();
+            uses.extend(terminator_values(&block.terminator));
+            for value in uses {
+                let Some(definition) = definitions
+                    .get(value.0 as usize)
+                    .and_then(|definition| *definition)
+                else {
+                    continue;
+                };
+                let inside_resume_region = match definition {
+                    DefinitionSite::Entry => false,
+                    DefinitionSite::BlockEntry(block) | DefinitionSite::Instruction(block, _) => {
+                        dominators
+                            .get(block.0 as usize)
+                            .is_some_and(|set| set.contains(&successor))
+                    }
+                };
+                if !inside_resume_region {
+                    errors.push(finding(
+                        function,
+                        format!(
+                            "use of value {} in block {} crosses suspend in block {} without a successor parameter",
+                            value.0, block.id.0, suspend_block.id.0
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn definition_dominates_definition(
+    definition: DefinitionSite,
+    target: DefinitionSite,
+    dominators: &[BTreeSet<l::BlockId>],
+) -> bool {
+    match (definition, target) {
+        (DefinitionSite::Entry, _) => true,
+        (DefinitionSite::BlockEntry(_), DefinitionSite::Entry)
+        | (DefinitionSite::Instruction(_, _), DefinitionSite::Entry) => false,
+        (DefinitionSite::BlockEntry(definition), DefinitionSite::BlockEntry(target)) => {
+            definition == target
+                || dominators
+                    .get(target.0 as usize)
+                    .is_some_and(|set| set.contains(&definition))
+        }
+        (DefinitionSite::BlockEntry(definition), DefinitionSite::Instruction(target, _)) => {
+            definition == target
+                || dominators
+                    .get(target.0 as usize)
+                    .is_some_and(|set| set.contains(&definition))
+        }
+        (
+            DefinitionSite::Instruction(definition_block, _),
+            DefinitionSite::BlockEntry(target_block),
+        ) => {
+            definition_block != target_block
+                && dominators
+                    .get(target_block.0 as usize)
+                    .is_some_and(|set| set.contains(&definition_block))
+        }
+        (
+            DefinitionSite::Instruction(definition_block, definition_index),
+            DefinitionSite::Instruction(target_block, target_index),
+        ) => {
+            (definition_block == target_block && definition_index < target_index)
+                || (definition_block != target_block
+                    && dominators
+                        .get(target_block.0 as usize)
+                        .is_some_and(|set| set.contains(&definition_block)))
         }
     }
 }
@@ -7810,6 +8156,23 @@ mod verifier_tests {
         actual_parameters: Vec<l::ValueType>,
         actual_return: Option<l::ValueType>,
     ) -> l::Module {
+        let operation_target = match &kind {
+            l::CallTargetKind::Intrinsic(intrinsic) => {
+                Some(l::CallSignatureTarget::Intrinsic(intrinsic.clone()))
+            }
+            l::CallTargetKind::BuiltinMethod(method) => {
+                Some(l::CallSignatureTarget::BuiltinMethod(*method))
+            }
+            l::CallTargetKind::Function(_)
+            | l::CallTargetKind::Method(_)
+            | l::CallTargetKind::Foreign(_)
+            | l::CallTargetKind::Indirect => None,
+        };
+        let target_parameters = if operation_target.is_some() {
+            Vec::new()
+        } else {
+            declared_parameters.clone()
+        };
         let parameters = actual_parameters
             .iter()
             .enumerate()
@@ -7865,8 +8228,8 @@ mod verifier_tests {
                     result,
                     kind: l::InstructionKind::Call(l::CallTarget {
                         kind,
-                        parameter_types: declared_parameters,
-                        return_type: declared_return,
+                        parameter_types: target_parameters,
+                        return_type: declared_return.clone(),
                     }),
                     operands,
                     invalidates: Vec::new(),
@@ -7881,6 +8244,14 @@ mod verifier_tests {
             entry: l::BlockId(0),
             pos: pos(),
         };
+        let mut intrinsic_operations = intrinsic_operations();
+        if let (Some(row), Some(target)) = (intrinsic_operations.first_mut(), operation_target) {
+            row.signatures.push(l::CallSignature {
+                target,
+                parameter_types: declared_parameters,
+                return_type: declared_return,
+            });
+        }
         l::Module {
             entry: Some(l::FunctionId(0)),
             async_roots: Vec::new(),
@@ -7891,7 +8262,7 @@ mod verifier_tests {
             foreign_functions: Vec::new(),
             functions: vec![function],
             worker_entries: Vec::new(),
-            intrinsic_operations: intrinsic_operations(),
+            intrinsic_operations,
             initializer: None,
         }
     }
@@ -8124,7 +8495,7 @@ mod verifier_tests {
         let errors = verify_module(&module).expect_err("wrong intrinsic call must fail");
         assert!(errors.iter().any(|error| error
             .message
-            .contains("call signature disagrees with its target")));
+            .contains("call disagrees with the signature table")));
     }
 
     #[test]
@@ -8142,7 +8513,7 @@ mod verifier_tests {
         let errors = verify_module(&module).expect_err("wrong built-in call must fail");
         assert!(errors.iter().any(|error| error
             .message
-            .contains("call signature disagrees with its target")));
+            .contains("call disagrees with the signature table")));
     }
 
     #[test]

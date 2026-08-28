@@ -3231,7 +3231,7 @@ fn f7 "synchronousScopes" kind=Free exported=false generator=false async=false -
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) @ a146-scoped-locals.ts:81:5
     -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(16)), Value(ValueId(17))] })
   b6(%18: Data(I32), %19: Data(Str)) Some("for.step"):
-    -> Trap(Trap { kind: Unreachable, pos: Pos { file: "a146-scoped-locals.ts", line: 52, col: 10 } })
+    -> Unreachable { pos: Pos { file: "a146-scoped-locals.ts", line: 52, col: 10 } }
   b7(%20: Data(I32), %21: Data(Str)) Some("for.exit"):
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%14) @ a146-scoped-locals.ts:84:3
     %24: Data(Str) = StringLiteral("branch:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 86, col: 30 } }] @ a146-scoped-locals.ts:86:30
@@ -3426,7 +3426,7 @@ fn f8 "generatorScopes" kind=Free exported=false generator=true async=false -> G
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%21) invalidates=[ValueId(5)] @ a146-scoped-locals.ts:198:5
     -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(21))] })
   b9(%22: Data(Str)) Some("for.step"):
-    -> Trap(Trap { kind: Unreachable, pos: Pos { file: "a146-scoped-locals.ts", line: 166, col: 11 } })
+    -> Unreachable { pos: Pos { file: "a146-scoped-locals.ts", line: 166, col: 11 } }
   b10(%23: Data(Str)) Some("for.exit"):
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%19) invalidates=[ValueId(5)] @ a146-scoped-locals.ts:201:3
     %26: Data(I32) = Copy(Integer(1):I32) @ a146-scoped-locals.ts:202:3
@@ -6907,7 +6907,7 @@ fn f44 "main" kind=Free exported=true generator=false async=true -> Void entry=b
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%558) invalidates=[ValueId(8), ValueId(625), ValueId(627), ValueId(628), ValueId(48), ValueId(675), ValueId(739), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(749), ValueId(755), ValueId(763), ValueId(426), ValueId(465)] @ a149-suspension-state.ts:636:5
     -> Suspend { kind: Async, pos: Pos { file: "a149-suspension-state.ts", line: 637, col: 5 }, successor: BlockId(98), resume_value: None, arguments: [Value(ValueId(530)), Value(ValueId(531)), Value(ValueId(532)), Value(ValueId(533)), Value(ValueId(534)), Value(ValueId(535)), Value(ValueId(536)), Value(ValueId(537)), Value(ValueId(538))], invalidates: [ValueId(8), ValueId(625), ValueId(627), ValueId(628), ValueId(48), ValueId(675), ValueId(739), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(749), ValueId(755), ValueId(763), ValueId(426), ValueId(465)], traps: [] }
   b96(%539: Data(I32), %540: Data(I32), %541: Data(I32), %542: Data(Func(FuncType { params: [], ret: I32 })), %543: Data(Func(FuncType { params: [], ret: I32 })), %544: Data(Func(FuncType { params: [], ret: I32 })), %545: Data(Func(FuncType { params: [], ret: I32 })), %546: Data(Func(FuncType { params: [], ret: I32 })), %547: Data(Func(FuncType { params: [], ret: I32 }))) Some("for.step"):
-    -> Trap(Trap { kind: Unreachable, pos: Pos { file: "a149-suspension-state.ts", line: 302, col: 23 } })
+    -> Unreachable { pos: Pos { file: "a149-suspension-state.ts", line: 302, col: 23 } }
   b97(%548: Data(I32), %549: Data(I32), %550: Data(I32), %551: Data(Func(FuncType { params: [], ret: I32 })), %552: Data(Func(FuncType { params: [], ret: I32 })), %553: Data(Func(FuncType { params: [], ret: I32 })), %554: Data(Func(FuncType { params: [], ret: I32 })), %555: Data(Func(FuncType { params: [], ret: I32 })), %556: Data(Func(FuncType { params: [], ret: I32 }))) Some("for.exit"):
     %561: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(70))() @ a149-suspension-state.ts:642:20
     %562: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(71))() @ a149-suspension-state.ts:643:21

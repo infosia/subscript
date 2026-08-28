@@ -198,12 +198,9 @@ struct Invalidation {
 struct IteratorCursor {
     kind: l::ForOfKind,
     subject: Value,
-    /// Captured Map/Set storage bound returned by the runtime. Array/string
-    /// cursors have no independent iterator object, per stdlib section 14.
-    assoc_bound: Option<u64>,
+    /// Storage position bound captured when the cursor is created.
+    bound: i64,
     position: i64,
-    next_position: Cell<i64>,
-    fixed_bound: Option<i32>,
     assoc_probe_size: Option<usize>,
 }
 
@@ -240,6 +237,12 @@ enum Flow {
     },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TrapPhase {
+    Before,
+    After,
+}
+
 struct Layout {
     size: usize,
     align: usize,
@@ -265,6 +268,10 @@ struct Interpreter<'m> {
     class_layouts: HashMap<ClassId, Layout>,
     poison_registry: HashMap<l::ValueId, Vec<Weak<RefCell<Option<Invalidation>>>>>,
     async_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
+    // Runtime helpers can report while an instruction is still executing.
+    // Keep the enclosing LIR sites here so that even those reports use the
+    // checker-owned source position rather than the instruction's broad span.
+    active_traps: Vec<l::Trap>,
 }
 
 impl<'m> Interpreter<'m> {
@@ -278,6 +285,7 @@ impl<'m> Interpreter<'m> {
             class_layouts: HashMap::new(),
             poison_registry: HashMap::new(),
             async_handles: RefCell::new(HashMap::new()),
+            active_traps: Vec::new(),
         };
         interpreter.compute_class_layouts()?;
         interpreter.globals = module
@@ -487,7 +495,7 @@ impl<'m> Interpreter<'m> {
                     yielded: _,
                     async_call: Some((target, arguments)),
                     ..
-                } => match self.invoke_target(&target, arguments, None)? {
+                } => match self.invoke_target(&target, arguments, None, None)? {
                     Value::Coroutine(child) => root.stack.push((child, true)),
                     value => coroutine.borrow_mut().state.resume = Some(value),
                 },
@@ -541,7 +549,7 @@ impl<'m> Interpreter<'m> {
             } => Ok(self.iter_result(false, value, value_ty)?),
             Flow::Suspended { async_call, .. } => {
                 if let Some((target, arguments)) = async_call {
-                    let called = self.invoke_target(&target, arguments, None)?;
+                    let called = self.invoke_target(&target, arguments, None, None)?;
                     let resume = match called {
                         Value::Coroutine(child) => self.drive_coroutine(&child)?,
                         other => other,
@@ -581,7 +589,6 @@ impl<'m> Interpreter<'m> {
                 self.invalidate(&instruction.invalidates, &instruction.pos, || {
                     format!("{:?}", instruction.kind)
                 });
-                self.check_runtime(&instruction.pos)?;
             }
             match &block.terminator {
                 l::Terminator::Branch(target) => {
@@ -757,6 +764,35 @@ impl<'m> Interpreter<'m> {
         function: &l::Function,
         instruction: &l::Instruction,
     ) -> Result<(), InterpretError> {
+        let enclosing_traps = std::mem::replace(&mut self.active_traps, instruction.traps.clone());
+        let outcome = self.execute_instruction_effect(frame, function, instruction);
+        self.active_traps = enclosing_traps;
+        outcome
+    }
+
+    fn execute_instruction_effect(
+        &mut self,
+        frame: &mut Frame,
+        function: &l::Function,
+        instruction: &l::Instruction,
+    ) -> Result<(), InterpretError> {
+        let operand_types = instruction
+            .operands
+            .iter()
+            .map(|operand| match operand {
+                l::Operand::Constant(constant) => Ok(l::ValueType::Data(constant.ty.clone())),
+                l::Operand::Value(value) => function
+                    .values
+                    .get(value.0 as usize)
+                    .map(|value| value.ty.clone())
+                    .ok_or_else(|| {
+                        self.invalid(
+                            Some(instruction.pos.clone()),
+                            format!("operand value {} has no type", value.0),
+                        )
+                    }),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let operands = instruction
             .operands
             .iter()
@@ -766,6 +802,7 @@ impl<'m> Interpreter<'m> {
             .result
             .and_then(|value| function.values.get(value.0 as usize))
             .map(|value| &value.ty);
+        self.dispatch_instruction_traps(function, instruction, &operands, None, TrapPhase::Before)?;
         let result = match &instruction.kind {
             l::InstructionKind::Copy => Some(
                 self.copy_value(
@@ -1026,12 +1063,18 @@ impl<'m> Interpreter<'m> {
                 function,
                 instruction,
             )?)),
-            l::InstructionKind::Call(target) => {
-                Some(self.invoke_target(target, operands, Some(&instruction.pos))?)
-            }
-            l::InstructionKind::AsyncHandleCreate(target) => {
-                Some(self.invoke_target(target, operands, Some(&instruction.pos))?)
-            }
+            l::InstructionKind::Call(target) => Some(self.invoke_target(
+                target,
+                operands,
+                Some(&operand_types),
+                Some(&instruction.pos),
+            )?),
+            l::InstructionKind::AsyncHandleCreate(target) => Some(self.invoke_target(
+                target,
+                operands,
+                Some(&operand_types),
+                Some(&instruction.pos),
+            )?),
             l::InstructionKind::AsyncHandleRetain => {
                 let Value::Coroutine(handle) = operands
                     .first()
@@ -1160,9 +1203,21 @@ impl<'m> Interpreter<'m> {
                     operands
                         .first()
                         .ok_or_else(|| self.missing_operand(instruction, 0))?,
+                    operands
+                        .get(2)
+                        .ok_or_else(|| self.missing_operand(instruction, 2))?
+                        .as_i64()?,
+                    &instruction.pos,
                 )?,
             ),
         };
+        self.dispatch_instruction_traps(
+            function,
+            instruction,
+            &[],
+            result.as_ref(),
+            TrapPhase::After,
+        )?;
         if let Some(id) = instruction.result {
             let result = result.ok_or_else(|| {
                 self.invalid(
@@ -1317,9 +1372,268 @@ impl<'m> Interpreter<'m> {
         )
     }
 
+    /// Evaluates every checker-owned trap site in declaration order. Operand
+    /// predicates run before the instruction effect; result and pending
+    /// runtime predicates complete through the same dispatch after the
+    /// effect. No instruction-kind arm owns an individual trap check.
+    fn dispatch_instruction_traps(
+        &mut self,
+        function: &l::Function,
+        instruction: &l::Instruction,
+        operands: &[Value],
+        result: Option<&Value>,
+        phase: TrapPhase,
+    ) -> Result<(), InterpretError> {
+        for trap in &instruction.traps {
+            let fired = match (&trap.kind, phase) {
+                (l::TrapKind::Allocation | l::TrapKind::Call, TrapPhase::After) => {
+                    if let Some(runtime) = self.context.trap_record() {
+                        return Err(InterpretError::Trap {
+                            kind: runtime.kind.rule().to_string(),
+                            pos: trap.pos.clone(),
+                            message: runtime.message.clone(),
+                        });
+                    }
+                    false
+                }
+                (l::TrapKind::Unreachable, TrapPhase::Before) => true,
+                (l::TrapKind::DivisionByZero, TrapPhase::Before) => operands
+                    .get(1)
+                    .is_some_and(|divisor| divisor.as_u64().is_ok_and(|value| value == 0)),
+                (l::TrapKind::IndexRead | l::TrapKind::IndexWrite, TrapPhase::Before) => {
+                    let index = operands
+                        .get(1)
+                        .ok_or_else(|| self.missing_operand(instruction, 1))?
+                        .as_i64()?;
+                    let length = self.indexed_length(function, instruction, operands)?;
+                    index < 0 || index >= length
+                }
+                (l::TrapKind::JsonResultValue, TrapPhase::Before) => {
+                    !self.json_result_ok(instruction, operands)?
+                }
+                (l::TrapKind::NullNarrowing, TrapPhase::Before) => {
+                    operands.first().is_some_and(|value| match value {
+                        Value::Null => true,
+                        Value::Handle(handle) => handle.is_null(),
+                        _ => false,
+                    })
+                }
+                (l::TrapKind::ClassMismatch(class), TrapPhase::Before) => operands
+                    .first()
+                    .is_some_and(|value| !self.value_has_class(value, *class)),
+                (l::TrapKind::DevOnlyLifetime, TrapPhase::Before) => operands
+                    .iter()
+                    .filter_map(|value| match value {
+                        Value::Handle(handle) if !handle.is_null() => Some(*handle as usize),
+                        _ => None,
+                    })
+                    .any(|handle| !self.context.is_live(handle)),
+                // The reference interpreter does not hot-reload a module, so
+                // a frame created by this run cannot have a stale epoch.
+                (l::TrapKind::DevReloadOnlyStaleCoroutine, TrapPhase::Before) => false,
+                (l::TrapKind::WireEnumValue(alias), TrapPhase::After) => {
+                    let definition = self
+                        .module
+                        .string_aliases
+                        .get(alias.0)
+                        .filter(|definition| definition.id == *alias)
+                        .ok_or_else(|| {
+                            self.invalid(
+                                Some(trap.pos.clone()),
+                                format!("wire string alias {} is missing", alias.0),
+                            )
+                        })?;
+                    let wire = result
+                        .ok_or_else(|| {
+                            self.invalid(
+                                Some(trap.pos.clone()),
+                                "wire-enum trap has no instruction result",
+                            )
+                        })?
+                        .as_i64()?;
+                    !definition
+                        .wire_values
+                        .as_ref()
+                        .is_some_and(|values| values.iter().any(|value| i64::from(*value) == wire))
+                }
+                (
+                    l::TrapKind::Allocation
+                    | l::TrapKind::Call
+                    | l::TrapKind::Unreachable
+                    | l::TrapKind::DivisionByZero
+                    | l::TrapKind::IndexRead
+                    | l::TrapKind::IndexWrite
+                    | l::TrapKind::JsonResultValue
+                    | l::TrapKind::NullNarrowing
+                    | l::TrapKind::ClassMismatch(_)
+                    | l::TrapKind::DevOnlyLifetime
+                    | l::TrapKind::DevReloadOnlyStaleCoroutine
+                    | l::TrapKind::WireEnumValue(_),
+                    _,
+                ) => false,
+            };
+            if fired {
+                return Err(self.trap_error(trap));
+            }
+        }
+        Ok(())
+    }
+
+    fn indexed_length(
+        &mut self,
+        function: &l::Function,
+        instruction: &l::Instruction,
+        operands: &[Value],
+    ) -> Result<i64, InterpretError> {
+        let base_type = match instruction.operands.first() {
+            Some(l::Operand::Constant(constant)) => l::ValueType::Data(constant.ty.clone()),
+            Some(l::Operand::Value(value)) => function
+                .values
+                .get(value.0 as usize)
+                .map(|value| value.ty.clone())
+                .ok_or_else(|| {
+                    self.invalid(
+                        Some(instruction.pos.clone()),
+                        format!("indexed base value {} has no type", value.0),
+                    )
+                })?,
+            None => return Err(self.missing_operand(instruction, 0)),
+        };
+        match base_type {
+            l::ValueType::Data(Type::Array(_)) => {
+                let handle = operands
+                    .first()
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?
+                    .as_handle()?;
+                // SAFETY: verification restricts this operand to a dynamic
+                // array. A preceding lifetime site rejects a stale handle.
+                Ok(i64::from(unsafe { self.context.array_len(handle) }))
+            }
+            l::ValueType::Data(Type::FixedArray(_, count))
+            | l::ValueType::Address(l::AddressType {
+                pointee: Type::FixedArray(_, count),
+                ..
+            }) => Ok(i64::from(count)),
+            other => Err(self.invalid(
+                Some(instruction.pos.clone()),
+                format!("index trap has non-indexable base type {other:?}"),
+            )),
+        }
+    }
+
+    fn json_result_ok(
+        &self,
+        instruction: &l::Instruction,
+        operands: &[Value],
+    ) -> Result<bool, InterpretError> {
+        let l::InstructionKind::LoadField(l::FieldRef::Class(field)) = instruction.kind else {
+            return Err(self.invalid(
+                Some(instruction.pos.clone()),
+                "JsonResultValue is not attached to a class-field load",
+            ));
+        };
+        let definition = self
+            .module
+            .classes
+            .iter()
+            .find(|definition| {
+                definition
+                    .fields
+                    .iter()
+                    .any(|candidate| candidate.id == field)
+            })
+            .ok_or_else(|| {
+                self.invalid(
+                    Some(instruction.pos.clone()),
+                    format!("JsonResult value field {} is missing", field.0),
+                )
+            })?;
+        let value_field = definition
+            .fields
+            .iter()
+            .find(|candidate| candidate.id == field)
+            .expect("class search found the value field");
+        if value_field.source_name != "value" {
+            return Err(self.invalid(
+                Some(instruction.pos.clone()),
+                "JsonResultValue is attached to a non-value field",
+            ));
+        }
+        let ok_field = definition
+            .fields
+            .iter()
+            .find(|candidate| candidate.source_name == "ok" && candidate.ty == Type::Bool)
+            .ok_or_else(|| {
+                self.invalid(
+                    Some(instruction.pos.clone()),
+                    "JsonResult class has no boolean ok field",
+                )
+            })?;
+        let (offset, _) = self
+            .field_layouts
+            .get(&ok_field.id)
+            .ok_or_else(|| self.invalid(None, "JsonResult ok field has no layout"))?;
+        let base = operands
+            .first()
+            .ok_or_else(|| self.missing_operand(instruction, 0))?;
+        match base {
+            Value::Handle(handle)
+                if !handle.is_null() && self.context.is_live(*handle as usize) =>
+            {
+                // SAFETY: exact live-handle membership plus the verified class
+                // layout proves that the one-byte boolean field is readable.
+                Ok(unsafe { *handle.add(*offset) != 0 })
+            }
+            Value::Blob(bytes) => Ok(bytes.get(*offset).is_some_and(|value| *value != 0)),
+            Value::Address(address) => {
+                let address = Address {
+                    target: match &address.target {
+                        AddressTarget::Slot(slot) => AddressTarget::SlotBytes {
+                            slot: slot.clone(),
+                            offset: *offset,
+                        },
+                        AddressTarget::SlotBytes { slot, offset: base } => {
+                            AddressTarget::SlotBytes {
+                                slot: slot.clone(),
+                                offset: base + *offset,
+                            }
+                        }
+                        AddressTarget::Pointer(pointer) => {
+                            // SAFETY: the source address names the verified
+                            // aggregate whose `ok` field offset was computed.
+                            AddressTarget::Pointer(unsafe { pointer.add(*offset) })
+                        }
+                    },
+                    pointee: Type::Bool,
+                    poison: address.poison.clone(),
+                };
+                self.load_address(&address)?.as_bool()
+            }
+            _ => Ok(false),
+        }
+    }
+
+    fn value_has_class(&self, value: &Value, expected: ClassId) -> bool {
+        let Value::Handle(handle) = value else {
+            return false;
+        };
+        if handle.is_null() || !self.context.is_live(*handle as usize) {
+            return false;
+        }
+        // SAFETY: Context::is_live proves `handle` is an exact live payload;
+        // its class id is the u32 header word eight bytes before the payload.
+        unsafe { (handle.sub(8) as *const u32).read() == expected.0 as u32 }
+    }
+
     fn trap_error(&self, trap: &l::Trap) -> InterpretError {
+        let kind = match trap.kind {
+            l::TrapKind::IndexRead | l::TrapKind::IndexWrite => {
+                RuntimeTrapKind::IndexOutOfBounds.rule().to_string()
+            }
+            _ => format!("{:?}", trap.kind),
+        };
         InterpretError::Trap {
-            kind: format!("{:?}", trap.kind),
+            kind,
             pos: trap.pos.clone(),
             message: "LIR trap terminator/check fired".to_string(),
         }
@@ -1329,9 +1643,19 @@ impl<'m> Interpreter<'m> {
         let Some(trap) = self.context.trap_record() else {
             return Ok(());
         };
+        let pos = self
+            .active_traps
+            .iter()
+            .find(|site| runtime_trap_matches_lir(trap.kind, &site.kind))
+            .or_else(|| {
+                self.active_traps
+                    .iter()
+                    .find(|site| site.kind == l::TrapKind::Call)
+            })
+            .map_or_else(|| pos.clone(), |site| site.pos.clone());
         Err(InterpretError::Trap {
             kind: trap.kind.rule().to_string(),
-            pos: pos.clone(),
+            pos,
             message: trap.message.clone(),
         })
     }
@@ -1340,6 +1664,7 @@ impl<'m> Interpreter<'m> {
         &mut self,
         target: &l::CallTarget,
         mut operands: Vec<Value>,
+        operand_types: Option<&[l::ValueType]>,
         pos: Option<&Pos>,
     ) -> Result<Value, InterpretError> {
         match &target.kind {
@@ -1405,7 +1730,9 @@ impl<'m> Interpreter<'m> {
                     intrinsic,
                     &operation,
                     operands,
-                    &target.parameter_types,
+                    operand_types.ok_or_else(|| {
+                        self.invalid(pos.cloned(), "intrinsic call has no operand types")
+                    })?,
                     target.return_type.as_ref(),
                     pos,
                 )
@@ -1413,7 +1740,9 @@ impl<'m> Interpreter<'m> {
             l::CallTargetKind::BuiltinMethod(method) => self.invoke_builtin(
                 *method,
                 operands,
-                &target.parameter_types,
+                operand_types.ok_or_else(|| {
+                    self.invalid(pos.cloned(), "built-in call has no operand types")
+                })?,
                 target.return_type.as_ref(),
             ),
         }
@@ -2791,7 +3120,7 @@ impl<'m> Interpreter<'m> {
             .ok_or_else(|| self.invalid(None, "array callback element has no layout"))?;
         match (receiver_ty, receiver) {
             (Type::Array(_), Value::Handle(handle)) => {
-                // Callbacks may shorten the receiver. Appends never extend the
+                // Callbacks can shorten the receiver. Appends never extend the
                 // captured `initial_len`, but a removed suffix ends traversal.
                 let current_len = unsafe { self.context.array_len(*handle) };
                 if i32::try_from(index).map_or(true, |index| index >= current_len) {
@@ -4164,19 +4493,6 @@ impl<'m> Interpreter<'m> {
             _ => {
                 let a = left.as_u64()?;
                 let b = right.as_u64()?;
-                if b == 0 && matches!(operator, l::BinaryOp::Div | l::BinaryOp::Rem) {
-                    let trap = instruction
-                        .traps
-                        .iter()
-                        .find(|trap| trap.kind == l::TrapKind::DivisionByZero)
-                        .ok_or_else(|| {
-                            self.invalid(
-                                Some(instruction.pos.clone()),
-                                "integer division has no DivisionByZero site",
-                            )
-                        })?;
-                    return Err(self.trap_error(trap));
-                }
                 let bits = integer_bits(ty).ok_or_else(|| {
                     self.invalid(
                         Some(instruction.pos.clone()),
@@ -4540,9 +4856,25 @@ impl<'m> Interpreter<'m> {
             None
         };
         self.check_runtime(pos)?;
-        let fixed_bound = match subject_ty {
-            Some(Type::FixedArray(_, count)) => Some(*count as i32),
-            _ => None,
+        let bound = if let Some(bound) = assoc_bound {
+            i64::try_from(bound)
+                .map_err(|_| self.invalid(Some(pos.clone()), "iterator bound exceeds i64"))?
+        } else {
+            match (subject_ty, &subject) {
+                (Some(Type::Array(_)), Value::Handle(array)) => {
+                    i64::from(unsafe { self.context.array_len(*array) })
+                }
+                (Some(Type::Str), Value::Handle(string)) => {
+                    i64::from(ffi_len_string(&self.context, *string))
+                }
+                (Some(Type::FixedArray(_, count)), Value::Blob(_)) => i64::from(*count),
+                _ => {
+                    return Err(self.invalid(
+                        Some(pos.clone()),
+                        "iterator cursor kind and subject disagree",
+                    ));
+                }
+            }
         };
         let assoc_probe_size = match result_ty {
             Some(l::ValueType::Iterator(iterator))
@@ -4561,13 +4893,25 @@ impl<'m> Interpreter<'m> {
             }
             _ => None,
         };
+        let mut position = 0;
+        if matches!(
+            kind,
+            l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues
+        ) {
+            position = self.next_live_assoc_position(
+                &subject,
+                kind,
+                assoc_probe_size,
+                position,
+                bound,
+                pos,
+            )?;
+        }
         Ok(Value::Iterator(Rc::new(IteratorCursor {
             kind,
             subject,
-            assoc_bound,
-            position: 0,
-            next_position: Cell::new(0),
-            fixed_bound,
+            bound,
+            position,
             assoc_probe_size,
         })))
     }
@@ -4575,71 +4919,50 @@ impl<'m> Interpreter<'m> {
     fn iterator_has_next(
         &mut self,
         cursor: &Rc<IteratorCursor>,
-        index: i64,
+        _index: i64,
         bound: i64,
         pos: &Pos,
     ) -> Result<bool, InterpretError> {
         match cursor.kind {
             l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys => {
                 let current = unsafe { self.context.array_len(cursor.subject.as_handle()?) };
-                Ok(index < bound && index < i64::from(current))
+                Ok(cursor.position < bound && cursor.position < i64::from(current))
             }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
                 let width = cursor.assoc_probe_size.ok_or_else(|| {
                     self.invalid(Some(pos.clone()), "association cursor has no probe layout")
                 })?;
                 let mut probe = vec![0_u8; width.max(1)];
-                let mut position = index.max(cursor.position).max(0);
-                while position < bound {
-                    let active = unsafe {
-                        ffi::subscript_rt_assoc_iter_copy(
-                            &mut *self.context,
-                            cursor.subject.as_handle()?,
-                            position as u64,
-                            u32::from(cursor.kind == l::ForOfKind::MapValues),
-                            probe.as_mut_ptr(),
-                            0,
-                        )
-                    };
-                    self.check_runtime(pos)?;
-                    if active != 0 {
-                        cursor.next_position.set(position);
-                        return Ok(true);
-                    }
-                    position += 1;
+                if cursor.position < 0 || cursor.position >= bound {
+                    return Ok(false);
                 }
-                Ok(false)
+                let active = unsafe {
+                    ffi::subscript_rt_assoc_iter_copy(
+                        &mut *self.context,
+                        cursor.subject.as_handle()?,
+                        cursor.position as u64,
+                        u32::from(cursor.kind == l::ForOfKind::MapValues),
+                        probe.as_mut_ptr(),
+                        0,
+                    )
+                };
+                self.check_runtime(pos)?;
+                Ok(active != 0)
             }
             l::ForOfKind::StringCodePoints => Ok(cursor.position < bound),
-            l::ForOfKind::FixedArrayValues => Ok(index < bound),
+            l::ForOfKind::FixedArrayValues => Ok(cursor.position < bound),
         }
     }
 
     fn iterator_bound(&self, cursor: &Value) -> Result<i32, InterpretError> {
         let cursor = cursor.as_iterator()?;
-        if let Some(bound) = cursor.assoc_bound {
-            return i32::try_from(bound)
-                .map_err(|_| self.invalid(None, "iterator bound exceeds i32"));
-        }
-        match (&cursor.kind, &cursor.subject) {
-            (l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys, Value::Handle(array)) => {
-                // SAFETY: live array cursor subject.
-                Ok(unsafe { self.context.array_len(*array) })
-            }
-            (l::ForOfKind::StringCodePoints, Value::Handle(string)) => {
-                Ok(ffi_len_string(&self.context, *string))
-            }
-            (l::ForOfKind::FixedArrayValues, Value::Blob(_)) => cursor
-                .fixed_bound
-                .ok_or_else(|| self.invalid(None, "fixed-array cursor has no declared count")),
-            _ => Err(self.invalid(None, "iterator cursor kind and subject disagree")),
-        }
+        i32::try_from(cursor.bound).map_err(|_| self.invalid(None, "iterator bound exceeds i32"))
     }
 
     fn iterator_value(
         &mut self,
         cursor: &Value,
-        index: i64,
+        _index: i64,
         result_ty: Option<&l::ValueType>,
         pos: &Pos,
     ) -> Result<Value, InterpretError> {
@@ -4649,12 +4972,15 @@ impl<'m> Interpreter<'m> {
             _ => return Err(self.invalid(Some(pos.clone()), "IteratorValue has no data result")),
         };
         match cursor.kind {
-            l::ForOfKind::ArrayKeys => Ok(Value::I(index)),
+            l::ForOfKind::ArrayKeys => Ok(Value::I(cursor.position)),
             l::ForOfKind::ArrayValues => {
                 let array = cursor.subject.as_handle()?;
                 // SAFETY: HasNext established index < captured bound; runtime also
                 // checks the current live array length after removals.
-                let pointer = unsafe { self.context.array_elem_ptr(array, index as i32, 0) };
+                let pointer = unsafe {
+                    self.context
+                        .array_elem_ptr(array, cursor.position as i32, 0)
+                };
                 self.check_runtime(pos)?;
                 let layout = self.layout_cached(ty).ok_or_else(|| {
                     self.invalid(Some(pos.clone()), "iterator element has no layout")
@@ -4671,7 +4997,7 @@ impl<'m> Interpreter<'m> {
                 let layout = self.layout_cached(ty).ok_or_else(|| {
                     self.invalid(Some(pos.clone()), "iterator element has no layout")
                 })?;
-                let offset = index as usize * align_up(layout.size, layout.align);
+                let offset = cursor.position as usize * align_up(layout.size, layout.align);
                 self.unpack(ty, bytes.get(offset..).unwrap_or_default())
             }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
@@ -4685,7 +5011,7 @@ impl<'m> Interpreter<'m> {
                     ffi::subscript_rt_assoc_iter_copy(
                         &mut *self.context,
                         cursor.subject.as_handle()?,
-                        cursor.next_position.get() as u64,
+                        cursor.position as u64,
                         u32::from(cursor.kind == l::ForOfKind::MapValues),
                         bytes.as_mut_ptr(),
                         0,
@@ -4714,31 +5040,87 @@ impl<'m> Interpreter<'m> {
                     )
                 };
                 self.check_runtime(pos)?;
-                cursor.next_position.set(i64::from(next));
                 self.root_handle(value);
                 Ok(Value::Handle(value))
             }
         }
     }
 
-    fn iterator_advance(&self, cursor: &Value) -> Result<Value, InterpretError> {
+    fn iterator_advance(
+        &mut self,
+        cursor: &Value,
+        bound: i64,
+        pos: &Pos,
+    ) -> Result<Value, InterpretError> {
         let cursor = cursor.as_iterator()?;
         let position = match cursor.kind {
-            l::ForOfKind::StringCodePoints => cursor.next_position.get(),
-            l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
-                cursor.next_position.get().saturating_add(1)
+            l::ForOfKind::StringCodePoints => {
+                let bytes = self.string_bytes(cursor.subject.as_handle()?)?;
+                let start = usize::try_from(cursor.position)
+                    .map_err(|_| self.invalid(Some(pos.clone()), "negative string cursor"))?;
+                let rest = bytes.get(start..).ok_or_else(|| {
+                    self.invalid(
+                        Some(pos.clone()),
+                        "string cursor exceeds its captured bound",
+                    )
+                })?;
+                let text = std::str::from_utf8(rest).map_err(|_| {
+                    self.invalid(Some(pos.clone()), "string cursor does not name UTF-8")
+                })?;
+                let width = text.chars().next().map_or(0, char::len_utf8);
+                cursor.position.saturating_add(width as i64)
             }
+            l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => self
+                .next_live_assoc_position(
+                    &cursor.subject,
+                    cursor.kind,
+                    cursor.assoc_probe_size,
+                    cursor.position.saturating_add(1),
+                    bound,
+                    pos,
+                )?,
             _ => cursor.position.saturating_add(1),
         };
         Ok(Value::Iterator(Rc::new(IteratorCursor {
             kind: cursor.kind,
             subject: cursor.subject.clone(),
-            assoc_bound: cursor.assoc_bound,
+            bound: cursor.bound,
             position,
-            next_position: Cell::new(position),
-            fixed_bound: cursor.fixed_bound,
             assoc_probe_size: cursor.assoc_probe_size,
         })))
+    }
+
+    fn next_live_assoc_position(
+        &mut self,
+        subject: &Value,
+        kind: l::ForOfKind,
+        probe_size: Option<usize>,
+        mut position: i64,
+        bound: i64,
+        pos: &Pos,
+    ) -> Result<i64, InterpretError> {
+        let width = probe_size.ok_or_else(|| {
+            self.invalid(Some(pos.clone()), "association cursor has no probe layout")
+        })?;
+        let mut probe = vec![0_u8; width.max(1)];
+        while position < bound {
+            let active = unsafe {
+                ffi::subscript_rt_assoc_iter_copy(
+                    &mut *self.context,
+                    subject.as_handle()?,
+                    position as u64,
+                    u32::from(kind == l::ForOfKind::MapValues),
+                    probe.as_mut_ptr(),
+                    0,
+                )
+            };
+            self.check_runtime(pos)?;
+            if active != 0 {
+                break;
+            }
+            position += 1;
+        }
+        Ok(position)
     }
 
     fn iter_result(
@@ -4763,6 +5145,38 @@ unsafe fn callback_state<'a>(env: *const u8) -> &'a mut CallbackState {
     // SAFETY: every runtime callback using these bridges receives the address
     // of a live stack-owned `CallbackState` as its environment.
     unsafe { &mut *env.cast_mut().cast::<CallbackState>() }
+}
+
+fn runtime_trap_matches_lir(runtime: RuntimeTrapKind, lir: &l::TrapKind) -> bool {
+    match runtime {
+        RuntimeTrapKind::AllocationFailure => *lir == l::TrapKind::Allocation,
+        RuntimeTrapKind::IndexOutOfBounds => {
+            matches!(lir, l::TrapKind::IndexRead | l::TrapKind::IndexWrite)
+        }
+        RuntimeTrapKind::NullNarrowing => *lir == l::TrapKind::NullNarrowing,
+        RuntimeTrapKind::ClassMismatch => matches!(lir, l::TrapKind::ClassMismatch(_)),
+        RuntimeTrapKind::DoubleDelete
+        | RuntimeTrapKind::UseAfterDelete
+        | RuntimeTrapKind::InvalidDelete
+        | RuntimeTrapKind::CallbackUserdataFreed => *lir == l::TrapKind::DevOnlyLifetime,
+        RuntimeTrapKind::DivisionByZero => *lir == l::TrapKind::DivisionByZero,
+        RuntimeTrapKind::StaleCoroutine => *lir == l::TrapKind::DevReloadOnlyStaleCoroutine,
+        RuntimeTrapKind::JsonResultValue => *lir == l::TrapKind::JsonResultValue,
+        RuntimeTrapKind::WireEnumUnknownValue => matches!(lir, l::TrapKind::WireEnumValue(_)),
+        RuntimeTrapKind::EmptyPop
+        | RuntimeTrapKind::StringSlice
+        | RuntimeTrapKind::Internal
+        | RuntimeTrapKind::DateRange
+        | RuntimeTrapKind::StrRange
+        | RuntimeTrapKind::NumberRange
+        | RuntimeTrapKind::JsonNumber
+        | RuntimeTrapKind::JsonCycle
+        | RuntimeTrapKind::Regex
+        | RuntimeTrapKind::RegexBudget
+        | RuntimeTrapKind::WorkerTrapped
+        | RuntimeTrapKind::UnreachableReached => *lir == l::TrapKind::Call,
+        _ => *lir == l::TrapKind::Call,
+    }
 }
 
 unsafe fn callback_interpreter(state: &mut CallbackState) -> &mut Interpreter<'static> {
