@@ -7835,6 +7835,59 @@ satisfy it.)*
    (TS2351), so the direction is right. The message names the
    shadow. It must not say the class is unknown, because the class
    is declared and a local owns its name.
+4c. **Module scope: an initializer reads only what is already
+   initialized.** *(Added 2026-08-28 after the Fable phase review of
+   §66–§67, finding C1.)* Rules 3 and 4 stop at the function boundary
+   and did not say so. `reserve_block_declarations` runs for every
+   function, lambda, block, branch, and switch body, and never for the
+   module. Measured at `2a65724`, `tsc --strict` accepts this program:
+
+   ```ts
+   class Box { value: i32 = 5; }
+   const g: Box = f();
+   function f(): Box { return h; }
+   const h: Box = new Box();
+   export function main(): void { print(`h=${h.value}`); print(`g=${g.value}`); }
+   ```
+
+       subscript check   no error
+       dev tier          signal 11
+       ship tier         h=5, then SIGSEGV
+       node              ReferenceError: Cannot access 'h' before initialization
+
+   With `i32` in place of `Box`, both tiers print `0:1` and no
+   diagnostic. With `string`, the null string prints nothing. The
+   direct form `const a: i32 = b; const b: i32 = 2;` is accepted here
+   too and prints `0:2`; `tsc` rejects it (TS2448).
+
+   **Rule.** Module-level bindings initialize in declaration order. A
+   module-level initializer reads or writes, directly or through any
+   function it calls, only a module-level data binding declared before
+   it. A violation fails with S100 at the initializer. The message
+   names the binding and the call path that reaches it.
+
+   The check is a fixpoint over the module's functions. A function's
+   global set is its direct global reads and writes, plus the global
+   sets of the functions it calls. An indirect call through a function
+   value reads every global. A `function` declaration is hoisted and
+   is not a binding for this rule. A class name is not a binding. A
+   `const`, `let`, or `using` at module level is.
+
+   **Why reject, not trap.** Invariant 6 asks for a clear, early
+   error. A trap needs a null check at every read of a global
+   reference, and every program pays it for a defect only a module
+   initializer can cause. `tsc` accepts the function-mediated form and
+   `node` throws; this compiler narrows (invariant 5). **No accepted
+   program changes its value**: measured at `2a65724`, zero accept
+   entries hold a calling module-level initializer followed by a later
+   data binding.
+
+   Corpus: `r158` (the direct form; `tsc` rejects, TS2448), `r159`
+   (the function-mediated form; `tsc` accepts, `node` throws), `a160`
+   (the legal shapes: an initializer that reads an earlier binding
+   directly and through a function; a function declared after the
+   initializer that reads only earlier bindings; a later binding read
+   only from `main`).
 5. Nothing else moves. Every other accepted program keeps its
    diagnostics and its output.
 6. §66 measurement 6e's note applies: once a switch body is one
