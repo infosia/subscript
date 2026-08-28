@@ -8,8 +8,24 @@ use std::process::Command;
 use std::time::Instant;
 
 const HEADER_FIELD_PREFIX: &str = "js-comparable: ";
-const NODE_VERSION: &str = "v24.18.0";
+/// The `node` major line this gate runs on (compiler.md §69.3 rule 4).
+/// The repository does not install `node`, so the pin is the major line: a
+/// major release brings a new V8, and that is when a person re-measures the
+/// record. A patch equality would report the host, not a divergence.
+const NODE_MAJOR: &str = "v24";
+/// The `node` version §69.2's record was measured on (§69.3 rule 6). A
+/// failure on the major line names it, so a reader can tell a host mismatch
+/// from a divergence. The summary prints the version that actually ran.
+const NODE_RECORDED: &str = "v24.18.0";
+/// The TypeScript version `package.json` and its lockfile install. This one
+/// is exact, because the repository controls it: a mismatch is a stale
+/// `node_modules` (§69.3 rule 4).
 const TYPESCRIPT_VERSION: &str = "5.9.2";
+
+/// The major line of a `node` version string, `v24.18.0` to `v24`.
+fn node_major(version: &str) -> &str {
+    version.split_once('.').map_or(version, |(major, _)| major)
+}
 
 #[derive(Debug, Eq, PartialEq)]
 enum JsClaim {
@@ -486,7 +502,14 @@ fn every_accept_entry_has_a_total_js_claim_and_comparable_output_matches() {
     let mut meta = meta.splitn(4, '\t');
     assert_eq!(meta.next(), Some("meta"), "invalid runner metadata");
     let node_version = meta.next().expect("runner metadata must name Node");
-    assert_eq!(node_version, NODE_VERSION, "the Node pin changed");
+    assert_eq!(
+        node_major(node_version),
+        NODE_MAJOR,
+        "the Node major line changed: this host runs {node_version} and the \
+         §69.2 record was measured on {NODE_RECORDED}. A new major brings a \
+         new V8, so re-measure the record rather than read past it \
+         (compiler.md §69.3 rule 4)"
+    );
     let typescript_version = meta.next().expect("runner metadata must name TypeScript");
     assert_eq!(
         typescript_version, TYPESCRIPT_VERSION,
@@ -576,6 +599,40 @@ fn collision_table_is_a_consistent_corpus_index() {
         errors.is_empty(),
         "invalid collision table index:\n{}",
         errors.join("\n")
+    );
+}
+
+/// §69.3 rule 4 pins `node` to its major line, so this pins what "major
+/// line" reads. A patch or minor release inside the line passes, and a new
+/// major does not — which is the one case that asks a person to re-measure.
+/// The recorded version stays exact, because §69.3 rule 6 names it in the
+/// failure.
+#[test]
+fn the_node_pin_holds_the_major_line_and_not_the_patch() {
+    assert_eq!(node_major("v24.18.0"), NODE_MAJOR);
+    assert_eq!(node_major("v24.16.0"), NODE_MAJOR);
+    assert_eq!(node_major("v24.0.0"), NODE_MAJOR);
+    assert_ne!(node_major("v26.1.0"), NODE_MAJOR);
+    assert_ne!(node_major("v22.20.0"), NODE_MAJOR);
+    assert_eq!(node_major(NODE_RECORDED), NODE_MAJOR);
+    // A malformed string keeps its own text, so it cannot match the line.
+    assert_ne!(node_major("unknown"), NODE_MAJOR);
+}
+
+/// `package.json` and this gate state one `node` pin, so they must agree.
+/// Two records that disagree are worse than one (§69.3 rule 4).
+#[test]
+fn the_package_manifest_states_the_same_node_line() {
+    let manifest =
+        fs::read_to_string(project_root().join("package.json")).expect("read package.json");
+    let expected = format!("\"node\": \"{}.x\"", NODE_MAJOR.trim_start_matches('v'));
+    assert!(
+        manifest.contains(&expected),
+        "package.json must declare engines.node as {expected}:\n{manifest}"
+    );
+    assert!(
+        manifest.contains(&format!("\"typescript\": \"{TYPESCRIPT_VERSION}\"")),
+        "package.json must install TypeScript {TYPESCRIPT_VERSION}:\n{manifest}"
     );
 }
 
