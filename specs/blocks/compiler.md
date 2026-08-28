@@ -8198,6 +8198,12 @@ satisfy it.)*
    the owner decides, the compiler keeps this order and the entry
    records that the value is not settled.
 
+   **Decided 2026-08-28: the call-time view** (§68.7.3, the Foreign
+   row). The data pointer and count are read after every argument and
+   immediately before the call, so `f2sync` and `f2suspend` both give
+   `3`. The suspending call is legal. Rule 7's "before a later
+   argument runs" is withdrawn for foreign array arguments.
+
 ### 67.3 Changes by site
 
 Pass A, `compiler/src/check/`: the `switch` case scope becomes one
@@ -9271,7 +9277,7 @@ The target kind decides the operand roles.
 |---|---|---|
 | `Function` | the declared parameters, in order | a call of the module function. |
 | `Method` | the receiver first, then the parameters | a call of the class method. A value-class receiver is an address; a reference-class receiver is a handle. |
-| `Foreign` | the marshalled arguments, in order | a call across the C ABI. §67.2 rules 7 and 7a hold: an array argument's data pointer and count are read before a later argument runs. **The call carries that snapshot as operands, taken at the argument's evaluation point.** *(Added 2026-08-26 after step 2. §68.7.3 stated the order and the form could not express it, so a consumer had to re-derive it — which §68.2 item 10 forbids. §68.2 item 12's check verifies the snapshot operands.)* |
+| `Foreign` | the marshalled arguments, in order | a call across the C ABI. **The call-time view.** *(Owner, 2026-08-28: "call-time view でいきましょう". This replaces the sentence "an array argument's data pointer and count are read before a later argument runs ... taken at the argument's evaluation point", added 2026-08-26.)* An array argument is the array, as JavaScript passes a reference. The call carries the array's data pointer and count as operands, **read after every argument is evaluated and immediately before the call**. A later argument that grows the array is visible to the callee, whether or not it suspends. No snapshot exists that a later argument can invalidate, so rule 9 has nothing to recompute here and no stale pointer can reach the C side. §68.2 item 12's check verifies that the operands are read after the last argument. |
 | `Indirect` | the callable first, then the parameters | a call through a value of `Type::Func`. |
 | `Intrinsic` | the family's operands, in order | the operation the module's intrinsic table names. The table, not a positional index into a Rust array, defines it (§68.2 item 11). |
 | `BuiltinMethod` | the receiver first, then the parameters | the standard-library method. `stdlib.md` decides each one. |
@@ -9299,8 +9305,11 @@ reference JavaScript passes, and no stale pointer is possible.
 argument's evaluation point and the later argument's growth is a
 trap, so the first and third cases stop. The first keeps §67.2 rule 7's
 intent for sync code and changes one pinned value; the second changes
-which programs run. The owner decides, because rule 7a was the
-owner's, and until then the tree stands as measured.
+which programs run. **Decided: the call-time view** *(Owner, 2026-08-28)*. All three
+cases print `3`. One pinned value moves: the `f2sync=2` interop twin
+in `codegen/tests/interop.rs` becomes `3`; the `f2suspend=3` twin is
+already the call-time value. No corpus `.expected` prints the sync
+case (`a149` does not), so none moves.
 
 #### 68.7.4 The three protocols that LIR alone defines
 
