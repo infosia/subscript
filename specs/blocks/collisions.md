@@ -186,7 +186,11 @@ non-generic reference classes join the surface —
 §37). Accept adds `a110`–`a111`; reject adds `r101`–`r105`. *Revised 2026-08-23 (R36):* the class can be generic, and
 a generic async function with explicit type arguments is awaitable
 (`compiler.md` §64). Accept adds `a143`; reject adds `r140`;
-`retired:r104`.
+`retired:r104`. *Revised 2026-08-27 (§70):* the result of an async
+call is a reference-counted handle that can be held, stored, passed,
+and awaited later; dropping one without an await stays rejected
+(`r100`, `r105` rewritten to that form). Accept adds `a154`–`a155`;
+reject adds `r157`.
 
 ### C9. Field initializers — every construction, no `this`
 
@@ -1190,11 +1194,12 @@ Accept: `a147`, `a148`. Reject: `r148`–`r156`.
     `Context.suspend()` — the primitive suspension point, ambient in
     the prelude as `suspend(): Promise<void>`, resumed at the next
     explicit step — and a **direct call of an `async function` in
-    await position**. An async call must be immediately awaited
-    (a floating call statement is rejected — stock `tsc` allows the
-    floating promise, so that reject entry is a strictly-narrower
-    pin); `Promise` values are never stored, passed, returned raw,
-    or combined. `new Promise`, `.then`/`.catch`/`.finally` calls,
+    await position**. *(Revised 2026-08-27, §70: the result of an
+    async call is a handle. A handle can be held, stored, passed,
+    and awaited later; a handle dropped without an await is
+    rejected — stock `tsc` allows the floating promise, so that
+    reject entry is a strictly-narrower pin.)* A handle is never
+    combined: `new Promise`, `.then`/`.catch`/`.finally` calls,
     and `Promise.all/race/resolve/reject` are rejected. The lib
     `Promise<T>` type is the `tsc` view only (C8 precedent).
     *(Revised 2026-08-02, R13: a direct async **method** call in
@@ -1237,7 +1242,9 @@ Accept: `a147`, `a148`. Reject: `r148`–`r156`.
   (two interleaved roots), `a95` (foreign-poll await — absorbs the
   earlier Q1 corpus request). Reject: `r96` (`new Promise`), `r97`
   (`.then` call), `r98` (`Promise.all`), `r99` (`await` outside
-  `async`), `r100` (floating async call; `tsc`-clean).
+  `async`), `r100` (a handle dropped without an await; `tsc`-clean;
+  rewritten by §70 from the floating-call form). §70 adds accept
+  `a154`–`a155` (a held handle, a handle array) and reject `r157`.
 
 - **Q35 (Workers — standard-library threads)** — *(Owner,
   2026-08-02. Two rulings recorded the same day: the "stdlib grows

@@ -9476,6 +9476,67 @@ because an arbitrary class's allocation has no spare word.)*
    returns.
 2. **A copy increments; a scope exit decrements.** The compiler emits
    both. There is no user-visible operation.
+
+   **2a. Every store of a counted value is one path, and the verifier
+   checks it.** *(Added 2026-08-28 after the Fable phase review of
+   §69–§70, finding C1.)* Rule 2 says "a copy increments" and the
+   lowering acquired at five sites: a local declaration, a local
+   assignment, an array-literal element, a call argument, and a
+   `return`. A store into a global, a class field, an array element,
+   and a spread literal did not acquire. `release_scopes_from` released
+   the local regardless, so the count reached zero while the other
+   copy still named the frame. Measured at `7bf2559`, each accepted by
+   the checker, each followed by four more awaits so the freed frame
+   is reused:
+
+       g = t          (module-level `let g: Promise<i32>`)   v=100, expected v=3
+       this.h = h     (a class field)                        v=100, expected v=5
+       hs[0] = t      (an index store)                       v=100, expected v=7
+       [...hs]        (a spread literal)                     o=101 o1=100, expected o=1 o1=2
+
+   Both tiers print the wrong value. Without the reuse step the dev
+   tier dies with SIGSEGV and the ship tier runs the frame twice. The
+   interpreter reports `unknown packed async handle` for the first
+   three and agrees with the wrong output for the fourth, so the
+   spread form is a defect all three share (core principle 12).
+
+   This is a class, not four sites, and CLAUDE.md's two-round rule
+   applies. The fix is two things:
+
+   - **One path.** Every instruction the lowering emits that stores a
+     counted operand into a location that outlives the expression —
+     a local, a global, a field, an element, a literal, a spread, an
+     argument, a return — is emitted by one function, and that
+     function acquires. No store site calls the emitter directly.
+   - **A total check.** The LIR verifier walks every function and,
+     for every store of an operand whose type is counted, requires
+     that the operand is a fresh owner used exactly once, or that its
+     retain precedes the store. A violation names the instruction. A
+     unit test builds the violating LIR by hand and reads the message
+     (core principle 9), and `a161` is Red against the pin.
+
+   **2b. One analysis owns "which expression copies a handle".**
+   *(Same review, finding M4.)* The checker's must-await analysis
+   (`expr_async_origins`) and the lowering's ownership analysis
+   (`acquire_owner`) walk two different site sets. Where they
+   disagree the outcome is a false rejection or the use-after-free
+   above. Measured false rejections: a `for...of` over a handle array
+   (S013 on every element); an arrow lambda that returns a handle;
+   `hs[0] = t` awaited only through `hs[0]`. Measured leaks with no
+   diagnostic: `flag ? quiet(1) : quiet(2)` retains a count the arm
+   already gave (`live_bytes` 24, expected 0); `hs.pop();` as a
+   statement never releases the popped element.
+
+   The set of copy sites is one fact. Both analyses read it from one
+   place, and a site absent from that place is a build failure, not a
+   silent gap. Which form that takes is the round's to choose; the
+   property is the contract.
+
+   Corpus: `a161` pins the four stores of 2a with the reuse step, so
+   a wrong value is visible; `a162` pins the `for...of` loop, the
+   arrow lambda, the index-store-then-await, the conditional
+   expression, and `pop()` as a statement, each with `live_bytes`
+   read at the end. Both are Red at `7bf2559`.
 3. **A count reaching zero frees the frame**, deterministically, at
    the decrement. No traversal runs and no collector is invoked, so
    invariant 2 holds: this is `delete` at a known point, not a
