@@ -103,6 +103,6 @@ each the same day.
 |---|---|---|---|
 | A class field and a method of one name (§66–§67 M1, deferred earlier) | one member namespace per class body; a second claim fails | §67.1 rule 3a, `b31a7a3` | `127f868`: `ClassSig.member_namespace`, `r161`–`r163` |
 | Static members were "not decided" | decided: separate static namespace, a static field is a module global and a rule-4c binding | §71, `e3526da` | `0cb3c8b`: `a168`, `r164`–`r168`, reload twin |
-| C13's fixed entry bound bought nothing (`IteratorHasNext` already read the live count) | ECMA's rule per spelling; C13 retired; `a80` becomes comparable | `390f9d6` | round 7 |
+| C13's fixed entry bound bought nothing (`IteratorHasNext` already read the live count) | ECMA's rule per spelling; C13 retired; `a80` becomes comparable | `390f9d6` | `3005536`: the cursor carries its bound kind, `a80` 136→156 bytes from `node`, `a170` |
 | A nullable boundary aggregate held as an address into activation storage (the root of §33.4, rule 8b, and S015) | a managed box; S015 deleted; the recursive `SubChainHeader.next` decided the box over an inline payload | §33.5, `c426ee7` | round 8 |
 | §66 measurement 6i (a lambda reads a later `const`) | closed by rule 4; accepting it needs capture by reference (a C5 revision), recorded and not taken | `ba3a6ac` | — |
