@@ -189,6 +189,12 @@ struct CallParam {
     pos: Pos,
 }
 
+struct StaticCallback {
+    target: l::CallTargetKind,
+    callable: Option<l::Operand>,
+    ty: Type,
+}
+
 impl From<&hir::Param> for CallParam {
     fn from(parameter: &hir::Param) -> Self {
         Self {
@@ -508,12 +514,35 @@ impl<'a> Lowering<'a> {
 
         let mut intrinsic_operations = intrinsic_operations();
         if let Some(row) = intrinsic_operations.first_mut() {
-            row.signatures.extend(
-                self.hir
-                    .operation_signatures
-                    .iter()
-                    .map(lower_operation_signature),
-            );
+            let mut signatures = self
+                .hir
+                .operation_signatures
+                .iter()
+                .map(lower_operation_signature)
+                .collect::<Vec<_>>();
+            for operation in &self.hir.operation_signatures {
+                if !matches!(
+                    operation.target,
+                    hir::OperationSignatureTarget::Arr(hir::ArrFn::Map | hir::ArrFn::Filter)
+                ) {
+                    continue;
+                }
+                let Some(Type::Array(element)) = &operation.return_type else {
+                    continue;
+                };
+                let signature = l::CallSignature {
+                    target: l::CallSignatureTarget::BuiltinMethod(l::BuiltinMethod::ArrayPush),
+                    parameter_types: vec![
+                        l::ValueType::Data(Type::Array(element.clone())),
+                        l::ValueType::Data((**element).clone()),
+                    ],
+                    return_type: Some(l::ValueType::Data(Type::I32)),
+                };
+                if !signatures.contains(&signature) {
+                    signatures.push(signature);
+                }
+            }
+            row.signatures.extend(signatures);
         }
         Ok(l::Module {
             entry,
@@ -2737,6 +2766,458 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok((iterator_type, iterator))
     }
 
+    fn lower_static_callback(
+        &mut self,
+        callback: &hir::Expr,
+    ) -> Result<StaticCallback, LowerError> {
+        let Type::Func(_) = &callback.ty else {
+            return Err(self.error(&callback.pos, "static callback is not function-typed"));
+        };
+        match &callback.kind {
+            hir::ExprKind::FuncRef(name) => {
+                let function = self
+                    .lowering
+                    .free_functions
+                    .get(name)
+                    .map(|record| record.id)
+                    .ok_or_else(|| {
+                        self.error(&callback.pos, format!("unknown callback function `{name}`"))
+                    })?;
+                let _ = self.require_expr(callback)?;
+                Ok(StaticCallback {
+                    target: l::CallTargetKind::Function(function),
+                    callable: None,
+                    ty: callback.ty.clone(),
+                })
+            }
+            hir::ExprKind::Lambda {
+                params,
+                ret,
+                body,
+                captures,
+            } => {
+                let (function, callable) =
+                    self.lower_lambda_with_id(params, ret, body, captures, callback)?;
+                Ok(StaticCallback {
+                    target: l::CallTargetKind::StaticClosure(function),
+                    callable: Some(callable),
+                    ty: callback.ty.clone(),
+                })
+            }
+            _ => Err(self.error(&callback.pos, "callback is not a known function")),
+        }
+    }
+
+    fn emit_static_callback_call(
+        &mut self,
+        callback: &StaticCallback,
+        callable: Option<l::Operand>,
+        arguments: Vec<l::Operand>,
+        traps: Vec<l::Trap>,
+        pos: &Pos,
+    ) -> Result<Option<l::Operand>, LowerError> {
+        let Type::Func(signature) = &callback.ty else {
+            return Err(self.error(pos, "static callback type is not callable"));
+        };
+        let mut operands = Vec::with_capacity(arguments.len() + usize::from(callable.is_some()));
+        let mut parameter_types = Vec::with_capacity(operands.capacity());
+        if let Some(callable) = callable {
+            operands.push(callable);
+            parameter_types.push(l::ValueType::Data(callback.ty.clone()));
+        }
+        operands.extend(arguments);
+        parameter_types.extend(signature.params.iter().cloned().map(l::ValueType::Data));
+        let return_type =
+            (signature.ret != Type::Void).then(|| l::ValueType::Data(signature.ret.clone()));
+        self.emit(
+            l::InstructionKind::Call(l::CallTarget {
+                kind: callback.target.clone(),
+                parameter_types,
+                return_type: return_type.clone(),
+            }),
+            operands,
+            return_type,
+            true,
+            traps,
+            pos.clone(),
+        )
+    }
+
+    fn emit_static_array_push(
+        &mut self,
+        array: l::Operand,
+        value: l::Operand,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        self.emit(
+            l::InstructionKind::Call(l::CallTarget {
+                kind: l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush),
+                parameter_types: Vec::new(),
+                return_type: Some(l::ValueType::Data(Type::I32)),
+            }),
+            vec![array, value],
+            Some(l::ValueType::Data(Type::I32)),
+            true,
+            Vec::new(),
+            pos.clone(),
+        )?;
+        Ok(())
+    }
+
+    fn lower_static_array_callback(
+        &mut self,
+        operation: hir::ArrFn,
+        args: &[hir::Expr],
+        expr: &hir::Expr,
+    ) -> Result<Option<l::Operand>, LowerError> {
+        let Some(subject) = args.first() else {
+            return Err(self.error(&expr.pos, "static Array callback has no receiver"));
+        };
+        let Some(callback_expr) = args.get(1) else {
+            return Err(self.error(&expr.pos, "static Array callback has no callback"));
+        };
+        let Type::Array(element) = &subject.ty else {
+            return Err(self.error(
+                &subject.pos,
+                "static Array callback receiver is not dynamic",
+            ));
+        };
+        let element = (**element).clone();
+        let subject_value = self.require_expr(subject)?;
+        let callback = self.lower_static_callback(callback_expr)?;
+        let initial = if matches!(operation, hir::ArrFn::Reduce | hir::ArrFn::ReduceRight) {
+            Some(
+                args.get(2)
+                    .ok_or_else(|| self.error(&expr.pos, "reduce has no initial value"))
+                    .and_then(|initial| self.require_expr(initial))?,
+            )
+        } else {
+            None
+        };
+        let Type::Func(callback_type) = &callback.ty else {
+            unreachable!("static callback type was checked")
+        };
+        let indexed_arity = operation.callback_index_arity();
+        let indexed = indexed_arity == Some(callback_type.params.len());
+        if !indexed && indexed_arity.is_some_and(|arity| callback_type.params.len() + 1 != arity) {
+            return Err(self.error(&callback_expr.pos, "static callback arity is invalid"));
+        }
+
+        let reverse = operation == hir::ArrFn::ReduceRight;
+        let kind = if reverse {
+            l::ForOfKind::ArrayValuesReverse
+        } else {
+            l::ForOfKind::ArrayValues
+        };
+        let (iterator_type, iterator) = self.create_iterator(
+            subject_value.clone(),
+            kind,
+            element.clone(),
+            l::IteratorBoundKind::Fixed,
+            &expr.pos,
+        )?;
+        let reverse_index_iterator = if reverse && indexed {
+            Some(self.create_iterator(
+                subject_value,
+                l::ForOfKind::ArrayKeysReverse,
+                Type::I32,
+                l::IteratorBoundKind::Fixed,
+                &expr.pos,
+            )?)
+        } else {
+            None
+        };
+        let bound = self
+            .emit(
+                l::InstructionKind::IteratorBound,
+                vec![iterator.clone()],
+                Some(l::ValueType::Data(Type::I32)),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("static callback iterator bound");
+        let call_traps = convert_traps(&expr.trap_sites(self.lowering.hir))
+            .into_iter()
+            .filter(|trap| trap.kind == l::TrapKind::Call)
+            .collect::<Vec<_>>();
+
+        let output = if matches!(operation, hir::ArrFn::Map | hir::ArrFn::Filter) {
+            let Type::Array(output_element) = &expr.ty else {
+                return Err(self.error(&expr.pos, "Array producer result is not an array"));
+            };
+            Some(
+                self.emit(
+                    l::InstructionKind::ArrayWithCapacity,
+                    vec![bound.clone()],
+                    Some(l::ValueType::Data(Type::Array(output_element.clone()))),
+                    false,
+                    call_traps.clone(),
+                    expr.pos.clone(),
+                )?
+                .expect("capacity array result"),
+            )
+        } else {
+            None
+        };
+        let initial_result = match operation {
+            hir::ArrFn::Map | hir::ArrFn::Filter => output.clone(),
+            hir::ArrFn::Reduce | hir::ArrFn::ReduceRight => initial,
+            hir::ArrFn::Some => Some(bool_constant(false)),
+            hir::ArrFn::Every => Some(bool_constant(true)),
+            hir::ArrFn::FindIndex => Some(i32_constant(-1)),
+            hir::ArrFn::ForEach => None,
+            _ => return Err(self.error(&expr.pos, "unsupported static Array callback operation")),
+        };
+
+        self.scopes.push(HashMap::new());
+        let cursor_binding =
+            self.declare_hidden_binding("<array callback cursor>", iterator_type.clone(), iterator);
+        let reverse_index_binding = reverse_index_iterator.map(|(ty, iterator)| {
+            self.declare_hidden_binding("<array callback reverse index>", ty, iterator)
+        });
+        let callable_binding = callback.callable.clone().map(|callable| {
+            self.declare_hidden_binding(
+                "<array callback callable>",
+                l::ValueType::Data(callback.ty.clone()),
+                callable,
+            )
+        });
+        let index_binding = self.declare_hidden_binding(
+            "<array callback step>",
+            l::ValueType::Data(Type::I32),
+            i32_constant(0),
+        );
+        let bound_binding = self.declare_hidden_binding(
+            "<array callback bound>",
+            l::ValueType::Data(Type::I32),
+            bound,
+        );
+        let result_binding = initial_result.map(|value| {
+            self.declare_hidden_binding(
+                "<array callback result>",
+                l::ValueType::Data(expr.ty.clone()),
+                value,
+            )
+        });
+        let mut traversal = vec![cursor_binding, index_binding, bound_binding];
+        traversal.extend(reverse_index_binding);
+        traversal.extend(callable_binding);
+        traversal.extend(result_binding);
+
+        let header = self.new_state_block(
+            Vec::new(),
+            Some("array-callback.cond".to_string()),
+            &traversal,
+        );
+        let body = self.new_block(Vec::new(), Some("array-callback.body".to_string()));
+        let step = self.new_state_block(
+            Vec::new(),
+            Some("array-callback.step".to_string()),
+            &traversal,
+        );
+        let exit_forced = result_binding.into_iter().collect::<Vec<_>>();
+        let exit = self.new_state_block(
+            Vec::new(),
+            Some("array-callback.exit".to_string()),
+            &exit_forced,
+        );
+        let edge = self.block_target(header, Vec::new())?;
+        self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
+
+        self.enter_block(header)?;
+        let header_cursor = self.read_binding(cursor_binding, &expr.pos)?;
+        let header_index = self.read_binding(index_binding, &expr.pos)?;
+        let header_bound = self.read_binding(bound_binding, &expr.pos)?;
+        let more = self
+            .emit(
+                l::InstructionKind::IteratorHasNext,
+                vec![header_cursor, header_index, header_bound],
+                Some(l::ValueType::Data(Type::Bool)),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("static callback iterator condition");
+        let exit_target = self.block_target(exit, Vec::new())?;
+        self.terminate(
+            l::Terminator::ConditionalBranch {
+                condition: more,
+                then_target: target(body, Vec::new()),
+                else_target: exit_target,
+            },
+            &expr.pos,
+        )?;
+
+        self.current = Some(body);
+        let cursor = self.read_binding(cursor_binding, &expr.pos)?;
+        let step_index = self.read_binding(index_binding, &expr.pos)?;
+        let captured_bound = self.read_binding(bound_binding, &expr.pos)?;
+        let value = self
+            .emit(
+                l::InstructionKind::IteratorValue,
+                vec![cursor, step_index.clone(), captured_bound.clone()],
+                Some(l::ValueType::Data(element.clone())),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("static callback iterator value");
+        let callback_index = if let Some(binding) = reverse_index_binding {
+            let reverse_cursor = self.read_binding(binding, &expr.pos)?;
+            self.emit(
+                l::InstructionKind::IteratorValue,
+                vec![reverse_cursor, step_index.clone(), captured_bound.clone()],
+                Some(l::ValueType::Data(Type::I32)),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("reverse callback index")
+        } else {
+            step_index.clone()
+        };
+        let mut arguments = if matches!(operation, hir::ArrFn::Reduce | hir::ArrFn::ReduceRight) {
+            vec![
+                self.read_binding(result_binding.expect("reduce result binding"), &expr.pos)?,
+                value.clone(),
+            ]
+        } else {
+            vec![value.clone()]
+        };
+        if indexed {
+            arguments.push(callback_index.clone());
+        }
+        let callable = callable_binding
+            .map(|binding| self.read_binding(binding, &expr.pos))
+            .transpose()?;
+        let callback_result =
+            self.emit_static_callback_call(&callback, callable, arguments, call_traps, &expr.pos)?;
+
+        let mut branch_to_step = true;
+        match operation {
+            hir::ArrFn::Map => {
+                let output =
+                    self.read_binding(result_binding.expect("map result binding"), &expr.pos)?;
+                self.emit_static_array_push(
+                    output,
+                    callback_result.expect("map callback result"),
+                    &expr.pos,
+                )?;
+            }
+            hir::ArrFn::Filter => {
+                let push = self.new_block(Vec::new(), Some("array-callback.push".to_string()));
+                let step_target = self.block_target(step, Vec::new())?;
+                self.terminate(
+                    l::Terminator::ConditionalBranch {
+                        condition: callback_result.expect("filter callback result"),
+                        then_target: target(push, Vec::new()),
+                        else_target: step_target,
+                    },
+                    &expr.pos,
+                )?;
+                self.current = Some(push);
+                let output =
+                    self.read_binding(result_binding.expect("filter result binding"), &expr.pos)?;
+                self.emit_static_array_push(output, value, &expr.pos)?;
+            }
+            hir::ArrFn::Reduce | hir::ArrFn::ReduceRight => {
+                self.bindings[result_binding.expect("reduce result binding").0].value =
+                    Some(callback_result.expect("reduce callback result"));
+            }
+            hir::ArrFn::ForEach => {}
+            hir::ArrFn::Some | hir::ArrFn::Every | hir::ArrFn::FindIndex => {
+                let matched = callback_result.expect("predicate callback result");
+                let (finish_on_true, finished_value) = match operation {
+                    hir::ArrFn::Some => (true, bool_constant(true)),
+                    hir::ArrFn::Every => (false, bool_constant(false)),
+                    hir::ArrFn::FindIndex => (true, callback_index),
+                    _ => unreachable!(),
+                };
+                let finish = self.new_block(Vec::new(), Some("array-callback.finish".to_string()));
+                let step_target = self.block_target(step, Vec::new())?;
+                let (then_target, else_target) = if finish_on_true {
+                    (target(finish, Vec::new()), step_target)
+                } else {
+                    (step_target, target(finish, Vec::new()))
+                };
+                self.terminate(
+                    l::Terminator::ConditionalBranch {
+                        condition: matched,
+                        then_target,
+                        else_target,
+                    },
+                    &expr.pos,
+                )?;
+                self.current = Some(finish);
+                self.bindings[result_binding.expect("predicate result binding").0].value =
+                    Some(finished_value);
+                let exit_target = self.block_target(exit, Vec::new())?;
+                self.terminate(l::Terminator::Branch(exit_target), &expr.pos)?;
+                branch_to_step = false;
+            }
+            _ => unreachable!(),
+        }
+        if branch_to_step {
+            let edge = self.block_target(step, Vec::new())?;
+            self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
+        }
+
+        self.enter_block(step)?;
+        let cursor = self.read_binding(cursor_binding, &expr.pos)?;
+        let index = self.read_binding(index_binding, &expr.pos)?;
+        let captured_bound = self.read_binding(bound_binding, &expr.pos)?;
+        let advanced = self
+            .emit(
+                l::InstructionKind::IteratorAdvance,
+                vec![cursor, index.clone(), captured_bound.clone()],
+                Some(iterator_type),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("advanced static callback iterator");
+        if reverse {
+            self.bindings[cursor_binding.0].value = Some(advanced);
+        }
+        if let Some(binding) = reverse_index_binding {
+            let cursor = self.read_binding(binding, &expr.pos)?;
+            let iterator_type = self.bindings[binding.0].ty.clone();
+            let advanced = self
+                .emit(
+                    l::InstructionKind::IteratorAdvance,
+                    vec![cursor, index.clone(), captured_bound],
+                    Some(iterator_type),
+                    false,
+                    Vec::new(),
+                    expr.pos.clone(),
+                )?
+                .expect("advanced reverse index iterator");
+            self.bindings[binding.0].value = Some(advanced);
+        }
+        let next_index = self
+            .emit(
+                l::InstructionKind::Binary(l::BinaryOp::Add),
+                vec![index, i32_constant(1)],
+                Some(l::ValueType::Data(Type::I32)),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("advanced static callback step");
+        self.bindings[index_binding.0].value = Some(next_index);
+        let edge = self.block_target(header, Vec::new())?;
+        self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
+
+        self.enter_block(exit)?;
+        let result = result_binding
+            .map(|binding| self.read_binding(binding, &expr.pos))
+            .transpose()?;
+        self.release_scopes_from(self.scopes.len() - 1, &expr.pos)?;
+        self.scopes.pop();
+        Ok(result)
+    }
+
     fn lower_for_each(
         &mut self,
         callee: &hir::Callee,
@@ -3712,11 +4193,35 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         args: &[hir::Expr],
         expr: &hir::Expr,
     ) -> Result<Option<l::Operand>, LowerError> {
+        if let hir::Callee::Arr(operation) = callee {
+            let static_operation = matches!(
+                operation,
+                hir::ArrFn::Map
+                    | hir::ArrFn::Filter
+                    | hir::ArrFn::Reduce
+                    | hir::ArrFn::ReduceRight
+                    | hir::ArrFn::ForEach
+                    | hir::ArrFn::Some
+                    | hir::ArrFn::Every
+                    | hir::ArrFn::FindIndex
+            );
+            let dynamic_receiver = matches!(
+                args.first().map(|argument| &argument.ty),
+                Some(Type::Array(_))
+            );
+            let known_callback = args.get(1).is_some_and(|callback| {
+                matches!(
+                    callback.kind,
+                    hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. }
+                )
+            });
+            if static_operation && dynamic_receiver && known_callback {
+                return self.lower_static_array_callback(*operation, args, expr);
+            }
+        }
         if matches!(
             callee,
-            hir::Callee::Arr(hir::ArrFn::ForEach)
-                | hir::Callee::Map(hir::MapFn::ForEach)
-                | hir::Callee::Set(hir::SetFn::ForEach)
+            hir::Callee::Map(hir::MapFn::ForEach) | hir::Callee::Set(hir::SetFn::ForEach)
         ) {
             return self.lower_for_each(callee, args, expr);
         }
@@ -4739,6 +5244,18 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         captures: &[hir::Capture],
         expr: &hir::Expr,
     ) -> Result<l::Operand, LowerError> {
+        self.lower_lambda_with_id(params, ret, body, captures, expr)
+            .map(|(_, closure)| closure)
+    }
+
+    fn lower_lambda_with_id(
+        &mut self,
+        params: &[hir::Param],
+        ret: &Type,
+        body: &[hir::Stmt],
+        captures: &[hir::Capture],
+        expr: &hir::Expr,
+    ) -> Result<(l::FunctionId, l::Operand), LowerError> {
         let capture_values = captures
             .iter()
             .map(|capture| {
@@ -4769,15 +5286,17 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             None,
             captures.to_vec(),
         )?;
-        self.emit(
-            l::InstructionKind::MakeClosure(id),
-            capture_values,
-            Some(l::ValueType::Data(expr.ty.clone())),
-            false,
-            convert_traps(&expr.trap_sites(self.lowering.hir)),
-            expr.pos.clone(),
-        )?
-        .ok_or_else(|| self.error(&expr.pos, "lambda produced no function value"))
+        let closure = self
+            .emit(
+                l::InstructionKind::MakeClosure(id),
+                capture_values,
+                Some(l::ValueType::Data(expr.ty.clone())),
+                false,
+                convert_traps(&expr.trap_sites(self.lowering.hir)),
+                expr.pos.clone(),
+            )?
+            .ok_or_else(|| self.error(&expr.pos, "lambda produced no function value"))?;
+        Ok((id, closure))
     }
 
     fn lower_async_call(
@@ -5919,6 +6438,20 @@ fn target(block: l::BlockId, arguments: Vec<l::Operand>) -> l::BlockTarget {
     l::BlockTarget { block, arguments }
 }
 
+fn i32_constant(value: i32) -> l::Operand {
+    l::Operand::Constant(l::Constant {
+        ty: Type::I32,
+        kind: l::ConstantKind::Integer(i64::from(value)),
+    })
+}
+
+fn bool_constant(value: bool) -> l::Operand {
+    l::Operand::Constant(l::Constant {
+        ty: Type::Bool,
+        kind: l::ConstantKind::Boolean(value),
+    })
+}
+
 fn branch(block: l::BlockId) -> l::Terminator {
     l::Terminator::Branch(target(block, Vec::new()))
 }
@@ -6705,6 +7238,7 @@ fn counted_instruction_stores<'i>(
         l::InstructionKind::ArrayLiteral | l::InstructionKind::ArraySpreadLiteral(_) => Some(0),
         l::InstructionKind::Call(target) => match target.kind {
             l::CallTargetKind::Function(_) | l::CallTargetKind::Intrinsic(_) => Some(0),
+            l::CallTargetKind::StaticClosure(_) => Some(1),
             l::CallTargetKind::Method(_)
             | l::CallTargetKind::Indirect
             | l::CallTargetKind::BuiltinMethod(_) => Some(1),
@@ -6747,6 +7281,7 @@ fn counted_terminator_stores(
         } => {
             let start = match target.kind {
                 l::CallTargetKind::Function(_) | l::CallTargetKind::Intrinsic(_) => Some(0),
+                l::CallTargetKind::StaticClosure(_) => Some(1),
                 l::CallTargetKind::Method(_)
                 | l::CallTargetKind::Indirect
                 | l::CallTargetKind::BuiltinMethod(_) => Some(1),
@@ -6797,6 +7332,7 @@ fn fresh_owner_index(function: &l::Function) -> (Vec<bool>, Vec<Vec<l::Operand>>
             l::InstructionKind::AsyncHandleCreate(_)
                 | l::InstructionKind::Call(_)
                 | l::InstructionKind::ArrayLiteral
+                | l::InstructionKind::ArrayWithCapacity
                 | l::InstructionKind::ArraySpreadLiteral(_)
         ) {
             if let Some(result) = instruction.result {
@@ -7444,6 +7980,13 @@ fn verify_instruction_contract(
             }
             let target_exists = match &target.kind {
                 l::CallTargetKind::Function(id) => declared_function(module, *id).is_some(),
+                l::CallTargetKind::StaticClosure(id) => {
+                    declared_function(module, *id)
+                        .is_some_and(|function| function.kind == l::FunctionKind::Lambda)
+                        && instruction.operands.first().is_some_and(|operand| {
+                            static_closure_operand_matches(function, operand, *id)
+                        })
+                }
                 l::CallTargetKind::Method(id) => declared_method_function(module, *id).is_some(),
                 l::CallTargetKind::Foreign(id) => module
                     .foreign_functions
@@ -7619,6 +8162,19 @@ fn verify_instruction_contract(
                 bad("array literal signature is invalid", errors);
             }
         }
+        l::InstructionKind::ArrayWithCapacity => {
+            let valid = matches!(
+                (operand_types.as_slice(), result_type.as_ref()),
+                (
+                    [l::ValueType::Data(Type::I32)],
+                    Some(l::ValueType::Data(Type::Array(_)))
+                )
+            ) && instruction.traps.len() == 1
+                && instruction.traps[0].kind == l::TrapKind::Call;
+            if !valid {
+                bad("capacity array signature/traps are invalid", errors);
+            }
+        }
         l::InstructionKind::ArraySpreadLiteral(spreads) => {
             let valid = match result_type.as_ref() {
                 Some(l::ValueType::Data(Type::Array(element))) => {
@@ -7667,7 +8223,14 @@ fn verify_instruction_contract(
             if operand_types.len() != 1 || !valid {
                 bad("iterator creation signature is invalid", errors);
             }
-            if *bound == l::IteratorBoundKind::Fixed && *kind != l::ForOfKind::ArrayValues {
+            if *bound == l::IteratorBoundKind::Fixed
+                && !matches!(
+                    kind,
+                    l::ForOfKind::ArrayValues
+                        | l::ForOfKind::ArrayValuesReverse
+                        | l::ForOfKind::ArrayKeysReverse
+                )
+            {
                 bad(
                     "fixed iterator bound requires a dynamic-array value cursor",
                     errors,
@@ -7914,6 +8477,111 @@ fn declared_parameters_match(
         })
 }
 
+fn static_closure_operand_matches(
+    function: &l::Function,
+    operand: &l::Operand,
+    target: l::FunctionId,
+) -> bool {
+    fn collect(
+        function: &l::Function,
+        operand: &l::Operand,
+        target: l::FunctionId,
+        visiting: &mut BTreeSet<l::ValueId>,
+        saw_closure: &mut bool,
+    ) -> bool {
+        let l::Operand::Value(value) = operand else {
+            return false;
+        };
+        if !visiting.insert(*value) {
+            return true;
+        }
+        if let Some(instruction) = function
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .find(|instruction| instruction.result == Some(*value))
+        {
+            let valid = match &instruction.kind {
+                l::InstructionKind::MakeClosure(function) => {
+                    *saw_closure = true;
+                    *function == target
+                }
+                l::InstructionKind::Copy => instruction.operands.first().is_some_and(|operand| {
+                    collect(function, operand, target, visiting, saw_closure)
+                }),
+                _ => false,
+            };
+            visiting.remove(value);
+            return valid;
+        }
+        if function
+            .parameters
+            .iter()
+            .any(|parameter| parameter.value == *value)
+        {
+            visiting.remove(value);
+            return false;
+        }
+        let Some((destination, index)) = function.blocks.iter().find_map(|block| {
+            block
+                .parameters
+                .iter()
+                .position(|parameter| parameter == value)
+                .map(|index| (block.id, index))
+        }) else {
+            visiting.remove(value);
+            return false;
+        };
+        let mut found = false;
+        let mut valid = true;
+        let mut inspect = |edge: &l::BlockTarget| {
+            if edge.block != destination {
+                return;
+            }
+            found = true;
+            valid &= edge
+                .arguments
+                .get(index)
+                .is_some_and(|operand| collect(function, operand, target, visiting, saw_closure));
+        };
+        for block in &function.blocks {
+            match &block.terminator {
+                l::Terminator::Branch(edge) => inspect(edge),
+                l::Terminator::ConditionalBranch {
+                    then_target,
+                    else_target,
+                    ..
+                } => {
+                    inspect(then_target);
+                    inspect(else_target);
+                }
+                l::Terminator::Switch { arms, default, .. } => {
+                    for arm in arms {
+                        inspect(&arm.target);
+                    }
+                    inspect(default);
+                }
+                l::Terminator::Return { .. }
+                | l::Terminator::Trap(_)
+                | l::Terminator::Unreachable { .. }
+                | l::Terminator::Suspend { .. } => {}
+            }
+        }
+        visiting.remove(value);
+        found && valid
+    }
+
+    let mut saw_closure = false;
+    let valid = collect(
+        function,
+        operand,
+        target,
+        &mut BTreeSet::new(),
+        &mut saw_closure,
+    );
+    valid && saw_closure
+}
+
 fn foreign_boundary_pointer_type_matches(
     module: &l::Module,
     actual: &l::ValueType,
@@ -7956,6 +8624,7 @@ fn operation_name(module: &l::Module, kind: &l::CallTargetKind) -> String {
         }
         l::CallTargetKind::BuiltinMethod(method) => format!("BuiltinMethod.{method:?}"),
         l::CallTargetKind::Function(_)
+        | l::CallTargetKind::StaticClosure(_)
         | l::CallTargetKind::Method(_)
         | l::CallTargetKind::Foreign(_)
         | l::CallTargetKind::Indirect => "<declared call>".to_string(),
@@ -7969,6 +8638,26 @@ fn declared_call_signature(
 ) -> Option<(Vec<l::ValueType>, Option<l::ValueType>)> {
     match kind {
         l::CallTargetKind::Function(id) => declared_function(module, *id).map(function_signature),
+        l::CallTargetKind::StaticClosure(id) => {
+            let function = declared_function(module, *id)?;
+            let callable = operand_types.first()?.clone();
+            if !matches!(callable, l::ValueType::Data(Type::Func(_))) {
+                return None;
+            }
+            let mut parameters = vec![callable];
+            parameters.extend(
+                function
+                    .parameters
+                    .iter()
+                    .filter(|parameter| parameter.kind == l::ParameterKind::Explicit)
+                    .filter_map(|parameter| value_type(function, parameter.value).cloned()),
+            );
+            Some((
+                parameters,
+                (function.return_type != Type::Void)
+                    .then(|| l::ValueType::Data(function.return_type.clone())),
+            ))
+        }
         l::CallTargetKind::Method(id) => {
             declared_method_function(module, *id).map(function_signature)
         }
@@ -9021,6 +9710,7 @@ mod verifier_tests {
                 Some(l::CallSignatureTarget::BuiltinMethod(*method))
             }
             l::CallTargetKind::Function(_)
+            | l::CallTargetKind::StaticClosure(_)
             | l::CallTargetKind::Method(_)
             | l::CallTargetKind::Foreign(_)
             | l::CallTargetKind::Indirect => None,

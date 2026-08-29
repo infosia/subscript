@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use subscript_compiler::hir;
 use subscript_compiler::lir as l;
-use subscript_compiler::{ClassId, Pos};
+use subscript_compiler::{ClassId, Pos, Type};
 
 /// Returns every HIR execution fact that the supplied LIR module drops.
 pub fn dropped_facts(hir: &hir::Module, lir: &l::Module) -> Vec<String> {
@@ -18,6 +18,7 @@ pub fn dropped_facts(hir: &hir::Module, lir: &l::Module) -> Vec<String> {
     compare_foreign_array_snapshots(hir, lir, &mut findings);
     compare_call_operands(hir, lir, &mut findings);
     compare_iterator_bounds(hir, lir, &mut findings);
+    compare_static_array_callbacks(hir, lir, &mut findings);
     compare_instruction_operands(lir, &mut findings);
     findings
 }
@@ -26,6 +27,7 @@ pub fn dropped_facts(hir: &hir::Module, lir: &l::Module) -> Vec<String> {
 struct ExpectedIteratorBound {
     bound: l::IteratorBoundKind,
     spelling: &'static str,
+    count: usize,
 }
 
 fn compare_iterator_bounds(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {
@@ -45,24 +47,26 @@ fn compare_iterator_bounds(hir: &hir::Module, lir: &l::Module, findings: &mut Ve
             return;
         };
         let fact = match callee {
-            hir::Callee::Arr(hir::ArrFn::ForEach) => Some(ExpectedIteratorBound {
-                bound: if matches!(
-                    args.first().map(|argument| &argument.ty),
-                    Some(subscript_compiler::Type::Array(_))
-                ) {
-                    l::IteratorBoundKind::Fixed
-                } else {
-                    l::IteratorBoundKind::Live
-                },
-                spelling: "Array.forEach",
-            }),
+            hir::Callee::Arr(operation) if static_array_callback(*operation, args).is_some() => {
+                let callback = static_array_callback(*operation, args)
+                    .expect("guard established a static callback");
+                let indexed = matches!(&callback.ty, Type::Func(signature)
+                    if operation.callback_index_arity() == Some(signature.params.len()));
+                Some(ExpectedIteratorBound {
+                    bound: l::IteratorBoundKind::Fixed,
+                    spelling: "static Array callback",
+                    count: 1 + usize::from(*operation == hir::ArrFn::ReduceRight && indexed),
+                })
+            }
             hir::Callee::Map(hir::MapFn::ForEach) => Some(ExpectedIteratorBound {
                 bound: l::IteratorBoundKind::Live,
                 spelling: "Map.forEach",
+                count: 2,
             }),
             hir::Callee::Set(hir::SetFn::ForEach) => Some(ExpectedIteratorBound {
                 bound: l::IteratorBoundKind::Live,
                 spelling: "Set.forEach",
+                count: 1,
             }),
             _ => None,
         };
@@ -96,10 +100,11 @@ fn compare_iterator_bounds(hir: &hir::Module, lir: &l::Module, findings: &mut Ve
         }
     }
     for (key, required) in expected {
-        if !actual_positions.contains_key(&key) {
+        let carried = actual_positions.get(&key).copied().unwrap_or(0);
+        if carried != required.count {
             findings.push(format!(
-                "{}:{}:{}: {} spelling carries no {:?} iterator cursor in LIR",
-                key.0, key.1, key.2, required.spelling, required.bound
+                "{}:{}:{}: {} spelling carries {carried} {:?} iterator cursor(s); HIR requires {}",
+                key.0, key.1, key.2, required.spelling, required.bound, required.count
             ));
         }
     }
@@ -117,6 +122,7 @@ fn collect_for_of_bounds(
                     ExpectedIteratorBound {
                         bound: l::IteratorBoundKind::Live,
                         spelling: "for-of",
+                        count: 1,
                     },
                 );
                 collect_for_of_bounds(body, expected);
@@ -142,6 +148,155 @@ fn collect_for_of_bounds(
             | hir::Stmt::Continue(_) => {}
         }
     }
+}
+
+fn static_array_callback(operation: hir::ArrFn, args: &[hir::Expr]) -> Option<&hir::Expr> {
+    if !matches!(
+        operation,
+        hir::ArrFn::Map
+            | hir::ArrFn::Filter
+            | hir::ArrFn::Reduce
+            | hir::ArrFn::ReduceRight
+            | hir::ArrFn::ForEach
+            | hir::ArrFn::Some
+            | hir::ArrFn::Every
+            | hir::ArrFn::FindIndex
+    ) || !matches!(
+        args.first().map(|argument| &argument.ty),
+        Some(Type::Array(_))
+    ) {
+        return None;
+    }
+    let callback = args.get(1)?;
+    matches!(
+        callback.kind,
+        hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. }
+    )
+    .then_some(callback)
+}
+
+fn compare_static_array_callbacks(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {
+    walk_module_expressions(hir, &mut |expr| {
+        let hir::ExprKind::Call {
+            callee: hir::Callee::Arr(operation),
+            args,
+        } = &expr.kind
+        else {
+            return;
+        };
+        if !matches!(
+            operation,
+            hir::ArrFn::Map
+                | hir::ArrFn::Filter
+                | hir::ArrFn::Reduce
+                | hir::ArrFn::ReduceRight
+                | hir::ArrFn::ForEach
+                | hir::ArrFn::Some
+                | hir::ArrFn::Every
+                | hir::ArrFn::FindIndex
+        ) || !matches!(
+            args.first().map(|argument| &argument.ty),
+            Some(Type::Array(_))
+        ) {
+            return;
+        }
+        if args.get(1).is_none() {
+            return;
+        }
+        let key = pos_key(&expr.pos);
+        let instructions = lir
+            .functions
+            .iter()
+            .flat_map(|function| {
+                function
+                    .blocks
+                    .iter()
+                    .flat_map(|block| &block.instructions)
+                    .map(move |instruction| (function, instruction))
+            })
+            .filter(|(_, instruction)| pos_key(&instruction.pos) == key)
+            .collect::<Vec<_>>();
+        let operation_id = hir::ArrFn::ALL
+            .iter()
+            .position(|candidate| candidate == operation)
+            .map(|index| index as u16);
+        let intrinsic_count = instructions
+            .iter()
+            .filter(|(_, instruction)| {
+                matches!(&instruction.kind, l::InstructionKind::Call(target)
+                    if matches!(&target.kind, l::CallTargetKind::Intrinsic(intrinsic)
+                        if intrinsic.family == l::IntrinsicFamily::Array
+                            && Some(intrinsic.operation) == operation_id))
+            })
+            .count();
+
+        let Some(static_callback) = static_array_callback(*operation, args) else {
+            if intrinsic_count != 1 {
+                findings.push(format!(
+                    "{}: Array callback function value carries {intrinsic_count} runtime intrinsic call(s); HIR requires 1",
+                    expr.pos
+                ));
+            }
+            return;
+        };
+        if intrinsic_count != 0 {
+            findings.push(format!(
+                "{}: static Array callback keeps {intrinsic_count} runtime intrinsic call(s)",
+                expr.pos
+            ));
+        }
+        let direct = instructions
+            .iter()
+            .filter(|(_, instruction)| {
+                let l::InstructionKind::Call(target) = &instruction.kind else {
+                    return false;
+                };
+                match (&static_callback.kind, &target.kind) {
+                    (hir::ExprKind::FuncRef(name), l::CallTargetKind::Function(id)) => {
+                        lir.functions.get(id.0 as usize).is_some_and(|function| {
+                            function.id == *id
+                                && function.kind == l::FunctionKind::Free
+                                && function.source_name == *name
+                        })
+                    }
+                    (hir::ExprKind::Lambda { .. }, l::CallTargetKind::StaticClosure(id)) => {
+                        lir.functions.get(id.0 as usize).is_some_and(|function| {
+                            function.id == *id
+                                && function.kind == l::FunctionKind::Lambda
+                                && function.pos == static_callback.pos
+                        })
+                    }
+                    _ => false,
+                }
+            })
+            .count();
+        if direct != 1 {
+            findings.push(format!(
+                "{}: static Array callback carries {direct} matching direct call target(s); HIR requires 1",
+                expr.pos
+            ));
+        }
+        let output_count = instructions
+            .iter()
+            .filter(|(_, instruction)| instruction.kind == l::InstructionKind::ArrayWithCapacity)
+            .count();
+        let push_count = instructions
+            .iter()
+            .filter(|(_, instruction)| {
+                matches!(&instruction.kind,
+                l::InstructionKind::Call(target)
+                    if target.kind == l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush))
+            })
+            .count();
+        let produces_array = matches!(operation, hir::ArrFn::Map | hir::ArrFn::Filter);
+        let required = usize::from(produces_array);
+        if output_count != required || push_count != required {
+            findings.push(format!(
+                "{}: static {operation:?} carries {output_count} capacity allocation(s) and {push_count} push site(s); HIR requires {required} each",
+                expr.pos
+            ));
+        }
+    });
 }
 
 fn compare_foreign_array_snapshots(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {
@@ -1136,6 +1291,21 @@ fn collect_trap_expression(
             for site in node.trap_sites(hir) {
                 *expected.entry(hir_trap_key(&site)).or_default() += 1;
             }
+            if let hir::ExprKind::Call {
+                callee: hir::Callee::Arr(operation @ (hir::ArrFn::Map | hir::ArrFn::Filter)),
+                args,
+            } = &node.kind
+            {
+                if static_array_callback(*operation, args).is_some() {
+                    if let Some(site) = node
+                        .trap_sites(hir)
+                        .into_iter()
+                        .find(|site| matches!(site, hir::TrapSite::Call { .. }))
+                    {
+                        *expected.entry(hir_trap_key(&site)).or_default() += 1;
+                    }
+                }
+            }
         }
         match &node.kind {
             hir::ExprKind::DescriptorLit { class, fields } => {
@@ -1502,9 +1672,17 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
                         })
                         .sum()
                 }),
-            hir::Callee::Arr(hir::ArrFn::ForEach)
-            | hir::Callee::Map(hir::MapFn::ForEach)
-            | hir::Callee::Set(hir::SetFn::ForEach) => {
+            hir::Callee::Arr(operation) if static_array_callback(*operation, args).is_some() => {
+                let callback = static_array_callback(*operation, args)?;
+                match &callback.ty {
+                    Type::Func(function) => Some(
+                        function.params.len()
+                            + usize::from(matches!(callback.kind, hir::ExprKind::Lambda { .. })),
+                    ),
+                    _ => None,
+                }
+            }
+            hir::Callee::Map(hir::MapFn::ForEach) | hir::Callee::Set(hir::SetFn::ForEach) => {
                 args.get(1).and_then(|callback| match &callback.ty {
                     subscript_compiler::Type::Func(function) => Some(function.params.len() + 1),
                     _ => None,
@@ -1620,6 +1798,7 @@ fn instruction_arity(
         | K::LoadField(_)
         | K::Length
         | K::ForeignArrayData
+        | K::ArrayWithCapacity
         | K::IteratorCreate { .. }
         | K::IteratorBound => Arity::Exact(1),
         K::StringLiteral(_)

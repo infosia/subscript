@@ -1081,6 +1081,14 @@ impl<'m> Interpreter<'m> {
                 let ty = self.data_result_type(result_ty, instruction)?;
                 Some(self.array_literal(ty, &operands, &instruction.pos)?)
             }
+            l::InstructionKind::ArrayWithCapacity => {
+                let ty = self.data_result_type(result_ty, instruction)?;
+                let capacity = operands
+                    .first()
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?
+                    .as_i64()?;
+                Some(self.array_with_capacity(ty, capacity, &instruction.pos)?)
+            }
             l::InstructionKind::ArraySpreadLiteral(parts) => {
                 let ty = self.data_result_type(result_ty, instruction)?;
                 Some(self.array_spread_literal(ty, parts, &operands, &instruction.pos)?)
@@ -1690,6 +1698,24 @@ impl<'m> Interpreter<'m> {
     ) -> Result<Value, InterpretError> {
         match &target.kind {
             l::CallTargetKind::Function(function) => self.call_function(*function, operands),
+            l::CallTargetKind::StaticClosure(function) => {
+                let callable = operands.first().cloned().ok_or_else(|| {
+                    self.invalid(pos.cloned(), "static closure call has no callable")
+                })?;
+                operands.remove(0);
+                let Value::Callable(callable) = callable else {
+                    return Err(type_error("callable", &callable));
+                };
+                if callable.function != *function {
+                    return Err(self.invalid(
+                        pos.cloned(),
+                        "static closure callable and direct target disagree",
+                    ));
+                }
+                let mut arguments = callable.captures.clone();
+                arguments.extend(operands);
+                self.call_function(*function, arguments)
+            }
             l::CallTargetKind::Method(method) => {
                 let function = self
                     .module
@@ -4802,6 +4828,36 @@ impl<'m> Interpreter<'m> {
         Ok(Value::Handle(array))
     }
 
+    fn array_with_capacity(
+        &mut self,
+        ty: &Type,
+        capacity: i64,
+        pos: &Pos,
+    ) -> Result<Value, InterpretError> {
+        let Type::Array(element) = ty else {
+            return Err(self.invalid(
+                Some(pos.clone()),
+                "ArrayWithCapacity result is not a dynamic array",
+            ));
+        };
+        let capacity = u64::try_from(capacity).map_err(|_| {
+            self.invalid(Some(pos.clone()), "ArrayWithCapacity has a negative bound")
+        })?;
+        let layout = self.type_layout(element)?;
+        // SAFETY: Context and the verified array element layout meet the runtime contract.
+        let array = unsafe {
+            ffi::subscript_rt_array_with_capacity(
+                &mut *self.context,
+                capacity,
+                layout.size as u64,
+                0,
+            )
+        };
+        self.check_runtime(pos)?;
+        self.root_handle(array);
+        Ok(Value::Handle(array))
+    }
+
     fn array_spread_literal(
         &mut self,
         ty: &Type,
@@ -5023,7 +5079,14 @@ impl<'m> Interpreter<'m> {
             }
             _ => None,
         };
-        let mut position = 0;
+        let mut position = if matches!(
+            kind,
+            l::ForOfKind::ArrayValuesReverse | l::ForOfKind::ArrayKeysReverse
+        ) {
+            bound - 1
+        } else {
+            0
+        };
         if matches!(
             kind,
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues
@@ -5050,7 +5113,7 @@ impl<'m> Interpreter<'m> {
     fn iterator_has_next(
         &mut self,
         cursor: &Rc<IteratorCursor>,
-        _index: i64,
+        index: i64,
         bound: i64,
         pos: &Pos,
     ) -> Result<bool, InterpretError> {
@@ -5060,7 +5123,15 @@ impl<'m> Interpreter<'m> {
         } else {
             current
         };
-        Ok(cursor.position >= 0 && cursor.position < effective)
+        let position = if matches!(
+            cursor.kind,
+            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys
+        ) {
+            index
+        } else {
+            cursor.position
+        };
+        Ok(position >= 0 && position < effective)
     }
 
     fn iterator_bound(&mut self, cursor: &Value, pos: &Pos) -> Result<i32, InterpretError> {
@@ -5079,7 +5150,10 @@ impl<'m> Interpreter<'m> {
         pos: &Pos,
     ) -> Result<i64, InterpretError> {
         let bound = match cursor.kind {
-            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys => {
+            l::ForOfKind::ArrayValues
+            | l::ForOfKind::ArrayKeys
+            | l::ForOfKind::ArrayValuesReverse
+            | l::ForOfKind::ArrayKeysReverse => {
                 i64::from(unsafe { self.context.array_len(cursor.subject.as_handle()?) })
             }
             l::ForOfKind::FixedArrayValues => cursor.bound,
@@ -5105,7 +5179,7 @@ impl<'m> Interpreter<'m> {
     fn iterator_value(
         &mut self,
         cursor: &Value,
-        _index: i64,
+        index: i64,
         result_ty: Option<&l::ValueType>,
         pos: &Pos,
     ) -> Result<Value, InterpretError> {
@@ -5115,15 +5189,23 @@ impl<'m> Interpreter<'m> {
             _ => return Err(self.invalid(Some(pos.clone()), "IteratorValue has no data result")),
         };
         match cursor.kind {
-            l::ForOfKind::ArrayKeys => Ok(Value::I(cursor.position)),
-            l::ForOfKind::ArrayValues => {
+            l::ForOfKind::ArrayKeys | l::ForOfKind::ArrayKeysReverse => {
+                Ok(Value::I(if cursor.kind == l::ForOfKind::ArrayKeys {
+                    index
+                } else {
+                    cursor.position
+                }))
+            }
+            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayValuesReverse => {
                 let array = cursor.subject.as_handle()?;
+                let position = if cursor.kind == l::ForOfKind::ArrayValues {
+                    index
+                } else {
+                    cursor.position
+                };
                 // SAFETY: HasNext established index < captured bound; runtime also
                 // checks the current live array length after removals.
-                let pointer = unsafe {
-                    self.context
-                        .array_elem_ptr(array, cursor.position as i32, 0)
-                };
+                let pointer = unsafe { self.context.array_elem_ptr(array, position as i32, 0) };
                 self.check_runtime(pos)?;
                 let layout = self.layout_cached(ty).ok_or_else(|| {
                     self.invalid(Some(pos.clone()), "iterator element has no layout")
@@ -5228,6 +5310,13 @@ impl<'m> Interpreter<'m> {
                     effective_bound,
                     pos,
                 )?,
+            l::ForOfKind::ArrayValuesReverse | l::ForOfKind::ArrayKeysReverse => {
+                if cursor.position <= 0 || effective_bound <= 0 {
+                    -1
+                } else {
+                    (cursor.position - 1).min(effective_bound - 1)
+                }
+            }
             _ => cursor.position.saturating_add(1),
         };
         Ok(Value::Iterator(Rc::new(IteratorCursor {

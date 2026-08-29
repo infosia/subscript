@@ -108,6 +108,9 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t49-wire-enum-struct-unknown-member" => (TrapKind::WireEnumUnknownValue, 12, 36),
         "t50-wire-entry-unknown-value" => (TrapKind::WireEnumUnknownValue, 8, 27),
         "t51-bytes-into-range" => (TrapKind::IndexOutOfBounds, 18, 3),
+        "t52-static-map-callback-fault" | "t53-value-map-callback-fault" => {
+            (TrapKind::IndexOutOfBounds, 9, 18)
+        }
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -617,14 +620,14 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
-    let expected_count = 51;
+    let expected_count = 53;
     assert_eq!(
         ids.len(),
         expected_count,
         "expected exactly {expected_count} active trap entries (t01–t33 and t35–t38 runnable \
          coverage + t34 unrepresentable-layout policy, t39–t45 regex coverage, t46 \
          callback-userdata coverage, t47 unreachable coverage, t48 wire-enum crossing, and \
-         t49 wire-enum boundary-member coverage, t50 wire-entry coverage, and t51 R34 byte-range coverage), found {}",
+         t49 wire-enum boundary-member coverage, t50 wire-entry coverage, t51 R34 byte-range coverage, and t52–t53 static/value callback trap coverage), found {}",
         ids.len()
     );
 
@@ -2083,6 +2086,109 @@ fn dynamic_array_length_and_index_use_inline_header_fields() {
         body.lines()
             .any(|line| line.contains("->data +") && line.contains("->elem_size")),
         "dynamic AddressOfIndex is not inline header arithmetic:\n{body}"
+    );
+}
+
+#[test]
+fn static_array_callback_iterator_uses_inline_header_fields() {
+    use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    const SOURCE: &str = "function twice(value: i32): i32 {\n  return value * 2;\n}\nexport function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  print(`${xs.map(twice)[0]}`);\n}\n";
+    let files = [SourceFile::new("inline-array-iterator.ts", SOURCE)];
+    let hir = check_program(&files).expect("static callback iterator probe checks cleanly");
+    let lir = lower_module(&hir).expect("static callback iterator probe lowers to LIR");
+    let main = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "main")
+        .expect("program has main");
+    let callback = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "twice")
+        .expect("program has twice");
+    let c = emit_c(&hir)
+        .expect("static callback iterator probe emits C")
+        .source;
+    let body = emitted_function_body(&c, main.id);
+
+    for opaque in ["subscript_rt_array_len", "subscript_rt_array_data"] {
+        assert!(
+            !body.contains(opaque),
+            "static callback iterator retained opaque helper `{opaque}`:\n{body}"
+        );
+    }
+    assert!(
+        body.contains("((const SsArrayHeader*)")
+            && body.contains("->len")
+            && body.contains("->data"),
+        "static callback iterator does not read the array header inline:\n{body}"
+    );
+    assert!(
+        body.contains("subscript_rt_array_with_capacity")
+            && body.contains(&format!("sub_f{}(ctx", callback.id.0)),
+        "static callback map lost its pre-sized output or direct call:\n{body}"
+    );
+    let lines = body.lines().collect::<Vec<_>>();
+    let call = lines
+        .iter()
+        .position(|line| line.contains(&format!("sub_f{}(ctx", callback.id.0)))
+        .expect("static callback map has a direct callback call");
+    assert!(
+        !lines[call + 1].contains("*(const uint32_t*)ctx"),
+        "non-trapping direct callback retained a pending-trap branch:\n{body}"
+    );
+    assert!(
+        !body
+            .lines()
+            .any(|line| line.contains(".position = (") && line.contains(".position + 1ull")),
+        "unused forward IteratorAdvance retained its aggregate update:\n{body}"
+    );
+    let push_header = lines[call + 1..]
+        .iter()
+        .position(|line| line.contains("SsArrayHeader*"))
+        .map(|offset| call + 1 + offset)
+        .expect("static callback map has an inline push header");
+    assert!(
+        !lines[push_header + 1].contains("->len <"),
+        "preallocated static-map push retained its growth branch:\n{body}"
+    );
+}
+
+#[test]
+fn generator_creation_call_keeps_its_implicit_allocation_check() {
+    use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    const SOURCE: &str = "function* values(): Generator<i32> {\n  yield 1;\n}\nexport function main(): void {\n  const generator: Generator<i32> = values();\n  print(`${generator.next().value}`);\n}\n";
+    let files = [SourceFile::new("generator-allocation.ts", SOURCE)];
+    let hir = check_program(&files).expect("generator allocation probe checks cleanly");
+    let lir = lower_module(&hir).expect("generator allocation probe lowers to LIR");
+    let main = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "main")
+        .expect("program has main");
+    let generator = lir
+        .functions
+        .iter()
+        .find(|function| function.source_name == "values")
+        .expect("program has values");
+    let c = emit_c(&hir)
+        .expect("generator allocation probe emits C")
+        .source;
+    let body = emitted_function_body(&c, main.id);
+    let lines = body.lines().collect::<Vec<_>>();
+    let call = lines
+        .iter()
+        .position(|line| line.contains(&format!("sub_f{}(ctx", generator.id.0)))
+        .expect("main calls the generator creator");
+    assert!(
+        lines[call + 1].contains("*(const uint32_t*)ctx"),
+        "generator creation lost its implicit allocation check:\n{body}"
     );
 }
 

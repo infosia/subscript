@@ -9074,6 +9074,1261 @@ fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b
     %12: Data(Str) = Template([Text("generator="), Operand(0)])(%11) traps=[Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 45, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 45, col: 39 } }, Trap { kind: Allocation, pos: Pos { file: "a164-frame-class-locals.ts", line: 45, col: 9 } }] @ a164-frame-class-locals.ts:45:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a164-frame-class-locals.ts:45:3
     -> Return { value: None, pos: Pos { file: "a164-frame-class-locals.ts", line: 40, col: 17 } }
+===== a171-static-array-callbacks =====
+module initializer=None
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "mapNamed" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a171-static-array-callbacks.ts:7:10
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:7:19
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:7:31
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ a171-static-array-callbacks.ts:8:10
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 8, col: 3 } }
+fn f1 "filterNamed" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a171-static-array-callbacks.ts:11:10
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:11:22
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:11:34
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(I32) name=None
+  value %3: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ a171-static-array-callbacks.ts:12:10
+    %3: Data(Bool) = Binary(Ge)(%2, Integer(7):I32) @ a171-static-array-callbacks.ts:12:10
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 12, col: 3 } }
+fn f2 "reduceNamed" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a171-static-array-callbacks.ts:15:10
+  param %0 "acc": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:15:22
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:15:32
+  param %2 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:15:44
+  value %0: Data(I32) name=Some("acc")
+  value %1: Data(I32) name=Some("value")
+  value %2: Data(I32) name=Some("index")
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %3: Data(I32) = Binary(Mul)(%0, Integer(10):I32) @ a171-static-array-callbacks.ts:16:10
+    %4: Data(I32) = Binary(Add)(%3, %1) @ a171-static-array-callbacks.ts:16:10
+    %5: Data(I32) = Binary(Add)(%4, %2) @ a171-static-array-callbacks.ts:16:10
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 16, col: 3 } }
+fn f3 "forEachNamed" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a171-static-array-callbacks.ts:19:10
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:19:23
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:19:35
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("forEach:"), Operand(0), Text(":"), Operand(1)])(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 20, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 20, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 20, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 20, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 20, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 20, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 20, col: 9 } }] @ a171-static-array-callbacks.ts:20:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a171-static-array-callbacks.ts:20:3
+    -> Return { value: None, pos: Pos { file: "a171-static-array-callbacks.ts", line: 19, col: 10 } }
+fn f4 "someNamed" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a171-static-array-callbacks.ts:23:10
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:23:20
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:23:32
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("some:"), Operand(0), Text(":"), Operand(1)])(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 24, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 24, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 24, col: 9 } }] @ a171-static-array-callbacks.ts:24:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a171-static-array-callbacks.ts:24:3
+    %3: Data(I32) = Binary(Add)(%0, %1) @ a171-static-array-callbacks.ts:25:10
+    %4: Data(Bool) = Binary(Ge)(%3, Integer(8):I32) @ a171-static-array-callbacks.ts:25:10
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 25, col: 3 } }
+fn f5 "everyNamed" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a171-static-array-callbacks.ts:28:10
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:28:21
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:28:33
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("every:"), Operand(0), Text(":"), Operand(1)])(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 29, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 29, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 29, col: 9 } }] @ a171-static-array-callbacks.ts:29:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a171-static-array-callbacks.ts:29:3
+    %3: Data(I32) = Binary(Add)(%0, %1) @ a171-static-array-callbacks.ts:30:10
+    %4: Data(Bool) = Binary(Lt)(%3, Integer(10):I32) @ a171-static-array-callbacks.ts:30:10
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 30, col: 3 } }
+fn f6 "findNamed" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a171-static-array-callbacks.ts:33:10
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:33:20
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:33:32
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(I32) name=None
+  value %3: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ a171-static-array-callbacks.ts:34:10
+    %3: Data(Bool) = Binary(Eq)(%2, Integer(8):I32) @ a171-static-array-callbacks.ts:34:10
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 34, col: 3 } }
+fn f7 "missNamed" kind=Free exported=false generator=false async=false -> Bool entry=b0 @ a171-static-array-callbacks.ts:37:10
+  param %0 "_value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:37:20
+  param %1 "_index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:37:33
+  value %0: Data(I32) name=Some("_value")
+  value %1: Data(I32) name=Some("_index")
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a171-static-array-callbacks.ts", line: 38, col: 3 } }
+fn f8 "runNamed" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a171-static-array-callbacks.ts:41:10
+  param %0 "values": Data(Array(I32)) kind=Explicit storage=None @ a171-static-array-callbacks.ts:41:19
+  value %0: Data(Array(I32)) name=Some("values")
+  value %1: Data(Str) name=None
+  value %2: Data(Func(FuncType { params: [I32, I32], ret: I32 })) name=None
+  value %3: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Array(I32)) name=None
+  value %6: Data(Array(I32)) name=None
+  value %7: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(Array(I32)) name=None
+  value %11: Data(Array(I32)) name=None
+  value %12: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Array(I32)) name=None
+  value %16: Data(Array(I32)) name=None
+  value %17: Data(Array(I32)) name=None
+  value %18: Data(Bool) name=None
+  value %19: Data(I32) name=None
+  value %20: Data(I32) name=None
+  value %21: Data(I32) name=None
+  value %22: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %23: Data(I32) name=None
+  value %24: Data(Str) name=None
+  value %25: Data(Str) name=None
+  value %26: Data(Str) name=None
+  value %27: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %28: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %29: Data(I32) name=None
+  value %30: Data(Array(I32)) name=None
+  value %31: Data(Array(I32)) name=None
+  value %32: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %33: Data(I32) name=None
+  value %34: Data(I32) name=None
+  value %35: Data(Array(I32)) name=None
+  value %36: Data(Array(I32)) name=None
+  value %37: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %38: Data(I32) name=None
+  value %39: Data(I32) name=None
+  value %40: Data(Array(I32)) name=None
+  value %41: Data(Array(I32)) name=None
+  value %42: Data(Array(I32)) name=None
+  value %43: Data(Bool) name=None
+  value %44: Data(I32) name=None
+  value %45: Data(Bool) name=None
+  value %46: Data(I32) name=None
+  value %47: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %48: Data(I32) name=None
+  value %49: Data(Str) name=None
+  value %50: Data(Str) name=None
+  value %51: Data(Str) name=None
+  value %52: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) name=None
+  value %53: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %54: Data(I32) name=None
+  value %55: Data(Array(I32)) name=None
+  value %56: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %57: Data(I32) name=None
+  value %58: Data(I32) name=None
+  value %59: Data(I32) name=None
+  value %60: Data(Array(I32)) name=None
+  value %61: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %62: Data(I32) name=None
+  value %63: Data(I32) name=None
+  value %64: Data(I32) name=None
+  value %65: Data(Array(I32)) name=None
+  value %66: Data(I32) name=None
+  value %67: Data(Bool) name=None
+  value %68: Data(I32) name=None
+  value %69: Data(I32) name=None
+  value %70: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %71: Data(I32) name=None
+  value %72: Data(Str) name=None
+  value %73: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) name=None
+  value %74: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) name=None
+  value %75: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) name=None
+  value %76: Data(I32) name=None
+  value %77: Data(Array(I32)) name=None
+  value %78: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) name=None
+  value %79: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) name=None
+  value %80: Data(I32) name=None
+  value %81: Data(I32) name=None
+  value %82: Data(I32) name=None
+  value %83: Data(Array(I32)) name=None
+  value %84: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) name=None
+  value %85: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) name=None
+  value %86: Data(I32) name=None
+  value %87: Data(I32) name=None
+  value %88: Data(I32) name=None
+  value %89: Data(Array(I32)) name=None
+  value %90: Data(I32) name=None
+  value %91: Data(Bool) name=None
+  value %92: Data(I32) name=None
+  value %93: Data(I32) name=None
+  value %94: Data(I32) name=None
+  value %95: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) name=None
+  value %96: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) name=None
+  value %97: Data(I32) name=None
+  value %98: Data(Str) name=None
+  value %99: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %100: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %101: Data(I32) name=None
+  value %102: Data(Array(I32)) name=None
+  value %103: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %104: Data(I32) name=None
+  value %105: Data(I32) name=None
+  value %106: Data(Array(I32)) name=None
+  value %107: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %108: Data(I32) name=None
+  value %109: Data(I32) name=None
+  value %110: Data(Array(I32)) name=None
+  value %111: Data(Bool) name=None
+  value %112: Data(I32) name=None
+  value %113: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %114: Data(I32) name=None
+  value %115: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %116: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %117: Data(I32) name=None
+  value %118: Data(Array(I32)) name=None
+  value %119: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %120: Data(I32) name=None
+  value %121: Data(I32) name=None
+  value %122: Data(Bool) name=None
+  value %123: Data(Array(I32)) name=None
+  value %124: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %125: Data(I32) name=None
+  value %126: Data(I32) name=None
+  value %127: Data(Bool) name=None
+  value %128: Data(Array(I32)) name=None
+  value %129: Data(Bool) name=None
+  value %130: Data(Bool) name=None
+  value %131: Data(I32) name=None
+  value %132: Data(Bool) name=None
+  value %133: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %134: Data(I32) name=None
+  value %135: Data(Str) name=None
+  value %136: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %137: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %138: Data(I32) name=None
+  value %139: Data(Array(I32)) name=None
+  value %140: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %141: Data(I32) name=None
+  value %142: Data(I32) name=None
+  value %143: Data(Bool) name=None
+  value %144: Data(Array(I32)) name=None
+  value %145: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %146: Data(I32) name=None
+  value %147: Data(I32) name=None
+  value %148: Data(Bool) name=None
+  value %149: Data(Array(I32)) name=None
+  value %150: Data(Bool) name=None
+  value %151: Data(Bool) name=None
+  value %152: Data(I32) name=None
+  value %153: Data(Bool) name=None
+  value %154: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %155: Data(I32) name=None
+  value %156: Data(Str) name=None
+  value %157: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %158: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %159: Data(I32) name=None
+  value %160: Data(Array(I32)) name=None
+  value %161: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %162: Data(I32) name=None
+  value %163: Data(I32) name=None
+  value %164: Data(I32) name=None
+  value %165: Data(Array(I32)) name=None
+  value %166: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %167: Data(I32) name=None
+  value %168: Data(I32) name=None
+  value %169: Data(I32) name=None
+  value %170: Data(Array(I32)) name=None
+  value %171: Data(I32) name=None
+  value %172: Data(Bool) name=None
+  value %173: Data(I32) name=None
+  value %174: Data(Bool) name=None
+  value %175: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %176: Data(I32) name=None
+  value %177: Data(Str) name=None
+  value %178: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %179: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %180: Data(I32) name=None
+  value %181: Data(Array(I32)) name=None
+  value %182: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %183: Data(I32) name=None
+  value %184: Data(I32) name=None
+  value %185: Data(I32) name=None
+  value %186: Data(Array(I32)) name=None
+  value %187: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %188: Data(I32) name=None
+  value %189: Data(I32) name=None
+  value %190: Data(I32) name=None
+  value %191: Data(Array(I32)) name=None
+  value %192: Data(I32) name=None
+  value %193: Data(Bool) name=None
+  value %194: Data(I32) name=None
+  value %195: Data(Bool) name=None
+  value %196: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %197: Data(I32) name=None
+  value %198: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = StringLiteral("named")() traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 42, col: 9 } }] @ a171-static-array-callbacks.ts:42:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) invalidates=[ValueId(0)] @ a171-static-array-callbacks.ts:42:3
+    %2: Data(Func(FuncType { params: [I32, I32], ret: I32 })) = FunctionRef(FunctionId(0))() @ a171-static-array-callbacks.ts:43:27
+    %3: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%0) @ a171-static-array-callbacks.ts:43:16
+    %4: Data(I32) = IteratorBound(%3) @ a171-static-array-callbacks.ts:43:16
+    %5: Data(Array(I32)) = ArrayWithCapacity(%4) traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 43, col: 16 } }] @ a171-static-array-callbacks.ts:43:16
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(3)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(4)), Value(ValueId(5))] })
+  b1(%6: Data(Array(I32)), %7: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %8: Data(I32), %9: Data(I32), %10: Data(Array(I32))) Some("array-callback.cond"):
+    %18: Data(Bool) = IteratorHasNext(%7, %8, %9) @ a171-static-array-callbacks.ts:43:16
+    -> ConditionalBranch { condition: Value(ValueId(18)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(6)), Value(ValueId(10))] } }
+  b2 Some("array-callback.body"):
+    %19: Data(I32) = IteratorValue(%7, %8, %9) @ a171-static-array-callbacks.ts:43:16
+    %20: Data(I32) = Call(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%19, %8) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 43, col: 16 } }] @ a171-static-array-callbacks.ts:43:16
+    %21: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%10, %20) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17)] @ a171-static-array-callbacks.ts:43:16
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(7)), Value(ValueId(8)), Value(ValueId(9)), Value(ValueId(10))] })
+  b3(%11: Data(Array(I32)), %12: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %13: Data(I32), %14: Data(I32), %15: Data(Array(I32))) Some("array-callback.step"):
+    %22: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%12, %13, %14) @ a171-static-array-callbacks.ts:43:16
+    %23: Data(I32) = Binary(Add)(%13, Integer(1):I32) @ a171-static-array-callbacks.ts:43:16
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(11)), Value(ValueId(12)), Value(ValueId(23)), Value(ValueId(14)), Value(ValueId(15))] })
+  b4(%16: Data(Array(I32)), %17: Data(Array(I32))) Some("array-callback.exit"):
+    %24: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 43, col: 42 } }] @ a171-static-array-callbacks.ts:43:42
+    %25: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%17, %24) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 43, col: 16 } }] @ a171-static-array-callbacks.ts:43:16
+    %26: Data(Str) = Template([Text("map:"), Operand(0)])(%25) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 43, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 43, col: 9 } }] @ a171-static-array-callbacks.ts:43:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%26) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17)] @ a171-static-array-callbacks.ts:43:3
+    %27: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = FunctionRef(FunctionId(1))() @ a171-static-array-callbacks.ts:44:33
+    %28: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%16) @ a171-static-array-callbacks.ts:44:19
+    %29: Data(I32) = IteratorBound(%28) @ a171-static-array-callbacks.ts:44:19
+    %30: Data(Array(I32)) = ArrayWithCapacity(%29) traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 44, col: 19 } }] @ a171-static-array-callbacks.ts:44:19
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(16)), Value(ValueId(28)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(29)), Value(ValueId(30))] })
+  b5(%31: Data(Array(I32)), %32: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %33: Data(I32), %34: Data(I32), %35: Data(Array(I32))) Some("array-callback.cond"):
+    %43: Data(Bool) = IteratorHasNext(%32, %33, %34) @ a171-static-array-callbacks.ts:44:19
+    -> ConditionalBranch { condition: Value(ValueId(43)), then_target: BlockTarget { block: BlockId(6), arguments: [] }, else_target: BlockTarget { block: BlockId(8), arguments: [Value(ValueId(31)), Value(ValueId(35))] } }
+  b6 Some("array-callback.body"):
+    %44: Data(I32) = IteratorValue(%32, %33, %34) @ a171-static-array-callbacks.ts:44:19
+    %45: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%44, %33) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 44, col: 19 } }] @ a171-static-array-callbacks.ts:44:19
+    -> ConditionalBranch { condition: Value(ValueId(45)), then_target: BlockTarget { block: BlockId(9), arguments: [] }, else_target: BlockTarget { block: BlockId(7), arguments: [Value(ValueId(31)), Value(ValueId(32)), Value(ValueId(33)), Value(ValueId(34)), Value(ValueId(35))] } }
+  b7(%36: Data(Array(I32)), %37: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %38: Data(I32), %39: Data(I32), %40: Data(Array(I32))) Some("array-callback.step"):
+    %47: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%37, %38, %39) @ a171-static-array-callbacks.ts:44:19
+    %48: Data(I32) = Binary(Add)(%38, Integer(1):I32) @ a171-static-array-callbacks.ts:44:19
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(36)), Value(ValueId(37)), Value(ValueId(48)), Value(ValueId(39)), Value(ValueId(40))] })
+  b8(%41: Data(Array(I32)), %42: Data(Array(I32))) Some("array-callback.exit"):
+    %49: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 44, col: 51 } }] @ a171-static-array-callbacks.ts:44:51
+    %50: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%42, %49) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 44, col: 19 } }] @ a171-static-array-callbacks.ts:44:19
+    %51: Data(Str) = Template([Text("filter:"), Operand(0)])(%50) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 44, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 44, col: 9 } }] @ a171-static-array-callbacks.ts:44:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%51) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42)] @ a171-static-array-callbacks.ts:44:3
+    %52: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) = FunctionRef(FunctionId(2))() @ a171-static-array-callbacks.ts:45:33
+    %53: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%41) @ a171-static-array-callbacks.ts:45:19
+    %54: Data(I32) = IteratorBound(%53) @ a171-static-array-callbacks.ts:45:19
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(41)), Value(ValueId(53)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(54)), Constant(Constant { ty: I32, kind: Integer(1) })] })
+  b9 Some("array-callback.push"):
+    %46: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%35, %44) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42)] @ a171-static-array-callbacks.ts:44:19
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(31)), Value(ValueId(32)), Value(ValueId(33)), Value(ValueId(34)), Value(ValueId(35))] })
+  b10(%55: Data(Array(I32)), %56: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %57: Data(I32), %58: Data(I32), %59: Data(I32)) Some("array-callback.cond"):
+    %67: Data(Bool) = IteratorHasNext(%56, %57, %58) @ a171-static-array-callbacks.ts:45:19
+    -> ConditionalBranch { condition: Value(ValueId(67)), then_target: BlockTarget { block: BlockId(11), arguments: [] }, else_target: BlockTarget { block: BlockId(13), arguments: [Value(ValueId(55)), Value(ValueId(59))] } }
+  b11 Some("array-callback.body"):
+    %68: Data(I32) = IteratorValue(%56, %57, %58) @ a171-static-array-callbacks.ts:45:19
+    %69: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%59, %68, %57) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 45, col: 19 } }] @ a171-static-array-callbacks.ts:45:19
+    -> Branch(BlockTarget { block: BlockId(12), arguments: [Value(ValueId(55)), Value(ValueId(56)), Value(ValueId(57)), Value(ValueId(58)), Value(ValueId(69))] })
+  b12(%60: Data(Array(I32)), %61: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %62: Data(I32), %63: Data(I32), %64: Data(I32)) Some("array-callback.step"):
+    %70: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%61, %62, %63) @ a171-static-array-callbacks.ts:45:19
+    %71: Data(I32) = Binary(Add)(%62, Integer(1):I32) @ a171-static-array-callbacks.ts:45:19
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(60)), Value(ValueId(61)), Value(ValueId(71)), Value(ValueId(63)), Value(ValueId(64))] })
+  b13(%65: Data(Array(I32)), %66: Data(I32)) Some("array-callback.exit"):
+    %72: Data(Str) = Template([Text("reduce:"), Operand(0)])(%66) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 45, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 45, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 45, col: 9 } }] @ a171-static-array-callbacks.ts:45:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%72) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65)] @ a171-static-array-callbacks.ts:45:3
+    %73: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) = FunctionRef(FunctionId(2))() @ a171-static-array-callbacks.ts:46:43
+    %74: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) = IteratorCreate { kind: ArrayValuesReverse, bound: Fixed }(%65) @ a171-static-array-callbacks.ts:46:24
+    %75: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) = IteratorCreate { kind: ArrayKeysReverse, bound: Fixed }(%65) @ a171-static-array-callbacks.ts:46:24
+    %76: Data(I32) = IteratorBound(%74) @ a171-static-array-callbacks.ts:46:24
+    -> Branch(BlockTarget { block: BlockId(14), arguments: [Value(ValueId(65)), Value(ValueId(74)), Value(ValueId(75)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(76)), Constant(Constant { ty: I32, kind: Integer(1) })] })
+  b14(%77: Data(Array(I32)), %78: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }), %79: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }), %80: Data(I32), %81: Data(I32), %82: Data(I32)) Some("array-callback.cond"):
+    %91: Data(Bool) = IteratorHasNext(%78, %80, %81) @ a171-static-array-callbacks.ts:46:24
+    -> ConditionalBranch { condition: Value(ValueId(91)), then_target: BlockTarget { block: BlockId(15), arguments: [] }, else_target: BlockTarget { block: BlockId(17), arguments: [Value(ValueId(77)), Value(ValueId(82))] } }
+  b15 Some("array-callback.body"):
+    %92: Data(I32) = IteratorValue(%78, %80, %81) @ a171-static-array-callbacks.ts:46:24
+    %93: Data(I32) = IteratorValue(%79, %80, %81) @ a171-static-array-callbacks.ts:46:24
+    %94: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%82, %92, %93) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 46, col: 24 } }] @ a171-static-array-callbacks.ts:46:24
+    -> Branch(BlockTarget { block: BlockId(16), arguments: [Value(ValueId(77)), Value(ValueId(78)), Value(ValueId(79)), Value(ValueId(80)), Value(ValueId(81)), Value(ValueId(94))] })
+  b16(%83: Data(Array(I32)), %84: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }), %85: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }), %86: Data(I32), %87: Data(I32), %88: Data(I32)) Some("array-callback.step"):
+    %95: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) = IteratorAdvance(%84, %86, %87) @ a171-static-array-callbacks.ts:46:24
+    %96: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) = IteratorAdvance(%85, %86, %87) @ a171-static-array-callbacks.ts:46:24
+    %97: Data(I32) = Binary(Add)(%86, Integer(1):I32) @ a171-static-array-callbacks.ts:46:24
+    -> Branch(BlockTarget { block: BlockId(14), arguments: [Value(ValueId(83)), Value(ValueId(95)), Value(ValueId(96)), Value(ValueId(97)), Value(ValueId(87)), Value(ValueId(88))] })
+  b17(%89: Data(Array(I32)), %90: Data(I32)) Some("array-callback.exit"):
+    %98: Data(Str) = Template([Text("reduceRight:"), Operand(0)])(%90) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 46, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 46, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 46, col: 9 } }] @ a171-static-array-callbacks.ts:46:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%98) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89)] @ a171-static-array-callbacks.ts:46:3
+    %99: Data(Func(FuncType { params: [I32, I32], ret: Void })) = FunctionRef(FunctionId(3))() @ a171-static-array-callbacks.ts:47:18
+    %100: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%89) @ a171-static-array-callbacks.ts:47:3
+    %101: Data(I32) = IteratorBound(%100) @ a171-static-array-callbacks.ts:47:3
+    -> Branch(BlockTarget { block: BlockId(18), arguments: [Value(ValueId(89)), Value(ValueId(100)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(101))] })
+  b18(%102: Data(Array(I32)), %103: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %104: Data(I32), %105: Data(I32)) Some("array-callback.cond"):
+    %111: Data(Bool) = IteratorHasNext(%103, %104, %105) @ a171-static-array-callbacks.ts:47:3
+    -> ConditionalBranch { condition: Value(ValueId(111)), then_target: BlockTarget { block: BlockId(19), arguments: [] }, else_target: BlockTarget { block: BlockId(21), arguments: [Value(ValueId(102))] } }
+  b19 Some("array-callback.body"):
+    %112: Data(I32) = IteratorValue(%103, %104, %105) @ a171-static-array-callbacks.ts:47:3
+    Call(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32), Data(I32)], return_type: None })(%112, %104) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89), ValueId(102), ValueId(106), ValueId(110)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 47, col: 3 } }] @ a171-static-array-callbacks.ts:47:3
+    -> Branch(BlockTarget { block: BlockId(20), arguments: [Value(ValueId(102)), Value(ValueId(103)), Value(ValueId(104)), Value(ValueId(105))] })
+  b20(%106: Data(Array(I32)), %107: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %108: Data(I32), %109: Data(I32)) Some("array-callback.step"):
+    %113: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%107, %108, %109) @ a171-static-array-callbacks.ts:47:3
+    %114: Data(I32) = Binary(Add)(%108, Integer(1):I32) @ a171-static-array-callbacks.ts:47:3
+    -> Branch(BlockTarget { block: BlockId(18), arguments: [Value(ValueId(106)), Value(ValueId(107)), Value(ValueId(114)), Value(ValueId(109))] })
+  b21(%110: Data(Array(I32))) Some("array-callback.exit"):
+    %115: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = FunctionRef(FunctionId(4))() @ a171-static-array-callbacks.ts:48:36
+    %116: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%110) @ a171-static-array-callbacks.ts:48:24
+    %117: Data(I32) = IteratorBound(%116) @ a171-static-array-callbacks.ts:48:24
+    -> Branch(BlockTarget { block: BlockId(22), arguments: [Value(ValueId(110)), Value(ValueId(116)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(117)), Constant(Constant { ty: Bool, kind: Boolean(false) })] })
+  b22(%118: Data(Array(I32)), %119: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %120: Data(I32), %121: Data(I32), %122: Data(Bool)) Some("array-callback.cond"):
+    %130: Data(Bool) = IteratorHasNext(%119, %120, %121) @ a171-static-array-callbacks.ts:48:24
+    -> ConditionalBranch { condition: Value(ValueId(130)), then_target: BlockTarget { block: BlockId(23), arguments: [] }, else_target: BlockTarget { block: BlockId(25), arguments: [Value(ValueId(118)), Value(ValueId(122))] } }
+  b23 Some("array-callback.body"):
+    %131: Data(I32) = IteratorValue(%119, %120, %121) @ a171-static-array-callbacks.ts:48:24
+    %132: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%131, %120) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89), ValueId(102), ValueId(106), ValueId(110), ValueId(118), ValueId(123), ValueId(128)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 48, col: 24 } }] @ a171-static-array-callbacks.ts:48:24
+    -> ConditionalBranch { condition: Value(ValueId(132)), then_target: BlockTarget { block: BlockId(26), arguments: [] }, else_target: BlockTarget { block: BlockId(24), arguments: [Value(ValueId(118)), Value(ValueId(119)), Value(ValueId(120)), Value(ValueId(121)), Value(ValueId(122))] } }
+  b24(%123: Data(Array(I32)), %124: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %125: Data(I32), %126: Data(I32), %127: Data(Bool)) Some("array-callback.step"):
+    %133: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%124, %125, %126) @ a171-static-array-callbacks.ts:48:24
+    %134: Data(I32) = Binary(Add)(%125, Integer(1):I32) @ a171-static-array-callbacks.ts:48:24
+    -> Branch(BlockTarget { block: BlockId(22), arguments: [Value(ValueId(123)), Value(ValueId(124)), Value(ValueId(134)), Value(ValueId(126)), Value(ValueId(127))] })
+  b25(%128: Data(Array(I32)), %129: Data(Bool)) Some("array-callback.exit"):
+    %135: Data(Str) = Template([Text("some-result:"), Operand(0)])(%129) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 48, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 48, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 48, col: 9 } }] @ a171-static-array-callbacks.ts:48:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%135) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89), ValueId(102), ValueId(106), ValueId(110), ValueId(118), ValueId(123), ValueId(128)] @ a171-static-array-callbacks.ts:48:3
+    %136: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = FunctionRef(FunctionId(5))() @ a171-static-array-callbacks.ts:49:38
+    %137: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%128) @ a171-static-array-callbacks.ts:49:25
+    %138: Data(I32) = IteratorBound(%137) @ a171-static-array-callbacks.ts:49:25
+    -> Branch(BlockTarget { block: BlockId(27), arguments: [Value(ValueId(128)), Value(ValueId(137)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(138)), Constant(Constant { ty: Bool, kind: Boolean(true) })] })
+  b26 Some("array-callback.finish"):
+    -> Branch(BlockTarget { block: BlockId(25), arguments: [Value(ValueId(118)), Constant(Constant { ty: Bool, kind: Boolean(true) })] })
+  b27(%139: Data(Array(I32)), %140: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %141: Data(I32), %142: Data(I32), %143: Data(Bool)) Some("array-callback.cond"):
+    %151: Data(Bool) = IteratorHasNext(%140, %141, %142) @ a171-static-array-callbacks.ts:49:25
+    -> ConditionalBranch { condition: Value(ValueId(151)), then_target: BlockTarget { block: BlockId(28), arguments: [] }, else_target: BlockTarget { block: BlockId(30), arguments: [Value(ValueId(139)), Value(ValueId(143))] } }
+  b28 Some("array-callback.body"):
+    %152: Data(I32) = IteratorValue(%140, %141, %142) @ a171-static-array-callbacks.ts:49:25
+    %153: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%152, %141) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89), ValueId(102), ValueId(106), ValueId(110), ValueId(118), ValueId(123), ValueId(128), ValueId(139), ValueId(144), ValueId(149)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 49, col: 25 } }] @ a171-static-array-callbacks.ts:49:25
+    -> ConditionalBranch { condition: Value(ValueId(153)), then_target: BlockTarget { block: BlockId(29), arguments: [Value(ValueId(139)), Value(ValueId(140)), Value(ValueId(141)), Value(ValueId(142)), Value(ValueId(143))] }, else_target: BlockTarget { block: BlockId(31), arguments: [] } }
+  b29(%144: Data(Array(I32)), %145: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %146: Data(I32), %147: Data(I32), %148: Data(Bool)) Some("array-callback.step"):
+    %154: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%145, %146, %147) @ a171-static-array-callbacks.ts:49:25
+    %155: Data(I32) = Binary(Add)(%146, Integer(1):I32) @ a171-static-array-callbacks.ts:49:25
+    -> Branch(BlockTarget { block: BlockId(27), arguments: [Value(ValueId(144)), Value(ValueId(145)), Value(ValueId(155)), Value(ValueId(147)), Value(ValueId(148))] })
+  b30(%149: Data(Array(I32)), %150: Data(Bool)) Some("array-callback.exit"):
+    %156: Data(Str) = Template([Text("every-result:"), Operand(0)])(%150) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 49, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 49, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 49, col: 9 } }] @ a171-static-array-callbacks.ts:49:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%156) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89), ValueId(102), ValueId(106), ValueId(110), ValueId(118), ValueId(123), ValueId(128), ValueId(139), ValueId(144), ValueId(149)] @ a171-static-array-callbacks.ts:49:3
+    %157: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = FunctionRef(FunctionId(6))() @ a171-static-array-callbacks.ts:50:34
+    %158: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%149) @ a171-static-array-callbacks.ts:50:17
+    %159: Data(I32) = IteratorBound(%158) @ a171-static-array-callbacks.ts:50:17
+    -> Branch(BlockTarget { block: BlockId(32), arguments: [Value(ValueId(149)), Value(ValueId(158)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(159)), Constant(Constant { ty: I32, kind: Integer(-1) })] })
+  b31 Some("array-callback.finish"):
+    -> Branch(BlockTarget { block: BlockId(30), arguments: [Value(ValueId(139)), Constant(Constant { ty: Bool, kind: Boolean(false) })] })
+  b32(%160: Data(Array(I32)), %161: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %162: Data(I32), %163: Data(I32), %164: Data(I32)) Some("array-callback.cond"):
+    %172: Data(Bool) = IteratorHasNext(%161, %162, %163) @ a171-static-array-callbacks.ts:50:17
+    -> ConditionalBranch { condition: Value(ValueId(172)), then_target: BlockTarget { block: BlockId(33), arguments: [] }, else_target: BlockTarget { block: BlockId(35), arguments: [Value(ValueId(160)), Value(ValueId(164))] } }
+  b33 Some("array-callback.body"):
+    %173: Data(I32) = IteratorValue(%161, %162, %163) @ a171-static-array-callbacks.ts:50:17
+    %174: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%173, %162) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89), ValueId(102), ValueId(106), ValueId(110), ValueId(118), ValueId(123), ValueId(128), ValueId(139), ValueId(144), ValueId(149), ValueId(160), ValueId(165), ValueId(170)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 50, col: 17 } }] @ a171-static-array-callbacks.ts:50:17
+    -> ConditionalBranch { condition: Value(ValueId(174)), then_target: BlockTarget { block: BlockId(36), arguments: [] }, else_target: BlockTarget { block: BlockId(34), arguments: [Value(ValueId(160)), Value(ValueId(161)), Value(ValueId(162)), Value(ValueId(163)), Value(ValueId(164))] } }
+  b34(%165: Data(Array(I32)), %166: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %167: Data(I32), %168: Data(I32), %169: Data(I32)) Some("array-callback.step"):
+    %175: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%166, %167, %168) @ a171-static-array-callbacks.ts:50:17
+    %176: Data(I32) = Binary(Add)(%167, Integer(1):I32) @ a171-static-array-callbacks.ts:50:17
+    -> Branch(BlockTarget { block: BlockId(32), arguments: [Value(ValueId(165)), Value(ValueId(166)), Value(ValueId(176)), Value(ValueId(168)), Value(ValueId(169))] })
+  b35(%170: Data(Array(I32)), %171: Data(I32)) Some("array-callback.exit"):
+    %177: Data(Str) = Template([Text("find:"), Operand(0)])(%171) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 50, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 50, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 50, col: 9 } }] @ a171-static-array-callbacks.ts:50:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%177) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89), ValueId(102), ValueId(106), ValueId(110), ValueId(118), ValueId(123), ValueId(128), ValueId(139), ValueId(144), ValueId(149), ValueId(160), ValueId(165), ValueId(170)] @ a171-static-array-callbacks.ts:50:3
+    %178: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = FunctionRef(FunctionId(7))() @ a171-static-array-callbacks.ts:51:34
+    %179: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%170) @ a171-static-array-callbacks.ts:51:17
+    %180: Data(I32) = IteratorBound(%179) @ a171-static-array-callbacks.ts:51:17
+    -> Branch(BlockTarget { block: BlockId(37), arguments: [Value(ValueId(170)), Value(ValueId(179)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(180)), Constant(Constant { ty: I32, kind: Integer(-1) })] })
+  b36 Some("array-callback.finish"):
+    -> Branch(BlockTarget { block: BlockId(35), arguments: [Value(ValueId(160)), Value(ValueId(162))] })
+  b37(%181: Data(Array(I32)), %182: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %183: Data(I32), %184: Data(I32), %185: Data(I32)) Some("array-callback.cond"):
+    %193: Data(Bool) = IteratorHasNext(%182, %183, %184) @ a171-static-array-callbacks.ts:51:17
+    -> ConditionalBranch { condition: Value(ValueId(193)), then_target: BlockTarget { block: BlockId(38), arguments: [] }, else_target: BlockTarget { block: BlockId(40), arguments: [Value(ValueId(181)), Value(ValueId(185))] } }
+  b38 Some("array-callback.body"):
+    %194: Data(I32) = IteratorValue(%182, %183, %184) @ a171-static-array-callbacks.ts:51:17
+    %195: Data(Bool) = Call(CallTarget { kind: Function(FunctionId(7)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%194, %183) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89), ValueId(102), ValueId(106), ValueId(110), ValueId(118), ValueId(123), ValueId(128), ValueId(139), ValueId(144), ValueId(149), ValueId(160), ValueId(165), ValueId(170), ValueId(181), ValueId(186), ValueId(191)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 51, col: 17 } }] @ a171-static-array-callbacks.ts:51:17
+    -> ConditionalBranch { condition: Value(ValueId(195)), then_target: BlockTarget { block: BlockId(41), arguments: [] }, else_target: BlockTarget { block: BlockId(39), arguments: [Value(ValueId(181)), Value(ValueId(182)), Value(ValueId(183)), Value(ValueId(184)), Value(ValueId(185))] } }
+  b39(%186: Data(Array(I32)), %187: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %188: Data(I32), %189: Data(I32), %190: Data(I32)) Some("array-callback.step"):
+    %196: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%187, %188, %189) @ a171-static-array-callbacks.ts:51:17
+    %197: Data(I32) = Binary(Add)(%188, Integer(1):I32) @ a171-static-array-callbacks.ts:51:17
+    -> Branch(BlockTarget { block: BlockId(37), arguments: [Value(ValueId(186)), Value(ValueId(187)), Value(ValueId(197)), Value(ValueId(189)), Value(ValueId(190))] })
+  b40(%191: Data(Array(I32)), %192: Data(I32)) Some("array-callback.exit"):
+    %198: Data(Str) = Template([Text("miss:"), Operand(0)])(%192) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 51, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 51, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 51, col: 9 } }] @ a171-static-array-callbacks.ts:51:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%198) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(10), ValueId(11), ValueId(15), ValueId(16), ValueId(17), ValueId(30), ValueId(31), ValueId(35), ValueId(36), ValueId(40), ValueId(41), ValueId(42), ValueId(55), ValueId(60), ValueId(65), ValueId(77), ValueId(83), ValueId(89), ValueId(102), ValueId(106), ValueId(110), ValueId(118), ValueId(123), ValueId(128), ValueId(139), ValueId(144), ValueId(149), ValueId(160), ValueId(165), ValueId(170), ValueId(181), ValueId(186), ValueId(191)] @ a171-static-array-callbacks.ts:51:3
+    -> Return { value: None, pos: Pos { file: "a171-static-array-callbacks.ts", line: 41, col: 10 } }
+  b41 Some("array-callback.finish"):
+    -> Branch(BlockTarget { block: BlockId(40), arguments: [Value(ValueId(181)), Value(ValueId(183))] })
+fn f9 "runLambda" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a171-static-array-callbacks.ts:54:10
+  param %0 "values": Data(Array(I32)) kind=Explicit storage=None @ a171-static-array-callbacks.ts:54:20
+  value %0: Data(Array(I32)) name=Some("values")
+  value %1: Data(Str) name=None
+  value %2: Data(Func(FuncType { params: [I32, I32], ret: I32 })) name=None
+  value %3: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Array(I32)) name=None
+  value %6: Data(Array(I32)) name=None
+  value %7: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %8: Data(Func(FuncType { params: [I32, I32], ret: I32 })) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Array(I32)) name=None
+  value %12: Data(Array(I32)) name=None
+  value %13: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %14: Data(Func(FuncType { params: [I32, I32], ret: I32 })) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(Array(I32)) name=None
+  value %18: Data(Array(I32)) name=None
+  value %19: Data(Array(I32)) name=None
+  value %20: Data(Bool) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(I32) name=None
+  value %23: Data(I32) name=None
+  value %24: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(Str) name=None
+  value %27: Data(Str) name=None
+  value %28: Data(Str) name=None
+  value %29: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %30: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %31: Data(I32) name=None
+  value %32: Data(Array(I32)) name=None
+  value %33: Data(Array(I32)) name=None
+  value %34: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %35: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %36: Data(I32) name=None
+  value %37: Data(I32) name=None
+  value %38: Data(Array(I32)) name=None
+  value %39: Data(Array(I32)) name=None
+  value %40: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %41: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %42: Data(I32) name=None
+  value %43: Data(I32) name=None
+  value %44: Data(Array(I32)) name=None
+  value %45: Data(Array(I32)) name=None
+  value %46: Data(Array(I32)) name=None
+  value %47: Data(Bool) name=None
+  value %48: Data(I32) name=None
+  value %49: Data(Bool) name=None
+  value %50: Data(I32) name=None
+  value %51: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %52: Data(I32) name=None
+  value %53: Data(Str) name=None
+  value %54: Data(Str) name=None
+  value %55: Data(Str) name=None
+  value %56: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) name=None
+  value %57: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %58: Data(I32) name=None
+  value %59: Data(Array(I32)) name=None
+  value %60: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %61: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) name=None
+  value %62: Data(I32) name=None
+  value %63: Data(I32) name=None
+  value %64: Data(I32) name=None
+  value %65: Data(Array(I32)) name=None
+  value %66: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %67: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) name=None
+  value %68: Data(I32) name=None
+  value %69: Data(I32) name=None
+  value %70: Data(I32) name=None
+  value %71: Data(Array(I32)) name=None
+  value %72: Data(I32) name=None
+  value %73: Data(Bool) name=None
+  value %74: Data(I32) name=None
+  value %75: Data(I32) name=None
+  value %76: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %77: Data(I32) name=None
+  value %78: Data(Str) name=None
+  value %79: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) name=None
+  value %80: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) name=None
+  value %81: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) name=None
+  value %82: Data(I32) name=None
+  value %83: Data(Array(I32)) name=None
+  value %84: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) name=None
+  value %85: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) name=None
+  value %86: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) name=None
+  value %87: Data(I32) name=None
+  value %88: Data(I32) name=None
+  value %89: Data(I32) name=None
+  value %90: Data(Array(I32)) name=None
+  value %91: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) name=None
+  value %92: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) name=None
+  value %93: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) name=None
+  value %94: Data(I32) name=None
+  value %95: Data(I32) name=None
+  value %96: Data(I32) name=None
+  value %97: Data(Array(I32)) name=None
+  value %98: Data(I32) name=None
+  value %99: Data(Bool) name=None
+  value %100: Data(I32) name=None
+  value %101: Data(I32) name=None
+  value %102: Data(I32) name=None
+  value %103: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) name=None
+  value %104: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) name=None
+  value %105: Data(I32) name=None
+  value %106: Data(Str) name=None
+  value %107: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %108: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %109: Data(I32) name=None
+  value %110: Data(Array(I32)) name=None
+  value %111: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %112: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %113: Data(I32) name=None
+  value %114: Data(I32) name=None
+  value %115: Data(Array(I32)) name=None
+  value %116: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %117: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %118: Data(I32) name=None
+  value %119: Data(I32) name=None
+  value %120: Data(Array(I32)) name=None
+  value %121: Data(Bool) name=None
+  value %122: Data(I32) name=None
+  value %123: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %124: Data(I32) name=None
+  value %125: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %126: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %127: Data(I32) name=None
+  value %128: Data(Array(I32)) name=None
+  value %129: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %130: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %131: Data(I32) name=None
+  value %132: Data(I32) name=None
+  value %133: Data(Bool) name=None
+  value %134: Data(Array(I32)) name=None
+  value %135: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %136: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %137: Data(I32) name=None
+  value %138: Data(I32) name=None
+  value %139: Data(Bool) name=None
+  value %140: Data(Array(I32)) name=None
+  value %141: Data(Bool) name=None
+  value %142: Data(Bool) name=None
+  value %143: Data(I32) name=None
+  value %144: Data(Bool) name=None
+  value %145: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %146: Data(I32) name=None
+  value %147: Data(Str) name=None
+  value %148: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %149: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %150: Data(I32) name=None
+  value %151: Data(Array(I32)) name=None
+  value %152: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %153: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %154: Data(I32) name=None
+  value %155: Data(I32) name=None
+  value %156: Data(Bool) name=None
+  value %157: Data(Array(I32)) name=None
+  value %158: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %159: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %160: Data(I32) name=None
+  value %161: Data(I32) name=None
+  value %162: Data(Bool) name=None
+  value %163: Data(Array(I32)) name=None
+  value %164: Data(Bool) name=None
+  value %165: Data(Bool) name=None
+  value %166: Data(I32) name=None
+  value %167: Data(Bool) name=None
+  value %168: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %169: Data(I32) name=None
+  value %170: Data(Str) name=None
+  value %171: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %172: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %173: Data(I32) name=None
+  value %174: Data(Array(I32)) name=None
+  value %175: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %176: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %177: Data(I32) name=None
+  value %178: Data(I32) name=None
+  value %179: Data(I32) name=None
+  value %180: Data(Array(I32)) name=None
+  value %181: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %182: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %183: Data(I32) name=None
+  value %184: Data(I32) name=None
+  value %185: Data(I32) name=None
+  value %186: Data(Array(I32)) name=None
+  value %187: Data(I32) name=None
+  value %188: Data(Bool) name=None
+  value %189: Data(I32) name=None
+  value %190: Data(Bool) name=None
+  value %191: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %192: Data(I32) name=None
+  value %193: Data(Str) name=None
+  value %194: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %195: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %196: Data(I32) name=None
+  value %197: Data(Array(I32)) name=None
+  value %198: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %199: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %200: Data(I32) name=None
+  value %201: Data(I32) name=None
+  value %202: Data(I32) name=None
+  value %203: Data(Array(I32)) name=None
+  value %204: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %205: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %206: Data(I32) name=None
+  value %207: Data(I32) name=None
+  value %208: Data(I32) name=None
+  value %209: Data(Array(I32)) name=None
+  value %210: Data(I32) name=None
+  value %211: Data(Bool) name=None
+  value %212: Data(I32) name=None
+  value %213: Data(Bool) name=None
+  value %214: Iterator(IteratorType { kind: ArrayValues, element: I32 }) name=None
+  value %215: Data(I32) name=None
+  value %216: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = StringLiteral("lambda")() traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 56, col: 9 } }] @ a171-static-array-callbacks.ts:56:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) invalidates=[ValueId(0)] @ a171-static-array-callbacks.ts:56:3
+    %2: Data(Func(FuncType { params: [I32, I32], ret: I32 })) = MakeClosure(FunctionId(12))(Integer(0):I32) @ a171-static-array-callbacks.ts:58:23
+    %3: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%0) @ a171-static-array-callbacks.ts:58:12
+    %4: Data(I32) = IteratorBound(%3) @ a171-static-array-callbacks.ts:58:12
+    %5: Data(Array(I32)) = ArrayWithCapacity(%4) traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 58, col: 12 } }] @ a171-static-array-callbacks.ts:58:12
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(3)), Value(ValueId(2)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(4)), Value(ValueId(5))] })
+  b1(%6: Data(Array(I32)), %7: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %8: Data(Func(FuncType { params: [I32, I32], ret: I32 })), %9: Data(I32), %10: Data(I32), %11: Data(Array(I32))) Some("array-callback.cond"):
+    %20: Data(Bool) = IteratorHasNext(%7, %9, %10) @ a171-static-array-callbacks.ts:58:12
+    -> ConditionalBranch { condition: Value(ValueId(20)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(6)), Value(ValueId(11))] } }
+  b2 Some("array-callback.body"):
+    %21: Data(I32) = IteratorValue(%7, %9, %10) @ a171-static-array-callbacks.ts:58:12
+    %22: Data(I32) = Call(CallTarget { kind: StaticClosure(FunctionId(12)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: I32 })), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%8, %21, %9) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 58, col: 12 } }] @ a171-static-array-callbacks.ts:58:12
+    %23: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%11, %22) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19)] @ a171-static-array-callbacks.ts:58:12
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Value(ValueId(7)), Value(ValueId(8)), Value(ValueId(9)), Value(ValueId(10)), Value(ValueId(11))] })
+  b3(%12: Data(Array(I32)), %13: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %14: Data(Func(FuncType { params: [I32, I32], ret: I32 })), %15: Data(I32), %16: Data(I32), %17: Data(Array(I32))) Some("array-callback.step"):
+    %24: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%13, %15, %16) @ a171-static-array-callbacks.ts:58:12
+    %25: Data(I32) = Binary(Add)(%15, Integer(1):I32) @ a171-static-array-callbacks.ts:58:12
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(12)), Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(25)), Value(ValueId(16)), Value(ValueId(17))] })
+  b4(%18: Data(Array(I32)), %19: Data(Array(I32))) Some("array-callback.exit"):
+    %26: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 58, col: 85 } }] @ a171-static-array-callbacks.ts:58:85
+    %27: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%19, %26) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 58, col: 12 } }] @ a171-static-array-callbacks.ts:58:12
+    %28: Data(Str) = Template([Text("map:"), Operand(0)])(%27) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 58, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 58, col: 5 } }] @ a171-static-array-callbacks.ts:58:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%28) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19)] @ a171-static-array-callbacks.ts:57:3
+    %29: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = MakeClosure(FunctionId(13))() @ a171-static-array-callbacks.ts:61:29
+    %30: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%18) @ a171-static-array-callbacks.ts:61:15
+    %31: Data(I32) = IteratorBound(%30) @ a171-static-array-callbacks.ts:61:15
+    %32: Data(Array(I32)) = ArrayWithCapacity(%31) traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 61, col: 15 } }] @ a171-static-array-callbacks.ts:61:15
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(18)), Value(ValueId(30)), Value(ValueId(29)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(31)), Value(ValueId(32))] })
+  b5(%33: Data(Array(I32)), %34: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %35: Data(Func(FuncType { params: [I32, I32], ret: Bool })), %36: Data(I32), %37: Data(I32), %38: Data(Array(I32))) Some("array-callback.cond"):
+    %47: Data(Bool) = IteratorHasNext(%34, %36, %37) @ a171-static-array-callbacks.ts:61:15
+    -> ConditionalBranch { condition: Value(ValueId(47)), then_target: BlockTarget { block: BlockId(6), arguments: [] }, else_target: BlockTarget { block: BlockId(8), arguments: [Value(ValueId(33)), Value(ValueId(38))] } }
+  b6 Some("array-callback.body"):
+    %48: Data(I32) = IteratorValue(%34, %36, %37) @ a171-static-array-callbacks.ts:61:15
+    %49: Data(Bool) = Call(CallTarget { kind: StaticClosure(FunctionId(13)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Bool })), Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%35, %48, %36) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 61, col: 15 } }] @ a171-static-array-callbacks.ts:61:15
+    -> ConditionalBranch { condition: Value(ValueId(49)), then_target: BlockTarget { block: BlockId(9), arguments: [] }, else_target: BlockTarget { block: BlockId(7), arguments: [Value(ValueId(33)), Value(ValueId(34)), Value(ValueId(35)), Value(ValueId(36)), Value(ValueId(37)), Value(ValueId(38))] } }
+  b7(%39: Data(Array(I32)), %40: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %41: Data(Func(FuncType { params: [I32, I32], ret: Bool })), %42: Data(I32), %43: Data(I32), %44: Data(Array(I32))) Some("array-callback.step"):
+    %51: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%40, %42, %43) @ a171-static-array-callbacks.ts:61:15
+    %52: Data(I32) = Binary(Add)(%42, Integer(1):I32) @ a171-static-array-callbacks.ts:61:15
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(39)), Value(ValueId(40)), Value(ValueId(41)), Value(ValueId(52)), Value(ValueId(43)), Value(ValueId(44))] })
+  b8(%45: Data(Array(I32)), %46: Data(Array(I32))) Some("array-callback.exit"):
+    %53: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 61, col: 91 } }] @ a171-static-array-callbacks.ts:61:91
+    %54: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%46, %53) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 61, col: 15 } }] @ a171-static-array-callbacks.ts:61:15
+    %55: Data(Str) = Template([Text("filter:"), Operand(0)])(%54) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 61, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 61, col: 5 } }] @ a171-static-array-callbacks.ts:61:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%55) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46)] @ a171-static-array-callbacks.ts:60:3
+    %56: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) = MakeClosure(FunctionId(14))() @ a171-static-array-callbacks.ts:64:29
+    %57: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%45) @ a171-static-array-callbacks.ts:64:15
+    %58: Data(I32) = IteratorBound(%57) @ a171-static-array-callbacks.ts:64:15
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(45)), Value(ValueId(57)), Value(ValueId(56)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(58)), Constant(Constant { ty: I32, kind: Integer(1) })] })
+  b9 Some("array-callback.push"):
+    %50: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(I32)), Data(I32)], return_type: Some(Data(I32)) })(%38, %48) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46)] @ a171-static-array-callbacks.ts:61:15
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(33)), Value(ValueId(34)), Value(ValueId(35)), Value(ValueId(36)), Value(ValueId(37)), Value(ValueId(38))] })
+  b10(%59: Data(Array(I32)), %60: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %61: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })), %62: Data(I32), %63: Data(I32), %64: Data(I32)) Some("array-callback.cond"):
+    %73: Data(Bool) = IteratorHasNext(%60, %62, %63) @ a171-static-array-callbacks.ts:64:15
+    -> ConditionalBranch { condition: Value(ValueId(73)), then_target: BlockTarget { block: BlockId(11), arguments: [] }, else_target: BlockTarget { block: BlockId(13), arguments: [Value(ValueId(59)), Value(ValueId(64))] } }
+  b11 Some("array-callback.body"):
+    %74: Data(I32) = IteratorValue(%60, %62, %63) @ a171-static-array-callbacks.ts:64:15
+    %75: Data(I32) = Call(CallTarget { kind: StaticClosure(FunctionId(14)), parameter_types: [Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })), Data(I32), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%61, %64, %74, %62) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 64, col: 15 } }] @ a171-static-array-callbacks.ts:64:15
+    -> Branch(BlockTarget { block: BlockId(12), arguments: [Value(ValueId(59)), Value(ValueId(60)), Value(ValueId(61)), Value(ValueId(62)), Value(ValueId(63)), Value(ValueId(75))] })
+  b12(%65: Data(Array(I32)), %66: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %67: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })), %68: Data(I32), %69: Data(I32), %70: Data(I32)) Some("array-callback.step"):
+    %76: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%66, %68, %69) @ a171-static-array-callbacks.ts:64:15
+    %77: Data(I32) = Binary(Add)(%68, Integer(1):I32) @ a171-static-array-callbacks.ts:64:15
+    -> Branch(BlockTarget { block: BlockId(10), arguments: [Value(ValueId(65)), Value(ValueId(66)), Value(ValueId(67)), Value(ValueId(77)), Value(ValueId(69)), Value(ValueId(70))] })
+  b13(%71: Data(Array(I32)), %72: Data(I32)) Some("array-callback.exit"):
+    %78: Data(Str) = Template([Text("reduce:"), Operand(0)])(%72) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 64, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 64, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 64, col: 5 } }] @ a171-static-array-callbacks.ts:64:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%78) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71)] @ a171-static-array-callbacks.ts:63:3
+    %79: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) = MakeClosure(FunctionId(15))() @ a171-static-array-callbacks.ts:67:39
+    %80: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) = IteratorCreate { kind: ArrayValuesReverse, bound: Fixed }(%71) @ a171-static-array-callbacks.ts:67:20
+    %81: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) = IteratorCreate { kind: ArrayKeysReverse, bound: Fixed }(%71) @ a171-static-array-callbacks.ts:67:20
+    %82: Data(I32) = IteratorBound(%80) @ a171-static-array-callbacks.ts:67:20
+    -> Branch(BlockTarget { block: BlockId(14), arguments: [Value(ValueId(71)), Value(ValueId(80)), Value(ValueId(81)), Value(ValueId(79)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(82)), Constant(Constant { ty: I32, kind: Integer(1) })] })
+  b14(%83: Data(Array(I32)), %84: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }), %85: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }), %86: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })), %87: Data(I32), %88: Data(I32), %89: Data(I32)) Some("array-callback.cond"):
+    %99: Data(Bool) = IteratorHasNext(%84, %87, %88) @ a171-static-array-callbacks.ts:67:20
+    -> ConditionalBranch { condition: Value(ValueId(99)), then_target: BlockTarget { block: BlockId(15), arguments: [] }, else_target: BlockTarget { block: BlockId(17), arguments: [Value(ValueId(83)), Value(ValueId(89))] } }
+  b15 Some("array-callback.body"):
+    %100: Data(I32) = IteratorValue(%84, %87, %88) @ a171-static-array-callbacks.ts:67:20
+    %101: Data(I32) = IteratorValue(%85, %87, %88) @ a171-static-array-callbacks.ts:67:20
+    %102: Data(I32) = Call(CallTarget { kind: StaticClosure(FunctionId(15)), parameter_types: [Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })), Data(I32), Data(I32), Data(I32)], return_type: Some(Data(I32)) })(%86, %89, %100, %101) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 67, col: 20 } }] @ a171-static-array-callbacks.ts:67:20
+    -> Branch(BlockTarget { block: BlockId(16), arguments: [Value(ValueId(83)), Value(ValueId(84)), Value(ValueId(85)), Value(ValueId(86)), Value(ValueId(87)), Value(ValueId(88)), Value(ValueId(102))] })
+  b16(%90: Data(Array(I32)), %91: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }), %92: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }), %93: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })), %94: Data(I32), %95: Data(I32), %96: Data(I32)) Some("array-callback.step"):
+    %103: Iterator(IteratorType { kind: ArrayValuesReverse, element: I32 }) = IteratorAdvance(%91, %94, %95) @ a171-static-array-callbacks.ts:67:20
+    %104: Iterator(IteratorType { kind: ArrayKeysReverse, element: I32 }) = IteratorAdvance(%92, %94, %95) @ a171-static-array-callbacks.ts:67:20
+    %105: Data(I32) = Binary(Add)(%94, Integer(1):I32) @ a171-static-array-callbacks.ts:67:20
+    -> Branch(BlockTarget { block: BlockId(14), arguments: [Value(ValueId(90)), Value(ValueId(103)), Value(ValueId(104)), Value(ValueId(93)), Value(ValueId(105)), Value(ValueId(95)), Value(ValueId(96))] })
+  b17(%97: Data(Array(I32)), %98: Data(I32)) Some("array-callback.exit"):
+    %106: Data(Str) = Template([Text("reduceRight:"), Operand(0)])(%98) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 67, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 67, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 67, col: 5 } }] @ a171-static-array-callbacks.ts:67:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%106) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97)] @ a171-static-array-callbacks.ts:66:3
+    %107: Data(Func(FuncType { params: [I32, I32], ret: Void })) = MakeClosure(FunctionId(16))() @ a171-static-array-callbacks.ts:69:18
+    %108: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%97) @ a171-static-array-callbacks.ts:69:3
+    %109: Data(I32) = IteratorBound(%108) @ a171-static-array-callbacks.ts:69:3
+    -> Branch(BlockTarget { block: BlockId(18), arguments: [Value(ValueId(97)), Value(ValueId(108)), Value(ValueId(107)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(109))] })
+  b18(%110: Data(Array(I32)), %111: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %112: Data(Func(FuncType { params: [I32, I32], ret: Void })), %113: Data(I32), %114: Data(I32)) Some("array-callback.cond"):
+    %121: Data(Bool) = IteratorHasNext(%111, %113, %114) @ a171-static-array-callbacks.ts:69:3
+    -> ConditionalBranch { condition: Value(ValueId(121)), then_target: BlockTarget { block: BlockId(19), arguments: [] }, else_target: BlockTarget { block: BlockId(21), arguments: [Value(ValueId(110))] } }
+  b19 Some("array-callback.body"):
+    %122: Data(I32) = IteratorValue(%111, %113, %114) @ a171-static-array-callbacks.ts:69:3
+    Call(CallTarget { kind: StaticClosure(FunctionId(16)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Void })), Data(I32), Data(I32)], return_type: None })(%112, %122, %113) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97), ValueId(110), ValueId(115), ValueId(120)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 69, col: 3 } }] @ a171-static-array-callbacks.ts:69:3
+    -> Branch(BlockTarget { block: BlockId(20), arguments: [Value(ValueId(110)), Value(ValueId(111)), Value(ValueId(112)), Value(ValueId(113)), Value(ValueId(114))] })
+  b20(%115: Data(Array(I32)), %116: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %117: Data(Func(FuncType { params: [I32, I32], ret: Void })), %118: Data(I32), %119: Data(I32)) Some("array-callback.step"):
+    %123: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%116, %118, %119) @ a171-static-array-callbacks.ts:69:3
+    %124: Data(I32) = Binary(Add)(%118, Integer(1):I32) @ a171-static-array-callbacks.ts:69:3
+    -> Branch(BlockTarget { block: BlockId(18), arguments: [Value(ValueId(115)), Value(ValueId(116)), Value(ValueId(117)), Value(ValueId(124)), Value(ValueId(119))] })
+  b21(%120: Data(Array(I32))) Some("array-callback.exit"):
+    %125: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = MakeClosure(FunctionId(17))() @ a171-static-array-callbacks.ts:73:32
+    %126: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%120) @ a171-static-array-callbacks.ts:73:20
+    %127: Data(I32) = IteratorBound(%126) @ a171-static-array-callbacks.ts:73:20
+    -> Branch(BlockTarget { block: BlockId(22), arguments: [Value(ValueId(120)), Value(ValueId(126)), Value(ValueId(125)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(127)), Constant(Constant { ty: Bool, kind: Boolean(false) })] })
+  b22(%128: Data(Array(I32)), %129: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %130: Data(Func(FuncType { params: [I32, I32], ret: Bool })), %131: Data(I32), %132: Data(I32), %133: Data(Bool)) Some("array-callback.cond"):
+    %142: Data(Bool) = IteratorHasNext(%129, %131, %132) @ a171-static-array-callbacks.ts:73:20
+    -> ConditionalBranch { condition: Value(ValueId(142)), then_target: BlockTarget { block: BlockId(23), arguments: [] }, else_target: BlockTarget { block: BlockId(25), arguments: [Value(ValueId(128)), Value(ValueId(133))] } }
+  b23 Some("array-callback.body"):
+    %143: Data(I32) = IteratorValue(%129, %131, %132) @ a171-static-array-callbacks.ts:73:20
+    %144: Data(Bool) = Call(CallTarget { kind: StaticClosure(FunctionId(17)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Bool })), Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%130, %143, %131) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97), ValueId(110), ValueId(115), ValueId(120), ValueId(128), ValueId(134), ValueId(140)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 73, col: 20 } }] @ a171-static-array-callbacks.ts:73:20
+    -> ConditionalBranch { condition: Value(ValueId(144)), then_target: BlockTarget { block: BlockId(26), arguments: [] }, else_target: BlockTarget { block: BlockId(24), arguments: [Value(ValueId(128)), Value(ValueId(129)), Value(ValueId(130)), Value(ValueId(131)), Value(ValueId(132)), Value(ValueId(133))] } }
+  b24(%134: Data(Array(I32)), %135: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %136: Data(Func(FuncType { params: [I32, I32], ret: Bool })), %137: Data(I32), %138: Data(I32), %139: Data(Bool)) Some("array-callback.step"):
+    %145: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%135, %137, %138) @ a171-static-array-callbacks.ts:73:20
+    %146: Data(I32) = Binary(Add)(%137, Integer(1):I32) @ a171-static-array-callbacks.ts:73:20
+    -> Branch(BlockTarget { block: BlockId(22), arguments: [Value(ValueId(134)), Value(ValueId(135)), Value(ValueId(136)), Value(ValueId(146)), Value(ValueId(138)), Value(ValueId(139))] })
+  b25(%140: Data(Array(I32)), %141: Data(Bool)) Some("array-callback.exit"):
+    %147: Data(Str) = Template([Text("some-result:"), Operand(0)])(%141) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 73, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 73, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 73, col: 5 } }] @ a171-static-array-callbacks.ts:73:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%147) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97), ValueId(110), ValueId(115), ValueId(120), ValueId(128), ValueId(134), ValueId(140)] @ a171-static-array-callbacks.ts:72:3
+    %148: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = MakeClosure(FunctionId(18))() @ a171-static-array-callbacks.ts:79:34
+    %149: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%140) @ a171-static-array-callbacks.ts:79:21
+    %150: Data(I32) = IteratorBound(%149) @ a171-static-array-callbacks.ts:79:21
+    -> Branch(BlockTarget { block: BlockId(27), arguments: [Value(ValueId(140)), Value(ValueId(149)), Value(ValueId(148)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(150)), Constant(Constant { ty: Bool, kind: Boolean(true) })] })
+  b26 Some("array-callback.finish"):
+    -> Branch(BlockTarget { block: BlockId(25), arguments: [Value(ValueId(128)), Constant(Constant { ty: Bool, kind: Boolean(true) })] })
+  b27(%151: Data(Array(I32)), %152: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %153: Data(Func(FuncType { params: [I32, I32], ret: Bool })), %154: Data(I32), %155: Data(I32), %156: Data(Bool)) Some("array-callback.cond"):
+    %165: Data(Bool) = IteratorHasNext(%152, %154, %155) @ a171-static-array-callbacks.ts:79:21
+    -> ConditionalBranch { condition: Value(ValueId(165)), then_target: BlockTarget { block: BlockId(28), arguments: [] }, else_target: BlockTarget { block: BlockId(30), arguments: [Value(ValueId(151)), Value(ValueId(156))] } }
+  b28 Some("array-callback.body"):
+    %166: Data(I32) = IteratorValue(%152, %154, %155) @ a171-static-array-callbacks.ts:79:21
+    %167: Data(Bool) = Call(CallTarget { kind: StaticClosure(FunctionId(18)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Bool })), Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%153, %166, %154) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97), ValueId(110), ValueId(115), ValueId(120), ValueId(128), ValueId(134), ValueId(140), ValueId(151), ValueId(157), ValueId(163)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 79, col: 21 } }] @ a171-static-array-callbacks.ts:79:21
+    -> ConditionalBranch { condition: Value(ValueId(167)), then_target: BlockTarget { block: BlockId(29), arguments: [Value(ValueId(151)), Value(ValueId(152)), Value(ValueId(153)), Value(ValueId(154)), Value(ValueId(155)), Value(ValueId(156))] }, else_target: BlockTarget { block: BlockId(31), arguments: [] } }
+  b29(%157: Data(Array(I32)), %158: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %159: Data(Func(FuncType { params: [I32, I32], ret: Bool })), %160: Data(I32), %161: Data(I32), %162: Data(Bool)) Some("array-callback.step"):
+    %168: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%158, %160, %161) @ a171-static-array-callbacks.ts:79:21
+    %169: Data(I32) = Binary(Add)(%160, Integer(1):I32) @ a171-static-array-callbacks.ts:79:21
+    -> Branch(BlockTarget { block: BlockId(27), arguments: [Value(ValueId(157)), Value(ValueId(158)), Value(ValueId(159)), Value(ValueId(169)), Value(ValueId(161)), Value(ValueId(162))] })
+  b30(%163: Data(Array(I32)), %164: Data(Bool)) Some("array-callback.exit"):
+    %170: Data(Str) = Template([Text("every-result:"), Operand(0)])(%164) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 79, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 79, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 79, col: 5 } }] @ a171-static-array-callbacks.ts:79:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%170) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97), ValueId(110), ValueId(115), ValueId(120), ValueId(128), ValueId(134), ValueId(140), ValueId(151), ValueId(157), ValueId(163)] @ a171-static-array-callbacks.ts:78:3
+    %171: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = MakeClosure(FunctionId(19))() @ a171-static-array-callbacks.ts:85:30
+    %172: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%163) @ a171-static-array-callbacks.ts:85:13
+    %173: Data(I32) = IteratorBound(%172) @ a171-static-array-callbacks.ts:85:13
+    -> Branch(BlockTarget { block: BlockId(32), arguments: [Value(ValueId(163)), Value(ValueId(172)), Value(ValueId(171)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(173)), Constant(Constant { ty: I32, kind: Integer(-1) })] })
+  b31 Some("array-callback.finish"):
+    -> Branch(BlockTarget { block: BlockId(30), arguments: [Value(ValueId(151)), Constant(Constant { ty: Bool, kind: Boolean(false) })] })
+  b32(%174: Data(Array(I32)), %175: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %176: Data(Func(FuncType { params: [I32, I32], ret: Bool })), %177: Data(I32), %178: Data(I32), %179: Data(I32)) Some("array-callback.cond"):
+    %188: Data(Bool) = IteratorHasNext(%175, %177, %178) @ a171-static-array-callbacks.ts:85:13
+    -> ConditionalBranch { condition: Value(ValueId(188)), then_target: BlockTarget { block: BlockId(33), arguments: [] }, else_target: BlockTarget { block: BlockId(35), arguments: [Value(ValueId(174)), Value(ValueId(179))] } }
+  b33 Some("array-callback.body"):
+    %189: Data(I32) = IteratorValue(%175, %177, %178) @ a171-static-array-callbacks.ts:85:13
+    %190: Data(Bool) = Call(CallTarget { kind: StaticClosure(FunctionId(19)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Bool })), Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%176, %189, %177) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97), ValueId(110), ValueId(115), ValueId(120), ValueId(128), ValueId(134), ValueId(140), ValueId(151), ValueId(157), ValueId(163), ValueId(174), ValueId(180), ValueId(186)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 85, col: 13 } }] @ a171-static-array-callbacks.ts:85:13
+    -> ConditionalBranch { condition: Value(ValueId(190)), then_target: BlockTarget { block: BlockId(36), arguments: [] }, else_target: BlockTarget { block: BlockId(34), arguments: [Value(ValueId(174)), Value(ValueId(175)), Value(ValueId(176)), Value(ValueId(177)), Value(ValueId(178)), Value(ValueId(179))] } }
+  b34(%180: Data(Array(I32)), %181: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %182: Data(Func(FuncType { params: [I32, I32], ret: Bool })), %183: Data(I32), %184: Data(I32), %185: Data(I32)) Some("array-callback.step"):
+    %191: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%181, %183, %184) @ a171-static-array-callbacks.ts:85:13
+    %192: Data(I32) = Binary(Add)(%183, Integer(1):I32) @ a171-static-array-callbacks.ts:85:13
+    -> Branch(BlockTarget { block: BlockId(32), arguments: [Value(ValueId(180)), Value(ValueId(181)), Value(ValueId(182)), Value(ValueId(192)), Value(ValueId(184)), Value(ValueId(185))] })
+  b35(%186: Data(Array(I32)), %187: Data(I32)) Some("array-callback.exit"):
+    %193: Data(Str) = Template([Text("find:"), Operand(0)])(%187) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 85, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 85, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 85, col: 5 } }] @ a171-static-array-callbacks.ts:85:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%193) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97), ValueId(110), ValueId(115), ValueId(120), ValueId(128), ValueId(134), ValueId(140), ValueId(151), ValueId(157), ValueId(163), ValueId(174), ValueId(180), ValueId(186)] @ a171-static-array-callbacks.ts:84:3
+    %194: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = MakeClosure(FunctionId(20))() @ a171-static-array-callbacks.ts:88:30
+    %195: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%186) @ a171-static-array-callbacks.ts:88:13
+    %196: Data(I32) = IteratorBound(%195) @ a171-static-array-callbacks.ts:88:13
+    -> Branch(BlockTarget { block: BlockId(37), arguments: [Value(ValueId(186)), Value(ValueId(195)), Value(ValueId(194)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(196)), Constant(Constant { ty: I32, kind: Integer(-1) })] })
+  b36 Some("array-callback.finish"):
+    -> Branch(BlockTarget { block: BlockId(35), arguments: [Value(ValueId(174)), Value(ValueId(177))] })
+  b37(%197: Data(Array(I32)), %198: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %199: Data(Func(FuncType { params: [I32, I32], ret: Bool })), %200: Data(I32), %201: Data(I32), %202: Data(I32)) Some("array-callback.cond"):
+    %211: Data(Bool) = IteratorHasNext(%198, %200, %201) @ a171-static-array-callbacks.ts:88:13
+    -> ConditionalBranch { condition: Value(ValueId(211)), then_target: BlockTarget { block: BlockId(38), arguments: [] }, else_target: BlockTarget { block: BlockId(40), arguments: [Value(ValueId(197)), Value(ValueId(202))] } }
+  b38 Some("array-callback.body"):
+    %212: Data(I32) = IteratorValue(%198, %200, %201) @ a171-static-array-callbacks.ts:88:13
+    %213: Data(Bool) = Call(CallTarget { kind: StaticClosure(FunctionId(20)), parameter_types: [Data(Func(FuncType { params: [I32, I32], ret: Bool })), Data(I32), Data(I32)], return_type: Some(Data(Bool)) })(%199, %212, %200) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97), ValueId(110), ValueId(115), ValueId(120), ValueId(128), ValueId(134), ValueId(140), ValueId(151), ValueId(157), ValueId(163), ValueId(174), ValueId(180), ValueId(186), ValueId(197), ValueId(203), ValueId(209)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 88, col: 13 } }] @ a171-static-array-callbacks.ts:88:13
+    -> ConditionalBranch { condition: Value(ValueId(213)), then_target: BlockTarget { block: BlockId(41), arguments: [] }, else_target: BlockTarget { block: BlockId(39), arguments: [Value(ValueId(197)), Value(ValueId(198)), Value(ValueId(199)), Value(ValueId(200)), Value(ValueId(201)), Value(ValueId(202))] } }
+  b39(%203: Data(Array(I32)), %204: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %205: Data(Func(FuncType { params: [I32, I32], ret: Bool })), %206: Data(I32), %207: Data(I32), %208: Data(I32)) Some("array-callback.step"):
+    %214: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorAdvance(%204, %206, %207) @ a171-static-array-callbacks.ts:88:13
+    %215: Data(I32) = Binary(Add)(%206, Integer(1):I32) @ a171-static-array-callbacks.ts:88:13
+    -> Branch(BlockTarget { block: BlockId(37), arguments: [Value(ValueId(203)), Value(ValueId(204)), Value(ValueId(205)), Value(ValueId(215)), Value(ValueId(207)), Value(ValueId(208))] })
+  b40(%209: Data(Array(I32)), %210: Data(I32)) Some("array-callback.exit"):
+    %216: Data(Str) = Template([Text("miss:"), Operand(0)])(%210) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 88, col: 5 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 88, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 88, col: 5 } }] @ a171-static-array-callbacks.ts:88:5
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%216) invalidates=[ValueId(0), ValueId(5), ValueId(6), ValueId(11), ValueId(12), ValueId(17), ValueId(18), ValueId(19), ValueId(32), ValueId(33), ValueId(38), ValueId(39), ValueId(44), ValueId(45), ValueId(46), ValueId(59), ValueId(65), ValueId(71), ValueId(83), ValueId(90), ValueId(97), ValueId(110), ValueId(115), ValueId(120), ValueId(128), ValueId(134), ValueId(140), ValueId(151), ValueId(157), ValueId(163), ValueId(174), ValueId(180), ValueId(186), ValueId(197), ValueId(203), ValueId(209)] @ a171-static-array-callbacks.ts:87:3
+    -> Return { value: None, pos: Pos { file: "a171-static-array-callbacks.ts", line: 54, col: 10 } }
+  b41 Some("array-callback.finish"):
+    -> Branch(BlockTarget { block: BlockId(40), arguments: [Value(ValueId(197)), Value(ValueId(200))] })
+fn f10 "runValue" kind=Free exported=false generator=false async=false -> Void entry=b0 @ a171-static-array-callbacks.ts:92:10
+  param %0 "values": Data(Array(I32)) kind=Explicit storage=None @ a171-static-array-callbacks.ts:92:19
+  value %0: Data(Array(I32)) name=Some("values")
+  value %1: Data(Func(FuncType { params: [I32, I32], ret: I32 })) name=None
+  value %2: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %3: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) name=None
+  value %4: Data(Func(FuncType { params: [I32, I32], ret: Void })) name=None
+  value %5: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %6: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %7: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %8: Data(Func(FuncType { params: [I32, I32], ret: Bool })) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(Array(I32)) name=None
+  value %11: Data(Str) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(Array(I32)) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(Str) name=None
+  value %20: Data(I32) name=None
+  value %21: Data(Str) name=None
+  value %22: Data(Bool) name=None
+  value %23: Data(Str) name=None
+  value %24: Data(Bool) name=None
+  value %25: Data(Str) name=None
+  value %26: Data(I32) name=None
+  value %27: Data(Str) name=None
+  value %28: Data(I32) name=None
+  value %29: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Func(FuncType { params: [I32, I32], ret: I32 })) = FunctionRef(FunctionId(0))() @ a171-static-array-callbacks.ts:93:53
+    %2: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = FunctionRef(FunctionId(1))() @ a171-static-array-callbacks.ts:94:60
+    %3: Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })) = FunctionRef(FunctionId(2))() @ a171-static-array-callbacks.ts:95:66
+    %4: Data(Func(FuncType { params: [I32, I32], ret: Void })) = FunctionRef(FunctionId(3))() @ a171-static-array-callbacks.ts:96:58
+    %5: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = FunctionRef(FunctionId(4))() @ a171-static-array-callbacks.ts:97:58
+    %6: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = FunctionRef(FunctionId(5))() @ a171-static-array-callbacks.ts:98:59
+    %7: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = FunctionRef(FunctionId(6))() @ a171-static-array-callbacks.ts:99:58
+    %8: Data(Func(FuncType { params: [I32, I32], ret: Bool })) = FunctionRef(FunctionId(7))() @ a171-static-array-callbacks.ts:100:58
+    %9: Data(Str) = StringLiteral("value")() traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 101, col: 9 } }] @ a171-static-array-callbacks.ts:101:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) invalidates=[ValueId(0)] @ a171-static-array-callbacks.ts:101:3
+    %10: Data(Array(I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 9, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32, I32], ret: I32 }))], return_type: Some(Data(Array(I32))) })(%0, %1) invalidates=[ValueId(0), ValueId(10)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 102, col: 16 } }] @ a171-static-array-callbacks.ts:102:16
+    %11: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 102, col: 42 } }] @ a171-static-array-callbacks.ts:102:42
+    %12: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%10, %11) invalidates=[ValueId(0), ValueId(10)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 102, col: 16 } }] @ a171-static-array-callbacks.ts:102:16
+    %13: Data(Str) = Template([Text("map:"), Operand(0)])(%12) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 102, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 102, col: 9 } }] @ a171-static-array-callbacks.ts:102:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%13) invalidates=[ValueId(0), ValueId(10)] @ a171-static-array-callbacks.ts:102:3
+    %14: Data(Array(I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 10, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32, I32], ret: Bool }))], return_type: Some(Data(Array(I32))) })(%0, %2) invalidates=[ValueId(0), ValueId(10), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 103, col: 19 } }] @ a171-static-array-callbacks.ts:103:19
+    %15: Data(Str) = StringLiteral(",")() traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 103, col: 51 } }] @ a171-static-array-callbacks.ts:103:51
+    %16: Data(Str) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 3, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Str)], return_type: Some(Data(Str)) })(%14, %15) invalidates=[ValueId(0), ValueId(10), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 103, col: 19 } }] @ a171-static-array-callbacks.ts:103:19
+    %17: Data(Str) = Template([Text("filter:"), Operand(0)])(%16) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 103, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 103, col: 9 } }] @ a171-static-array-callbacks.ts:103:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) invalidates=[ValueId(0), ValueId(10), ValueId(14)] @ a171-static-array-callbacks.ts:103:3
+    %18: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 11, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%0, %3, Integer(1):I32) invalidates=[ValueId(0), ValueId(10), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 104, col: 19 } }] @ a171-static-array-callbacks.ts:104:19
+    %19: Data(Str) = Template([Text("reduce:"), Operand(0)])(%18) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 104, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 104, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 104, col: 9 } }] @ a171-static-array-callbacks.ts:104:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%19) invalidates=[ValueId(0), ValueId(10), ValueId(14)] @ a171-static-array-callbacks.ts:104:3
+    %20: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 16, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32, I32, I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%0, %3, Integer(1):I32) invalidates=[ValueId(0), ValueId(10), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 105, col: 24 } }] @ a171-static-array-callbacks.ts:105:24
+    %21: Data(Str) = Template([Text("reduceRight:"), Operand(0)])(%20) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 105, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 105, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 105, col: 9 } }] @ a171-static-array-callbacks.ts:105:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%21) invalidates=[ValueId(0), ValueId(10), ValueId(14)] @ a171-static-array-callbacks.ts:105:3
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 8, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32, I32], ret: Void }))], return_type: None })(%0, %4) invalidates=[ValueId(0), ValueId(10), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 106, col: 3 } }] @ a171-static-array-callbacks.ts:106:3
+    %22: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 12, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32, I32], ret: Bool }))], return_type: Some(Data(Bool)) })(%0, %5) invalidates=[ValueId(0), ValueId(10), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 107, col: 24 } }] @ a171-static-array-callbacks.ts:107:24
+    %23: Data(Str) = Template([Text("some-result:"), Operand(0)])(%22) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 107, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 107, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 107, col: 9 } }] @ a171-static-array-callbacks.ts:107:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%23) invalidates=[ValueId(0), ValueId(10), ValueId(14)] @ a171-static-array-callbacks.ts:107:3
+    %24: Data(Bool) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 13, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32, I32], ret: Bool }))], return_type: Some(Data(Bool)) })(%0, %6) invalidates=[ValueId(0), ValueId(10), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 108, col: 25 } }] @ a171-static-array-callbacks.ts:108:25
+    %25: Data(Str) = Template([Text("every-result:"), Operand(0)])(%24) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 108, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 108, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 108, col: 9 } }] @ a171-static-array-callbacks.ts:108:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%25) invalidates=[ValueId(0), ValueId(10), ValueId(14)] @ a171-static-array-callbacks.ts:108:3
+    %26: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 14, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32, I32], ret: Bool }))], return_type: Some(Data(I32)) })(%0, %7) invalidates=[ValueId(0), ValueId(10), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 109, col: 17 } }] @ a171-static-array-callbacks.ts:109:17
+    %27: Data(Str) = Template([Text("find:"), Operand(0)])(%26) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 109, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 109, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 109, col: 9 } }] @ a171-static-array-callbacks.ts:109:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%27) invalidates=[ValueId(0), ValueId(10), ValueId(14)] @ a171-static-array-callbacks.ts:109:3
+    %28: Data(I32) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 14, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(I32)), Data(Func(FuncType { params: [I32, I32], ret: Bool }))], return_type: Some(Data(I32)) })(%0, %8) invalidates=[ValueId(0), ValueId(10), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 110, col: 17 } }] @ a171-static-array-callbacks.ts:110:17
+    %29: Data(Str) = Template([Text("miss:"), Operand(0)])(%28) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 110, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 110, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 110, col: 9 } }] @ a171-static-array-callbacks.ts:110:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%29) invalidates=[ValueId(0), ValueId(10), ValueId(14)] @ a171-static-array-callbacks.ts:110:3
+    -> Return { value: None, pos: Pos { file: "a171-static-array-callbacks.ts", line: 92, col: 10 } }
+fn f11 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a171-static-array-callbacks.ts:113:17
+  value %0: Data(Array(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(Array(I32)) = ArrayLiteral(Integer(2):I32, Integer(4):I32, Integer(6):I32, Integer(8):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 114, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 114, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 114, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 114, col: 32 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 114, col: 35 } }] @ a171-static-array-callbacks.ts:114:25
+    Call(CallTarget { kind: Function(FunctionId(8)), parameter_types: [Data(Array(I32))], return_type: None })(%0) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 115, col: 3 } }] @ a171-static-array-callbacks.ts:115:3
+    Call(CallTarget { kind: Function(FunctionId(9)), parameter_types: [Data(Array(I32))], return_type: None })(%0) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 116, col: 3 } }] @ a171-static-array-callbacks.ts:116:3
+    Call(CallTarget { kind: Function(FunctionId(10)), parameter_types: [Data(Array(I32))], return_type: None })(%0) invalidates=[ValueId(0)] traps=[Trap { kind: Call, pos: Pos { file: "a171-static-array-callbacks.ts", line: 117, col: 3 } }] @ a171-static-array-callbacks.ts:117:3
+    -> Return { value: None, pos: Pos { file: "a171-static-array-callbacks.ts", line: 113, col: 17 } }
+fn f12 "<lambda a171-static-array-callbacks.ts:58:23>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a171-static-array-callbacks.ts:58:23
+  param %0 "offset": Data(I32) kind=Capture storage=None @ a171-static-array-callbacks.ts:58:23
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:58:23
+  param %2 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:58:23
+  value %0: Data(I32) name=Some("offset")
+  value %1: Data(I32) name=Some("value")
+  value %2: Data(I32) name=Some("index")
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  b0 Some("entry"):
+    %3: Data(I32) = Binary(Add)(%1, %2) @ a171-static-array-callbacks.ts:58:56
+    %4: Data(I32) = Binary(Add)(%3, %0) @ a171-static-array-callbacks.ts:58:56
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 58, col: 56 } }
+fn f13 "<lambda a171-static-array-callbacks.ts:61:29>" kind=Lambda exported=false generator=false async=false -> Bool entry=b0 @ a171-static-array-callbacks.ts:61:29
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:61:29
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:61:29
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(I32) name=None
+  value %3: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ a171-static-array-callbacks.ts:61:66
+    %3: Data(Bool) = Binary(Ge)(%2, Integer(7):I32) @ a171-static-array-callbacks.ts:61:66
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 61, col: 66 } }
+fn f14 "<lambda a171-static-array-callbacks.ts:64:29>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a171-static-array-callbacks.ts:64:29
+  param %0 "acc": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:64:29
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:64:29
+  param %2 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:64:29
+  value %0: Data(I32) name=Some("acc")
+  value %1: Data(I32) name=Some("value")
+  value %2: Data(I32) name=Some("index")
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %3: Data(I32) = Binary(Mul)(%0, Integer(10):I32) @ a171-static-array-callbacks.ts:64:72
+    %4: Data(I32) = Binary(Add)(%3, %1) @ a171-static-array-callbacks.ts:64:72
+    %5: Data(I32) = Binary(Add)(%4, %2) @ a171-static-array-callbacks.ts:64:72
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 64, col: 72 } }
+fn f15 "<lambda a171-static-array-callbacks.ts:67:39>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a171-static-array-callbacks.ts:67:39
+  param %0 "acc": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:67:39
+  param %1 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:67:39
+  param %2 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:67:39
+  value %0: Data(I32) name=Some("acc")
+  value %1: Data(I32) name=Some("value")
+  value %2: Data(I32) name=Some("index")
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %3: Data(I32) = Binary(Mul)(%0, Integer(10):I32) @ a171-static-array-callbacks.ts:67:82
+    %4: Data(I32) = Binary(Add)(%3, %1) @ a171-static-array-callbacks.ts:67:82
+    %5: Data(I32) = Binary(Add)(%4, %2) @ a171-static-array-callbacks.ts:67:82
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 67, col: 82 } }
+fn f16 "<lambda a171-static-array-callbacks.ts:69:18>" kind=Lambda exported=false generator=false async=false -> Void entry=b0 @ a171-static-array-callbacks.ts:69:18
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:69:18
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:69:18
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("forEach:"), Operand(0), Text(":"), Operand(1)])(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 70, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 70, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 70, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 70, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 70, col: 11 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 70, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 70, col: 11 } }] @ a171-static-array-callbacks.ts:70:11
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a171-static-array-callbacks.ts:70:5
+    -> Return { value: None, pos: Pos { file: "a171-static-array-callbacks.ts", line: 69, col: 18 } }
+fn f17 "<lambda a171-static-array-callbacks.ts:73:32>" kind=Lambda exported=false generator=false async=false -> Bool entry=b0 @ a171-static-array-callbacks.ts:73:32
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:73:32
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:73:32
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("some:"), Operand(0), Text(":"), Operand(1)])(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 74, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 74, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 74, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 74, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 74, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 74, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 74, col: 13 } }] @ a171-static-array-callbacks.ts:74:13
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a171-static-array-callbacks.ts:74:7
+    %3: Data(I32) = Binary(Add)(%0, %1) @ a171-static-array-callbacks.ts:75:14
+    %4: Data(Bool) = Binary(Ge)(%3, Integer(8):I32) @ a171-static-array-callbacks.ts:75:14
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 75, col: 7 } }
+fn f18 "<lambda a171-static-array-callbacks.ts:79:34>" kind=Lambda exported=false generator=false async=false -> Bool entry=b0 @ a171-static-array-callbacks.ts:79:34
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:79:34
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:79:34
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(Str) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(Str) = Template([Text("every:"), Operand(0), Text(":"), Operand(1)])(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 80, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 80, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 80, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 80, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 80, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 80, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a171-static-array-callbacks.ts", line: 80, col: 13 } }] @ a171-static-array-callbacks.ts:80:13
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a171-static-array-callbacks.ts:80:7
+    %3: Data(I32) = Binary(Add)(%0, %1) @ a171-static-array-callbacks.ts:81:14
+    %4: Data(Bool) = Binary(Lt)(%3, Integer(10):I32) @ a171-static-array-callbacks.ts:81:14
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 81, col: 7 } }
+fn f19 "<lambda a171-static-array-callbacks.ts:85:30>" kind=Lambda exported=false generator=false async=false -> Bool entry=b0 @ a171-static-array-callbacks.ts:85:30
+  param %0 "value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:85:30
+  param %1 "index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:85:30
+  value %0: Data(I32) name=Some("value")
+  value %1: Data(I32) name=Some("index")
+  value %2: Data(I32) name=None
+  value %3: Data(Bool) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Binary(Add)(%0, %1) @ a171-static-array-callbacks.ts:85:67
+    %3: Data(Bool) = Binary(Eq)(%2, Integer(8):I32) @ a171-static-array-callbacks.ts:85:67
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a171-static-array-callbacks.ts", line: 85, col: 67 } }
+fn f20 "<lambda a171-static-array-callbacks.ts:88:30>" kind=Lambda exported=false generator=false async=false -> Bool entry=b0 @ a171-static-array-callbacks.ts:88:30
+  param %0 "_value": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:88:30
+  param %1 "_index": Data(I32) kind=Explicit storage=None @ a171-static-array-callbacks.ts:88:30
+  value %0: Data(I32) name=Some("_value")
+  value %1: Data(I32) name=Some("_index")
+  b0 Some("entry"):
+    -> Return { value: Some(Constant(Constant { ty: Bool, kind: Boolean(false) })), pos: Pos { file: "a171-static-array-callbacks.ts", line: 88, col: 69 } }
 ===== a20-coroutine-generator =====
 module initializer=None
 intrinsic Ambient.0 "Print"

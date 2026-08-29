@@ -772,6 +772,101 @@ fn iteration_fact_check_rejects_a_fixed_for_of_cursor() {
 }
 
 #[test]
+fn static_array_callback_fact_check_rejects_a_non_direct_target() {
+    let accept = corpus::corpus_accept();
+    let sources = corpus::entry_sources(&accept, "a171-static-array-callbacks");
+    let hir = check_program(&sources).expect("a171 checks clean");
+    let mut lir = lower_module(&hir).expect("a171 lowers to LIR");
+    let call = lir
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.blocks)
+        .flat_map(|block| &mut block.instructions)
+        .find(|instruction| {
+            matches!(
+                &instruction.kind,
+                InstructionKind::Call(target)
+                    if matches!(target.kind, lir::CallTargetKind::Function(_))
+                        && instruction.pos.file == "a171-static-array-callbacks.ts"
+                        && instruction.pos.line == 43
+            )
+        })
+        .expect("named map direct callback call");
+    let InstructionKind::Call(target) = &mut call.kind else {
+        unreachable!()
+    };
+    target.kind = lir::CallTargetKind::Indirect;
+    let findings = lir_facts::dropped_facts(&hir, &lir);
+    assert!(findings.iter().any(|finding| finding.contains(
+        "static Array callback carries 0 matching direct call target(s); HIR requires 1"
+    )));
+}
+
+#[test]
+fn static_array_callback_fact_check_rejects_a_missing_capacity_allocation() {
+    let accept = corpus::corpus_accept();
+    let sources = corpus::entry_sources(&accept, "a171-static-array-callbacks");
+    let hir = check_program(&sources).expect("a171 checks clean");
+    let mut lir = lower_module(&hir).expect("a171 lowers to LIR");
+    let allocation = lir
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.blocks)
+        .flat_map(|block| &mut block.instructions)
+        .find(|instruction| instruction.kind == InstructionKind::ArrayWithCapacity)
+        .expect("static map capacity allocation");
+    allocation.kind = InstructionKind::Copy;
+    let findings = lir_facts::dropped_facts(&hir, &lir);
+    assert!(findings.iter().any(|finding| {
+        finding.contains("carries 0 capacity allocation(s) and 1 push site(s)")
+    }));
+}
+
+#[test]
+fn verifier_rejects_a_static_closure_target_with_another_environment() {
+    let accept = corpus::corpus_accept();
+    let mut lir = lower_entry(&accept, "a171-static-array-callbacks");
+    let replacement = lir
+        .functions
+        .iter()
+        .flat_map(|function| &function.blocks)
+        .flat_map(|block| &block.instructions)
+        .find_map(|instruction| match &instruction.kind {
+            InstructionKind::Call(target)
+                if instruction.pos.line == 88
+                    && instruction.pos.file == "a171-static-array-callbacks.ts" =>
+            {
+                match target.kind {
+                    lir::CallTargetKind::StaticClosure(function) => Some(function),
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .expect("miss lambda direct target");
+    let target = lir
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.blocks)
+        .flat_map(|block| &mut block.instructions)
+        .find_map(|instruction| match &mut instruction.kind {
+            InstructionKind::Call(target)
+                if instruction.pos.line == 85
+                    && instruction.pos.file == "a171-static-array-callbacks.ts" =>
+            {
+                Some(target)
+            }
+            _ => None,
+        })
+        .expect("find lambda direct target");
+    target.kind = lir::CallTargetKind::StaticClosure(replacement);
+    let errors = verify_module(&lir).expect_err("mismatched static closure must reject");
+    assert!(errors.iter().any(|error| error
+        .message
+        .contains("call target identity/signature is invalid")));
+}
+
+#[test]
 fn item_12_reports_a_missing_foreign_array_snapshot_pair() {
     let accept = corpus::corpus_accept();
     let sources = corpus::entry_sources(&accept, "a26-interop-array-pair");
@@ -1189,8 +1284,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 114;
-const DEBUG_RUNNABLE_COUNT: usize = 113;
+const RELEASE_RUNNABLE_COUNT: usize = 116;
+const DEBUG_RUNNABLE_COUNT: usize = 115;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1410,6 +1505,14 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a170-iteration-bound-spelling",
         "live for-of and Map.forEach bounds plus the fixed Array.forEach bound",
+    ),
+    (
+        "a171-static-array-callbacks",
+        "static callback loops, direct calls, short circuits, and function-value intrinsics",
+    ),
+    (
+        "a172-array-callback-mutation",
+        "fixed callback ranges while the receiver grows or shrinks",
     ),
     (
         "a15-manual-lifetime",
@@ -1706,6 +1809,20 @@ const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
         "Unreachable",
         10,
         3,
+    ),
+    (
+        "t52-static-map-callback-fault",
+        "static map callback direct-call trap and stop behavior",
+        "index-out-of-bounds",
+        9,
+        18,
+    ),
+    (
+        "t53-value-map-callback-fault",
+        "function-value map callback intrinsic trap and stop behavior",
+        "index-out-of-bounds",
+        9,
+        18,
     ),
 ];
 
@@ -2589,6 +2706,7 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
                     | "a149-suspension-state"
                     | "a150-receiver-address-invalidation"
                     | "a151-lambda-env-outlives-block"
+                    | "a171-static-array-callbacks"
             )
         {
             actual.push_str("===== ");

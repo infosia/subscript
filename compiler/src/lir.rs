@@ -498,6 +498,8 @@ pub enum InstructionKind {
     ForeignArrayData,
     /// Construct a non-spread array literal.
     ArrayLiteral,
+    /// Allocate an empty dynamic array with the supplied element capacity.
+    ArrayWithCapacity,
     /// Construct an array literal with per-operand spread modes.
     ArraySpreadLiteral(Vec<Option<SpreadKind>>),
     /// Format and concatenate a template literal.
@@ -574,6 +576,8 @@ pub struct CallTarget {
 pub enum CallTargetKind {
     /// Direct script function.
     Function(FunctionId),
+    /// Direct lambda body with its callable environment as operand zero.
+    StaticClosure(FunctionId),
     /// Direct class method or constructor.
     Method(MethodId),
     /// Foreign C-ABI function.
@@ -689,6 +693,7 @@ impl Module {
                 Some(CallSignatureTarget::BuiltinMethod(*method))
             }
             CallTargetKind::Function(_)
+            | CallTargetKind::StaticClosure(_)
             | CallTargetKind::Method(_)
             | CallTargetKind::Foreign(_)
             | CallTargetKind::Indirect => None,
@@ -790,6 +795,10 @@ pub enum ForOfKind {
     ArrayValues,
     /// Dynamic-array indices.
     ArrayKeys,
+    /// Dynamic-array values from the initial last index to zero.
+    ArrayValuesReverse,
+    /// Dynamic-array indices from the initial last index to zero.
+    ArrayKeysReverse,
     /// Fixed-array values.
     FixedArrayValues,
     /// Map keys.

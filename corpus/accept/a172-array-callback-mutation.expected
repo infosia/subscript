@@ -1,0 +1,16 @@
+grow-named
+grow:1:0
+grow:2:1
+grown:1,2,3
+grow-value
+grow:1:0
+grow:2:1
+grown:1,2,3
+shrink-named
+shrink:1:0
+shrink:2:1
+shrunk:1,2
+shrink-value
+shrink:1:0
+shrink:2:1
+shrunk:1,2

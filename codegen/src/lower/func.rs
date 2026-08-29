@@ -1454,27 +1454,39 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         arguments: &[Value],
         checked: bool,
     ) -> Result<Vec<Value>, String> {
-        let call = if self.ml.opts.reload {
-            let id = self.ml.func_id(key)?;
-            let slot = self.ml.slot_of(key)?;
-            let displacement = i32::try_from(u64::from(slot) * 8)
-                .map_err(|_| internal("function slot offset does not fit in i32"))?;
-            let signature = self.builder.import_signature(self.ml.signature_of(id));
-            let table_offset = ctx_off(rtc::Context::fn_table_offset())?;
-            let table = self
-                .builder
-                .ins()
-                .load(types::I64, flags(), self.ctx, table_offset);
-            let code = self
-                .builder
-                .ins()
-                .load(types::I64, flags(), table, displacement);
-            self.builder.ins().call_indirect(signature, code, arguments)
-        } else {
-            let id = self.ml.func_id(key)?;
-            let reference = self.ml.module.declare_func_in_func(id, self.builder.func);
-            self.builder.ins().call(reference, arguments)
-        };
+        if !self.ml.opts.reload {
+            return self.call_script_direct(key, arguments, checked);
+        }
+        let id = self.ml.func_id(key)?;
+        let slot = self.ml.slot_of(key)?;
+        let displacement = i32::try_from(u64::from(slot) * 8)
+            .map_err(|_| internal("function slot offset does not fit in i32"))?;
+        let signature = self.builder.import_signature(self.ml.signature_of(id));
+        let table_offset = ctx_off(rtc::Context::fn_table_offset())?;
+        let table = self
+            .builder
+            .ins()
+            .load(types::I64, flags(), self.ctx, table_offset);
+        let code = self
+            .builder
+            .ins()
+            .load(types::I64, flags(), table, displacement);
+        let call = self.builder.ins().call_indirect(signature, code, arguments);
+        if checked {
+            self.trap_check();
+        }
+        Ok(self.builder.inst_results(call).to_vec())
+    }
+
+    fn call_script_direct(
+        &mut self,
+        key: &FnKey,
+        arguments: &[Value],
+        checked: bool,
+    ) -> Result<Vec<Value>, String> {
+        let id = self.ml.func_id(key)?;
+        let reference = self.ml.module.declare_func_in_func(id, self.builder.func);
+        let call = self.builder.ins().call(reference, arguments);
         if checked {
             self.trap_check();
         }
@@ -2536,6 +2548,52 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         }
     }
 
+    fn array_with_capacity(
+        &mut self,
+        result_ty: &Type,
+        capacity: RV,
+        traps: &[l::Trap],
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        let Type::Array(element) = result_ty else {
+            return Err(internal("capacity array result is not an array"));
+        };
+        let capacity = self.expect_scalar(capacity)?;
+        let capacity = if self.builder.func.dfg.value_type(capacity) == types::I64 {
+            capacity
+        } else {
+            self.builder.ins().uextend(types::I64, capacity)
+        };
+        let stride = self.ml.layouts.stride(element)?;
+        let stride = self.iconst(types::I64, i64::from(stride));
+        let diagnostic = traps.first().map_or(pos, |trap| &trap.pos);
+        let diagnostic = self.position_id(diagnostic);
+        let diagnostic = self.iconst(types::I32, diagnostic);
+        let mut signature = Signature::new(self.ml.call_conv);
+        for ty in [types::I64, types::I64, types::I64, types::I32] {
+            signature.params.push(AbiParam::new(ty));
+        }
+        signature.returns.push(AbiParam::new(types::I64));
+        let function = self
+            .ml
+            .module
+            .declare_function(
+                "subscript_rt_array_with_capacity",
+                Linkage::Import,
+                &signature,
+            )
+            .map_err(|error| internal(format!("declare array capacity allocator: {error}")))?;
+        let handle = self
+            .call_runtime(function, &[self.ctx, capacity, stride, diagnostic], false)?
+            .ok_or_else(|| internal("capacity array allocation has no result"))?;
+        for trap in traps {
+            if trap.kind == l::TrapKind::Call {
+                self.emit_trap(trap, TrapOperand::Pending)?;
+            }
+        }
+        Ok(RV::Scalar(handle))
+    }
+
     fn spread_array_literal(
         &mut self,
         result_ty: &Type,
@@ -2884,6 +2942,52 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             self.push_argument(&mut arguments, value, ty)?;
         }
         let results = self.call_script(&function_key(target), &arguments, false)?;
+        self.call_result(return_type, &results, sret)
+    }
+
+    fn static_closure_call(
+        &mut self,
+        function: l::FunctionId,
+        operands: &[RV],
+        parameter_types: &[l::ValueType],
+        return_type: Option<&l::ValueType>,
+    ) -> Result<RV, String> {
+        let target = self
+            .ml
+            .lir
+            .functions
+            .get(function.0 as usize)
+            .filter(|target| target.id == function)
+            .ok_or_else(|| internal(format!("function {} is missing", function.0)))?;
+        let callable = *operands
+            .first()
+            .ok_or_else(|| internal("static closure call has no callable"))?;
+        let (_, environment) = self.expect_pair(callable)?;
+        let mut arguments = vec![self.ctx, environment];
+        let sret = if let Some(l::ValueType::Data(ty)) = return_type {
+            match self.ml.layouts.repr(ty)? {
+                Repr::Agg { size, align } => {
+                    let slot = self.stack_slot(size, align);
+                    arguments.push(slot);
+                    Some(slot)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        for (value, ty) in operands
+            .iter()
+            .copied()
+            .skip(1)
+            .zip(parameter_types.iter().skip(1))
+        {
+            self.push_argument(&mut arguments, value, ty)?;
+        }
+        // Lambda bodies belong to the current reload generation and have no
+        // stable cross-generation slot. The callable operand supplies that
+        // generation's environment, so call its declared body directly.
+        let results = self.call_script_direct(&function_key(target), &arguments, false)?;
         self.call_result(return_type, &results, sret)
     }
 
@@ -4313,6 +4417,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         self.builder.ins().store(flags(), captured, cursor, 16);
         if matches!(
             kind,
+            l::ForOfKind::ArrayValuesReverse | l::ForOfKind::ArrayKeysReverse
+        ) {
+            let empty = self.builder.ins().icmp_imm(IntCC::Equal, captured, 0);
+            let last = self.builder.ins().iadd_imm(captured, -1);
+            let exhausted = self.iconst(types::I64, -1);
+            let position = self.builder.ins().select(empty, exhausted, last);
+            self.builder.ins().store(flags(), position, cursor, 8);
+        } else if matches!(
+            kind,
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues
         ) {
             let start = self.iconst(types::I64, 0);
@@ -4331,7 +4444,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     ) -> Result<Value, String> {
         let subject = self.builder.ins().load(types::I64, flags(), cursor, 0);
         let bound = match iterator_ty.kind {
-            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys => self
+            l::ForOfKind::ArrayValues
+            | l::ForOfKind::ArrayKeys
+            | l::ForOfKind::ArrayValuesReverse
+            | l::ForOfKind::ArrayKeysReverse => self
                 .call_runtime(self.ml.rt.array_len, &[self.ctx, subject], false)?
                 .ok_or_else(|| internal("array iterator bound has no result"))?,
             l::ForOfKind::FixedArrayValues => {
@@ -4458,12 +4574,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         &mut self,
         iterator: RV,
         iterator_ty: &l::IteratorType,
-        _index: Value,
+        index: Value,
         bound: Value,
         pos: &Pos,
     ) -> Result<RV, String> {
         let cursor = self.expect_aggregate(iterator)?;
-        let cursor_position = self.builder.ins().load(types::I64, flags(), cursor, 8);
+        let cursor_position = if matches!(
+            iterator_ty.kind,
+            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys
+        ) {
+            self.builder.ins().uextend(types::I64, index)
+        } else {
+            self.builder.ins().load(types::I64, flags(), cursor, 8)
+        };
         let effective = self.iterator_effective_bound(cursor, iterator_ty, bound, pos)?;
         let condition =
             self.builder
@@ -4476,17 +4599,24 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         &mut self,
         iterator: RV,
         iterator_ty: &l::IteratorType,
-        _index: Value,
+        index: Value,
         pos: &Pos,
     ) -> Result<RV, String> {
         let cursor = self.expect_aggregate(iterator)?;
         let subject = self.builder.ins().load(types::I64, flags(), cursor, 0);
-        let cursor_position = self.builder.ins().load(types::I64, flags(), cursor, 8);
+        let cursor_position = if matches!(
+            iterator_ty.kind,
+            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys
+        ) {
+            self.builder.ins().uextend(types::I64, index)
+        } else {
+            self.builder.ins().load(types::I64, flags(), cursor, 8)
+        };
         match iterator_ty.kind {
-            l::ForOfKind::ArrayKeys => Ok(RV::Scalar(
+            l::ForOfKind::ArrayKeys | l::ForOfKind::ArrayKeysReverse => Ok(RV::Scalar(
                 self.builder.ins().ireduce(types::I32, cursor_position),
             )),
-            l::ForOfKind::ArrayValues => {
+            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayValuesReverse => {
                 let data = self
                     .call_runtime(self.ml.rt.array_data, &[self.ctx, subject], false)?
                     .ok_or_else(|| internal("array iterator data has no result"))?;
@@ -4557,6 +4687,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::ForOfKind::ArrayValues
             | l::ForOfKind::ArrayKeys
             | l::ForOfKind::FixedArrayValues => self.builder.ins().iadd_imm(current, 1),
+            l::ForOfKind::ArrayValuesReverse | l::ForOfKind::ArrayKeysReverse => {
+                let no_prior = self.builder.ins().icmp_imm(IntCC::Equal, current, 0);
+                let empty = self.builder.ins().icmp_imm(IntCC::Equal, effective, 0);
+                let exhausted = self.builder.ins().bor(no_prior, empty);
+                let prior = self.builder.ins().iadd_imm(current, -1);
+                let last_live = self.builder.ins().iadd_imm(effective, -1);
+                let clamped = self.builder.ins().umin(prior, last_live);
+                let sentinel = self.iconst(types::I64, -1);
+                self.builder.ins().select(exhausted, sentinel, clamped)
+            }
             l::ForOfKind::StringCodePoints => {
                 let current = self.builder.ins().ireduce(types::I32, current);
                 let next = self.stack_slot(4, 4);
@@ -5831,6 +5971,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 target.return_type.as_ref(),
                 false,
             )?,
+            l::CallTargetKind::StaticClosure(function) => self.static_closure_call(
+                *function,
+                operands,
+                parameter_types,
+                target.return_type.as_ref(),
+            )?,
             l::CallTargetKind::Method(method) => self.script_call(
                 self.method_function(*method)?,
                 operands,
@@ -5869,6 +6015,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         if matches!(
             target.kind,
             l::CallTargetKind::Function(_)
+                | l::CallTargetKind::StaticClosure(_)
                 | l::CallTargetKind::Method(_)
                 | l::CallTargetKind::Indirect
         ) {
@@ -6230,6 +6377,20 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                             .ok_or_else(|| internal("array result type is missing"))?,
                     )?,
                     &operands,
+                    &instruction.traps,
+                    &instruction.pos,
+                )?,
+            ),
+            l::InstructionKind::ArrayWithCapacity => Some(
+                self.array_with_capacity(
+                    data_type(
+                        result_ty
+                            .as_ref()
+                            .ok_or_else(|| internal("capacity array result type is missing"))?,
+                    )?,
+                    *operands
+                        .first()
+                        .ok_or_else(|| internal("capacity array bound is missing"))?,
                     &instruction.traps,
                     &instruction.pos,
                 )?,

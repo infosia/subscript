@@ -451,6 +451,10 @@ fn runtime_traps(function: &l::Function) -> Vec<l::Trap> {
     traps
 }
 
+fn script_call_requires_pending_check(function: &l::Function) -> bool {
+    function.is_generator || function.is_async || !runtime_traps(function).is_empty()
+}
+
 fn verify_trap_consumption(
     function: &l::Function,
     expected: &[l::Trap],
@@ -787,6 +791,8 @@ impl<'m> Emitter<'m> {
                 iterator.kind,
                 l::ForOfKind::ArrayValues
                     | l::ForOfKind::ArrayKeys
+                    | l::ForOfKind::ArrayValuesReverse
+                    | l::ForOfKind::ArrayKeysReverse
                     | l::ForOfKind::MapKeys
                     | l::ForOfKind::MapValues
                     | l::ForOfKind::SetValues
@@ -1587,6 +1593,8 @@ struct Body<'e, 'm, 'f> {
     removable_edge_copies: HashSet<(l::BlockId, l::BlockId, usize)>,
     value_storage: Vec<l::ValueId>,
     root_storage: RootStoragePlan,
+    dead_forward_iterator_results: HashSet<l::ValueId>,
+    fixed_iterators: HashSet<l::ValueId>,
     delayed_declarations: HashSet<l::ValueId>,
     consumed_traps: Vec<l::Trap>,
     temporary: u32,
@@ -1920,6 +1928,7 @@ fn declaration_can_use_instruction_assignment(kind: &l::InstructionKind) -> bool
             | l::InstructionKind::Length
             | l::InstructionKind::ForeignArrayData
             | l::InstructionKind::ArrayLiteral
+            | l::InstructionKind::ArrayWithCapacity
             | l::InstructionKind::IteratorCreate { .. }
     )
 }
@@ -2128,6 +2137,88 @@ fn block_uses_value(block: &l::BasicBlock, value: l::ValueId) -> bool {
         .iter()
         .any(|instruction| instruction_uses_value(instruction, value))
         || terminator_uses_value(&block.terminator, value)
+}
+
+fn fixed_iterator_values(function: &l::Function) -> HashSet<l::ValueId> {
+    // Fixed and live facts can meet through cyclic block parameters. Propagate
+    // both bits to retain a fixed fact only when no live path reaches a value.
+    const FIXED: u8 = 1;
+    const LIVE: u8 = 2;
+    let mut bounds = vec![0u8; function.values.len()];
+    for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
+        let Some(result) = instruction.result else {
+            continue;
+        };
+        match instruction.kind {
+            l::InstructionKind::IteratorCreate {
+                bound: l::IteratorBoundKind::Fixed,
+                ..
+            } => bounds[result.0 as usize] = FIXED,
+            l::InstructionKind::IteratorCreate {
+                bound: l::IteratorBoundKind::Live,
+                ..
+            } => bounds[result.0 as usize] = LIVE,
+            _ => {}
+        }
+    }
+    loop {
+        let mut changed = false;
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                let propagates = matches!(
+                    instruction.kind,
+                    l::InstructionKind::Copy | l::InstructionKind::IteratorAdvance
+                );
+                if propagates {
+                    let Some(result) = instruction.result else {
+                        continue;
+                    };
+                    let incoming = instruction
+                        .operands
+                        .first()
+                        .and_then(|operand| match operand {
+                            l::Operand::Value(value) => Some(bounds[value.0 as usize]),
+                            l::Operand::Constant(_) => None,
+                        });
+                    if let Some(incoming) = incoming {
+                        let value = &mut bounds[result.0 as usize];
+                        let combined = *value | incoming;
+                        if combined != *value {
+                            *value = combined;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        for destination in &function.blocks {
+            for (index, parameter) in destination.parameters.iter().copied().enumerate() {
+                let incoming = function.blocks.iter().flat_map(|source| {
+                    ordinary_targets(&source.terminator)
+                        .into_iter()
+                        .filter(|target| target.block == destination.id)
+                        .filter_map(|target| target.arguments.get(index))
+                });
+                let combined = incoming.fold(0u8, |combined, operand| match operand {
+                    l::Operand::Value(value) => combined | bounds[value.0 as usize],
+                    l::Operand::Constant(_) => combined,
+                });
+                let value = &mut bounds[parameter.0 as usize];
+                let combined = *value | combined;
+                if combined != *value {
+                    *value = combined;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            return bounds
+                .into_iter()
+                .enumerate()
+                .filter_map(|(index, bound)| (bound == FIXED).then_some(l::ValueId(index as u32)))
+                .collect();
+        }
+    }
 }
 
 fn value_used_from(function: &l::Function, value: l::ValueId, start: l::BlockId) -> bool {
@@ -2554,6 +2645,35 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         coroutine: bool,
     ) -> Result<Self, String> {
         let root_storage = root_storage::plan(function, &emitter.layouts)?;
+        let dead_forward_iterator_results = function
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter_map(|instruction| {
+                let result = instruction.result?;
+                if !matches!(instruction.kind, l::InstructionKind::IteratorAdvance)
+                    || function
+                        .blocks
+                        .iter()
+                        .any(|block| block_uses_value(block, result))
+                {
+                    return None;
+                }
+                let l::Operand::Value(iterator) = instruction.operands.first()? else {
+                    return None;
+                };
+                let l::ValueType::Iterator(iterator) = &function.values[iterator.0 as usize].ty
+                else {
+                    return None;
+                };
+                matches!(
+                    iterator.kind,
+                    l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys
+                )
+                .then_some(result)
+            })
+            .collect::<HashSet<_>>();
+        let fixed_iterators = fixed_iterator_values(function);
         let rooted_values = root_storage
             .value_slots
             .iter()
@@ -2646,6 +2766,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             removable_edge_copies,
             value_storage,
             root_storage,
+            dead_forward_iterator_results,
+            fixed_iterators,
             delayed_declarations,
             consumed_traps: Vec::new(),
             temporary: 0,
@@ -3112,9 +3234,19 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     self.function.id.0, block.id.0, instruction.kind
                 ))
             })?;
-            let clears = self.root_storage.clear_after_instruction[block.id.0 as usize]
+            let mut clears = self.root_storage.clear_after_instruction[block.id.0 as usize]
                 [instruction_index]
                 .clone();
+            if let Some(result) = instruction
+                .result
+                .filter(|result| self.dead_forward_iterator_results.contains(result))
+            {
+                if let Some(slot) = self.root_storage.value_slots[result.0 as usize] {
+                    // The result has no use, so C emits no assignment. Remove
+                    // the clear for that omitted root assignment too.
+                    clears.retain(|candidate| *candidate != slot);
+                }
+            }
             self.emit_root_clears(out, &clears)?;
         }
         self.emit_terminator(out, &block)?;
@@ -3310,6 +3442,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             l::InstructionKind::ArrayLiteral => {
                 self.emit_array_literal(out, instruction, &operands, result)
+            }
+            l::InstructionKind::ArrayWithCapacity => {
+                self.emit_array_with_capacity(out, instruction, &operands, result)
             }
             l::InstructionKind::ArraySpreadLiteral(spreads) => {
                 self.emit_spread_array(out, instruction, spreads, &operands, &operand_types, result)
@@ -4873,6 +5008,48 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         }
     }
 
+    fn emit_array_with_capacity(
+        &mut self,
+        out: &mut String,
+        instruction: &l::Instruction,
+        operands: &[String],
+        result: Option<String>,
+    ) -> Result<(), String> {
+        let result_id = instruction
+            .result
+            .ok_or_else(|| internal("capacity array has no result"))?;
+        let Type::Array(element) = data_type(self.value_type(result_id)?)?.clone() else {
+            return Err(internal("capacity array result is not an array"));
+        };
+        let capacity = operands
+            .first()
+            .ok_or_else(|| internal("capacity array has no bound"))?;
+        let destination = result.ok_or_else(|| internal("capacity array result is missing"))?;
+        let pos = if let Some(trap) = instruction.traps.first() {
+            self.emitter.pos_id(&trap.pos)
+        } else {
+            self.emitter.pos_id(&instruction.pos)
+        };
+        let call = self.emitter.runtime_call(
+            "void*",
+            "subscript_rt_array_with_capacity",
+            &[
+                "void*".into(),
+                "uint64_t".into(),
+                "uint64_t".into(),
+                "uint32_t".into(),
+            ],
+            &[
+                "ctx".into(),
+                format!("(uint64_t)({capacity})"),
+                format!("(uint64_t)sizeof({})", self.emitter.ctype(&element)?),
+                format!("{pos}u"),
+            ],
+        );
+        self.assign(out, Some(destination), &call)?;
+        self.consume_call_traps(out, &instruction.traps, true)
+    }
+
     fn emit_spread_array(
         &mut self,
         out: &mut String,
@@ -5291,9 +5468,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             _ => self.iterator_current_bound_expression(instruction, &temporary, iterator_type)?,
         };
         let fixed = u32::from(bound_kind == l::IteratorBoundKind::Fixed);
+        let position = if matches!(
+            kind,
+            l::ForOfKind::ArrayValuesReverse | l::ForOfKind::ArrayKeysReverse
+        ) {
+            format!("((uint64_t)({bound}) == 0ull ? UINT64_MAX : (uint64_t)({bound}) - 1ull)")
+        } else {
+            "0ull".to_string()
+        };
         let _ = writeln!(
             out,
-            "    {destination} = (SubIter){{ {subject}, 0ull, (uint64_t)({bound}), {fixed}ull }};"
+            "    {destination} = (SubIter){{ {subject}, {position}, (uint64_t)({bound}), {fixed}ull }};"
         );
         if matches!(
             kind,
@@ -5353,6 +5538,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         result: Option<String>,
     ) -> Result<(), String> {
         let iterator_type = self.iterator_type(iterator_type)?;
+        if instruction.operands.first().is_some_and(
+            |operand| matches!(operand, l::Operand::Value(value) if self.fixed_iterators.contains(value)),
+        ) {
+            return self.assign(out, result, &format!("(int32_t)(({iterator}).bound)"));
+        }
         let current =
             self.iterator_current_bound_expression(instruction, iterator, iterator_type)?;
         let expression =
@@ -5367,12 +5557,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         iterator_type: &l::IteratorType,
     ) -> Result<String, String> {
         Ok(match iterator_type.kind {
-            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys => self.emitter.runtime_call(
-                "int32_t",
-                "subscript_rt_array_len",
-                &["void*".into(), "const void*".into()],
-                &["ctx".into(), format!("({iterator}).subject")],
-            ),
+            l::ForOfKind::ArrayValues
+            | l::ForOfKind::ArrayKeys
+            | l::ForOfKind::ArrayValuesReverse
+            | l::ForOfKind::ArrayKeysReverse => {
+                format!("((const SsArrayHeader*)({iterator}).subject)->len")
+            }
             l::ForOfKind::FixedArrayValues => {
                 format!("({iterator}).bound")
             }
@@ -5410,7 +5600,22 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let destination = result.ok_or_else(|| internal("iterator condition has no result"))?;
         let current =
             self.iterator_current_bound_expression(instruction, &operands[0], &iterator)?;
-        let _ = writeln!(out, "    {destination} = ((uint64_t)({}.position) < (uint64_t)({current}) && ({}.fixed == 0ull || (uint64_t)({}.position) < (uint32_t)({})));", operands[0], operands[0], operands[0], operands[2]);
+        let position = if matches!(
+            iterator.kind,
+            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys
+        ) {
+            operands[1].clone()
+        } else {
+            format!("{}.position", operands[0])
+        };
+        let fixed = instruction.operands.first().is_some_and(
+            |operand| matches!(operand, l::Operand::Value(value) if self.fixed_iterators.contains(value)),
+        );
+        if fixed {
+            let _ = writeln!(out, "    {destination} = ((uint64_t)({position}) < (uint64_t)({current}) && (uint64_t)({position}) < (uint32_t)({}));", operands[2]);
+        } else {
+            let _ = writeln!(out, "    {destination} = ((uint64_t)({position}) < (uint64_t)({current}) && ({}.fixed == 0ull || (uint64_t)({position}) < (uint32_t)({})));", operands[0], operands[2]);
+        }
         Ok(())
     }
 
@@ -5425,23 +5630,27 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let iterator = self.iterator_type(&operand_types[0])?.clone();
         let destination = result.ok_or_else(|| internal("iterator value has no result"))?;
         match iterator.kind {
-            l::ForOfKind::ArrayKeys => {
-                let _ = writeln!(
-                    out,
-                    "    {destination} = (int32_t)({}.position);",
-                    operands[0]
-                );
+            l::ForOfKind::ArrayKeys | l::ForOfKind::ArrayKeysReverse => {
+                let position = if iterator.kind == l::ForOfKind::ArrayKeys {
+                    operands[1].as_str()
+                } else {
+                    return self.assign(
+                        out,
+                        Some(destination),
+                        &format!("(int32_t)({}.position)", operands[0]),
+                    );
+                };
+                let _ = writeln!(out, "    {destination} = (int32_t)({position});");
             }
-            l::ForOfKind::ArrayValues => {
-                let data = self.emitter.runtime_call(
-                    "const void*",
-                    "subscript_rt_array_data",
-                    &["void*".into(), "const void*".into()],
-                    &["ctx".into(), format!("({}).subject", operands[0])],
-                );
+            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayValuesReverse => {
+                let position = if iterator.kind == l::ForOfKind::ArrayValues {
+                    operands[1].clone()
+                } else {
+                    format!("{}.position", operands[0])
+                };
                 let _ = writeln!(
                     out,
-                    "    {destination} = (({}*)({data}))[{}.position];",
+                    "    {destination} = (({}*)(((const SsArrayHeader*)({}.subject))->data))[{position}];",
                     self.emitter.ctype(&iterator.element)?,
                     operands[0]
                 );
@@ -5519,6 +5728,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     ) -> Result<(), String> {
         let iterator = self.iterator_type(&operand_types[0])?.clone();
         let destination = result.ok_or_else(|| internal("iterator advance has no result"))?;
+        if instruction
+            .result
+            .is_some_and(|result| self.dead_forward_iterator_results.contains(&result))
+        {
+            // The explicit index advances the forward loop. LIR retains this
+            // protocol instruction, but its unused aggregate result has no C effect.
+            return Ok(());
+        }
         let _ = writeln!(out, "    {destination} = {};", operands[0]);
         match iterator.kind {
             l::ForOfKind::ArrayValues
@@ -5528,6 +5745,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     out,
                     "    {destination}.position = ({}).position + 1ull;",
                     operands[0]
+                );
+            }
+            l::ForOfKind::ArrayValuesReverse | l::ForOfKind::ArrayKeysReverse => {
+                let current_bound =
+                    self.iterator_current_bound_expression(instruction, &operands[0], &iterator)?;
+                let effective = self.fresh();
+                let prior = self.fresh();
+                let _ = writeln!(
+                    out,
+                    "    uint64_t {effective} = (uint64_t)({current_bound});\n    if ({destination}.fixed != 0ull && (uint64_t)({}) < {effective}) {effective} = (uint64_t)({});\n    uint64_t {prior} = ({}).position == 0ull ? UINT64_MAX : ({}).position - 1ull;\n    {destination}.position = ({effective} == 0ull || {prior} == UINT64_MAX) ? UINT64_MAX : ({prior} < {effective} - 1ull ? {prior} : {effective} - 1ull);",
+                    operands[2], operands[2], operands[0], operands[0]
                 );
             }
             l::ForOfKind::StringCodePoints => {
@@ -5611,12 +5839,36 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         match &target.kind {
             l::CallTargetKind::Function(function) => {
                 self.emit_script_call(out, *function, operands, result)?;
-                self.consume_call_traps(out, &instruction.traps)
+                let check_pending =
+                    script_call_requires_pending_check(self.emitter.function(*function)?);
+                self.consume_call_traps(out, &instruction.traps, check_pending)
+            }
+            l::CallTargetKind::StaticClosure(function) => {
+                let callable = operands
+                    .first()
+                    .ok_or_else(|| internal("static closure call has no callable"))?;
+                let arguments = operands.iter().skip(1).cloned().collect::<Vec<_>>();
+                let separator = if arguments.is_empty() { "" } else { ", " };
+                let expression = format!(
+                    "sub_f{}(ctx, {callable}.env{separator}{})",
+                    function.0,
+                    arguments.join(", ")
+                );
+                if let Some(result) = result {
+                    let _ = writeln!(out, "    {result} = {expression};");
+                } else {
+                    let _ = writeln!(out, "    {expression};");
+                }
+                let check_pending =
+                    script_call_requires_pending_check(self.emitter.function(*function)?);
+                self.consume_call_traps(out, &instruction.traps, check_pending)
             }
             l::CallTargetKind::Method(method) => {
                 let function = self.emitter.method_function(*method)?;
                 self.emit_script_call(out, function, operands, result)?;
-                self.consume_call_traps(out, &instruction.traps)
+                let check_pending =
+                    script_call_requires_pending_check(self.emitter.function(function)?);
+                self.consume_call_traps(out, &instruction.traps, check_pending)
             }
             l::CallTargetKind::Indirect => {
                 let callable = operands
@@ -5646,7 +5898,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 } else {
                     let _ = writeln!(out, "    {expression};");
                 }
-                self.consume_call_traps(out, &instruction.traps)
+                self.consume_call_traps(out, &instruction.traps, true)
             }
             l::CallTargetKind::Foreign(function) => {
                 self.emit_foreign_call(out, instruction, *function, operands, operand_types, result)
@@ -5689,7 +5941,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         Ok(())
     }
 
-    fn consume_call_traps(&mut self, out: &mut String, traps: &[l::Trap]) -> Result<(), String> {
+    fn consume_call_traps(
+        &mut self,
+        out: &mut String,
+        traps: &[l::Trap],
+        check_pending: bool,
+    ) -> Result<(), String> {
         let mut checked = false;
         for trap in traps {
             match trap.kind {
@@ -5701,7 +5958,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 ref other => return Err(internal(format!("script call carries trap {other:?}"))),
             }
         }
-        if checked {
+        if checked && check_pending {
             self.emit_pending_check(out);
         }
         Ok(())
@@ -6295,6 +6552,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     "    SsArrayHeader* {header} = (SsArrayHeader*)({});",
                     operands[0]
                 );
+                if instruction.traps.is_empty() {
+                    // Static callback lowering gives this push a dominating
+                    // capacity bound. All ordinary pushes carry a Call trap.
+                    let _ = writeln!(
+                        out,
+                        "    (({element_type}*){header}->data)[{header}->len] = {};",
+                        operands[1]
+                    );
+                    let _ = writeln!(out, "    {header}->len += 1u;");
+                    return self.assign(out, result, &format!("(int32_t)({header}->len)"));
+                }
                 let _ = writeln!(out, "    if ({header}->len < {header}->cap) {{");
                 let _ = writeln!(
                     out,
