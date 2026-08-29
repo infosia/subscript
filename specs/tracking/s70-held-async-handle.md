@@ -172,3 +172,44 @@ consecutive runs, in both profiles.
 The differential gate compares tier outputs, and the output is correct
 in every run (CLAUDE.md core principle 12). The accounting assertion is
 the only witness, and it makes one measurement per gate run.
+
+## `a162` retention: the word is named and cleared — 2026-08-30
+
+Landed at `ebc46fd`.
+
+### The word
+
+The marker reached the retained string from the `exerciseCopySites`
+coroutine frame, payload word 52, generated member `b21_child`. The
+member held the address of the `copiedWork(8)` child frame after that
+frame was released. A later `printNumber(256)` allocation sometimes
+reused the address for its 11-byte string payload. The stale word then
+equaled a live payload address, and the marker kept the string.
+
+A completed await released its child frame and did not clear the
+member. Allocator reuse changed the marked set without a program
+change. The rate on the arm64 host was 0 in 10,000 pre-fix attempts;
+its allocator did not reuse the address.
+
+### The fix
+
+Cranelift and emitted C now zero the child member immediately after the
+release, on the direct await path and on the held await path (§68.2
+rule 8: the storage scope is the value live range; §70.3 rule 3).
+A hand-built LIR test pins the clears in both tiers.
+
+`SUBSCRIPT_MARK_TRACE=<payload address|strings|all>` prints each root or
+payload word that reaches a payload to stderr, with the root set, index,
+word, value, and reached class. It is off when absent. A subprocess unit
+test turns it on for a hand-built module and reads the records.
+
+### Measured
+
+| Profile | Runs at `507eaa6` | 267 bytes | Runs after the fix | 256 bytes |
+|---|---:|---:|---:|---:|
+| debug | 200 | 6 | 1,000 consecutive | 1,000 |
+| release | 300 | 30 | 1,000 consecutive | 1,000 |
+
+The release-mode assertion also measured 0 excesses in 300 further
+consecutive runs on the arm64 host. No corpus or golden file moved.
+Clippy 7/22/13. Release suite 1,120 passed.
