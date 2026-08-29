@@ -122,18 +122,17 @@ than raising them again.
 *(Owner decision. Until this date every sweep above was run by hand.)*
 
 `compiler/tests/hygiene.rs` runs under `cargo test` on every host,
-including the Windows gate, and fails on the first hit. It scans:
+including the Windows gate, and fails on the first hit. It scans
+**every tracked file, and every untracked file the ignore rules do not
+exclude**, as text; a file that is not valid UTF-8 is skipped as
+binary. `node_modules/`, `target/`, `HANDOFF.md`, and `REPORT.md` are
+outside the scan, because they are never committed.
 
-1. **Every tracked file, and every untracked file the ignore rules do
-   not exclude**, as text; a file that is not valid UTF-8 is skipped
-   as binary. `node_modules/`, `target/`, `HANDOFF.md`, and `REPORT.md`
-   are outside the scan, because they are never committed.
-2. **Every commit message in the whole history** (`git log --all
-   --format=%B`).
-3. **Every blob in the whole history** for the same patterns, by the
-   fastest form the round measures under 30 s on the reference
-   machine (`git grep` over `git rev-list --all`, or one `git log -S`
-   per pattern); the form and its time are recorded here.
+It does not scan commit messages or history blobs. The gate runs on
+every commit, so the working tree is what a commit can add; the
+history was swept by hand and found clean (the records above), and a
+retroactive scan on every test run buys nothing for its cost. *(Owner
+decision, 2026-08-30; the first draft of this section scanned both.)*
 
 Patterns, each written so that a bare mention of the pattern's own
 text — this table, a rule in CLAUDE.md, the test's source — does not
