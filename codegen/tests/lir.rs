@@ -4,6 +4,9 @@
 mod corpus;
 #[path = "support/lir_facts.rs"]
 mod lir_facts;
+#[cfg(not(all(windows, target_env = "msvc")))]
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
 #[cfg(debug_assertions)]
 #[allow(dead_code)]
 #[path = "support/trap_corpus.rs"]
@@ -11,7 +14,9 @@ mod trap_corpus;
 
 use subscript_codegen::interpreter::interpret;
 use subscript_codegen::lir::{lower_module, verify_module};
-use subscript_codegen::run_jit_with_memory_accounting;
+#[cfg(not(all(windows, target_env = "msvc")))]
+use subscript_codegen::run_jit_with_memory_accounting_and_native_libraries;
+use subscript_codegen::{run_jit, run_jit_with_memory_accounting};
 use subscript_compiler::lir::{
     self as lir, BlockId, ForOfKind, InstructionKind, IteratorBoundKind, Module, Operand,
     Terminator, TrapKind, ValueType,
@@ -34,6 +39,92 @@ fn s68_interpreter_saturates_float_to_integer_casts() {
     let module = lower_entry(&accept, id);
     let output = interpret(&module).expect("a167 interpreter run");
     assert_eq!(output, corpus::golden_bytes(&accept, id), "{id}");
+}
+
+#[test]
+fn nullable_boundary_boxes_copy_values_and_keep_narrowed_places() {
+    let sources = [
+        SourceFile::ambient(
+            "box.generated.d.ts",
+            r#"
+// @subscript-c-header include="box.h"
+declare class Pair {
+  left: i32;
+  right: i32;
+  constructor(left: i32, right: i32);
+}
+"#,
+        ),
+        SourceFile::new(
+            "box.ts",
+            r#"
+class Holder {
+  value: Pair | null;
+  constructor(value: Pair | null) {
+    this.value = value;
+  }
+}
+
+export function main(): void {
+  const source: Pair = new Pair(1, 2);
+  const first: Holder = new Holder(source);
+  const second: Holder = new Holder(source);
+  const empty: Holder = new Holder(null);
+  const alias: Pair | null = first.value;
+  if (first.value !== null && second.value !== null) {
+    const snapshot: Pair = first.value;
+    first.value.left = 9;
+    Context.collect();
+    print(`member:${snapshot.left}:${second.value.left}:${first.value.left}`);
+    if (alias !== null) {
+      print(`alias:${alias.left}`);
+    }
+  }
+  if (empty.value === null) {
+    print("null");
+  }
+
+  const local: Pair | null = source;
+  if (local !== null) {
+    local.left = 11;
+    print(`local:${local.left}:${source.left}`);
+  }
+
+  const values: (Pair | null)[] = [source, null];
+  const element: Pair | null = values[0];
+  if (element !== null) {
+    const elementCopy: Pair = element;
+    element.right = 7;
+    print(`element:${elementCopy.right}:${element.right}`);
+  }
+}
+"#,
+        ),
+    ];
+    let hir = check_program(&sources).expect("nullable boundary box source checks");
+    let mut module = lower_module(&hir).expect("nullable boundary box source lowers");
+    let output = b"member:1:1:9\nalias:9\nnull\nlocal:11:1\nelement:2:7\n";
+    assert_eq!(interpret(&module).expect("box LIR interprets"), output);
+    assert_eq!(
+        run_jit(&sources).expect("box source runs in the JIT"),
+        output
+    );
+
+    let box_instruction = module
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.blocks)
+        .flat_map(|block| &mut block.instructions)
+        .find(|instruction| matches!(instruction.kind, InstructionKind::BoxBoundaryValue { .. }))
+        .expect("source lowers a nullable boundary box");
+    box_instruction.kind = InstructionKind::Coerce;
+    let errors = verify_module(&module).expect_err("address-free Coerce must be rejected");
+    assert!(
+        errors.iter().any(|error| error
+            .message
+            .contains("implicit coercion signature is invalid")),
+        "{errors:?}"
+    );
 }
 
 fn verifier_module(function: lir::Function) -> Module {
@@ -553,6 +644,51 @@ fn counted_store_corpus_matches_the_interpreter() {
     }
 }
 
+#[cfg(not(all(windows, target_env = "msvc")))]
+#[test]
+fn a163_accounts_for_nullable_boundary_boxes() {
+    let accept = corpus::corpus_accept();
+    let id = "a163-address-taken-activation";
+    let sources = corpus::entry_sources(&accept, id);
+    let (output, accounting) = run_jit_with_memory_accounting_and_native_libraries(
+        &sources,
+        &[native_fixture::library()],
+        false,
+    )
+    .unwrap_or_else(|error| panic!("{id}: dev JIT failed: {error}"));
+    assert_eq!(output, corpus::golden_bytes(&accept, id), "{id}");
+    assert_eq!(accounting.live_bytes, 2977, "{id}");
+    eprintln!(
+        "{id}: live_bytes={} reserved_bytes={}",
+        accounting.live_bytes, accounting.reserved_bytes
+    );
+}
+
+#[test]
+fn a169_chain_link_boxes_the_complete_extension() {
+    let accept = corpus::corpus_accept();
+    let module = lower_entry(&accept, "a169-managed-boundary-box");
+    let extension = module
+        .classes
+        .iter()
+        .find(|class| class.source_name == "SubChainExtA")
+        .expect("SubChainExtA class")
+        .id;
+    let boxes = module
+        .functions
+        .iter()
+        .flat_map(|function| &function.blocks)
+        .flat_map(|block| &block.instructions)
+        .filter(|instruction| {
+            matches!(
+                instruction.kind,
+                InstructionKind::BoxBoundaryValue { payload } if payload == extension
+            )
+        })
+        .count();
+    assert_eq!(boxes, 2, "a169 boxes its tail and head extensions");
+}
+
 #[test]
 fn every_hir_execution_fact_is_carried_by_lir() {
     let accept = corpus::corpus_accept();
@@ -692,7 +828,7 @@ fn item_12_compares_host_entry_traps_in_both_directions() {
 }
 
 #[test]
-fn embedded_boundary_header_constructor_keeps_enclosing_place_address() {
+fn embedded_boundary_header_constructor_boxes_the_complete_extension() {
     let sources = [
         SourceFile::ambient(
             "embedded-header.generated.d.ts",
@@ -724,6 +860,10 @@ declare class Tick {
             r#"
 export function main(): void {
   const limit: Limit = new Limit(new Header(HeaderKind.LIMIT, null), 3);
+  const links: (Header | null)[] = [];
+  links.push(limit.header);
+  links.fill(limit.header);
+  links.unshift(limit.header);
   const tick: Tick = new Tick(
     new Header(HeaderKind.TICK, limit.header),
     2,
@@ -736,11 +876,90 @@ export function main(): void {
     let hir = check_program(&sources).expect("embedded-header shape checks clean");
     let lir = lower_module(&hir).expect("embedded-header shape lowers to LIR");
     verify_module(&lir).expect("embedded-header LIR verifies");
+    assert_eq!(
+        interpret(&lir).expect("embedded-header box interprets"),
+        b"2\n"
+    );
+    let header = lir
+        .classes
+        .iter()
+        .find(|class| class.source_name == "Header")
+        .expect("Header class")
+        .id;
+    let limit = lir
+        .classes
+        .iter()
+        .find(|class| class.source_name == "Limit")
+        .expect("Limit class")
+        .id;
+    let tick = lir
+        .classes
+        .iter()
+        .find(|class| class.source_name == "Tick")
+        .expect("Tick class")
+        .id;
+    let result_ty = lir
+        .functions
+        .iter()
+        .find_map(|function| {
+            let instruction = function
+                .blocks
+                .iter()
+                .flat_map(|block| &block.instructions)
+                .find(|instruction| {
+                    matches!(
+                        instruction.kind,
+                        InstructionKind::BoxBoundaryValue { payload } if payload == limit
+                    )
+                })?;
+            let result = instruction.result?;
+            function
+                .values
+                .get(result.0 as usize)
+                .map(|value| &value.ty)
+        })
+        .expect("the embedded Header store boxes Limit");
+    assert_eq!(
+        result_ty,
+        &subscript_compiler::lir::ValueType::Data(Type::Nullable(Box::new(Type::Class(header))))
+    );
     let findings = lir_facts::dropped_facts(&hir, &lir);
     assert!(
         findings.is_empty(),
         "embedded header lost an execution fact:\n{}",
         findings.join("\n")
+    );
+
+    let mut invalid = lir.clone();
+    let mut changed = false;
+    for function in &mut invalid.functions {
+        for instruction in function
+            .blocks
+            .iter_mut()
+            .flat_map(|block| &mut block.instructions)
+        {
+            if matches!(
+                instruction.kind,
+                InstructionKind::BoxBoundaryValue { payload } if payload == limit
+            ) {
+                let result = instruction.result.expect("embedded box result");
+                function.values[result.0 as usize].ty =
+                    ValueType::Data(Type::Nullable(Box::new(Type::Class(tick))));
+                changed = true;
+                break;
+            }
+        }
+        if changed {
+            break;
+        }
+    }
+    assert!(changed, "embedded Header store has a box instruction");
+    let errors = verify_module(&invalid).expect_err("extension without the result header rejects");
+    assert!(
+        errors.iter().any(|error| error
+            .message
+            .contains("boundary value box signature is invalid")),
+        "{errors:?}"
     );
 }
 
@@ -875,6 +1094,10 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     (
         "a163-address-taken-activation",
         "calls the synthetic native interop library",
+    ),
+    (
+        "a169-managed-boundary-box",
+        "calls the synthetic native interop library; the instruction-level box test is interpreted separately",
     ),
     (
         "a107-interop-handle-parameter-pair",
@@ -1493,7 +1716,7 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
     let entries = corpus::golden_ids(&accept);
     assert_eq!(
         INTERPRETER_EXCLUSIONS.len(),
-        54,
+        55,
         "the declared host-dependent exclusion count changed"
     );
     for (id, reason) in INTERPRETER_EXCLUSIONS {

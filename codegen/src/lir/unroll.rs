@@ -152,6 +152,7 @@ fn instruction_is_clone_safe(kind: &l::InstructionKind) -> bool {
             | l::InstructionKind::Binary(_)
             | l::InstructionKind::Cast
             | l::InstructionKind::Coerce
+            | l::InstructionKind::BoxBoundaryValue { .. }
             | l::InstructionKind::AddressOfValue
             | l::InstructionKind::AddressOfField(_)
             | l::InstructionKind::AddressOfIndex { checked: false }

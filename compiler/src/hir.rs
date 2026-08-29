@@ -3254,6 +3254,12 @@ impl Expr {
                 .get(id.0)
                 .is_some_and(|class| !class.is_value)
         };
+        let class_is_boundary_box = |id: ClassId| {
+            module
+                .classes
+                .get(id.0)
+                .is_some_and(|class| class.is_value && class.is_boundary)
+        };
         let reference_value = |ty: &Type| match ty {
             Type::Class(id) => class_is_reference(*id),
             Type::Array(_) | Type::Map(..) | Type::Set(_) | Type::Generator(_) | Type::Object => {
@@ -3267,9 +3273,49 @@ impl Expr {
                         | Type::Map(..)
                         | Type::Set(_)
                         | Type::Generator(_)
-                ) || matches!(&**inner, Type::Class(id) if class_is_reference(*id))
+                ) || matches!(&**inner, Type::Class(id)
+                    if class_is_reference(*id) || class_is_boundary_box(*id))
             }
             _ => false,
+        };
+        let boundary_box_store = |stored: &Type, value: &Type| {
+            matches!(stored, Type::Nullable(inner)
+            if matches!(inner.as_ref(), Type::Class(class)
+                if value == &Type::Class(*class)
+                    && module.classes.get(class.0).is_some_and(|definition| {
+                        definition.is_value && definition.is_boundary
+                    })))
+        };
+        let embedded_header_store = |stored: &Type, value: &Expr| {
+            let Type::Nullable(inner) = stored else {
+                return false;
+            };
+            let Type::Class(header) = inner.as_ref() else {
+                return false;
+            };
+            let K::Field { obj, name } = &value.kind else {
+                return false;
+            };
+            let Type::Class(extension) = obj.ty else {
+                return false;
+            };
+            let nullable = Type::Nullable(Box::new(Type::Class(*header)));
+            let linked = module.classes.iter().any(|class| {
+                class.is_boundary && class.fields.iter().any(|field| field.ty == nullable)
+            }) || module.foreign_fns.iter().any(|function| {
+                function
+                    .params
+                    .iter()
+                    .any(|parameter| parameter.ty == nullable)
+            });
+            module
+                .classes
+                .get(extension.0)
+                .filter(|class| class.is_value && class.is_boundary)
+                .and_then(|class| class.fields.first())
+                .is_some_and(|field| {
+                    field.name == *name && field.ty == Type::Class(*header) && linked
+                })
         };
         let index_site = |target: &Expr, write: bool| {
             let K::Index { checked, .. } = &target.kind else {
@@ -3359,7 +3405,7 @@ impl Expr {
             } => vec![TrapSite::Unreachable {
                 pos: self.pos.clone(),
             }],
-            K::Call { callee, .. } => {
+            K::Call { callee, args } => {
                 let mut sites = Vec::new();
                 if matches!(callee, Callee::Ambient(AmbientFn::UnsafeDelete)) {
                     sites.push(lifetime(&self.pos));
@@ -3377,6 +3423,122 @@ impl Expr {
                 }
                 if callee.has_call_site() {
                     sites.push(call(&self.pos));
+                }
+                let parameter_types = match callee {
+                    Callee::Func(name) => module
+                        .functions
+                        .iter()
+                        .find(|function| function.name == *name)
+                        .map(|function| {
+                            function
+                                .params
+                                .iter()
+                                .map(|parameter| parameter.ty.clone())
+                                .collect::<Vec<_>>()
+                        }),
+                    Callee::Foreign(name) => module
+                        .foreign_fns
+                        .iter()
+                        .find(|function| function.name == *name)
+                        .map(|function| {
+                            function
+                                .params
+                                .iter()
+                                .map(|parameter| parameter.ty.clone())
+                                .collect::<Vec<_>>()
+                        }),
+                    Callee::Value(value) => match &value.ty {
+                        Type::Func(signature) => Some(signature.params.clone()),
+                        _ => None,
+                    },
+                    Callee::Method { recv, name } => match recv.ty {
+                        Type::Class(class) => module.classes.get(class.0).and_then(|definition| {
+                            definition
+                                .methods
+                                .iter()
+                                .find(|method| method.name == *name)
+                                .map(|method| {
+                                    method
+                                        .params
+                                        .iter()
+                                        .map(|parameter| parameter.ty.clone())
+                                        .collect::<Vec<_>>()
+                                })
+                        }),
+                        _ => None,
+                    },
+                    _ => None,
+                }
+                .or_else(|| {
+                    let (target, prefix) = match callee {
+                        Callee::Ambient(function) => {
+                            (OperationSignatureTarget::Ambient(*function), None)
+                        }
+                        Callee::ContextBytes { function, ty } => (
+                            OperationSignatureTarget::ContextBytes(*function, ty.clone()),
+                            None,
+                        ),
+                        Callee::Math(function) => (OperationSignatureTarget::Math(*function), None),
+                        Callee::Num(function) => (OperationSignatureTarget::Num(*function), None),
+                        Callee::Date(function) => (OperationSignatureTarget::Date(*function), None),
+                        Callee::Json(function) => (OperationSignatureTarget::Json(*function), None),
+                        Callee::Str(function) => (OperationSignatureTarget::Str(*function), None),
+                        Callee::Regex(function) => {
+                            (OperationSignatureTarget::Regex(*function), None)
+                        }
+                        Callee::Arr(function) => (OperationSignatureTarget::Arr(*function), None),
+                        Callee::Map(function) => (OperationSignatureTarget::Map(*function), None),
+                        Callee::Set(function) => (OperationSignatureTarget::Set(*function), None),
+                        Callee::Worker(function) => {
+                            (OperationSignatureTarget::Worker(*function), None)
+                        }
+                        Callee::Method { recv, name } => {
+                            let method = match (&recv.ty, name.as_str()) {
+                                (Type::Array(_), "push") => BuiltinMethod::ArrayPush,
+                                (Type::Array(_), "pop") => BuiltinMethod::ArrayPop,
+                                (Type::Str, "slice") => BuiltinMethod::StringSlice,
+                                (Type::Generator(_), "next") => BuiltinMethod::GeneratorNext,
+                                _ => return None,
+                            };
+                            (
+                                OperationSignatureTarget::BuiltinMethod(method),
+                                Some(&recv.ty),
+                            )
+                        }
+                        Callee::Func(_) | Callee::Foreign(_) | Callee::Value(_) => return None,
+                    };
+                    let prefix_count = usize::from(prefix.is_some());
+                    module
+                        .operation_signatures
+                        .iter()
+                        .find(|signature| {
+                            signature.target == target
+                                && signature.parameter_types.len() == args.len() + prefix_count
+                                && prefix.is_none_or(|prefix| {
+                                    signature.parameter_types.first() == Some(prefix)
+                                })
+                                && signature.parameter_types[prefix_count..]
+                                    .iter()
+                                    .zip(args)
+                                    .all(|(parameter, argument)| {
+                                        parameter == &argument.ty
+                                            || boundary_box_store(parameter, &argument.ty)
+                                    })
+                        })
+                        .map(|signature| signature.parameter_types[prefix_count..].to_vec())
+                });
+                if let Some(parameter_types) = parameter_types {
+                    sites.extend(
+                        parameter_types
+                            .iter()
+                            .zip(args)
+                            .filter(|(parameter, argument)| {
+                                boundary_box_store(parameter, &argument.ty)
+                                    && (!matches!(callee, Callee::Foreign(_))
+                                        || embedded_header_store(parameter, argument))
+                            })
+                            .map(|(_, argument)| allocation(&argument.pos)),
+                    );
                 }
                 if let Callee::Foreign(name) = callee {
                     let wire_alias = module
@@ -3418,7 +3580,7 @@ impl Expr {
                 },
                 call(&self.pos),
             ],
-            K::New { class, .. } => {
+            K::New { class, args } => {
                 let Some(def) = module.classes.get(class.0) else {
                     return Vec::new();
                 };
@@ -3426,6 +3588,13 @@ impl Expr {
                 if !def.is_value {
                     sites.push(allocation(&self.pos));
                 }
+                sites.extend(
+                    def.fields
+                        .iter()
+                        .zip(args)
+                        .filter(|(field, argument)| boundary_box_store(&field.ty, &argument.ty))
+                        .map(|(_, argument)| allocation(&argument.pos)),
+                );
                 if def.ctor.is_some() {
                     sites.push(call(&self.pos));
                 }
@@ -3503,6 +3672,11 @@ impl Expr {
                 }
                 sites
             }
+            K::Cond { then, els, .. } => [then, els]
+                .into_iter()
+                .filter(|arm| boundary_box_store(&self.ty, &arm.ty))
+                .map(|arm| allocation(&arm.pos))
+                .collect(),
             K::Int(_)
             | K::Float(_)
             | K::Bool(_)
@@ -3522,8 +3696,7 @@ impl Expr {
             | K::Lambda { .. }
             | K::Yield(_)
             | K::AsyncSuspend
-            | K::AsyncHandleTransfer { .. }
-            | K::Cond { .. } => Vec::new(),
+            | K::AsyncHandleTransfer { .. } => Vec::new(),
         }
     }
 }

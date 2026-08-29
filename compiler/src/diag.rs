@@ -31,8 +31,8 @@ pub enum RuleCode {
     S009,
     /// Exceptions are not in the language (C6).
     S010,
-    /// Unions are limited to `Ref | null`; nullable values must be
-    /// narrowed before member access (C7).
+    /// Unions are limited to nullable handles (including boundary boxes);
+    /// nullable values must be narrowed before member access (C7, §33.5).
     S011,
     /// `undefined` is banned; the single null story is `null` (C7).
     S012,
@@ -42,16 +42,13 @@ pub enum RuleCode {
     /// Out-of-subset standard-library use, or arithmetic on storage-only
     /// `f16` (Q23).
     S014,
-    /// A value with a nullable boundary-aggregate field may not escape
-    /// the activation that built it (§33.4).
-    S015,
     /// Catch-all: construct outside the decided language surface.
     S100,
 }
 
 impl RuleCode {
     /// Every stable rule code, in numeric order.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 15] = [
         Self::S001,
         Self::S002,
         Self::S003,
@@ -66,7 +63,6 @@ impl RuleCode {
         Self::S012,
         Self::S013,
         Self::S014,
-        Self::S015,
         Self::S100,
     ];
 
@@ -88,7 +84,6 @@ impl RuleCode {
             RuleCode::S012 => "S012",
             RuleCode::S013 => "S013",
             RuleCode::S014 => "S014",
-            RuleCode::S015 => "S015",
             RuleCode::S100 => "S100",
         }
     }
@@ -110,7 +105,7 @@ impl RuleCode {
             RuleCode::S009 => "A capturing lambda may not escape its defining function.",
             RuleCode::S010 => "Exceptions are not in the language.",
             RuleCode::S011 => {
-                "Unions are limited to `Ref | null`; nullable values must be narrowed before member access."
+                "Unions are limited to nullable handles, including boundary boxes; nullable values must be narrowed before member access."
             }
             RuleCode::S012 => "`undefined` is banned; the single null story is `null`.",
             RuleCode::S013 => {
@@ -118,9 +113,6 @@ impl RuleCode {
             }
             RuleCode::S014 => {
                 "Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected."
-            }
-            RuleCode::S015 => {
-                "A nullable boundary aggregate may not escape the activation that built it."
             }
             RuleCode::S100 => "Constructs outside the decided language surface are rejected.",
         }
@@ -204,7 +196,7 @@ mod tests {
 
     #[test]
     fn every_rule_code_has_an_explanation() {
-        assert_eq!(RuleCode::ALL.len(), 16);
+        assert_eq!(RuleCode::ALL.len(), 15);
         for code in RuleCode::ALL {
             assert!(!code.explanation().is_empty(), "{code}");
             assert!(!code.explanation().contains('\n'), "{code}");

@@ -1491,72 +1491,6 @@ impl<'p> Checker<'p> {
             || matches!(ty, Type::Map(..) | Type::Set(_))
     }
 
-    /// Returns the first nullable boundary-aggregate field in the §33
-    /// reachable set. All S015 escape sites use this one traversal.
-    pub(crate) fn nullable_boundary_aggregate_field(&self, ty: &Type) -> Option<String> {
-        fn visit(
-            checker: &Checker<'_>,
-            ty: &Type,
-            path: Option<&str>,
-            visiting: &mut HashSet<ClassId>,
-        ) -> Option<String> {
-            match ty {
-                Type::Array(element) | Type::FixedArray(element, _) => {
-                    visit(checker, element, path, visiting)
-                }
-                Type::Nullable(inner) => visit(checker, inner, path, visiting),
-                Type::Class(id) => {
-                    let class = checker.classes.get(id.0)?;
-                    if !visiting.insert(*id) {
-                        return None;
-                    }
-                    for field in &class.fields {
-                        let field_path = path.map_or_else(
-                            || field.name.clone(),
-                            |prefix| format!("{prefix}.{}", field.name),
-                        );
-                        if matches!(
-                            &field.ty,
-                            Type::Nullable(inner)
-                                if matches!(inner.as_ref(), Type::Class(inner_id)
-                                    if checker.classes.get(inner_id.0).is_some_and(|inner_class| inner_class.is_boundary))
-                        ) {
-                            visiting.remove(id);
-                            return Some(field_path);
-                        }
-                        if let Some(found) = visit(checker, &field.ty, Some(&field_path), visiting)
-                        {
-                            visiting.remove(id);
-                            return Some(found);
-                        }
-                    }
-                    visiting.remove(id);
-                    None
-                }
-                _ => None,
-            }
-        }
-
-        visit(self, ty, None, &mut HashSet::new())
-    }
-
-    pub(crate) fn reject_nullable_boundary_aggregate_escape(
-        &mut self,
-        ty: &Type,
-        site: &str,
-        pos: Pos,
-    ) {
-        if let Some(field) = self.nullable_boundary_aggregate_field(ty) {
-            self.error(
-                RuleCode::S015,
-                format!(
-                    "{site} lets nullable boundary-aggregate field `{field}` escape its building activation"
-                ),
-                pos,
-            );
-        }
-    }
-
     /// The Q24 hash/equality kind of a key, or `None` outside the
     /// whitelist.
     pub(crate) fn assoc_key_kind(&self, ty: &Type) -> Option<hir::AssocKeyKind> {
@@ -3839,11 +3773,6 @@ impl<'p> Checker<'p> {
                                 e.pos.clone(),
                                 "the initializer",
                             );
-                            self.reject_nullable_boundary_aggregate_escape(
-                                &e.ty,
-                                "a module-level initializer",
-                                e.pos.clone(),
-                            );
                             e
                         }
                         None => {
@@ -4506,11 +4435,6 @@ impl<'p> Checker<'p> {
                                     expression.pos.clone(),
                                     "the static field initializer",
                                 );
-                                self.reject_nullable_boundary_aggregate_escape(
-                                    &expression.ty,
-                                    "a static field initializer",
-                                    expression.pos.clone(),
-                                );
                                 expression
                             }
                             None => {
@@ -4551,13 +4475,6 @@ impl<'p> Checker<'p> {
                         e.pos.clone(),
                         "the field initializer",
                     );
-                    if !self.classes[id.0].is_value {
-                        self.reject_nullable_boundary_aggregate_escape(
-                            &e.ty,
-                            "a reference-class field initializer",
-                            e.pos.clone(),
-                        );
-                    }
                     if let Some(field) = self.classes[id.0]
                         .fields
                         .iter_mut()
@@ -4924,11 +4841,6 @@ impl<'p> Checker<'p> {
                     pos.clone(),
                 );
             }
-            self.reject_nullable_boundary_aggregate_escape(
-                &local.ty,
-                "a lambda capture",
-                pos.clone(),
-            );
             let mut remaining = crossed;
             for frame in fx.frames.iter_mut().rev() {
                 if remaining == 0 {

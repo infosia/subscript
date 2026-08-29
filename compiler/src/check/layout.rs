@@ -418,7 +418,14 @@ impl<'a> Validator<'a> {
             | Type::Map(..)
             | Type::Set(_)
             | Type::Generator(_) => true,
-            Type::Nullable(inner) => self.is_managed(inner) || matches!(**inner, Type::Func(_)),
+            Type::Nullable(inner) => {
+                self.is_managed(inner)
+                    || matches!(**inner, Type::Func(_))
+                    || matches!(&**inner, Type::Class(id)
+                    if self.classes.get(id.0).is_some_and(|class| {
+                        class.is_value && class.is_boundary
+                    }))
+            }
             Type::Class(id) => self.classes.get(id.0).is_some_and(|class| !class.is_value),
             _ => false,
         }

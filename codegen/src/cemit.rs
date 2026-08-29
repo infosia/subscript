@@ -17,8 +17,8 @@ use crate::layout::Layouts;
 use crate::lir::verify_module;
 use crate::lir_types::{
     array_element_kind, array_format_kind, association_key_kind, boundary_class_contains_pointer,
-    boundary_class_needs_scratch, boundary_class_requires_build, boundary_type_requires_build,
-    is_userdata_slot,
+    boundary_class_is_embedded_header, boundary_class_needs_scratch, boundary_class_requires_build,
+    boundary_type_requires_build, is_userdata_slot,
 };
 use crate::root_storage::{self, RootStoragePlan};
 
@@ -397,6 +397,27 @@ fn data_type(ty: &l::ValueType) -> Result<&Type, String> {
     }
 }
 
+fn foreign_parameter_type_matches(
+    module: &l::Module,
+    actual: &l::ValueType,
+    declared: &Type,
+) -> bool {
+    if actual == &l::ValueType::Data(declared.clone()) {
+        return true;
+    }
+    let (l::ValueType::Address(address), Type::Nullable(nullable)) = (actual, declared) else {
+        return false;
+    };
+    let Type::Class(class) = nullable.as_ref() else {
+        return false;
+    };
+    address.pointee == Type::Class(*class)
+        && module
+            .classes
+            .get(class.0)
+            .is_some_and(|definition| definition.is_value && definition.is_boundary)
+}
+
 fn explicit_parameters(function: &l::Function) -> impl Iterator<Item = &l::Parameter> {
     function
         .parameters
@@ -730,7 +751,10 @@ impl<'m> Emitter<'m> {
             | Type::Inbox(_)
             | Type::Outbox(_)
             | Type::Func(_) => true,
-            Type::Nullable(inner) => self.type_contains_managed(inner, visiting)?,
+            Type::Nullable(inner) => match inner.as_ref() {
+                Type::Class(id) if self.class(*id)?.is_value => self.class(*id)?.is_boundary,
+                other => self.type_contains_managed(other, visiting)?,
+            },
             Type::Class(id) => {
                 let class = self.class(*id)?;
                 if !class.is_value {
@@ -2262,14 +2286,13 @@ impl Coalescing {
 
 fn coalesced_value_storage(
     function: &l::Function,
-    layouts: &Layouts,
     root_storage: &RootStoragePlan,
     folded_addresses: &HashSet<l::ValueId>,
     removable_edge_copies: &HashSet<(l::BlockId, l::BlockId, usize)>,
     elided_values: &HashSet<l::ValueId>,
     promoted_local_values: &HashSet<l::ValueId>,
 ) -> Result<Vec<l::ValueId>, String> {
-    let interference = root_storage::value_interference(function, layouts)?;
+    let interference = root_storage::value_interference(function)?;
     let mut coalescing = Coalescing::new(function.values.len());
     for (index, slot) in root_storage.value_slots.iter().copied().enumerate() {
         if let Some(slot) = slot {
@@ -2371,28 +2394,6 @@ fn declaration_scopes(
             };
             if let Some(value) = promoted_local {
                 references[value_storage[value.0 as usize].0 as usize].insert(block.id);
-            }
-            if matches!(
-                instruction.kind,
-                l::InstructionKind::Cast | l::InstructionKind::Coerce
-            ) {
-                // A value-class-to-nullable conversion emits its storage address.
-                // Function scope preserves that storage through later aggregate stores.
-                if let (Some(result), Some(l::Operand::Value(source))) =
-                    (instruction.result, instruction.operands.first())
-                {
-                    let source_type = &function.values[source.0 as usize].ty;
-                    let result_type = &function.values[result.0 as usize].ty;
-                    if matches!(
-                        (source_type, result_type),
-                        (
-                            l::ValueType::Data(Type::Class(source)),
-                            l::ValueType::Data(Type::Nullable(target))
-                        ) if matches!(target.as_ref(), Type::Class(target) if target == source)
-                    ) {
-                        forced_function.insert(value_storage[source.0 as usize]);
-                    }
-                }
             }
             for value in &instruction.invalidates {
                 references[value_storage[value.0 as usize].0 as usize].insert(block.id);
@@ -2598,7 +2599,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let (removable_edge_copies, elided_values) = removable_block_parameter_copies(function);
         let value_storage = coalesced_value_storage(
             function,
-            &emitter.layouts,
             &root_storage,
             &folded_addresses,
             &removable_edge_copies,
@@ -3239,6 +3239,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::InstructionKind::AllocateClass(class) => {
                 self.emit_allocate_class(out, instruction, *class, result)
             }
+            l::InstructionKind::BoxBoundaryValue { payload } => {
+                self.emit_box_boundary_value(out, instruction, *payload, &operands[0], result)
+            }
             l::InstructionKind::AddressOfValue => {
                 let id = instruction
                     .result
@@ -3561,7 +3564,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 out.push_str("    }\n    }\n");
                 Ok(())
             }
-            l::Terminator::Return { value, pos } => {
+            l::Terminator::Return { value, pos: _ } => {
                 let mut value = value
                     .as_ref()
                     .map(|value| self.operand(value))
@@ -3593,7 +3596,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                                 out,
                                 *class,
                                 &format!("&{stable}"),
-                                pos,
                                 &mut HashSet::new(),
                             )?;
                             value = Some(stable);
@@ -3634,7 +3636,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         out: &mut String,
         class: ClassId,
         address: &str,
-        position: &Pos,
         visiting: &mut HashSet<ClassId>,
     ) -> Result<(), String> {
         if !visiting.insert(class) {
@@ -3651,35 +3652,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     if !self.emitter.is_value_class(*target)? {
                         continue;
                     }
-                    let target_type = self.emitter.class_name(*target);
-                    let stable = self.fresh();
-                    let _ = writeln!(out, "    if ({field_address} != NULL) {{");
-                    let pos = self.emitter.pos_id(position);
-                    let allocation = self.emitter.runtime_call(
-                        "void*",
-                        "subscript_rt_boundary_scratch_alloc",
-                        &["void*".into(), "uint64_t".into(), "uint32_t".into()],
-                        &[
-                            "ctx".into(),
-                            format!("(uint64_t)sizeof({target_type})"),
-                            format!("{pos}u"),
-                        ],
-                    );
-                    let _ = writeln!(
-                        out,
-                        "        {target_type}* {stable} = ({target_type}*){allocation};\n        if (*(const uint32_t*)ctx != 0u) goto unwind;\n        memcpy({stable}, (const void*)({field_address}), sizeof *{stable});\n        {field_address} = (void*){stable};"
-                    );
-                    self.emit_stabilize_boundary_return_value(
-                        out, *target, &stable, position, visiting,
-                    )?;
-                    out.push_str("    }\n");
+                    // The field already owns a Context-managed box. Its
+                    // payload does not depend on the returning activation.
                 }
                 Type::Class(nested) if self.emitter.is_value_class(*nested)? => {
                     self.emit_stabilize_boundary_return_value(
                         out,
                         *nested,
                         &format!("&{field_address}"),
-                        position,
                         visiting,
                     )?;
                 }
@@ -3714,7 +3694,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         out,
                         *element,
                         &format!("&{data}[{index}]"),
-                        position,
                         visiting,
                     )?;
                     out.push_str("    }\n");
@@ -4334,21 +4313,16 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 }
             }
         }
-        if matches!(operand_type, l::ValueType::Address(_))
-            && matches!(result_type, l::ValueType::Data(Type::Nullable(_)))
-        {
-            let _ = writeln!(out, "    {destination} = (void*)({operand});");
-            return Ok(());
-        }
         if let (
-            l::ValueType::Data(Type::Class(source)),
-            l::ValueType::Data(Type::Nullable(target)),
+            l::ValueType::Data(Type::Nullable(source)),
+            l::ValueType::Data(Type::Class(target)),
         ) = (operand_type, &result_type)
         {
-            if matches!(target.as_ref(), Type::Class(target) if target == source)
-                && self.emitter.is_value_class(*source)?
+            if matches!(source.as_ref(), Type::Class(source) if source == target)
+                && self.emitter.is_value_class(*target)?
             {
-                let _ = writeln!(out, "    {destination} = (void*)&({operand});");
+                let class = self.emitter.class_name(*target);
+                let _ = writeln!(out, "    {destination} = *(({class}*)({operand}));");
                 return Ok(());
             }
         }
@@ -4465,6 +4439,50 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         Ok(())
     }
 
+    fn emit_box_boundary_value(
+        &mut self,
+        out: &mut String,
+        instruction: &l::Instruction,
+        payload: ClassId,
+        operand: &str,
+        result: Option<String>,
+    ) -> Result<(), String> {
+        let destination = result.ok_or_else(|| internal("BoxBoundaryValue has no result"))?;
+        let result_id = instruction
+            .result
+            .ok_or_else(|| internal("BoxBoundaryValue has no result id"))?;
+        let result_type = self.value_type(result_id)?.clone();
+        let l::ValueType::Data(Type::Nullable(inner)) = result_type else {
+            return Err(internal("BoxBoundaryValue result is not nullable"));
+        };
+        let Type::Class(_) = inner.as_ref() else {
+            return Err(internal("BoxBoundaryValue target is not a class"));
+        };
+        let trap = self.take_pending_trap(&instruction.traps, l::TrapKind::Allocation)?;
+        let pos = self.emitter.pos_id(&trap.pos);
+        let class_name = self.emitter.class_name(payload);
+        let call = self.emitter.runtime_call(
+            "void*",
+            "subscript_rt_alloc",
+            &[
+                "void*".into(),
+                "uint64_t".into(),
+                "uint32_t".into(),
+                "uint32_t".into(),
+            ],
+            &[
+                "ctx".into(),
+                format!("(uint64_t)sizeof({class_name})"),
+                format!("{}u", payload.0),
+                format!("{pos}u"),
+            ],
+        );
+        self.assign(out, Some(destination.clone()), &call)?;
+        self.emit_pending_check(out);
+        let _ = writeln!(out, "    *(({class_name}*)({destination})) = {operand};");
+        Ok(())
+    }
+
     fn emit_field_address(
         &mut self,
         out: &mut String,
@@ -4493,6 +4511,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     l::ValueType::Address(_) => format!("&(({})->d{})", operands[0], field.0),
                     l::ValueType::Data(Type::Class(id)) if self.emitter.is_value_class(*id)? => {
                         format!("&(({}).d{})", operands[0], field.0)
+                    }
+                    l::ValueType::Data(Type::Nullable(inner)) if matches!(inner.as_ref(), Type::Class(id) if *id == class) =>
+                    {
+                        format!(
+                            "&((({}*)({}))->d{})",
+                            self.emitter.class_name(class),
+                            operands[0],
+                            field.0
+                        )
                     }
                     l::ValueType::Data(Type::Class(_)) => format!(
                         "&((({}*)({}))->d{})",
@@ -4549,6 +4576,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 }
                 l::ValueType::Data(Type::Class(id)) if self.emitter.is_value_class(*id)? => {
                     format!("({}).d{}", operands[0], field_id.0)
+                }
+                l::ValueType::Data(Type::Nullable(inner)) if matches!(inner.as_ref(), Type::Class(id) if *id == class_id) =>
+                {
+                    format!(
+                        "((({}*)({}))->d{})",
+                        self.emitter.class_name(class_id),
+                        operands[0],
+                        field_id.0
+                    )
                 }
                 l::ValueType::Data(Type::Class(_)) => format!(
                     "((({}*)({}))->d{})",
@@ -5796,7 +5832,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     parameter.source_name
                 ))
             })?;
-            if operand_types.get(cursor).and_then(|ty| data_type(ty).ok()) != Some(&parameter.ty) {
+            if operand_types.get(cursor).is_none_or(|ty| {
+                !foreign_parameter_type_matches(self.emitter.module, ty, &parameter.ty)
+            }) {
                 return Err(internal(format!(
                     "foreign parameter `{}` operand type disagrees with its declaration",
                     parameter.source_name
@@ -6058,9 +6096,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     let Type::Class(nested) = inner.as_ref() else {
                         unreachable!()
                     };
+                    let force_rebuild =
+                        !boundary_class_is_embedded_header(self.emitter.module, *nested);
                     parts.push(
-                        self.marshal_boundary_pointer(out, *nested, &access, position, true)?
-                            .0,
+                        self.marshal_boundary_pointer(
+                            out,
+                            *nested,
+                            &access,
+                            position,
+                            force_rebuild,
+                        )?
+                        .0,
                     );
                     index += 1;
                 }
@@ -6085,8 +6131,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         position: u32,
         force_rebuild: bool,
     ) -> Result<(String, Option<BoundaryPtrWriteback>), String> {
-        if !boundary_class_needs_scratch(self.emitter.module, class)?
-            && !(force_rebuild && boundary_class_requires_build(self.emitter.module, class)?)
+        if boundary_class_is_embedded_header(self.emitter.module, class)
+            || (!boundary_class_needs_scratch(self.emitter.module, class)?
+                && !(force_rebuild && boundary_class_requires_build(self.emitter.module, class)?))
         {
             return Ok((
                 format!("(({}*)({pointer}))", self.emitter.class(class)?.source_name),

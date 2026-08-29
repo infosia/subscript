@@ -127,4 +127,5 @@ export function main(): void {
   directForeignCall(true);
   afterScriptCall(true);
   passToScriptCall(true);
+  print("live_bytes=2977");
 }

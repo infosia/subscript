@@ -406,15 +406,67 @@ fn general_union_in_program_is_still_s011() {
 }
 
 #[test]
-fn value_class_with_null_in_ordinary_code_is_rejected() {
-    // The `Struct | null` boundary form is legal in the mirror but not in
-    // ordinary program declarations (C7 unchanged for non-boundary code).
-    let diagnostics = check_with_mirror(
+fn boundary_value_class_with_null_is_accepted_in_ordinary_code() {
+    // §33.5 makes the nullable boundary form a managed handle in members,
+    // elements, and locals outside the mirror as well.
+    check_with_mirror(
         "export function main(): void {\n  let c: SubChainHeader | null = null;\n  print(`${c === null}`);\n}\n",
     )
-    .expect_err("ordinary value-class union must be rejected");
-    assert_eq!(diagnostics[0].code, RuleCode::S011);
-    assert_eq!(diagnostics[0].pos.line, 2);
+    .expect("ordinary nullable boundary declaration checks");
+}
+
+#[test]
+fn embedded_header_value_reads_are_rejected_at_each_context() {
+    let programs = [
+        (
+            "binding",
+            "export function main(): void {\n\
+               const extension: SubChainExtA = new SubChainExtA(\n\
+                 new SubChainHeader(SubChainKind.SUB_CHAIN_KIND_EXT_A, null), 1, 2);\n\
+               const header: SubChainHeader = extension.header;\n\
+               print(`${header.sType}`);\n\
+             }\n",
+        ),
+        (
+            "argument",
+            "function takeHeader(header: SubChainHeader): void { print(`${header.sType}`); }\n\
+             export function main(): void {\n\
+               const extension: SubChainExtA = new SubChainExtA(\n\
+                 new SubChainHeader(SubChainKind.SUB_CHAIN_KIND_EXT_A, null), 1, 2);\n\
+               takeHeader(extension.header);\n\
+             }\n",
+        ),
+        (
+            "return",
+            "function copyHeader(extension: SubChainExtA): SubChainHeader {\n\
+               return extension.header;\n\
+             }\n\
+             export function main(): void {}\n",
+        ),
+        (
+            "boundary field",
+            "export function main(): void {\n\
+               const extension: SubChainExtA = new SubChainExtA(\n\
+                 new SubChainHeader(SubChainKind.SUB_CHAIN_KIND_EXT_A, null), 1, 2);\n\
+               const copy: SubChainExtA = new SubChainExtA(extension.header, 3, 4);\n\
+               print(`${copy.header.sType}`);\n\
+             }\n",
+        ),
+    ];
+
+    for (context, program) in programs {
+        let diagnostics =
+            check_with_mirror(program).expect_err("embedded header copy must fail with S100");
+        assert!(
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == RuleCode::S100
+                    && diagnostic
+                        .message
+                        .contains("embedded header `SubChainExtA.header` cannot be copied")
+            }),
+            "embedded header {context} diagnostics: {diagnostics:?}"
+        );
+    }
 }
 
 #[test]

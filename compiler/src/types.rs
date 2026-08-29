@@ -123,7 +123,7 @@ pub enum Type {
     /// Non-capturing function type `(params) => ret`.
     Func(Box<FuncType>),
     /// `Ref | null` (C7). The inner type is a reference class, `object`,
-    /// or a function type.
+    /// a function type, or a boxed boundary value class (§33.5).
     Nullable(Box<Type>),
     /// Coroutine object produced by calling a `function*` (C8); yields
     /// the carried type through `.next()`.

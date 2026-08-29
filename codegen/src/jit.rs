@@ -1741,7 +1741,21 @@ pub fn run_jit_with_memory_accounting(
     files: &[SourceFile],
     freed_handle_diagnostics: bool,
 ) -> Result<(Vec<u8>, JitMemoryAccounting), RunError> {
-    let (module, lowered) = compile_jit(files, &[])?;
+    run_jit_with_memory_accounting_and_native_libraries(files, &[], freed_handle_diagnostics)
+}
+
+/// Runs the dev JIT with native libraries and returns stdout plus the live
+/// Context's post-run allocation accounting.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_jit_with_native_libraries`].
+pub fn run_jit_with_memory_accounting_and_native_libraries(
+    files: &[SourceFile],
+    libraries: &[NativeLibrary],
+    freed_handle_diagnostics: bool,
+) -> Result<(Vec<u8>, JitMemoryAccounting), RunError> {
+    let (module, lowered) = compile_jit(files, libraries)?;
     let outcome = execute_entry(&module, &lowered, None, freed_handle_diagnostics, None)
         .map(|run| (run.stdout, memory_accounting(&run.ctx)));
     // SAFETY: all executions above have returned and no pointer into

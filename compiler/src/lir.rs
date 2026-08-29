@@ -469,6 +469,14 @@ pub enum InstructionKind {
     Coerce,
     /// Allocate zeroed class storage.
     AllocateClass(ClassId),
+    /// Allocate a managed box and copy one boundary value into its payload.
+    ///
+    /// `payload` equals the result's class for an ordinary box. For an
+    /// embedded header, it names the enclosing extension class instead.
+    BoxBoundaryValue {
+        /// Class whose complete layout and class id the box stores.
+        payload: ClassId,
+    },
     /// Take a temporary aggregate's address.
     AddressOfValue,
     /// Address one field.

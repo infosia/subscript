@@ -973,6 +973,16 @@ impl<'m> Interpreter<'m> {
             l::InstructionKind::AllocateClass(class) => {
                 Some(self.allocate_class(*class, result_ty, &instruction.pos)?)
             }
+            l::InstructionKind::BoxBoundaryValue { payload } => Some(
+                self.box_boundary_value(
+                    operands
+                        .first()
+                        .ok_or_else(|| self.missing_operand(instruction, 0))?,
+                    *payload,
+                    result_ty,
+                    &instruction.pos,
+                )?,
+            ),
             l::InstructionKind::AddressOfValue => {
                 let value = operands
                     .first()
@@ -3888,6 +3898,40 @@ impl<'m> Interpreter<'m> {
         Ok(Value::Handle(handle))
     }
 
+    fn box_boundary_value(
+        &mut self,
+        value: &Value,
+        payload: ClassId,
+        result_ty: Option<&l::ValueType>,
+        pos: &Pos,
+    ) -> Result<Value, InterpretError> {
+        let Some(l::ValueType::Data(Type::Nullable(inner))) = result_ty else {
+            return Err(self.invalid(
+                Some(pos.clone()),
+                "BoxBoundaryValue result type is inconsistent",
+            ));
+        };
+        let Type::Class(_) = inner.as_ref() else {
+            return Err(self.invalid(Some(pos.clone()), "BoxBoundaryValue target is not a class"));
+        };
+        let layout = self.class_layouts.get(&payload).ok_or_else(|| {
+            self.invalid(
+                Some(pos.clone()),
+                format!("class {:?} has no box layout", payload),
+            )
+        })?;
+        let bytes = self.pack(&Type::Class(payload), value)?;
+        let handle = self.context.alloc(layout.size, payload.0 as u32, 0);
+        self.check_runtime(pos)?;
+        if !handle.is_null() && !bytes.is_empty() {
+            // SAFETY: the Context allocated exactly `layout.size` payload
+            // bytes, and `pack` returns that class layout's exact byte image.
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), handle, bytes.len()) };
+        }
+        self.root_handle(handle);
+        Ok(Value::Handle(handle))
+    }
+
     fn root_handle(&mut self, handle: *mut u8) {
         if handle.is_null() || handle.addr() & 1 != 0 {
             return;
@@ -4640,6 +4684,32 @@ impl<'m> Interpreter<'m> {
         instruction: &l::Instruction,
     ) -> Result<Value, InterpretError> {
         let ty = self.data_result_type(result_ty, instruction)?;
+        if let (Type::Class(target), Some(Type::Nullable(source))) = (ty, source_ty) {
+            if matches!(source.as_ref(), Type::Class(source) if source == target)
+                && self
+                    .module
+                    .classes
+                    .get(target.0)
+                    .is_some_and(|class| class.is_value)
+            {
+                let handle = value.as_handle()?;
+                let layout = self.class_layouts.get(target).ok_or_else(|| {
+                    self.invalid(
+                        Some(instruction.pos.clone()),
+                        format!("class {:?} has no box layout", target),
+                    )
+                })?;
+                if handle.is_null() {
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        "null boundary box was narrowed without a guard",
+                    ));
+                }
+                // SAFETY: BoxBoundaryValue allocates this exact class payload.
+                let bytes = unsafe { std::slice::from_raw_parts(handle, layout.size) };
+                return self.unpack(ty, bytes);
+            }
+        }
         Ok(match ty {
             Type::F16 => Value::U(ffi::subscript_rt_f16_from_f64(value.as_f64()?) as u64),
             Type::F32 => Value::F32(if matches!(source_ty, Some(Type::F16)) {

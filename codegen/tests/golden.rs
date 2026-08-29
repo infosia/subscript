@@ -406,7 +406,7 @@ fn scalar_parameter_pair_entry_matches_across_tiers_and_golden() {
 }
 
 #[test]
-fn embedded_chain_header_keeps_its_boundary_address() {
+fn embedded_chain_header_box_keeps_the_complete_extension() {
     let accept = corpus::corpus_accept();
     let id = "a89-interop-chain-payload";
     let sources = corpus::entry_sources(&accept, id);
@@ -422,6 +422,26 @@ fn embedded_chain_header_keeps_its_boundary_address() {
     println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
     println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
     assert_eq!(jit, golden, "{id}: embedded-header payload is wrong");
+    assert_eq!(ship, jit, "{id}: tier outputs differ");
+}
+
+#[test]
+fn managed_boundary_box_survives_the_building_function() {
+    let accept = corpus::corpus_accept();
+    let id = "a169-managed-boundary-box";
+    let sources = corpus::entry_sources(&accept, id);
+    let Some(libraries) = native_libraries(&sources) else {
+        println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
+    let jit = run_jit_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries)
+        .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+    let golden = corpus::golden_bytes(&accept, id);
+    println!("{id} dev-JIT:\n{}", String::from_utf8_lossy(&jit));
+    println!("{id} ship-C-AOT:\n{}", String::from_utf8_lossy(&ship));
+    assert_eq!(jit, golden, "{id}: managed-box payload is wrong");
     assert_eq!(ship, jit, "{id}: tier outputs differ");
 }
 
@@ -899,8 +919,8 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // Entry a170 pins iteration bounds selected by source spelling.
     assert_eq!(
         golden_ids.len(),
-        168,
-        "expected exactly 168 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        169,
+        "expected exactly 169 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -941,7 +961,7 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          R36 async-generic golden, the a144 R37 named-accessor golden, the a145 §66 \
          emitted-identifier golden, the a146 §66 scoped-local golden, the a147–a148 §67 \
          switch-body-scope goldens, the a149 §67 suspension-state golden, the a150–a153 §68 \
-         goldens, the a154–a155 §70 held-async-handle goldens, the a156 value-class receiver-by-value golden, the a157 suspension-loop-liveness golden, the a159 address-base-liveness golden, the a160 §67 module-initializer-order golden, the a161–a162 §70 counted-store/copy-site goldens, the a163 address-taken activation-liveness golden, the a164–a165 and a167 §68 consumer goldens, the a166 resume-parameter-interference golden, the a168 §71 static-member golden, and the a170 iteration-bound-spelling golden, found {}",
+         goldens, the a154–a155 §70 held-async-handle goldens, the a156 value-class receiver-by-value golden, the a157 suspension-loop-liveness golden, the a159 address-base-liveness golden, the a160 §67 module-initializer-order golden, the a161–a162 §70 counted-store/copy-site goldens, the a163 address-taken activation-liveness golden, the a164–a165 and a167 §68 consumer goldens, the a166 resume-parameter-interference golden, the a168 §71 static-member golden, the a169 §33.5 managed-boundary-box golden, and the a170 iteration-bound-spelling golden, found {}",
         golden_ids.len()
     );
 

@@ -22,7 +22,8 @@ use subscript_runtime::TrapKind;
 use crate::layout::{closure_environment_layout, is_unsigned, managed_words, Layouts, Repr};
 use crate::lir_types::{
     array_element_kind, array_format_kind, association_key_kind, boundary_class_contains_pointer,
-    boundary_class_needs_scratch, boundary_class_requires_build, is_userdata_slot,
+    boundary_class_is_embedded_header, boundary_class_needs_scratch, boundary_class_requires_build,
+    is_userdata_slot,
 };
 use crate::lower::{
     checked_layout_add, checked_layout_mul, internal, round_up_layout, FnKey, GlobalSlot, ModLower,
@@ -730,6 +731,27 @@ fn data_type(value: &l::ValueType) -> Result<&Type, String> {
         l::ValueType::Data(ty) => Ok(ty),
         other => Err(internal(format!("expected data value type, got {other:?}"))),
     }
+}
+
+fn foreign_parameter_type_matches(
+    module: &l::Module,
+    actual: &l::ValueType,
+    declared: &Type,
+) -> bool {
+    if actual == &l::ValueType::Data(declared.clone()) {
+        return true;
+    }
+    let (l::ValueType::Address(address), Type::Nullable(nullable)) = (actual, declared) else {
+        return false;
+    };
+    let Type::Class(class) = nullable.as_ref() else {
+        return false;
+    };
+    address.pointee == Type::Class(*class)
+        && module
+            .classes
+            .get(class.0)
+            .is_some_and(|definition| definition.is_value && definition.is_boundary)
 }
 
 fn value_repr(layouts: &Layouts, value: &l::ValueType) -> Result<Repr, String> {
@@ -1755,6 +1777,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                             self.address_offset(pointer, i64::from(offset))
                         }
                     }
+                    l::ValueType::Data(Type::Nullable(inner)) if matches!(inner.as_ref(), Type::Class(id) if *id == class) =>
+                    {
+                        let pointer = self.expect_scalar(base)?;
+                        self.address_offset(pointer, i64::from(offset))
+                    }
                     l::ValueType::Address(_) => {
                         let pointer = self.expect_scalar(base)?;
                         self.address_offset(pointer, i64::from(offset))
@@ -2379,6 +2406,50 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.emit_trap(trap, TrapOperand::Pending)?;
             }
         }
+        Ok(RV::Scalar(pointer))
+    }
+
+    fn box_boundary_value(
+        &mut self,
+        value: RV,
+        ty: &l::ValueType,
+        payload: ClassId,
+        traps: &[l::Trap],
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        let l::ValueType::Data(Type::Class(class)) = ty else {
+            return Err(internal("BoxBoundaryValue operand is not a class value"));
+        };
+        if *class != payload {
+            return Err(internal(
+                "BoxBoundaryValue payload disagrees with its operand",
+            ));
+        }
+        let layout = self.ml.layouts.class(payload.0)?;
+        if !layout.is_value {
+            return Err(internal("BoxBoundaryValue operand is not a value class"));
+        }
+        let size = self.iconst(types::I64, i64::from(layout.size));
+        let class_id = self.iconst(types::I32, payload.0 as i64);
+        let position = traps
+            .iter()
+            .find(|trap| trap.kind == l::TrapKind::Allocation)
+            .map_or(pos, |trap| &trap.pos);
+        let position = self.position_id(position);
+        let position = self.iconst(types::I32, position);
+        let pointer = self
+            .call_runtime(
+                self.ml.rt.alloc,
+                &[self.ctx, size, class_id, position],
+                false,
+            )?
+            .ok_or_else(|| internal("boundary value box allocation has no result"))?;
+        for trap in traps {
+            if trap.kind == l::TrapKind::Allocation {
+                self.emit_trap(trap, TrapOperand::Pending)?;
+            }
+        }
+        self.store_data(&Type::Class(payload), pointer, 0, value)?;
         Ok(RV::Scalar(pointer))
     }
 }
@@ -4626,7 +4697,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let ty = parameter_types
                     .get(cursor)
                     .ok_or_else(|| internal("foreign parameter type is missing"))?;
-                if data_type(ty)? != &parameter.ty {
+                if !foreign_parameter_type_matches(self.ml.lir, ty, &parameter.ty) {
                     return Err(internal(format!(
                         "foreign parameter `{}` type disagrees with LIR call target",
                         parameter.source_name
@@ -5170,7 +5241,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let class = self
                     .boundary_pointer_class(ty)
                     .ok_or_else(|| internal("boundary pointer class is missing"))?;
-                if boundary_class_needs_scratch(self.ml.lir, ClassId(class))? {
+                if !boundary_class_is_embedded_header(self.ml.lir, ClassId(class))
+                    && boundary_class_needs_scratch(self.ml.lir, ClassId(class))?
+                {
                     let (pointer, writeback) =
                         self.marshal_boundary_pointer(class, source, scratch_mark, pos)?;
                     self.push_foreign_argument(signature, arguments, types::I64, pointer);
@@ -5199,16 +5272,14 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         &mut self,
         class: usize,
         source: Value,
-        pos: &Pos,
     ) -> Result<(), String> {
-        self.stabilize_boundary_return_value_inner(class, source, pos, &mut HashSet::new())
+        self.stabilize_boundary_return_value_inner(class, source, &mut HashSet::new())
     }
 
     fn stabilize_boundary_return_value_inner(
         &mut self,
         class: usize,
         source: Value,
-        pos: &Pos,
         visiting: &mut HashSet<usize>,
     ) -> Result<(), String> {
         if !visiting.insert(class) {
@@ -5228,36 +5299,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .get(index)
                 .ok_or_else(|| internal("boundary return field offset is missing"))?
                 as i32;
-            if let Some(target_class) = self.boundary_pointer_class(&field.ty) {
-                let pointer = self.builder.ins().load(types::I64, flags(), source, offset);
-                let nonnull = self.builder.ins().icmp_imm(IntCC::NotEqual, pointer, 0);
-                let copy = self.builder.create_block();
-                let ready = self.builder.create_block();
-                self.builder.ins().brif(nonnull, copy, &[], ready, &[]);
-                self.builder.switch_to_block(copy);
-                let target_layout = self.ml.layouts.class(target_class)?.clone();
-                let bytes = self.iconst(types::I64, i64::from(target_layout.size));
-                let position = self.position_id(pos);
-                let position = self.iconst(types::I32, position);
-                let stable = self
-                    .call_runtime(
-                        self.ml.rt.boundary_scratch_alloc,
-                        &[self.ctx, bytes, position],
-                        false,
-                    )?
-                    .ok_or_else(|| internal("boundary return scratch allocation has no result"))?;
-                self.trap_check();
-                self.copy_bytes(stable, pointer, target_layout.size, target_layout.align);
-                self.stabilize_boundary_return_value_inner(target_class, stable, pos, visiting)?;
-                self.builder.ins().store(flags(), stable, source, offset);
-                self.builder.ins().jump(ready, &[]);
-                self.builder.switch_to_block(ready);
+            if self.boundary_pointer_class(&field.ty).is_some() {
+                // The field already owns a Context-managed box. Its payload
+                // does not depend on the returning activation.
                 continue;
             }
             if let Type::Class(inner) = &field.ty {
                 if self.is_value_class(&field.ty) {
                     let nested = self.address_offset(source, i64::from(offset));
-                    self.stabilize_boundary_return_value_inner(inner.0, nested, pos, visiting)?;
+                    self.stabilize_boundary_return_value_inner(inner.0, nested, visiting)?;
                     continue;
                 }
             }
@@ -5293,7 +5343,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.stabilize_boundary_return_value_inner(
                     element_class.0,
                     element_address,
-                    pos,
                     visiting,
                 )?;
                 let next = self.builder.ins().iadd_imm(item, 1);
@@ -5486,6 +5535,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.builder
                             .ins()
                             .load(types::I64, flags(), source, language_offset);
+                    if boundary_class_is_embedded_header(self.ml.lir, ClassId(child_class)) {
+                        self.builder
+                            .ins()
+                            .store(flags(), source_pointer, destination, c_offset);
+                        index += 1;
+                        continue;
+                    }
                     let zero = self.iconst(types::I64, 0);
                     self.builder
                         .ins()
@@ -5912,17 +5968,24 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 if matches!(
                     (operand_types.first(), result_ty.as_ref()),
                     (
-                        Some(l::ValueType::Address(_)),
-                        Some(l::ValueType::Data(Type::Nullable(_)))
-                    )
+                        Some(l::ValueType::Data(Type::Nullable(source))),
+                        Some(l::ValueType::Data(Type::Class(target)))
+                    ) if matches!(source.as_ref(), Type::Class(source)
+                        if source == target && self.is_value_class(&Type::Class(*target)))
                 ) {
-                    Some(RV::Scalar(
-                        self.expect_scalar(
-                            *operands
-                                .first()
-                                .ok_or_else(|| internal("conversion operand is missing"))?,
+                    let pointer = self.expect_scalar(
+                        *operands
+                            .first()
+                            .ok_or_else(|| internal("conversion operand is missing"))?,
+                    )?;
+                    Some(
+                        self.clone_value(
+                            RV::Aggregate(pointer),
+                            result_ty
+                                .as_ref()
+                                .ok_or_else(|| internal("conversion result type is missing"))?,
                         )?,
-                    ))
+                    )
                 } else {
                     let source = data_type(
                         operand_types
@@ -5965,6 +6028,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     (_, value) => value,
                 })
             }
+            l::InstructionKind::BoxBoundaryValue { payload } => Some(
+                self.box_boundary_value(
+                    *operands
+                        .first()
+                        .ok_or_else(|| internal("BoxBoundaryValue operand is missing"))?,
+                    operand_types
+                        .first()
+                        .ok_or_else(|| internal("BoxBoundaryValue type is missing"))?,
+                    *payload,
+                    &instruction.traps,
+                    &instruction.pos,
+                )?,
+            ),
             l::InstructionKind::AddressOfValue => {
                 let ty = data_type(
                     operand_types
@@ -6329,7 +6405,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(result)
     }
 
-    fn emit_return(&mut self, value: Option<&l::Operand>, pos: &Pos) -> Result<(), String> {
+    fn emit_return(&mut self, value: Option<&l::Operand>, _pos: &Pos) -> Result<(), String> {
         if let Some(kind) = self.coroutine {
             let frame = self
                 .frame
@@ -6365,7 +6441,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     if self.is_value_class(&Type::Class(*class))
                         && boundary_class_contains_pointer(self.ml.lir, *class)?
                     {
-                        self.stabilize_boundary_return_value(class.0, destination, pos)?;
+                        self.stabilize_boundary_return_value(class.0, destination)?;
                     }
                 }
                 Vec::new()

@@ -175,6 +175,34 @@ pub(crate) fn boundary_class_contains_pointer(
     boundary_class_contains_pointer_inner(module, class, &mut HashSet::new())
 }
 
+pub(crate) fn boundary_class_is_embedded_header(module: &l::Module, header: ClassId) -> bool {
+    if !module
+        .classes
+        .get(header.0)
+        .is_some_and(|class| class.id == header && class.is_value && class.is_boundary)
+    {
+        return false;
+    }
+    let nullable_header = Type::Nullable(Box::new(Type::Class(header)));
+    let used_as_link = module.classes.iter().any(|class| {
+        class.is_boundary && class.fields.iter().any(|field| field.ty == nullable_header)
+    }) || module.foreign_functions.iter().any(|function| {
+        function
+            .parameters
+            .iter()
+            .any(|parameter| parameter.ty == nullable_header)
+    });
+    used_as_link
+        && module.classes.iter().any(|class| {
+            class.is_value
+                && class.is_boundary
+                && class
+                    .fields
+                    .first()
+                    .is_some_and(|field| field.ty == Type::Class(header))
+        })
+}
+
 pub(crate) fn boundary_class_requires_build(
     module: &l::Module,
     class: ClassId,

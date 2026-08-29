@@ -2,7 +2,9 @@
 
 use std::collections::{BTreeSet, HashSet};
 
-use subscript_compiler::{lir as l, Type};
+use subscript_compiler::lir as l;
+#[cfg(test)]
+use subscript_compiler::Type;
 
 use crate::layout::{managed_words, Layouts};
 
@@ -48,51 +50,23 @@ fn value_operand(operand: Option<&l::Operand>) -> Option<l::ValueId> {
 ///
 /// This is the only decision point for rule 8b. Array-element addresses use
 /// the direct `array_base` provenance on their LIR value instead.
-fn address_taken_value(
-    function: &l::Function,
-    layouts: &Layouts,
-    instruction: &l::Instruction,
-) -> Result<Option<l::ValueId>, String> {
+fn address_taken_value(instruction: &l::Instruction) -> Result<Option<l::ValueId>, String> {
     let Some(source) = value_operand(instruction.operands.first()) else {
         return Ok(None);
     };
     match &instruction.kind {
         l::InstructionKind::AddressOfValue => Ok(Some(source)),
-        l::InstructionKind::Coerce => {
-            let Some(result) = instruction.result else {
-                return Ok(None);
-            };
-            let value_class = match &function.values[source.0 as usize].ty {
-                l::ValueType::Data(Type::Class(class)) => layouts.class(class.0)?.is_value,
-                _ => false,
-            };
-            Ok((value_class
-                && matches!(
-                    (
-                        &function.values[source.0 as usize].ty,
-                        &function.values[result.0 as usize].ty,
-                    ),
-                    (
-                        l::ValueType::Data(Type::Class(source)),
-                        l::ValueType::Data(Type::Nullable(target)),
-                    ) if matches!(target.as_ref(), Type::Class(target) if target == source)
-                ))
-            .then_some(source))
-        }
         _ => Ok(None),
     }
 }
 
-fn address_taken_values(
-    function: &l::Function,
-    layouts: &Layouts,
-) -> Result<BTreeSet<l::ValueId>, String> {
+fn address_taken_values(function: &l::Function) -> Result<BTreeSet<l::ValueId>, String> {
     function
         .blocks
         .iter()
         .flat_map(|block| &block.instructions)
         .try_fold(BTreeSet::new(), |mut values, instruction| {
-            if let Some(value) = address_taken_value(function, layouts, instruction)? {
+            if let Some(value) = address_taken_value(instruction)? {
                 values.insert(origin(function, value)?);
             }
             Ok(values)
@@ -266,9 +240,8 @@ fn live_ins(
 
 pub(crate) fn value_interference(
     function: &l::Function,
-    layouts: &Layouts,
 ) -> Result<Vec<HashSet<l::ValueId>>, String> {
-    let held_to_exit = address_taken_values(function, layouts)?;
+    let held_to_exit = address_taken_values(function)?;
     let origin_interference = value_interference_with(function, &held_to_exit)?;
     let mut origin_members = vec![Vec::new(); function.values.len()];
     for value in &function.values {
@@ -385,7 +358,7 @@ fn occupied_slots(
 }
 
 pub(crate) fn plan(function: &l::Function, layouts: &Layouts) -> Result<RootStoragePlan, String> {
-    let held_to_exit = address_taken_values(function, layouts)?;
+    let held_to_exit = address_taken_values(function)?;
     let live_in = live_ins(function, &held_to_exit)?;
     let interference = value_interference_with(function, &held_to_exit)?;
     let mut slots = Vec::<RootSlot>::new();
@@ -679,7 +652,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            address_taken_values(&function(values, vec![block]), &layouts()).unwrap(),
+            address_taken_values(&function(values, vec![block])).unwrap(),
             BTreeSet::from([l::ValueId(0)])
         );
     }

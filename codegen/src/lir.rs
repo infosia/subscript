@@ -411,12 +411,8 @@ impl<'a> Lowering<'a> {
                     if builder.current.is_none() {
                         break;
                     }
-                    let value = builder.require_expr(&global.init)?;
-                    let value = builder.coerce_operand(
-                        value,
-                        l::ValueType::Data(global.ty.clone()),
-                        &global.pos,
-                    )?;
+                    let value =
+                        builder.lower_stored_expr_at(&global.ty, &global.init, &global.pos)?;
                     let global_id = builder
                         .lowering
                         .globals
@@ -1252,14 +1248,16 @@ impl AddressTaken<'_> {
                     _ => None,
                 };
                 for (index, argument) in args.iter().enumerate() {
-                    if parameter_types
-                        .as_ref()
-                        .and_then(|params| params.get(index))
-                        .is_some_and(|parameter| {
-                            self.is_boundary_struct_pointer(parameter)
-                                && matches!(argument.ty, Type::Class(_))
-                                && is_place_expr(argument)
-                        })
+                    if matches!(callee, hir::Callee::Foreign(_))
+                        && parameter_types
+                            .as_ref()
+                            .and_then(|params| params.get(index))
+                            .is_some_and(|parameter| {
+                                self.is_boundary_struct_pointer(parameter)
+                                    && matches!(argument.ty, Type::Class(_))
+                                    && is_place_expr(argument)
+                                    && !self.is_embedded_header_store(parameter, argument)
+                            })
                     {
                         self.place(argument);
                     } else {
@@ -1267,26 +1265,9 @@ impl AddressTaken<'_> {
                     }
                 }
             }
-            K::New { class, args } => {
-                let boundary_fields = self
-                    .module
-                    .classes
-                    .get(class.0)
-                    .filter(|definition| definition.is_boundary)
-                    .map(|definition| &definition.fields);
-                for (index, argument) in args.iter().enumerate() {
-                    if boundary_fields
-                        .and_then(|fields| fields.get(index))
-                        .is_some_and(|field| {
-                            self.is_boundary_struct_pointer(&field.ty)
-                                && matches!(argument.ty, Type::Class(_))
-                                && is_place_expr(argument)
-                        })
-                    {
-                        self.place(argument);
-                    } else {
-                        self.expr(argument);
-                    }
+            K::New { args, .. } => {
+                for argument in args {
+                    self.expr(argument);
                 }
             }
             K::DescriptorLit { fields, .. } => {
@@ -1386,6 +1367,36 @@ impl AddressTaken<'_> {
                 definition.is_value && definition.is_boundary
             })))
     }
+
+    fn is_embedded_header_store(&self, expected: &Type, expr: &hir::Expr) -> bool {
+        let Type::Nullable(inner) = expected else {
+            return false;
+        };
+        let Type::Class(header) = inner.as_ref() else {
+            return false;
+        };
+        let hir::ExprKind::Field { obj, name } = &expr.kind else {
+            return false;
+        };
+        let Type::Class(extension) = obj.ty else {
+            return false;
+        };
+        let nullable = Type::Nullable(Box::new(Type::Class(*header)));
+        let linked = self.module.classes.iter().any(|class| {
+            class.is_boundary && class.fields.iter().any(|field| field.ty == nullable)
+        }) || self.module.foreign_fns.iter().any(|function| {
+            function
+                .params
+                .iter()
+                .any(|parameter| parameter.ty == nullable)
+        });
+        self.module
+            .classes
+            .get(extension.0)
+            .filter(|class| class.is_value && class.is_boundary)
+            .and_then(|class| class.fields.first())
+            .is_some_and(|field| field.name == *name && field.ty == Type::Class(*header) && linked)
+    }
 }
 
 fn is_place_expr(expr: &hir::Expr) -> bool {
@@ -1424,6 +1435,7 @@ struct PreparedPlace {
 #[derive(Clone)]
 enum PreparedPlaceKind {
     ExistingAddress(l::Operand, Type),
+    BoxedBoundary(l::Operand, Type),
     Local(l::LocalId, Type),
     Global(l::GlobalId, Type),
     Field {
@@ -1463,6 +1475,7 @@ fn collect_place_traps(place: &PreparedPlace, traps: &mut Vec<l::Trap>) {
     let base = match &place.kind {
         PreparedPlaceKind::Field { base, .. } | PreparedPlaceKind::Index { base, .. } => base,
         PreparedPlaceKind::ExistingAddress(..)
+        | PreparedPlaceKind::BoxedBoundary(..)
         | PreparedPlaceKind::Local(..)
         | PreparedPlaceKind::Global(..) => return,
     };
@@ -1480,6 +1493,7 @@ fn prepare_place_after_checked_read(place: &mut PreparedPlace) {
         }
         PreparedPlaceKind::Field { base, .. } => base,
         PreparedPlaceKind::ExistingAddress(..)
+        | PreparedPlaceKind::BoxedBoundary(..)
         | PreparedPlaceKind::Local(..)
         | PreparedPlaceKind::Global(..) => return,
     };
@@ -2297,8 +2311,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 init,
                 pos,
             } => {
-                let value = self.require_expr(init)?;
-                let value = self.coerce_operand(value, l::ValueType::Data(ty.clone()), pos)?;
+                let value = self.lower_stored_expr_at(ty, init, pos)?;
                 self.declare_binding(
                     name.clone(),
                     l::ValueType::Data(ty.clone()),
@@ -2324,14 +2337,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             hir::Stmt::Return { value, pos } => {
                 let value = value
                     .as_ref()
-                    .map(|value| {
-                        let value = self.require_expr(value)?;
-                        self.coerce_operand(
-                            value,
-                            l::ValueType::Data(self.function.ret.clone()),
-                            pos,
-                        )
-                    })
+                    .map(|value| self.lower_stored_expr_at(&self.function.ret.clone(), value, pos))
                     .transpose()?;
                 self.terminate_return(value, l::ValueType::Data(self.function.ret.clone()), pos)?;
             }
@@ -3365,14 +3371,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 };
                 let operands = elements
                     .iter()
-                    .map(|element| {
-                        let value = self.require_expr(element)?;
-                        self.coerce_operand(
-                            value,
-                            l::ValueType::Data(element_type.clone()),
-                            &element.pos,
-                        )
-                    })
+                    .map(|element| self.lower_stored_expr(&element_type, element))
                     .collect::<Result<Vec<_>, _>>()?;
                 let stored = elements
                     .iter()
@@ -3402,15 +3401,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 let operands = elements
                     .iter()
                     .map(|element| {
-                        let value = self.require_expr(&element.expr)?;
                         if element.spread.is_none() {
-                            self.coerce_operand(
-                                value,
-                                l::ValueType::Data((**element_type).clone()),
-                                &element.expr.pos,
-                            )
+                            self.lower_stored_expr(element_type, &element.expr)
                         } else {
-                            Ok(value)
+                            self.require_expr(&element.expr)
                         }
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -3602,18 +3596,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             &expr.pos,
         )?;
         self.current = Some(then_block);
-        let then_value = self.require_expr(then)?;
-        let then_value =
-            self.coerce_operand(then_value, l::ValueType::Data(expr.ty.clone()), &then.pos)?;
+        let then_value = self.lower_stored_expr(&expr.ty, then)?;
         let result_type = l::ValueType::Data(expr.ty.clone());
         let then_is_fresh = self.operand_is_fresh_owner(&then_value, &result_type);
         let edge = self.block_target(merge, vec![then_value])?;
         self.terminate(l::Terminator::Branch(edge), &then.pos)?;
         self.restore_bindings(&branch_state);
         self.current = Some(else_block);
-        let else_value = self.require_expr(els)?;
-        let else_value =
-            self.coerce_operand(else_value, l::ValueType::Data(expr.ty.clone()), &els.pos)?;
+        let else_value = self.lower_stored_expr(&expr.ty, els)?;
         let else_is_fresh = self.operand_is_fresh_owner(&else_value, &result_type);
         let edge = self.block_target(merge, vec![else_value])?;
         self.terminate(l::Terminator::Branch(edge), &els.pos)?;
@@ -3665,8 +3655,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             } else {
                 None
             };
-            let value = self.require_expr(value_expr)?;
             let result = if let Some(op) = op {
+                let value = self.require_expr(value_expr)?;
                 self.emit(
                     l::InstructionKind::Binary(convert_binary(op)?),
                     vec![old.expect("compound old value"), value],
@@ -3677,11 +3667,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 )?
                 .expect("compound result")
             } else {
-                self.coerce_operand(
-                    value,
-                    l::ValueType::Data(target_expr.ty.clone()),
-                    &target_expr.pos,
-                )?
+                self.lower_stored_expr_at(&target_expr.ty, value_expr, &target_expr.pos)?
             };
             self.write_binding(binding, result.clone(), &target_expr.pos, Vec::new())?;
             return Ok(result);
@@ -3702,8 +3688,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
             None
         };
-        let value = self.require_expr(value_expr)?;
         let result = if let Some(op) = op {
+            let value = self.require_expr(value_expr)?;
             self.emit(
                 l::InstructionKind::Binary(convert_binary(op)?),
                 vec![old.expect("compound old value"), value],
@@ -3714,7 +3700,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             )?
             .expect("compound result")
         } else {
-            value
+            self.lower_stored_expr_at(&target_expr.ty, value_expr, &target_expr.pos)?
         };
         self.store_place(&place, result.clone(), &target_expr.pos)?;
         Ok(result)
@@ -3746,7 +3732,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             return Ok(None);
         }
 
-        let (parameter_types, return_type) =
+        let (declared_parameter_types, return_type) =
             self.declared_hir_call_signature(callee, args, expr)?;
         let (kind, mut operands, mut params, receiver_for_defaults) =
             self.resolve_call(callee, expr)?;
@@ -3756,16 +3742,19 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_)
             )
         {
-            params = args
-                .iter()
-                .enumerate()
-                .map(|(index, argument)| CallParam {
-                    name: format!("arg{index}"),
-                    ty: argument.ty.clone(),
-                    default: None,
-                    pos: argument.pos.clone(),
-                })
-                .collect();
+            params = self
+                .operation_call_params(&kind, &operands, args, return_type.as_ref())?
+                .unwrap_or_else(|| {
+                    args.iter()
+                        .enumerate()
+                        .map(|(index, argument)| CallParam {
+                            name: format!("arg{index}"),
+                            ty: argument.ty.clone(),
+                            default: None,
+                            pos: argument.pos.clone(),
+                        })
+                        .collect()
+                });
         }
         let foreign = matches!(kind, l::CallTargetKind::Foreign(_));
         let explicit_offset = operands.len();
@@ -3783,6 +3772,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             kind,
             l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_)
         );
+        let parameter_types = if foreign {
+            operands
+                .iter()
+                .map(|operand| self.operand_type(operand, &expr.pos))
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            declared_parameter_types
+        };
         let target = l::CallTarget {
             kind,
             parameter_types: if table_signature {
@@ -3808,18 +3805,93 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 })
                 .collect()
         };
+        // Nullable boundary boxes are emitted while each argument is lowered;
+        // keep their allocation sites on those instructions instead of also
+        // attaching them to the eventual call.
+        let call_traps = convert_traps(&expr.trap_sites(self.lowering.hir))
+            .into_iter()
+            .filter(|trap| trap.kind != l::TrapKind::Allocation)
+            .collect();
         let result = self.emit_store_instruction(
             l::InstructionKind::Call(target),
             operands,
             stored,
             (return_type, true),
-            convert_traps(&expr.trap_sites(self.lowering.hir)),
+            call_traps,
             expr.pos.clone(),
         )?;
         for (owner, ty, pos) in deleted_field_owners {
             self.release_owner(owner, &ty, &pos)?;
         }
         Ok(result)
+    }
+
+    fn operation_call_params(
+        &self,
+        kind: &l::CallTargetKind,
+        prefix: &[l::Operand],
+        arguments: &[hir::Expr],
+        return_type: Option<&l::ValueType>,
+    ) -> Result<Option<Vec<CallParam>>, LowerError> {
+        let target = match kind {
+            l::CallTargetKind::Intrinsic(intrinsic) => {
+                l::CallSignatureTarget::Intrinsic(intrinsic.clone())
+            }
+            l::CallTargetKind::BuiltinMethod(method) => {
+                l::CallSignatureTarget::BuiltinMethod(*method)
+            }
+            _ => return Ok(None),
+        };
+        let prefix_types = prefix
+            .iter()
+            .map(|operand| {
+                self.operand_type(
+                    operand,
+                    arguments
+                        .first()
+                        .map_or(&self.function.pos, |argument| &argument.pos),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let signature = self
+            .lowering
+            .hir
+            .operation_signatures
+            .iter()
+            .map(lower_operation_signature)
+            .find(|signature| {
+                signature.target == target
+                    && signature.return_type.as_ref() == return_type
+                    && signature.parameter_types.len() == prefix.len() + arguments.len()
+                    && signature.parameter_types[..prefix.len()] == prefix_types
+                    && signature.parameter_types[prefix.len()..]
+                        .iter()
+                        .zip(arguments)
+                        .all(|(expected, argument)| match expected {
+                            l::ValueType::Data(expected) => {
+                                expected == &argument.ty
+                                    || self.is_boundary_box_narrowing(expected, &argument.ty)
+                                    || self.embedded_header_extension(expected, argument).is_some()
+                            }
+                            l::ValueType::Address(_) | l::ValueType::Iterator(_) => false,
+                        })
+            });
+        Ok(signature.map(|signature| {
+            signature.parameter_types[prefix.len()..]
+                .iter()
+                .zip(arguments)
+                .enumerate()
+                .map(|(index, (parameter, argument))| CallParam {
+                    name: format!("arg{index}"),
+                    ty: match parameter {
+                        l::ValueType::Data(ty) => ty.clone(),
+                        l::ValueType::Address(_) | l::ValueType::Iterator(_) => argument.ty.clone(),
+                    },
+                    default: None,
+                    pos: argument.pos.clone(),
+                })
+                .collect()
+        }))
     }
 
     fn owners_destroyed_by_unsafe_delete(
@@ -4236,7 +4308,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let mut substitutions = HashMap::new();
         for (index, parameter) in params.iter().enumerate() {
             let value = if let Some(argument) = args.get(index) {
-                self.lower_argument_value(&parameter.ty, argument)?
+                if foreign {
+                    self.lower_foreign_argument_value(&parameter.ty, argument)?
+                } else {
+                    self.lower_argument_value(&parameter.ty, argument)?
+                }
             } else {
                 let default = parameter.default.as_ref().ok_or_else(|| {
                     self.error(
@@ -4264,14 +4340,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         }
                     });
                 }
-                let lowered = self.require_expr(default);
+                let lowered = self.lower_stored_expr_at(&parameter.ty, default, &parameter.pos);
                 self.this_value = saved_this;
                 self.substitutions.pop();
                 lowered?
             };
             let actual = self.operand_type(&value, &parameter.pos)?;
             let expected = l::ValueType::Data(parameter.ty.clone());
-            let value = if actual == expected {
+            let value = if actual == expected
+                || foreign && self.foreign_boundary_pointer_representation(&parameter.ty, &actual)
+            {
                 value
             } else {
                 self.coerce_operand(value, expected, &parameter.pos)?
@@ -4352,7 +4430,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .ok_or_else(|| self.error(&expr.pos, "constructed class id is missing"))?;
         let allocation_traps = convert_traps(&expr.trap_sites(self.lowering.hir))
             .into_iter()
-            .filter(|trap| trap.kind == l::TrapKind::Allocation)
+            .filter(|trap| trap.kind == l::TrapKind::Allocation && trap.pos == expr.pos)
             .collect();
         let allocated = self
             .emit(
@@ -4378,7 +4456,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         for (index, field) in class.fields.iter().enumerate() {
             if let Some(initializer) = &field.init {
                 let saved_this = self.this_value.replace(allocated.clone());
-                let value = self.require_expr(initializer);
+                let value = self.lower_stored_expr_at(&field.ty, initializer, &field.pos);
                 self.this_value = saved_this;
                 let value = value?;
                 self.store_class_field(class_id, index, allocated.clone(), value, &field.pos)?;
@@ -4398,7 +4476,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
             for (index, (field, argument)) in class.fields.iter().zip(args).enumerate() {
                 let value = self.lower_argument_value(&field.ty, argument)?;
-                self.store_class_field(class_id, index, allocated.clone(), value, &field.pos)?;
+                self.store_class_field(class_id, index, allocated.clone(), value, &argument.pos)?;
             }
         }
         if let Some(constructor) = &class.ctor {
@@ -4508,7 +4586,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .expect("descriptor allocation");
         for (index, (slot, field)) in slots.iter().zip(&class.fields).enumerate() {
             let value = if let Some(value) = slot {
-                self.require_expr(value)?
+                self.lower_stored_expr(&field.ty, value)?
             } else if field.is_absence_capable {
                 let Type::StringAlias(alias) = field.ty else {
                     return Err(
@@ -4534,7 +4612,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     )
                 })?;
                 let saved_this = self.this_value.replace(allocated.clone());
-                let value = self.require_expr(default);
+                let value = self.lower_stored_expr(&field.ty, default);
                 self.this_value = saved_this;
                 value?
             };
@@ -4604,26 +4682,53 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         expected: &Type,
         argument: &hir::Expr,
     ) -> Result<l::Operand, LowerError> {
-        if !self.is_boundary_struct_pointer(expected) || !matches!(argument.ty, Type::Class(_)) {
+        if self.embedded_header_extension(expected, argument).is_some() {
+            self.lower_stored_expr(expected, argument)
+        } else {
+            self.require_expr(argument)
+        }
+    }
+
+    fn lower_foreign_argument_value(
+        &mut self,
+        expected: &Type,
+        argument: &hir::Expr,
+    ) -> Result<l::Operand, LowerError> {
+        if self.embedded_header_extension(expected, argument).is_some() {
+            return self.lower_stored_expr(expected, argument);
+        }
+        if !self.is_boundary_box_narrowing(expected, &argument.ty) {
             return self.require_expr(argument);
         }
-        if is_place_expr(argument) {
+        let value = if self.is_place_expr(argument) {
             let place = self.prepare_place(argument)?;
-            return self.materialize_address(&place, &argument.pos);
+            self.materialize_address_inner(&place, &argument.pos, false)?
+        } else {
+            self.require_expr(argument)?
+        };
+        match self.operand_type(&value, &argument.pos)? {
+            l::ValueType::Address(_) | l::ValueType::Data(Type::Nullable(_)) => Ok(value),
+            l::ValueType::Data(Type::Class(class))
+                if expected == &Type::Nullable(Box::new(Type::Class(class))) =>
+            {
+                self.emit(
+                    l::InstructionKind::AddressOfValue,
+                    vec![value],
+                    Some(l::ValueType::Address(l::AddressType {
+                        pointee: Type::Class(class),
+                        array_base: None,
+                    })),
+                    false,
+                    Vec::new(),
+                    argument.pos.clone(),
+                )?
+                .ok_or_else(|| self.error(&argument.pos, "foreign argument address is missing"))
+            }
+            other => Err(self.error(
+                &argument.pos,
+                format!("nullable boundary argument has invalid LIR type {other:?}"),
+            )),
         }
-        let value = self.require_expr(argument)?;
-        self.emit(
-            l::InstructionKind::AddressOfValue,
-            vec![value],
-            Some(l::ValueType::Address(l::AddressType {
-                pointee: argument.ty.clone(),
-                array_base: None,
-            })),
-            false,
-            Vec::new(),
-            argument.pos.clone(),
-        )?
-        .ok_or_else(|| self.error(&argument.pos, "boundary pointer address produced no value"))
     }
 
     fn lower_lambda(
@@ -4970,13 +5075,22 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let kind = match &expr.kind {
             hir::ExprKind::Local(name) => {
                 let binding = self.lookup_binding(name, &expr.pos)?;
+                let ty = match &self.bindings[binding.0].ty {
+                    l::ValueType::Data(ty) => ty.clone(),
+                    other => {
+                        return Err(self.error(
+                            &expr.pos,
+                            format!("local place has invalid LIR type {other:?}"),
+                        ));
+                    }
+                };
                 let local = self.bindings[binding.0].storage.ok_or_else(|| {
                     self.error(
                         &expr.pos,
                         format!("local `{name}` is used as an address but has no storage"),
                     )
                 })?;
-                PreparedPlaceKind::Local(local, expr.ty.clone())
+                PreparedPlaceKind::Local(local, ty)
             }
             hir::ExprKind::Global(name) => {
                 let global = self
@@ -4985,7 +5099,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .get(name)
                     .copied()
                     .ok_or_else(|| self.error(&expr.pos, format!("unknown global `{name}`")))?;
-                PreparedPlaceKind::Global(global, expr.ty.clone())
+                let ty = self
+                    .lowering
+                    .hir
+                    .globals
+                    .iter()
+                    .find(|definition| definition.name == *name)
+                    .map(|definition| definition.ty.clone())
+                    .ok_or_else(|| self.error(&expr.pos, format!("unknown global `{name}`")))?;
+                PreparedPlaceKind::Global(global, ty)
             }
             hir::ExprKind::Field { obj, name } => {
                 let base = if self.is_stored_aggregate(&obj.ty) && self.is_place_expr(obj) {
@@ -5041,6 +5163,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 Some(base)
             }
             PreparedPlaceKind::ExistingAddress(..)
+            | PreparedPlaceKind::BoxedBoundary(..)
             | PreparedPlaceKind::Local(..)
             | PreparedPlaceKind::Global(..) => None,
         };
@@ -5052,7 +5175,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 traps.remove(index);
             }
         }
-        Ok(PreparedPlace { kind, traps })
+        let place = PreparedPlace { kind, traps };
+        let stored = self.place_type(&place).clone();
+        if self.is_boundary_box_narrowing(&stored, &expr.ty) {
+            let handle = self.load_place(&place, &expr.pos)?;
+            return Ok(PreparedPlace {
+                kind: PreparedPlaceKind::BoxedBoundary(handle, expr.ty.clone()),
+                traps: Vec::new(),
+            });
+        }
+        Ok(place)
     }
 
     fn materialize_address(
@@ -5076,6 +5208,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         };
         match &place.kind {
             PreparedPlaceKind::ExistingAddress(address, _) => Ok(address.clone()),
+            PreparedPlaceKind::BoxedBoundary(handle, _) => Ok(handle.clone()),
             PreparedPlaceKind::Local(local, ty) => self
                 .emit(
                     l::InstructionKind::AddressOfLocal(*local),
@@ -5163,6 +5296,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
 
     fn load_place(&mut self, place: &PreparedPlace, pos: &Pos) -> Result<l::Operand, LowerError> {
         match &place.kind {
+            PreparedPlaceKind::BoxedBoundary(handle, ty) => {
+                self.coerce_operand(handle.clone(), l::ValueType::Data(ty.clone()), pos)
+            }
             PreparedPlaceKind::Local(local, _) => self.load_local(*local, pos),
             PreparedPlaceKind::Global(global, ty) => self
                 .emit(
@@ -5287,6 +5423,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     fn place_type<'p>(&self, place: &'p PreparedPlace) -> &'p Type {
         match &place.kind {
             PreparedPlaceKind::ExistingAddress(_, ty)
+            | PreparedPlaceKind::BoxedBoundary(_, ty)
             | PreparedPlaceKind::Local(_, ty)
             | PreparedPlaceKind::Global(_, ty)
             | PreparedPlaceKind::Field { ty, .. }
@@ -5317,12 +5454,121 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
     }
 
-    fn is_boundary_struct_pointer(&self, ty: &Type) -> bool {
-        matches!(ty, Type::Nullable(inner)
-        if matches!(&**inner, Type::Class(class)
-            if self.lowering.hir.classes.get(class.0).is_some_and(|definition| {
-                definition.is_value && definition.is_boundary
-            })))
+    fn boundary_box_class(&self, ty: &Type) -> Option<ClassId> {
+        let Type::Nullable(inner) = ty else {
+            return None;
+        };
+        let Type::Class(class) = inner.as_ref() else {
+            return None;
+        };
+        self.lowering
+            .hir
+            .classes
+            .get(class.0)
+            .is_some_and(|definition| definition.is_value && definition.is_boundary)
+            .then_some(*class)
+    }
+
+    fn is_embedded_boundary_header(&self, header: ClassId) -> bool {
+        let nullable = Type::Nullable(Box::new(Type::Class(header)));
+        self.lowering
+            .hir
+            .classes
+            .iter()
+            .any(|class| class.is_boundary && class.fields.iter().any(|field| field.ty == nullable))
+            || self.lowering.hir.foreign_fns.iter().any(|function| {
+                function
+                    .params
+                    .iter()
+                    .any(|parameter| parameter.ty == nullable)
+            })
+    }
+
+    fn embedded_header_extension(
+        &self,
+        expected: &Type,
+        expr: &hir::Expr,
+    ) -> Option<(ClassId, ClassId)> {
+        let header = self.boundary_box_class(expected)?;
+        let hir::ExprKind::Field { obj, name } = &expr.kind else {
+            return None;
+        };
+        let Type::Class(extension) = obj.ty else {
+            return None;
+        };
+        let definition = self.lowering.hir.classes.get(extension.0)?;
+        let first = definition.fields.first()?;
+        (definition.is_value
+            && definition.is_boundary
+            && first.name == *name
+            && first.ty == Type::Class(header)
+            && self.is_embedded_boundary_header(header))
+        .then_some((extension, header))
+    }
+
+    fn lower_stored_expr(
+        &mut self,
+        expected: &Type,
+        expr: &hir::Expr,
+    ) -> Result<l::Operand, LowerError> {
+        self.lower_stored_expr_at(expected, expr, &expr.pos)
+    }
+
+    fn lower_stored_expr_at(
+        &mut self,
+        expected: &Type,
+        expr: &hir::Expr,
+        coercion_pos: &Pos,
+    ) -> Result<l::Operand, LowerError> {
+        if let Some((extension, header)) = self.embedded_header_extension(expected, expr) {
+            let hir::ExprKind::Field { obj, .. } = &expr.kind else {
+                unreachable!("embedded header projection is a field")
+            };
+            let value = self.require_expr(obj)?;
+            let actual = self.operand_type(&value, &expr.pos)?;
+            let expected_operand = l::ValueType::Data(Type::Class(extension));
+            if actual != expected_operand {
+                return Err(self.error(
+                    &expr.pos,
+                    format!(
+                        "embedded header extension has LIR type {actual:?}, expected {expected_operand:?}"
+                    ),
+                ));
+            }
+            return self
+                .emit(
+                    l::InstructionKind::BoxBoundaryValue { payload: extension },
+                    vec![value],
+                    Some(l::ValueType::Data(Type::Nullable(Box::new(Type::Class(
+                        header,
+                    ))))),
+                    false,
+                    vec![l::Trap {
+                        kind: l::TrapKind::Allocation,
+                        pos: expr.pos.clone(),
+                    }],
+                    expr.pos.clone(),
+                )?
+                .ok_or_else(|| self.error(&expr.pos, "embedded header box produced no handle"));
+        }
+        let value = self.require_expr(expr)?;
+        self.coerce_operand(value, l::ValueType::Data(expected.clone()), coercion_pos)
+    }
+
+    fn is_boundary_box_narrowing(&self, stored: &Type, narrowed: &Type) -> bool {
+        self.boundary_box_class(stored)
+            .is_some_and(|class| narrowed == &Type::Class(class))
+    }
+
+    fn foreign_boundary_pointer_representation(
+        &self,
+        declared: &Type,
+        actual: &l::ValueType,
+    ) -> bool {
+        let Some(class) = self.boundary_box_class(declared) else {
+            return false;
+        };
+        matches!(actual, l::ValueType::Address(address) if address.pointee == Type::Class(class))
     }
 
     fn allocated_type(&self, class: ClassId, pos: &Pos) -> Result<l::ValueType, LowerError> {
@@ -5433,6 +5679,70 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let actual = self.operand_type(&operand, pos)?;
         if actual == expected {
             return Ok(operand);
+        }
+        if let l::ValueType::Data(Type::Nullable(target)) = &expected {
+            if let Type::Class(target) = target.as_ref() {
+                let boundary = self
+                    .lowering
+                    .hir
+                    .classes
+                    .get(target.0)
+                    .is_some_and(|definition| definition.is_value && definition.is_boundary);
+                if boundary {
+                    let value = match &actual {
+                        l::ValueType::Address(address)
+                            if address.pointee == Type::Class(*target) =>
+                        {
+                            self.emit(
+                                l::InstructionKind::LoadAddress,
+                                vec![operand.clone()],
+                                Some(l::ValueType::Data(Type::Class(*target))),
+                                false,
+                                Vec::new(),
+                                pos.clone(),
+                            )?
+                            .expect("boundary value load")
+                        }
+                        l::ValueType::Data(Type::Class(source)) if source == target => {
+                            operand.clone()
+                        }
+                        _ => {
+                            return self
+                                .emit(
+                                    l::InstructionKind::Coerce,
+                                    vec![operand],
+                                    Some(expected),
+                                    false,
+                                    Vec::new(),
+                                    pos.clone(),
+                                )?
+                                .ok_or_else(|| {
+                                    self.error(pos, "implicit coercion produced no value")
+                                });
+                        }
+                    };
+                    if matches!(
+                        self.operand_type(&value, pos)?,
+                        l::ValueType::Data(Type::Class(source)) if source == *target
+                    ) {
+                        return self
+                            .emit(
+                                l::InstructionKind::BoxBoundaryValue { payload: *target },
+                                vec![value],
+                                Some(expected),
+                                false,
+                                vec![l::Trap {
+                                    kind: l::TrapKind::Allocation,
+                                    pos: pos.clone(),
+                                }],
+                                pos.clone(),
+                            )?
+                            .ok_or_else(|| {
+                                self.error(pos, "boundary value box produced no handle")
+                            });
+                    }
+                }
+            }
         }
         let kind = match (&actual, &expected) {
             (l::ValueType::Address(address), l::ValueType::Data(result))
@@ -6876,25 +7186,12 @@ fn verify_instruction_contract(
             }
         }
         l::InstructionKind::Coerce => {
-            let data_coercion = matches!(
-                (operand_types.first(), result_type.as_ref()),
-                (Some(l::ValueType::Data(_)), Some(l::ValueType::Data(_)))
-            );
-            let boundary_address_coercion = matches!(
-                (operand_types.first(), result_type.as_ref()),
-                (
-                    Some(l::ValueType::Address(l::AddressType {
-                        pointee: Type::Class(source),
-                        ..
-                    })),
-                    Some(l::ValueType::Data(Type::Nullable(target)))
-                ) if matches!(&**target, Type::Class(target)
-                    if source == target
-                        && module.classes.get(target.0).is_some_and(|class| {
-                            class.is_value && class.is_boundary
-                        }))
-            );
-            if operand_types.len() != 1 || (!data_coercion && !boundary_address_coercion) {
+            let data_coercion =
+                matches!(
+                    (operand_types.first(), result_type.as_ref()),
+                    (Some(l::ValueType::Data(_)), Some(l::ValueType::Data(_)))
+                ) && !boundary_box_coercion_signature(module, &operand_types, result_type.as_ref());
+            if operand_types.len() != 1 || !data_coercion {
                 bad("implicit coercion signature is invalid", errors);
             }
         }
@@ -7057,6 +7354,13 @@ fn verify_instruction_contract(
                 bad("class allocation signature is invalid", errors);
             }
         }
+        l::InstructionKind::BoxBoundaryValue { payload } => {
+            let valid =
+                boundary_box_signature(module, *payload, &operand_types, result_type.as_ref());
+            if !valid {
+                bad("boundary value box signature is invalid", errors);
+            }
+        }
         l::InstructionKind::AddressOfValue => {
             let valid = match (operand_types.as_slice(), result_type.as_ref()) {
                 ([l::ValueType::Data(value)], Some(l::ValueType::Address(address))) => {
@@ -7124,8 +7428,12 @@ fn verify_instruction_contract(
                 if let Some((parameters, result)) =
                     declared_call_signature(module, &target.kind, &operand_types)
                 {
-                    if !call_parameters_match(&target.parameter_types, &parameters)
-                        || target.return_type != result
+                    if !declared_parameters_match(
+                        module,
+                        &target.kind,
+                        &target.parameter_types,
+                        &parameters,
+                    ) || target.return_type != result
                     {
                         bad(
                             "call signature disagrees with the target declaration",
@@ -7438,6 +7746,62 @@ fn lir_field_type(
     }
 }
 
+fn boundary_box_signature(
+    module: &l::Module,
+    payload: ClassId,
+    operands: &[l::ValueType],
+    result: Option<&l::ValueType>,
+) -> bool {
+    let (
+        [l::ValueType::Data(Type::Class(source))],
+        Some(l::ValueType::Data(Type::Nullable(target))),
+    ) = (operands, result)
+    else {
+        return false;
+    };
+    let Type::Class(target) = target.as_ref() else {
+        return false;
+    };
+    if *source != payload {
+        return false;
+    }
+    let Some(source_class) = module.classes.get(source.0) else {
+        return false;
+    };
+    if !source_class.is_value || !source_class.is_boundary {
+        return false;
+    }
+    if source == target {
+        return true;
+    }
+    source_class.fields.first().is_some_and(|field| {
+        field.ty == Type::Class(*target) && embedded_boundary_header(module, *target)
+    })
+}
+
+fn boundary_box_coercion_signature(
+    module: &l::Module,
+    operands: &[l::ValueType],
+    result: Option<&l::ValueType>,
+) -> bool {
+    let [l::ValueType::Data(Type::Class(payload))] = operands else {
+        return false;
+    };
+    boundary_box_signature(module, *payload, operands, result)
+}
+
+fn embedded_boundary_header(module: &l::Module, header: ClassId) -> bool {
+    let nullable_header = Type::Nullable(Box::new(Type::Class(header)));
+    module.classes.iter().any(|class| {
+        class.is_boundary && class.fields.iter().any(|field| field.ty == nullable_header)
+    }) || module.foreign_functions.iter().any(|function| {
+        function
+            .parameters
+            .iter()
+            .any(|parameter| parameter.ty == nullable_header)
+    })
+}
+
 fn field_base_accepts(module: &l::Module, field: l::FieldRef, base: &l::ValueType) -> bool {
     match field {
         l::FieldRef::Class(id) => {
@@ -7447,6 +7811,10 @@ fn field_base_accepts(module: &l::Module, field: l::FieldRef, base: &l::ValueTyp
                 .find(|class| class.fields.iter().any(|candidate| candidate.id == id));
             owner.is_some_and(|class| match base {
                 l::ValueType::Data(Type::Class(id)) => *id == class.id,
+                l::ValueType::Data(Type::Nullable(inner)) => {
+                    matches!(inner.as_ref(), Type::Class(id)
+                        if *id == class.id && class.is_value && class.is_boundary)
+                }
                 l::ValueType::Address(address) => address.pointee == Type::Class(class.id),
                 _ => false,
             })
@@ -7530,6 +7898,40 @@ fn call_parameters_match(actual: &[l::ValueType], declared: &[l::ValueType]) -> 
             .iter()
             .zip(declared)
             .all(|(actual, declared)| call_type_matches(actual, declared))
+}
+
+fn declared_parameters_match(
+    module: &l::Module,
+    kind: &l::CallTargetKind,
+    actual: &[l::ValueType],
+    declared: &[l::ValueType],
+) -> bool {
+    actual.len() == declared.len()
+        && actual.iter().zip(declared).all(|(actual, declared)| {
+            call_type_matches(actual, declared)
+                || matches!(kind, l::CallTargetKind::Foreign(_))
+                    && foreign_boundary_pointer_type_matches(module, actual, declared)
+        })
+}
+
+fn foreign_boundary_pointer_type_matches(
+    module: &l::Module,
+    actual: &l::ValueType,
+    declared: &l::ValueType,
+) -> bool {
+    let (l::ValueType::Address(address), l::ValueType::Data(Type::Nullable(nullable))) =
+        (actual, declared)
+    else {
+        return false;
+    };
+    let Type::Class(class) = nullable.as_ref() else {
+        return false;
+    };
+    address.pointee == Type::Class(*class)
+        && module
+            .classes
+            .get(class.0)
+            .is_some_and(|definition| definition.is_value && definition.is_boundary)
 }
 
 fn is_operation_table_target(kind: &l::CallTargetKind) -> bool {
@@ -7749,8 +8151,12 @@ fn verify_terminator_types(
                     if let Some((parameters, result)) =
                         declared_call_signature(module, &target.kind, &target.parameter_types)
                     {
-                        if !call_parameters_match(&target.parameter_types, &parameters)
-                            || target.return_type != result
+                        if !declared_parameters_match(
+                            module,
+                            &target.kind,
+                            &target.parameter_types,
+                            &parameters,
+                        ) || target.return_type != result
                         {
                             errors.push(finding(
                                 function,

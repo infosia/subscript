@@ -50,6 +50,8 @@ pub(crate) struct ClassLayout {
     pub field_offsets: Vec<u32>,
     /// True for `@CStruct class`.
     pub is_value: bool,
+    /// True when the class came from a boundary mirror.
+    pub is_boundary: bool,
 }
 
 /// Precomputed layouts for every class in the module.
@@ -210,6 +212,7 @@ fn round_up(value: u32, align: u32) -> Result<u32, String> {
 struct ClassShape {
     name: String,
     is_value: bool,
+    is_boundary: bool,
     alignment: Option<u32>,
     fields: Vec<Type>,
 }
@@ -255,6 +258,7 @@ impl<'m> Builder<'m> {
             align,
             field_offsets,
             is_value: class.is_value,
+            is_boundary: class.is_boundary,
         };
         self.visiting[id] = false;
         self.slots[id] = Some(layout.clone());
@@ -309,6 +313,7 @@ impl Layouts {
             .map(|class| ClassShape {
                 name: class.name.clone(),
                 is_value: class.is_value,
+                is_boundary: class.is_boundary,
                 alignment: class
                     .alignment_override
                     .as_ref()
@@ -327,6 +332,7 @@ impl Layouts {
             .map(|class| ClassShape {
                 name: class.source_name.clone(),
                 is_value: class.is_value,
+                is_boundary: class.is_boundary,
                 alignment: class.alignment,
                 fields: class.fields.iter().map(|field| field.ty.clone()).collect(),
             })
@@ -595,7 +601,14 @@ pub(crate) fn is_managed(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
         | Type::Set(_)
         | Type::Generator(_)
         | Type::AsyncHandle(_) => true,
-        Type::Nullable(inner) => is_managed(layouts, inner)? || matches!(**inner, Type::Func(_)),
+        Type::Nullable(inner) => {
+            is_managed(layouts, inner)?
+                || matches!(**inner, Type::Func(_))
+                || matches!(&**inner, Type::Class(id) if {
+                    let class = layouts.class(id.0)?;
+                    class.is_value && class.is_boundary
+                })
+        }
         Type::Class(id) => !layouts.class(id.0)?.is_value,
         _ => false,
     })
@@ -684,13 +697,14 @@ fn type_contains_managed(
         | Type::Generator(_)
         | Type::AsyncHandle(_) => true,
         Type::Nullable(inner) => match &**inner {
-            // A nullable value-class slot is a borrowed C struct pointer,
-            // not an embedded copy of the pointed-to record.
+            // A nullable value-class slot is a managed box handle, not an
+            // embedded copy. Do not recurse into the payload: recursive
+            // boundary classes terminate at this handle.
             Type::Class(id) => {
-                !classes
+                let class = classes
                     .get(id.0)
-                    .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?
-                    .is_value
+                    .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?;
+                !class.is_value || class.is_boundary
             }
             Type::Func(_) => true,
             other => type_contains_managed(classes, other, memo, known, visiting)?,

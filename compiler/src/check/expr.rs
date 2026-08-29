@@ -278,10 +278,11 @@ impl<'p> Checker<'p> {
             }
             Callee::Func(_) | Callee::Foreign(_) | Callee::Value(_) => return,
         };
-        let parameter_types = receiver
+        let mut parameter_types = receiver
             .into_iter()
             .chain(args.iter().map(|argument| argument.ty.clone()))
-            .collect();
+            .collect::<Vec<_>>();
+        Self::normalize_operation_parameter_types(&target, &mut parameter_types);
         let signature = hir::OperationSignature {
             target,
             parameter_types,
@@ -293,6 +294,99 @@ impl<'p> Checker<'p> {
         }
     }
 
+    fn normalize_operation_parameter_types(
+        target: &hir::OperationSignatureTarget,
+        parameters: &mut [Type],
+    ) {
+        let array_element = parameters.first().and_then(|receiver| match receiver {
+            Type::Array(element) => Some((**element).clone()),
+            _ => None,
+        });
+        match target {
+            hir::OperationSignatureTarget::BuiltinMethod(hir::BuiltinMethod::ArrayPush) => {
+                if let (Some(element), Some(value)) = (array_element, parameters.get_mut(1)) {
+                    *value = element;
+                }
+            }
+            hir::OperationSignatureTarget::Arr(function) => match function {
+                hir::ArrFn::IndexOf
+                | hir::ArrFn::LastIndexOf
+                | hir::ArrFn::Includes
+                | hir::ArrFn::Fill
+                | hir::ArrFn::Unshift => {
+                    if let (Some(element), Some(value)) = (array_element, parameters.get_mut(1)) {
+                        *value = element;
+                    }
+                }
+                hir::ArrFn::Reduce | hir::ArrFn::ReduceRight => {
+                    let accumulator = parameters.get(1).and_then(|callback| match callback {
+                        Type::Func(signature) => signature.params.first().cloned(),
+                        _ => None,
+                    });
+                    if let (Some(accumulator), Some(initial)) = (accumulator, parameters.get_mut(2))
+                    {
+                        *initial = accumulator;
+                    }
+                }
+                _ => {}
+            },
+            hir::OperationSignatureTarget::Map(function) => {
+                let pair = parameters.first().and_then(|receiver| match receiver {
+                    Type::Map(key, value) => Some(((**key).clone(), (**value).clone())),
+                    _ => None,
+                });
+                if let Some((key, value)) = pair {
+                    if matches!(
+                        function,
+                        hir::MapFn::Get
+                            | hir::MapFn::GetOr
+                            | hir::MapFn::Set
+                            | hir::MapFn::Has
+                            | hir::MapFn::Delete
+                    ) {
+                        if let Some(parameter) = parameters.get_mut(1) {
+                            *parameter = key;
+                        }
+                    }
+                    if matches!(function, hir::MapFn::GetOr | hir::MapFn::Set) {
+                        if let Some(parameter) = parameters.get_mut(2) {
+                            *parameter = value;
+                        }
+                    }
+                }
+            }
+            hir::OperationSignatureTarget::Set(function) => {
+                let key = parameters.first().and_then(|receiver| match receiver {
+                    Type::Set(key) => Some((**key).clone()),
+                    _ => None,
+                });
+                if matches!(
+                    function,
+                    hir::SetFn::Add | hir::SetFn::Has | hir::SetFn::Delete
+                ) {
+                    if let (Some(key), Some(parameter)) = (key, parameters.get_mut(1)) {
+                        *parameter = key;
+                    }
+                }
+            }
+            hir::OperationSignatureTarget::Worker(function) => {
+                let message = parameters
+                    .first()
+                    .and_then(|receiver| match (function, receiver) {
+                        (hir::WorkerFn::Post, Type::Worker(input, _)) => Some((**input).clone()),
+                        (hir::WorkerFn::OutboxPost, Type::Outbox(message)) => {
+                            Some((**message).clone())
+                        }
+                        _ => None,
+                    });
+                if let (Some(message), Some(parameter)) = (message, parameters.get_mut(1)) {
+                    *parameter = message;
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Checks one expression. `ctx` is the contextual type used to type
     /// suffix-less numeric literals (C4); it never coerces non-literals.
     pub(crate) fn check_expr(
@@ -301,9 +395,24 @@ impl<'p> Checker<'p> {
         ctx: Option<&Type>,
         fx: &mut FnCtx,
     ) -> hir::Expr {
+        self.check_expr_with_header_receiver(e, ctx, fx, false)
+    }
+
+    fn check_expr_with_header_receiver(
+        &mut self,
+        e: &ast::Expr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        allow_embedded_header_receiver: bool,
+    ) -> hir::Expr {
         let pos = self.pos(e.span());
-        let checked = match e {
-            ast::Expr::Paren(p) => self.check_expr(&p.expr, ctx, fx),
+        let mut checked = match e {
+            ast::Expr::Paren(p) => self.check_expr_with_header_receiver(
+                &p.expr,
+                ctx,
+                fx,
+                allow_embedded_header_receiver,
+            ),
             ast::Expr::Lit(lit) => self.check_lit(lit, ctx, pos),
             ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
             ast::Expr::Ident(id) => self.check_ident(id, fx),
@@ -386,8 +495,70 @@ impl<'p> Checker<'p> {
                 self.err_expr(p)
             }
         };
+        if !allow_embedded_header_receiver {
+            self.reject_embedded_header_copy(&mut checked, ctx);
+        }
         self.register_operation_signature(&checked);
         checked
+    }
+
+    fn embedded_header_projection(&self, expr: &hir::Expr) -> Option<(ClassId, ClassId)> {
+        let ExprKind::Field { obj, name } = &expr.kind else {
+            return None;
+        };
+        let Type::Class(extension) = obj.ty else {
+            return None;
+        };
+        let definition = self.classes.get(extension.0)?;
+        let first = definition.fields.first()?;
+        let Type::Class(header) = first.ty else {
+            return None;
+        };
+        let nullable = Type::Nullable(Box::new(Type::Class(header)));
+        let used_as_link = self.classes.iter().any(|class| {
+            class.is_boundary && class.fields.iter().any(|field| field.ty == nullable)
+        }) || self.foreign_defs.iter().any(|function| {
+            function
+                .params
+                .iter()
+                .any(|parameter| parameter.ty == nullable)
+        });
+        (definition.is_value
+            && definition.is_boundary
+            && first.name == *name
+            && self
+                .classes
+                .get(header.0)
+                .is_some_and(|class| class.is_value && class.is_boundary)
+            && used_as_link)
+            .then_some((extension, header))
+    }
+
+    fn reject_embedded_header_copy(&mut self, expr: &mut hir::Expr, expected: Option<&Type>) {
+        if expr.ty == Type::Error {
+            return;
+        }
+        let Some((extension, header)) = self.embedded_header_projection(expr) else {
+            return;
+        };
+        let nullable_header = Type::Nullable(Box::new(Type::Class(header)));
+        if expected == Some(&nullable_header) {
+            return;
+        }
+        let extension_name = self.classes[extension.0].name.clone();
+        let header_name = self.classes[header.0].name.clone();
+        self.error(
+            RuleCode::S100,
+            format!(
+                "embedded header `{extension_name}.{}` cannot be copied as `{header_name}`; store it directly into `{header_name} | null` or read one of its fields",
+                match &expr.kind {
+                    ExprKind::Field { name, .. } => name.as_str(),
+                    _ => unreachable!("embedded header projection is a field"),
+                }
+            ),
+            expr.pos.clone(),
+        );
+        expr.ty = Type::Error;
     }
 
     /// Checks an expression statement, admitting the ambient
@@ -2134,11 +2305,6 @@ impl<'p> Checker<'p> {
                         checked.pos.clone(),
                     );
                 }
-                self.reject_nullable_boundary_aggregate_escape(
-                    &checked.ty,
-                    "a descriptor field store",
-                    checked.pos.clone(),
-                );
             }
             fields.push(checked);
         }
@@ -2273,7 +2439,7 @@ impl<'p> Checker<'p> {
     /// Checks a receiver expression and enforces C7: member access on a
     /// nullable value requires prior narrowing.
     fn check_receiver(&mut self, obj: &ast::Expr, fx: &mut FnCtx) -> hir::Expr {
-        let mut checked = self.check_expr(obj, None, fx);
+        let mut checked = self.check_expr_with_header_receiver(obj, None, fx, true);
         self.apply_narrowing(&mut checked, fx);
         if let Type::Nullable(_) = checked.ty {
             let name = self.type_name(&checked.ty);
@@ -3847,11 +4013,6 @@ impl<'p> Checker<'p> {
                             value.pos.clone(),
                         );
                     }
-                    self.reject_nullable_boundary_aggregate_escape(
-                        &value.ty,
-                        "an array `fill` store",
-                        value.pos.clone(),
-                    );
                 }
                 if checked.len() == 1 {
                     checked.push(int_default(0, &pos));
@@ -3955,11 +4116,6 @@ impl<'p> Checker<'p> {
                             value.pos.clone(),
                         );
                     }
-                    self.reject_nullable_boundary_aggregate_escape(
-                        &value.ty,
-                        "an array `unshift` store",
-                        value.pos.clone(),
-                    );
                 }
                 let mut args = vec![recv];
                 args.extend(checked);
@@ -5740,25 +5896,6 @@ impl<'p> Checker<'p> {
             }
             _ => {}
         }
-        match &target.kind {
-            ExprKind::Global(_) => self.reject_nullable_boundary_aggregate_escape(
-                &value.ty,
-                "an assignment to a module-level binding",
-                value.pos.clone(),
-            ),
-            ExprKind::Index { .. } => self.reject_nullable_boundary_aggregate_escape(
-                &value.ty,
-                "an array-element store",
-                value.pos.clone(),
-            ),
-            ExprKind::Field { obj, .. } if self.is_reference_class(&obj.ty) => self
-                .reject_nullable_boundary_aggregate_escape(
-                    &value.ty,
-                    "a reference-class field store",
-                    value.pos.clone(),
-                ),
-            _ => {}
-        }
         // C7: an assignment invalidates narrowing for the path and its
         // extensions.
         if let Some(key) = path_key(&target) {
@@ -6661,11 +6798,6 @@ impl<'p> Checker<'p> {
                                 arg.pos.clone(),
                             );
                         }
-                        self.reject_nullable_boundary_aggregate_escape(
-                            &arg.ty,
-                            "an array `push` store",
-                            arg.pos.clone(),
-                        );
                     }
                     mk(recv, args, Type::I32, pos)
                 }
@@ -7093,13 +7225,6 @@ impl<'p> Checker<'p> {
                     arg.pos.clone(),
                 );
             }
-            if !self.classes[class_id.0].is_value {
-                self.reject_nullable_boundary_aggregate_escape(
-                    &arg.ty,
-                    "a reference-class construction",
-                    arg.pos.clone(),
-                );
-            }
         }
         hir::Expr {
             kind: ExprKind::New {
@@ -7314,63 +7439,5 @@ mod tests {
             .expect_err("f32FromBits rejects an f64 argument");
         assert_eq!(diagnostics[0].code, RuleCode::S007);
         assert_eq!(diagnostics[0].pos.line, 3);
-    }
-
-    #[test]
-    fn s015_names_each_local_escape_site_from_one_reachable_set() {
-        let mirror = SourceFile::ambient(
-            "boundary.d.ts",
-            "declare class Inner {\n\
-               value: u32;\n\
-               constructor(value: u32);\n\
-             }\n\
-             declare class Outer {\n\
-               inner: Inner | null;\n\
-               constructor(inner: Inner | null);\n\
-             }\n",
-        );
-        let source = SourceFile::new(
-            "test.ts",
-            "class Holder {\n\
-               value: Outer;\n\
-               constructor(value: Outer) { this.value = value; }\n\
-             }\n\
-             let globalValue: Outer = new Outer(null);\n\
-             function returned(): Outer { return new Outer(new Inner(1)); }\n\
-             function storedInArray(): void {\n\
-               const values: Outer[] = [new Outer(null)];\n\
-               values[0] = new Outer(new Inner(2));\n\
-             }\n\
-             function captured(): void {\n\
-               const value: Outer = new Outer(new Inner(3));\n\
-               const read = (): boolean => value.inner !== null;\n\
-               print(`${read()}`);\n\
-             }\n\
-             export function main(): void {\n\
-               const holder: Holder = new Holder(new Outer(new Inner(4)));\n\
-               storedInArray();\n\
-               captured();\n\
-               print(`${holder.value.inner !== null}:${globalValue.inner !== null}:${returned().inner !== null}`);\n\
-             }\n",
-        );
-        let diagnostics = check_program(&[mirror, source]).expect_err("S015 escape sites reject");
-        let messages = diagnostics
-            .iter()
-            .filter(|diagnostic| diagnostic.code == RuleCode::S015)
-            .map(|diagnostic| diagnostic.message.as_str())
-            .collect::<Vec<_>>();
-        for site in [
-            "a return",
-            "a module-level initializer",
-            "an array-element store",
-            "a reference-class field store",
-            "a lambda capture",
-        ] {
-            assert!(
-                messages.iter().any(|message| message.contains(site)),
-                "missing {site}: {messages:?}"
-            );
-        }
-        assert!(messages.iter().all(|message| message.contains("`inner`")));
     }
 }

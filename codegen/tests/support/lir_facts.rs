@@ -14,7 +14,7 @@ pub fn dropped_facts(hir: &hir::Module, lir: &l::Module) -> Vec<String> {
     compare_entry_and_async_roots(hir, lir, &mut findings);
     compare_traps(hir, lir, &mut findings);
     compare_terminator_positions(hir, lir, &mut findings);
-    compare_boundary_pointer_addresses(hir, lir, &mut findings);
+    compare_boundary_boxes(hir, lir, &mut findings);
     compare_foreign_array_snapshots(hir, lir, &mut findings);
     compare_call_operands(hir, lir, &mut findings);
     compare_iterator_bounds(hir, lir, &mut findings);
@@ -327,30 +327,21 @@ fn lir_operand_type<'a>(
     }
 }
 
-fn compare_boundary_pointer_addresses(
-    hir: &hir::Module,
-    lir: &l::Module,
-    findings: &mut Vec<String>,
-) {
+fn compare_boundary_boxes(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {
     let mut actual = BTreeMap::<(String, u32, u32), usize>::new();
     for function in &lir.functions {
-        let mut definitions = vec![None; function.values.len()];
         for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
-            if let Some(result) = instruction.result {
-                definitions[result.0 as usize] = Some(instruction);
-            }
-        }
-        for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
-            if instruction.kind != l::InstructionKind::Coerce {
+            if !matches!(
+                instruction.kind,
+                l::InstructionKind::BoxBoundaryValue { .. }
+            ) {
                 continue;
             }
-            let Some(l::Operand::Value(address)) = instruction.operands.first() else {
+            let Some(l::Operand::Value(value)) = instruction.operands.first() else {
                 continue;
             };
-            let Some(l::ValueType::Address(address_ty)) = function
-                .values
-                .get(address.0 as usize)
-                .map(|value| &value.ty)
+            let Some(l::ValueType::Data(source_ty)) =
+                function.values.get(value.0 as usize).map(|value| &value.ty)
             else {
                 continue;
             };
@@ -361,24 +352,21 @@ fn compare_boundary_pointer_addresses(
             else {
                 continue;
             };
-            if !lir_boundary_address_coercion(lir, &address_ty.pointee, result_ty) {
+            if !lir_boundary_box(lir, source_ty, result_ty) {
                 continue;
             }
-            let Some(definition) = definitions[address.0 as usize] else {
-                continue;
-            };
             *actual
                 .entry((
-                    definition.pos.file.clone(),
-                    definition.pos.line,
-                    definition.pos.col,
+                    instruction.pos.file.clone(),
+                    instruction.pos.line,
+                    instruction.pos.col,
                 ))
                 .or_default() += 1;
         }
     }
 
     walk_module_expressions(hir, &mut |expr| {
-        let mut require_address = |parameter: &subscript_compiler::Type, argument: &hir::Expr| {
+        let mut require_box = |parameter: &subscript_compiler::Type, argument: &hir::Expr| {
             if !hir_boundary_pointer_type(hir, parameter)
                 || !matches!(argument.ty, subscript_compiler::Type::Class(_))
             {
@@ -392,27 +380,12 @@ fn compare_boundary_pointer_addresses(
             match actual.get_mut(&key) {
                 Some(count) if *count != 0 => *count -= 1,
                 _ => findings.push(format!(
-                    "{}: boundary-pointer argument carries no address provenance in LIR",
+                    "{}: boundary-pointer argument carries no managed box in LIR",
                     argument.pos
                 )),
             }
         };
         match &expr.kind {
-            hir::ExprKind::Call {
-                callee: hir::Callee::Foreign(name),
-                args,
-            } => {
-                let Some(function) = hir
-                    .foreign_fns
-                    .iter()
-                    .find(|function| function.name == *name)
-                else {
-                    return;
-                };
-                for (parameter, argument) in function.params.iter().zip(args) {
-                    require_address(&parameter.ty, argument);
-                }
-            }
             hir::ExprKind::New { class, args } => {
                 let Some(definition) = hir
                     .classes
@@ -422,7 +395,7 @@ fn compare_boundary_pointer_addresses(
                     return;
                 };
                 for (field, argument) in definition.fields.iter().zip(args) {
-                    require_address(&field.ty, argument);
+                    require_box(&field.ty, argument);
                 }
             }
             hir::ExprKind::Call { .. }
@@ -470,20 +443,49 @@ fn hir_boundary_pointer_type(hir: &hir::Module, ty: &subscript_compiler::Type) -
         })))
 }
 
-fn lir_boundary_address_coercion(
+fn lir_boundary_box(
     lir: &l::Module,
-    pointee: &subscript_compiler::Type,
+    source: &subscript_compiler::Type,
     result: &l::ValueType,
 ) -> bool {
-    matches!((pointee, result),
-    (
+    let (
         subscript_compiler::Type::Class(source),
-        l::ValueType::Data(subscript_compiler::Type::Nullable(target))
-    ) if matches!(&**target, subscript_compiler::Type::Class(target)
-        if source == target
-            && lir.classes.get(target.0).is_some_and(|definition| {
-                definition.is_value && definition.is_boundary
-            })))
+        l::ValueType::Data(subscript_compiler::Type::Nullable(target)),
+    ) = (source, result)
+    else {
+        return false;
+    };
+    let subscript_compiler::Type::Class(target) = target.as_ref() else {
+        return false;
+    };
+    if source == target {
+        return lir
+            .classes
+            .get(target.0)
+            .is_some_and(|definition| definition.is_value && definition.is_boundary);
+    }
+    lir.classes.get(source.0).is_some_and(|definition| {
+        definition.is_value
+            && definition.is_boundary
+            && definition.fields.first().is_some_and(|field| {
+                field.ty == subscript_compiler::Type::Class(*target)
+                    && lir_embedded_boundary_header(lir, *target)
+            })
+    })
+}
+
+fn lir_embedded_boundary_header(lir: &l::Module, header: subscript_compiler::ClassId) -> bool {
+    let nullable =
+        subscript_compiler::Type::Nullable(Box::new(subscript_compiler::Type::Class(header)));
+    lir.classes
+        .iter()
+        .any(|class| class.is_boundary && class.fields.iter().any(|field| field.ty == nullable))
+        || lir.foreign_functions.iter().any(|function| {
+            function
+                .parameters
+                .iter()
+                .any(|parameter| parameter.ty == nullable)
+        })
 }
 
 fn compare_terminator_positions(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {
@@ -1612,6 +1614,7 @@ fn instruction_arity(
         | K::Unary(_)
         | K::Cast
         | K::Coerce
+        | K::BoxBoundaryValue { .. }
         | K::AddressOfValue
         | K::LoadAddress
         | K::LoadField(_)

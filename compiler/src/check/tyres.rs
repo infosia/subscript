@@ -600,16 +600,16 @@ impl<'p> Checker<'p> {
                 if matches!(inner, Type::Error) {
                     return Type::Error;
                 }
-                // C7: `Ref | null` for reference shapes (classes, opaque
-                // handles, functions, `object`). At a boundary position
-                // (`in_boundary`), the `Struct | null` form is also legal
-                // — a value-class-with-null whose `null` lowers to the
-                // zeroed struct (P5.2b). It stays rejected elsewhere.
+                // C7 and §33.5: nullable reference shapes and nullable
+                // boundary value classes are reference-sized handles. Plain
+                // script value classes remain outside the union surface.
                 if self.in_assoc_key {
                     return Type::Nullable(Box::new(inner));
                 }
                 let ok = (inner.is_reference_shape() && !self.is_value_class(&inner))
-                    || (self.in_boundary && self.is_value_class(&inner));
+                    || matches!(&inner, Type::Class(id) if self.classes.get(id.0).is_some_and(
+                        |definition| definition.is_value && definition.is_boundary
+                    ));
                 if ok {
                     return Type::Nullable(Box::new(inner));
                 }
