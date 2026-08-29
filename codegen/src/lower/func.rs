@@ -4167,8 +4167,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     fn iterator_create(
         &mut self,
         kind: l::ForOfKind,
+        bound_kind: l::IteratorBoundKind,
         subject: RV,
         subject_ty: &l::ValueType,
+        iterator_ty: &l::IteratorType,
+        pos: &Pos,
     ) -> Result<RV, String> {
         let cursor = self.stack_slot(32, 8);
         self.zero_bytes(cursor, 32, 8);
@@ -4177,25 +4180,46 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             _ => self.expect_scalar(subject)?,
         };
         self.builder.ins().store(flags(), subject, cursor, 0);
-        if kind == l::ForOfKind::FixedArrayValues {
-            let l::ValueType::Data(Type::FixedArray(_, count)) = subject_ty else {
-                return Err(internal(
-                    "fixed-array iterator has no fixed-array subject type",
-                ));
-            };
-            let count = self.iconst(types::I64, i64::from(*count));
-            self.builder.ins().store(flags(), count, cursor, 16);
+        let fixed = self.iconst(
+            types::I64,
+            i64::from(bound_kind == l::IteratorBoundKind::Fixed),
+        );
+        self.builder.ins().store(flags(), fixed, cursor, 24);
+        if kind == l::ForOfKind::FixedArrayValues
+            && !matches!(subject_ty, l::ValueType::Data(Type::FixedArray(_, _)))
+        {
+            return Err(internal(
+                "fixed-array iterator has no fixed-array subject type",
+            ));
+        }
+        let captured = if let (
+            l::ForOfKind::FixedArrayValues,
+            l::ValueType::Data(Type::FixedArray(_, count)),
+        ) = (kind, subject_ty)
+        {
+            self.iconst(types::I64, i64::from(*count))
+        } else {
+            self.iterator_current_bound(cursor, iterator_ty, pos)?
+        };
+        self.builder.ins().store(flags(), captured, cursor, 16);
+        if matches!(
+            kind,
+            l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues
+        ) {
+            let start = self.iconst(types::I64, 0);
+            let position =
+                self.next_live_assoc_position(subject, iterator_ty, start, captured, pos)?;
+            self.builder.ins().store(flags(), position, cursor, 8);
         }
         Ok(RV::Aggregate(cursor))
     }
 
-    fn iterator_bound(
+    fn iterator_current_bound(
         &mut self,
-        iterator: RV,
+        cursor: Value,
         iterator_ty: &l::IteratorType,
         pos: &Pos,
-    ) -> Result<RV, String> {
-        let cursor = self.expect_aggregate(iterator)?;
+    ) -> Result<Value, String> {
         let subject = self.builder.ins().load(types::I64, flags(), cursor, 0);
         let bound = match iterator_ty.kind {
             l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys => self
@@ -4214,134 +4238,128 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 )?
                 .ok_or_else(|| internal("association iterator bound has no result"))?
             }
-            l::ForOfKind::StringCodePoints => {
-                let length = self
-                    .call_runtime(self.ml.rt.str_len, &[self.ctx, subject], false)?
-                    .ok_or_else(|| internal("string iterator bound has no result"))?;
-                length
-            }
+            l::ForOfKind::StringCodePoints => self
+                .call_runtime(self.ml.rt.str_len, &[self.ctx, subject], false)?
+                .ok_or_else(|| internal("string iterator bound has no result"))?,
         };
-        let bound = if self.builder.func.dfg.value_type(bound) == types::I32 {
+        Ok(if self.builder.func.dfg.value_type(bound) == types::I32 {
             self.builder.ins().uextend(types::I64, bound)
         } else {
             bound
-        };
-        self.builder.ins().store(flags(), bound, cursor, 16);
+        })
+    }
+
+    fn iterator_bound(
+        &mut self,
+        iterator: RV,
+        iterator_ty: &l::IteratorType,
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        let cursor = self.expect_aggregate(iterator)?;
+        let current = self.iterator_current_bound(cursor, iterator_ty, pos)?;
+        let captured = self.builder.ins().load(types::I64, flags(), cursor, 16);
+        let fixed = self.builder.ins().load(types::I64, flags(), cursor, 24);
+        let fixed = self.builder.ins().icmp_imm(IntCC::NotEqual, fixed, 0);
+        let bound = self.builder.ins().select(fixed, captured, current);
         Ok(RV::Scalar(self.builder.ins().ireduce(types::I32, bound)))
+    }
+
+    fn iterator_effective_bound(
+        &mut self,
+        cursor: Value,
+        iterator_ty: &l::IteratorType,
+        captured: Value,
+        pos: &Pos,
+    ) -> Result<Value, String> {
+        let captured = if self.builder.func.dfg.value_type(captured) == types::I64 {
+            captured
+        } else {
+            self.builder.ins().uextend(types::I64, captured)
+        };
+        let current = self.iterator_current_bound(cursor, iterator_ty, pos)?;
+        let fixed_limit = self.builder.ins().umin(captured, current);
+        let fixed = self.builder.ins().load(types::I64, flags(), cursor, 24);
+        let fixed = self.builder.ins().icmp_imm(IntCC::NotEqual, fixed, 0);
+        Ok(self.builder.ins().select(fixed, fixed_limit, current))
+    }
+
+    fn next_live_assoc_position(
+        &mut self,
+        subject: Value,
+        iterator_ty: &l::IteratorType,
+        start: Value,
+        bound: Value,
+        pos: &Pos,
+    ) -> Result<Value, String> {
+        let (size, align) = self.ml.layouts.size_align(&iterator_ty.element)?;
+        let output = self.stack_slot(size.max(1), align.max(1));
+        let select = self.iconst(
+            types::I32,
+            i64::from(iterator_ty.kind == l::ForOfKind::MapValues),
+        );
+        let diagnostic_position = self.position_id(pos);
+        let diagnostic_position = self.iconst(types::I32, diagnostic_position);
+        let loop_block = self.builder.create_block();
+        let found = self.builder.create_block();
+        self.builder.append_block_param(loop_block, types::I64);
+        self.builder.append_block_param(found, types::I64);
+        self.builder
+            .ins()
+            .jump(loop_block, &[BlockArg::Value(start)]);
+        self.builder.switch_to_block(loop_block);
+        let candidate = self.builder.block_params(loop_block)[0];
+        let below = self
+            .builder
+            .ins()
+            .icmp(IntCC::UnsignedLessThan, candidate, bound);
+        let inspect = self.builder.create_block();
+        self.builder
+            .ins()
+            .brif(below, inspect, &[], found, &[BlockArg::Value(candidate)]);
+        self.builder.switch_to_block(inspect);
+        let active = self
+            .call_runtime(
+                self.ml.rt.assoc_iter_copy,
+                &[
+                    self.ctx,
+                    subject,
+                    candidate,
+                    select,
+                    output,
+                    diagnostic_position,
+                ],
+                true,
+            )?
+            .ok_or_else(|| internal("association iterator active flag is missing"))?;
+        let active = self.builder.ins().icmp_imm(IntCC::NotEqual, active, 0);
+        let next = self.builder.create_block();
+        self.builder
+            .ins()
+            .brif(active, found, &[BlockArg::Value(candidate)], next, &[]);
+        self.builder.switch_to_block(next);
+        let candidate = self.builder.ins().iadd_imm(candidate, 1);
+        self.builder
+            .ins()
+            .jump(loop_block, &[BlockArg::Value(candidate)]);
+        self.builder.switch_to_block(found);
+        Ok(self.builder.block_params(found)[0])
     }
 
     fn iterator_has_next(
         &mut self,
         iterator: RV,
         iterator_ty: &l::IteratorType,
-        index: Value,
+        _index: Value,
         bound: Value,
         pos: &Pos,
     ) -> Result<RV, String> {
         let cursor = self.expect_aggregate(iterator)?;
-        let subject = self.builder.ins().load(types::I64, flags(), cursor, 0);
         let cursor_position = self.builder.ins().load(types::I64, flags(), cursor, 8);
-        let index = if self.builder.func.dfg.value_type(index) == types::I64 {
-            index
-        } else {
-            self.builder.ins().uextend(types::I64, index)
-        };
-        let bound = if self.builder.func.dfg.value_type(bound) == types::I64 {
-            bound
-        } else {
-            self.builder.ins().uextend(types::I64, bound)
-        };
-        let below_bound = self
-            .builder
-            .ins()
-            .icmp(IntCC::UnsignedLessThan, index, bound);
-        let condition = match iterator_ty.kind {
-            l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys => {
-                let current = self
-                    .call_runtime(self.ml.rt.array_len, &[self.ctx, subject], false)?
-                    .ok_or_else(|| internal("array iterator length has no result"))?;
-                let current = self.builder.ins().uextend(types::I64, current);
-                let below_current =
-                    self.builder
-                        .ins()
-                        .icmp(IntCC::UnsignedLessThan, index, current);
-                self.builder.ins().band(below_bound, below_current)
-            }
-            l::ForOfKind::FixedArrayValues => below_bound,
-            l::ForOfKind::StringCodePoints => {
-                self.builder
-                    .ins()
-                    .icmp(IntCC::UnsignedLessThan, cursor_position, bound)
-            }
-            l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
-                let (size, align) = self.ml.layouts.size_align(&iterator_ty.element)?;
-                let output = self.stack_slot(size.max(1), align.max(1));
-                let select = self.iconst(
-                    types::I32,
-                    i64::from(iterator_ty.kind == l::ForOfKind::MapValues),
-                );
-                let diagnostic_position = self.position_id(pos);
-                let diagnostic_position = self.iconst(types::I32, diagnostic_position);
-                let loop_block = self.builder.create_block();
-                let found = self.builder.create_block();
-                self.builder.append_block_param(loop_block, types::I64);
-                self.builder.append_block_param(found, types::I8);
-                self.builder.append_block_param(found, types::I64);
-                let start = self.builder.ins().umax(index, cursor_position);
-                self.builder
-                    .ins()
-                    .jump(loop_block, &[BlockArg::Value(start)]);
-                self.builder.switch_to_block(loop_block);
-                let candidate = self.builder.block_params(loop_block)[0];
-                let below = self
-                    .builder
-                    .ins()
-                    .icmp(IntCC::UnsignedLessThan, candidate, bound);
-                let inspect = self.builder.create_block();
-                let false_value = self.iconst(types::I8, 0);
-                self.builder.ins().brif(
-                    below,
-                    inspect,
-                    &[],
-                    found,
-                    &[BlockArg::Value(false_value), BlockArg::Value(candidate)],
-                );
-                self.builder.switch_to_block(inspect);
-                let active = self
-                    .call_runtime(
-                        self.ml.rt.assoc_iter_copy,
-                        &[
-                            self.ctx,
-                            subject,
-                            candidate,
-                            select,
-                            output,
-                            diagnostic_position,
-                        ],
-                        true,
-                    )?
-                    .ok_or_else(|| internal("association iterator active flag is missing"))?;
-                let active = self.builder.ins().icmp_imm(IntCC::NotEqual, active, 0);
-                let next = self.builder.create_block();
-                self.builder.ins().brif(
-                    active,
-                    found,
-                    &[BlockArg::Value(active), BlockArg::Value(candidate)],
-                    next,
-                    &[],
-                );
-                self.builder.switch_to_block(next);
-                let candidate = self.builder.ins().iadd_imm(candidate, 1);
-                self.builder
-                    .ins()
-                    .jump(loop_block, &[BlockArg::Value(candidate)]);
-                self.builder.switch_to_block(found);
-                let active = self.builder.block_params(found)[0];
-                let candidate = self.builder.block_params(found)[1];
-                self.builder.ins().store(flags(), candidate, cursor, 24);
-                active
-            }
-        };
+        let effective = self.iterator_effective_bound(cursor, iterator_ty, bound, pos)?;
+        let condition =
+            self.builder
+                .ins()
+                .icmp(IntCC::UnsignedLessThan, cursor_position, effective);
         Ok(RV::Scalar(condition))
     }
 
@@ -4349,32 +4367,34 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         &mut self,
         iterator: RV,
         iterator_ty: &l::IteratorType,
-        index: Value,
+        _index: Value,
         pos: &Pos,
     ) -> Result<RV, String> {
         let cursor = self.expect_aggregate(iterator)?;
         let subject = self.builder.ins().load(types::I64, flags(), cursor, 0);
-        let index = if self.builder.func.dfg.value_type(index) == types::I64 {
-            index
-        } else {
-            self.builder.ins().uextend(types::I64, index)
-        };
+        let cursor_position = self.builder.ins().load(types::I64, flags(), cursor, 8);
         match iterator_ty.kind {
-            l::ForOfKind::ArrayKeys => {
-                Ok(RV::Scalar(self.builder.ins().ireduce(types::I32, index)))
-            }
+            l::ForOfKind::ArrayKeys => Ok(RV::Scalar(
+                self.builder.ins().ireduce(types::I32, cursor_position),
+            )),
             l::ForOfKind::ArrayValues => {
                 let data = self
                     .call_runtime(self.ml.rt.array_data, &[self.ctx, subject], false)?
                     .ok_or_else(|| internal("array iterator data has no result"))?;
                 let stride = self.ml.layouts.stride(&iterator_ty.element)?;
-                let offset = self.builder.ins().imul_imm(index, i64::from(stride));
+                let offset = self
+                    .builder
+                    .ins()
+                    .imul_imm(cursor_position, i64::from(stride));
                 let address = self.builder.ins().iadd(data, offset);
                 self.load_data(&iterator_ty.element, address, 0)
             }
             l::ForOfKind::FixedArrayValues => {
                 let stride = self.ml.layouts.stride(&iterator_ty.element)?;
-                let offset = self.builder.ins().imul_imm(index, i64::from(stride));
+                let offset = self
+                    .builder
+                    .ins()
+                    .imul_imm(cursor_position, i64::from(stride));
                 let address = self.builder.ins().iadd(subject, offset);
                 self.load_data(&iterator_ty.element, address, 0)
             }
@@ -4387,17 +4407,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 );
                 let position = self.position_id(pos);
                 let position = self.iconst(types::I32, position);
-                let selected = self.builder.ins().load(types::I64, flags(), cursor, 24);
                 self.call_runtime(
                     self.ml.rt.assoc_iter_copy,
-                    &[self.ctx, subject, selected, select, output, position],
+                    &[self.ctx, subject, cursor_position, select, output, position],
                     true,
                 )?;
                 self.load_data(&iterator_ty.element, output, 0)
             }
             l::ForOfKind::StringCodePoints => {
-                let current = self.builder.ins().load(types::I64, flags(), cursor, 8);
-                let current = self.builder.ins().ireduce(types::I32, current);
+                let current = self.builder.ins().ireduce(types::I32, cursor_position);
                 let next = self.stack_slot(4, 4);
                 let position = self.position_id(pos);
                 let position = self.iconst(types::I32, position);
@@ -4408,9 +4426,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         true,
                     )?
                     .ok_or_else(|| internal("string iterator value is missing"))?;
-                let next = self.builder.ins().load(types::I32, flags(), next, 0);
-                let next = self.builder.ins().uextend(types::I64, next);
-                self.builder.ins().store(flags(), next, cursor, 24);
                 Ok(RV::Scalar(value))
             }
         }
@@ -4420,27 +4435,38 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         &mut self,
         iterator: RV,
         iterator_ty: &l::IteratorType,
-        _bound: Value,
-        _pos: &Pos,
+        bound: Value,
+        pos: &Pos,
     ) -> Result<RV, String> {
         let cursor = self.expect_aggregate(iterator)?;
         let next_cursor = self.stack_slot(32, 8);
         self.copy_bytes(next_cursor, cursor, 32, 8);
         let current = self.builder.ins().load(types::I64, flags(), cursor, 8);
+        let effective = self.iterator_effective_bound(cursor, iterator_ty, bound, pos)?;
+        let subject = self.builder.ins().load(types::I64, flags(), cursor, 0);
         let next = match iterator_ty.kind {
             l::ForOfKind::ArrayValues
             | l::ForOfKind::ArrayKeys
             | l::ForOfKind::FixedArrayValues => self.builder.ins().iadd_imm(current, 1),
             l::ForOfKind::StringCodePoints => {
-                self.builder.ins().load(types::I64, flags(), cursor, 24)
+                let current = self.builder.ins().ireduce(types::I32, current);
+                let next = self.stack_slot(4, 4);
+                let position = self.position_id(pos);
+                let position = self.iconst(types::I32, position);
+                self.call_runtime(
+                    self.ml.rt.str_iter_code_point,
+                    &[self.ctx, subject, current, next, position],
+                    true,
+                )?;
+                let next = self.builder.ins().load(types::I32, flags(), next, 0);
+                self.builder.ins().uextend(types::I64, next)
             }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
-                let selected = self.builder.ins().load(types::I64, flags(), cursor, 24);
-                self.builder.ins().iadd_imm(selected, 1)
+                let start = self.builder.ins().iadd_imm(current, 1);
+                self.next_live_assoc_position(subject, iterator_ty, start, effective, pos)?
             }
         };
         self.builder.ins().store(flags(), next, next_cursor, 8);
-        self.builder.ins().store(flags(), next, next_cursor, 24);
         Ok(RV::Aggregate(next_cursor))
     }
 }
@@ -6172,17 +6198,26 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 )?;
                 None
             }
-            l::InstructionKind::IteratorCreate(kind) => Some(
-                self.iterator_create(
-                    *kind,
-                    *operands
-                        .first()
-                        .ok_or_else(|| internal("iterator subject is missing"))?,
-                    operand_types
-                        .first()
-                        .ok_or_else(|| internal("iterator subject type is missing"))?,
-                )?,
-            ),
+            l::InstructionKind::IteratorCreate { kind, bound } => {
+                let iterator_ty = match result_ty.as_ref() {
+                    Some(l::ValueType::Iterator(ty)) => ty,
+                    _ => return Err(internal("IteratorCreate has no iterator result type")),
+                };
+                Some(
+                    self.iterator_create(
+                        *kind,
+                        *bound,
+                        *operands
+                            .first()
+                            .ok_or_else(|| internal("iterator subject is missing"))?,
+                        operand_types
+                            .first()
+                            .ok_or_else(|| internal("iterator subject type is missing"))?,
+                        iterator_ty,
+                        &instruction.pos,
+                    )?,
+                )
+            }
             l::InstructionKind::IteratorHasNext => {
                 let iterator_ty = match operand_types.first() {
                     Some(l::ValueType::Iterator(ty)) => ty,

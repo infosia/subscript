@@ -1,9 +1,9 @@
 // corpus: accept/a80-for-of-foreach-mutation
-// purpose: P22 for-of and forEach share byte-identical fixed-bound mutation traversal.
-// observable: the two spellings print identical sequences; appends do not extend and removals shorten.
-// exercises: for-of-foreach-parity, mutation-during-iteration, fixed-entry-bound
+// purpose: Mutation traversal follows the bound rule of each source spelling.
+// observable: removals shorten each visit; Map appends extend for-of and forEach traversal.
+// exercises: for-of-foreach-parity, mutation-during-iteration, live-association-bound
 // questions: Q30
-// tsc: accepts; js-comparable: no C13: Mutation during traversal produces different output.
+// tsc: accepts; js-comparable: yes
 function visitArray(value: i32): void {
   print(`array:${value}`);
 }

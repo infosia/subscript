@@ -508,8 +508,13 @@ pub enum InstructionKind {
     AsyncHandleArrayRetain,
     /// Release each async handle stored in one dynamic array.
     AsyncHandleArrayRelease,
-    /// Create a fused for-of cursor.
-    IteratorCreate(ForOfKind),
+    /// Create a fused iteration cursor with its source-selected bound.
+    IteratorCreate {
+        /// Storage traversal operation.
+        kind: ForOfKind,
+        /// Bound rule selected by the source spelling.
+        bound: IteratorBoundKind,
+    },
     /// Test a fused cursor without advancing it.
     IteratorHasNext,
     /// Read the element at the current traversal state.
@@ -787,6 +792,15 @@ pub enum ForOfKind {
     SetValues,
     /// UTF-8 code points.
     StringCodePoints,
+}
+
+/// Source-selected bound rule for one fused iteration cursor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IteratorBoundKind {
+    /// Compare the cursor position with the container's current count.
+    Live,
+    /// Compare the cursor position with the count captured at creation.
+    Fixed,
 }
 
 /// Array spread traversal kinds.

@@ -13,8 +13,8 @@ use subscript_codegen::interpreter::interpret;
 use subscript_codegen::lir::{lower_module, verify_module};
 use subscript_codegen::run_jit_with_memory_accounting;
 use subscript_compiler::lir::{
-    self as lir, BlockId, ForOfKind, InstructionKind, Module, Operand, Terminator, TrapKind,
-    ValueType,
+    self as lir, BlockId, ForOfKind, InstructionKind, IteratorBoundKind, Module, Operand,
+    Terminator, TrapKind, ValueType,
 };
 use subscript_compiler::lir_text::print_module;
 use subscript_compiler::Type;
@@ -577,6 +577,65 @@ fn every_hir_execution_fact_is_carried_by_lir() {
 }
 
 #[test]
+fn iteration_spelling_selects_the_lir_cursor_bound() {
+    let accept = corpus::corpus_accept();
+    let sources = corpus::entry_sources(&accept, "a170-iteration-bound-spelling");
+    let hir = check_program(&sources).expect("a170 checks clean");
+    let lir = lower_module(&hir).expect("a170 lowers to LIR");
+    let bounds = lir
+        .functions
+        .iter()
+        .flat_map(|function| &function.blocks)
+        .flat_map(|block| &block.instructions)
+        .filter_map(|instruction| match instruction.kind {
+            InstructionKind::IteratorCreate { kind, bound } => Some((kind, bound)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        bounds
+            .iter()
+            .filter(|(_, bound)| *bound == IteratorBoundKind::Fixed)
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![(ForOfKind::ArrayValues, IteratorBoundKind::Fixed)]
+    );
+    assert!(bounds.iter().any(|(kind, bound)| {
+        *kind == ForOfKind::ArrayValues && *bound == IteratorBoundKind::Live
+    }));
+    assert!(bounds.iter().any(|(kind, bound)| {
+        *kind == ForOfKind::MapValues && *bound == IteratorBoundKind::Live
+    }));
+    assert_eq!(
+        interpret(&lir).expect("a170 interpreter run"),
+        corpus::golden_bytes(&accept, "a170-iteration-bound-spelling")
+    );
+}
+
+#[test]
+fn iteration_fact_check_rejects_a_fixed_for_of_cursor() {
+    let source = "export function main(): void {\n  const values: i32[] = [1, 2];\n  for (const value of values) { print(`${value}`); }\n}\n";
+    let hir = check_program(&[SourceFile::new("fixed-for-of.ts", source)])
+        .expect("fixed for-of witness checks clean");
+    let mut lir = lower_module(&hir).expect("fixed for-of witness lowers");
+    let create = lir
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.blocks)
+        .flat_map(|block| &mut block.instructions)
+        .find(|instruction| matches!(instruction.kind, InstructionKind::IteratorCreate { .. }))
+        .expect("for-of iterator creation");
+    let InstructionKind::IteratorCreate { bound, .. } = &mut create.kind else {
+        unreachable!()
+    };
+    *bound = IteratorBoundKind::Fixed;
+    assert_eq!(
+        lir_facts::dropped_facts(&hir, &lir),
+        vec!["fixed-for-of.ts:3:3: iterator bound Fixed disagrees with for-of spelling, which requires Live"]
+    );
+}
+
+#[test]
 fn item_12_reports_a_missing_foreign_array_snapshot_pair() {
     let accept = corpus::corpus_accept();
     let sources = corpus::entry_sources(&accept, "a26-interop-array-pair");
@@ -907,8 +966,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 113;
-const DEBUG_RUNNABLE_COUNT: usize = 112;
+const RELEASE_RUNNABLE_COUNT: usize = 114;
+const DEBUG_RUNNABLE_COUNT: usize = 113;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1124,6 +1183,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a168-static-members",
         "static globals and free functions for fields, methods, and accessors",
+    ),
+    (
+        "a170-iteration-bound-spelling",
+        "live for-of and Map.forEach bounds plus the fixed Array.forEach bound",
     ),
     (
         "a15-manual-lifetime",

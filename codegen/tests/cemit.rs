@@ -1714,11 +1714,11 @@ fn map_and_set_trapping_foreach_callbacks_report_identically() {
 }
 
 #[test]
-fn map_growth_during_for_each_preserves_the_fixed_entry_bound() {
+fn map_growth_during_for_each_visits_the_appended_entry() {
     // The deleted first slot makes the ordered vector compactable. The
     // callback's insertion reaches the growth boundary while iteration
-    // is positioned after that slot. The shared P22 traversal must keep
-    // the live 2,3,4 suffix without extending the entry snapshot to 5.
+    // is positioned after that slot. The live ECMA traversal must keep
+    // the 2,3,4 suffix and extend it to the appended entry 5.
     assert_tiers_print(
         "let seen: string = \"\";\n\
          export function main(): void {\n\
@@ -1736,7 +1736,7 @@ fn map_growth_during_for_each_preserves_the_fixed_entry_bound() {
            });\n\
            print(seen);\n\
          }\n",
-        "2:20|3:30|4:40|\n",
+        "2:20|3:30|4:40|5:50|\n",
     );
 }
 
@@ -1779,7 +1779,7 @@ fn map_mutation_during_for_each_keeps_the_p22_visit_rules() {
            });\n\
            print(seen);\n\
          }\n",
-        "12|13|1|1\n",
+        "123|13|1|1\n",
     );
 }
 

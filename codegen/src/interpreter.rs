@@ -197,6 +197,7 @@ struct Invalidation {
 
 struct IteratorCursor {
     kind: l::ForOfKind,
+    bound_kind: l::IteratorBoundKind,
     subject: Value,
     /// Storage position bound captured when the cursor is created.
     bound: i64,
@@ -1158,13 +1159,14 @@ impl<'m> Interpreter<'m> {
                 }
                 None
             }
-            l::InstructionKind::IteratorCreate(kind) => {
+            l::InstructionKind::IteratorCreate { kind, bound } => {
                 let subject_ty = self
                     .instruction_operand_type(function, instruction, 0)
                     .cloned();
                 Some(
                     self.iterator_create(
                         *kind,
+                        *bound,
                         operands
                             .first()
                             .ok_or_else(|| self.missing_operand(instruction, 0))?
@@ -1180,6 +1182,7 @@ impl<'m> Interpreter<'m> {
                     operands
                         .first()
                         .ok_or_else(|| self.missing_operand(instruction, 0))?,
+                    &instruction.pos,
                 )? as i64,
             )),
             l::InstructionKind::IteratorHasNext => {
@@ -4895,6 +4898,7 @@ impl<'m> Interpreter<'m> {
     fn iterator_create(
         &mut self,
         kind: l::ForOfKind,
+        bound_kind: l::IteratorBoundKind,
         subject: Value,
         subject_ty: Option<&Type>,
         result_ty: Option<&l::ValueType>,
@@ -4965,6 +4969,7 @@ impl<'m> Interpreter<'m> {
         }
         Ok(Value::Iterator(Rc::new(IteratorCursor {
             kind,
+            bound_kind,
             subject,
             bound,
             position,
@@ -4979,40 +4984,52 @@ impl<'m> Interpreter<'m> {
         bound: i64,
         pos: &Pos,
     ) -> Result<bool, InterpretError> {
-        match cursor.kind {
+        let current = self.iterator_current_bound(cursor, pos)?;
+        let effective = if cursor.bound_kind == l::IteratorBoundKind::Fixed {
+            bound.min(current)
+        } else {
+            current
+        };
+        Ok(cursor.position >= 0 && cursor.position < effective)
+    }
+
+    fn iterator_bound(&mut self, cursor: &Value, pos: &Pos) -> Result<i32, InterpretError> {
+        let cursor = cursor.as_iterator()?;
+        let bound = if cursor.bound_kind == l::IteratorBoundKind::Fixed {
+            cursor.bound
+        } else {
+            self.iterator_current_bound(cursor, pos)?
+        };
+        i32::try_from(bound).map_err(|_| self.invalid(None, "iterator bound exceeds i32"))
+    }
+
+    fn iterator_current_bound(
+        &mut self,
+        cursor: &IteratorCursor,
+        pos: &Pos,
+    ) -> Result<i64, InterpretError> {
+        let bound = match cursor.kind {
             l::ForOfKind::ArrayValues | l::ForOfKind::ArrayKeys => {
-                let current = unsafe { self.context.array_len(cursor.subject.as_handle()?) };
-                Ok(cursor.position < bound && cursor.position < i64::from(current))
+                i64::from(unsafe { self.context.array_len(cursor.subject.as_handle()?) })
+            }
+            l::ForOfKind::FixedArrayValues => cursor.bound,
+            l::ForOfKind::StringCodePoints => {
+                i64::from(ffi_len_string(&self.context, cursor.subject.as_handle()?))
             }
             l::ForOfKind::MapKeys | l::ForOfKind::MapValues | l::ForOfKind::SetValues => {
-                let width = cursor.assoc_probe_size.ok_or_else(|| {
-                    self.invalid(Some(pos.clone()), "association cursor has no probe layout")
-                })?;
-                let mut probe = vec![0_u8; width.max(1)];
-                if cursor.position < 0 || cursor.position >= bound {
-                    return Ok(false);
-                }
-                let active = unsafe {
-                    ffi::subscript_rt_assoc_iter_copy(
+                let bound = unsafe {
+                    ffi::subscript_rt_assoc_iter_begin(
                         &mut *self.context,
                         cursor.subject.as_handle()?,
-                        cursor.position as u64,
-                        u32::from(cursor.kind == l::ForOfKind::MapValues),
-                        probe.as_mut_ptr(),
                         0,
                     )
                 };
                 self.check_runtime(pos)?;
-                Ok(active != 0)
+                i64::try_from(bound)
+                    .map_err(|_| self.invalid(Some(pos.clone()), "iterator bound exceeds i64"))?
             }
-            l::ForOfKind::StringCodePoints => Ok(cursor.position < bound),
-            l::ForOfKind::FixedArrayValues => Ok(cursor.position < bound),
-        }
-    }
-
-    fn iterator_bound(&self, cursor: &Value) -> Result<i32, InterpretError> {
-        let cursor = cursor.as_iterator()?;
-        i32::try_from(cursor.bound).map_err(|_| self.invalid(None, "iterator bound exceeds i32"))
+        };
+        Ok(bound.max(0))
     }
 
     fn iterator_value(
@@ -5109,6 +5126,12 @@ impl<'m> Interpreter<'m> {
         pos: &Pos,
     ) -> Result<Value, InterpretError> {
         let cursor = cursor.as_iterator()?;
+        let current_bound = self.iterator_current_bound(cursor, pos)?;
+        let effective_bound = if cursor.bound_kind == l::IteratorBoundKind::Fixed {
+            bound.min(current_bound)
+        } else {
+            current_bound
+        };
         let position = match cursor.kind {
             l::ForOfKind::StringCodePoints => {
                 let bytes = self.string_bytes(cursor.subject.as_handle()?)?;
@@ -5132,13 +5155,14 @@ impl<'m> Interpreter<'m> {
                     cursor.kind,
                     cursor.assoc_probe_size,
                     cursor.position.saturating_add(1),
-                    bound,
+                    effective_bound,
                     pos,
                 )?,
             _ => cursor.position.saturating_add(1),
         };
         Ok(Value::Iterator(Rc::new(IteratorCursor {
             kind: cursor.kind,
+            bound_kind: cursor.bound_kind,
             subject: cursor.subject.clone(),
             bound: cursor.bound,
             position,

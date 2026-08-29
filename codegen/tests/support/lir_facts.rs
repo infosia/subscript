@@ -17,8 +17,131 @@ pub fn dropped_facts(hir: &hir::Module, lir: &l::Module) -> Vec<String> {
     compare_boundary_pointer_addresses(hir, lir, &mut findings);
     compare_foreign_array_snapshots(hir, lir, &mut findings);
     compare_call_operands(hir, lir, &mut findings);
+    compare_iterator_bounds(hir, lir, &mut findings);
     compare_instruction_operands(lir, &mut findings);
     findings
+}
+
+#[derive(Clone)]
+struct ExpectedIteratorBound {
+    bound: l::IteratorBoundKind,
+    spelling: &'static str,
+}
+
+fn compare_iterator_bounds(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {
+    let mut expected = BTreeMap::<(String, u32, u32), ExpectedIteratorBound>::new();
+    let mut collect_for_of = |statements: &[hir::Stmt]| {
+        collect_for_of_bounds(statements, &mut expected);
+    };
+    for function in all_declared_functions(hir) {
+        collect_for_of(&function.body);
+    }
+    collect_for_of(&hir.top_level);
+    walk_module_expressions(hir, &mut |expr| {
+        if let hir::ExprKind::Lambda { body, .. } = &expr.kind {
+            collect_for_of_bounds(body, &mut expected);
+        }
+        let hir::ExprKind::Call { callee, args } = &expr.kind else {
+            return;
+        };
+        let fact = match callee {
+            hir::Callee::Arr(hir::ArrFn::ForEach) => Some(ExpectedIteratorBound {
+                bound: if matches!(
+                    args.first().map(|argument| &argument.ty),
+                    Some(subscript_compiler::Type::Array(_))
+                ) {
+                    l::IteratorBoundKind::Fixed
+                } else {
+                    l::IteratorBoundKind::Live
+                },
+                spelling: "Array.forEach",
+            }),
+            hir::Callee::Map(hir::MapFn::ForEach) => Some(ExpectedIteratorBound {
+                bound: l::IteratorBoundKind::Live,
+                spelling: "Map.forEach",
+            }),
+            hir::Callee::Set(hir::SetFn::ForEach) => Some(ExpectedIteratorBound {
+                bound: l::IteratorBoundKind::Live,
+                spelling: "Set.forEach",
+            }),
+            _ => None,
+        };
+        if let Some(fact) = fact {
+            expected.insert(pos_key(&expr.pos), fact);
+        }
+    });
+
+    let mut actual_positions = BTreeMap::<(String, u32, u32), usize>::new();
+    for instruction in lir
+        .functions
+        .iter()
+        .flat_map(|function| &function.blocks)
+        .flat_map(|block| &block.instructions)
+    {
+        let l::InstructionKind::IteratorCreate { bound, .. } = instruction.kind else {
+            continue;
+        };
+        let key = pos_key(&instruction.pos);
+        *actual_positions.entry(key.clone()).or_default() += 1;
+        match expected.get(&key) {
+            Some(required) if required.bound != bound => findings.push(format!(
+                "{}: iterator bound {bound:?} disagrees with {} spelling, which requires {:?}",
+                instruction.pos, required.spelling, required.bound
+            )),
+            Some(_) => {}
+            None => findings.push(format!(
+                "{}: iterator bound {bound:?} has no for-of or forEach spelling in HIR",
+                instruction.pos
+            )),
+        }
+    }
+    for (key, required) in expected {
+        if !actual_positions.contains_key(&key) {
+            findings.push(format!(
+                "{}:{}:{}: {} spelling carries no {:?} iterator cursor in LIR",
+                key.0, key.1, key.2, required.spelling, required.bound
+            ));
+        }
+    }
+}
+
+fn collect_for_of_bounds(
+    statements: &[hir::Stmt],
+    expected: &mut BTreeMap<(String, u32, u32), ExpectedIteratorBound>,
+) {
+    for statement in statements {
+        match statement {
+            hir::Stmt::ForOf { body, pos, .. } => {
+                expected.insert(
+                    pos_key(pos),
+                    ExpectedIteratorBound {
+                        bound: l::IteratorBoundKind::Live,
+                        spelling: "for-of",
+                    },
+                );
+                collect_for_of_bounds(body, expected);
+            }
+            hir::Stmt::If { then, els, .. } => {
+                collect_for_of_bounds(then, expected);
+                if let Some(els) = els {
+                    collect_for_of_bounds(els, expected);
+                }
+            }
+            hir::Stmt::While { body, .. }
+            | hir::Stmt::For { body, .. }
+            | hir::Stmt::Block(body) => collect_for_of_bounds(body, expected),
+            hir::Stmt::Switch { cases, .. } => {
+                for case in cases {
+                    collect_for_of_bounds(&case.body, expected);
+                }
+            }
+            hir::Stmt::Let { .. }
+            | hir::Stmt::Expr(_)
+            | hir::Stmt::Return { .. }
+            | hir::Stmt::Break(_)
+            | hir::Stmt::Continue(_) => {}
+        }
+    }
 }
 
 fn compare_foreign_array_snapshots(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {
@@ -1377,6 +1500,14 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
                         })
                         .sum()
                 }),
+            hir::Callee::Arr(hir::ArrFn::ForEach)
+            | hir::Callee::Map(hir::MapFn::ForEach)
+            | hir::Callee::Set(hir::SetFn::ForEach) => {
+                args.get(1).and_then(|callback| match &callback.ty {
+                    subscript_compiler::Type::Func(function) => Some(function.params.len() + 1),
+                    _ => None,
+                })
+            }
             hir::Callee::Value(_) | hir::Callee::Method { .. } => Some(args.len() + 1),
             hir::Callee::Ambient(_)
             | hir::Callee::ContextBytes { .. }
@@ -1486,7 +1617,7 @@ fn instruction_arity(
         | K::LoadField(_)
         | K::Length
         | K::ForeignArrayData
-        | K::IteratorCreate(_)
+        | K::IteratorCreate { .. }
         | K::IteratorBound => Arity::Exact(1),
         K::StringLiteral(_)
         | K::LoadLocal(_)

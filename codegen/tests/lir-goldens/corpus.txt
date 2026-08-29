@@ -3262,7 +3262,7 @@ fn f7 "synchronousScopes" kind=Free exported=false generator=false async=false -
     %38: Data(Str) = Template([Text("storage:outer-unmanaged:"), Operand(0)])(Integer(7):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 119, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 119, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 119, col: 9 } }] @ a146-scoped-locals.ts:119:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%38) @ a146-scoped-locals.ts:119:3
     %39: Data(Array(I32)) = ArrayLiteral(Integer(1):I32, Integer(2):I32, Integer(3):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 121, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 121, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 121, col: 29 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 121, col: 32 } }] @ a146-scoped-locals.ts:121:25
-    %40: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate(ArrayValues)(%39) @ a146-scoped-locals.ts:122:3
+    %40: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Live }(%39) @ a146-scoped-locals.ts:122:3
     %41: Data(I32) = IteratorBound(%40) @ a146-scoped-locals.ts:122:3
     -> Branch(BlockTarget { block: BlockId(13), arguments: [Value(ValueId(29)), Value(ValueId(40)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(41))] })
   b12(%30: Data(I32)) Some("switch.case.0"):
@@ -3319,7 +3319,7 @@ fn f7 "synchronousScopes" kind=Free exported=false generator=false async=false -
     %76: Data(Map(Str, I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Map(Str, I32))) })() invalidates=[ValueId(39)] traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 143, col: 33 } }] @ a146-scoped-locals.ts:143:33
     %77: Data(Str) = StringLiteral("a")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 144, col: 11 } }] @ a146-scoped-locals.ts:144:11
     %78: Data(Map(Str, I32)) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(Str, I32)), Data(Str), Data(I32)], return_type: Some(Data(Map(Str, I32))) })(%76, %77, Integer(1):I32) invalidates=[ValueId(39)] traps=[Trap { kind: Call, pos: Pos { file: "a146-scoped-locals.ts", line: 144, col: 3 } }] @ a146-scoped-locals.ts:144:3
-    %79: Iterator(IteratorType { kind: MapKeys, element: Str }) = IteratorCreate(MapKeys)(%76) @ a146-scoped-locals.ts:145:3
+    %79: Iterator(IteratorType { kind: MapKeys, element: Str }) = IteratorCreate { kind: MapKeys, bound: Live }(%76) @ a146-scoped-locals.ts:145:3
     %80: Data(I32) = IteratorBound(%79) @ a146-scoped-locals.ts:145:3
     -> Branch(BlockTarget { block: BlockId(27), arguments: [Value(ValueId(68)), Value(ValueId(79)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(80))] })
   b27(%81: Data(I32), %82: Iterator(IteratorType { kind: MapKeys, element: Str }), %83: Data(I32), %84: Data(I32)) Some("for-of.cond"):
@@ -3393,7 +3393,7 @@ fn f8 "generatorScopes" kind=Free exported=false generator=true async=false -> G
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a146-scoped-locals.ts:181:3
     %4: Data(Str) = StringLiteral("generator-for-of:outer")() traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 183, col: 29 } }] @ a146-scoped-locals.ts:183:29
     %5: Data(Array(I32)) = ArrayLiteral(Integer(1):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 184, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a146-scoped-locals.ts", line: 184, col: 24 } }] @ a146-scoped-locals.ts:184:23
-    %6: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate(ArrayValues)(%5) @ a146-scoped-locals.ts:184:3
+    %6: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Live }(%5) @ a146-scoped-locals.ts:184:3
     %7: Data(I32) = IteratorBound(%6) @ a146-scoped-locals.ts:184:3
     -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(6)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(7))] })
   b2 Some("switch.case.0"):
@@ -4916,7 +4916,7 @@ fn f11 "doubled" kind=Free exported=false generator=true async=false -> Generato
   value %19: Data(I32) name=None
   value %20: Data(I32) name=None
   b0 Some("entry"):
-    %1: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate(ArrayValues)(%0) @ a149-suspension-state.ts:26:3
+    %1: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Live }(%0) @ a149-suspension-state.ts:26:3
     %2: Data(I32) = IteratorBound(%1) @ a149-suspension-state.ts:26:3
     -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(2))] })
   b1(%3: Data(Array(I32)), %4: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %5: Data(I32), %6: Data(I32)) Some("for-of.cond"):
@@ -6809,7 +6809,7 @@ fn f44 "main" kind=Free exported=true generator=false async=true -> Void entry=b
     %425: Data(Str) = Template([Text("lambda:after="), Operand(0), Text(":"), Operand(1)])(%423, %424) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 25 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 590, col: 9 } }] @ a149-suspension-state.ts:590:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%425) invalidates=[ValueId(8), ValueId(625), ValueId(627), ValueId(628), ValueId(48), ValueId(675), ValueId(739), ValueId(203), ValueId(210), ValueId(215), ValueId(216), ValueId(221), ValueId(222), ValueId(231), ValueId(749), ValueId(755), ValueId(763)] @ a149-suspension-state.ts:590:3
     %426: Data(Array(I32)) = ArrayLiteral(Integer(2):I32, Integer(4):I32, Integer(6):I32) traps=[Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 592, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 592, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 592, col: 27 } }, Trap { kind: Allocation, pos: Pos { file: "a149-suspension-state.ts", line: 592, col: 30 } }] @ a149-suspension-state.ts:592:23
-    %427: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate(ArrayValues)(%426) @ a149-suspension-state.ts:592:3
+    %427: Iterator(IteratorType { kind: ArrayValues, element: I32 }) = IteratorCreate { kind: ArrayValues, bound: Live }(%426) @ a149-suspension-state.ts:592:3
     %428: Data(I32) = IteratorBound(%427) @ a149-suspension-state.ts:592:3
     -> Branch(BlockTarget { block: BlockId(79), arguments: [Value(ValueId(895)), Value(ValueId(896)), Value(ValueId(897)), Value(ValueId(898)), Value(ValueId(899)), Value(ValueId(900)), Value(ValueId(901)), Value(ValueId(902)), Value(ValueId(427)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(428))] })
   b79(%429: Data(I32), %430: Data(I32), %431: Data(I32), %432: Data(Func(FuncType { params: [], ret: I32 })), %433: Data(Func(FuncType { params: [], ret: I32 })), %434: Data(Func(FuncType { params: [], ret: I32 })), %435: Data(Func(FuncType { params: [], ret: I32 })), %436: Data(Func(FuncType { params: [], ret: I32 })), %437: Iterator(IteratorType { kind: ArrayValues, element: I32 }), %438: Data(I32), %439: Data(I32)) Some("for-of.cond"):

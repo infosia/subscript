@@ -2560,7 +2560,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         });
         let iterator = self
             .emit(
-                l::InstructionKind::IteratorCreate(kind),
+                l::InstructionKind::IteratorCreate {
+                    kind,
+                    bound: l::IteratorBoundKind::Live,
+                },
                 vec![subject_value],
                 Some(iterator_type.clone()),
                 false,
@@ -2704,6 +2707,272 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.release_scopes_from(self.scopes.len() - 1, pos)?;
         self.scopes.pop();
         Ok(())
+    }
+
+    fn create_iterator(
+        &mut self,
+        subject: l::Operand,
+        kind: l::ForOfKind,
+        element: Type,
+        bound: l::IteratorBoundKind,
+        pos: &Pos,
+    ) -> Result<(l::ValueType, l::Operand), LowerError> {
+        let iterator_type = l::ValueType::Iterator(l::IteratorType { kind, element });
+        let iterator = self
+            .emit(
+                l::InstructionKind::IteratorCreate { kind, bound },
+                vec![subject],
+                Some(iterator_type.clone()),
+                false,
+                Vec::new(),
+                pos.clone(),
+            )?
+            .expect("iterator result");
+        Ok((iterator_type, iterator))
+    }
+
+    fn lower_for_each(
+        &mut self,
+        callee: &hir::Callee,
+        args: &[hir::Expr],
+        expr: &hir::Expr,
+    ) -> Result<Option<l::Operand>, LowerError> {
+        let [subject, callback] = args else {
+            return Err(self.error(
+                &expr.pos,
+                format!("forEach lowering expected 2 operands, got {}", args.len()),
+            ));
+        };
+        let subject_value = self.require_expr(subject)?;
+        let callback_value = self.require_expr(callback)?;
+        let Type::Func(callback_type) = &callback.ty else {
+            return Err(self.error(&callback.pos, "forEach callback is not function-typed"));
+        };
+        if callback_type.ret != Type::Void {
+            return Err(self.error(&callback.pos, "forEach callback does not return void"));
+        }
+
+        let (kind, element, secondary, bound) = match (callee, &subject.ty) {
+            (hir::Callee::Arr(hir::ArrFn::ForEach), Type::Array(element)) => (
+                l::ForOfKind::ArrayValues,
+                (**element).clone(),
+                None,
+                l::IteratorBoundKind::Fixed,
+            ),
+            (hir::Callee::Arr(hir::ArrFn::ForEach), Type::FixedArray(element, _)) => (
+                l::ForOfKind::FixedArrayValues,
+                (**element).clone(),
+                None,
+                l::IteratorBoundKind::Live,
+            ),
+            (hir::Callee::Map(hir::MapFn::ForEach), Type::Map(key, value)) => (
+                l::ForOfKind::MapValues,
+                (**value).clone(),
+                Some((l::ForOfKind::MapKeys, (**key).clone())),
+                l::IteratorBoundKind::Live,
+            ),
+            (hir::Callee::Set(hir::SetFn::ForEach), Type::Set(key)) => (
+                l::ForOfKind::SetValues,
+                (**key).clone(),
+                None,
+                l::IteratorBoundKind::Live,
+            ),
+            _ => {
+                return Err(self.error(&subject.pos, "forEach spelling and receiver type disagree"));
+            }
+        };
+
+        let (iterator_type, iterator) = self.create_iterator(
+            subject_value.clone(),
+            kind,
+            element.clone(),
+            bound,
+            &expr.pos,
+        )?;
+        let secondary_iterator = secondary
+            .map(|(kind, element)| {
+                self.create_iterator(subject_value.clone(), kind, element, bound, &expr.pos)
+            })
+            .transpose()?;
+        let captured_bound = self
+            .emit(
+                l::InstructionKind::IteratorBound,
+                vec![iterator.clone()],
+                Some(l::ValueType::Data(Type::I32)),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("iterator bound");
+        let index = l::Operand::Constant(l::Constant {
+            ty: Type::I32,
+            kind: l::ConstantKind::Integer(0),
+        });
+
+        self.scopes.push(HashMap::new());
+        let cursor_binding =
+            self.declare_hidden_binding("<for-each cursor>", iterator_type.clone(), iterator);
+        let secondary_binding = secondary_iterator.map(|(ty, iterator)| {
+            self.declare_hidden_binding("<for-each secondary cursor>", ty, iterator)
+        });
+        let callback_binding = self.declare_hidden_binding(
+            "<for-each callback>",
+            l::ValueType::Data(callback.ty.clone()),
+            callback_value,
+        );
+        let index_binding =
+            self.declare_hidden_binding("<for-each index>", l::ValueType::Data(Type::I32), index);
+        let bound_binding = self.declare_hidden_binding(
+            "<for-each bound>",
+            l::ValueType::Data(Type::I32),
+            captured_bound,
+        );
+        let mut traversal = vec![
+            cursor_binding,
+            callback_binding,
+            index_binding,
+            bound_binding,
+        ];
+        traversal.extend(secondary_binding);
+
+        let header =
+            self.new_state_block(Vec::new(), Some("for-each.cond".to_string()), &traversal);
+        let body = self.new_block(Vec::new(), Some("for-each.body".to_string()));
+        let step = self.new_state_block(Vec::new(), Some("for-each.step".to_string()), &traversal);
+        let exit = self.new_state_block(Vec::new(), Some("for-each.exit".to_string()), &[]);
+        let edge = self.block_target(header, Vec::new())?;
+        self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
+
+        self.enter_block(header)?;
+        let cursor = self.read_binding(cursor_binding, &expr.pos)?;
+        let index = self.read_binding(index_binding, &expr.pos)?;
+        let captured_bound = self.read_binding(bound_binding, &expr.pos)?;
+        let more = self
+            .emit(
+                l::InstructionKind::IteratorHasNext,
+                vec![cursor, index, captured_bound],
+                Some(l::ValueType::Data(Type::Bool)),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("iterator condition");
+        let exit_target = self.block_target(exit, Vec::new())?;
+        self.terminate(
+            l::Terminator::ConditionalBranch {
+                condition: more,
+                then_target: target(body, Vec::new()),
+                else_target: exit_target,
+            },
+            &expr.pos,
+        )?;
+
+        self.current = Some(body);
+        let cursor = self.read_binding(cursor_binding, &expr.pos)?;
+        let index = self.read_binding(index_binding, &expr.pos)?;
+        let captured_bound = self.read_binding(bound_binding, &expr.pos)?;
+        let value = self
+            .emit(
+                l::InstructionKind::IteratorValue,
+                vec![cursor, index.clone(), captured_bound.clone()],
+                Some(l::ValueType::Data(element)),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("iterator value");
+        let mut call_operands = vec![self.read_binding(callback_binding, &expr.pos)?, value];
+        if let Some(secondary_binding) = secondary_binding {
+            let secondary_cursor = self.read_binding(secondary_binding, &expr.pos)?;
+            let secondary_type = self.bindings[secondary_binding.0].ty.clone();
+            let l::ValueType::Iterator(secondary_type) = secondary_type else {
+                unreachable!("secondary cursor binding has an iterator type")
+            };
+            let secondary_value = self
+                .emit(
+                    l::InstructionKind::IteratorValue,
+                    vec![secondary_cursor, index.clone(), captured_bound],
+                    Some(l::ValueType::Data(secondary_type.element)),
+                    false,
+                    Vec::new(),
+                    expr.pos.clone(),
+                )?
+                .expect("secondary iterator value");
+            call_operands.push(secondary_value);
+        } else if callback_type.params.len() == 2 {
+            call_operands.push(index.clone());
+        }
+        self.emit(
+            l::InstructionKind::Call(l::CallTarget {
+                kind: l::CallTargetKind::Indirect,
+                parameter_types: std::iter::once(l::ValueType::Data(callback.ty.clone()))
+                    .chain(callback_type.params.iter().cloned().map(l::ValueType::Data))
+                    .collect(),
+                return_type: None,
+            }),
+            call_operands,
+            None,
+            true,
+            convert_traps(&expr.trap_sites(self.lowering.hir)),
+            expr.pos.clone(),
+        )?;
+        let edge = self.block_target(step, Vec::new())?;
+        self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
+
+        self.enter_block(step)?;
+        let cursor = self.read_binding(cursor_binding, &expr.pos)?;
+        let index = self.read_binding(index_binding, &expr.pos)?;
+        let captured_bound = self.read_binding(bound_binding, &expr.pos)?;
+        let advanced = self
+            .emit(
+                l::InstructionKind::IteratorAdvance,
+                vec![cursor, index.clone(), captured_bound.clone()],
+                Some(iterator_type),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("advanced iterator");
+        self.bindings[cursor_binding.0].value = Some(advanced);
+        if let Some(secondary_binding) = secondary_binding {
+            let cursor = self.read_binding(secondary_binding, &expr.pos)?;
+            let iterator_type = self.bindings[secondary_binding.0].ty.clone();
+            let advanced = self
+                .emit(
+                    l::InstructionKind::IteratorAdvance,
+                    vec![cursor, index.clone(), captured_bound],
+                    Some(iterator_type),
+                    false,
+                    Vec::new(),
+                    expr.pos.clone(),
+                )?
+                .expect("advanced secondary iterator");
+            self.bindings[secondary_binding.0].value = Some(advanced);
+        }
+        let next_index = self
+            .emit(
+                l::InstructionKind::Binary(l::BinaryOp::Add),
+                vec![
+                    index,
+                    l::Operand::Constant(l::Constant {
+                        ty: Type::I32,
+                        kind: l::ConstantKind::Integer(1),
+                    }),
+                ],
+                Some(l::ValueType::Data(Type::I32)),
+                false,
+                Vec::new(),
+                expr.pos.clone(),
+            )?
+            .expect("advanced iterator index");
+        self.bindings[index_binding.0].value = Some(next_index);
+        let edge = self.block_target(header, Vec::new())?;
+        self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
+
+        self.enter_block(exit)?;
+        self.release_scopes_from(self.scopes.len() - 1, &expr.pos)?;
+        self.scopes.pop();
+        Ok(None)
     }
 
     fn lower_switch(
@@ -3457,6 +3726,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         args: &[hir::Expr],
         expr: &hir::Expr,
     ) -> Result<Option<l::Operand>, LowerError> {
+        if matches!(
+            callee,
+            hir::Callee::Arr(hir::ArrFn::ForEach)
+                | hir::Callee::Map(hir::MapFn::ForEach)
+                | hir::Callee::Set(hir::SetFn::ForEach)
+        ) {
+            return self.lower_for_each(callee, args, expr);
+        }
         if matches!(callee, hir::Callee::Ambient(hir::AmbientFn::Unreachable)) {
             let trap = convert_traps(&expr.trap_sites(self.lowering.hir))
                 .into_iter()
@@ -7074,13 +7351,19 @@ fn verify_instruction_contract(
                 bad("closure signature is invalid", errors);
             }
         }
-        l::InstructionKind::IteratorCreate(kind) => {
+        l::InstructionKind::IteratorCreate { kind, bound } => {
             let valid = matches!(
                 result_type.as_ref(),
                 Some(l::ValueType::Iterator(iterator)) if iterator.kind == *kind
             );
             if operand_types.len() != 1 || !valid {
                 bad("iterator creation signature is invalid", errors);
+            }
+            if *bound == l::IteratorBoundKind::Fixed && *kind != l::ForOfKind::ArrayValues {
+                bad(
+                    "fixed iterator bound requires a dynamic-array value cursor",
+                    errors,
+                );
             }
         }
         l::InstructionKind::IteratorHasNext => {
