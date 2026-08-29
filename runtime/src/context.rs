@@ -2776,6 +2776,36 @@ impl Context {
         p
     }
 
+    /// Allocates an empty dynamic array with storage for `capacity` elements.
+    pub fn array_with_capacity(
+        &mut self,
+        capacity: usize,
+        elem_size: usize,
+        pos_id: u32,
+    ) -> *mut u8 {
+        let Some(data_size) = capacity.checked_mul(elem_size) else {
+            self.trap(
+                TrapKind::AllocationFailure,
+                "array capacity is not representable",
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        };
+        let handle = self.array_new(elem_size, pos_id);
+        if handle.is_null() || capacity == 0 {
+            return handle;
+        }
+        let data = self.alloc(data_size, CLASS_ARRAY_DATA, pos_id);
+        if data.is_null() {
+            return std::ptr::null_mut();
+        }
+        // SAFETY: `handle` points to the header that `array_new` created.
+        let header = unsafe { &mut *(handle as *mut ArrayHeader) };
+        header.cap = capacity as u64;
+        header.data = data;
+        handle
+    }
+
     /// Allocates a byte array and copies `len` bytes from `src`.
     ///
     /// # Safety
@@ -4624,6 +4654,28 @@ mod tests {
         let r = ctx.trap_record().expect("oob trap");
         assert_eq!(r.kind, TrapKind::IndexOutOfBounds);
         assert_eq!(r.pos_id, 9);
+    }
+
+    #[test]
+    fn array_with_capacity_reserves_empty_storage() {
+        let mut ctx = Context::new();
+        let h = ctx.array_with_capacity(3, std::mem::size_of::<i32>(), 0);
+        assert!(!h.is_null());
+        // SAFETY: `h` is a live array handle from this context.
+        let header = unsafe { &*(h as *const ArrayHeader) };
+        assert_eq!(header.len, 0);
+        assert_eq!(header.cap, 3);
+        assert_eq!(header.elem_size, 4);
+        assert!(!header.data.is_null());
+        let data = header.data;
+        for value in [10i32, 20, 30] {
+            // SAFETY: `h` is live and `value` has the array element type.
+            assert!(unsafe { ctx.array_push(h, (&raw const value).cast(), 0) } > 0);
+        }
+        // SAFETY: `h` remains live and the reserved pushes do not grow it.
+        let header = unsafe { &*(h as *const ArrayHeader) };
+        assert_eq!(header.len, 3);
+        assert_eq!(header.data, data);
     }
 
     #[test]

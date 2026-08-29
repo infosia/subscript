@@ -3540,6 +3540,31 @@ pub unsafe extern "C" fn subscript_rt_array_new(
     unsafe { &mut *ctx }.array_new(elem_size as usize, pos_id)
 }
 
+/// Allocates an empty dynamic array with storage for `capacity` elements.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_with_capacity(
+    ctx: *mut Context,
+    capacity: u64,
+    elem_size: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    let runtime = unsafe { &mut *ctx };
+    let (Ok(capacity), Ok(elem_size)) = (usize::try_from(capacity), usize::try_from(elem_size))
+    else {
+        runtime.trap(
+            TrapKind::AllocationFailure,
+            "array capacity is not representable",
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    runtime.array_with_capacity(capacity, elem_size, pos_id)
+}
+
 /// Allocates a byte array and copies a readable byte span into it.
 ///
 /// # Safety
@@ -6556,6 +6581,31 @@ mod tests {
             ctx.trap_record().map(|r| (r.kind, r.pos_id)),
             Some((TrapKind::IndexOutOfBounds, 9))
         );
+    }
+
+    #[test]
+    fn ffi_array_with_capacity_reserves_empty_storage() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: the context and all element pointers are valid.
+        unsafe {
+            let array = subscript_rt_array_with_capacity(p, 3, 4, 0);
+            assert!(!array.is_null());
+            assert_eq!(subscript_rt_array_len(p, array), 0);
+            let values = [10i32, 20, 30];
+            assert_eq!(
+                subscript_rt_array_push(p, array, (&raw const values[0]).cast(), 0),
+                1
+            );
+            let data = subscript_rt_array_ptr(p, array, 0, 0);
+            for (index, value) in values.iter().enumerate().skip(1) {
+                assert_eq!(
+                    subscript_rt_array_push(p, array, (&raw const *value).cast(), 0),
+                    index as i32 + 1
+                );
+            }
+            assert_eq!(subscript_rt_array_ptr(p, array, 0, 0), data);
+        }
     }
 
     #[test]

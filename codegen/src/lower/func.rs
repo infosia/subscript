@@ -643,6 +643,7 @@ const COROUTINE_RESUME_OFFSET: i32 = 8;
 const GENERATOR_EPOCH_OFFSET: i32 = 4;
 const COROUTINE_PAYLOAD_OFFSET: u32 = 16;
 const ARRAY_LEN_OFFSET: i32 = 0;
+const ARRAY_CAP_OFFSET: i32 = 8;
 const ARRAY_ELEM_SIZE_OFFSET: i32 = 16;
 const ARRAY_DATA_OFFSET: i32 = 24;
 
@@ -4113,26 +4114,63 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.emit_trap(trap, TrapOperand::Value(handle))?;
                     }
                 }
-                let value = self.materialize(
-                    *operands
-                        .get(1)
-                        .ok_or_else(|| internal("array push has no value"))?,
-                    element,
-                )?;
+                let value = *operands
+                    .get(1)
+                    .ok_or_else(|| internal("array push has no value"))?;
+                let length = self
+                    .builder
+                    .ins()
+                    .load(types::I64, flags(), handle, ARRAY_LEN_OFFSET);
+                let capacity =
+                    self.builder
+                        .ins()
+                        .load(types::I64, flags(), handle, ARRAY_CAP_OFFSET);
+                let available = self
+                    .builder
+                    .ins()
+                    .icmp(IntCC::UnsignedLessThan, length, capacity);
+                let fast = self.builder.create_block();
+                let slow = self.builder.create_block();
+                let done = self.builder.create_block();
+                self.builder.ins().brif(available, fast, &[], slow, &[]);
+
+                self.builder.switch_to_block(fast);
+                let data = self
+                    .builder
+                    .ins()
+                    .load(types::I64, flags(), handle, ARRAY_DATA_OFFSET);
+                let stride = self.ml.layouts.stride(element)?;
+                let offset = self.builder.ins().imul_imm(length, i64::from(stride));
+                let destination = self.builder.ins().iadd(data, offset);
+                self.store_data(element, destination, 0, value)?;
+                let next_length = self.builder.ins().iadd_imm(length, 1);
+                self.builder
+                    .ins()
+                    .store(flags(), next_length, handle, ARRAY_LEN_OFFSET);
+                self.builder.ins().jump(done, &[]);
+
+                self.builder.switch_to_block(slow);
+                let value = self.materialize(value, element)?;
                 let position = self.position_id(pos);
                 let position = self.iconst(types::I32, position);
-                let result = self
-                    .call_runtime(
-                        self.ml.rt.array_push,
-                        &[self.ctx, handle, value, position],
-                        false,
-                    )?
-                    .ok_or_else(|| internal("array push has no result"))?;
+                self.call_runtime(
+                    self.ml.rt.array_push,
+                    &[self.ctx, handle, value, position],
+                    false,
+                )?;
                 for trap in traps {
                     if matches!(trap.kind, l::TrapKind::Allocation | l::TrapKind::Call) {
                         self.emit_trap(trap, TrapOperand::Pending)?;
                     }
                 }
+                self.builder.ins().jump(done, &[]);
+
+                self.builder.switch_to_block(done);
+                let result = self
+                    .builder
+                    .ins()
+                    .load(types::I64, flags(), handle, ARRAY_LEN_OFFSET);
+                let result = self.builder.ins().ireduce(types::I32, result);
                 Ok(RV::Scalar(result))
             }
             l::BuiltinMethod::ArrayPop => {

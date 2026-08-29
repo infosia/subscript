@@ -6288,6 +6288,20 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let l::ValueType::Data(Type::Array(element)) = &operand_types[0] else {
                     return Err(internal("array push receiver is not an array"));
                 };
+                let header = self.fresh();
+                let element_type = self.emitter.ctype(element)?;
+                let _ = writeln!(
+                    out,
+                    "    SsArrayHeader* {header} = (SsArrayHeader*)({});",
+                    operands[0]
+                );
+                let _ = writeln!(out, "    if ({header}->len < {header}->cap) {{");
+                let _ = writeln!(
+                    out,
+                    "        (({element_type}*){header}->data)[{header}->len] = {};",
+                    operands[1]
+                );
+                let _ = writeln!(out, "        {header}->len += 1u;\n    }} else {{");
                 let pointer = self.materialize(out, &operands[1], element)?;
                 let pos = self.emitter.pos_id(&instruction.pos);
                 let call = self.emitter.runtime_call(
@@ -6306,8 +6320,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         format!("{pos}u"),
                     ],
                 );
-                self.assign(out, result, &call)?;
-                self.consume_runtime_traps(out, &instruction.traps, true)
+                let _ = writeln!(out, "        (void){call};");
+                self.consume_runtime_traps(out, &instruction.traps, true)?;
+                out.push_str("    }\n");
+                self.assign(out, result, &format!("(int32_t)({header}->len)"))
             }
             l::BuiltinMethod::ArrayPop => {
                 let l::ValueType::Data(Type::Array(element)) = &operand_types[0] else {
