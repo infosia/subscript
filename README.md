@@ -225,15 +225,15 @@ machine/runtime versions is in [`benchmarks/`](benchmarks/README.md).
 | Workload | C | subscript&#8209;ship | subscript&#8209;jit | LuaJIT | JSC | V8 |
 |---|---|---|---|---|---|---|
 | mandelbrot | 1.00× | **1.00×** | 1.04× | 2.78× | 1.00× | 1.01× |
-| fib-recursive | 1.00× | **1.00×** | 2.17× | 1.87× | 1.49× | 2.63× |
-| primes | 1.00× | **1.00×** | 1.47× | 2.10× | 0.92× | 1.71× |
-| fib-loop | 1.00× | 1.03× | 2.41× | 1.48× | 1.09× | 1.58× |
-| queen | 1.00× | 1.09× | 1.51× | 1.36× | 1.23× | 1.76× |
-| sort | 1.00× | 1.24× | 2.33× | 2.29× | 1.45× | 1.83× |
-| tree | 1.00× | 1.54× | 6.20× | 2.19× | 0.32× | 0.47× |
-| particles | 1.00× | 2.12× | 12.75× | 3.93× | 1.95× | 3.67× |
-| collect | 1.00× | 6.45× | 7.04× | 3.68× | 1.04× | 2.60× |
-| callbacks | 1.00× | 22.95× | 26.35× | 9.58× | 5.25× | 29.76× |
+| fib-recursive | 1.00× | **1.00×** | 2.17× | 1.88× | 1.49× | 2.63× |
+| primes | 1.00× | **1.00×** | 1.47× | 2.11× | 0.93× | 1.71× |
+| fib-loop | 1.00× | 1.04× | 2.42× | 1.48× | 1.09× | 1.58× |
+| queen | 1.00× | 1.09× | 1.50× | 1.46× | 1.23× | 1.77× |
+| sort | 1.00× | 1.24× | 2.26× | 2.26× | 1.45× | 1.82× |
+| tree | 1.00× | 1.55× | 6.23× | 2.23× | 0.32× | 0.47× |
+| particles | 1.00× | 2.12× | 12.13× | 3.84× | 1.91× | 3.58× |
+| collect | 1.00× | **1.00×** | 3.20× | 3.69× | 1.04× | — |
+| callbacks | 1.00× | 21.84× | 24.41× | 9.51× | 5.34× | 29.73× |
 
 For what the language looks like at these speeds — ten commented programs,
 a C host facade, and a C host that owns the loop — see
@@ -242,34 +242,39 @@ a C host facade, and a C host that owns the loop — see
 What the numbers show:
 
 - **On compute-bound work the shipping tier reaches hand-written C** —
-  mandelbrot, fib-recursive, and primes at 1.00×, fib-loop at 1.03×, queen
+  mandelbrot, fib-recursive, and primes at 1.00×, fib-loop at 1.04×, queen
   at 1.09×. The shipping tier *is* the emitted C compiled by the same
   `clang -O2`, and pure-numeric code has almost no array traffic to check.
 - **The cost is checked memory traffic and value copies** — `sort`
   (bounds-checked growable arrays) at 1.24×, `tree` (per-node allocate and
-  free through the Context's size-class arena) at 1.54×, `particles`
+  free through the Context's size-class arena) at 1.55×, `particles`
   (value-struct arrays) at 2.12×. These are the language's real costs — an
   emitted bounds check per element, value-copy semantics, a 16-byte
   allocation header — not a measurement artifact.
-- **Two rows are the language's weak ones, and they say what they cost.**
-  `collect` (6.45×) allocates 20000 string-owning nodes per round, drops
-  one quarter of them, and reclaims those through an explicit collection;
-  the generational collectors beat it (JSC 1.04×, V8 2.60×), because a
-  size-class arena that frees each object individually is not a
-  bump-and-sweep nursery. `callbacks` (22.95×) runs `map`/`filter`/`reduce`
-  over a 1000000-element array 20 times; the C baseline reuses three
-  buffers it allocates once, while the callback spelling allocates a new
-  array per stage, and every runtime pays for it (V8 29.76×, LuaJIT
-  9.58×). Neither row is a codegen defect; both are what the idiom costs
-  against C that does not use it.
+- **One row is the language's weak one, and it says what it costs.**
+  `callbacks` (21.84×) runs `map`/`filter`/`reduce` over a
+  1000000-element array 20 times; the C baseline reuses three buffers it
+  allocates once, while the callback spelling allocates a new array per
+  stage, and every runtime pays for it (V8 29.73×, LuaJIT
+  9.51×). It is not a codegen defect; it is what the idiom
+  costs against C that does not use it.
+- **`collect` lands on C.** It allocates 20000 string-owning nodes per
+  round, drops one quarter of them, and reclaims those through an
+  explicit collection: 1.00× of C on the shipping tier, level
+  with JSC (1.04×) and ahead of LuaJIT (3.69×).
+  On 2026-08-27 the same row measured 6.45×; the two causes — the marker
+  scanned string payloads as pointer candidates, and every string was
+  built through Rust-side temporaries — are measured and closed in
+  `specs/blocks/compiler.md` §8.1c. V8's cell is withheld: its timing
+  spread past ±20% in three runs on 2026-08-29 (it measured 2.60× on
+  2026-08-27).
 - **Against the JITs**, the shipping tier is at or ahead of LuaJIT on every
-  row except `collect` and `callbacks`, and level with JSC/V8 on the
-  compute-bound rows. JSC leads on `particles`, `collect`, and `callbacks`,
-  and JSC/V8 lead on `tree`, where garbage-collected bump allocation beats
-  even C.
+  row except `callbacks`, and level with JSC/V8 on the compute-bound rows
+  and on `collect`. JSC leads on `particles` and `callbacks`, and JSC/V8
+  lead on `tree`, where garbage-collected bump allocation beats even C.
 - **The development tier trades execution speed for iteration speed** —
   the Cranelift JIT is tuned for compile speed and hot reload, not peak
-  codegen, and runs 1.04×–26.35×. That is the trade the tier exists to
+  codegen, and runs 1.04×–24.41×. That is the trade the tier exists to
   make; the next section measures the side it is paid on.
 
 ### Iteration speed
@@ -291,7 +296,7 @@ within 20 ms, and development-tier execution below a 25× ceiling.
 
 This is one benchmark set on one machine; treat the ratios as indicative,
 not a leaderboard. The table above is the arm64 / macOS snapshot (the
-shipping target), captured 2026-08-27. An older x86_64 / Windows snapshot
+shipping target), captured 2026-08-29. An older x86_64 / Windows snapshot
 (2026-07-24) — four subjects, since LuaJIT and JSC are not built there — is
 in
 [`benchmarks/README.windows-x86_64.md`](benchmarks/README.windows-x86_64.md).
