@@ -1,9 +1,11 @@
 # Windows portability — evidence
 
-Status: **green**, measured 2026-08-28 (the sections at the end of this
-file). Both profiles pass on `x86_64-pc-windows-msvc`: 1044 in debug and
-1043 in release, zero failures, with `cargo fmt --check` at exit 0 and
-`perf_gate_meets_every_threshold` passing. Contract:
+Status: **green for portability**, measured 2026-08-30 (the sections at
+the end of this file). Both profiles build and run on
+`x86_64-pc-windows-msvc`: 1093 in debug and 1091 in release, with
+`cargo fmt --check` at exit 0 and `perf_gate_meets_every_threshold`
+passing. One release failure is open, and it is target-neutral:
+`s70-held-async-handle.md` holds it. Contract:
 `specs/blocks/compiler.md` §11a; architecture §1 (dev tier:
 cranelift-jit, Windows/Mac). This file keeps the record from
 2026-07-23 forward, so the older sections state older states.
@@ -1114,3 +1116,24 @@ The number is provisional: this machine reported the `a22` C baseline at
 
 The one failure in each profile is the Node pin: this host runs v24.16.0
 against a v24.18.0 pin. `perf_gate_meets_every_threshold` passes.
+
+## Gate state at `0541c96`, 2026-08-30
+
+| Gate | Result |
+|---|---|
+| `cargo test --workspace` | 1093 passed, 0 failed, 1 ignored |
+| `cargo test --workspace --release` | 1091 passed, 1 failed, 1 ignored |
+| `cargo fmt --check` | exit 0 |
+| clippy compiler / runtime / codegen | 7 / 22 / 13 |
+| `perf_gate_meets_every_threshold` | passed |
+| `tools/hygiene.sh` | exit 0 |
+
+The Node pin failure of the 2026-08-28 record is closed. §69.3 pins
+`node` to its major line, and this host runs v24.16.0 against the v24
+line.
+
+The one release failure is
+`counted_store_corpus_matches_the_interpreter`. It is not a Windows
+defect: the helper it uses does not fork on any platform, and the run
+measures the wrong `live_bytes` in about 3 runs of 100 on every profile.
+`s70-held-async-handle.md` holds the measurement and the open finding.
