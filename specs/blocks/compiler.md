@@ -321,7 +321,6 @@ Observable obligations only; internal design is the implementer's.
 | S011 | unions limited to `T \| null` | C7 | r12 |
 | S012 | `undefined` banned | C7 | r13 |
 | S013 | no `async` / event loop | C8 | r14 |
-| S015 | a nullable boundary aggregate may not escape its function | §33.4 | r160 |
 
   Constructs outside the decided surface (e.g. non-whitelisted
   `Array.prototype` / `string` members — collisions.md Q4/Q5) are
@@ -4249,6 +4248,73 @@ while an address into it was live.
 provenance, and root storage must read it: a base stays rooted while an
 address derived from it is live. One shared plan serves both tiers, so
 the fix has no per-transcriber site.
+
+### 33.5 The script-side representation is a managed box
+
+*(Owner, 2026-08-29: "1,2,3 やりましょう", item 1, then "go on" on the
+box design after the recursion measurement.)*
+
+§33.1 gives a non-null struct-pointer member a pointer to a scratch
+struct at the call. It said nothing about how the script holds the
+member between construction and the call, and the tree held it as an
+**address into activation storage**. That representation is the root
+of §33.4's whole record, of §68.2 rule 8b, and of the S015 escape rule:
+each exists to keep an address alive, or to forbid the program shapes
+where it cannot be kept alive.
+
+**Measured at `857757a`:** the mirror declares a recursive member,
+`SubChainHeader { next: SubChainHeader | null }`, the intrusive
+extension chain of §12.3. An inline representation (payload plus a
+presence flag) cannot hold a type that contains itself, so the box is
+the one representation, not one of two.
+
+**Rule.** A member, element, or local of type `T | null`, where `T` is
+a boundary value class, holds either `null` or a **managed reference to
+a heap copy of `T`** — a box. The box is a Context allocation with the
+allocation header every managed object carries; it is freed by
+`Context.collect()` or with the Context, as an array or a string is
+(invariant 2: a program that never collects is correct, merely
+larger).
+
+1. **A store copies.** Storing a `T` value into such a place
+   allocates a fresh box and copies `T` into it (C12 value semantics;
+   no two places alias one box through a value store). Storing `null`
+   stores `null`. Storing a `T | null` value copies the reference,
+   as a reference-class handle copies.
+2. **A read through the narrowed member is a place in the box.**
+   After `x.f !== null`, `x.f.a` reads and `x.f.a = v` writes the
+   box's storage, as a field of a reference class does. `const c: T =
+   x.f` copies out.
+3. **The foreign call reads the box.** §33.1's scratch construction
+   takes the box's contents for a non-null member and `NULL` for
+   `null`; nothing else changes at the call.
+4. **No address of activation storage is taken.** The
+   value-class-to-nullable conversion is an allocation and a copy,
+   not an address. §68.7.2's boundary-address `Coerce` row goes; the
+   form gains one instruction that takes a value-class datum and
+   produces the box's handle (the round names it inside §68's rules,
+   the verifier checks it, the interpreter implements it from the
+   row).
+5. **Recursion is representable.** A box holds a `T` that holds a
+   box. The read direction stays fail-loud per §33.1.
+6. **S015 is deleted**, and its code-table row with it. The escape it
+   forbade is a copy of a reference, and it is sound. `r160` is
+   deleted and its program becomes accept entry `a169`, printing every
+   selector through the foreign checker after the escape.
+7. **Rule 8b stays** for `AddressOfValue`, its remaining client (a
+   by-value receiver). Its `Coerce` client is gone.
+8. **What does not move.** `a106`, `a125` (as restructured), `a159`,
+   `a163`, and the two fixtures restructured under S015 keep their
+   goldens: an in-activation shape is unchanged by where the payload
+   lives. `a125`'s original returning form is legal again, and a
+   later round can restore it if the owner wants the entry in its
+   first shape.
+
+**Cost.** One allocation per non-null store, where the address
+representation had none. The count of such stores in a program is the
+count of descriptors it builds, which is small and not in any hot
+loop the corpus measures; `perf-gate`'s two workloads build none.
+`a163` gains a `live_bytes` line so the boxes are counted.
 
 ## 34. R11 — parameter-position handle-element pairs
 
