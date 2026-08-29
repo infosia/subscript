@@ -7542,6 +7542,18 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    covers. The emitter unit test pins the C block without pinning a
    value. Name resolution needs its own request and its own owner
    decision.
+
+   **Closed 2026-08-29 (owner: "A で進めて").** §67.1 rule 4 rejects
+   the read whether it is direct or inside a nested lambda, so the
+   silent value is gone: measured at `c426ee7`, the program of 6h
+   fails with S100 at the read. What remains is a narrowing: `tsc`
+   accepts a lambda that reads a `const` declared later in its block,
+   and `node` prints the later value when the call follows the
+   declaration. Accepting it needs capture by reference, because C5's
+   by-value capture at the literal has no value to take before the
+   declaration runs. That is a revision of C5 and of §68.2 rule 8a,
+   recorded here as the alternative and not taken. The rejection
+   stands, and the diagnostic names the read.
 6j. *(Sixth review, 2026-08-25. Recorded, not fixed here.)* The
    checker reports no duplicate declaration in one scope. Measured:
    `function f(n: i32): i32 { const n: i32 = 7; return n; }` prints
