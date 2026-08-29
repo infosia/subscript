@@ -138,15 +138,18 @@ including the Windows gate, and fails on the first hit. It scans:
 
 Patterns, each written so that a bare mention of the pattern's own
 text — this table, a rule in CLAUDE.md, the test's source — does not
-match, because each requires a path component or a trailer value
-after it:
+match: a path pattern requires a following component, and a trailer
+pattern requires the form a tool writes (the angle bracket, the link
+bracket, the value), which a sentence that names the trailer does not
+carry. *(Corrected 2026-08-30 after the round measured that the bare
+trailer strings matched this table.)*
 
 | Class | Pattern |
 |---|---|
 | a home directory | `/Users/<name>`, `/home/<name>`, `C:\Users\<name>`, `~/<component>` |
 | a temporary directory of one machine | `/private/tmp/<component>`, `/private/var/<component>`, `/var/folders/<component>`, `/tmp/claude<anything>` |
 | a sibling or predecessor checkout | `../subscript-typegpu`, `../yawgpu`, `../ts2das`, the words `ts2das` and `daslang` |
-| an agent session trailer or link | `Co-Authored-By: Claude`, `Generated with Claude Code`, `Claude-Session:`, `claude.ai/code/`, `noreply@anthropic.com` |
+| an agent session trailer or link, in the form a tool writes it | `Co-Authored-By: Claude <` (the name and the opening of its address), `Generated with [Claude Code]` (the link's bracket), `Claude-Session: <value>`, `claude.ai/code/<session id>`, `<noreply@anthropic.com>` (the address in angle brackets) |
 
 Not scanned, by the rulings above: the git author identity, and the
 `github.com/infosia/` fork URLs.
