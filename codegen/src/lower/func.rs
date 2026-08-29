@@ -6953,6 +6953,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             &[self.ctx, child, release_pos],
             false,
         )?;
+        let child_offset = plan
+            .child
+            .ok_or_else(|| internal("completed async call has no child-frame slot"))?;
+        let zero = self.iconst(types::I64, 0);
+        self.builder
+            .ins()
+            .store(flags(), zero, frame, child_offset as i32);
         let successor = self.blocks[successor.0 as usize];
         self.builder.ins().jump(successor, &arguments);
         Ok(())
@@ -7076,6 +7083,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 slot.offset as i32,
             )?));
         }
+        let child_offset = plan
+            .child
+            .ok_or_else(|| internal("completed held await has no child-frame slot"))?;
+        let zero = self.iconst(types::I64, 0);
+        self.builder
+            .ins()
+            .store(flags(), zero, frame, child_offset as i32);
         self.builder
             .ins()
             .jump(self.blocks[successor.0 as usize], &arguments);
@@ -7494,11 +7508,97 @@ fn define_context<M: Module>(
     label: &str,
 ) -> Result<(), String> {
     ensure_explicit_frame_supported(&context.func, label)?;
+    #[cfg(test)]
+    DEFINED_FUNCTION_TEXTS.with(|texts| {
+        texts
+            .borrow_mut()
+            .push((label.to_string(), context.func.to_string()));
+    });
     ml.module
         .define_function(id, context)
         .map_err(|error| internal(format!("define {label}: {error:?}")))?;
     ml.module.clear_context(context);
     Ok(())
+}
+
+#[cfg(test)]
+thread_local! {
+    static DEFINED_FUNCTION_TEXTS: std::cell::RefCell<Vec<(String, String)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+pub(super) fn take_defined_function_texts() -> Vec<(String, String)> {
+    DEFINED_FUNCTION_TEXTS.with(|texts| std::mem::take(&mut *texts.borrow_mut()))
+}
+
+#[cfg(test)]
+mod completed_child_tests {
+    use cranelift_jit::{JITBuilder, JITModule};
+    use cranelift_module::default_libcall_names;
+    use subscript_compiler::{check_program, SourceFile};
+
+    use super::take_defined_function_texts;
+    use crate::lower::{dev_flags, lower_lir_module_with, LowerOptions};
+
+    #[test]
+    fn cranelift_clears_completed_async_child_slots() {
+        let hir = check_program(&[SourceFile::new(
+            "clear-async-child.ts",
+            r#"
+async function child(): Promise<i32> {
+  await Context.suspend();
+  return 1;
+}
+
+export async function main(): Promise<void> {
+  await child();
+  const held: Promise<i32> = child();
+  await held;
+}
+"#,
+        )])
+        .expect("hand-built async module");
+        let lir = crate::lir::lower_module(&hir).expect("hand-built async LIR");
+        let main = lir
+            .functions
+            .iter()
+            .find(|function| function.source_name == "main")
+            .expect("main LIR function");
+        let label = format!("LIR coroutine resume {}", main.id.0);
+
+        let isa = cranelift_native::builder()
+            .expect("host ISA")
+            .finish(dev_flags().expect("dev flags"))
+            .expect("ISA flags");
+        let builder = JITBuilder::with_isa(isa, default_libcall_names());
+        let mut module = JITModule::new(builder);
+        let _ = take_defined_function_texts();
+        lower_lir_module_with(&mut module, &lir, LowerOptions::default())
+            .expect("hand-built async Cranelift lowering");
+        let functions = take_defined_function_texts();
+        // SAFETY: no finalized function address escapes this test.
+        unsafe { module.free_memory() };
+        let resume = functions
+            .iter()
+            .find(|(candidate, _)| candidate == &label)
+            .map(|(_, text)| text)
+            .expect("main coroutine resume CLIF");
+
+        let zero_stores_at = |offset: u32| {
+            let address = format!(", v1+{offset}");
+            resume
+                .lines()
+                .filter(|line| {
+                    line.contains("store notrap aligned")
+                        && line.contains(&address)
+                        && line.ends_with("= 0")
+                })
+                .count()
+        };
+        assert_eq!(zero_stores_at(16), 2, "direct child clear on both paths");
+        assert_eq!(zero_stores_at(32), 2, "held child clear on both paths");
+    }
 }
 
 /// Defines one ordinary LIR graph.

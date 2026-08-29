@@ -338,6 +338,97 @@ struct Allocation {
     marked: bool,
 }
 
+#[derive(Clone, Copy)]
+enum MarkSource {
+    Root {
+        set: &'static str,
+        index: usize,
+        word: usize,
+    },
+    Payload {
+        class_id: u32,
+        address: usize,
+        word: usize,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum MarkTraceTarget {
+    All,
+    Strings,
+    Address(usize),
+}
+
+struct MarkTracer {
+    target: MarkTraceTarget,
+    records: Vec<String>,
+}
+
+impl MarkTracer {
+    fn new(target: MarkTraceTarget) -> Self {
+        Self {
+            target,
+            records: Vec::new(),
+        }
+    }
+
+    fn matches(&self, address: usize, class_id: u32) -> bool {
+        matches!(self.target, MarkTraceTarget::All)
+            || matches!(self.target, MarkTraceTarget::Strings if class_id == CLASS_STRING)
+            || matches!(self.target, MarkTraceTarget::Address(target) if target == address)
+    }
+
+    fn record(&mut self, address: usize, class_id: u32, source: MarkSource) {
+        if !self.matches(address, class_id) {
+            return;
+        }
+        let source = match source {
+            MarkSource::Root { set, index, word } => {
+                format!("source=root set={set} index={index} word={word} value=0x{address:x}")
+            }
+            MarkSource::Payload {
+                class_id,
+                address: parent,
+                word,
+            } => format!(
+                "source=payload class_id={class_id} address=0x{parent:x} word={word} \
+                 value=0x{address:x}"
+            ),
+        };
+        let record =
+            format!("SUBSCRIPT_MARK_TRACE payload=0x{address:x} class_id={class_id} {source}");
+        eprintln!("{record}");
+        self.records.push(record);
+    }
+}
+
+fn mark_trace_target() -> Option<MarkTraceTarget> {
+    // Set SUBSCRIPT_MARK_TRACE to one payload address (decimal or 0x-prefixed
+    // hexadecimal), `strings`, or `all`. The marker prints each word that
+    // pushes a selected allocation. The variable is absent by default.
+    let value = std::env::var("SUBSCRIPT_MARK_TRACE").ok()?;
+    if value == "all" {
+        return Some(MarkTraceTarget::All);
+    }
+    if value == "strings" {
+        return Some(MarkTraceTarget::Strings);
+    }
+    let address = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .map_or_else(
+            || value.parse::<usize>(),
+            |digits| usize::from_str_radix(digits, 16),
+        );
+    match address {
+        Ok(address) => Some(MarkTraceTarget::Address(address)),
+        Err(error) => {
+            eprintln!("SUBSCRIPT_MARK_TRACE ignored invalid payload address `{value}`: {error}");
+            None
+        }
+    }
+}
+
 /// Host allocations used only while recursively lowering one foreign-call
 /// argument tree (§32/§33). They are deliberately outside the managed heap:
 /// a callback may collect while C is borrowing scratch arrays or pointed-to
@@ -2276,47 +2367,186 @@ impl Context {
     /// Explicitly invoked collection (Q7): frees every allocation not
     /// reachable from the registered roots. Never runs unbidden.
     pub fn collect(&mut self) {
+        self.collect_with_trace(mark_trace_target());
+    }
+
+    fn push_mark_word(
+        &self,
+        work: &mut Vec<usize>,
+        tracer: &mut Option<MarkTracer>,
+        address: usize,
+        source: MarkSource,
+    ) {
+        work.push(address);
+        let Some(tracer) = tracer else {
+            return;
+        };
+        let class_id = if self.uses_ship_arena() {
+            if let Some((block, _)) = self.arena_lookup_block(address) {
+                // SAFETY: arena membership gives an owned block with a
+                // complete initialized header.
+                Some(unsafe { (block.add(8) as *const u32).read() })
+            } else {
+                self.large.get(&address).map(|allocation| {
+                    // SAFETY: exact large-map membership gives an owned
+                    // allocation with a complete initialized header.
+                    unsafe { (allocation.base.add(8) as *const u32).read() }
+                })
+            }
+        } else {
+            self.allocations
+                .get(&address)
+                .map(|allocation| allocation.class_id)
+        };
+        if let Some(class_id) = class_id {
+            tracer.record(address, class_id, source);
+        }
+    }
+
+    fn collect_with_trace(&mut self, trace_target: Option<MarkTraceTarget>) -> Vec<String> {
         let mut work: Vec<usize> = Vec::new();
-        for &(base, words) in &self.roots {
+        let mut tracer = trace_target.map(MarkTracer::new);
+        for (index, &(base, words)) in self.roots.iter().enumerate() {
             for i in 0..words {
                 // SAFETY: root ranges are addresses of live global
                 // slots registered by generated code; reading their
                 // words is valid for the duration of the script run.
-                work.push(unsafe { ((base + i * 8) as *const usize).read_unaligned() });
+                let address = unsafe { ((base + i * 8) as *const usize).read_unaligned() };
+                self.push_mark_word(
+                    &mut work,
+                    &mut tracer,
+                    address,
+                    MarkSource::Root {
+                        set: "roots",
+                        index,
+                        word: i,
+                    },
+                );
             }
         }
-        for &(base, slots) in &self.shadow {
+        for (index, &(base, slots)) in self.shadow.iter().enumerate() {
             for i in 0..slots {
                 // SAFETY: shadow frames are live stack ranges registered
                 // by the running generated code.
-                work.push(unsafe { ((base + i * 8) as *const usize).read_unaligned() });
+                let address = unsafe { ((base + i * 8) as *const usize).read_unaligned() };
+                self.push_mark_word(
+                    &mut work,
+                    &mut tracer,
+                    address,
+                    MarkSource::Root {
+                        set: "shadow",
+                        index,
+                        word: i,
+                    },
+                );
             }
         }
-        work.extend(self.async_roots.iter().map(|root| root.frame as usize));
-        work.extend(self.active_async_frames.iter().copied());
+        for (index, root) in self.async_roots.iter().enumerate() {
+            self.push_mark_word(
+                &mut work,
+                &mut tracer,
+                root.frame as usize,
+                MarkSource::Root {
+                    set: "async_roots",
+                    index,
+                    word: 0,
+                },
+            );
+        }
+        for (index, address) in self.active_async_frames.iter().copied().enumerate() {
+            self.push_mark_word(
+                &mut work,
+                &mut tracer,
+                address,
+                MarkSource::Root {
+                    set: "active_async_frames",
+                    index,
+                    word: 0,
+                },
+            );
+        }
         // Counted frames are roots even when the only holders form a cycle.
         // This deliberately makes such a cycle leak (§70.3.6); collection
         // must not reinterpret the reference-count ownership model.
-        work.extend(self.async_frames.keys().copied());
-        for completion in self
+        for (index, address) in self.async_frames.keys().copied().enumerate() {
+            self.push_mark_word(
+                &mut work,
+                &mut tracer,
+                address,
+                MarkSource::Root {
+                    set: "async_frames",
+                    index,
+                    word: 0,
+                },
+            );
+        }
+        for (index, completion) in self
             .async_frames
             .values()
             .filter_map(|meta| meta.completion.as_deref())
+            .enumerate()
         {
-            for word in completion.chunks_exact(core::mem::size_of::<usize>()) {
+            for (word_index, word) in completion
+                .chunks_exact(core::mem::size_of::<usize>())
+                .enumerate()
+            {
                 // SAFETY: `word` is exactly one native word of Context-owned
                 // completion storage; unaligned reads preserve aggregate
                 // layouts while exposing any managed handle to the marker.
-                work.push(unsafe { word.as_ptr().cast::<usize>().read_unaligned() });
+                let address = unsafe { word.as_ptr().cast::<usize>().read_unaligned() };
+                self.push_mark_word(
+                    &mut work,
+                    &mut tracer,
+                    address,
+                    MarkSource::Root {
+                        set: "completion",
+                        index,
+                        word: word_index,
+                    },
+                );
             }
         }
-        work.extend(self.interned.values().copied());
-        work.extend(self.astral_code_points.values().copied());
-        for binding in &self.callbacks {
-            for userdata in [binding.userdata1, binding.userdata2] {
+        for (index, address) in self.interned.values().copied().enumerate() {
+            self.push_mark_word(
+                &mut work,
+                &mut tracer,
+                address,
+                MarkSource::Root {
+                    set: "interned",
+                    index,
+                    word: 0,
+                },
+            );
+        }
+        for (index, address) in self.astral_code_points.values().copied().enumerate() {
+            self.push_mark_word(
+                &mut work,
+                &mut tracer,
+                address,
+                MarkSource::Root {
+                    set: "astral_code_points",
+                    index,
+                    word: 0,
+                },
+            );
+        }
+        for (index, binding) in self.callbacks.iter().enumerate() {
+            for (word, userdata) in [binding.userdata1, binding.userdata2]
+                .into_iter()
+                .enumerate()
+            {
                 let address = userdata as usize;
                 if !userdata.is_null() && self.is_live(address) {
-                    work.push(address);
+                    self.push_mark_word(
+                        &mut work,
+                        &mut tracer,
+                        address,
+                        MarkSource::Root {
+                            set: "callbacks",
+                            index,
+                            word,
+                        },
+                    );
                 }
             }
         }
@@ -2325,37 +2555,48 @@ impl Context {
             // Ship tier (§8.1b): mark state lives in the block header
             // (MARK_STATE), not in a map; sweep walks the chunk grids and
             // the large records.
-            self.arena_mark(&mut work);
+            self.arena_mark(&mut work, &mut tracer);
             self.arena_sweep();
             self.sweep_regex_values();
-            return;
+            return tracer.map_or_else(Vec::new, |tracer| tracer.records);
         }
 
         let mut marked_count = 0usize;
         while let Some(addr) = work.pop() {
-            let Some(a) = self.allocations.get_mut(&addr) else {
+            let Some((class_id, words)) = self.allocations.get_mut(&addr).and_then(|allocation| {
+                if allocation.marked {
+                    return None;
+                }
+                allocation.marked = true;
+                Some((allocation.class_id, allocation.payload_size / 8))
+            }) else {
                 continue;
             };
-            if a.marked {
-                continue;
-            }
-            a.marked = true;
             marked_count += 1;
-            if class_holds_no_handle(a.class_id) {
+            if class_holds_no_handle(class_id) {
                 continue;
             }
             let payload = addr as *const u8;
-            let words = a.payload_size / 8;
             for i in 0..words {
                 // SAFETY: the payload is owned by this context and at
                 // least `payload_size` bytes; reads stay inside it.
                 let w = unsafe { (payload.add(i * 8) as *const usize).read_unaligned() };
-                work.push(w);
+                self.push_mark_word(
+                    &mut work,
+                    &mut tracer,
+                    w,
+                    MarkSource::Payload {
+                        class_id,
+                        address: addr,
+                        word: i,
+                    },
+                );
             }
         }
 
         self.sweep_dev_allocations(self.allocations.len() - marked_count);
         self.sweep_regex_values();
+        tracer.map_or_else(Vec::new, |tracer| tracer.records)
     }
 
     /// Exact-size allocator sweep: extract unreachable records from the
@@ -2455,7 +2696,7 @@ impl Context {
     /// header, or an exact large-record match); a reached block's header
     /// is stamped `MARK_STATE`. The marker pushes payload words only when
     /// the block's class can hold a handle.
-    fn arena_mark(&mut self, work: &mut Vec<usize>) {
+    fn arena_mark(&mut self, work: &mut Vec<usize>, tracer: &mut Option<MarkTracer>) {
         while let Some(addr) = work.pop() {
             let (block, payload_size) = if let Some((block, class)) = self.arena_lookup_block(addr)
             {
@@ -2491,7 +2732,16 @@ impl Context {
                     continue;
                 }
                 for i in 0..payload_size / 8 {
-                    work.push((payload.add(i * 8) as *const usize).read_unaligned());
+                    self.push_mark_word(
+                        work,
+                        tracer,
+                        (payload.add(i * 8) as *const usize).read_unaligned(),
+                        MarkSource::Payload {
+                            class_id,
+                            address: addr,
+                            word: i,
+                        },
+                    );
                 }
             }
         }
@@ -4533,6 +4783,53 @@ mod tests {
         ctx.collect();
         assert!(ctx.is_live(outer as usize));
         assert!(ctx.is_live(inner as usize));
+    }
+
+    const MARK_TRACE_TEST_CHILD: &str = "SUBSCRIPT_MARK_TRACE_TEST_CHILD";
+
+    #[test]
+    fn mark_trace_environment_child() {
+        if std::env::var_os(MARK_TRACE_TEST_CHILD).is_none() {
+            return;
+        }
+        let mut ctx = Context::new();
+        let inner = ctx.alloc_str(b"trace", 0) as usize;
+        let outer = ctx.alloc(8, 7, 0);
+        // SAFETY: `outer` has one writable payload word.
+        unsafe { outer.cast::<usize>().write(inner) };
+        let root = outer as usize;
+        ctx.root_add(&root as *const usize as usize, 1);
+
+        ctx.collect();
+    }
+
+    #[test]
+    fn mark_trace_environment_names_root_and_payload_words_on_stderr() {
+        let output = std::process::Command::new(
+            std::env::current_exe().expect("runtime test executable path"),
+        )
+        .args([
+            "--exact",
+            "context::tests::mark_trace_environment_child",
+            "--nocapture",
+        ])
+        .env(MARK_TRACE_TEST_CHILD, "1")
+        .env("SUBSCRIPT_MARK_TRACE", "all")
+        .output()
+        .expect("mark trace child process");
+
+        assert!(output.status.success());
+        let stderr = String::from_utf8(output.stderr).expect("mark trace stderr is UTF-8");
+        assert!(
+            stderr.contains("class_id=7 source=root set=roots index=0 word=0"),
+            "{stderr}"
+        );
+        assert!(
+            stderr.contains(&format!(
+                "class_id={CLASS_STRING} source=payload class_id=7"
+            )) && stderr.contains("word=0 value=0x"),
+            "{stderr}"
+        );
     }
 
     #[test]

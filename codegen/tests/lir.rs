@@ -25,6 +25,8 @@ use subscript_compiler::lir_text::print_module;
 use subscript_compiler::Type;
 use subscript_compiler::{check_program, SourceFile};
 
+const MARK_TRACE_MODULE_CHILD: &str = "SUBSCRIPT_MARK_TRACE_MODULE_CHILD";
+
 fn lower_entry(accept: &std::path::Path, id: &str) -> Module {
     let sources = corpus::entry_sources(accept, id);
     let hir = check_program(&sources)
@@ -505,6 +507,95 @@ async function main(): Promise<void> {
         main.values[invalidates[0].0 as usize].ty,
         ValueType::Data(Type::Array(_))
     ));
+}
+
+#[test]
+fn emitted_coroutine_clears_completed_child_slots() {
+    let sources = [SourceFile::new(
+        "clear-async-child.ts",
+        r#"
+async function child(): Promise<i32> {
+  await Context.suspend();
+  return 1;
+}
+
+export async function main(): Promise<void> {
+  await child();
+  const held: Promise<i32> = child();
+  await held;
+}
+"#,
+    )];
+    let hir = check_program(&sources).expect("hand-built async module");
+    let source = subscript_codegen::emit_c(&hir)
+        .expect("hand-built async C emission")
+        .source;
+
+    assert_eq!(
+        source.matches("_child = NULL;").count(),
+        4,
+        "both initial and resumed paths must clear both child members"
+    );
+    assert_eq!(source.matches("frame->b0_child = NULL;").count(), 2);
+    assert_eq!(source.matches("frame->b1_child = NULL;").count(), 2);
+    let release = source
+        .find("subscript_rt_async_release(ctx, frame->b0_child")
+        .expect("direct async call releases its child");
+    let clear = source[release..]
+        .find("frame->b0_child = NULL;")
+        .expect("direct async call clears its released child");
+    assert!(clear > 0);
+}
+
+#[test]
+fn mark_trace_environment_reports_a_hand_built_module() {
+    if std::env::var_os(MARK_TRACE_MODULE_CHILD).is_some() {
+        let sources = [SourceFile::new(
+            "mark-trace.ts",
+            r#"
+class Leaf {
+  text: string;
+  constructor(text: string) {
+    this.text = text;
+  }
+}
+
+let leaf: Leaf | null = null;
+
+export function main(): void {
+  leaf = new Leaf("trace");
+  Context.collect();
+  if (leaf !== null) {
+    print(leaf.text);
+    Context.free(leaf);
+    leaf = null;
+  }
+}
+"#,
+        )];
+        let (output, _) =
+            run_jit_with_memory_accounting(&sources, false).expect("hand-built trace module");
+        assert_eq!(output, b"trace\n");
+        return;
+    }
+
+    let output =
+        std::process::Command::new(std::env::current_exe().expect("LIR test executable path"))
+            .args([
+                "--exact",
+                "mark_trace_environment_reports_a_hand_built_module",
+                "--nocapture",
+            ])
+            .env(MARK_TRACE_MODULE_CHILD, "1")
+            .env("SUBSCRIPT_MARK_TRACE", "all")
+            .output()
+            .expect("mark trace module child process");
+
+    assert!(output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("mark trace stderr is UTF-8");
+    assert!(stderr.contains("source=root set=roots"), "{stderr}");
+    assert!(stderr.contains("source=payload class_id="), "{stderr}");
+    assert!(stderr.contains("word=0 value=0x"), "{stderr}");
 }
 
 #[test]

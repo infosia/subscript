@@ -4141,6 +4141,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             ],
         );
         let _ = writeln!(out, "    {release};");
+        let _ = writeln!(out, "    frame->b{}_child = NULL;", block.id.0);
         let _ = writeln!(out, "    goto b{};", successor.0);
         Ok(())
     }
@@ -4221,6 +4222,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         self.emit_pop(out);
         out.push_str("        return 0;\n    }\n");
         self.restore_suspend_arguments(out, block)?;
+        let _ = writeln!(out, "    frame->b{}_child = NULL;", block.id.0);
         let _ = writeln!(out, "    goto b{};", successor.0);
         Ok(())
     }
