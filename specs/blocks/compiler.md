@@ -738,6 +738,60 @@ lowering, or `subscript_rt_*` ABI change.
 4. Inspection aids (`is_live`, `live_count`) remain functional on both
    tiers.
 
+### 8.1c A block that holds no handle is not scanned, and a string is written where it lives
+
+*(Owner, 2026-08-29: "A → B の順で進めて", after the `collect`
+benchmark was decomposed.)*
+
+`collect` measured 6.45× the C baseline (`benchmarks/README.md`,
+2026-08-27). Five variants of the workload, each a standalone ship
+binary built with the runner's flags and timed eleven times:
+
+    nodes only, no collect                         12.5 ms
+    nodes only, with collect                       16.3 ms
+    short strings (`${uid}`), with collect         14.4 ms
+    the four padded strings, no collect            97.9 ms
+    the four padded strings, with collect         219.0 ms   (the benchmark)
+
+Two causes, of comparable size.
+
+**A. The marker scans string payloads.** `arena_mark` pushes every
+payload word of every marked block as a pointer candidate and looks
+each one up in the chunk table, and it does not read the class id the
+block header carries. A string is `[len][bytes]` and holds no handle.
+The live strings of one round are 60k, averaging 13 words: about 4.7
+million lookups per run, about 121 ms. The dev tier's marker
+(`allocations.get_mut` per word) has the same shape.
+
+*Rule.* A block whose class holds no handle — `CLASS_STRING` today; a
+class the runtime can name as handle-free in the same way later — is
+marked and not scanned. The marker reads the class id from the header
+before it pushes the payload. Conservative tracing of padding stays
+for every other class. Zero-initialization of a handle-free block is
+not required by tracing; the language's zero-init rules decide it
+(a string writes its length and bytes and exposes nothing else).
+
+**B. A string is built through Rust-side temporaries.** `${uid}` builds
+a `String` and copies it into the arena. `padStart` copies the receiver
+and the pad to two `Vec`s, builds a third, and copies that into the
+arena; the arena zeroes the whole block on free-list reuse before the
+string overwrites it. The C baseline writes each string into its
+`malloc` with one `memset` and one `memcpy`. The 120k nodes' strings
+cost about 85 ms here and are inside the baseline's 32 ms.
+
+*Rule.* A string operation whose result length is known before the
+bytes are produced allocates the result first and writes into it.
+`alloc_str` gains a form that takes the length and a writer; `padStart`,
+`padEnd`, the integer formatters, and concatenation use it. No `Vec` or
+`String` is allocated per call on the runtime side for these
+operations.
+
+**Exit criteria.** No corpus golden moves (neither rule changes an
+observable). After A: `collect` under 3.5× on the arm64 reference
+machine. After A and B: under 2.0×. §3's 7.5× gate stays a ceiling
+against regression. The `cross-language` snapshot and `benchmarks/
+README.md` are re-measured on a quiet machine after each round.
+
 ### 8.2 Hot reload (dev tier)
 
 Per §1's rules, made testable:
