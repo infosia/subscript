@@ -124,8 +124,13 @@ than raising them again.
 and every untracked file
 the ignore rules do not exclude, as text, for a local path, a sibling
 or predecessor reference, and an agent session trailer, and exits 1
-after printing every hit as `file:line:text`. The script is the one
-place the patterns are written; this record does not repeat them.
+after printing every hit as `file:line:text`. It also scans every
+commit message, and only the messages, for an agent session trailer
+(owner decision, 2026-08-30, after two such trailers reached `main`
+from another session and were removed by a rewrite). The script is
+the one place the patterns are written; this record does not repeat
+them.
 
-The working tree is the scope; the history was swept by hand and
-found clean (the records above). *(Owner decision, 2026-08-30.)*
+The working tree and the commit messages are the scope; the history's
+blobs were swept by hand and found clean (the records above). *(Owner
+decision, 2026-08-30.)*

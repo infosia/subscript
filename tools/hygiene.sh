@@ -6,8 +6,8 @@
 #     tools/hygiene.sh
 #
 # Scans every tracked file and every untracked file the ignore rules do
-# not exclude. Exit 0 when clean; exit 1 after printing every hit as
-# file:line:text. The working tree is the scope.
+# not exclude, and every commit message for an agent session trailer.
+# Exit 0 when clean; exit 1 after printing every hit.
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -55,5 +55,12 @@ while IFS= read -r file; do
         failed=1
     fi
 done <"$file_list"
+
+# Every commit message, for an agent session trailer. This is the one
+# history scan: one `git log` over the messages, not the blobs.
+if git log --all --format='%h %B' | grep -nE "$trailers"; then
+    echo "hygiene: agent session trailer in a commit message" >&2
+    failed=1
+fi
 
 exit "$failed"
