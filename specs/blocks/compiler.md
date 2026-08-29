@@ -852,10 +852,22 @@ entry pins it by running the same program through both spellings
 (`a171`: a named callback, a lambda, and a function value held in a
 local, each over the same array, printing the same lines).
 
-**Exit criteria.** No corpus golden moves. After A: `push` under 1.5 ns
-per element on the arm64 reference machine and `callbacks` under 8×.
-After A and B: `callbacks` under 3×. §3 gains no gate for it; the
-`cross-language` snapshot is re-measured after each round.
+**Exit criteria.** No corpus golden moves. After A: the 20-round
+push-only program under 60 ms on the arm64 reference machine (2.6 ns
+per element, of which the doubling growth and process start are about
+half; the fast path itself is about 1 ns). After A and B: `callbacks`
+under 3×. §3 gains no gate for it; the `cross-language` snapshot is
+re-measured after each round.
+
+*(Corrected 2026-08-29 when A was measured. The criterion first read
+"push under 1.5 ns and `callbacks` under 8× after A". The 1.5 ns
+assumed a pre-sized array, which the language cannot spell, so the
+push-only program pays eighteen doublings per round. And `callbacks`
+does not move under A at all — 321 → 296 ms — because its pushes are
+the runtime intrinsics' own `array_push`, which part A does not
+touch; the hand-loop decomposition above measured hand loops, not the
+benchmark's spelling. Both were the orchestrator's estimates, and the
+measurements replace them.)*
 
 ### 8.2 Hot reload (dev tier)
 
