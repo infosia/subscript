@@ -4310,6 +4310,48 @@ larger).
    later round can restore it if the owner wants the entry in its
    first shape.
 
+**Rules 9 and 10, the intrusive header.** *(Owner, 2026-08-29: "keep
+going", after round 8 measured the contradiction.)* `examples/e09`
+and the two-header binding gate store `limit.engineHeader` — the first
+field of an extension value — into `engineNext: EngineHeader | null`,
+and the host casts the link back to `EngineEntityLimitOption*` and
+reads the payload after the header. That is the C idiom the §12.3
+chain pattern names: a pointer to the first member is a pointer to the
+enclosing struct. Rule 1 as written boxes `T` alone and loses the
+extension: measured, the ship tier read `0` where the golden holds
+`2`, and the dev tier read `2` from memory past the box.
+
+9. **An embedded header boxes its extension.** A boundary value class
+   `H` is an *embedded header* when it is the first field of another
+   boundary value class `E` (the *extension*) and some field or
+   parameter is typed `H | null`. The checker derives this from the
+   mirror; no annotation exists. Storing the place `e.h` — `e` a value
+   of `E`, `h` its first field of type `H` — into an `H | null`
+   location allocates the box with **`E`'s layout and class id** and
+   copies all of `e`. The link's static type stays `H | null`, so the
+   spelling is `tsc`-clean; a narrowed read through the link reads the
+   `H` at the payload's start; the scratch construction hands the C
+   side the payload pointer, which is the extension. Storing a value
+   whose static type is `H` itself (a base header, constructed
+   directly) boxes `H`, as rule 1 says.
+10. **A chain header is not copied out of its extension.** A read of
+   `e.h` as a value — `const h: H = e.h`, an argument, a return, a
+   field of a value class — where `H` is an embedded header and `e` an
+   extension, fails with S100 at the read: the copy would carry `E`'s
+   tag with no `E` behind it, and the host would read past it. The
+   only uses of `e.h` are the store of rule 9 and a read of `e.h`'s own
+   fields. `tsc` accepts the copy; the narrowing is recorded here.
+
+Corpus: `a169` adds the intrusive shape — an extension stored through
+its header into a link, read back through the C checker's payload
+selector after the building function returns. `r169` pins rule 10.
+`examples/e09` and the two-header gate keep their sources and their
+bytes.
+
+*(Correction to the round's acceptance: the reference interpreter has
+no foreign fixture, so `a169` joins the interpreter's declared
+exclusion list with that reason, as `a106` does.)*
+
 **Cost.** One allocation per non-null store, where the address
 representation had none. The count of such stores in a program is the
 count of descriptors it builds, which is small and not in any hot
