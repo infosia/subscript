@@ -112,3 +112,17 @@ each the same day.
 return sound, and the round-3 restructuring was a workaround for S015,
 which no longer exists. The source is `96e9708`'s byte for byte; the
 golden did not move; release 1094 passed 0 failed.
+
+## The collect benchmark, 2026-08-29
+
+The owner asked why `collect` was slow. Five standalone variants split
+the 219 ms: the marker's scan of string payloads (about 121 ms) and
+the string path's Rust-side temporaries (about 85 ms). §8.1c records
+the decomposition and the two rules. Round A (`64a637a`): the marker
+reads the class id and does not scan a handle-free block; 220 → 106 ms.
+Round B (`642c295`): `alloc_str_with` and direct writers for
+`padStart`/`padEnd`, the formatters, and concatenation, and no zeroing
+of a handle-free block on free-list reuse; 98 → 33 ms. `collect` now
+measures 1.01× of C on the ship tier and 3.30× on the dev tier. No
+golden moved. The README's explanation that a generational collector
+beats the arena by design was wrong and is corrected.

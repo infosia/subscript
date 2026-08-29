@@ -792,6 +792,15 @@ machine. After A and B: under 2.0×. §3's 7.5× gate stays a ceiling
 against regression. The `cross-language` snapshot and `benchmarks/
 README.md` are re-measured on a quiet machine after each round.
 
+**Measured.** A landed at `64a637a`: the standalone ship binary
+220.4 → 106.4 ms, `perf-gate` collect ship 3.02×, dev 5.22×. B landed
+at `642c295`: 98.2 → 33.0 ms, `perf-gate` collect ship 0.95×, dev
+3.13×; `cross-language` collect ship 1.01×, dev 3.30×, against LuaJIT
+3.75× and JSC 1.08×. No golden moved in either round. The size-class
+arena that frees each object individually was never the cost; the
+marker's string scan and the string temporaries were, and
+`benchmarks/README.md`'s earlier explanation is corrected.
+
 ### 8.2 Hot reload (dev tier)
 
 Per §1's rules, made testable:
