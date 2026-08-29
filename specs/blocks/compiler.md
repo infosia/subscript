@@ -801,6 +801,62 @@ arena that frees each object individually was never the cost; the
 marker's string scan and the string temporaries were, and
 `benchmarks/README.md`'s earlier explanation is corrected.
 
+### 8.1d A push is inline, and a static callback is a loop
+
+*(Owner, 2026-08-29: "fix callbacks too".)*
+
+`callbacks` measured 21.84× the C baseline. Decomposed as §8.1c was:
+
+    the benchmark (map, filter, reduce with named callbacks)      321 ms
+    the same three stages as hand-written loops with push         284 ms
+    20M pushes alone                                              149 ms   7.5 ns each
+    20M bounds-checked reads with an add                           22 ms   1.1 ns each
+    20M direct calls of a named function                           10 ms   inlined
+
+The callback trampoline is not the cost; the push is. Every `push`
+is an out-of-line runtime call that takes the value through memory,
+multiplies by a run-time `elem_size`, copies with a dynamic length,
+and is followed by a trap-flag read. The workload's 35 million pushes
+at 7 ns are 245 of its 321 ms.
+
+**A. A push is inline.** The element type is static at every push
+site, so both transcribers emit the fast path in place:
+
+    if (len < cap) { data[len] = value; len += 1; } else { grow }
+
+with a typed store and a static stride, and the growth path stays the
+runtime's. The trap-flag read after a push moves to the growth path,
+which is the only place a push can trap (allocation failure). The
+runtime gains `array_with_capacity(n, elem)` so a producer that knows
+its bound allocates once. The interpreter keeps its own push; the
+verifier is unchanged, because LIR's `ArrayPush` does not change —
+the transcribers read the same instruction and emit it differently.
+
+**B. A static callback is a loop.** `map`, `filter`, `reduce`,
+`reduceRight`, `forEach`, `some`, `every`, and `findIndex` whose
+callback operand is a known function — a named function, or a lambda
+literal with or without captures — lower in `codegen/src/lir.rs` to
+the iteration protocol of §68.7.4 with a **direct call** at each
+element, the output array (for `map` and `filter`) allocated with
+`array_with_capacity(len)`, and the push of part A. The range is the
+one ECMA gives each method and the one the runtime implements today:
+fixed before the first call for every method in this list, elements
+removed before their visit not visited. A callback that is a function
+*value* (a variable, a parameter) keeps the runtime intrinsic, which
+keeps its per-element `len_of` check and its trap propagation. Both
+tiers and the interpreter read the loop as they read any loop; no tier
+gains a form.
+
+The observable behaviour of the two paths is identical, and a corpus
+entry pins it by running the same program through both spellings
+(`a171`: a named callback, a lambda, and a function value held in a
+local, each over the same array, printing the same lines).
+
+**Exit criteria.** No corpus golden moves. After A: `push` under 1.5 ns
+per element on the arm64 reference machine and `callbacks` under 8×.
+After A and B: `callbacks` under 3×. §3 gains no gate for it; the
+`cross-language` snapshot is re-measured after each round.
+
 ### 8.2 Hot reload (dev tier)
 
 Per §1's rules, made testable:
