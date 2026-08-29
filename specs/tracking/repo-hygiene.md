@@ -117,43 +117,15 @@ identity is the owner's own.
 Neither item is a finding. A future sweep reports them as accepted rather
 than raising them again.
 
-## The sweep is a test — 2026-08-30
+## The sweep is a script — 2026-08-30
 
-*(Owner decision. Until this date every sweep above was run by hand.)*
+`tools/hygiene.sh` runs before every commit (CLAUDE.md, "Privacy /
+repo hygiene"). It scans every tracked file and every untracked file
+the ignore rules do not exclude, as text, for a local path, a sibling
+or predecessor reference, and an agent session trailer, and exits 1
+after printing every hit as `file:line:text`. The script is the one
+place the patterns are written; this record does not repeat them.
 
-`compiler/tests/hygiene.rs` runs under `cargo test` on every host,
-including the Windows gate, and fails on the first hit. It scans
-**every tracked file, and every untracked file the ignore rules do not
-exclude**, as text; a file that is not valid UTF-8 is skipped as
-binary. `node_modules/`, `target/`, `HANDOFF.md`, and `REPORT.md` are
-outside the scan, because they are never committed.
-
-It does not scan commit messages or history blobs. The gate runs on
-every commit, so the working tree is what a commit can add; the
-history was swept by hand and found clean (the records above), and a
-retroactive scan on every test run buys nothing for its cost. *(Owner
-decision, 2026-08-30; the first draft of this section scanned both.)*
-
-Patterns, each written so that a bare mention of the pattern's own
-text — this table, a rule in CLAUDE.md, the test's source — does not
-match: a path pattern requires a following component, and a trailer
-pattern requires the form a tool writes (the angle bracket, the link
-bracket, the value), which a sentence that names the trailer does not
-carry. *(Corrected 2026-08-30 after the round measured that the bare
-trailer strings matched this table.)*
-
-| Class | Pattern |
-|---|---|
-| a home directory | `/Users/<name>`, `/home/<name>`, `C:\Users\<name>`, `~/<component>` |
-| a temporary directory of one machine | `/private/tmp/<component>`, `/private/var/<component>`, `/var/folders/<component>`, `/tmp/claude<anything>` |
-| a sibling or predecessor checkout | `../subscript-typegpu`, `../yawgpu`, `../ts2das`, the words `ts2das` and `daslang` |
-| an agent session trailer or link, in the form a tool writes it | `Co-Authored-By: Claude <` (the name and the opening of its address), `Generated with [Claude Code]` (the link's bracket), `Claude-Session: <value>`, `claude.ai/code/<session id>`, `<noreply@anthropic.com>` (the address in angle brackets) |
-
-Not scanned, by the rulings above: the git author identity, and the
-`github.com/infosia/` fork URLs.
-
-The test names every hit with its file and line, or its commit hash,
-before it fails. A test that builds a violating file in a temporary
-directory and runs the scanner over it pins that the scanner fails
-(core principle 9); the scanner is one function over a list of paths,
-so the test reaches it without touching the repository.
+The working tree is the scope. The gate runs before each commit, so
+the tree is what a commit can add; the history was swept by hand and
+found clean (the records above). *(Owner decision, 2026-08-30.)*
