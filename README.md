@@ -260,14 +260,10 @@ What the numbers show:
   costs against C that does not use it.
 - **`collect` lands on C.** It allocates 20000 string-owning nodes per
   round, drops one quarter of them, and reclaims those through an
-  explicit collection: 1.00× of C on the shipping tier, level
-  with JSC (1.04×) and ahead of LuaJIT (3.69×).
-  On 2026-08-27 the same row measured 6.45×; the two causes — the marker
-  scanned string payloads as pointer candidates, and every string was
-  built through Rust-side temporaries — are measured and closed in
-  `specs/blocks/compiler.md` §8.1c. V8's cell is withheld: its timing
-  spread past ±20% in three runs on 2026-08-29 (it measured 2.60× on
-  2026-08-27).
+  explicit collection: 1.00× of C on the shipping tier, level with JSC
+  (1.04×) and ahead of LuaJIT (3.69×). V8's cell is withheld: its
+  timing spread past ±20% in each of three runs, so the benchmark
+  reports no number for it.
 - **Against the JITs**, the shipping tier is at or ahead of LuaJIT on every
   row except `callbacks`, and level with JSC/V8 on the compute-bound rows
   and on `collect`. JSC leads on `particles` and `callbacks`, and JSC/V8
