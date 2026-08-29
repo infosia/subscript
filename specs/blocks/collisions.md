@@ -294,7 +294,7 @@ Accept: `a144`. Reject: `r141-value-class-write-accessor`,
 
 ### C13. Iteration over a container that changes — a fixed entry bound
 
-**Retired 2026-08-29 (owner: "1,2,3 やりましょう", item 2).** The
+**Retired 2026-08-29 (owner decision).** The
 divergence bought nothing: `IteratorHasNext` already read the
 container's current element count every step to shorten on a removal,
 so the fixed bound saved no work. ECMA's own rules are now the

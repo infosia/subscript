@@ -119,8 +119,7 @@ than raising them again.
 
 ## The sweep is a test — 2026-08-30
 
-*(Owner: "このチェックは自動化されていますか？…同等のものを作ってもよいです".
-Until this date every sweep above was run by hand.)*
+*(Owner decision. Until this date every sweep above was run by hand.)*
 
 `compiler/tests/hygiene.rs` runs under `cargo test` on every host,
 including the Windows gate, and fails on the first hit. It scans:

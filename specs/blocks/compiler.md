@@ -145,7 +145,7 @@ SWC parse (TS-subset front end, Rust)
   of one function must stay within the same budget.
 
   **Dev-tier execution has a ceiling, not a target.** *(Owner,
-  2026-08-27: "30× is too slow".)* It must stay within **25×** of the C
+  2026-08-27.)* It must stay within **25×** of the C
   baseline. That is a ceiling against regression, not a performance
   goal: the tier exists to iterate, and 25× is chosen from the measured
   19.6× that a constant-trip unroller reaches, with room above it.
@@ -200,7 +200,7 @@ SWC parse (TS-subset front end, Rust)
   with a measured one.
 
 - **P4 allocation gate**, and the gate becomes automatic. *(Owner,
-  2026-08-28: "両方入れる".)* Two changes. `specs/tracking/gate-scope.md`
+  2026-08-28.)* Two changes. `specs/tracking/gate-scope.md`
   holds the evidence and the cost.
 
   **The gate measured `a22` alone, and `a22` has no path to the memory
@@ -740,7 +740,7 @@ lowering, or `subscript_rt_*` ABI change.
 
 ### 8.1c A block that holds no handle is not scanned, and a string is written where it lives
 
-*(Owner, 2026-08-29: "A → B の順で進めて", after the `collect`
+*(Owner, 2026-08-29, after the `collect`
 benchmark was decomposed.)*
 
 `collect` measured 6.45× the C baseline (`benchmarks/README.md`,
@@ -803,7 +803,7 @@ marker's string scan and the string temporaries were, and
 
 ### 8.1d A push is inline, and a static callback is a loop
 
-*(Owner, 2026-08-29: "fix callbacks too".)*
+*(Owner, 2026-08-29.)*
 
 `callbacks` measured 21.84× the C baseline. Decomposed as §8.1c was:
 
@@ -4391,8 +4391,8 @@ the fix has no per-transcriber site.
 
 ### 33.5 The script-side representation is a managed box
 
-*(Owner, 2026-08-29: "1,2,3 やりましょう", item 1, then "go on" on the
-box design after the recursion measurement.)*
+*(Owner, 2026-08-29; the box design was confirmed after the
+recursion measurement.)*
 
 §33.1 gives a non-null struct-pointer member a pointer to a scratch
 struct at the call. It said nothing about how the script holds the
@@ -4450,8 +4450,8 @@ larger).
    later round can restore it if the owner wants the entry in its
    first shape.
 
-**Rules 9 and 10, the intrusive header.** *(Owner, 2026-08-29: "keep
-going", after round 8 measured the contradiction.)* `examples/e09`
+**Rules 9 and 10, the intrusive header.** *(Owner, 2026-08-29, after
+round 8 measured the contradiction.)* `examples/e09`
 and the two-header binding gate store `limit.engineHeader` — the first
 field of an extension value — into `engineNext: EngineHeader | null`,
 and the host casts the link back to `EngineEntityLimitOption*` and
@@ -7725,7 +7725,7 @@ Measurements at `a2228d9`, on this host. Every one is pre-existing;
    value. Name resolution needs its own request and its own owner
    decision.
 
-   **Closed 2026-08-29 (owner: "A で進めて").** §67.1 rule 4 rejects
+   **Closed 2026-08-29 (owner decision).** §67.1 rule 4 rejects
    the read whether it is direct or inside a nested lambda, so the
    silent value is gone: measured at `c426ee7`, the program of 6h
    fails with S100 at the read. What remains is a narrowing: `tsc`
@@ -8122,7 +8122,7 @@ satisfy it.)*
    name are two declarations in one scope, because the body opens no
    scope of its own.
 3a. **A class body is one member namespace: one name, one member.**
-   *(Owner, 2026-08-29: "A で進めて", after the Fable phase review of
+   *(Owner, 2026-08-29, after the Fable phase review of
    §66–§67, M1.)* Rule 3 is stated for a scope; a class body is the
    scope of its instance members, and §65 applied the rule to
    accessors only. Measured at `857757a`, `tsc` under the corpus
@@ -9566,7 +9566,7 @@ The target kind decides the operand roles.
 |---|---|---|
 | `Function` | the declared parameters, in order | a call of the module function. |
 | `Method` | the receiver first, then the parameters | a call of the class method. A value-class receiver is an address; a reference-class receiver is a handle. |
-| `Foreign` | the marshalled arguments, in order | a call across the C ABI. **The call-time view.** *(Owner, 2026-08-28: "call-time view でいきましょう". This replaces the sentence "an array argument's data pointer and count are read before a later argument runs ... taken at the argument's evaluation point", added 2026-08-26.)* An array argument is the array, as JavaScript passes a reference. The call carries the array's data pointer and count as operands, **read after every argument is evaluated and immediately before the call**. A later argument that grows the array is visible to the callee, whether or not it suspends. No snapshot exists that a later argument can invalidate, so rule 9 has nothing to recompute here and no stale pointer can reach the C side. §68.2 item 12's check verifies that the operands are read after the last argument. |
+| `Foreign` | the marshalled arguments, in order | a call across the C ABI. **The call-time view.** *(Owner, 2026-08-28. This replaces the sentence "an array argument's data pointer and count are read before a later argument runs ... taken at the argument's evaluation point", added 2026-08-26.)* An array argument is the array, as JavaScript passes a reference. The call carries the array's data pointer and count as operands, **read after every argument is evaluated and immediately before the call**. A later argument that grows the array is visible to the callee, whether or not it suspends. No snapshot exists that a later argument can invalidate, so rule 9 has nothing to recompute here and no stale pointer can reach the C side. §68.2 item 12's check verifies that the operands are read after the last argument. |
 | `Indirect` | the callable first, then the parameters | a call through a value of `Type::Func`. |
 | `Intrinsic` | the family's operands, in order | the operation the module's intrinsic table names. The table, not a positional index into a Rust array, defines it (§68.2 item 11). |
 | `BuiltinMethod` | the receiver first, then the parameters | the standard-library method. `stdlib.md` decides each one. |
@@ -10162,7 +10162,7 @@ because an arbitrary class's allocation has no spare word.)*
 
 ## 71. Static members
 
-Owner decision 2026-08-29 ("1,2,3 やりましょう", item 3), after the
+Owner decision 2026-08-29, after the
 member-namespace measurement under §67.1 rule 3a. Static fields,
 methods, and accessors were rejected with S100 as "not decided". `tsc`
 accepts them, and a consumer that generates classes meets the
