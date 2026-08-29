@@ -271,9 +271,9 @@ phase cannot be COMPLETE with any open CRITICAL/MAJOR.
 - `.gitignore`: `target/`, `node_modules/`, `.claude/`, local test
   transcripts.
 
-**Run `tools/hygiene.sh` before every commit.** *(Owner,
-2026-08-30.)* It scans the working tree for the rules below and exits
-1 with every hit. A commit made while it fails is a defect.
+**Run `tools/hygiene.sh` once, at the end of every Phase Review.**
+*(Owner, 2026-08-30.)* It scans the working tree for the rules below
+and exits 1 with every hit. A phase is not COMPLETE while it fails.
 
 ### No local or sibling paths in committed files
 

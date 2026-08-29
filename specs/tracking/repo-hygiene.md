@@ -119,13 +119,13 @@ than raising them again.
 
 ## The sweep is a script — 2026-08-30
 
-`tools/hygiene.sh` runs before every commit (CLAUDE.md, "Privacy /
-repo hygiene"). It scans every tracked file and every untracked file
+`tools/hygiene.sh` runs once, at the end of every Phase Review
+(CLAUDE.md, "Privacy / repo hygiene"). It scans every tracked file
+and every untracked file
 the ignore rules do not exclude, as text, for a local path, a sibling
 or predecessor reference, and an agent session trailer, and exits 1
 after printing every hit as `file:line:text`. The script is the one
 place the patterns are written; this record does not repeat them.
 
-The working tree is the scope. The gate runs before each commit, so
-the tree is what a commit can add; the history was swept by hand and
+The working tree is the scope; the history was swept by hand and
 found clean (the records above). *(Owner decision, 2026-08-30.)*

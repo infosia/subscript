@@ -1,13 +1,13 @@
 #!/bin/sh
 # Repository hygiene (CLAUDE.md, "No local or sibling paths in committed
-# files" and the privacy rule above it). Run before every commit:
+# files" and the privacy rule above it). Run once, at the end of every
+# Phase Review:
 #
 #     tools/hygiene.sh
 #
 # Scans every tracked file and every untracked file the ignore rules do
 # not exclude. Exit 0 when clean; exit 1 after printing every hit as
-# file:line:text. The working tree is the scope: the gate runs before
-# each commit, so the tree is what a commit can add.
+# file:line:text. The working tree is the scope.
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
