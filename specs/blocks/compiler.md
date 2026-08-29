@@ -859,6 +859,15 @@ half; the fast path itself is about 1 ns). After A and B: `callbacks`
 under 3×. §3 gains no gate for it; the `cross-language` snapshot is
 re-measured after each round.
 
+**Measured.** A landed at `a430255`: the push-only program 150.8 →
+51.8 ms; `callbacks` unchanged within noise. B landed at `7775aa7`:
+`callbacks` as a standalone ship binary 296.7 → 37.0 ms, `cross-
+language` ship 2.84× of C (dev 21.49×: Cranelift does not inline the
+direct call, and the dev tier is gated on iteration time, not on
+this), against LuaJIT 9.25× and JSC 5.23×. `a171`, `a172`, `t52`, and
+`t53` pin the equivalence of the loop and the intrinsic. No golden
+moved in either round.
+
 *(Corrected 2026-08-29 when A was measured. The criterion first read
 "push under 1.5 ns and `callbacks` under 8× after A". The 1.5 ns
 assumed a pre-sized array, which the language cannot spell, so the

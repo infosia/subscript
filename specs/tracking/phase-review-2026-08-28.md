@@ -126,3 +126,18 @@ of a handle-free block on free-list reuse; 98 → 33 ms. `collect` now
 measures 1.01× of C on the ship tier and 3.30× on the dev tier. No
 golden moved. The README's explanation that a generational collector
 beats the arena by design was wrong and is corrected.
+
+## The callbacks benchmark, 2026-08-29 to 30
+
+The owner asked for `callbacks` next. Decomposed the same way: hand
+loops cost as much as the intrinsics, and 20 million pushes alone cost
+149 ms at 7.5 ns each; the push was the cost. §8.1d records it. Round
+A (`a430255`): both transcribers emit the push fast path in place with
+a typed store; the push-only program 150.8 → 51.8 ms; `callbacks` did
+not move, because its pushes were the runtime intrinsics' own — the
+orchestrator's exit criterion had assumed otherwise and was corrected
+(`d051090`). Round B (`7775aa7`): an array method with a known
+function lowers in LIR to a fixed-bound loop with a direct call, a
+pre-sized output, and the inline push; a function value keeps the
+intrinsic; `a171`/`a172`/`t52`/`t53` pin the two paths as identical.
+`callbacks` 296.7 → 37.0 ms, 2.84× of C. No golden moved.
