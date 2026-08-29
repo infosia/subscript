@@ -82,8 +82,11 @@ pub unsafe extern "C" fn subscript_rt_collect(ctx: *mut Context) {
     unsafe { &mut *ctx }.collect();
 }
 
-/// Allocates `size` zeroed payload bytes tagged `class_id`; null on
-/// trap.
+/// Allocates `size` payload bytes tagged `class_id`; null on trap.
+///
+/// Fresh storage and classes that can hold handles are zeroed. A
+/// handle-free class must replace all exposed bytes before a read.
+/// String operations use [`Context::alloc_str_with`] for that write.
 ///
 /// # Safety
 ///
@@ -1165,11 +1168,34 @@ pub unsafe extern "C" fn subscript_rt_str_concat(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handles.
-    let mut bytes = unsafe { ctx.str_bytes(a) }.to_vec();
-    // SAFETY: live string handles.
-    bytes.extend_from_slice(unsafe { ctx.str_bytes(b) });
-    ctx.alloc_str(&bytes, pos_id)
+    // SAFETY: live string handles. Allocating another Context string does
+    // not move either immutable input allocation.
+    let (a_ptr, a_len) = {
+        let bytes = unsafe { ctx.str_bytes(a) };
+        (bytes.as_ptr(), bytes.len())
+    };
+    // SAFETY: as above.
+    let (b_ptr, b_len) = {
+        let bytes = unsafe { ctx.str_bytes(b) };
+        (bytes.as_ptr(), bytes.len())
+    };
+    let Some(result_len) = a_len.checked_add(b_len) else {
+        ctx.trap(
+            TrapKind::AllocationFailure,
+            "string concatenation length is not representable",
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    ctx.alloc_str_with(result_len, pos_id, |destination| {
+        // SAFETY: both input ranges stay live during this synchronous
+        // writer. The fresh destination does not overlap either input.
+        unsafe {
+            std::ptr::copy_nonoverlapping(a_ptr, destination.as_mut_ptr(), a_len);
+            std::ptr::copy_nonoverlapping(b_ptr, destination.as_mut_ptr().add(a_len), b_len);
+        }
+        result_len
+    })
 }
 
 /// `slice(start, end)` with byte offsets and ECMA's negative/clamping
@@ -1763,27 +1789,39 @@ unsafe fn str_pad(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handles. Copied out so the borrows do not
-    // overlap the mutable trap/alloc calls below.
-    let bytes: Vec<u8> = unsafe { ctx.str_bytes(s) }.to_vec();
-    // SAFETY: live string handles.
-    let pad_bytes: Vec<u8> = unsafe { ctx.str_bytes(pad) }.to_vec();
-    if pad_bytes.is_empty() && (target.max(0) as usize) > bytes.len() {
+    // SAFETY: live string handles. Allocating the result does not move
+    // either immutable input allocation.
+    let (bytes_ptr, bytes_len) = {
+        let bytes = unsafe { ctx.str_bytes(s) };
+        (bytes.as_ptr(), bytes.len())
+    };
+    // SAFETY: as above.
+    let (pad_ptr, pad_len) = {
+        let bytes = unsafe { ctx.str_bytes(pad) };
+        (bytes.as_ptr(), bytes.len())
+    };
+    let target = usize::try_from(target.max(0)).unwrap_or(0);
+    if pad_len == 0 && target > bytes_len {
         ctx.trap(
             TrapKind::StrRange,
             format!(
                 "{name}({target}): an empty pad cannot reach the target length \
                  (string length {})",
-                bytes.len()
+                bytes_len
             ),
             pos_id,
         );
         return std::ptr::null_mut();
     }
-    ctx.alloc_str(
-        &crate::strops::pad(&bytes, target, &pad_bytes, at_start),
-        pos_id,
-    )
+    let result_len = target.max(bytes_len);
+    ctx.alloc_str_with(result_len, pos_id, |destination| {
+        // SAFETY: both input ranges stay live during this synchronous
+        // writer. Neither range overlaps the fresh destination.
+        let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr, bytes_len) };
+        // SAFETY: as above.
+        let pad_bytes = unsafe { std::slice::from_raw_parts(pad_ptr, pad_len) };
+        crate::strops::pad_into(bytes, pad_bytes, at_start, destination)
+    })
 }
 
 /// `padStart(len, pad)` — see [`str_pad`]. The checker supplies the
@@ -2107,6 +2145,13 @@ pub unsafe extern "C" fn subscript_rt_regex_match_end(
 
 // ----- Q14 formatting -----
 
+fn alloc_formatted(ctx: &mut Context, bytes: &[u8], pos_id: u32) -> *mut u8 {
+    ctx.alloc_str_with(bytes.len(), pos_id, |destination| {
+        destination.copy_from_slice(bytes);
+        bytes.len()
+    })
+}
+
 /// Formats an `i32` (Q14).
 ///
 /// # Safety
@@ -2115,7 +2160,9 @@ pub unsafe extern "C" fn subscript_rt_regex_match_end(
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_fmt_i32(ctx: *mut Context, v: i32, pos_id: u32) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.alloc_str(crate::fmt::fmt_i32(v).as_bytes(), pos_id)
+    let ctx = unsafe { &mut *ctx };
+    let mut storage = [0; crate::fmt::INTEGER_BUFFER_SIZE];
+    alloc_formatted(ctx, crate::fmt::fmt_i32_into(v, &mut storage), pos_id)
 }
 
 /// Formats a `u32` (Q14).
@@ -2126,7 +2173,9 @@ pub unsafe extern "C" fn subscript_rt_fmt_i32(ctx: *mut Context, v: i32, pos_id:
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_fmt_u32(ctx: *mut Context, v: u32, pos_id: u32) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.alloc_str(crate::fmt::fmt_u32(v).as_bytes(), pos_id)
+    let ctx = unsafe { &mut *ctx };
+    let mut storage = [0; crate::fmt::INTEGER_BUFFER_SIZE];
+    alloc_formatted(ctx, crate::fmt::fmt_u32_into(v, &mut storage), pos_id)
 }
 
 /// Formats an `i64` (Q14).
@@ -2137,7 +2186,9 @@ pub unsafe extern "C" fn subscript_rt_fmt_u32(ctx: *mut Context, v: u32, pos_id:
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_fmt_i64(ctx: *mut Context, v: i64, pos_id: u32) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.alloc_str(crate::fmt::fmt_i64(v).as_bytes(), pos_id)
+    let ctx = unsafe { &mut *ctx };
+    let mut storage = [0; crate::fmt::INTEGER_BUFFER_SIZE];
+    alloc_formatted(ctx, crate::fmt::fmt_i64_into(v, &mut storage), pos_id)
 }
 
 /// Formats a `u64` (Q14).
@@ -2148,7 +2199,9 @@ pub unsafe extern "C" fn subscript_rt_fmt_i64(ctx: *mut Context, v: i64, pos_id:
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_fmt_u64(ctx: *mut Context, v: u64, pos_id: u32) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.alloc_str(crate::fmt::fmt_u64(v).as_bytes(), pos_id)
+    let ctx = unsafe { &mut *ctx };
+    let mut storage = [0; crate::fmt::INTEGER_BUFFER_SIZE];
+    alloc_formatted(ctx, crate::fmt::fmt_u64_into(v, &mut storage), pos_id)
 }
 
 /// Formats an `f32` at f32 precision (Q14).
@@ -2159,7 +2212,13 @@ pub unsafe extern "C" fn subscript_rt_fmt_u64(ctx: *mut Context, v: u64, pos_id:
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_fmt_f32(ctx: *mut Context, v: f32, pos_id: u32) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.alloc_str(crate::fmt::fmt_f32(v).as_bytes(), pos_id)
+    let ctx = unsafe { &mut *ctx };
+    let mut storage = ryu_js::Buffer::new();
+    alloc_formatted(
+        ctx,
+        crate::fmt::fmt_f32_into(v, &mut storage).as_bytes(),
+        pos_id,
+    )
 }
 
 /// Formats an `f64` (Q14).
@@ -2170,7 +2229,13 @@ pub unsafe extern "C" fn subscript_rt_fmt_f32(ctx: *mut Context, v: f32, pos_id:
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_fmt_f64(ctx: *mut Context, v: f64, pos_id: u32) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.alloc_str(crate::fmt::fmt_f64(v).as_bytes(), pos_id)
+    let ctx = unsafe { &mut *ctx };
+    let mut storage = ryu_js::Buffer::new();
+    alloc_formatted(
+        ctx,
+        crate::fmt::fmt_f64_into(v, &mut storage).as_bytes(),
+        pos_id,
+    )
 }
 
 /// Formats a boolean.
@@ -5994,6 +6059,26 @@ mod tests {
     }
 
     #[test]
+    fn ffi_concat_direct_writer_matches_the_vec_reference_path() {
+        for (left, right) in [
+            (&b"left"[..], &b"right"[..]),
+            (&b""[..], &b"right"[..]),
+            ("é".as_bytes(), "中".as_bytes()),
+        ] {
+            let mut expected = left.to_vec();
+            expected.extend_from_slice(right);
+            let mut ctx = Context::new();
+            let p: *mut Context = &mut *ctx;
+            let left_handle = ctx.alloc_str(left, 0);
+            let right_handle = ctx.alloc_str(right, 0);
+            // SAFETY: the Context and both input strings stay live.
+            let result = unsafe { subscript_rt_str_concat(p, left_handle, right_handle, 0) };
+            // SAFETY: `result` is a live string in this Context.
+            unsafe { assert_eq!(ctx.str_bytes(result), expected) };
+        }
+    }
+
+    #[test]
     fn ffi_slice_off_utf8_boundary_traps() {
         let mut ctx = Context::new();
         let p: *mut Context = &mut *ctx;
@@ -6229,6 +6314,42 @@ mod tests {
         assert!(r.message.contains("padStart"));
     }
 
+    fn assert_direct_pad_matches_vec_reference(at_start: bool) {
+        let cases: &[(&[u8], i32, &[u8])] = &[
+            (b"ab", 9, b"xyz"),
+            (b"", 5, b"ab"),
+            (b"receiver", 3, b"xy"),
+            (b"z", 6, "é".as_bytes()),
+        ];
+        for &(receiver, target, pad) in cases {
+            let expected = crate::strops::pad(receiver, target, pad, at_start);
+            let mut ctx = Context::new();
+            let p: *mut Context = &mut *ctx;
+            let receiver_handle = ctx.alloc_str(receiver, 0);
+            let pad_handle = ctx.alloc_str(pad, 0);
+            // SAFETY: the Context and both input strings stay live.
+            let result = unsafe {
+                if at_start {
+                    subscript_rt_str_pad_start(p, receiver_handle, target, pad_handle, 0)
+                } else {
+                    subscript_rt_str_pad_end(p, receiver_handle, target, pad_handle, 0)
+                }
+            };
+            // SAFETY: `result` is a live string in this Context.
+            unsafe { assert_eq!(ctx.str_bytes(result), expected) };
+        }
+    }
+
+    #[test]
+    fn ffi_pad_start_direct_writer_matches_the_vec_reference_path() {
+        assert_direct_pad_matches_vec_reference(true);
+    }
+
+    #[test]
+    fn ffi_pad_end_direct_writer_matches_the_vec_reference_path() {
+        assert_direct_pad_matches_vec_reference(false);
+    }
+
     #[test]
     fn ffi_str_replace_first_all_and_empty_pattern_trap() {
         let mut ctx = Context::new();
@@ -6268,6 +6389,84 @@ mod tests {
             subscript_rt_print(p, t);
         }
         assert_eq!(ctx.take_stdout(), b"3.75\ntrue\n");
+    }
+
+    #[test]
+    fn ffi_fmt_i32_direct_writer_matches_the_string_reference_path() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        for value in [i32::MIN, -1, 0, i32::MAX] {
+            let expected = value.to_string();
+            // SAFETY: the Context stays live.
+            let result = unsafe { subscript_rt_fmt_i32(p, value, 0) };
+            // SAFETY: `result` is a live string in this Context.
+            unsafe { assert_eq!(ctx.str_bytes(result), expected.as_bytes()) };
+        }
+    }
+
+    #[test]
+    fn ffi_fmt_u32_direct_writer_matches_the_string_reference_path() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        for value in [0, 1, u32::MAX] {
+            let expected = value.to_string();
+            // SAFETY: the Context stays live.
+            let result = unsafe { subscript_rt_fmt_u32(p, value, 0) };
+            // SAFETY: `result` is a live string in this Context.
+            unsafe { assert_eq!(ctx.str_bytes(result), expected.as_bytes()) };
+        }
+    }
+
+    #[test]
+    fn ffi_fmt_i64_direct_writer_matches_the_string_reference_path() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        for value in [i64::MIN, -1, 0, i64::MAX] {
+            let expected = value.to_string();
+            // SAFETY: the Context stays live.
+            let result = unsafe { subscript_rt_fmt_i64(p, value, 0) };
+            // SAFETY: `result` is a live string in this Context.
+            unsafe { assert_eq!(ctx.str_bytes(result), expected.as_bytes()) };
+        }
+    }
+
+    #[test]
+    fn ffi_fmt_u64_direct_writer_matches_the_string_reference_path() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        for value in [0, 1, u64::MAX] {
+            let expected = value.to_string();
+            // SAFETY: the Context stays live.
+            let result = unsafe { subscript_rt_fmt_u64(p, value, 0) };
+            // SAFETY: `result` is a live string in this Context.
+            unsafe { assert_eq!(ctx.str_bytes(result), expected.as_bytes()) };
+        }
+    }
+
+    #[test]
+    fn ffi_fmt_f32_direct_writer_matches_the_string_reference_path() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        for value in [-0.0, 0.1, f32::INFINITY] {
+            let expected = crate::fmt::fmt_f32(value);
+            // SAFETY: the Context stays live.
+            let result = unsafe { subscript_rt_fmt_f32(p, value, 0) };
+            // SAFETY: `result` is a live string in this Context.
+            unsafe { assert_eq!(ctx.str_bytes(result), expected.as_bytes()) };
+        }
+    }
+
+    #[test]
+    fn ffi_fmt_f64_direct_writer_matches_the_string_reference_path() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        for value in [-0.0, 0.1, f64::INFINITY] {
+            let expected = crate::fmt::fmt_f64(value);
+            // SAFETY: the Context stays live.
+            let result = unsafe { subscript_rt_fmt_f64(p, value, 0) };
+            // SAFETY: `result` is a live string in this Context.
+            unsafe { assert_eq!(ctx.str_bytes(result), expected.as_bytes()) };
+        }
     }
 
     #[test]

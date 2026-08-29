@@ -22,24 +22,27 @@
 //! largest size class are carved from Context-owned per-class chunks by
 //! bump pointer; `Context.free` pushes a block onto its class's LIFO
 //! free list (threaded through the freed payload's first word) and the
-//! next same-class `alloc` pops it, zeroed. Larger allocations are
-//! individual system allocations with their own record. Double delete
-//! and use-after-delete are undefined here (Q6, trusted scripts). Enabling
-//! freed-handle diagnostics switches either construction path to exact-size
-//! allocation and budgeted retain-and-poison at or above the configured
-//! payload threshold.
+//! next same-class `alloc` pops it. The allocator zeroes classes that can
+//! hold handles. A string writer replaces all exposed bytes, so it does
+//! not zero that class. Larger allocations are individual system
+//! allocations with their own record. Double delete and use-after-delete
+//! are undefined here (Q6, trusted scripts). Enabling freed-handle
+//! diagnostics switches either construction path to exact-size allocation
+//! and budgeted retain-and-poison at or above the configured payload
+//! threshold.
 //!
 //! # Collection
 //!
 //! `Context.collect()` never runs unbidden (design invariant 2). Roots are the
 //! addresses generated code registers: module-global slots
 //! (`root_add`) and per-call shadow frames of managed locals
-//! (`shadow_push`/`shadow_pop`). Marking is conservative: the payload
-//! of every reached allocation is scanned for pointer-aligned words
-//! that equal a live payload address (this covers reference-class
-//! fields, array elements, array data pointers, and coroutine frame
-//! slots without layout metadata). Conservative marking can retain
-//! garbage; it never frees a reachable allocation.
+//! (`shadow_push`/`shadow_pop`). Marking is conservative for each class
+//! that can hold handles. Its payload words are candidates for live
+//! payload addresses. This covers reference-class fields, array elements,
+//! array data pointers, and coroutine frame slots without layout metadata.
+//! A class that holds no handle is marked without a payload scan.
+//! Conservative marking can retain garbage; it never frees a reachable
+//! allocation.
 
 use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -1464,11 +1467,13 @@ impl Context {
         self.alloc_fail_countdown = (n != 0).then_some(n);
     }
 
-    /// Allocates `size` payload bytes tagged `class_id`; returns the
-    /// zeroed payload pointer, or null after recording an
-    /// allocation-failure trap. Dev tier: an individual system
-    /// allocation tracked in the map. Ship tier: served from the arena
-    /// (§8.1b).
+    /// Allocates `size` payload bytes tagged `class_id`.
+    ///
+    /// Returns the payload pointer, or null after an allocation trap.
+    /// The development tier returns zeroed bytes. The ship tier also
+    /// zeroes fresh storage and reused classes that can hold handles.
+    /// A handle-free class must replace all exposed bytes before a read.
+    /// [`Context::alloc_str_with`] supplies that writer for strings.
     pub fn alloc(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
         self.allocation_started = true;
         if let Some(remaining) = self.alloc_fail_countdown {
@@ -1589,9 +1594,9 @@ impl Context {
 
     /// Ship-tier `alloc`: free-list pop, else bump from the class's open
     /// chunk, else a new chunk; above the largest class, an individual
-    /// system allocation with a `LargeAlloc` record. The payload is
-    /// zeroed in every case (§8.1b: conservative tracing and language
-    /// zero-init rely on it).
+    /// system allocation with a `LargeAlloc` record. A reused payload is
+    /// zeroed when its class can hold handles. A string writer replaces
+    /// all exposed bytes. Fresh chunks and large allocations stay zeroed.
     fn arena_alloc(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
         let need = HEADER_SIZE.saturating_add(size.max(1));
         if need > LARGEST_BLOCK {
@@ -1606,11 +1611,13 @@ impl Context {
             // SAFETY: `head` is a payload address this arena free-listed:
             // its block (header + `block_size - HEADER_SIZE` payload
             // capacity) is inside an owned chunk. The next link occupies
-            // the payload's first word; after unlinking, the whole
-            // capacity is re-zeroed and the header re-armed.
+            // the payload's first word. After unlinking, classes that can
+            // hold handles are re-zeroed before the header is re-armed.
             unsafe {
                 self.free_heads[class] = (payload as *const usize).read();
-                std::ptr::write_bytes(payload, 0, block_size - HEADER_SIZE);
+                if !class_holds_no_handle(class_id) {
+                    std::ptr::write_bytes(payload, 0, block_size - HEADER_SIZE);
+                }
                 let base = payload.sub(HEADER_SIZE);
                 (base as *mut u64).write(LIVE_STATE);
                 (base.add(8) as *mut u32).write(class_id);
@@ -2459,9 +2466,9 @@ impl Context {
                     // Dead, free-listed, or already marked.
                     continue;
                 }
-                // Allocation zeroes the complete size-class payload
-                // capacity, so conservatively tracing its padding is safe.
-                // The final header word now carries allocation attribution.
+                // Each class that reaches the payload scan has zeroed
+                // size-class padding. The final header word carries the
+                // allocation attribution.
                 (block, (SMALLEST_BLOCK << class) - HEADER_SIZE)
             } else if let Some(a) = self.large.get(&addr) {
                 // SAFETY: `base` heads an owned large allocation.
@@ -2548,19 +2555,48 @@ impl Context {
 
     // ----- strings (Q5) -----
 
-    /// Allocates an immutable string; payload = `[len: u64][bytes]`.
-    /// Returns the payload pointer (the string handle).
-    pub fn alloc_str(&mut self, bytes: &[u8], pos_id: u32) -> *mut u8 {
-        let p = self.alloc(8 + bytes.len(), CLASS_STRING, pos_id);
+    /// Allocates an immutable string and writes its bytes in place.
+    ///
+    /// The payload is `[len: u64][bytes]`. The writer receives exactly
+    /// `len` bytes and must return `len` after it writes every byte.
+    /// Returns the payload pointer, or null after an allocation trap.
+    pub fn alloc_str_with(
+        &mut self,
+        len: usize,
+        pos_id: u32,
+        writer: impl FnOnce(&mut [u8]) -> usize,
+    ) -> *mut u8 {
+        let Some(payload_len) = 8usize.checked_add(len) else {
+            self.trap(
+                TrapKind::AllocationFailure,
+                format!("string allocation of {len} bytes is not representable"),
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        };
+        let p = self.alloc(payload_len, CLASS_STRING, pos_id);
         if p.is_null() {
             return p;
         }
-        // SAFETY: `p` points at a fresh allocation of 8 + len bytes.
+        // SAFETY: `p` points at a live allocation of 8 + len bytes. The
+        // byte region starts after the length word and has exactly `len`
+        // bytes.
         unsafe {
-            (p as *mut u64).write(bytes.len() as u64);
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), p.add(8), bytes.len());
+            (p as *mut u64).write(len as u64);
+            let destination = std::slice::from_raw_parts_mut(p.add(8), len);
+            let written = writer(destination);
+            debug_assert_eq!(written, len, "a string writer must fill every byte");
         }
         p
+    }
+
+    /// Allocates an immutable string; payload = `[len: u64][bytes]`.
+    /// Returns the payload pointer (the string handle).
+    pub fn alloc_str(&mut self, bytes: &[u8], pos_id: u32) -> *mut u8 {
+        self.alloc_str_with(bytes.len(), pos_id, |destination| {
+            destination.copy_from_slice(bytes);
+            bytes.len()
+        })
     }
 
     /// Returns the allocation-free string handle for one BMP scalar.
@@ -4711,6 +4747,43 @@ mod tests {
             for i in 0..16 {
                 assert_eq!(q.add(i).read(), 0, "byte {i} not zeroed on reuse");
             }
+        }
+    }
+
+    #[test]
+    fn alloc_str_with_writes_exact_result_bytes_in_both_tiers() {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
+            let handle = ctx.alloc_str_with(5, 17, |destination| {
+                assert_eq!(destination.len(), 5, "{tier}");
+                destination.copy_from_slice(b"write");
+                destination.len()
+            });
+            assert!(!handle.is_null(), "{tier}");
+            // SAFETY: `handle` is a live string in this Context.
+            unsafe { assert_eq!(ctx.str_bytes(handle), b"write", "{tier}") };
+        }
+    }
+
+    #[test]
+    fn ship_string_writer_replaces_exposed_bytes_without_zeroing_padding() {
+        let mut ctx = Context::new_releasing();
+        let first = ctx.alloc_str(b"a", 0);
+        // A one-byte string uses 9 exposed payload bytes in a class with
+        // 16 payload bytes. Mark the seven padding bytes before release.
+        // SAFETY: `first` has 16 bytes of size-class payload capacity.
+        unsafe { std::ptr::write_bytes(first.add(9), 0xAB, 7) };
+        ctx.delete(first as usize, 0);
+
+        let reused = ctx.alloc_str_with(1, 0, |destination| {
+            destination[0] = b'z';
+            1
+        });
+        assert_eq!(reused, first, "the string free list must reuse the block");
+        // SAFETY: `reused` is a live string in this Context. The padding
+        // read stays inside its size-class payload capacity.
+        unsafe {
+            assert_eq!(ctx.str_bytes(reused), b"z");
+            assert_eq!(reused.add(9).read(), 0xAB);
         }
     }
 

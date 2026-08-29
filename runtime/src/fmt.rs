@@ -12,50 +12,106 @@
 //! the sign of negative zero on top. Both execution tiers share this
 //! implementation.
 
-fn fmt_float<F: ryu_js::Float>(v: F) -> String {
-    ryu_js::Buffer::new().format(v).to_owned()
+/// The largest decimal representation of one supported integer.
+pub(crate) const INTEGER_BUFFER_SIZE: usize = 20;
+
+fn fmt_unsigned(
+    mut magnitude: u64,
+    negative: bool,
+    storage: &mut [u8; INTEGER_BUFFER_SIZE],
+) -> &[u8] {
+    let mut start = storage.len();
+    loop {
+        start -= 1;
+        storage[start] = b'0' + (magnitude % 10) as u8;
+        magnitude /= 10;
+        if magnitude == 0 {
+            break;
+        }
+    }
+    if negative {
+        start -= 1;
+        storage[start] = b'-';
+    }
+    &storage[start..]
+}
+
+pub(crate) fn fmt_i32_into(v: i32, storage: &mut [u8; INTEGER_BUFFER_SIZE]) -> &[u8] {
+    fmt_unsigned(u64::from(v.unsigned_abs()), v.is_negative(), storage)
+}
+
+pub(crate) fn fmt_u32_into(v: u32, storage: &mut [u8; INTEGER_BUFFER_SIZE]) -> &[u8] {
+    fmt_unsigned(u64::from(v), false, storage)
+}
+
+pub(crate) fn fmt_i64_into(v: i64, storage: &mut [u8; INTEGER_BUFFER_SIZE]) -> &[u8] {
+    fmt_unsigned(v.unsigned_abs(), v.is_negative(), storage)
+}
+
+pub(crate) fn fmt_u64_into(v: u64, storage: &mut [u8; INTEGER_BUFFER_SIZE]) -> &[u8] {
+    fmt_unsigned(v, false, storage)
+}
+
+pub(crate) fn fmt_f32_into(v: f32, storage: &mut ryu_js::Buffer) -> &str {
+    if v == 0.0 && v.is_sign_negative() {
+        "-0"
+    } else {
+        storage.format(v)
+    }
+}
+
+pub(crate) fn fmt_f64_into(v: f64, storage: &mut ryu_js::Buffer) -> &str {
+    if v == 0.0 && v.is_sign_negative() {
+        "-0"
+    } else {
+        storage.format(v)
+    }
+}
+
+fn decimal_string(bytes: &[u8]) -> String {
+    std::str::from_utf8(bytes).unwrap_or_default().to_owned()
 }
 
 /// Formats an `i32` in decimal.
 #[must_use]
 pub fn fmt_i32(v: i32) -> String {
-    v.to_string()
+    let mut storage = [0; INTEGER_BUFFER_SIZE];
+    decimal_string(fmt_i32_into(v, &mut storage))
 }
 
 /// Formats a `u32` in decimal.
 #[must_use]
 pub fn fmt_u32(v: u32) -> String {
-    v.to_string()
+    let mut storage = [0; INTEGER_BUFFER_SIZE];
+    decimal_string(fmt_u32_into(v, &mut storage))
 }
 
 /// Formats an `i64` in decimal.
 #[must_use]
 pub fn fmt_i64(v: i64) -> String {
-    v.to_string()
+    let mut storage = [0; INTEGER_BUFFER_SIZE];
+    decimal_string(fmt_i64_into(v, &mut storage))
 }
 
 /// Formats a `u64` in decimal.
 #[must_use]
 pub fn fmt_u64(v: u64) -> String {
-    v.to_string()
+    let mut storage = [0; INTEGER_BUFFER_SIZE];
+    decimal_string(fmt_u64_into(v, &mut storage))
 }
 
 /// Formats an `f32` by shortest round-trip at f32 precision (Q14).
 #[must_use]
 pub fn fmt_f32(v: f32) -> String {
-    if v == 0.0 && v.is_sign_negative() {
-        return "-0".to_string();
-    }
-    fmt_float(v)
+    let mut storage = ryu_js::Buffer::new();
+    fmt_f32_into(v, &mut storage).to_owned()
 }
 
 /// Formats an `f64` by shortest round-trip (Q14).
 #[must_use]
 pub fn fmt_f64(v: f64) -> String {
-    if v == 0.0 && v.is_sign_negative() {
-        return "-0".to_string();
-    }
-    fmt_float(v)
+    let mut storage = ryu_js::Buffer::new();
+    fmt_f64_into(v, &mut storage).to_owned()
 }
 
 /// Formats a boolean as `true` / `false`.

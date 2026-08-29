@@ -221,6 +221,48 @@ pub fn pad(s: &[u8], target: i32, pad: &[u8], at_start: bool) -> Vec<u8> {
     out
 }
 
+/// Writes the `padStart` or `padEnd` result into an exact-size buffer.
+///
+/// The caller supplies the normalized result length and rejects an empty
+/// pad when filler bytes are necessary. A contract mismatch returns zero.
+pub(crate) fn pad_into(s: &[u8], pad: &[u8], at_start: bool, out: &mut [u8]) -> usize {
+    if out.len() < s.len() {
+        return 0;
+    }
+    let fill_len = out.len() - s.len();
+    if fill_len != 0 && pad.is_empty() {
+        return 0;
+    }
+    let (filler, receiver) = if at_start {
+        out.split_at_mut(fill_len)
+    } else {
+        let (receiver, filler) = out.split_at_mut(s.len());
+        (filler, receiver)
+    };
+    receiver.copy_from_slice(s);
+    fill_cyclic(filler, pad);
+    out.len()
+}
+
+fn fill_cyclic(out: &mut [u8], pattern: &[u8]) {
+    if out.is_empty() {
+        return;
+    }
+    if pattern.len() == 1 {
+        out.fill(pattern[0]);
+        return;
+    }
+    let first_len = pattern.len().min(out.len());
+    out[..first_len].copy_from_slice(&pattern[..first_len]);
+    let mut written = first_len;
+    while written < out.len() {
+        let copy_len = written.min(out.len() - written);
+        let (prefix, remaining) = out.split_at_mut(written);
+        remaining[..copy_len].copy_from_slice(&prefix[..copy_len]);
+        written += copy_len;
+    }
+}
+
 /// `toUpperCase()`: Unicode Default Case Conversion (Q21). Invalid
 /// UTF-8 is returned unchanged as a total fallback; language strings
 /// are always valid UTF-8.
