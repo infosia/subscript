@@ -242,6 +242,11 @@ pub const CLASS_MAP_INDEX: u32 = 0xFFFF_FF08;
 /// Class id used for RegExp handles.
 pub const CLASS_REGEX: u32 = 0xFFFF_FF09;
 
+#[inline]
+fn class_holds_no_handle(class_id: u32) -> bool {
+    matches!(class_id, CLASS_STRING)
+}
+
 // ----- ship-tier arena (§8.1b) -----
 
 // Header state word for a block reached by the current `Context.collect()` mark
@@ -326,6 +331,7 @@ struct Allocation {
     base: *mut u8,
     layout: Layout,
     payload_size: usize,
+    class_id: u32,
     marked: bool,
 }
 
@@ -1514,6 +1520,7 @@ impl Context {
                 base,
                 layout,
                 payload_size: size,
+                class_id,
                 marked: false,
             },
         );
@@ -2327,6 +2334,9 @@ impl Context {
             }
             a.marked = true;
             marked_count += 1;
+            if class_holds_no_handle(a.class_id) {
+                continue;
+            }
             let payload = addr as *const u8;
             let words = a.payload_size / 8;
             for i in 0..words {
@@ -2436,7 +2446,8 @@ impl Context {
     /// A word is treated as a managed payload only under the exact
     /// membership test ([`Context::arena_lookup_block`] plus a live
     /// header, or an exact large-record match); a reached block's header
-    /// is stamped `MARK_STATE` and its payload words are pushed.
+    /// is stamped `MARK_STATE`. The marker pushes payload words only when
+    /// the block's class can hold a handle.
     fn arena_mark(&mut self, work: &mut Vec<usize>) {
         while let Some(addr) = work.pop() {
             let (block, payload_size) = if let Some((block, class)) = self.arena_lookup_block(addr)
@@ -2464,10 +2475,14 @@ impl Context {
                 continue;
             };
             // SAFETY: `block` heads an owned allocation whose payload is
-            // at least `payload_size` bytes; all accesses stay inside it.
+            // at least `payload_size` bytes. The class id is in its header.
             unsafe {
-                (block as *mut u64).write(MARK_STATE);
                 let payload = block.add(HEADER_SIZE);
+                let class_id = (payload.offset(CLASS_ID_OFFSET as isize) as *const u32).read();
+                (block as *mut u64).write(MARK_STATE);
+                if class_holds_no_handle(class_id) {
+                    continue;
+                }
                 for i in 0..payload_size / 8 {
                     work.push((payload.add(i * 8) as *const usize).read_unaligned());
                 }
@@ -4423,7 +4438,24 @@ mod tests {
     }
 
     #[test]
-    fn collect_traces_through_payload_words() {
+    fn dev_collect_does_not_trace_handle_address_in_string_payload() {
+        let mut ctx = Context::new();
+        let target = ctx.alloc(8, 1, 0) as usize;
+        let string = {
+            let bytes = target.to_ne_bytes();
+            ctx.alloc_str(&bytes, 0)
+        };
+        let mut root = string as usize;
+        ctx.root_add(&mut root as *mut usize as usize, 1);
+
+        ctx.collect();
+
+        assert!(ctx.is_live(string as usize));
+        assert!(!ctx.is_live(target));
+    }
+
+    #[test]
+    fn dev_collect_traces_handle_address_in_reference_payload() {
         let mut ctx = Context::new();
         let inner = ctx.alloc(8, 1, 0);
         let outer = ctx.alloc(8, 1, 0);
@@ -4435,6 +4467,55 @@ mod tests {
         ctx.collect();
         assert!(ctx.is_live(outer as usize));
         assert!(ctx.is_live(inner as usize));
+    }
+
+    #[test]
+    fn ship_collect_does_not_trace_handle_address_in_string_payload() {
+        let mut ctx = Context::new_releasing();
+        let small_target = ctx.alloc(8, 1, 0) as usize;
+        let small_string = {
+            let bytes = small_target.to_ne_bytes();
+            ctx.alloc_str(&bytes, 0)
+        };
+
+        let large_target = ctx.alloc(8, 1, 0) as usize;
+        let large_string = {
+            let mut bytes = vec![0; LARGEST_BLOCK];
+            bytes[..core::mem::size_of::<usize>()].copy_from_slice(&large_target.to_ne_bytes());
+            ctx.alloc_str(&bytes, 0)
+        };
+        let mut roots = [small_string as usize, large_string as usize];
+        ctx.root_add(roots.as_mut_ptr() as usize, roots.len());
+
+        ctx.collect();
+
+        assert!(ctx.is_live(small_string as usize));
+        assert!(ctx.is_live(large_string as usize));
+        assert!(!ctx.is_live(small_target));
+        assert!(!ctx.is_live(large_target));
+    }
+
+    #[test]
+    fn ship_collect_traces_handle_address_in_reference_payload() {
+        let mut ctx = Context::new_releasing();
+        let small_target = ctx.alloc(8, 1, 0);
+        let small_outer = ctx.alloc(8, 1, 0);
+        // SAFETY: small_outer has one writable payload word.
+        unsafe { (small_outer as *mut usize).write(small_target as usize) };
+
+        let large_target = ctx.alloc(8, 1, 0);
+        let large_outer = ctx.alloc(LARGEST_BLOCK, 1, 0);
+        // SAFETY: large_outer has at least one writable payload word.
+        unsafe { (large_outer as *mut usize).write(large_target as usize) };
+        let mut roots = [small_outer as usize, large_outer as usize];
+        ctx.root_add(roots.as_mut_ptr() as usize, roots.len());
+
+        ctx.collect();
+
+        assert!(ctx.is_live(small_outer as usize));
+        assert!(ctx.is_live(large_outer as usize));
+        assert!(ctx.is_live(small_target as usize));
+        assert!(ctx.is_live(large_target as usize));
     }
 
     #[test]
