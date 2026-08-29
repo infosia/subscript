@@ -1135,5 +1135,6 @@ line.
 The one release failure is
 `counted_store_corpus_matches_the_interpreter`. It is not a Windows
 defect: the helper it uses does not fork on any platform, and the run
-measures the wrong `live_bytes` in about 3 runs of 100 on every profile.
+measures the wrong `live_bytes` in 2 to 10 runs of 100, on every
+profile.
 `s70-held-async-handle.md` holds the measurement and the open finding.

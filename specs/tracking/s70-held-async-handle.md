@@ -85,7 +85,7 @@ handle, which is why — the check was still needed.
 `a154`, `a155`, and `r157` are Red at the pin, verified against a
 binary built from it (CLAUDE.md core principle 10).
 
-## `a162` keeps its print strings in about 3 runs of 100 — 2026-08-30
+## `a162` keeps one string allocation, in 2 to 10 runs of 100 — 2026-08-30
 
 Status: **finding, 2026-08-30. Open.** No change is made here.
 
@@ -93,38 +93,53 @@ Status: **finding, 2026-08-30. Open.** No change is made here.
 
 `counted_store_corpus_matches_the_interpreter` (`codegen/tests/lir.rs`)
 asserts `live_bytes == 256` after the dev-JIT run of
-`a162-async-copy-sites`. The run measures 267 in about 3 runs of 100.
+`a162-async-copy-sites`. The run measures 267 in 2 to 10 runs of 100.
 The output matches the golden in every run, failed runs included.
 
 ### Evidence
 
 Measured on `x86_64-pc-windows-msvc` at `0541c96`. A probe repeated the
-identical run in one process and one thread.
+identical run in one process and one thread, and counted each distinct
+`(live_bytes, reserved_bytes)` pair.
 
-| Program | Runs | `live_bytes`, `reserved_bytes` |
+| Program | Runs | Pairs |
 |---|---|---|
 | `a162`, release | 200 | (256, 384) ×195; (267, 411) ×5 |
 | `a162`, debug | 200 | (256, 384) ×194; (267, 411) ×6 |
-| `a162`, no final `Context.collect()` | 50 | (331, 587) ×50 |
-| `a162`, no `toString` print | 50 | (256, 384) ×50 |
-| `a162`, last printed value 4 characters wider | 200 | (256, 384) ×196; (271, 415) ×4 |
+| `a162`, release | 300 | (256, 384) ×270; (267, 411) ×30 |
+| no final `Context.collect()` | 50 | (331, 587) ×50 |
+| no `toString` print | 50 | (256, 384) ×50 |
+| last printed value 4 characters wider | 200 | (256, 384) ×196; (271, 415) ×4 |
+| one extra print of a 5-digit value | 300 | (256, 384) ×277; (267, 411) ×11; (269, 413) ×12 |
+| only the last value printed | 300 | (256, 384) ×285; (267, 411) ×15 |
 
-The last row names the retained bytes. `printNumber` prints eight
-values, and their decimal spellings hold 11 bytes. The excess is 11. A
-four-character-wider last value makes the spellings hold 15 bytes, and
-the excess is 15. The excess is the eight `toString` results, and a run
-keeps all eight or none.
+**One allocation is retained, and it is one string.** `HEADER_SIZE` is
+16 and `reserved_bytes` sums `layout.size()`, so each retained
+allocation adds 16 plus its payload. Every excess pair holds
+`reserved − live = 16`. The count is one, not eight.
 
-Collection frees 75 bytes when it works, and 75 is 64 plus 11. Each
-string is one 8-byte allocation and one payload allocation. The failing
-run frees the eight 8-byte allocations and keeps the eight payloads.
+**The retained payload is 8 plus the character count of one printed
+value.** The last value is `256`, and the payload is 11. A last value
+of `2560000` makes it 15. A string allocation is a length word and the
+bytes.
+
+**It is not the whole print history.** The variant that prints only the
+last value still retains 11 bytes. The variant with an extra 5-digit
+print retains 11 or 13, so the retained string is the last allocated
+one or the one before it.
+
+**The eight strings are the collectable set.** Without the final
+`Context.collect()` the excess is 75 live and 203 reserved. 203 − 75 is
+128, which is 16 × 8. The eight payloads are 8 + 1, 8 + 1, 8 + 2,
+8 + 1, 8 + 1, 8 + 1, 8 + 1, and 8 + 3, and they sum to 75. Collection
+frees all eight, or all but one.
 
 ### The gate run suggested a concurrency defect, and it is not one
 
 The full `lir` test binary failed 2 times in 8 in release and 3 times in
 8 in debug. It failed 0 times in 8 with `--test-threads=1`. The
 single-threaded sample was too small to show the rate: the test runs
-`a162` once, so 8 runs at 3 per cent expect 0.24 failures.
+`a162` once.
 
 Concurrency raises the rate. Eight threads that each ran `a162` 25 times
 measured 34 excesses in 200 runs, against 5 in 200 sequential runs.
@@ -132,20 +147,25 @@ measured 34 excesses in 200 runs, against 5 in 200 sequential runs.
 `run_jit_with_memory_accounting_and_native_libraries` calls
 `execute_entry`, so this helper never forks. The defect is not specific
 to the Windows in-process path. The arm64 reference machine passes
-because one gate run makes one measurement.
+because one gate run makes one measurement, and the rate is under 10
+per cent.
 
 ### What a fix must establish
 
-`Context::collect` (`runtime/src/context.rs`) reads raw words from the
-registered root ranges. `self.roots` holds global slots and
-`self.shadow` holds live stack ranges. A word that equals a live
-allocation address marks that allocation. Heap addresses move between
-runs, so a match of this kind appears and disappears between identical
-runs. This is a candidate, not a measured cause.
+`Context::collect` (`runtime/src/context.rs`) marks from `self.roots`,
+`self.shadow`, the async frames, and each frame's completion storage. It
+reads raw words, and it marks every word that equals a live allocation
+address.
 
-The fix must name the root that marks the eight payloads. The marked
-set must be a function of the program. `a162` must then measure 256 in
-1000 consecutive runs, in both profiles.
+The shared lowering zeroes a shadow frame before it registers the frame
+(`codegen/src/lower/func.rs`), so an uninitialized shadow slot is not
+the cause. A slot that a dead local wrote, and a completion buffer that
+is wider than the value in it, are both still candidates. Neither is
+measured.
+
+The fix must name the word that marks the last string. The marked set
+must be a function of the program. `a162` must then measure 256 in 1000
+consecutive runs, in both profiles.
 
 ### Why the standing gates did not report it
 
