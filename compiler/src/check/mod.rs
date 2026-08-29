@@ -200,7 +200,38 @@ pub(crate) struct FnSig {
 pub(crate) struct ClassSig {
     pub ctor: Option<Vec<ParamSig>>,
     pub methods: HashMap<String, FnSig>,
-    pub accessors: HashSet<String>,
+    member_namespace: HashMap<String, ClassMemberNamespaceEntry>,
+}
+
+impl ClassSig {
+    fn has_accessor(&self, name: &str) -> bool {
+        matches!(
+            self.member_namespace.get(name),
+            Some(ClassMemberNamespaceEntry::Accessor { .. })
+        )
+    }
+
+    fn has_read_accessor(&self, name: &str) -> bool {
+        matches!(
+            self.member_namespace.get(name),
+            Some(ClassMemberNamespaceEntry::Accessor { read: true, .. })
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ClassMemberNamespaceEntry {
+    Field,
+    Method,
+    Accessor { read: bool, write: bool },
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ClassMemberDeclaration {
+    Field,
+    Method,
+    ReadAccessor,
+    WriteAccessor,
 }
 
 /// A module-level variable's declared shape.
@@ -2730,6 +2761,78 @@ impl<'p> Checker<'p> {
         }
     }
 
+    fn claim_class_member_name(
+        &mut self,
+        id: ClassId,
+        name: &str,
+        declaration: ClassMemberDeclaration,
+        pos: Pos,
+    ) -> bool {
+        use ClassMemberDeclaration::{Field, Method, ReadAccessor, WriteAccessor};
+        use ClassMemberNamespaceEntry::Accessor;
+
+        let existing = self.class_sigs[id.0].member_namespace.get(name).copied();
+        let entry = match (existing, declaration) {
+            (None, Field) => ClassMemberNamespaceEntry::Field,
+            (None, Method) => ClassMemberNamespaceEntry::Method,
+            (None, ReadAccessor) => Accessor {
+                read: true,
+                write: false,
+            },
+            (None, WriteAccessor) => Accessor {
+                read: false,
+                write: true,
+            },
+            (Some(Accessor { read: true, .. }), ReadAccessor) => {
+                self.error(
+                    RuleCode::S100,
+                    format!("two accessors cannot declare the read member `{name}`"),
+                    pos,
+                );
+                return false;
+            }
+            (Some(Accessor { write: true, .. }), WriteAccessor) => {
+                self.error(
+                    RuleCode::S100,
+                    format!("two accessors cannot declare the write member `{name}`"),
+                    pos,
+                );
+                return false;
+            }
+            (Some(Accessor { write, .. }), ReadAccessor) => Accessor { read: true, write },
+            (Some(Accessor { read, .. }), WriteAccessor) => Accessor { read, write: true },
+            (Some(existing), declaration) => {
+                let existing_kind = match existing {
+                    ClassMemberNamespaceEntry::Field => "field",
+                    ClassMemberNamespaceEntry::Method => "method",
+                    Accessor { .. } => "accessor",
+                };
+                let declared_kind = match declaration {
+                    Field => "field",
+                    Method => "method",
+                    ReadAccessor | WriteAccessor => "accessor",
+                };
+                let message = match (existing_kind, declared_kind) {
+                    ("accessor", "field") | ("field", "accessor") => {
+                        format!("a field and an accessor cannot share the member name `{name}`")
+                    }
+                    ("accessor", "method") | ("method", "accessor") => {
+                        format!("a method and an accessor cannot share the member name `{name}`")
+                    }
+                    _ => format!(
+                        "a {declared_kind} cannot share the member name `{name}` with a {existing_kind}"
+                    ),
+                };
+                self.error(RuleCode::S100, message, pos);
+                return false;
+            }
+        };
+        self.class_sigs[id.0]
+            .member_namespace
+            .insert(name.to_string(), entry);
+        true
+    }
+
     /// Resolves a class's fields and callable signatures (pass B), and
     /// enforces C2 (no inheritance for value classes; field whitelist).
     pub(crate) fn resolve_class_shape(&mut self, id: ClassId, class: &ast::Class) {
@@ -2769,18 +2872,12 @@ impl<'p> Checker<'p> {
                         continue;
                     }
                     let name = key.sym.to_string();
-                    if self.class_sigs[id.0].accessors.contains(&name)
-                        || self.class_sigs[id.0]
-                            .methods
-                            .contains_key(&format!("{name}="))
-                    {
-                        self.error(
-                            RuleCode::S100,
-                            format!(
-                                "a field and an accessor cannot share the member name `{name}`"
-                            ),
-                            self.pos(key.span),
-                        );
+                    if !self.claim_class_member_name(
+                        id,
+                        &name,
+                        ClassMemberDeclaration::Field,
+                        self.pos(key.span),
+                    ) {
                         continue;
                     }
                     let is_defaulted =
@@ -3036,52 +3133,13 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     }
-                    if method.kind == ast::MethodKind::Method
-                        && (self.class_sigs[id.0].accessors.contains(&name)
-                            || self.class_sigs[id.0]
-                                .methods
-                                .contains_key(&format!("{name}=")))
-                    {
-                        self.error(
-                            RuleCode::S100,
-                            format!(
-                                "a method and an accessor cannot share the member name `{name}`"
-                            ),
-                            key_pos,
-                        );
-                        continue;
-                    }
                     if method.kind == ast::MethodKind::Getter {
-                        if self.class_sigs[id.0].accessors.contains(&name) {
-                            self.error(
-                                RuleCode::S100,
-                                format!("two accessors cannot declare the read member `{name}`"),
-                                key_pos,
-                            );
-                            continue;
-                        }
-                        if self.classes[id.0]
-                            .fields
-                            .iter()
-                            .any(|field| field.name == name)
-                        {
-                            self.error(
-                                RuleCode::S100,
-                                format!(
-                                    "a field and an accessor cannot share the member name `{name}`"
-                                ),
-                                key_pos,
-                            );
-                            continue;
-                        }
-                        if self.class_sigs[id.0].methods.contains_key(&name) {
-                            self.error(
-                                RuleCode::S100,
-                                format!(
-                                    "a method and an accessor cannot share the member name `{name}`"
-                                ),
-                                key_pos,
-                            );
+                        if !self.claim_class_member_name(
+                            id,
+                            &name,
+                            ClassMemberDeclaration::ReadAccessor,
+                            key_pos.clone(),
+                        ) {
                             continue;
                         }
                         if !method.function.params.is_empty() {
@@ -3107,20 +3165,11 @@ impl<'p> Checker<'p> {
                             is_async: false,
                             yield_known: true,
                         };
-                        self.class_sigs[id.0].accessors.insert(name.clone());
                         self.class_sigs[id.0].methods.insert(name, sig);
                         continue;
                     }
                     if method.kind == ast::MethodKind::Setter {
                         let write_name = format!("{name}=");
-                        if self.class_sigs[id.0].methods.contains_key(&write_name) {
-                            self.error(
-                                RuleCode::S100,
-                                format!("two accessors cannot declare the write member `{name}`"),
-                                key_pos,
-                            );
-                            continue;
-                        }
                         if is_value {
                             let class_name = self.classes[id.0].name.clone();
                             self.error(
@@ -3132,30 +3181,12 @@ impl<'p> Checker<'p> {
                             );
                             continue;
                         }
-                        if self.classes[id.0]
-                            .fields
-                            .iter()
-                            .any(|field| field.name == name)
-                        {
-                            self.error(
-                                RuleCode::S100,
-                                format!(
-                                    "a field and an accessor cannot share the member name `{name}`"
-                                ),
-                                key_pos,
-                            );
-                            continue;
-                        }
-                        if self.class_sigs[id.0].methods.contains_key(&name)
-                            && !self.class_sigs[id.0].accessors.contains(&name)
-                        {
-                            self.error(
-                                RuleCode::S100,
-                                format!(
-                                    "a method and an accessor cannot share the member name `{name}`"
-                                ),
-                                key_pos,
-                            );
+                        if !self.claim_class_member_name(
+                            id,
+                            &name,
+                            ClassMemberDeclaration::WriteAccessor,
+                            key_pos.clone(),
+                        ) {
                             continue;
                         }
                         if method.function.return_type.is_some() {
@@ -3214,6 +3245,14 @@ impl<'p> Checker<'p> {
                         };
                         write_accessors.push((name.clone(), key_pos));
                         self.class_sigs[id.0].methods.insert(write_name, sig);
+                        continue;
+                    }
+                    if !self.claim_class_member_name(
+                        id,
+                        &name,
+                        ClassMemberDeclaration::Method,
+                        key_pos.clone(),
+                    ) {
                         continue;
                     }
                     if method.function.is_generator {
@@ -3345,7 +3384,7 @@ impl<'p> Checker<'p> {
             self.validate_class_index_accessors(id, pos);
         }
         for (name, pos) in write_accessors {
-            if !self.class_sigs[id.0].accessors.contains(&name) {
+            if !self.class_sigs[id.0].has_read_accessor(&name) {
                 self.error(
                     RuleCode::S100,
                     format!("write accessor `{name}` requires a read accessor with the same name"),
@@ -4335,7 +4374,7 @@ impl<'p> Checker<'p> {
                     }
                     match method.kind {
                         ast::MethodKind::Getter => {
-                            if !self.class_sigs[id.0].accessors.contains(&name)
+                            if !self.class_sigs[id.0].has_accessor(&name)
                                 || !checked_read_accessors.insert(name.clone())
                             {
                                 continue;
@@ -4348,7 +4387,7 @@ impl<'p> Checker<'p> {
                             name.push('=');
                         }
                         ast::MethodKind::Method => {
-                            if self.class_sigs[id.0].accessors.contains(&name) {
+                            if self.class_sigs[id.0].has_accessor(&name) {
                                 continue;
                             }
                         }

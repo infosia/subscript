@@ -1253,7 +1253,7 @@ impl<'p> Checker<'p> {
         } = &target.kind
         {
             if args.is_empty()
-                && matches!(&recv.ty, Type::Class(id) if self.class_sigs[id.0].accessors.contains(name))
+                && matches!(&recv.ty, Type::Class(id) if self.class_sigs[id.0].has_accessor(name))
             {
                 let operator = if u.op == ast::UpdateOp::PlusPlus {
                     "++"
@@ -4937,7 +4937,7 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     };
                 }
-                if self.class_sigs[id.0].accessors.contains(name) {
+                if self.class_sigs[id.0].has_accessor(name) {
                     let Some(sig) = self.class_sigs[id.0].methods.get(name) else {
                         self.error(
                             RuleCode::S100,
@@ -5386,7 +5386,7 @@ impl<'p> Checker<'p> {
                 callee: Callee::Method { recv, name },
                 args,
             } if args.is_empty() => match &recv.ty {
-                Type::Class(id) if self.class_sigs[id.0].accessors.contains(name) => {
+                Type::Class(id) if self.class_sigs[id.0].has_accessor(name) => {
                     Some((id, (**recv).clone(), name.clone()))
                 }
                 _ => None,
