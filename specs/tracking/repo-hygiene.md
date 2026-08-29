@@ -116,3 +116,43 @@ identity is the owner's own.
 
 Neither item is a finding. A future sweep reports them as accepted rather
 than raising them again.
+
+## The sweep is a test — 2026-08-30
+
+*(Owner: "このチェックは自動化されていますか？…同等のものを作ってもよいです".
+Until this date every sweep above was run by hand.)*
+
+`compiler/tests/hygiene.rs` runs under `cargo test` on every host,
+including the Windows gate, and fails on the first hit. It scans:
+
+1. **Every tracked file, and every untracked file the ignore rules do
+   not exclude**, as text; a file that is not valid UTF-8 is skipped
+   as binary. `node_modules/`, `target/`, `HANDOFF.md`, and `REPORT.md`
+   are outside the scan, because they are never committed.
+2. **Every commit message in the whole history** (`git log --all
+   --format=%B`).
+3. **Every blob in the whole history** for the same patterns, by the
+   fastest form the round measures under 30 s on the reference
+   machine (`git grep` over `git rev-list --all`, or one `git log -S`
+   per pattern); the form and its time are recorded here.
+
+Patterns, each written so that a bare mention of the pattern's own
+text — this table, a rule in CLAUDE.md, the test's source — does not
+match, because each requires a path component or a trailer value
+after it:
+
+| Class | Pattern |
+|---|---|
+| a home directory | `/Users/<name>`, `/home/<name>`, `C:\Users\<name>`, `~/<component>` |
+| a temporary directory of one machine | `/private/tmp/<component>`, `/private/var/<component>`, `/var/folders/<component>`, `/tmp/claude<anything>` |
+| a sibling or predecessor checkout | `../subscript-typegpu`, `../yawgpu`, `../ts2das`, the words `ts2das` and `daslang` |
+| an agent session trailer or link | `Co-Authored-By: Claude`, `Generated with Claude Code`, `Claude-Session:`, `claude.ai/code/`, `noreply@anthropic.com` |
+
+Not scanned, by the rulings above: the git author identity, and the
+`github.com/infosia/` fork URLs.
+
+The test names every hit with its file and line, or its commit hash,
+before it fails. A test that builds a violating file in a temporary
+directory and runs the scanner over it pins that the scanner fails
+(core principle 9); the scanner is one function over a list of paths,
+so the test reaches it without touching the repository.
