@@ -80,8 +80,8 @@ debug-skip reason only under `--nocapture`.
    rejects" and "any assertion that restates the corpus size".
 2. **A worktree per round.** Reviewers read the main checkout while a
    coding round edits; the round works on a branch in a git worktree
-   under the scratchpad and lands by fast-forward after a gate on
-   `main`. `node_modules` is a symlink into the main checkout, excluded
+   in a temporary directory outside the repository and lands by
+   fast-forward after a gate on `main`. `node_modules` is a symlink into the main checkout, excluded
    through `.git/info/exclude`.
 
 ## What the owner still holds
