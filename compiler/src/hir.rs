@@ -340,6 +340,8 @@ pub struct Global {
     pub mutable: bool,
     /// Checked initializer.
     pub init: Expr,
+    /// Number of checked top-level statements that run before this initializer.
+    pub initializer_index: usize,
     /// Position of the declaration.
     pub pos: Pos,
 }

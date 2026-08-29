@@ -200,10 +200,17 @@ pub(crate) struct FnSig {
 pub(crate) struct ClassSig {
     pub ctor: Option<Vec<ParamSig>>,
     pub methods: HashMap<String, FnSig>,
+    pub static_methods: HashMap<String, FnSig>,
+    pub static_fields: HashMap<String, GlobalSig>,
     member_namespace: HashMap<String, ClassMemberNamespaceEntry>,
+    static_member_namespace: HashMap<String, ClassMemberNamespaceEntry>,
 }
 
 impl ClassSig {
+    fn has_member(&self, name: &str) -> bool {
+        self.member_namespace.contains_key(name)
+    }
+
     fn has_accessor(&self, name: &str) -> bool {
         matches!(
             self.member_namespace.get(name),
@@ -216,6 +223,31 @@ impl ClassSig {
             self.member_namespace.get(name),
             Some(ClassMemberNamespaceEntry::Accessor { read: true, .. })
         )
+    }
+
+    fn has_static_accessor(&self, name: &str) -> bool {
+        matches!(
+            self.static_member_namespace.get(name),
+            Some(ClassMemberNamespaceEntry::Accessor { .. })
+        )
+    }
+
+    fn has_static_read_accessor(&self, name: &str) -> bool {
+        matches!(
+            self.static_member_namespace.get(name),
+            Some(ClassMemberNamespaceEntry::Accessor { read: true, .. })
+        )
+    }
+
+    fn has_static_write_accessor(&self, name: &str) -> bool {
+        matches!(
+            self.static_member_namespace.get(name),
+            Some(ClassMemberNamespaceEntry::Accessor { write: true, .. })
+        )
+    }
+
+    fn has_static_member(&self, name: &str) -> bool {
+        self.static_member_namespace.contains_key(name)
     }
 }
 
@@ -232,6 +264,10 @@ enum ClassMemberDeclaration {
     Method,
     ReadAccessor,
     WriteAccessor,
+}
+
+fn static_member_symbol(class: &str, member: &str) -> String {
+    format!("{class}.{member}")
 }
 
 /// A module-level variable's declared shape.
@@ -257,6 +293,7 @@ pub(crate) struct GenericClass {
     pub is_descriptor: bool,
     pub alignment_override: Option<hir::AlignmentOverride>,
     pub type_params: Vec<String>,
+    pub has_static_member: bool,
     pub class: ast::Class,
     pub pos: Pos,
 }
@@ -1014,7 +1051,7 @@ fn resolve_module_effects(
 
 fn module_data_bindings(checker: &Checker<'_>) -> Vec<String> {
     let mut bindings = Vec::new();
-    for file in &checker.prog.files {
+    for (file_index, file) in checker.prog.files.iter().enumerate() {
         if file.dts {
             continue;
         }
@@ -1034,6 +1071,35 @@ fn module_data_bindings(checker: &Checker<'_>) -> Vec<String> {
                     for declarator in &using.decls {
                         if let ast::Pat::Ident(binding) = &declarator.name {
                             bindings.push(binding.id.sym.to_string());
+                        }
+                    }
+                }
+                ast::Decl::Class(class) if class.class.type_params.is_none() => {
+                    let class_name = class.ident.sym.as_ref();
+                    let class_id = checker.file_scopes[file_index].get(class_name).and_then(
+                        |item| match item {
+                            ScopeItem::Class(id) => Some(*id),
+                            _ => None,
+                        },
+                    );
+                    let Some(class_id) = class_id else {
+                        continue;
+                    };
+                    for member in &class.class.body {
+                        let ast::ClassMember::ClassProp(property) = member else {
+                            continue;
+                        };
+                        if !property.is_static {
+                            continue;
+                        }
+                        let ast::PropName::Ident(name) = &property.key else {
+                            continue;
+                        };
+                        if checker.class_sigs[class_id.0]
+                            .static_fields
+                            .contains_key(name.sym.as_ref())
+                        {
+                            bindings.push(static_member_symbol(class_name, name.sym.as_ref()));
                         }
                     }
                 }
@@ -1790,6 +1856,20 @@ impl<'p> Checker<'p> {
         let pos = self.pos(c.ident.span);
         let (is_value, is_descriptor, alignment_override) = self.class_decorators(&c.class);
         if let Some(tp) = &c.class.type_params {
+            let static_members = c.class.body.iter().filter_map(|member| match member {
+                ast::ClassMember::ClassProp(property) if property.is_static => Some(property.span),
+                ast::ClassMember::Method(method) if method.is_static => Some(method.span),
+                _ => None,
+            });
+            let mut has_static_member = false;
+            for span in static_members {
+                has_static_member = true;
+                self.error(
+                    RuleCode::S100,
+                    "generic classes cannot declare static members",
+                    self.pos(span),
+                );
+            }
             let type_params: Vec<String> =
                 tp.params.iter().map(|p| p.name.sym.to_string()).collect();
             self.generic_classes.insert(
@@ -1800,6 +1880,7 @@ impl<'p> Checker<'p> {
                     is_descriptor,
                     alignment_override,
                     type_params,
+                    has_static_member,
                     class: (*c.class).clone(),
                     pos: pos.clone(),
                 },
@@ -2766,12 +2847,18 @@ impl<'p> Checker<'p> {
         id: ClassId,
         name: &str,
         declaration: ClassMemberDeclaration,
+        is_static: bool,
         pos: Pos,
     ) -> bool {
         use ClassMemberDeclaration::{Field, Method, ReadAccessor, WriteAccessor};
         use ClassMemberNamespaceEntry::Accessor;
 
-        let existing = self.class_sigs[id.0].member_namespace.get(name).copied();
+        let namespace = if is_static {
+            &self.class_sigs[id.0].static_member_namespace
+        } else {
+            &self.class_sigs[id.0].member_namespace
+        };
+        let existing = namespace.get(name).copied();
         let entry = match (existing, declaration) {
             (None, Field) => ClassMemberNamespaceEntry::Field,
             (None, Method) => ClassMemberNamespaceEntry::Method,
@@ -2786,7 +2873,10 @@ impl<'p> Checker<'p> {
             (Some(Accessor { read: true, .. }), ReadAccessor) => {
                 self.error(
                     RuleCode::S100,
-                    format!("two accessors cannot declare the read member `{name}`"),
+                    format!(
+                        "two {}accessors cannot declare the read member `{name}`",
+                        if is_static { "static " } else { "" }
+                    ),
                     pos,
                 );
                 return false;
@@ -2794,7 +2884,10 @@ impl<'p> Checker<'p> {
             (Some(Accessor { write: true, .. }), WriteAccessor) => {
                 self.error(
                     RuleCode::S100,
-                    format!("two accessors cannot declare the write member `{name}`"),
+                    format!(
+                        "two {}accessors cannot declare the write member `{name}`",
+                        if is_static { "static " } else { "" }
+                    ),
                     pos,
                 );
                 return false;
@@ -2823,13 +2916,24 @@ impl<'p> Checker<'p> {
                         "a {declared_kind} cannot share the member name `{name}` with a {existing_kind}"
                     ),
                 };
+                let message = if is_static {
+                    message.replacen("a ", "a static ", 1)
+                } else {
+                    message
+                };
                 self.error(RuleCode::S100, message, pos);
                 return false;
             }
         };
-        self.class_sigs[id.0]
-            .member_namespace
-            .insert(name.to_string(), entry);
+        if is_static {
+            self.class_sigs[id.0]
+                .static_member_namespace
+                .insert(name.to_string(), entry);
+        } else {
+            self.class_sigs[id.0]
+                .member_namespace
+                .insert(name.to_string(), entry);
+        }
         true
     }
 
@@ -2839,6 +2943,7 @@ impl<'p> Checker<'p> {
         let is_value = self.classes[id.0].is_value;
         let is_descriptor = self.classes[id.0].is_descriptor;
         let mut index_signature_pos = None;
+        let mut read_accessors = Vec::new();
         let mut write_accessors = Vec::new();
         if let Some(sup) = &class.super_class {
             let pos = self.pos(sup.span());
@@ -2867,8 +2972,65 @@ impl<'p> Checker<'p> {
                         continue;
                     };
                     if prop.is_static {
-                        let pos = self.pos(prop.span);
-                        self.error(RuleCode::S100, "static fields are not decided", pos);
+                        let pos = self.pos(key.span);
+                        if is_descriptor {
+                            self.error(
+                                RuleCode::S100,
+                                "descriptor classes cannot declare static fields",
+                                pos,
+                            );
+                            continue;
+                        }
+                        if self.in_boundary || self.classes[id.0].is_boundary {
+                            self.error(
+                                RuleCode::S100,
+                                "mirror classes cannot declare static fields",
+                                pos,
+                            );
+                            continue;
+                        }
+                        let name = key.sym.to_string();
+                        if !self.claim_class_member_name(
+                            id,
+                            &name,
+                            ClassMemberDeclaration::Field,
+                            true,
+                            self.pos(key.span),
+                        ) {
+                            continue;
+                        }
+                        if prop.is_optional {
+                            self.error(
+                                RuleCode::S012,
+                                "optional static fields imply `undefined`; use `T | null`",
+                                self.pos(prop.span),
+                            );
+                        }
+                        let ty = match &prop.type_ann {
+                            Some(annotation) => self.resolve_type(&annotation.type_ann),
+                            None => {
+                                self.error(
+                                    RuleCode::S100,
+                                    "static fields require a type annotation",
+                                    self.pos(key.span),
+                                );
+                                Type::Error
+                            }
+                        };
+                        if Self::is_context_affine_type(&ty) {
+                            self.error(
+                                RuleCode::S100,
+                                "Worker, Inbox, and Outbox values may not be static fields",
+                                self.pos(key.span),
+                            );
+                        }
+                        let signature = GlobalSig {
+                            ty,
+                            mutable: !prop.readonly,
+                        };
+                        let symbol = static_member_symbol(&self.classes[id.0].name, &name);
+                        self.global_sigs.insert(symbol, signature.clone());
+                        self.class_sigs[id.0].static_fields.insert(name, signature);
                         continue;
                     }
                     let name = key.sym.to_string();
@@ -2876,6 +3038,7 @@ impl<'p> Checker<'p> {
                         id,
                         &name,
                         ClassMemberDeclaration::Field,
+                        false,
                         self.pos(key.span),
                     ) {
                         continue;
@@ -3099,28 +3262,35 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     }
+                    if method.is_static && (self.in_boundary || self.classes[id.0].is_boundary) {
+                        self.error(
+                            RuleCode::S100,
+                            "mirror classes cannot declare static methods or accessors",
+                            key_pos,
+                        );
+                        continue;
+                    }
+                    if is_dispose && method.is_static {
+                        self.error(
+                            RuleCode::S100,
+                            "`[Symbol.dispose]()` must be non-static",
+                            key_pos,
+                        );
+                        continue;
+                    }
+                    if method.is_static && method.function.is_async {
+                        self.error(
+                            RuleCode::S100,
+                            "async static methods are not in the decided surface",
+                            self.pos(method.span),
+                        );
+                        continue;
+                    }
                     if is_dispose && is_value {
                         self.error(
                             RuleCode::S100,
                             "value classes cannot declare `[Symbol.dispose]()`",
                             key_pos,
-                        );
-                        continue;
-                    }
-                    if method.is_static {
-                        let pos = self.pos(method.span);
-                        self.error(
-                            RuleCode::S100,
-                            if is_dispose {
-                                "`[Symbol.dispose]()` must be non-static"
-                            } else if method.kind != ast::MethodKind::Method {
-                                "static accessors are not in the decided surface"
-                            } else if method.function.is_async {
-                                "async static methods are not in the decided surface"
-                            } else {
-                                "static methods and accessors are not decided"
-                            },
-                            pos,
                         );
                         continue;
                     }
@@ -3138,6 +3308,7 @@ impl<'p> Checker<'p> {
                             id,
                             &name,
                             ClassMemberDeclaration::ReadAccessor,
+                            method.is_static,
                             key_pos.clone(),
                         ) {
                             continue;
@@ -3165,12 +3336,21 @@ impl<'p> Checker<'p> {
                             is_async: false,
                             yield_known: true,
                         };
-                        self.class_sigs[id.0].methods.insert(name, sig);
+                        read_accessors.push((name.clone(), key_pos.clone(), method.is_static));
+                        if method.is_static {
+                            let symbol = static_member_symbol(&self.classes[id.0].name, &name);
+                            self.class_sigs[id.0]
+                                .static_methods
+                                .insert(name, sig.clone());
+                            self.fn_sigs.insert(symbol, sig);
+                        } else {
+                            self.class_sigs[id.0].methods.insert(name, sig);
+                        }
                         continue;
                     }
                     if method.kind == ast::MethodKind::Setter {
                         let write_name = format!("{name}=");
-                        if is_value {
+                        if is_value && !method.is_static {
                             let class_name = self.classes[id.0].name.clone();
                             self.error(
                                 RuleCode::S100,
@@ -3185,6 +3365,7 @@ impl<'p> Checker<'p> {
                             id,
                             &name,
                             ClassMemberDeclaration::WriteAccessor,
+                            method.is_static,
                             key_pos.clone(),
                         ) {
                             continue;
@@ -3243,19 +3424,29 @@ impl<'p> Checker<'p> {
                             is_async: false,
                             yield_known: true,
                         };
-                        write_accessors.push((name.clone(), key_pos));
-                        self.class_sigs[id.0].methods.insert(write_name, sig);
+                        write_accessors.push((name.clone(), key_pos, method.is_static));
+                        if method.is_static {
+                            let symbol =
+                                static_member_symbol(&self.classes[id.0].name, &write_name);
+                            self.class_sigs[id.0]
+                                .static_methods
+                                .insert(write_name, sig.clone());
+                            self.fn_sigs.insert(symbol, sig);
+                        } else {
+                            self.class_sigs[id.0].methods.insert(write_name, sig);
+                        }
                         continue;
                     }
                     if !self.claim_class_member_name(
                         id,
                         &name,
                         ClassMemberDeclaration::Method,
+                        method.is_static,
                         key_pos.clone(),
                     ) {
                         continue;
                     }
-                    if method.function.is_generator {
+                    if method.function.is_generator && !method.is_static {
                         let pos = self.pos(method.span);
                         self.error(
                             RuleCode::S100,
@@ -3276,7 +3467,7 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     }
-                    if method.function.is_async && is_value {
+                    if method.function.is_async && is_value && !method.is_static {
                         let pos = self.pos(method.span);
                         self.error(
                             RuleCode::S100,
@@ -3294,7 +3485,15 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     }
-                    self.class_sigs[id.0].methods.insert(name, sig);
+                    if method.is_static {
+                        let symbol = static_member_symbol(&self.classes[id.0].name, &name);
+                        self.class_sigs[id.0]
+                            .static_methods
+                            .insert(name, sig.clone());
+                        self.fn_sigs.insert(symbol, sig);
+                    } else {
+                        self.class_sigs[id.0].methods.insert(name, sig);
+                    }
                 }
                 ast::ClassMember::TsIndexSignature(signature) if !self.in_boundary => {
                     let pos = self.pos(signature.span);
@@ -3383,21 +3582,41 @@ impl<'p> Checker<'p> {
         if let Some(pos) = index_signature_pos {
             self.validate_class_index_accessors(id, pos);
         }
-        for (name, pos) in write_accessors {
-            if !self.class_sigs[id.0].has_read_accessor(&name) {
+        for (name, pos, is_static) in read_accessors {
+            if is_static && !self.class_sigs[id.0].has_static_write_accessor(&name) {
                 self.error(
                     RuleCode::S100,
-                    format!("write accessor `{name}` requires a read accessor with the same name"),
+                    format!(
+                        "static read accessor `{name}` requires a write accessor with the same name"
+                    ),
+                    pos,
+                );
+            }
+        }
+        for (name, pos, is_static) in write_accessors {
+            let has_read = if is_static {
+                self.class_sigs[id.0].has_static_read_accessor(&name)
+            } else {
+                self.class_sigs[id.0].has_read_accessor(&name)
+            };
+            if !has_read {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "{}write accessor `{name}` requires a read accessor with the same name",
+                        if is_static { "static " } else { "" }
+                    ),
                     pos,
                 );
                 continue;
             }
-            let read_type = self.class_sigs[id.0]
-                .methods
-                .get(&name)
-                .map(|signature| signature.ret.clone());
-            let write_type = self.class_sigs[id.0]
-                .methods
+            let methods = if is_static {
+                &self.class_sigs[id.0].static_methods
+            } else {
+                &self.class_sigs[id.0].methods
+            };
+            let read_type = methods.get(&name).map(|signature| signature.ret.clone());
+            let write_type = methods
                 .get(&format!("{name}="))
                 .and_then(|signature| signature.params.first())
                 .map(|parameter| parameter.ty.clone());
@@ -3645,6 +3864,7 @@ impl<'p> Checker<'p> {
                         ty: sig.ty,
                         mutable: sig.mutable,
                         init,
+                        initializer_index: self.top_level.len(),
                         pos,
                     });
                 }
@@ -4267,6 +4487,55 @@ impl<'p> Checker<'p> {
                     let ast::PropName::Ident(key) = &prop.key else {
                         continue;
                     };
+                    if prop.is_static {
+                        let name = key.sym.to_string();
+                        let Some(signature) =
+                            self.class_sigs[id.0].static_fields.get(&name).cloned()
+                        else {
+                            continue;
+                        };
+                        let pos = self.pos(key.span);
+                        let mut fx = FnCtx::new(Type::Void, false, None);
+                        let init = match &prop.value {
+                            Some(value) => {
+                                let expression =
+                                    self.check_expr(value, Some(&signature.ty), &mut fx);
+                                self.require_assignable(
+                                    &expression.ty.clone(),
+                                    &signature.ty,
+                                    expression.pos.clone(),
+                                    "the static field initializer",
+                                );
+                                self.reject_nullable_boundary_aggregate_escape(
+                                    &expression.ty,
+                                    "a static field initializer",
+                                    expression.pos.clone(),
+                                );
+                                expression
+                            }
+                            None => {
+                                self.error(
+                                    RuleCode::S100,
+                                    "static fields require an initializer",
+                                    pos.clone(),
+                                );
+                                hir::Expr {
+                                    kind: hir::ExprKind::Null,
+                                    ty: Type::Error,
+                                    pos: pos.clone(),
+                                }
+                            }
+                        };
+                        self.globals.push(hir::Global {
+                            name: static_member_symbol(&self.classes[id.0].name, &name),
+                            ty: signature.ty,
+                            mutable: signature.mutable,
+                            init,
+                            initializer_index: self.top_level.len(),
+                            pos,
+                        });
+                        continue;
+                    }
                     let Some(value) = &prop.value else { continue };
                     let field_ty = self.classes[id.0]
                         .fields
@@ -4369,41 +4638,62 @@ impl<'p> Checker<'p> {
                         }
                         _ => continue,
                     };
-                    if method.is_static {
-                        continue;
-                    }
                     match method.kind {
                         ast::MethodKind::Getter => {
-                            if !self.class_sigs[id.0].has_accessor(&name)
-                                || !checked_read_accessors.insert(name.clone())
+                            let has_accessor = if method.is_static {
+                                self.class_sigs[id.0].has_static_accessor(&name)
+                            } else {
+                                self.class_sigs[id.0].has_accessor(&name)
+                            };
+                            if !has_accessor
+                                || !checked_read_accessors.insert((method.is_static, name.clone()))
                             {
                                 continue;
                             }
                         }
                         ast::MethodKind::Setter => {
-                            if !checked_write_accessors.insert(name.clone()) {
+                            if !checked_write_accessors.insert((method.is_static, name.clone())) {
                                 continue;
                             }
                             name.push('=');
                         }
                         ast::MethodKind::Method => {
-                            if self.class_sigs[id.0].has_accessor(&name) {
+                            let has_accessor = if method.is_static {
+                                self.class_sigs[id.0].has_static_accessor(&name)
+                            } else {
+                                self.class_sigs[id.0].has_accessor(&name)
+                            };
+                            if has_accessor {
                                 continue;
                             }
                         }
                     }
-                    let Some(sig) = self.class_sigs[id.0].methods.get(&name).cloned() else {
+                    let sig = if method.is_static {
+                        self.class_sigs[id.0].static_methods.get(&name).cloned()
+                    } else {
+                        self.class_sigs[id.0].methods.get(&name).cloned()
+                    };
+                    let Some(sig) = sig else {
                         continue;
+                    };
+                    let function_name = if method.is_static {
+                        static_member_symbol(&self.classes[id.0].name, &name)
+                    } else {
+                        name.clone()
                     };
                     if let Some(func) = self.check_function(
                         &method.function,
-                        &name,
+                        &function_name,
                         false,
                         &sig,
-                        Some(this_ty.clone()),
+                        (!method.is_static).then(|| this_ty.clone()),
                         pos,
                     ) {
-                        self.classes[id.0].methods.push(func);
+                        if method.is_static {
+                            self.functions.push(func);
+                        } else {
+                            self.classes[id.0].methods.push(func);
+                        }
                     }
                 }
                 _ => {}
@@ -4478,6 +4768,9 @@ impl<'p> Checker<'p> {
                 ),
                 pos,
             );
+            return None;
+        }
+        if template.has_static_member {
             return None;
         }
         let name = self.mono_name(key, args);

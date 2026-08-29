@@ -15,7 +15,7 @@ use crate::hir::{
 use crate::types::{ClassId, FuncType, Type};
 
 use super::stmt::narrow_paths;
-use super::{Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
+use super::{static_member_symbol, Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
 
 /// Dotted path key for narrowing (`node`, `node.next`, `this.x`).
 pub(crate) fn path_key(e: &hir::Expr) -> Option<String> {
@@ -738,6 +738,7 @@ impl<'p> Checker<'p> {
                         ty: Type::RegExp,
                         mutable: false,
                         init,
+                        initializer_index: self.top_level.len(),
                         pos: pos.clone(),
                     });
                     self.regex_literals.insert(key, name.clone());
@@ -1271,6 +1272,33 @@ impl<'p> Checker<'p> {
                     pos.clone(),
                 );
                 return self.err_expr(pos);
+            }
+        }
+        if let ExprKind::Call {
+            callee: Callee::Func(symbol),
+            args,
+        } = &target.kind
+        {
+            if args.is_empty() {
+                if let Some((id, name)) = self.static_accessor_for_getter(symbol) {
+                    let class_name = self.classes[id.0].name.clone();
+                    let operator = if u.op == ast::UpdateOp::PlusPlus {
+                        "++"
+                    } else {
+                        "--"
+                    };
+                    let spelling = if u.prefix {
+                        format!("`{operator}{class_name}.{name}`")
+                    } else {
+                        format!("`{class_name}.{name}{operator}`")
+                    };
+                    self.error(
+                        RuleCode::S100,
+                        format!("{spelling} is not supported for a static accessor"),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
             }
         }
         // Q17: `++`/`--` rebind their target, so `const` bindings are
@@ -2349,13 +2377,68 @@ impl<'p> Checker<'p> {
         }
         match self.scope_item(&name) {
             Some(ScopeItem::Poisoned) => Some(self.err_expr(prop_pos)),
-            Some(ScopeItem::Class(_)) | Some(ScopeItem::GenericClass(_)) => {
+            Some(ScopeItem::Class(id)) => {
+                if prop == "prototype" {
+                    self.error(RuleCode::S003, "no prototype mutation", prop_pos.clone());
+                    return Some(self.err_expr(prop_pos));
+                }
+                let class_name = self.classes[id.0].name.clone();
+                if let Some(signature) = self.class_sigs[id.0].static_fields.get(prop).cloned() {
+                    let symbol = static_member_symbol(&class_name, prop);
+                    if for_write && !signature.mutable {
+                        self.error(
+                            RuleCode::S100,
+                            format!("cannot rebind `const` binding `{symbol}`"),
+                            prop_pos.clone(),
+                        );
+                    }
+                    return Some(hir::Expr {
+                        kind: ExprKind::Global(symbol),
+                        ty: signature.ty,
+                        pos: prop_pos,
+                    });
+                }
+                if self.class_sigs[id.0].has_static_accessor(prop) {
+                    let signature = self.class_sigs[id.0].static_methods.get(prop).cloned();
+                    let Some(signature) = signature else {
+                        self.error(
+                            RuleCode::S100,
+                            format!("static read accessor `{class_name}.{prop}` is missing"),
+                            prop_pos.clone(),
+                        );
+                        return Some(self.err_expr(prop_pos));
+                    };
+                    return Some(hir::Expr {
+                        kind: ExprKind::Call {
+                            callee: Callee::Func(static_member_symbol(&class_name, prop)),
+                            args: Vec::new(),
+                        },
+                        ty: signature.ret,
+                        pos: prop_pos,
+                    });
+                }
+                if self.class_sigs[id.0].static_methods.contains_key(prop) {
+                    self.error(
+                        RuleCode::S100,
+                        format!("static method `{class_name}.{prop}` may only be called"),
+                        prop_pos.clone(),
+                    );
+                    return Some(self.err_expr(prop_pos));
+                }
+                self.error(
+                    RuleCode::S100,
+                    format!("class `{class_name}` has no static member `{prop}`"),
+                    prop_pos.clone(),
+                );
+                Some(self.err_expr(prop_pos))
+            }
+            Some(ScopeItem::GenericClass(_)) => {
                 if prop == "prototype" {
                     self.error(RuleCode::S003, "no prototype mutation", prop_pos.clone());
                 } else {
                     self.error(
                         RuleCode::S100,
-                        format!("classes have no static member `{}`", prop),
+                        format!("generic class `{name}` has no static member `{prop}`"),
                         prop_pos.clone(),
                     );
                 }
@@ -4960,6 +5043,18 @@ impl<'p> Checker<'p> {
                     };
                 }
                 let class_name = self.classes[id.0].name.clone();
+                if !self.class_sigs[id.0].has_member(name)
+                    && self.class_sigs[id.0].has_static_member(name)
+                {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`{class_name}.{name}` is static and must be accessed through the class name"
+                        ),
+                        prop_pos.clone(),
+                    );
+                    return self.err_expr(prop_pos);
+                }
                 if for_write {
                     self.error(
                         RuleCode::S004,
@@ -5273,6 +5368,19 @@ impl<'p> Checker<'p> {
 
     // ----- assignment -----
 
+    fn static_accessor_for_getter(&self, symbol: &str) -> Option<(ClassId, String)> {
+        self.classes.iter().enumerate().find_map(|(index, class)| {
+            self.class_sigs[index]
+                .static_member_namespace
+                .iter()
+                .find_map(|(name, member)| {
+                    matches!(member, super::ClassMemberNamespaceEntry::Accessor { .. })
+                        .then(|| (ClassId(index), name.clone()))
+                        .filter(|(_, name)| static_member_symbol(&class.name, name) == symbol)
+                })
+        })
+    }
+
     fn check_assign(
         &mut self,
         a: &ast::AssignExpr,
@@ -5376,6 +5484,85 @@ impl<'p> Checker<'p> {
                         name: "set".to_string(),
                     },
                     args: vec![index, value],
+                },
+                ty: Type::Void,
+                pos,
+            };
+        }
+        let static_accessor_write = match &target.kind {
+            ExprKind::Call {
+                callee: Callee::Func(symbol),
+                args,
+            } if args.is_empty() => self.static_accessor_for_getter(symbol),
+            _ => None,
+        };
+        if let Some((id, name)) = static_accessor_write {
+            let class_name = self.classes[id.0].name.clone();
+            let operator = match a.op {
+                A::AddAssign => Some("+="),
+                A::SubAssign => Some("-="),
+                A::MulAssign => Some("*="),
+                A::DivAssign => Some("/="),
+                A::ModAssign => Some("%="),
+                A::BitAndAssign => Some("&="),
+                A::BitOrAssign => Some("|="),
+                A::BitXorAssign => Some("^="),
+                A::LShiftAssign => Some("<<="),
+                A::RShiftAssign => Some(">>="),
+                A::ZeroFillRShiftAssign => Some(">>>="),
+                _ => None,
+            };
+            if let Some(operator) = operator {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "`{class_name}.{name} {operator} v` is not supported for a static accessor"
+                    ),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            let write_name = format!("{name}=");
+            let Some(signature) = self.class_sigs[id.0]
+                .static_methods
+                .get(&write_name)
+                .cloned()
+            else {
+                self.error(
+                    RuleCode::S100,
+                    format!("`{class_name}.{name} = v` cannot write through a read-only accessor"),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            };
+            if !statement_position {
+                self.error(
+                    RuleCode::S100,
+                    format!("`{class_name}.{name} = v` cannot be used as a value"),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            }
+            let Some(parameter) = signature.params.first() else {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "static write accessor `{class_name}.{name}` has no parameter signature"
+                    ),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
+            };
+            self.require_assignable(
+                &value.ty.clone(),
+                &parameter.ty,
+                value.pos.clone(),
+                "the assignment",
+            );
+            return hir::Expr {
+                kind: ExprKind::Call {
+                    callee: Callee::Func(static_member_symbol(&class_name, &write_name)),
+                    args: vec![value],
                 },
                 ty: Type::Void,
                 pos,
@@ -6206,6 +6393,41 @@ impl<'p> Checker<'p> {
         }
     }
 
+    fn check_static_method_call(
+        &mut self,
+        member: &ast::MemberExpr,
+        call: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        member_pos: Pos,
+        name: &str,
+    ) -> Option<hir::Expr> {
+        let ast::Expr::Ident(receiver) = &*member.obj else {
+            return None;
+        };
+        let class_name = receiver.sym.to_string();
+        if fx.owns_local_name(&class_name) {
+            return None;
+        }
+        let Some(ScopeItem::Class(class)) = self.scope_item(&class_name) else {
+            return None;
+        };
+        if self.class_sigs[class.0].has_static_accessor(name)
+            || !self.class_sigs[class.0].static_methods.contains_key(name)
+        {
+            return None;
+        }
+        if call.type_args.is_some() {
+            self.error(
+                RuleCode::S100,
+                format!("static method `{class_name}.{name}` is not generic"),
+                member_pos,
+            );
+        }
+        let symbol = static_member_symbol(&self.classes[class.0].name, name);
+        Some(self.check_direct_call(&symbol, call, fx, pos))
+    }
+
     fn check_method_call(
         &mut self,
         m: &ast::MemberExpr,
@@ -6251,6 +6473,11 @@ impl<'p> Checker<'p> {
                 prop_pos,
             );
             return self.err_expr(pos);
+        }
+        if let Some(static_call) =
+            self.check_static_method_call(m, c, fx, pos.clone(), prop_pos.clone(), &name)
+        {
+            return static_call;
         }
         // `Context.collect()` / `Context.free(value)` (Q6/Q7): ambient
         // namespace calls lower through the existing ambient-call path.
@@ -6562,6 +6789,16 @@ impl<'p> Checker<'p> {
                     }
                     None => {
                         let class_name = self.classes[id.0].name.clone();
+                        if self.class_sigs[id.0].has_static_member(&name) {
+                            self.error(
+                                RuleCode::S100,
+                                format!(
+                                    "`{class_name}.{name}` is static and must be accessed through the class name"
+                                ),
+                                prop_pos.clone(),
+                            );
+                            return self.err_expr(pos);
+                        }
                         self.error(
                             RuleCode::S100,
                             format!("`{}` has no method `{}`", class_name, name),

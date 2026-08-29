@@ -390,34 +390,57 @@ impl<'a> Lowering<'a> {
                 None,
                 Vec::new(),
             )?;
-            for global in globals {
-                let value = builder.require_expr(&global.init)?;
-                let value = builder.coerce_operand(
-                    value,
-                    l::ValueType::Data(global.ty.clone()),
+            let top_level = builder.function.body.clone();
+            if let Some(global) = globals
+                .iter()
+                .find(|global| global.initializer_index > top_level.len())
+            {
+                return Err(builder.error(
                     &global.pos,
-                )?;
-                let global_id = builder
-                    .lowering
-                    .globals
-                    .get(&global.name)
-                    .copied()
-                    .ok_or_else(|| builder.error(&global.pos, "global id is missing"))?;
-                builder.emit_store_instruction(
-                    l::InstructionKind::StoreGlobal(global_id),
-                    vec![value],
-                    vec![StoredOperand {
-                        index: 0,
-                        ty: l::ValueType::Data(global.ty.clone()),
-                        action: OwnerStoreAction::Acquire(hir::AsyncCopySite::Binding),
-                        pos: global.pos.clone(),
-                    }],
-                    (None, false),
-                    Vec::new(),
-                    global.pos,
-                )?;
+                    "global initializer position is after the module body",
+                ));
             }
-            builder.lower_statements(&builder.function.body.clone())?;
+            for initializer_index in 0..=top_level.len() {
+                if builder.current.is_none() {
+                    break;
+                }
+                for global in globals
+                    .iter()
+                    .filter(|global| global.initializer_index == initializer_index)
+                {
+                    if builder.current.is_none() {
+                        break;
+                    }
+                    let value = builder.require_expr(&global.init)?;
+                    let value = builder.coerce_operand(
+                        value,
+                        l::ValueType::Data(global.ty.clone()),
+                        &global.pos,
+                    )?;
+                    let global_id = builder
+                        .lowering
+                        .globals
+                        .get(&global.name)
+                        .copied()
+                        .ok_or_else(|| builder.error(&global.pos, "global id is missing"))?;
+                    builder.emit_store_instruction(
+                        l::InstructionKind::StoreGlobal(global_id),
+                        vec![value],
+                        vec![StoredOperand {
+                            index: 0,
+                            ty: l::ValueType::Data(global.ty.clone()),
+                            action: OwnerStoreAction::Acquire(hir::AsyncCopySite::Binding),
+                            pos: global.pos.clone(),
+                        }],
+                        (None, false),
+                        Vec::new(),
+                        global.pos.clone(),
+                    )?;
+                }
+                if let Some(statement) = top_level.get(initializer_index) {
+                    builder.lower_statements(std::slice::from_ref(statement))?;
+                }
+            }
             let lowered = builder.finish()?;
             self.set_function(id, lowered)?;
             Some(id)

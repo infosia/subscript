@@ -907,8 +907,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 112;
-const DEBUG_RUNNABLE_COUNT: usize = 111;
+const RELEASE_RUNNABLE_COUNT: usize = 113;
+const DEBUG_RUNNABLE_COUNT: usize = 112;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1120,6 +1120,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a167-saturating-float-casts",
         "saturating float-to-integer casts and NaN-to-zero",
+    ),
+    (
+        "a168-static-members",
+        "static globals and free functions for fields, methods, and accessors",
     ),
     (
         "a15-manual-lifetime",

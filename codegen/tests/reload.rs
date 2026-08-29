@@ -214,6 +214,66 @@ fn accepted_body_edit_changes_behaviour_and_keeps_context_state() {
     assert_eq!(output(&mut s), "step=22\n");
 }
 
+const STATIC_COUNTER_V1: &str = "\
+@CStruct
+class Counter {
+  value: i32 = 7;
+  static count: i32 = 0;
+  static step(): i32 {
+    Counter.count += 1;
+    return Counter.count;
+  }
+  static get doubled(): i32 {
+    return Counter.count * 2;
+  }
+  static set doubled(value: i32) {
+    Counter.count = value / 2;
+  }
+}
+export function main(): void {
+  const counter: Counter = new Counter();
+  Counter.doubled = Counter.doubled + 2;
+  print(`${Counter.step()}:${counter.value}`);
+}
+";
+
+const STATIC_COUNTER_V2: &str = "\
+@CStruct
+class Counter {
+  value: i32 = 7;
+  static count: i32 = 0;
+  static step(): i32 {
+    Counter.count += 10;
+    return Counter.count;
+  }
+  static get doubled(): i32 {
+    return Counter.count * 2;
+  }
+  static set doubled(value: i32) {
+    Counter.count = value / 2;
+  }
+}
+export function main(): void {
+  const counter: Counter = new Counter();
+  Counter.doubled = Counter.doubled + 2;
+  print(`step=${Counter.step()}:${counter.value}`);
+}
+";
+
+#[test]
+fn accepted_body_edit_keeps_cstruct_static_field_state() {
+    let mut session = ReloadSession::new(&files(STATIC_COUNTER_V1)).expect("session");
+    session.call_main().expect("first call");
+    session.call_main().expect("second call");
+    assert_eq!(output(&mut session), "2:7\n4:7\n");
+
+    session
+        .reload(&files(STATIC_COUNTER_V2))
+        .expect("body edit is accepted");
+    session.call_main().expect("call after reload");
+    assert_eq!(output(&mut session), "step=15:7\n");
+}
+
 #[test]
 fn accepted_body_edit_keeps_live_allocations() {
     const V1: &str = "\

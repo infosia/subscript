@@ -181,6 +181,15 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r161-field-method-member-name-clash.ts", RuleCode::S100, 9),
     ("r162-duplicate-method-member-name.ts", RuleCode::S100, 12),
     ("r163-duplicate-field-member-name.ts", RuleCode::S100, 9),
+    ("r164-duplicate-static-member-name.ts", RuleCode::S100, 9),
+    ("r165-this-in-static-method.ts", RuleCode::S100, 11),
+    ("r166-static-member-through-instance.ts", RuleCode::S100, 13),
+    ("r167-static-member-on-generic-class.ts", RuleCode::S100, 8),
+    (
+        "r168-static-initializer-transitive-read.ts",
+        RuleCode::S100,
+        8,
+    ),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -310,8 +319,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        158,
-        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, seven R37 entries, fourteen §67 entries, one §70 entry, and one §33.4 entry"
+        163,
+        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, seven R37 entries, fourteen §67 entries, one §70 entry, one §33.4 entry, and five §71 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
