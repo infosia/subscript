@@ -224,16 +224,16 @@ machine/runtime versions is in [`benchmarks/`](benchmarks/README.md).
 
 | Workload | C | subscript&#8209;ship | subscript&#8209;jit | LuaJIT | JSC | V8 |
 |---|---|---|---|---|---|---|
-| mandelbrot | 1.00× | **1.00×** | 1.04× | 2.78× | 1.00× | 1.01× |
-| fib-recursive | 1.00× | **1.00×** | 2.17× | 1.88× | 1.49× | 2.63× |
-| primes | 1.00× | **1.00×** | 1.47× | 2.11× | 0.93× | 1.71× |
-| fib-loop | 1.00× | 1.04× | 2.42× | 1.48× | 1.09× | 1.58× |
-| queen | 1.00× | 1.09× | 1.50× | 1.46× | 1.23× | 1.77× |
-| sort | 1.00× | 1.24× | 2.26× | 2.26× | 1.45× | 1.82× |
-| tree | 1.00× | 1.55× | 6.23× | 2.23× | 0.32× | 0.47× |
-| particles | 1.00× | 2.12× | 12.13× | 3.84× | 1.91× | 3.58× |
-| collect | 1.00× | **1.00×** | 3.20× | 3.69× | 1.04× | — |
-| callbacks | 1.00× | 21.84× | 24.41× | 9.51× | 5.34× | 29.73× |
+| mandelbrot | 1.00× | **0.98×** | 1.02× | 2.80× | 0.98× | 1.01× |
+| fib-recursive | 1.00× | **0.97×** | 2.16× | 1.77× | 1.44× | 2.48× |
+| primes | 1.00× | **1.02×** | 1.44× | 2.10× | 0.92× | 1.76× |
+| fib-loop | 1.00× | **1.01×** | 2.44× | 1.44× | 1.06× | 1.55× |
+| queen | 1.00× | 1.12× | 1.51× | 1.51× | 1.23× | 1.77× |
+| sort | 1.00× | 1.12× | 2.15× | 2.17× | 1.44× | 1.74× |
+| tree | 1.00× | 1.55× | 6.27× | 2.26× | 0.33× | 0.46× |
+| particles | 1.00× | 2.18× | 12.02× | 3.95× | 1.90× | 3.68× |
+| collect | 1.00× | **0.99×** | 3.21× | 3.71× | 1.01× | 2.59× |
+| callbacks | 1.00× | 2.88× | 21.21× | 8.95× | 4.89× | 29.88× |
 
 For what the language looks like at these speeds — ten commented programs,
 a C host facade, and a C host that owns the loop — see
@@ -241,36 +241,34 @@ a C host facade, and a C host that owns the loop — see
 
 What the numbers show:
 
-- **On compute-bound work the shipping tier reaches hand-written C** —
-  mandelbrot, fib-recursive, and primes at 1.00×, fib-loop at 1.04×, queen
-  at 1.09×. The shipping tier *is* the emitted C compiled by the same
-  `clang -O2`, and pure-numeric code has almost no array traffic to check.
+- **On compute-bound work the shipping tier is C** — mandelbrot
+  0.98×, fib-recursive 0.97×, primes 1.02×, fib-loop
+  1.01×, queen 1.12×. The shipping tier *is* the emitted C compiled
+  by the same `clang -O2`, and pure-numeric code has almost no array
+  traffic to check.
 - **The cost is checked memory traffic and value copies** — `sort`
-  (bounds-checked growable arrays) at 1.24×, `tree` (per-node allocate and
+  (bounds-checked growable arrays) at 1.12×, `tree` (per-node allocate and
   free through the Context's size-class arena) at 1.55×, `particles`
-  (value-struct arrays) at 2.12×. These are the language's real costs — an
+  (value-struct arrays) at 2.18×. These are the language's real costs — an
   emitted bounds check per element, value-copy semantics, a 16-byte
   allocation header — not a measurement artifact.
-- **One row is the language's weak one, and it says what it costs.**
-  `callbacks` (21.84×) runs `map`/`filter`/`reduce` over a
-  1000000-element array 20 times; the C baseline reuses three buffers it
-  allocates once, while the callback spelling allocates a new array per
-  stage, and every runtime pays for it (V8 29.73×, LuaJIT
-  9.51×). It is not a codegen defect; it is what the idiom
-  costs against C that does not use it.
+- **`callbacks` (2.88×) is the widest gap**, and it is the idiom's:
+  `map`/`filter`/`reduce` over a 1000000-element array 20 times allocates a
+  fresh output array per stage, while the C baseline reuses three buffers
+  it allocates once. A callback that names a function compiles to a plain
+  loop with a direct call; the allocation is what remains. Every runtime
+  pays for the idiom (JSC 4.89×, LuaJIT 8.95×, V8 29.88×).
 - **`collect` lands on C.** It allocates 20000 string-owning nodes per
   round, drops one quarter of them, and reclaims those through an
-  explicit collection: 1.00× of C on the shipping tier, level with JSC
-  (1.04×) and ahead of LuaJIT (3.69×). V8's cell is withheld: its
-  timing spread past ±20% in each of three runs, so the benchmark
-  reports no number for it.
-- **Against the JITs**, the shipping tier is at or ahead of LuaJIT on every
-  row except `callbacks`, and level with JSC/V8 on the compute-bound rows
-  and on `collect`. JSC leads on `particles` and `callbacks`, and JSC/V8
-  lead on `tree`, where garbage-collected bump allocation beats even C.
+  explicit collection: 0.99× of C on the shipping tier, level with JSC
+  (1.01×) and ahead of V8 (2.59×) and LuaJIT (3.71×).
+- **Against the JITs**, the shipping tier is ahead of LuaJIT on every row,
+  level with JSC/V8 on the compute-bound rows and on `collect`, and
+  behind JSC on `particles` and `callbacks`. JSC/V8 lead on `tree`, where
+  garbage-collected bump allocation beats even C.
 - **The development tier trades execution speed for iteration speed** —
   the Cranelift JIT is tuned for compile speed and hot reload, not peak
-  codegen, and runs 1.04×–24.41×. That is the trade the tier exists to
+  codegen, and runs 1.02×–21.21×. That is the trade the tier exists to
   make; the next section measures the side it is paid on.
 
 ### Iteration speed
