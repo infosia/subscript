@@ -106,3 +106,9 @@ each the same day.
 | C13's fixed entry bound bought nothing (`IteratorHasNext` already read the live count) | ECMA's rule per spelling; C13 retired; `a80` becomes comparable | `390f9d6` | `3005536`: the cursor carries its bound kind, `a80` 136→156 bytes from `node`, `a170` |
 | A nullable boundary aggregate held as an address into activation storage (the root of §33.4, rule 8b, and S015) | a managed box; S015 deleted; the recursive `SubChainHeader.next` decided the box over an inline payload | §33.5, `c426ee7`; rules 9–10 for the intrusive header, `ae5662e` (forced by `e09`'s measurement) | `4ef7ea7`: `BoxBoundaryValue`, S015 deleted, `a169` `r169`, `a163` counts its boxes |
 | §66 measurement 6i (a lambda reads a later `const`) | closed by rule 4; accepting it needs capture by reference (a C5 revision), recorded and not taken | `ba3a6ac` | — |
+
+`a125` is restored to its first shape (owner, 2026-08-29): the three
+`boundaryVia*` functions return the target again. §33.5 makes the
+return sound, and the round-3 restructuring was a workaround for S015,
+which no longer exists. The source is `96e9708`'s byte for byte; the
+golden did not move; release 1094 passed 0 failed.
