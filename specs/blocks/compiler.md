@@ -10540,3 +10540,30 @@ strings by content; handles by identity).
 
 Measured before the rule: `arrops.rs` `elem_eq`/`elem_same_value_zero`
 and `assocops.rs` `keys_equal` were two tables; `F16` existed in one.
+
+## 78. The MINOR consolidation pass
+
+*(Owner decision, 2026-08-30.)*
+
+**Rule 1.** A MINOR consolidation changes no observable behaviour: no
+corpus golden, `.expected`, LIR golden text, warning output, diagnostic
+text, or runtime symbol set moves, unless a rule below names the move.
+
+**Rule 2.** A consolidation that removes a runtime symbol (`Rm19`: one
+`subscript_rt_assoc_*` symbol per Map/Set operation; `Rm32`:
+`subscript_rt_str_method_concat` deleted) changes both code generators
+and the runtime in one round; the emitted C for every corpus entry is
+re-derived and the differential gate is the check.
+
+**Rule 3.** The `Template` instruction carries a `FormatKind` per piece
+(`Gm18`, core principle 8); the transcribers read it and keep no type
+table. The LIR golden text gains the field; that move is the only
+golden move the pass allows, and the round reports the diff.
+
+**Rule 4.** `lir::TrapKind::runtime_kind()` (`Gm7`) and
+`IntrinsicOperation::runtime_symbol()` (`Gm17`) are written next to the
+contract enums in `compiler/src/lir.rs`; every transcriber reads them.
+
+**Rule 5.** An item the round finds unsound, or that needs a decision
+this section does not give, is reported and left; the round does not
+stop for it.
