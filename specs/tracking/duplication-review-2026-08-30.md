@@ -180,23 +180,23 @@ corpus entry; the acceptance widenings recorded in the §74 filters.
 ## The MINOR findings (not started; line numbers at `f99d4cb`)
 
 ### codegen (17)
-- Cm7: LIR trap kind to runtime trap kind mapped three ways. Fix: `impl l::TrapKind { fn runtime_kind(&self) -> Option<TrapKind> }` next to the contract.
-- Cm8: six helpers duplicated verbatim between the two transcribers. Fix: move all six to `lir_types.rs`.
-- Cm9: padding-range walk in four copies. Fix: `Layouts::padding_ranges(ty)` with no module argument; the C emitter and the interpreter consume the ranges.
-- Cm10: layout arithmetic helpers duplicated. Fix: export the `layout.rs` set with `pub(crate)`.
-- Cm11: `is_unsigned` twice. Fix: delete the cemit copy.
-- Cm12: in-file duplicates in `lir.rs`. Fix: one free function per predicate.
-- Cm13: `lower_async_call` and `lower_async_handle_create` share their first 85 lines. Fix: extract `resolve_async_target` and keep only the terminator/instruction tail in each.
-- Cm14: dominance decision in two shapes. Fix: `check_dominates` calls `definition_dominates_definition` with a synthesized use site.
-- Cm15: call-target operand start index table twice. Fix: one `fn counted_operand_start(kind: &CallTargetKind) -> Option<usize>`.
-- Cm16: Worker intrinsic numbering in two tables. Fix: a `WorkerFn::ALL` table in `hir` and `intrinsic_index`.
-- Cm17: runtime symbol names kept in four tables. Fix: `l::IntrinsicOperation` carries `runtime_symbol`; a macro emits the `jit.rs` pairs from the `ffi` names.
-- Cm18: template format dispatch is a per-transcriber type table. Fix: the `Template` instruction carries a `FormatKind` per piece (core principle 8).
-- Cm19: interpreter computes storage layout twice in one file. Fix: memoize every `type_layout` result and make `layout_cached` a map read.
-- Cm20: `operand_is_fresh_owner` scans every block per query. Fix: insert the result id into the set at emit time and delete the walk.
-- Cm21: `local_requires_frame` is quadratic over blocks per local. Fix: compute the store-block set per local once before the loop.
-- Cm22: `consume_call_traps` and `consume_runtime_traps` differ by one accepted kind. Fix: one function with an `accepts_stale_coroutine: bool` argument, or accept the union in one place.
-- Cm23: tier run entry points are five thin wrappers each. Fix: one public `RunConfig` struct with `Default` and one `run` per tier.
+- Gm7: LIR trap kind to runtime trap kind mapped three ways. Fix: `impl l::TrapKind { fn runtime_kind(&self) -> Option<TrapKind> }` next to the contract.
+- Gm8: six helpers duplicated verbatim between the two transcribers. Fix: move all six to `lir_types.rs`.
+- Gm9: padding-range walk in four copies. Fix: `Layouts::padding_ranges(ty)` with no module argument; the C emitter and the interpreter consume the ranges.
+- Gm10: layout arithmetic helpers duplicated. Fix: export the `layout.rs` set with `pub(crate)`.
+- Gm11: `is_unsigned` twice. Fix: delete the cemit copy.
+- Gm12: in-file duplicates in `lir.rs`. Fix: one free function per predicate.
+- Gm13: `lower_async_call` and `lower_async_handle_create` share their first 85 lines. Fix: extract `resolve_async_target` and keep only the terminator/instruction tail in each.
+- Gm14: dominance decision in two shapes. Fix: `check_dominates` calls `definition_dominates_definition` with a synthesized use site.
+- Gm15: call-target operand start index table twice. Fix: one `fn counted_operand_start(kind: &CallTargetKind) -> Option<usize>`.
+- Gm16: Worker intrinsic numbering in two tables. Fix: a `WorkerFn::ALL` table in `hir` and `intrinsic_index`.
+- Gm17: runtime symbol names kept in four tables. Fix: `l::IntrinsicOperation` carries `runtime_symbol`; a macro emits the `jit.rs` pairs from the `ffi` names.
+- Gm18: template format dispatch is a per-transcriber type table. Fix: the `Template` instruction carries a `FormatKind` per piece (core principle 8).
+- Gm19: interpreter computes storage layout twice in one file. Fix: memoize every `type_layout` result and make `layout_cached` a map read.
+- Gm20: `operand_is_fresh_owner` scans every block per query. Fix: insert the result id into the set at emit time and delete the walk.
+- Gm21: `local_requires_frame` is quadratic over blocks per local. Fix: compute the store-block set per local once before the loop.
+- Gm22: `consume_call_traps` and `consume_runtime_traps` differ by one accepted kind. Fix: one function with an `accepts_stale_coroutine: bool` argument, or accept the union in one place.
+- Gm23: tier run entry points are five thin wrappers each. Fix: one public `RunConfig` struct with `Default` and one `run` per tier.
 
 ### compiler (21)
 - Cm7: three integer-range tables plus two width tables. Fix: `Type::int_bounds() -> Option<(i128, i128)>` and `Type::bit_width()` in `types.rs`; the f64-exact cap and the i64 lattice cap are one `min`/`clamp` at the caller.
@@ -221,7 +221,7 @@ corpus entry; the acceptance widenings recorded in the §74 filters.
 - Cm26: the `w001` and `w003` statement walks carry the same `loop_depth` bookkeeping. Fix: covered by finding 3; one walk with a per-statement callback.
 - Cm27: the `_ =>` arms in `check/mod.rs:889` (`ModuleEffects::expr`) and `check/mod.rs:832` duplicate the walk in finding 3 for a second module-level pass over every body. Fix: covered by finding 3; the effects pass folds over `children()`.
 
-### runtime (27)
+### runtime (28)
 - Rm5: Allocation header written at four sites, class id read at ten sites through raw offsets. Sites: writes `context.rs:1606-1609`, `1712-1715`, `1734-1737`, `1810-1813`; reads `context.rs:1905, 1930, 1959, 2031, 2088, 2297, 2318, 2334, 2388, 2393` use `base.add(8)` while `CLASS_ID_OFFSET` / `POS_ID_OFFSET` (`165-167`) exist. Consolidation: `write_header(base, class, pos)` and `header_class_id(base)`.
 - Rm6: Dev `alloc` and `arena_alloc_large` have the same layout / `alloc_zeroed` / two-trap sequence. Sites: `context.rs:1588-1610` and `context.rs:1790-1815`. Consolidation: one `alloc_system_block(size, class, pos) -> Option<(base, layout)>`.
 - Rm7: Three chunk walks that test `LIVE_STATE` per block. Sites: `context.rs:2189-2200` (`live_count`), `2216-2230` (`live_bytes`), `2284-2303` (`visit_live_allocations`). Consolidation: one `live_blocks()` iterator yielding `(base, block_size)`.
@@ -246,6 +246,7 @@ corpus entry; the acceptance widenings recorded in the §74 filters.
 - Rm26: `splice` and `shift` shrink the array by popping into a discarded buffer once per removed element. Sites: `arrops.rs:849-853`, `arrops.rs:887-889`. Consolidation: `Context::array_truncate(handle, new_len)`.
 - Rm27: Two subject-reading mechanisms and four budget-trap blocks in `regexops`. Sites: `text_from_handle` (`regexops.rs:187-209`, used by `replace`, `replace_all`, `split`, `new`) against `text_parts` + `text_from_parts` (`211-243`, used by `test`, `search`); the budget trap at `regexops.rs:284-292`, `491-499`, `558-566`, `583-591`. Consolidation: one `subject(ctx, handle, what, pos)` and one `budgeted_find(ctx, compiled, text, at, pos) -> Option<Option<CaptureMatch>>` (`find_and_record` at `271-296` already has the shape).
 - Rm28: `Worker::post` and `outbox_post` have the same zero-size / null / `queue.post` body; `materialize_parent` is an alias of `materialize`. Sites: `worker.rs:213-229` against `worker.rs:395-421`; `worker.rs:422-424`. Consolidation: `Queue::post_fixed(payload: *const u8) -> PostResult`; delete the alias.
+- Rm29: Two checks compare a record against the expression that produced it. Sites: `context.rs:2108` (`debug_assert_eq!(released_class_id, class_id)` reads the same header word at `2088` and `2031`/`1959`); `context.rs:2838` (`debug_assert_eq!(written, len)` where every writer returns the `len` it received: `ffi.rs:1198`, `ffi.rs:1826` via `pad_into` returning `out.len()` at `strops.rs:245`, `ffi.rs:2151`, `context.rs:2848`). Consolidation: drop the writer's return value and the assert; drop the second class-id read.
 - Rm30: Three observer setters share the set-or-clear-userdata body. Sites: `context.rs:1347-1354`, `1445-1452`, `1456-1466`. Consolidation: one generic `set_observer(slot, userdata_slot, observer, userdata)`.
 - Rm31: Receiver liveness is checked per wrapper, not per family. Sites: every Map/Set entry checks (`ffi.rs:448-1030`); of the array entries only `array_byte_range` (`3608`) and `array_push` (`3646`) check; `array_pop` (`3795`), `array_ptr` (`3811`), and every `arr_*` entry (`3859-4690`) do not. Consolidation: the check belongs in the `Context` array primitives (`array_len`, `array_elem_ptr`, `array_push`, `array_pop`) once, or in one wrapper macro.
 - Rm32: `subscript_rt_str_method_concat` (`ffi.rs:1601-1610`) is a second symbol for `subscript_rt_str_concat`. Consolidation: the code generators emit one symbol.
