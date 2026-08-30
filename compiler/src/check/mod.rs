@@ -363,18 +363,15 @@ struct SwitchUsingStorage {
 }
 
 fn has_dispose_binding(statements: &[hir::Stmt]) -> bool {
-    statements.iter().any(|statement| match statement {
-        hir::Stmt::Let { dispose, .. } => *dispose,
-        hir::Stmt::If { then, els, .. } => {
-            has_dispose_binding(then) || els.as_deref().is_some_and(has_dispose_binding)
-        }
-        hir::Stmt::While { body, .. }
-        | hir::Stmt::For { body, .. }
-        | hir::Stmt::ForOf { body, .. }
-        | hir::Stmt::Block(body) => has_dispose_binding(body),
-        hir::Stmt::Switch { cases, .. } => cases.iter().any(|case| has_dispose_binding(&case.body)),
-        _ => false,
-    })
+    fn statement_has_dispose(statement: &hir::Stmt) -> bool {
+        matches!(statement, hir::Stmt::Let { dispose: true, .. })
+            || statement.children().into_iter().any(|child| match child {
+                hir::HirChild::Expr(_) => false,
+                hir::HirChild::Stmt(statement) => statement_has_dispose(statement),
+            })
+    }
+
+    statements.iter().any(statement_has_dispose)
 }
 
 /// One function (or lambda) frame.
@@ -537,6 +534,8 @@ pub(crate) struct Checker<'p> {
     pub foreign_mirror_ids: HashMap<usize, hir::ForeignMirrorId>,
     /// Class ids that are opaque handles (empty branded nominal types).
     pub handle_classes: HashSet<ClassId>,
+    /// Runtime handle classification for each entry in `classes`.
+    pub type_handle_classes: Vec<crate::types::HandleClass>,
     /// Class ids that are boundary structs: value-layout structs whose
     /// fields may hold boundary types (`X | null`, `object | null`,
     /// function pointers) outside the ordinary C2 value-field whitelist.
@@ -629,6 +628,7 @@ pub(crate) fn run(
         foreign_mirrors: Vec::new(),
         foreign_mirror_ids: HashMap::new(),
         handle_classes: HashSet::new(),
+        type_handle_classes: Vec::new(),
         boundary_classes: HashSet::new(),
         type_aliases: HashMap::new(),
         in_boundary: false,
@@ -1394,12 +1394,7 @@ impl<'p> Checker<'p> {
     }
 
     pub(crate) fn is_reference_class(&self, ty: &Type) -> bool {
-        let classes = self
-            .classes
-            .iter()
-            .map(crate::types::HandleClass::from)
-            .collect::<Vec<_>>();
-        ty.uses_reference_identity(&classes)
+        ty.uses_reference_identity(&self.type_handle_classes)
     }
 
     /// The Q24 hash/equality kind of a key, or `None` outside the
@@ -1767,6 +1762,8 @@ impl<'p> Checker<'p> {
             index_signature: None,
             pos: pos.clone(),
         });
+        self.type_handle_classes
+            .push(crate::types::HandleClass::from(&self.classes[id.0]));
         self.class_sigs.push(ClassSig::default());
         if self.class_ids.contains_key(name) {
             // Cross-file collisions land here; same-file ones are also
@@ -2104,8 +2101,8 @@ impl<'p> Checker<'p> {
                     let raw = number.raw.as_deref()?;
                     i32::try_from(parse_integer_spelling(raw, negate)?).ok()
                 }
-                ast::Expr::Unary(unary) if unary.op == ast::UnaryOp::Minus && !negate => {
-                    read(&unary.arg, true)
+                ast::Expr::Unary(unary) if unary.op == ast::UnaryOp::Minus => {
+                    read(&unary.arg, !negate)
                 }
                 ast::Expr::Paren(paren) => read(&paren.expr, negate),
                 _ => None,
@@ -2178,6 +2175,7 @@ impl<'p> Checker<'p> {
         let id = self.new_class(&name, true, false, None, pos.clone());
         self.boundary_classes.insert(id);
         self.classes[id.0].is_boundary = true;
+        self.type_handle_classes[id.0] = crate::types::HandleClass::BoundaryValue;
         self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
     }
 

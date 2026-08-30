@@ -629,7 +629,7 @@ pub struct Expr {
 
 /// One immediate node below an HIR expression or statement.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum HirChild<'a> {
+pub enum HirChild<'a> {
     /// An expression child.
     Expr(&'a Expr),
     /// A statement child.
@@ -3291,7 +3291,7 @@ pub enum SpreadKind {
 
 impl Expr {
     /// Returns every immediate expression or statement child in source order.
-    pub(crate) fn children(&self) -> Vec<HirChild<'_>> {
+    pub fn children(&self) -> Vec<HirChild<'_>> {
         use ExprKind as K;
 
         match &self.kind {
@@ -3457,7 +3457,7 @@ impl Expr {
 
 impl Stmt {
     /// Returns every immediate expression or statement child in source order.
-    pub(crate) fn children(&self) -> Vec<HirChild<'_>> {
+    pub fn children(&self) -> Vec<HirChild<'_>> {
         match self {
             Stmt::Let { init, .. } | Stmt::Expr(init) => vec![HirChild::Expr(init)],
             Stmt::Return { value, .. } => value.iter().map(HirChild::Expr).collect(),

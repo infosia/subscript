@@ -1170,11 +1170,6 @@ impl AddressTaken<'_> {
                 self.expr(init);
                 self.declare(name, pos);
             }
-            hir::Stmt::Expr(expr) => self.expr(expr),
-            hir::Stmt::Return {
-                value: Some(value), ..
-            } => self.expr(value),
-            hir::Stmt::Return { value: None, .. } => {}
             hir::Stmt::If {
                 cond, then, els, ..
             } => {
@@ -1231,28 +1226,27 @@ impl AddressTaken<'_> {
                 }
             }
             hir::Stmt::Block(statements) => self.scoped(statements),
-            hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
+            _ => {
+                for child in statement.children() {
+                    match child {
+                        hir::HirChild::Expr(expr) => self.expr(expr),
+                        hir::HirChild::Stmt(statement) => self.statement(statement),
+                    }
+                }
+            }
         }
     }
 
     fn expr(&mut self, expr: &hir::Expr) {
         use hir::ExprKind as K;
         match &expr.kind {
-            K::Unary { operand, .. }
-            | K::Cast(operand)
-            | K::JsonResultValue(operand)
-            | K::Length(operand) => self.expr(operand),
-            K::AbsenceTest { value, .. } => self.expr(value),
-            K::Binary { left, right, .. } => {
-                self.expr(left);
-                self.expr(right);
-            }
             K::Assign { target, value, .. } => {
                 match target.kind {
                     K::Local(_) | K::Global(_) => {}
                     _ => self.place(target),
                 }
                 self.expr(value);
+                return;
             }
             K::Call { callee, args } => {
                 match callee {
@@ -1331,68 +1325,20 @@ impl AddressTaken<'_> {
                         self.expr(argument);
                     }
                 }
+                return;
             }
-            K::New { args, .. } => {
-                for argument in args {
-                    self.expr(argument);
-                }
+            K::Index { .. } => {
+                self.place(expr);
+                return;
             }
-            K::DescriptorLit { fields, .. } => {
-                for field in fields.iter().flatten() {
-                    self.expr(field);
-                }
+            K::Lambda { .. } => return,
+            _ => {}
+        }
+        for child in expr.children() {
+            match child {
+                hir::HirChild::Expr(expr) => self.expr(expr),
+                hir::HirChild::Stmt(statement) => self.statement(statement),
             }
-            K::Field { obj, .. } => self.expr(obj),
-            K::Index { .. } => self.place(expr),
-            K::ArrayLit(elements) => {
-                for element in elements {
-                    self.expr(element);
-                }
-            }
-            K::ArraySpreadLit(elements) => {
-                for element in elements {
-                    self.expr(&element.expr);
-                }
-            }
-            K::Template(parts) => {
-                for part in parts {
-                    if let hir::TplPart::Expr(expr) = part {
-                        self.expr(expr);
-                    }
-                }
-            }
-            K::Yield(Some(value)) => self.expr(value),
-            K::Yield(None) => {}
-            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
-                if let Some(receiver) = callee.receiver() {
-                    self.expr(receiver);
-                }
-                for argument in args {
-                    self.expr(argument);
-                }
-            }
-            K::AsyncHandleAwait(handle) | K::AsyncHandleTransfer { value: handle, .. } => {
-                self.expr(handle);
-            }
-            K::Cond { cond, then, els } => {
-                self.expr(cond);
-                self.expr(then);
-                self.expr(els);
-            }
-            K::Int(_)
-            | K::Float(_)
-            | K::Bool(_)
-            | K::Str(_)
-            | K::Null
-            | K::This
-            | K::Local(_)
-            | K::Global(_)
-            | K::FuncRef(_)
-            | K::EnumMember { .. }
-            | K::Zero
-            | K::RawNew { .. }
-            | K::Lambda { .. }
-            | K::AsyncSuspend => {}
         }
     }
 
@@ -7135,14 +7081,16 @@ fn counted_terminator_stores(
     terminator: &l::Terminator,
 ) -> Vec<(usize, l::Operand)> {
     match terminator {
-        l::Terminator::Return { .. } => terminator
-            .value_uses()
-            .into_iter()
-            .filter(|value| value_type(function, *value).is_some_and(is_async_owner_type))
-            .map(|value| (0, l::Operand::Value(value)))
+        l::Terminator::Return { value, .. } => value
+            .iter()
+            .filter(|operand| {
+                operand_type(function, operand).is_some_and(|ty| is_async_owner_type(&ty))
+            })
+            .cloned()
+            .map(|operand| (0, operand))
             .collect(),
         l::Terminator::Suspend {
-            kind: l::SuspendKind::AsyncCall { target, .. },
+            kind: l::SuspendKind::AsyncCall { target, operands },
             ..
         } => {
             let start = match target.kind {
@@ -7153,23 +7101,9 @@ fn counted_terminator_stores(
                 | l::CallTargetKind::BuiltinMethod(_) => Some(1),
                 l::CallTargetKind::Foreign(_) => None,
             };
-            let target_argument_count = terminator.targets().first().map_or(0, |target| {
-                target
-                    .arguments
-                    .iter()
-                    .filter(|argument| matches!(argument, l::Operand::Value(_)))
-                    .count()
-            });
             start
                 .into_iter()
-                .flat_map(|start| {
-                    terminator
-                        .value_uses()
-                        .into_iter()
-                        .enumerate()
-                        .skip(target_argument_count + start)
-                        .map(|(index, value)| (index - target_argument_count, value))
-                })
+                .flat_map(|start| operands.iter().copied().enumerate().skip(start))
                 .filter(|(_, value)| value_type(function, *value).is_some_and(is_async_owner_type))
                 .map(|(index, value)| (index, l::Operand::Value(value)))
                 .collect()

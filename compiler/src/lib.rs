@@ -625,6 +625,14 @@ mod tests {
     }
 
     #[test]
+    fn enum_member_accepts_nested_negation() {
+        let module =
+            check_one("enum E { A = -(-5) }\nexport function main(): void { print(`${E.A}`); }\n")
+                .expect("nested enum negation checks");
+        assert_eq!(module.enums[0].members, vec![("A".to_string(), 5)]);
+    }
+
+    #[test]
     fn plain_string_alias_stays_rejected_at_foreign_parameter_and_return_positions() {
         let diagnostics = check_program(&[
             SourceFile::ambient(

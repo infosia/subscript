@@ -175,9 +175,6 @@ impl WarningChecker<'_> {
                         );
                     }
                 }
-                Stmt::Expr(expr) => {
-                    self.scan_w001_expr(expr, loop_depth, collect_mutes, AllocationSink::Use)
-                }
                 Stmt::Return { value, .. } => {
                     if let Some(value) = value {
                         self.scan_w001_expr(

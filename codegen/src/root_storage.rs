@@ -263,7 +263,7 @@ fn value_interference_with(
     Ok(interference)
 }
 
-fn managed_value_words(layouts: &Layouts, ty: &l::ValueType) -> Result<u32, String> {
+pub(crate) fn managed_value_words(layouts: &Layouts, ty: &l::ValueType) -> Result<u32, String> {
     match ty {
         l::ValueType::Data(ty) => managed_words(layouts, ty),
         l::ValueType::Iterator(_) => Ok(4),

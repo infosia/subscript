@@ -397,7 +397,15 @@ impl<'p> Checker<'p> {
                 false
             }
             ast::Stmt::Decl(ast::Decl::Using(using)) => {
-                self.check_using(using, fx, out);
+                if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
+                    self.error(
+                        RuleCode::S100,
+                        "nested declarations are not in the decided surface",
+                        self.pos(using.span),
+                    );
+                } else {
+                    self.check_using(using, fx, out);
+                }
                 false
             }
             ast::Stmt::Decl(other) => {

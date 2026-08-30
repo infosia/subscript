@@ -229,102 +229,118 @@ fn suspend_successor_rejects_a_pre_suspend_value_without_a_parameter() {
 #[test]
 fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
     let pos = subscript_compiler::Pos::new("local-storage-class.ts", 1, 1);
-    let mut module = verifier_module(lir::Function {
-        id: lir::FunctionId(0),
-        source_name: "bad_activation_local".to_string(),
-        kind: lir::FunctionKind::Free,
-        exported: false,
-        is_generator: false,
-        is_async: true,
-        creation_traps: Vec::new(),
-        host_entry_traps: None,
-        parameters: Vec::new(),
-        return_type: Type::Void,
-        locals: vec![lir::Local {
-            id: lir::LocalId(0),
-            source_name: "saved".to_string(),
-            ty: ValueType::Data(Type::I32),
-            mutable: true,
-            storage: lir::LocalStorageClass::Activation,
-            pos: pos.clone(),
-        }],
-        values: vec![
-            lir::Value {
-                id: lir::ValueId(0),
+    for (label, read, read_type) in [
+        (
+            "load",
+            InstructionKind::LoadLocal(lir::LocalId(0)),
+            ValueType::Data(Type::I32),
+        ),
+        (
+            "address",
+            InstructionKind::AddressOfLocal(lir::LocalId(0)),
+            ValueType::Address(lir::AddressType {
+                pointee: Type::I32,
+                array_base: None,
+            }),
+        ),
+    ] {
+        let mut module = verifier_module(lir::Function {
+            id: lir::FunctionId(0),
+            source_name: "bad_activation_local".to_string(),
+            kind: lir::FunctionKind::Free,
+            exported: false,
+            is_generator: false,
+            is_async: true,
+            creation_traps: Vec::new(),
+            host_entry_traps: None,
+            parameters: Vec::new(),
+            return_type: Type::Void,
+            locals: vec![lir::Local {
+                id: lir::LocalId(0),
+                source_name: "saved".to_string(),
                 ty: ValueType::Data(Type::I32),
-                fresh_owner: false,
-                source_name: None,
-            },
-            lir::Value {
-                id: lir::ValueId(1),
-                ty: ValueType::Data(Type::I32),
-                fresh_owner: false,
-                source_name: Some("saved".to_string()),
-            },
-        ],
-        liveness: lir::Liveness::default(),
-        blocks: vec![
-            lir::BasicBlock {
-                id: BlockId(0),
-                source_name: Some("entry".to_string()),
-                parameters: Vec::new(),
-                instructions: vec![
-                    lir::Instruction {
-                        result: Some(lir::ValueId(0)),
-                        kind: InstructionKind::Zero,
+                mutable: true,
+                storage: lir::LocalStorageClass::Activation,
+                pos: pos.clone(),
+            }],
+            values: vec![
+                lir::Value {
+                    id: lir::ValueId(0),
+                    ty: ValueType::Data(Type::I32),
+                    fresh_owner: false,
+                    source_name: None,
+                },
+                lir::Value {
+                    id: lir::ValueId(1),
+                    ty: read_type,
+                    fresh_owner: false,
+                    source_name: Some("saved".to_string()),
+                },
+            ],
+            liveness: lir::Liveness::default(),
+            blocks: vec![
+                lir::BasicBlock {
+                    id: BlockId(0),
+                    source_name: Some("entry".to_string()),
+                    parameters: Vec::new(),
+                    instructions: vec![
+                        lir::Instruction {
+                            result: Some(lir::ValueId(0)),
+                            kind: InstructionKind::Zero,
+                            operands: Vec::new(),
+                            invalidates: Vec::new(),
+                            traps: Vec::new(),
+                            pos: pos.clone(),
+                        },
+                        lir::Instruction {
+                            result: None,
+                            kind: InstructionKind::StoreLocal(lir::LocalId(0)),
+                            operands: vec![Operand::Value(lir::ValueId(0))],
+                            invalidates: Vec::new(),
+                            traps: Vec::new(),
+                            pos: pos.clone(),
+                        },
+                    ],
+                    terminator: Terminator::Suspend {
+                        kind: lir::SuspendKind::Async,
+                        pos: pos.clone(),
+                        successor: BlockId(1),
+                        resume_value: None,
+                        arguments: Vec::new(),
+                        invalidates: Vec::new(),
+                        traps: Vec::new(),
+                    },
+                },
+                lir::BasicBlock {
+                    id: BlockId(1),
+                    source_name: Some("resume".to_string()),
+                    parameters: Vec::new(),
+                    instructions: vec![lir::Instruction {
+                        result: Some(lir::ValueId(1)),
+                        kind: read,
                         operands: Vec::new(),
                         invalidates: Vec::new(),
                         traps: Vec::new(),
                         pos: pos.clone(),
-                    },
-                    lir::Instruction {
-                        result: None,
-                        kind: InstructionKind::StoreLocal(lir::LocalId(0)),
-                        operands: vec![Operand::Value(lir::ValueId(0))],
-                        invalidates: Vec::new(),
-                        traps: Vec::new(),
+                    }],
+                    terminator: Terminator::Return {
+                        value: None,
                         pos: pos.clone(),
                     },
-                ],
-                terminator: Terminator::Suspend {
-                    kind: lir::SuspendKind::Async,
-                    pos: pos.clone(),
-                    successor: BlockId(1),
-                    resume_value: None,
-                    arguments: Vec::new(),
-                    invalidates: Vec::new(),
-                    traps: Vec::new(),
                 },
-            },
-            lir::BasicBlock {
-                id: BlockId(1),
-                source_name: Some("resume".to_string()),
-                parameters: Vec::new(),
-                instructions: vec![lir::Instruction {
-                    result: Some(lir::ValueId(1)),
-                    kind: InstructionKind::LoadLocal(lir::LocalId(0)),
-                    operands: Vec::new(),
-                    invalidates: Vec::new(),
-                    traps: Vec::new(),
-                    pos: pos.clone(),
-                }],
-                terminator: Terminator::Return {
-                    value: None,
-                    pos: pos.clone(),
-                },
-            },
-        ],
-        entry: BlockId(0),
-        pos,
-    });
-    module.entry = Some(lir::FunctionId(0));
-    let error = interpret(&module).expect_err("the poisoned activation local must fail");
-    assert!(
-        error.to_string().contains(
-            "activation local 0 (`saved`) was loaded after suspend in block 0 at local-storage-class.ts:1:1"
-        ),
-        "{error:?}"
-    );
+            ],
+            entry: BlockId(0),
+            pos: pos.clone(),
+        });
+        module.entry = Some(lir::FunctionId(0));
+        let error = interpret(&module).expect_err("the poisoned activation local must fail");
+        assert!(
+            error.to_string().contains(
+                "activation local 0 (`saved`) was loaded after suspend in block 0 at local-storage-class.ts:1:1"
+            ),
+            "{label}: {error:?}"
+        );
+    }
 }
 
 #[test]

@@ -2029,117 +2029,27 @@ fn walk_expr<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::Expr)) {
     visit(expr);
     use hir::ExprKind as K;
     match &expr.kind {
-        K::Unary { operand, .. }
-        | K::Cast(operand)
-        | K::JsonResultValue(operand)
-        | K::Length(operand) => walk_expr(operand, visit),
-        K::AbsenceTest { value, .. } => walk_expr(value, visit),
-        K::Binary { left, right, .. } => {
-            walk_expr(left, visit);
-            walk_expr(right, visit);
-        }
         K::Assign { target, value, .. } => {
             walk_place_children(target, visit);
             walk_expr(value, visit);
+            return;
         }
-        K::Call { callee, args } => {
-            match callee {
-                hir::Callee::Value(value) => walk_expr(value, visit),
-                hir::Callee::Method { recv, .. } => walk_expr(recv, visit),
-                hir::Callee::Func(_)
-                | hir::Callee::Foreign(_)
-                | hir::Callee::Ambient(_)
-                | hir::Callee::ContextBytes { .. }
-                | hir::Callee::Math(_)
-                | hir::Callee::Num(_)
-                | hir::Callee::Date(_)
-                | hir::Callee::Json(_)
-                | hir::Callee::Str(_)
-                | hir::Callee::Regex(_)
-                | hir::Callee::Arr(_)
-                | hir::Callee::Map(_)
-                | hir::Callee::Set(_)
-                | hir::Callee::Worker(_) => {}
-            }
-            for argument in args {
-                walk_expr(argument, visit);
-            }
-        }
-        K::New { args, .. } => {
-            for argument in args {
-                walk_expr(argument, visit);
-            }
-        }
-        K::DescriptorLit { fields, .. } => {
-            for field in fields.iter().flatten() {
-                walk_expr(field, visit);
-            }
-        }
-        K::Field { obj, .. } | K::Index { obj, .. } => {
-            walk_expr(obj, visit);
-            if let K::Index { index, .. } = &expr.kind {
-                walk_expr(index, visit);
-            }
-        }
-        K::ArrayLit(elements) => {
-            for element in elements {
-                walk_expr(element, visit);
-            }
-        }
-        K::ArraySpreadLit(elements) => {
-            for element in elements {
-                walk_expr(&element.expr, visit);
-            }
-        }
-        K::Template(parts) => {
-            for part in parts {
-                if let hir::TplPart::Expr(value) = part {
-                    walk_expr(value, visit);
-                }
-            }
-        }
-        K::Lambda { params, body, .. } => {
+        K::Lambda { params, .. } => {
             for parameter in params {
                 if let Some(default) = &parameter.default {
                     walk_expr(default, visit);
                 }
             }
-            walk_statements(body, visit);
         }
-        K::Yield(value) => {
-            if let Some(value) = value {
-                walk_expr(value, visit);
+        _ => {}
+    }
+    for child in expr.children() {
+        match child {
+            hir::HirChild::Expr(expr) => walk_expr(expr, visit),
+            hir::HirChild::Stmt(statement) => {
+                walk_statements(std::slice::from_ref(statement), visit);
             }
         }
-        K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
-            if let Some(receiver) = callee.receiver() {
-                walk_expr(receiver, visit);
-            }
-            for argument in args {
-                walk_expr(argument, visit);
-            }
-        }
-        K::AsyncHandleAwait(handle) | K::AsyncHandleTransfer { value: handle, .. } => {
-            walk_expr(handle, visit);
-        }
-        K::Cond { cond, then, els } => {
-            walk_expr(cond, visit);
-            walk_expr(then, visit);
-            walk_expr(els, visit);
-        }
-        K::Int(_)
-        | K::Float(_)
-        | K::Bool(_)
-        | K::Str(_)
-        | K::Null
-        | K::This
-        | K::Local(_)
-        | K::Global(_)
-        | K::FuncRef(_)
-        | K::EnumMember { .. }
-        | K::Zero
-        | K::RawNew { .. }
-        | K::AsyncSuspend => {}
     }
 }
 
@@ -2151,35 +2061,6 @@ fn walk_place_children<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::
             walk_expr(index, visit);
         }
         hir::ExprKind::Local(_) | hir::ExprKind::Global(_) | hir::ExprKind::This => {}
-        hir::ExprKind::Int(_)
-        | hir::ExprKind::Float(_)
-        | hir::ExprKind::Bool(_)
-        | hir::ExprKind::Str(_)
-        | hir::ExprKind::Null
-        | hir::ExprKind::FuncRef(_)
-        | hir::ExprKind::EnumMember { .. }
-        | hir::ExprKind::Unary { .. }
-        | hir::ExprKind::Binary { .. }
-        | hir::ExprKind::AbsenceTest { .. }
-        | hir::ExprKind::Assign { .. }
-        | hir::ExprKind::Cast(_)
-        | hir::ExprKind::Call { .. }
-        | hir::ExprKind::New { .. }
-        | hir::ExprKind::DescriptorLit { .. }
-        | hir::ExprKind::Zero
-        | hir::ExprKind::RawNew { .. }
-        | hir::ExprKind::JsonResultValue(_)
-        | hir::ExprKind::Length(_)
-        | hir::ExprKind::ArrayLit(_)
-        | hir::ExprKind::ArraySpreadLit(_)
-        | hir::ExprKind::Template(_)
-        | hir::ExprKind::Lambda { .. }
-        | hir::ExprKind::Yield(_)
-        | hir::ExprKind::AsyncSuspend
-        | hir::ExprKind::AsyncCall { .. }
-        | hir::ExprKind::AsyncHandleCreate { .. }
-        | hir::ExprKind::AsyncHandleAwait(_)
-        | hir::ExprKind::AsyncHandleTransfer { .. }
-        | hir::ExprKind::Cond { .. } => walk_expr(expr, visit),
+        _ => walk_expr(expr, visit),
     }
 }

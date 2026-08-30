@@ -168,7 +168,7 @@ impl HandleKind {
     /// Can the stored representation expose managed handles to the marker?
     #[must_use]
     pub fn contains_managed(self) -> bool {
-        self.is_collector_managed() || matches!(self, Self::Func)
+        self.is_collector_managed()
     }
 }
 
@@ -661,7 +661,7 @@ mod tests {
             (HandleKind::Worker, false, true, false, false, false),
             (HandleKind::Inbox, false, true, false, false, false),
             (HandleKind::Outbox, false, true, false, false, false),
-            (HandleKind::Func, false, true, false, false, true),
+            (HandleKind::Func, false, true, false, false, false),
             (HandleKind::ReferenceClass, true, true, true, true, true),
             (HandleKind::FuncBox, true, true, false, true, true),
             (HandleKind::BoundaryBox, true, true, false, true, true),

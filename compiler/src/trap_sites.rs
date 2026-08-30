@@ -155,12 +155,6 @@ impl Analyzer {
                 // A same-named binding shadows any proven outer counter.
                 self.ranges.remove(name);
             }
-            hir::Stmt::Expr(expr) => self.expr(expr),
-            hir::Stmt::Return { value, .. } => {
-                if let Some(value) = value {
-                    self.expr(value);
-                }
-            }
             hir::Stmt::If {
                 cond, then, els, ..
             } => {

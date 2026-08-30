@@ -92,13 +92,11 @@ pub(crate) unsafe fn value_eq(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arrops::{elem_value_eq, ElemKind};
-    use crate::assocops::{keys_equal, KeyKind};
+    use crate::assocops::KeyKind;
 
-    unsafe fn callers_agree(
+    unsafe fn assert_value_eq(
         ctx: *mut Context,
-        elem_kind: ElemKind,
-        key_kind: KeyKind,
+        kind: ValueKind,
         width: usize,
         left: *const u8,
         right: *const u8,
@@ -106,18 +104,13 @@ mod tests {
     ) {
         // SAFETY: each call receives the matching test storage below.
         assert_eq!(
-            unsafe { elem_value_eq(ctx, elem_kind, width, left, right, true) },
-            expected
-        );
-        // SAFETY: each call receives the matching test storage below.
-        assert_eq!(
-            unsafe { keys_equal(ctx, key_kind, left, right, width) },
+            unsafe { value_eq(ctx, kind, width, left, right, true) },
             expected
         );
     }
 
     #[test]
-    fn value_eq_every_kind_and_width_callers_agree() {
+    fn value_eq_covers_every_kind_and_width() {
         let mut ctx = Context::new();
         let ctx_ptr: *mut Context = &mut *ctx;
 
@@ -128,19 +121,17 @@ mod tests {
             different[0] ^= 1;
             // SAFETY: all arrays contain eight readable bytes.
             unsafe {
-                callers_agree(
+                assert_value_eq(
                     ctx_ptr,
-                    ElemKind::Int,
-                    KeyKind::Bits,
+                    ValueKind::Bits,
                     width,
                     left.as_ptr(),
                     equal.as_ptr(),
                     true,
                 );
-                callers_agree(
+                assert_value_eq(
                     ctx_ptr,
-                    ElemKind::SignedInt,
-                    KeyKind::Ref,
+                    ValueKind::Bits,
                     width,
                     left.as_ptr(),
                     different.as_ptr(),
@@ -155,35 +146,33 @@ mod tests {
         let f64_nan_b = f64::from_bits(0xfff8_0000_0000_0042);
         // SAFETY: values have the widths selected for their kinds.
         unsafe {
-            callers_agree(
+            assert_value_eq(
                 ctx_ptr,
-                ElemKind::F32,
-                KeyKind::F32,
+                ValueKind::F32,
                 4,
                 (&raw const f32_nan_a).cast(),
                 (&raw const f32_nan_b).cast(),
                 true,
             );
-            callers_agree(
+            assert_value_eq(
                 ctx_ptr,
-                ElemKind::F64,
-                KeyKind::F64,
+                ValueKind::F64,
                 8,
                 (&raw const f64_nan_a).cast(),
                 (&raw const f64_nan_b).cast(),
                 true,
             );
-            assert!(!elem_value_eq(
+            assert!(!value_eq(
                 ctx_ptr,
-                ElemKind::F32,
+                ValueKind::F32,
                 4,
                 (&raw const f32_nan_a).cast(),
                 (&raw const f32_nan_b).cast(),
                 false,
             ));
-            assert!(!elem_value_eq(
+            assert!(!value_eq(
                 ctx_ptr,
-                ElemKind::F64,
+                ValueKind::F64,
                 8,
                 (&raw const f64_nan_a).cast(),
                 (&raw const f64_nan_b).cast(),
@@ -195,10 +184,9 @@ mod tests {
         let string_b = ctx.alloc_str(b"same", 0);
         // SAFETY: both slots contain live string handles.
         unsafe {
-            callers_agree(
+            assert_value_eq(
                 ctx_ptr,
-                ElemKind::Str,
-                KeyKind::Str,
+                ValueKind::Str,
                 8,
                 (&raw const string_a).cast(),
                 (&raw const string_b).cast(),
@@ -210,17 +198,17 @@ mod tests {
         let f16_nan_b = 0xfe42u16;
         // SAFETY: both values contain readable binary16 bits.
         unsafe {
-            assert!(elem_value_eq(
+            assert!(value_eq(
                 ctx_ptr,
-                ElemKind::F16,
+                ValueKind::F16,
                 2,
                 (&raw const f16_nan_a).cast(),
                 (&raw const f16_nan_b).cast(),
                 true,
             ));
-            assert!(!elem_value_eq(
+            assert!(!value_eq(
                 ctx_ptr,
-                ElemKind::F16,
+                ValueKind::F16,
                 2,
                 (&raw const f16_nan_a).cast(),
                 (&raw const f16_nan_b).cast(),

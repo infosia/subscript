@@ -881,23 +881,32 @@ impl<'m> Interpreter<'m> {
                 stored.poisoned_at = None;
                 None
             }
-            l::InstructionKind::AddressOfLocal(local) => Some(Value::Address(Address {
-                target: AddressTarget::Slot(
-                    frame
+            l::InstructionKind::AddressOfLocal(local) => {
+                let stored = frame.locals.get(local.0 as usize).ok_or_else(|| {
+                    self.invalid(
+                        Some(instruction.pos.clone()),
+                        format!("local {} is missing", local.0),
+                    )
+                })?;
+                if let Some((suspend, suspend_pos)) = &stored.poisoned_at {
+                    let name = function
                         .locals
                         .get(local.0 as usize)
-                        .ok_or_else(|| {
-                            self.invalid(
-                                Some(instruction.pos.clone()),
-                                format!("local {} is missing", local.0),
-                            )
-                        })?
-                        .slot()
-                        .clone(),
-                ),
-                pointee: self.address_pointee(result_ty, instruction)?,
-                poison: Rc::new(RefCell::new(None)),
-            })),
+                        .map_or("<missing>", |local| local.source_name.as_str());
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        format!(
+                            "activation local {} (`{name}`) was loaded after suspend in block {} at {suspend_pos}",
+                            local.0, suspend.0
+                        ),
+                    ));
+                }
+                Some(Value::Address(Address {
+                    target: AddressTarget::Slot(stored.slot().clone()),
+                    pointee: self.address_pointee(result_ty, instruction)?,
+                    poison: Rc::new(RefCell::new(None)),
+                }))
+            }
             l::InstructionKind::LoadGlobal(global) => Some(
                 self.globals
                     .get(global.0 as usize)

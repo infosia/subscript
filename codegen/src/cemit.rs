@@ -8384,7 +8384,7 @@ mod tests {
     }
 
     #[test]
-    fn rooted_local_decision_matches_the_shared_plan_for_all_handles_and_iterators() {
+    fn managed_word_counts_cover_all_handles_and_iterators() {
         let mut module = lower_test_source(
             "rooted-locals.ts",
             "@CStruct class Boundary { x: i32 = 0; }\nclass Ref {}\nexport function main(): void {}\n",
@@ -8398,22 +8398,31 @@ mod tests {
                 ret: Type::Bool,
             }))
         };
-        let mut types = vec![
-            l::ValueType::Data(Type::Str),
-            l::ValueType::Data(Type::RegExp),
-            l::ValueType::Data(Type::Object),
-            l::ValueType::Data(Type::Array(Box::new(Type::I32))),
-            l::ValueType::Data(Type::Map(Box::new(Type::I32), Box::new(Type::Bool))),
-            l::ValueType::Data(Type::Set(Box::new(Type::I32))),
-            l::ValueType::Data(Type::Generator(Box::new(Type::I32))),
-            l::ValueType::Data(Type::AsyncHandle(Box::new(Type::I32))),
-            l::ValueType::Data(Type::Worker(Box::new(Type::I32), Box::new(Type::Bool))),
-            l::ValueType::Data(Type::Inbox(Box::new(Type::I32))),
-            l::ValueType::Data(Type::Outbox(Box::new(Type::I32))),
-            l::ValueType::Data(function()),
-            l::ValueType::Data(reference),
-            l::ValueType::Data(Type::Nullable(Box::new(function()))),
-            l::ValueType::Data(Type::Nullable(Box::new(boundary))),
+        let mut cases = vec![
+            (l::ValueType::Data(Type::Str), 1),
+            (l::ValueType::Data(Type::RegExp), 1),
+            (l::ValueType::Data(Type::Object), 1),
+            (l::ValueType::Data(Type::Array(Box::new(Type::I32))), 1),
+            (
+                l::ValueType::Data(Type::Map(Box::new(Type::I32), Box::new(Type::Bool))),
+                1,
+            ),
+            (l::ValueType::Data(Type::Set(Box::new(Type::I32))), 1),
+            (l::ValueType::Data(Type::Generator(Box::new(Type::I32))), 1),
+            (
+                l::ValueType::Data(Type::AsyncHandle(Box::new(Type::I32))),
+                1,
+            ),
+            (
+                l::ValueType::Data(Type::Worker(Box::new(Type::I32), Box::new(Type::Bool))),
+                0,
+            ),
+            (l::ValueType::Data(Type::Inbox(Box::new(Type::I32))), 0),
+            (l::ValueType::Data(Type::Outbox(Box::new(Type::I32))), 0),
+            (l::ValueType::Data(function()), 0),
+            (l::ValueType::Data(reference), 1),
+            (l::ValueType::Data(Type::Nullable(Box::new(function()))), 1),
+            (l::ValueType::Data(Type::Nullable(Box::new(boundary))), 1),
         ];
         let iterator_kinds = [
             l::ForOfKind::ArrayValues,
@@ -8426,77 +8435,22 @@ mod tests {
             l::ForOfKind::SetValues,
             l::ForOfKind::StringCodePoints,
         ];
-        types.extend(iterator_kinds.map(|kind| {
-            l::ValueType::Iterator(l::IteratorType {
-                kind,
-                element: Type::I32,
-            })
+        cases.extend(iterator_kinds.map(|kind| {
+            (
+                l::ValueType::Iterator(l::IteratorType {
+                    kind,
+                    element: Type::I32,
+                }),
+                4,
+            )
         }));
-        let pos = Pos::new("rooted-locals.ts", 3, 1);
-        let values = types
-            .iter()
-            .enumerate()
-            .map(|(index, ty)| l::Value {
-                id: l::ValueId(index as u32),
-                ty: ty.clone(),
-                fresh_owner: false,
-                source_name: None,
-            })
-            .collect::<Vec<_>>();
-        let locals = types
-            .iter()
-            .enumerate()
-            .map(|(index, ty)| l::Local {
-                id: l::LocalId(index as u32),
-                source_name: format!("local{index}"),
-                ty: ty.clone(),
-                mutable: false,
-                storage: l::LocalStorageClass::Activation,
-                pos: pos.clone(),
-            })
-            .collect::<Vec<_>>();
-        let function = l::Function {
-            id: l::FunctionId(0),
-            source_name: "main".into(),
-            kind: l::FunctionKind::Free,
-            exported: true,
-            is_generator: false,
-            is_async: false,
-            creation_traps: Vec::new(),
-            host_entry_traps: Some(Vec::new()),
-            parameters: Vec::new(),
-            return_type: Type::Void,
-            locals,
-            values,
-            liveness: l::Liveness {
-                live_ins: vec![Vec::new()],
-                value_origins: (0..types.len())
-                    .map(|index| l::ValueId(index as u32))
-                    .collect(),
-            },
-            blocks: vec![l::BasicBlock {
-                id: l::BlockId(0),
-                source_name: None,
-                parameters: Vec::new(),
-                instructions: Vec::new(),
-                terminator: l::Terminator::Return {
-                    value: None,
-                    pos: pos.clone(),
-                },
-            }],
-            entry: l::BlockId(0),
-            pos,
-        };
-        module.functions = vec![function];
-        module.entry = Some(l::FunctionId(0));
         let layouts = Layouts::build_lir(&module).expect("test classes have valid layouts");
-        let plan = root_storage::plan(&module.functions[0], &layouts)
-            .expect("the shared root plan accepts every handle kind");
-        for (index, local) in module.functions[0].locals.iter().enumerate() {
-            let cemit = local_contains_managed(&layouts, &local.ty)
-                .expect("the C emitter classifies the local");
-            let shared = plan.value_slots[index].is_some();
-            assert_eq!(cemit, shared, "{}: {:?}", local.source_name, local.ty);
+        for (ty, expected) in cases {
+            assert_eq!(
+                root_storage::managed_value_words(&layouts, &ty).expect("managed word count"),
+                expected,
+                "{ty:?}"
+            );
         }
     }
 

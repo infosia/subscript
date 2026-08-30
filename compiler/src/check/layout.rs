@@ -179,15 +179,17 @@ fn count_async_calls(stmts: &[hir::Stmt]) -> u64 {
 
 struct Validator<'a> {
     classes: &'a [hir::ClassDef],
+    handle_classes: &'a [HandleClass],
     states: Vec<Option<Outcome>>,
     visiting: Vec<bool>,
     diagnostics: Vec<Diagnostic>,
 }
 
 impl<'a> Validator<'a> {
-    fn new(classes: &'a [hir::ClassDef]) -> Self {
+    fn new(classes: &'a [hir::ClassDef], handle_classes: &'a [HandleClass]) -> Self {
         Self {
             classes,
+            handle_classes,
             states: vec![None; classes.len()],
             visiting: vec![false; classes.len()],
             diagnostics: Vec::new(),
@@ -316,13 +318,8 @@ impl<'a> Validator<'a> {
     }
 
     fn is_managed(&self, ty: &Type) -> bool {
-        let classes = self
-            .classes
-            .iter()
-            .map(HandleClass::from)
-            .collect::<Vec<_>>();
         // Fact filter: does this value point to a Context allocation that the marker can reach?
-        ty.handle_kind(&classes)
+        ty.handle_kind(self.handle_classes)
             .is_some_and(HandleKind::is_collector_managed)
     }
 
@@ -615,7 +612,7 @@ impl<'a> Validator<'a> {
         for child in expr.children() {
             match child {
                 hir::HirChild::Expr(child) => self.validate_expr_frame(child, false, frame),
-                hir::HirChild::Stmt(_) => unreachable!("lambda children returned after handling"),
+                hir::HirChild::Stmt(_) => {}
             }
         }
 
@@ -870,7 +867,7 @@ impl<'a> Validator<'a> {
 
 impl Checker<'_> {
     pub(super) fn validate_layouts(&mut self) {
-        let diagnostics = Validator::new(&self.classes).validate(
+        let diagnostics = Validator::new(&self.classes, &self.type_handle_classes).validate(
             &self.pending_layouts,
             &self.functions,
             &self.globals,
