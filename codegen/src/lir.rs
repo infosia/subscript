@@ -6949,63 +6949,15 @@ fn replace_terminator_uses(
     original: l::ValueId,
     replacement: Option<l::ValueId>,
 ) {
-    match terminator {
-        l::Terminator::Branch(target) => {
-            replace_operands(&mut target.arguments, original, replacement);
-        }
-        l::Terminator::ConditionalBranch {
-            condition,
-            then_target,
-            else_target,
-        } => {
-            replace_operands(std::slice::from_mut(condition), original, replacement);
-            replace_operands(&mut then_target.arguments, original, replacement);
-            replace_operands(&mut else_target.arguments, original, replacement);
-        }
-        l::Terminator::Switch {
-            value,
-            arms,
-            default,
-        } => {
-            replace_operands(std::slice::from_mut(value), original, replacement);
-            for arm in arms {
-                replace_operands(&mut arm.target.arguments, original, replacement);
+    if let Some(replacement) = replacement {
+        // A replacement must update invalidation mentions with the read uses.
+        terminator.map_values(|value| {
+            if value == original {
+                replacement
+            } else {
+                value
             }
-            replace_operands(&mut default.arguments, original, replacement);
-        }
-        l::Terminator::Return { value, .. } => {
-            if let Some(value) = value {
-                replace_operands(std::slice::from_mut(value), original, replacement);
-            }
-        }
-        l::Terminator::Suspend {
-            kind,
-            arguments,
-            invalidates,
-            ..
-        } => {
-            replace_operands(arguments, original, replacement);
-            replace_ids(invalidates, original, replacement);
-            match kind {
-                l::SuspendKind::Yield(value) => {
-                    if value == &Some(original) {
-                        *value = replacement;
-                    }
-                }
-                l::SuspendKind::Async => {}
-                l::SuspendKind::AsyncCall { operands, .. } => {
-                    replace_ids(operands, original, replacement);
-                }
-                l::SuspendKind::AsyncHandle { handle } => {
-                    if *handle == original {
-                        if let Some(replacement) = replacement {
-                            *handle = replacement;
-                        }
-                    }
-                }
-            }
-        }
-        l::Terminator::Trap(_) | l::Terminator::Unreachable { .. } => {}
+        });
     }
 }
 
@@ -7267,16 +7219,14 @@ fn counted_terminator_stores(
     terminator: &l::Terminator,
 ) -> Vec<(usize, l::Operand)> {
     match terminator {
-        l::Terminator::Return {
-            value: Some(value), ..
-        } if operand_type(function, value)
-            .as_ref()
-            .is_some_and(is_async_owner_type) =>
-        {
-            vec![(0, value.clone())]
-        }
+        l::Terminator::Return { .. } => terminator
+            .value_uses()
+            .into_iter()
+            .filter(|value| value_type(function, *value).is_some_and(is_async_owner_type))
+            .map(|value| (0, l::Operand::Value(value)))
+            .collect(),
         l::Terminator::Suspend {
-            kind: l::SuspendKind::AsyncCall { target, operands },
+            kind: l::SuspendKind::AsyncCall { target, .. },
             ..
         } => {
             let start = match target.kind {
@@ -7287,9 +7237,23 @@ fn counted_terminator_stores(
                 | l::CallTargetKind::BuiltinMethod(_) => Some(1),
                 l::CallTargetKind::Foreign(_) => None,
             };
+            let target_argument_count = terminator.targets().first().map_or(0, |target| {
+                target
+                    .arguments
+                    .iter()
+                    .filter(|argument| matches!(argument, l::Operand::Value(_)))
+                    .count()
+            });
             start
                 .into_iter()
-                .flat_map(|start| operands.iter().copied().enumerate().skip(start))
+                .flat_map(|start| {
+                    terminator
+                        .value_uses()
+                        .into_iter()
+                        .enumerate()
+                        .skip(target_argument_count + start)
+                        .map(|(index, value)| (index - target_argument_count, value))
+                })
                 .filter(|(_, value)| value_type(function, *value).is_some_and(is_async_owner_type))
                 .map(|(index, value)| (index, l::Operand::Value(value)))
                 .collect()
@@ -7355,30 +7319,8 @@ fn fresh_owner_index(function: &l::Function) -> (Vec<bool>, Vec<Vec<l::Operand>>
         }
     };
     for block in &function.blocks {
-        match &block.terminator {
-            l::Terminator::Branch(target) => add_edge(target.block, &target.arguments),
-            l::Terminator::ConditionalBranch {
-                then_target,
-                else_target,
-                ..
-            } => {
-                add_edge(then_target.block, &then_target.arguments);
-                add_edge(else_target.block, &else_target.arguments);
-            }
-            l::Terminator::Switch { arms, default, .. } => {
-                for arm in arms {
-                    add_edge(arm.target.block, &arm.target.arguments);
-                }
-                add_edge(default.block, &default.arguments);
-            }
-            l::Terminator::Suspend {
-                successor,
-                arguments,
-                ..
-            } => add_edge(*successor, arguments),
-            l::Terminator::Return { .. }
-            | l::Terminator::Trap(_)
-            | l::Terminator::Unreachable { .. } => {}
+        for target in block.terminator.targets() {
+            add_edge(target.block, &target.arguments);
         }
     }
     (seeds, incoming)
@@ -8545,26 +8487,11 @@ fn static_closure_operand_matches(
                 .is_some_and(|operand| collect(function, operand, target, visiting, saw_closure));
         };
         for block in &function.blocks {
-            match &block.terminator {
-                l::Terminator::Branch(edge) => inspect(edge),
-                l::Terminator::ConditionalBranch {
-                    then_target,
-                    else_target,
-                    ..
-                } => {
-                    inspect(then_target);
-                    inspect(else_target);
-                }
-                l::Terminator::Switch { arms, default, .. } => {
-                    for arm in arms {
-                        inspect(&arm.target);
-                    }
-                    inspect(default);
-                }
-                l::Terminator::Return { .. }
-                | l::Terminator::Trap(_)
-                | l::Terminator::Unreachable { .. }
-                | l::Terminator::Suspend { .. } => {}
+            if matches!(block.terminator, l::Terminator::Suspend { .. }) {
+                continue;
+            }
+            for edge in block.terminator.targets() {
+                inspect(&edge);
             }
         }
         visiting.remove(value);
@@ -8716,13 +8643,14 @@ fn verify_terminator_types(
     block: &l::BasicBlock,
     errors: &mut Vec<VerifyError>,
 ) {
+    if !matches!(block.terminator, l::Terminator::Suspend { .. }) {
+        for target in block.terminator.targets() {
+            verify_edge(function, block, &target, errors);
+        }
+    }
     match &block.terminator {
-        l::Terminator::Branch(target) => verify_edge(function, block, target, errors),
-        l::Terminator::ConditionalBranch {
-            condition,
-            then_target,
-            else_target,
-        } => {
+        l::Terminator::Branch(_) => {}
+        l::Terminator::ConditionalBranch { condition, .. } => {
             verify_operand_type(
                 function,
                 condition,
@@ -8730,14 +8658,8 @@ fn verify_terminator_types(
                 &format!("block {} conditional", block.id.0),
                 errors,
             );
-            verify_edge(function, block, then_target, errors);
-            verify_edge(function, block, else_target, errors);
         }
-        l::Terminator::Switch {
-            value,
-            arms,
-            default,
-        } => {
+        l::Terminator::Switch { value, arms, .. } => {
             let discriminant = operand_type(function, value);
             for arm in arms {
                 if discriminant != Some(l::ValueType::Data(arm.value.ty.clone())) {
@@ -8749,9 +8671,7 @@ fn verify_terminator_types(
                         ),
                     ));
                 }
-                verify_edge(function, block, &arm.target, errors);
             }
-            verify_edge(function, block, default, errors);
         }
         l::Terminator::Return { value: None, .. } if function.is_generator => {}
         l::Terminator::Return { value, .. } => match (value, &function.return_type) {
@@ -9250,7 +9170,7 @@ fn check_dominates(
 fn predecessors(function: &l::Function) -> Vec<Vec<l::BlockId>> {
     let mut predecessors = vec![Vec::new(); function.blocks.len()];
     for block in &function.blocks {
-        for successor in successors(&block.terminator) {
+        for successor in block.terminator.successors() {
             if let Some(list) = predecessors.get_mut(successor.0 as usize) {
                 list.push(block.id);
             }
@@ -9295,79 +9215,11 @@ fn dominators(
 }
 
 fn successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
-    match terminator {
-        l::Terminator::Branch(target) => vec![target.block],
-        l::Terminator::ConditionalBranch {
-            then_target,
-            else_target,
-            ..
-        } => vec![then_target.block, else_target.block],
-        l::Terminator::Switch { arms, default, .. } => arms
-            .iter()
-            .map(|arm| arm.target.block)
-            .chain(std::iter::once(default.block))
-            .collect(),
-        l::Terminator::Suspend { successor, .. } => vec![*successor],
-        l::Terminator::Return { .. }
-        | l::Terminator::Unreachable { .. }
-        | l::Terminator::Trap(_) => Vec::new(),
-    }
+    terminator.successors()
 }
 
 fn terminator_values(terminator: &l::Terminator) -> Vec<l::ValueId> {
-    let mut values = Vec::new();
-    let mut push_operand = |operand: &l::Operand| {
-        if let l::Operand::Value(value) = operand {
-            values.push(*value);
-        }
-    };
-    match terminator {
-        l::Terminator::Branch(target) => target.arguments.iter().for_each(&mut push_operand),
-        l::Terminator::ConditionalBranch {
-            condition,
-            then_target,
-            else_target,
-        } => {
-            push_operand(condition);
-            then_target.arguments.iter().for_each(&mut push_operand);
-            else_target.arguments.iter().for_each(&mut push_operand);
-        }
-        l::Terminator::Switch {
-            value,
-            arms,
-            default,
-        } => {
-            push_operand(value);
-            for arm in arms {
-                arm.target.arguments.iter().for_each(&mut push_operand);
-            }
-            default.arguments.iter().for_each(&mut push_operand);
-        }
-        l::Terminator::Return { value, .. } => {
-            if let Some(value) = value {
-                push_operand(value);
-            }
-        }
-        l::Terminator::Suspend {
-            kind, arguments, ..
-        } => {
-            arguments.iter().for_each(&mut push_operand);
-            match kind {
-                l::SuspendKind::Yield(value) => {
-                    if let Some(value) = value {
-                        values.push(*value);
-                    }
-                }
-                l::SuspendKind::Async => {}
-                l::SuspendKind::AsyncCall { operands, .. } => {
-                    values.extend(operands.iter().copied());
-                }
-                l::SuspendKind::AsyncHandle { handle } => values.push(*handle),
-            }
-        }
-        l::Terminator::Trap(_) | l::Terminator::Unreachable { .. } => {}
-    }
-    values
+    terminator.value_uses()
 }
 
 fn verify_address_invalidation(function: &l::Function, errors: &mut Vec<VerifyError>) {

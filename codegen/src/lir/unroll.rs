@@ -709,7 +709,7 @@ fn has_external_use(
 fn predecessors(function: &l::Function) -> Vec<Vec<l::BlockId>> {
     let mut result = vec![Vec::new(); function.blocks.len()];
     for block in &function.blocks {
-        for successor in successors(&block.terminator) {
+        for successor in block.terminator.successors() {
             if let Some(predecessors) = result.get_mut(successor.0 as usize) {
                 predecessors.push(block.id);
             }
@@ -718,90 +718,23 @@ fn predecessors(function: &l::Function) -> Vec<Vec<l::BlockId>> {
     result
 }
 
-fn one_target_to(terminator: &l::Terminator, destination: l::BlockId) -> Option<&l::BlockTarget> {
-    let targets = normal_targets(terminator)
+fn one_target_to(terminator: &l::Terminator, destination: l::BlockId) -> Option<l::BlockTarget> {
+    if matches!(terminator, l::Terminator::Suspend { .. }) {
+        return None;
+    }
+    let targets = terminator
+        .targets()
         .into_iter()
         .filter(|target| target.block == destination)
         .collect::<Vec<_>>();
-    (targets.len() == 1).then(|| targets[0])
-}
-
-fn normal_targets(terminator: &l::Terminator) -> Vec<&l::BlockTarget> {
-    match terminator {
-        l::Terminator::Branch(target) => vec![target],
-        l::Terminator::ConditionalBranch {
-            then_target,
-            else_target,
-            ..
-        } => vec![then_target, else_target],
-        l::Terminator::Switch { arms, default, .. } => arms
-            .iter()
-            .map(|arm| &arm.target)
-            .chain(std::iter::once(default))
-            .collect(),
-        l::Terminator::Return { .. }
-        | l::Terminator::Unreachable { .. }
-        | l::Terminator::Trap(_)
-        | l::Terminator::Suspend { .. } => Vec::new(),
-    }
-}
-
-fn successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
-    match terminator {
-        l::Terminator::Suspend { successor, .. } => vec![*successor],
-        _ => normal_targets(terminator)
-            .into_iter()
-            .map(|target| target.block)
-            .collect(),
-    }
+    (targets.len() == 1).then(|| targets[0].clone())
 }
 
 fn terminator_values(terminator: &l::Terminator) -> Vec<l::ValueId> {
-    let mut values = normal_targets(terminator)
-        .into_iter()
-        .flat_map(|target| &target.arguments)
-        .filter_map(|operand| match operand {
-            l::Operand::Value(value) => Some(*value),
-            l::Operand::Constant(_) => None,
-        })
-        .collect::<Vec<_>>();
-    match terminator {
-        l::Terminator::ConditionalBranch {
-            condition: l::Operand::Value(value),
-            ..
-        }
-        | l::Terminator::Switch {
-            value: l::Operand::Value(value),
-            ..
-        } => values.push(*value),
-        l::Terminator::Return {
-            value: Some(l::Operand::Value(value)),
-            ..
-        } => values.push(*value),
-        l::Terminator::Suspend {
-            kind,
-            arguments,
-            invalidates,
-            ..
-        } => {
-            values.extend(arguments.iter().filter_map(|operand| match operand {
-                l::Operand::Value(value) => Some(*value),
-                l::Operand::Constant(_) => None,
-            }));
-            values.extend(invalidates);
-            match kind {
-                l::SuspendKind::Yield(value) => values.extend(value),
-                l::SuspendKind::Async => {}
-                l::SuspendKind::AsyncCall { operands, .. } => values.extend(operands),
-                l::SuspendKind::AsyncHandle { handle } => values.push(*handle),
-            }
-        }
-        l::Terminator::Branch(_)
-        | l::Terminator::ConditionalBranch { .. }
-        | l::Terminator::Switch { .. }
-        | l::Terminator::Return { .. }
-        | l::Terminator::Unreachable { .. }
-        | l::Terminator::Trap(_) => {}
+    let mut values = terminator.value_uses();
+    if let l::Terminator::Suspend { invalidates, .. } = terminator {
+        // External-use safety needs invalidation mentions outside the loop.
+        values.extend(invalidates);
     }
     values
 }

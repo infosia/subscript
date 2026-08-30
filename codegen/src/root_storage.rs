@@ -98,101 +98,25 @@ fn record_operand(
     Ok(())
 }
 
-fn record_target(
-    function: &l::Function,
-    values: &mut BTreeSet<l::ValueId>,
-    target: &l::BlockTarget,
-) -> Result<(), String> {
-    for argument in &target.arguments {
-        record_operand(function, values, argument)?;
-    }
-    Ok(())
-}
-
 fn record_terminator(
     function: &l::Function,
     values: &mut BTreeSet<l::ValueId>,
     terminator: &l::Terminator,
 ) -> Result<(), String> {
-    match terminator {
-        l::Terminator::Branch(target) => record_target(function, values, target)?,
-        l::Terminator::ConditionalBranch {
-            condition,
-            then_target,
-            else_target,
-        } => {
-            record_operand(function, values, condition)?;
-            record_target(function, values, then_target)?;
-            record_target(function, values, else_target)?;
+    for value in terminator.value_uses() {
+        record_value(function, values, value)?;
+    }
+    if let l::Terminator::Suspend { invalidates, .. } = terminator {
+        // Root interference needs every storage mention during suspension.
+        for value in invalidates {
+            record_value(function, values, *value)?;
         }
-        l::Terminator::Switch {
-            value,
-            arms,
-            default,
-        } => {
-            record_operand(function, values, value)?;
-            for arm in arms {
-                record_target(function, values, &arm.target)?;
-            }
-            record_target(function, values, default)?;
-        }
-        l::Terminator::Return { value, .. } => {
-            if let Some(value) = value {
-                record_operand(function, values, value)?;
-            }
-        }
-        l::Terminator::Suspend {
-            kind,
-            arguments,
-            invalidates,
-            ..
-        } => {
-            match kind {
-                l::SuspendKind::Yield(value) => {
-                    if let Some(value) = value {
-                        record_value(function, values, *value)?;
-                    }
-                }
-                l::SuspendKind::Async => {}
-                l::SuspendKind::AsyncCall { operands, .. } => {
-                    for value in operands {
-                        record_value(function, values, *value)?;
-                    }
-                }
-                l::SuspendKind::AsyncHandle { handle } => {
-                    record_value(function, values, *handle)?;
-                }
-            }
-            for argument in arguments {
-                record_operand(function, values, argument)?;
-            }
-            for value in invalidates {
-                record_value(function, values, *value)?;
-            }
-        }
-        l::Terminator::Unreachable { .. } | l::Terminator::Trap(_) => {}
     }
     Ok(())
 }
 
 fn successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
-    match terminator {
-        l::Terminator::Branch(target) => vec![target.block],
-        l::Terminator::ConditionalBranch {
-            then_target,
-            else_target,
-            ..
-        } => vec![then_target.block, else_target.block],
-        l::Terminator::Switch { arms, default, .. } => arms
-            .iter()
-            .map(|arm| arm.target.block)
-            .chain(std::iter::once(default.block))
-            .collect(),
-        l::Terminator::Suspend { successor, .. } => vec![*successor],
-        l::Terminator::Return { .. }
-        | l::Terminator::Unreachable { .. }
-        | l::Terminator::Trap(_) => Vec::new(),
-    }
+    terminator.successors()
 }
 
 fn add_interference(interference: &mut [HashSet<l::ValueId>], left: l::ValueId, right: l::ValueId) {

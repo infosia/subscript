@@ -895,6 +895,179 @@ pub enum Terminator {
 }
 
 impl Terminator {
+    /// Returns every control-flow target in edge order.
+    #[must_use]
+    pub fn targets(&self) -> Vec<BlockTarget> {
+        match self {
+            Self::Branch(target) => vec![target.clone()],
+            Self::ConditionalBranch {
+                then_target,
+                else_target,
+                ..
+            } => vec![then_target.clone(), else_target.clone()],
+            Self::Switch { arms, default, .. } => arms
+                .iter()
+                .map(|arm| arm.target.clone())
+                .chain(std::iter::once(default.clone()))
+                .collect(),
+            Self::Suspend {
+                successor,
+                arguments,
+                ..
+            } => vec![BlockTarget {
+                block: *successor,
+                arguments: arguments.clone(),
+            }],
+            Self::Return { .. } | Self::Unreachable { .. } | Self::Trap(_) => Vec::new(),
+        }
+    }
+
+    /// Returns every successor block id in edge order.
+    #[must_use]
+    pub fn successors(&self) -> Vec<BlockId> {
+        self.targets()
+            .into_iter()
+            .map(|target| target.block)
+            .collect()
+    }
+
+    /// Returns every value that the terminator reads.
+    ///
+    /// Suspend invalidations name movable storage. The resume value is a
+    /// definition. Neither is a read.
+    #[must_use]
+    pub fn value_uses(&self) -> Vec<ValueId> {
+        let mut values = Vec::new();
+        let mut push_operand = |operand: &Operand| {
+            if let Operand::Value(value) = operand {
+                values.push(*value);
+            }
+        };
+        match self {
+            Self::Branch(target) => target.arguments.iter().for_each(&mut push_operand),
+            Self::ConditionalBranch {
+                condition,
+                then_target,
+                else_target,
+            } => {
+                push_operand(condition);
+                then_target.arguments.iter().for_each(&mut push_operand);
+                else_target.arguments.iter().for_each(&mut push_operand);
+            }
+            Self::Switch {
+                value,
+                arms,
+                default,
+            } => {
+                push_operand(value);
+                for arm in arms {
+                    arm.target.arguments.iter().for_each(&mut push_operand);
+                }
+                default.arguments.iter().for_each(&mut push_operand);
+            }
+            Self::Return { value, .. } => {
+                if let Some(value) = value {
+                    push_operand(value);
+                }
+            }
+            Self::Suspend {
+                kind, arguments, ..
+            } => {
+                arguments.iter().for_each(&mut push_operand);
+                match kind {
+                    SuspendKind::Yield(value) => values.extend(value),
+                    SuspendKind::Async => {}
+                    SuspendKind::AsyncCall { operands, .. } => {
+                        values.extend(operands.iter().copied());
+                    }
+                    SuspendKind::AsyncHandle { handle } => values.push(*handle),
+                }
+            }
+            Self::Unreachable { .. } | Self::Trap(_) => {}
+        }
+        values
+    }
+
+    /// Replaces each read or invalidation value with the mapper's result.
+    ///
+    /// The resume value is a definition and is not mapped.
+    pub fn map_values(&mut self, mut map: impl FnMut(ValueId) -> ValueId) {
+        let map_operand = |operand: &mut Operand, map: &mut dyn FnMut(ValueId) -> ValueId| {
+            if let Operand::Value(value) = operand {
+                *value = map(*value);
+            }
+        };
+        match self {
+            Self::Branch(target) => {
+                for operand in &mut target.arguments {
+                    map_operand(operand, &mut map);
+                }
+            }
+            Self::ConditionalBranch {
+                condition,
+                then_target,
+                else_target,
+            } => {
+                map_operand(condition, &mut map);
+                for operand in then_target
+                    .arguments
+                    .iter_mut()
+                    .chain(&mut else_target.arguments)
+                {
+                    map_operand(operand, &mut map);
+                }
+            }
+            Self::Switch {
+                value,
+                arms,
+                default,
+            } => {
+                map_operand(value, &mut map);
+                for arm in arms {
+                    for operand in &mut arm.target.arguments {
+                        map_operand(operand, &mut map);
+                    }
+                }
+                for operand in &mut default.arguments {
+                    map_operand(operand, &mut map);
+                }
+            }
+            Self::Return { value, .. } => {
+                if let Some(value) = value {
+                    map_operand(value, &mut map);
+                }
+            }
+            Self::Suspend {
+                kind,
+                arguments,
+                invalidates,
+                ..
+            } => {
+                for argument in arguments {
+                    map_operand(argument, &mut map);
+                }
+                for value in invalidates {
+                    *value = map(*value);
+                }
+                match kind {
+                    SuspendKind::Yield(value) => {
+                        if let Some(value) = value {
+                            *value = map(*value);
+                        }
+                    }
+                    SuspendKind::Async => {}
+                    SuspendKind::AsyncCall { operands, .. } => {
+                        for value in operands {
+                            *value = map(*value);
+                        }
+                    }
+                    SuspendKind::AsyncHandle { handle } => *handle = map(*handle),
+                }
+            }
+            Self::Unreachable { .. } | Self::Trap(_) => {}
+        }
+    }
+
     /// Returns the source position for a terminator that can own a trap site.
     #[must_use]
     pub fn trap_site_position(&self) -> Option<&Pos> {
@@ -982,4 +1155,202 @@ pub enum TrapKind {
     DevReloadOnlyStaleCoroutine,
     /// Invalid C-entered wire alias value.
     WireEnumValue(StringAliasId),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    fn pos() -> Pos {
+        Pos::new("terminator.ts", 1, 1)
+    }
+
+    fn operand(value: u32) -> Operand {
+        Operand::Value(ValueId(value))
+    }
+
+    fn target(block: u32, values: &[u32]) -> BlockTarget {
+        BlockTarget {
+            block: BlockId(block),
+            arguments: values.iter().copied().map(operand).collect(),
+        }
+    }
+
+    fn async_target() -> CallTarget {
+        CallTarget {
+            kind: CallTargetKind::Function(FunctionId(0)),
+            parameter_types: Vec::new(),
+            return_type: None,
+        }
+    }
+
+    #[test]
+    fn terminator_walks_yield_all_targets_and_read_values() {
+        let cases = vec![
+            (
+                Terminator::Branch(target(1, &[0])),
+                vec![target(1, &[0])],
+                vec![0],
+            ),
+            (
+                Terminator::ConditionalBranch {
+                    condition: operand(1),
+                    then_target: target(2, &[2]),
+                    else_target: target(3, &[3]),
+                },
+                vec![target(2, &[2]), target(3, &[3])],
+                vec![1, 2, 3],
+            ),
+            (
+                Terminator::Switch {
+                    value: operand(4),
+                    arms: vec![
+                        SwitchArm {
+                            value: Constant {
+                                ty: Type::I32,
+                                kind: ConstantKind::Integer(0),
+                            },
+                            target: target(4, &[5]),
+                        },
+                        SwitchArm {
+                            value: Constant {
+                                ty: Type::I32,
+                                kind: ConstantKind::Integer(1),
+                            },
+                            target: target(5, &[6]),
+                        },
+                    ],
+                    default: target(6, &[7]),
+                },
+                vec![target(4, &[5]), target(5, &[6]), target(6, &[7])],
+                vec![4, 5, 6, 7],
+            ),
+            (
+                Terminator::Return {
+                    value: Some(operand(8)),
+                    pos: pos(),
+                },
+                Vec::new(),
+                vec![8],
+            ),
+            (
+                Terminator::Unreachable { pos: pos() },
+                Vec::new(),
+                Vec::new(),
+            ),
+            (
+                Terminator::Trap(Trap {
+                    kind: TrapKind::Unreachable,
+                    pos: pos(),
+                }),
+                Vec::new(),
+                Vec::new(),
+            ),
+            (
+                Terminator::Suspend {
+                    kind: SuspendKind::Yield(Some(ValueId(10))),
+                    pos: pos(),
+                    successor: BlockId(7),
+                    resume_value: Some(ValueId(90)),
+                    arguments: vec![operand(9)],
+                    invalidates: vec![ValueId(91)],
+                    traps: Vec::new(),
+                },
+                vec![target(7, &[9])],
+                vec![9, 10],
+            ),
+            (
+                Terminator::Suspend {
+                    kind: SuspendKind::Async,
+                    pos: pos(),
+                    successor: BlockId(8),
+                    resume_value: None,
+                    arguments: vec![operand(11)],
+                    invalidates: vec![ValueId(92)],
+                    traps: Vec::new(),
+                },
+                vec![target(8, &[11])],
+                vec![11],
+            ),
+            (
+                Terminator::Suspend {
+                    kind: SuspendKind::AsyncCall {
+                        target: async_target(),
+                        operands: vec![ValueId(13), ValueId(14)],
+                    },
+                    pos: pos(),
+                    successor: BlockId(9),
+                    resume_value: Some(ValueId(93)),
+                    arguments: vec![operand(12)],
+                    invalidates: vec![ValueId(94)],
+                    traps: Vec::new(),
+                },
+                vec![target(9, &[12])],
+                vec![12, 13, 14],
+            ),
+            (
+                Terminator::Suspend {
+                    kind: SuspendKind::AsyncHandle {
+                        handle: ValueId(16),
+                    },
+                    pos: pos(),
+                    successor: BlockId(10),
+                    resume_value: Some(ValueId(95)),
+                    arguments: vec![operand(15)],
+                    invalidates: vec![ValueId(96)],
+                    traps: Vec::new(),
+                },
+                vec![target(10, &[15])],
+                vec![15, 16],
+            ),
+        ];
+
+        for (terminator, targets, values) in cases {
+            assert_eq!(terminator.targets(), targets);
+            assert_eq!(
+                terminator.successors(),
+                targets
+                    .iter()
+                    .map(|target| target.block)
+                    .collect::<Vec<_>>()
+            );
+            let actual = terminator.value_uses();
+            assert_eq!(actual, values.into_iter().map(ValueId).collect::<Vec<_>>());
+            assert_eq!(actual.len(), actual.iter().collect::<HashSet<_>>().len());
+        }
+    }
+
+    #[test]
+    fn map_values_maps_reads_and_invalidations_but_not_resume_definitions() {
+        let mut terminator = Terminator::Suspend {
+            kind: SuspendKind::AsyncCall {
+                target: async_target(),
+                operands: vec![ValueId(2), ValueId(3)],
+            },
+            pos: pos(),
+            successor: BlockId(1),
+            resume_value: Some(ValueId(4)),
+            arguments: vec![operand(1)],
+            invalidates: vec![ValueId(5)],
+            traps: Vec::new(),
+        };
+        terminator.map_values(|value| ValueId(value.0 + 10));
+
+        assert_eq!(
+            terminator.value_uses(),
+            vec![ValueId(11), ValueId(12), ValueId(13)]
+        );
+        let Terminator::Suspend {
+            resume_value,
+            invalidates,
+            ..
+        } = terminator
+        else {
+            panic!("test terminator changed kind");
+        };
+        assert_eq!(resume_value, Some(ValueId(4)));
+        assert_eq!(invalidates, vec![ValueId(15)]);
+    }
 }

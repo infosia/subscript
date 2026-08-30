@@ -1614,84 +1614,12 @@ fn record_address_escape(uses: &mut HashMap<l::ValueId, Vec<AddressUse>>, operan
     }
 }
 
-fn record_target_address_escapes(
-    uses: &mut HashMap<l::ValueId, Vec<AddressUse>>,
-    target: &l::BlockTarget,
-) {
-    for argument in &target.arguments {
-        record_address_escape(uses, argument);
-    }
-}
-
 fn record_terminator_address_escapes(
     uses: &mut HashMap<l::ValueId, Vec<AddressUse>>,
     terminator: &l::Terminator,
 ) {
-    match terminator {
-        l::Terminator::Branch(target) => record_target_address_escapes(uses, target),
-        l::Terminator::ConditionalBranch {
-            condition,
-            then_target,
-            else_target,
-        } => {
-            record_address_escape(uses, condition);
-            record_target_address_escapes(uses, then_target);
-            record_target_address_escapes(uses, else_target);
-        }
-        l::Terminator::Switch {
-            value,
-            arms,
-            default,
-        } => {
-            record_address_escape(uses, value);
-            for arm in arms {
-                record_target_address_escapes(uses, &arm.target);
-            }
-            record_target_address_escapes(uses, default);
-        }
-        l::Terminator::Return { value, .. } => {
-            if let Some(value) = value {
-                record_address_escape(uses, value);
-            }
-        }
-        l::Terminator::Suspend {
-            kind,
-            arguments,
-            invalidates,
-            ..
-        } => {
-            match kind {
-                l::SuspendKind::Yield(value) => {
-                    if let Some(value) = value {
-                        if let Some(uses) = uses.get_mut(value) {
-                            uses.push(AddressUse::Escape);
-                        }
-                    }
-                }
-                l::SuspendKind::Async => {}
-                l::SuspendKind::AsyncCall { operands, .. } => {
-                    for value in operands {
-                        if let Some(uses) = uses.get_mut(value) {
-                            uses.push(AddressUse::Escape);
-                        }
-                    }
-                }
-                l::SuspendKind::AsyncHandle { handle } => {
-                    if let Some(uses) = uses.get_mut(handle) {
-                        uses.push(AddressUse::Escape);
-                    }
-                }
-            }
-            for argument in arguments {
-                record_address_escape(uses, argument);
-            }
-            for value in invalidates {
-                if let Some(uses) = uses.get_mut(value) {
-                    uses.push(AddressUse::Escape);
-                }
-            }
-        }
-        l::Terminator::Unreachable { .. } | l::Terminator::Trap(_) => {}
+    for value in terminator.value_uses() {
+        record_address_escape(uses, &l::Operand::Value(value));
     }
 }
 
@@ -1895,21 +1823,6 @@ fn record_value_reference(
     }
 }
 
-fn record_target_value_references(
-    function: &l::Function,
-    references: &mut [HashSet<l::BlockId>],
-    value_storage: &[l::ValueId],
-    target: &l::BlockTarget,
-    source: l::BlockId,
-) {
-    for argument in &target.arguments {
-        record_value_reference(references, value_storage, argument, source);
-    }
-    for parameter in &function.blocks[target.block.0 as usize].parameters {
-        references[value_storage[parameter.0 as usize].0 as usize].insert(source);
-    }
-}
-
 fn record_terminator_value_references(
     function: &l::Function,
     references: &mut [HashSet<l::BlockId>],
@@ -1918,100 +1831,33 @@ fn record_terminator_value_references(
     block: l::BlockId,
     terminator: &l::Terminator,
 ) {
-    match terminator {
-        l::Terminator::Branch(target) => {
-            record_target_value_references(function, references, value_storage, target, block);
+    for value in terminator.value_uses() {
+        references[value_storage[value.0 as usize].0 as usize].insert(block);
+    }
+    if let l::Terminator::Suspend {
+        successor,
+        resume_value,
+        ..
+    } = terminator
+    {
+        // Declaration scope follows emitted reads, not invalidation metadata.
+        for parameter in &function.blocks[successor.0 as usize].parameters {
+            forced_function.insert(value_storage[parameter.0 as usize]);
         }
-        l::Terminator::ConditionalBranch {
-            condition,
-            then_target,
-            else_target,
-        } => {
-            record_value_reference(references, value_storage, condition, block);
-            record_target_value_references(function, references, value_storage, then_target, block);
-            record_target_value_references(function, references, value_storage, else_target, block);
+        if let Some(value) = resume_value {
+            forced_function.insert(value_storage[value.0 as usize]);
         }
-        l::Terminator::Switch {
-            value,
-            arms,
-            default,
-        } => {
-            record_value_reference(references, value_storage, value, block);
-            for arm in arms {
-                record_target_value_references(
-                    function,
-                    references,
-                    value_storage,
-                    &arm.target,
-                    block,
-                );
-            }
-            record_target_value_references(function, references, value_storage, default, block);
-        }
-        l::Terminator::Return { value, .. } => {
-            if let Some(value) = value {
-                record_value_reference(references, value_storage, value, block);
+    } else {
+        for target in terminator.targets() {
+            for parameter in &function.blocks[target.block.0 as usize].parameters {
+                references[value_storage[parameter.0 as usize].0 as usize].insert(block);
             }
         }
-        l::Terminator::Suspend {
-            kind,
-            successor,
-            resume_value,
-            arguments,
-            invalidates,
-            ..
-        } => {
-            match kind {
-                l::SuspendKind::Yield(value) => {
-                    if let Some(value) = value {
-                        references[value_storage[value.0 as usize].0 as usize].insert(block);
-                    }
-                }
-                l::SuspendKind::Async => {}
-                l::SuspendKind::AsyncCall { operands, .. } => {
-                    for value in operands {
-                        references[value_storage[value.0 as usize].0 as usize].insert(block);
-                    }
-                }
-                l::SuspendKind::AsyncHandle { handle } => {
-                    references[value_storage[handle.0 as usize].0 as usize].insert(block);
-                }
-            }
-            for argument in arguments {
-                record_value_reference(references, value_storage, argument, block);
-            }
-            for value in invalidates {
-                references[value_storage[value.0 as usize].0 as usize].insert(block);
-            }
-            for parameter in &function.blocks[successor.0 as usize].parameters {
-                forced_function.insert(value_storage[parameter.0 as usize]);
-            }
-            if let Some(value) = resume_value {
-                forced_function.insert(value_storage[value.0 as usize]);
-            }
-        }
-        l::Terminator::Unreachable { .. } | l::Terminator::Trap(_) => {}
     }
 }
 
 fn terminator_successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
-    match terminator {
-        l::Terminator::Branch(target) => vec![target.block],
-        l::Terminator::ConditionalBranch {
-            then_target,
-            else_target,
-            ..
-        } => vec![then_target.block, else_target.block],
-        l::Terminator::Switch { arms, default, .. } => arms
-            .iter()
-            .map(|arm| arm.target.block)
-            .chain(std::iter::once(default.block))
-            .collect(),
-        l::Terminator::Suspend { successor, .. } => vec![*successor],
-        l::Terminator::Return { .. }
-        | l::Terminator::Unreachable { .. }
-        | l::Terminator::Trap(_) => Vec::new(),
-    }
+    terminator.successors()
 }
 
 fn instruction_uses_value(instruction: &l::Instruction, value: l::ValueId) -> bool {
@@ -2022,57 +1868,12 @@ fn instruction_uses_value(instruction: &l::Instruction, value: l::ValueId) -> bo
         || instruction.invalidates.contains(&value)
 }
 
-fn target_uses_value(target: &l::BlockTarget, value: l::ValueId) -> bool {
-    target
-        .arguments
-        .iter()
-        .any(|operand| matches!(operand, l::Operand::Value(candidate) if *candidate == value))
-}
-
 fn terminator_uses_value(terminator: &l::Terminator, value: l::ValueId) -> bool {
-    match terminator {
-        l::Terminator::Branch(target) => target_uses_value(target, value),
-        l::Terminator::ConditionalBranch {
-            condition,
-            then_target,
-            else_target,
-        } => {
-            matches!(condition, l::Operand::Value(candidate) if *candidate == value)
-                || target_uses_value(then_target, value)
-                || target_uses_value(else_target, value)
-        }
-        l::Terminator::Switch {
-            value: discriminant,
-            arms,
-            default,
-        } => {
-            matches!(discriminant, l::Operand::Value(candidate) if *candidate == value)
-                || arms.iter().any(|arm| target_uses_value(&arm.target, value))
-                || target_uses_value(default, value)
-        }
-        l::Terminator::Return {
-            value: returned, ..
-        } => matches!(returned, Some(l::Operand::Value(candidate)) if *candidate == value),
-        l::Terminator::Suspend {
-            kind,
-            arguments,
-            invalidates,
-            ..
-        } => {
-            let kind_uses = match kind {
-                l::SuspendKind::Yield(yielded) => *yielded == Some(value),
-                l::SuspendKind::Async => false,
-                l::SuspendKind::AsyncCall { operands, .. } => operands.contains(&value),
-                l::SuspendKind::AsyncHandle { handle } => *handle == value,
-            };
-            kind_uses
-                || arguments.iter().any(
-                    |operand| matches!(operand, l::Operand::Value(candidate) if *candidate == value),
-                )
-                || invalidates.contains(&value)
-        }
-        l::Terminator::Unreachable { .. } | l::Terminator::Trap(_) => false,
+    if terminator.value_uses().contains(&value) {
+        return true;
     }
+    // Copy elimination needs invalidation mentions because they require storage.
+    matches!(terminator, l::Terminator::Suspend { invalidates, .. } if invalidates.contains(&value))
 }
 
 fn block_uses_value(block: &l::BasicBlock, value: l::ValueId) -> bool {
@@ -2138,10 +1939,17 @@ fn fixed_iterator_values(function: &l::Function) -> HashSet<l::ValueId> {
         for destination in &function.blocks {
             for (index, parameter) in destination.parameters.iter().copied().enumerate() {
                 let incoming = function.blocks.iter().flat_map(|source| {
-                    ordinary_targets(&source.terminator)
+                    if matches!(source.terminator, l::Terminator::Suspend { .. }) {
+                        return Vec::new().into_iter();
+                    }
+                    source
+                        .terminator
+                        .targets()
                         .into_iter()
                         .filter(|target| target.block == destination.id)
-                        .filter_map(|target| target.arguments.get(index))
+                        .filter_map(|target| target.arguments.get(index).cloned())
+                        .collect::<Vec<_>>()
+                        .into_iter()
                 });
                 let combined = incoming.fold(0u8, |combined, operand| match operand {
                     l::Operand::Value(value) => combined | bounds[value.0 as usize],
@@ -2184,26 +1992,6 @@ fn value_used_from(function: &l::Function, value: l::ValueId, start: l::BlockId)
     false
 }
 
-fn ordinary_targets(terminator: &l::Terminator) -> Vec<&l::BlockTarget> {
-    match terminator {
-        l::Terminator::Branch(target) => vec![target],
-        l::Terminator::ConditionalBranch {
-            then_target,
-            else_target,
-            ..
-        } => vec![then_target, else_target],
-        l::Terminator::Switch { arms, default, .. } => arms
-            .iter()
-            .map(|arm| &arm.target)
-            .chain(std::iter::once(default))
-            .collect(),
-        l::Terminator::Return { .. }
-        | l::Terminator::Unreachable { .. }
-        | l::Terminator::Trap(_)
-        | l::Terminator::Suspend { .. } => Vec::new(),
-    }
-}
-
 fn removable_block_parameter_copies(
     function: &l::Function,
 ) -> (
@@ -2225,7 +2013,10 @@ fn removable_block_parameter_copies(
     let mut incoming = HashMap::<l::ValueId, usize>::new();
     let mut removable_incoming = HashMap::<l::ValueId, usize>::new();
     for block in &function.blocks {
-        for target in ordinary_targets(&block.terminator) {
+        if matches!(block.terminator, l::Terminator::Suspend { .. }) {
+            continue;
+        }
+        for target in block.terminator.targets() {
             let destination = &function.blocks[target.block.0 as usize];
             for (index, (argument, parameter)) in target
                 .arguments
@@ -2341,7 +2132,10 @@ fn coalesced_value_storage(
     // Prefer every block-parameter copy. A merge is valid only when no value
     // in either storage group interferes with a value in the other group.
     for block in &function.blocks {
-        for target in ordinary_targets(&block.terminator) {
+        if matches!(block.terminator, l::Terminator::Suspend { .. }) {
+            continue;
+        }
+        for target in block.terminator.targets() {
             let destination = &function.blocks[target.block.0 as usize];
             for (index, (argument, parameter)) in target
                 .arguments
