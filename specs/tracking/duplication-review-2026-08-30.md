@@ -74,3 +74,26 @@ Measured: `a174` golden on all three tiers; `r170`, `r171` report `S100`
 at the initializer (the message text still reads "enum members must
 have integer literal values"; a range-specific message is a MINOR for
 the next pass). Clippy 7/21/13. Gate on main: 1,125 passed, 0 failed.
+
+## Round 3 — one handle-kind table (landed `85242e9`)
+
+`Type::handle_kind` is the one table; four checker predicates and
+`codegen/src/layout.rs` are filters over it. The C emitter's two copies
+are deleted.
+
+The first report widened two acceptance filters: `i32[] | null` (S011)
+and `===` on arrays and `RegExp` (S100) became accepted. Measured
+against main with two probe programs. §74 gained rule 1a (an acceptance
+filter keeps the recorded answer; a widening is a corpus decision), and
+the correction round restored the answers and pinned both diagnostics
+in compiler unit tests. The fact filters keep the runtime's answers:
+`AsyncHandle`, `RegExp`, and the `Func | null` box are managed and
+dereference a Context allocation.
+
+Candidate widenings recorded in the filters' comments, not decided:
+`T[] | null`, `RegExp | null`, `Generator | null`, `AsyncHandle | null`
+(S011); identity `===` on `RegExp`, `object`, arrays, generators, async
+handles, `Worker`, `Inbox`, `Outbox` (S100).
+
+Measured: `Worker`, `Inbox`, `Outbox`, bare `Func` not managed (§74
+rule 3 record). Clippy 7/21/13. Gate on main: 1,131 passed, 0 failed.

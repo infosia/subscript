@@ -10386,8 +10386,16 @@ it reads `HandleKind`. `cemit.rs` calls it; the C emitter keeps no copy.
 **Rule 3.** Whether `Worker`, `Inbox`, `Outbox`, and a bare `Func` are
 collector-managed is a fact of the runtime class table
 (`runtime/src/context.rs`, `worker.rs`): a kind is managed if the runtime
-allocates its payload in the Context and the marker can reach it. The
-round that lands this section measures each and records the answer here.
+allocates its payload in the Context and the marker can reach it.
+
+Measured 2026-08-30 (`85242e9`): `Worker` is a `Box` owned by
+`WorkerSet::workers` (`runtime/src/worker.rs`), no class id, not
+reachable by the marker — not managed. `Inbox` and `Outbox` are stack
+locals of the worker entry — not managed. A bare `Func` is a code
+pointer and an environment pointer; the environment lives in activation
+or coroutine storage and the shared root plan roots it — the `Func`
+itself is not managed. `AsyncHandle` and `RegExp` are Context
+allocations — managed.
 
 Measured before the rules: four tables in `compiler/` (`check/layout.rs`
 `is_managed`, `hir.rs` `reference_value`, `types.rs`
