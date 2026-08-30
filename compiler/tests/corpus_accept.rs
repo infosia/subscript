@@ -598,6 +598,8 @@ fn r31_multi_binding_using_appends_reverse_dispose_calls_in_hir() {
     let hir::Stmt::Block(body) = &main.body[0] else {
         panic!("expected the using block");
     };
+    assert!(matches!(&body[0], hir::Stmt::Let { dispose: true, .. }));
+    assert!(matches!(&body[1], hir::Stmt::Let { dispose: true, .. }));
     let disposed = body
         .iter()
         .filter_map(|statement| {

@@ -1242,6 +1242,7 @@ impl AddressTaken<'_> {
             | K::Cast(operand)
             | K::JsonResultValue(operand)
             | K::Length(operand) => self.expr(operand),
+            K::AbsenceTest { value, .. } => self.expr(value),
             K::Binary { left, right, .. } => {
                 self.expr(left);
                 self.expr(right);
@@ -2326,6 +2327,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 name,
                 ty,
                 mutable,
+                dispose: _,
                 init,
                 pos,
             } => {
@@ -3727,6 +3729,35 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     l::InstructionKind::Binary(convert_binary(*op)?),
                     vec![left, right],
                     Some(l::ValueType::Data(expr.ty.clone())),
+                    false,
+                    convert_traps(&expr.trap_sites(self.lowering.hir)),
+                    expr.pos.clone(),
+                )?
+            }
+            K::AbsenceTest { value, negated } => {
+                let Type::StringAlias(alias) = value.ty else {
+                    return Err(self.error(&value.pos, "absence test value is not a string alias"));
+                };
+                let discriminant = self
+                    .lowering
+                    .hir
+                    .string_aliases
+                    .get(alias.0)
+                    .map(hir::StringAliasDef::absence_discriminant)
+                    .ok_or_else(|| self.error(&value.pos, "absence alias is missing"))?;
+                let value = self.require_expr(value)?;
+                let absent = l::Operand::Constant(l::Constant {
+                    ty: Type::StringAlias(alias),
+                    kind: l::ConstantKind::Integer(discriminant),
+                });
+                self.emit(
+                    l::InstructionKind::Binary(if *negated {
+                        l::BinaryOp::Ne
+                    } else {
+                        l::BinaryOp::Eq
+                    }),
+                    vec![value, absent],
+                    Some(l::ValueType::Data(Type::Bool)),
                     false,
                     convert_traps(&expr.trap_sites(self.lowering.hir)),
                     expr.pos.clone(),

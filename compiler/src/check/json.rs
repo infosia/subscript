@@ -489,6 +489,7 @@ impl Checker<'_> {
                 name: "builder".to_string(),
                 ty: Type::U64,
                 mutable: false,
+                dispose: false,
                 init: builder_init,
                 pos: pos.clone(),
             },
@@ -701,6 +702,7 @@ impl Checker<'_> {
                 name: "index".to_string(),
                 ty: Type::I32,
                 mutable: true,
+                dispose: false,
                 init: json_int(0, pos),
                 pos: pos.clone(),
             },
@@ -867,6 +869,7 @@ impl Checker<'_> {
                     name: "result".to_string(),
                     ty: result_ty.clone(),
                     mutable: false,
+                    dispose: false,
                     init: hir::Expr {
                         kind: ExprKind::RawNew { class: result_id },
                         ty: Type::Class(result_id),
@@ -878,6 +881,7 @@ impl Checker<'_> {
                     name: "parser".to_string(),
                     ty: Type::U64,
                     mutable: false,
+                    dispose: false,
                     init: self.json_call(
                         JsonFn::ParseBegin,
                         vec![json_local("text", Type::Str, &pos)],
@@ -893,6 +897,7 @@ impl Checker<'_> {
                             name: "node".to_string(),
                             ty: Type::U64,
                             mutable: false,
+                            dispose: false,
                             init: self.json_call(
                                 JsonFn::ParseRoot,
                                 vec![parser()],
@@ -986,6 +991,7 @@ impl Checker<'_> {
                         name: format!("field_{}", field.name),
                         ty: Type::U64,
                         mutable: false,
+                        dispose: false,
                         init: field_node,
                         pos: pos.clone(),
                     });
@@ -1037,6 +1043,7 @@ impl Checker<'_> {
                 name: "length".to_string(),
                 ty: Type::I32,
                 mutable: false,
+                dispose: false,
                 init: self.json_call(
                     JsonFn::ParseArrayLen,
                     vec![parser(), node()],
@@ -1067,6 +1074,7 @@ impl Checker<'_> {
             name: "index".to_string(),
             ty: Type::I32,
             mutable: true,
+            dispose: false,
             init: json_int(0, pos),
             pos: pos.clone(),
         });
@@ -1181,6 +1189,7 @@ impl Checker<'_> {
                     name: "value".to_string(),
                     ty: Type::Class(*id),
                     mutable: false,
+                    dispose: false,
                     init,
                     pos: pos.clone(),
                 }];
@@ -1252,6 +1261,7 @@ impl Checker<'_> {
                 name: "value".to_string(),
                 ty: array_ty.clone(),
                 mutable: false,
+                dispose: false,
                 init,
                 pos: pos.clone(),
             },
@@ -1259,6 +1269,7 @@ impl Checker<'_> {
                 name: "length".to_string(),
                 ty: Type::I32,
                 mutable: false,
+                dispose: false,
                 init: length,
                 pos: pos.clone(),
             },
@@ -1266,6 +1277,7 @@ impl Checker<'_> {
                 name: "index".to_string(),
                 ty: Type::I32,
                 mutable: true,
+                dispose: false,
                 init: json_int(0, pos),
                 pos: pos.clone(),
             },

@@ -144,6 +144,108 @@ mod tests {
     }
 
     #[test]
+    fn assignment_targets_classify_every_place_variant_from_source() {
+        use crate::check::{take_classified_places, PlaceKind};
+
+        let _ = take_classified_places();
+        check_one(
+            "let global: i32 = 0;\n\
+             class Holder {\n\
+               field: i32 = 0;\n\
+               static count: i32 = 0;\n\
+               get value(): i32 { return this.field; }\n\
+               set value(next: i32) {}\n\
+             }\n\
+             class Values {\n\
+               [index: u32]: i32;\n\
+               get(index: u32): i32 { return index as i32; }\n\
+               set(index: u32, value: i32): void {}\n\
+             }\n\
+             export function main(): void {\n\
+               let local: i32 = 0;\n\
+               const holder: Holder = new Holder();\n\
+               const array: i32[] = [0];\n\
+               const values: Values = new Values();\n\
+               local = 1;\n\
+               global = 1;\n\
+               holder.field = 1;\n\
+               array[0] = 1;\n\
+               values[0 as u32] = 1;\n\
+               holder.value = 1;\n\
+               Holder.count = 1;\n\
+             }\n",
+        )
+        .expect("all assignment place variants check");
+        assert_eq!(
+            take_classified_places(),
+            [
+                PlaceKind::Local,
+                PlaceKind::Global,
+                PlaceKind::Field,
+                PlaceKind::Index,
+                PlaceKind::IndexSignature,
+                PlaceKind::Accessor,
+                PlaceKind::StaticField,
+            ]
+        );
+    }
+
+    #[test]
+    fn nested_using_shadow_does_not_reuse_switch_storage() {
+        fn count_storage_writes(statements: &[hir::Stmt]) -> usize {
+            statements
+                .iter()
+                .map(|statement| match statement {
+                    hir::Stmt::Expr(hir::Expr {
+                        kind: hir::ExprKind::Assign { target, .. },
+                        ..
+                    }) if matches!(
+                        &target.kind,
+                        hir::ExprKind::Local(name) if name.starts_with("[[using.value#")
+                    ) =>
+                    {
+                        1
+                    }
+                    hir::Stmt::If { then, els, .. } => {
+                        count_storage_writes(then) + els.as_deref().map_or(0, count_storage_writes)
+                    }
+                    hir::Stmt::While { body, .. }
+                    | hir::Stmt::For { body, .. }
+                    | hir::Stmt::ForOf { body, .. }
+                    | hir::Stmt::Block(body) => count_storage_writes(body),
+                    hir::Stmt::Switch { cases, .. } => cases
+                        .iter()
+                        .map(|case| count_storage_writes(&case.body))
+                        .sum(),
+                    _ => 0,
+                })
+                .sum()
+        }
+
+        let module = check_one(
+            "class Resource { [Symbol.dispose](): void {} }\n\
+             export function main(): void {\n\
+               const tag: i32 = 0;\n\
+               switch (tag) {\n\
+                 case 0:\n\
+                   using resource = new Resource();\n\
+                   { using resource = new Resource(); }\n\
+                   break;\n\
+                 default:\n\
+                   break;\n\
+               }\n\
+             }\n",
+        )
+        .expect("a nested block may shadow a switch using binding");
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        assert_eq!(count_storage_writes(&main.body), 1);
+    }
+
+    #[test]
     fn invalid_regex_literal_is_a_checker_diagnostic() {
         let diagnostics = check_one("export function main(): void {\n  const regex = /(/;\n}\n")
             .expect_err("invalid literal must be rejected by the checker");
@@ -1269,6 +1371,20 @@ mod tests {
                 hir::ExprKind::Int(types::ABSENT_STRING_ALIAS_DISCRIMINANT),
                 Type::StringAlias(_)
             ))
+        ));
+        let hir::Stmt::If { cond, .. } = &main.body[1] else {
+            panic!("first presence test is an if statement");
+        };
+        assert!(matches!(
+            cond.kind,
+            hir::ExprKind::AbsenceTest { negated: true, .. }
+        ));
+        let hir::Stmt::If { cond, .. } = &main.body[2] else {
+            panic!("second presence test is an if statement");
+        };
+        assert!(matches!(
+            cond.kind,
+            hir::ExprKind::AbsenceTest { negated: false, .. }
         ));
     }
 

@@ -17,6 +17,132 @@ use crate::types::{ClassId, FuncType, Type};
 use super::stmt::narrow_paths;
 use super::{static_member_symbol, Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
 
+enum PlaceSource<'a> {
+    Ident(&'a ast::Ident),
+    Member(&'a ast::MemberExpr),
+    Unsupported,
+}
+
+enum Place {
+    Local(hir::Expr),
+    Global(hir::Expr),
+    Field(hir::Expr),
+    Index(hir::Expr),
+    IndexSignature {
+        receiver: hir::Expr,
+        index: hir::Expr,
+        signature: hir::IndexSignature,
+        pos: Pos,
+    },
+    Accessor {
+        class: ClassId,
+        receiver: Option<hir::Expr>,
+        name: String,
+        ty: Type,
+        pos: Pos,
+    },
+    StaticField(hir::Expr),
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlaceKind {
+    Local,
+    Global,
+    Field,
+    Index,
+    IndexSignature,
+    Accessor,
+    StaticField,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static CLASSIFIED_PLACES: std::cell::RefCell<Vec<PlaceKind>> = const {
+        std::cell::RefCell::new(Vec::new())
+    };
+}
+
+#[cfg(test)]
+pub(crate) fn take_classified_places() -> Vec<PlaceKind> {
+    CLASSIFIED_PLACES.with(|places| std::mem::take(&mut *places.borrow_mut()))
+}
+
+impl Place {
+    fn ty(&self) -> &Type {
+        match self {
+            Self::Local(expr)
+            | Self::Global(expr)
+            | Self::Field(expr)
+            | Self::Index(expr)
+            | Self::StaticField(expr) => &expr.ty,
+            Self::IndexSignature { signature, .. } => &signature.element_ty,
+            Self::Accessor { ty, .. } => ty,
+        }
+    }
+
+    fn into_read(self, checker: &Checker<'_>) -> hir::Expr {
+        match self {
+            Self::Local(expr)
+            | Self::Global(expr)
+            | Self::Field(expr)
+            | Self::Index(expr)
+            | Self::StaticField(expr) => expr,
+            Self::IndexSignature {
+                receiver,
+                index,
+                signature,
+                pos,
+            } => hir::Expr {
+                kind: ExprKind::Call {
+                    callee: Callee::Method {
+                        recv: Box::new(receiver),
+                        name: "get".to_string(),
+                    },
+                    args: vec![index],
+                },
+                ty: signature.element_ty,
+                pos,
+            },
+            Self::Accessor {
+                class,
+                receiver,
+                name,
+                ty,
+                pos,
+            } => hir::Expr {
+                kind: ExprKind::Call {
+                    callee: if let Some(receiver) = receiver {
+                        Callee::Method {
+                            recv: Box::new(receiver),
+                            name,
+                        }
+                    } else {
+                        Callee::Func(static_member_symbol(&checker.classes[class.0].name, &name))
+                    },
+                    args: Vec::new(),
+                },
+                ty,
+                pos,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    fn record_kind(&self) {
+        let kind = match self {
+            Self::Local(_) => PlaceKind::Local,
+            Self::Global(_) => PlaceKind::Global,
+            Self::Field(_) => PlaceKind::Field,
+            Self::Index(_) => PlaceKind::Index,
+            Self::IndexSignature { .. } => PlaceKind::IndexSignature,
+            Self::Accessor { .. } => PlaceKind::Accessor,
+            Self::StaticField(_) => PlaceKind::StaticField,
+        };
+        CLASSIFIED_PLACES.with(|places| places.borrow_mut().push(kind));
+    }
+}
+
 /// Dotted path key for narrowing (`node`, `node.next`, `this.x`).
 pub(crate) fn path_key(e: &hir::Expr) -> Option<String> {
     match &e.kind {
@@ -1392,16 +1518,15 @@ impl<'p> Checker<'p> {
     }
 
     fn check_update(&mut self, u: &ast::UpdateExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
-        let target = self.check_expr(&u.arg, None, fx);
-        if matches!(
-            &target.kind,
-            ExprKind::Call {
-                callee: Callee::Method { recv, name },
-                args,
-            } if name == "get"
-                && args.len() == 1
-                && matches!(&recv.ty, Type::Class(id) if self.classes[id.0].index_signature.is_some())
-        ) {
+        let source = match unparen_expr(&u.arg) {
+            ast::Expr::Ident(ident) => PlaceSource::Ident(ident),
+            ast::Expr::Member(member) => PlaceSource::Member(member),
+            _ => PlaceSource::Unsupported,
+        };
+        let place = self.check_assign_target(source, fx, &pos);
+        #[cfg(test)]
+        place.record_kind();
+        if matches!(&place, Place::IndexSignature { .. }) {
             let operator = if u.op == ast::UpdateOp::PlusPlus {
                 "++"
             } else {
@@ -1419,14 +1544,14 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        if let ExprKind::Call {
-            callee: Callee::Method { recv, name },
-            args,
-        } = &target.kind
+        if let Place::Accessor {
+            class,
+            receiver,
+            name,
+            ..
+        } = &place
         {
-            if args.is_empty()
-                && matches!(&recv.ty, Type::Class(id) if self.class_sigs[id.0].has_accessor(name))
-            {
+            if receiver.is_some() {
                 let operator = if u.op == ast::UpdateOp::PlusPlus {
                     "++"
                 } else {
@@ -1443,68 +1568,27 @@ impl<'p> Checker<'p> {
                     pos.clone(),
                 );
                 return self.err_expr(pos);
+            } else {
+                let class_name = self.classes[class.0].name.clone();
+                let operator = if u.op == ast::UpdateOp::PlusPlus {
+                    "++"
+                } else {
+                    "--"
+                };
+                let spelling = if u.prefix {
+                    format!("`{operator}{class_name}.{name}`")
+                } else {
+                    format!("`{class_name}.{name}{operator}`")
+                };
+                self.error(
+                    RuleCode::S100,
+                    format!("{spelling} is not supported for a static accessor"),
+                    pos.clone(),
+                );
+                return self.err_expr(pos);
             }
         }
-        if let ExprKind::Call {
-            callee: Callee::Func(symbol),
-            args,
-        } = &target.kind
-        {
-            if args.is_empty() {
-                if let Some((id, name)) = self.static_accessor_for_getter(symbol) {
-                    let class_name = self.classes[id.0].name.clone();
-                    let operator = if u.op == ast::UpdateOp::PlusPlus {
-                        "++"
-                    } else {
-                        "--"
-                    };
-                    let spelling = if u.prefix {
-                        format!("`{operator}{class_name}.{name}`")
-                    } else {
-                        format!("`{class_name}.{name}{operator}`")
-                    };
-                    self.error(
-                        RuleCode::S100,
-                        format!("{spelling} is not supported for a static accessor"),
-                        pos.clone(),
-                    );
-                    return self.err_expr(pos);
-                }
-            }
-        }
-        // Q17: `++`/`--` rebind their target, so `const` bindings are
-        // rejected exactly like plain assignment.
-        match &target.kind {
-            ExprKind::Local(name) => {
-                let mutable = fx
-                    .scopes
-                    .iter()
-                    .rev()
-                    .find_map(|s| s.vars.get(name))
-                    .map(|l| l.mutable)
-                    .unwrap_or(true);
-                if !mutable {
-                    self.error(
-                        RuleCode::S100,
-                        format!("cannot rebind `const` binding `{}`", name),
-                        target.pos.clone(),
-                    );
-                }
-            }
-            ExprKind::Global(name) => {
-                if let Some(sig) = self.global_sigs.get(name) {
-                    if !sig.mutable {
-                        let name = name.clone();
-                        self.error(
-                            RuleCode::S100,
-                            format!("cannot rebind `const` binding `{}`", name),
-                            target.pos.clone(),
-                        );
-                    }
-                }
-            }
-            _ => {}
-        }
+        let target = place.into_read(self);
         if !target.ty.is_numeric() && !matches!(target.ty, Type::Error) {
             let name = self.type_name(&target.ty);
             self.error(
@@ -1632,9 +1716,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Checks R16's sole legal `undefined` appearance. The source token is
-    /// erased to the reserved i32 discriminant in HIR, so both backends use
-    /// their ordinary integer comparison lowering.
+    /// Checks R16's sole legal `undefined` appearance.
     fn check_absence_presence_comparison(
         &mut self,
         binary: &ast::BinExpr,
@@ -1679,32 +1761,10 @@ impl<'p> Checker<'p> {
             return Some(self.err_expr(pos));
         }
 
-        let sentinel_value = match &checked.ty {
-            Type::StringAlias(id) => self
-                .string_aliases
-                .get(id.0)
-                .map_or(-1, hir::StringAliasDef::absence_discriminant),
-            _ => -1,
-        };
-        let sentinel = hir::Expr {
-            kind: ExprKind::Int(sentinel_value),
-            ty: checked.ty.clone(),
-            pos: self.pos(undefined_source.span()),
-        };
-        let (left, right) = if left_undefined {
-            (sentinel, checked)
-        } else {
-            (checked, sentinel)
-        };
         Some(hir::Expr {
-            kind: ExprKind::Binary {
-                op: if binary.op == ast::BinaryOp::EqEqEq {
-                    BinOp::Eq
-                } else {
-                    BinOp::Ne
-                },
-                left: Box::new(left),
-                right: Box::new(right),
+            kind: ExprKind::AbsenceTest {
+                value: Box::new(checked),
+                negated: binary.op == ast::BinaryOp::NotEqEq,
             },
             ty: Type::Bool,
             pos,
@@ -1901,9 +1961,7 @@ impl<'p> Checker<'p> {
                 cond.pos.clone(),
             );
         }
-        let (then_extra, else_extra) = narrow_paths(&cond, &|id| {
-            self.string_aliases[id.0].absence_discriminant()
-        });
+        let (then_extra, else_extra) = narrow_paths(&cond);
         let mut base = fx.narrowed.clone();
 
         fx.narrowed = base.iter().cloned().chain(then_extra.clone()).collect();
@@ -5524,19 +5582,6 @@ impl<'p> Checker<'p> {
 
     // ----- assignment -----
 
-    fn static_accessor_for_getter(&self, symbol: &str) -> Option<(ClassId, String)> {
-        self.classes.iter().enumerate().find_map(|(index, class)| {
-            self.class_sigs[index]
-                .static_member_namespace
-                .iter()
-                .find_map(|(name, member)| {
-                    matches!(member, super::ClassMemberNamespaceEntry::Accessor { .. })
-                        .then(|| (ClassId(index), name.clone()))
-                        .filter(|(_, name)| static_member_symbol(&class.name, name) == symbol)
-                })
-        })
-    }
-
     fn check_assign(
         &mut self,
         a: &ast::AssignExpr,
@@ -5567,25 +5612,32 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
         };
-        let target = self.check_assign_target(&a.left, fx, &pos);
-        let target_ty = target.ty.clone();
+        let source = match &a.left {
+            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Ident(binding)) => {
+                PlaceSource::Ident(&binding.id)
+            }
+            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(member)) => {
+                PlaceSource::Member(member)
+            }
+            _ => PlaceSource::Unsupported,
+        };
+        let place = self.check_assign_target(source, fx, &pos);
+        #[cfg(test)]
+        place.record_kind();
+        let target_ty = place.ty().clone();
         let value_ctx = if matches!(target_ty, Type::Error) {
             None
         } else {
             Some(target_ty.clone())
         };
         let value = self.check_expr(&a.right, value_ctx.as_ref(), fx);
-        let signature_write = match &target.kind {
-            ExprKind::Call {
-                callee: Callee::Method { recv, name },
-                args,
-            } if name == "get" && args.len() == 1 => match &recv.ty {
-                Type::Class(id) => self.classes[id.0]
-                    .index_signature
-                    .clone()
-                    .map(|signature| ((**recv).clone(), args[0].clone(), signature)),
-                _ => None,
-            },
+        let signature_write = match &place {
+            Place::IndexSignature {
+                receiver,
+                index,
+                signature,
+                ..
+            } => Some((receiver.clone(), index.clone(), signature.clone())),
             _ => None,
         };
         if let Some((recv, index, signature)) = signature_write {
@@ -5645,11 +5697,13 @@ impl<'p> Checker<'p> {
                 pos,
             };
         }
-        let static_accessor_write = match &target.kind {
-            ExprKind::Call {
-                callee: Callee::Func(symbol),
-                args,
-            } if args.is_empty() => self.static_accessor_for_getter(symbol),
+        let static_accessor_write = match &place {
+            Place::Accessor {
+                class,
+                receiver: None,
+                name,
+                ..
+            } => Some((*class, name.clone())),
             _ => None,
         };
         if let Some((id, name)) = static_accessor_write {
@@ -5724,16 +5778,13 @@ impl<'p> Checker<'p> {
                 pos,
             };
         }
-        let accessor_write = match &target.kind {
-            ExprKind::Call {
-                callee: Callee::Method { recv, name },
-                args,
-            } if args.is_empty() => match &recv.ty {
-                Type::Class(id) if self.class_sigs[id.0].has_accessor(name) => {
-                    Some((id, (**recv).clone(), name.clone()))
-                }
-                _ => None,
-            },
+        let accessor_write = match &place {
+            Place::Accessor {
+                class,
+                receiver: Some(receiver),
+                name,
+                ..
+            } => Some((*class, receiver.clone(), name.clone())),
             _ => None,
         };
         if let Some((id, recv, name)) = accessor_write {
@@ -5802,6 +5853,7 @@ impl<'p> Checker<'p> {
                 pos,
             };
         }
+        let target = place.into_read(self);
         if let Some(bin) = op {
             // Compound assignment is same-type arithmetic on the target.
             if target_ty == Type::F16
@@ -5913,16 +5965,11 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn check_assign_target(
-        &mut self,
-        target: &ast::AssignTarget,
-        fx: &mut FnCtx,
-        pos: &Pos,
-    ) -> hir::Expr {
+    fn check_assign_target(&mut self, target: PlaceSource<'_>, fx: &mut FnCtx, pos: &Pos) -> Place {
         match target {
-            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Ident(binding)) => {
-                let name = binding.id.sym.to_string();
-                let ident_pos = self.pos(binding.id.span);
+            PlaceSource::Ident(ident) => {
+                let name = ident.sym.to_string();
+                let ident_pos = self.pos(ident.span);
                 if let Some(local) = self.lookup_local_for_write(&name, &ident_pos, fx) {
                     if !local.mutable {
                         self.error(
@@ -5931,11 +5978,11 @@ impl<'p> Checker<'p> {
                             ident_pos.clone(),
                         );
                     }
-                    return hir::Expr {
+                    return Place::Local(hir::Expr {
                         kind: ExprKind::Local(name),
                         ty: local.ty,
                         pos: ident_pos,
-                    };
+                    });
                 }
                 if let Some(ScopeItem::Global(g)) = self.scope_item(&name) {
                     let sig = self.global_sigs.get(&g).cloned();
@@ -5947,38 +5994,36 @@ impl<'p> Checker<'p> {
                                 ident_pos.clone(),
                             );
                         }
-                        return hir::Expr {
+                        return Place::Global(hir::Expr {
                             kind: ExprKind::Global(g),
                             ty: sig.ty,
                             pos: ident_pos,
-                        };
+                        });
                     }
                 }
                 if matches!(self.scope_item(&name), Some(ScopeItem::Poisoned)) {
-                    return self.err_expr(ident_pos);
+                    return Place::Local(self.err_expr(ident_pos));
                 }
                 self.error(
                     RuleCode::S100,
                     format!("`{}` is not an assignable binding", name),
                     ident_pos.clone(),
                 );
-                self.err_expr(ident_pos)
+                Place::Local(self.err_expr(ident_pos))
             }
-            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(m)) => {
-                self.check_member_write(m, fx)
-            }
-            _ => {
+            PlaceSource::Member(member) => self.check_member_place(member, fx),
+            PlaceSource::Unsupported => {
                 self.error(
                     RuleCode::S100,
                     "assignment target outside the decided surface",
                     pos.clone(),
                 );
-                self.err_expr(pos.clone())
+                Place::Local(self.err_expr(pos.clone()))
             }
         }
     }
 
-    fn check_member_write(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> hir::Expr {
+    fn check_member_place(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> Place {
         let pos = self.pos(m.span);
         match &m.prop {
             ast::MemberProp::Computed(c) => {
@@ -5992,18 +6037,67 @@ impl<'p> Checker<'p> {
                     _ => Type::I32,
                 };
                 let index = self.check_expr(&c.expr, Some(&index_context), fx);
-                self.check_index(obj, index, pos)
+                if let Type::Class(id) = &obj.ty {
+                    if let Some(signature) = self.classes[id.0].index_signature.clone() {
+                        self.require_assignable(
+                            &index.ty.clone(),
+                            &signature.index_ty,
+                            index.pos.clone(),
+                            "the index",
+                        );
+                        return Place::IndexSignature {
+                            receiver: obj,
+                            index,
+                            signature,
+                            pos,
+                        };
+                    }
+                }
+                Place::Index(self.check_index(obj, index, pos))
             }
             ast::MemberProp::Ident(prop) => {
                 let name = prop.sym.to_string();
                 let prop_pos = self.pos(prop.span);
-                if let Some(handled) =
-                    self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, true)
+                if let Some(place) = self.check_namespace_place(&m.obj, &name, prop_pos.clone(), fx)
                 {
-                    return handled;
+                    return place;
                 }
                 let obj = self.check_receiver(&m.obj, fx);
-                self.member_on(obj, &name, prop_pos, true)
+                if let Type::Class(id) = &obj.ty {
+                    if self.classes[id.0]
+                        .fields
+                        .iter()
+                        .any(|field| field.name == name)
+                    {
+                        return Place::Field(self.member_on(obj, &name, prop_pos, true));
+                    }
+                    if self.class_sigs[id.0].has_accessor(&name) {
+                        let Some(signature) = self.class_sigs[id.0].methods.get(&name) else {
+                            self.error(
+                                RuleCode::S100,
+                                format!("read accessor `{name}` has no checker signature"),
+                                prop_pos.clone(),
+                            );
+                            return Place::Accessor {
+                                class: *id,
+                                receiver: Some(obj),
+                                name,
+                                ty: Type::Error,
+                                pos: prop_pos,
+                            };
+                        };
+                        let ty = signature.ret.clone();
+                        let call_pos = obj.pos.clone();
+                        return Place::Accessor {
+                            class: *id,
+                            receiver: Some(obj),
+                            name,
+                            ty,
+                            pos: call_pos,
+                        };
+                    }
+                }
+                Place::Field(self.member_on(obj, &name, prop_pos, true))
             }
             ast::MemberProp::PrivateName(_) => {
                 self.error(
@@ -6011,9 +6105,71 @@ impl<'p> Checker<'p> {
                     "private names are not in the decided surface",
                     pos.clone(),
                 );
-                self.err_expr(pos)
+                Place::Field(self.err_expr(pos))
             }
         }
+    }
+
+    fn check_namespace_place(
+        &mut self,
+        obj: &ast::Expr,
+        prop: &str,
+        prop_pos: Pos,
+        fx: &mut FnCtx,
+    ) -> Option<Place> {
+        let ast::Expr::Ident(ident) = obj else {
+            return None;
+        };
+        let name = ident.sym.to_string();
+        if fx.owns_local_name(&name) {
+            return None;
+        }
+        let Some(ScopeItem::Class(class)) = self.scope_item(&name) else {
+            return self
+                .check_namespace_member(obj, prop, prop_pos, fx, true)
+                .map(Place::StaticField);
+        };
+        let class_name = self.classes[class.0].name.clone();
+        if let Some(signature) = self.class_sigs[class.0].static_fields.get(prop).cloned() {
+            let symbol = static_member_symbol(&class_name, prop);
+            if !signature.mutable {
+                self.error(
+                    RuleCode::S100,
+                    format!("cannot rebind `const` binding `{symbol}`"),
+                    prop_pos.clone(),
+                );
+            }
+            return Some(Place::StaticField(hir::Expr {
+                kind: ExprKind::Global(symbol),
+                ty: signature.ty,
+                pos: prop_pos,
+            }));
+        }
+        if self.class_sigs[class.0].has_static_accessor(prop) {
+            let Some(signature) = self.class_sigs[class.0].static_methods.get(prop) else {
+                self.error(
+                    RuleCode::S100,
+                    format!("static read accessor `{class_name}.{prop}` is missing"),
+                    prop_pos.clone(),
+                );
+                return Some(Place::Accessor {
+                    class,
+                    receiver: None,
+                    name: prop.to_string(),
+                    ty: Type::Error,
+                    pos: prop_pos,
+                });
+            };
+            return Some(Place::Accessor {
+                class,
+                receiver: None,
+                name: prop.to_string(),
+                ty: signature.ret.clone(),
+                pos: prop_pos,
+            });
+        }
+        self.check_namespace_member(obj, prop, prop_pos, fx, true)
+            .map(Place::StaticField)
     }
 
     // ----- calls -----
@@ -7405,6 +7561,17 @@ impl<'p> Checker<'p> {
                 }
                 out
             }
+        };
+        let body = if super::has_dispose_binding(&body) {
+            self.insert_scope_exit_disposals(
+                body,
+                ret.as_ref().unwrap_or(&Type::Error),
+                &mut Vec::new(),
+                (None, None),
+                (true, &[]),
+            )
+        } else {
+            body
         };
         fx.narrowed = saved_narrowed;
         fx.scopes.pop();

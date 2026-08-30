@@ -566,6 +566,7 @@ fn compare_boundary_boxes(hir: &hir::Module, lir: &l::Module, findings: &mut Vec
             | hir::ExprKind::EnumMember { .. }
             | hir::ExprKind::Unary { .. }
             | hir::ExprKind::Binary { .. }
+            | hir::ExprKind::AbsenceTest { .. }
             | hir::ExprKind::Assign { .. }
             | hir::ExprKind::Cast(_)
             | hir::ExprKind::DescriptorLit { .. }
@@ -725,6 +726,7 @@ fn expression_owns_terminator_position(expr: &hir::Expr) -> bool {
         | K::EnumMember { .. }
         | K::Unary { .. }
         | K::Binary { .. }
+        | K::AbsenceTest { .. }
         | K::Assign { .. }
         | K::Cast(_)
         | K::New { .. }
@@ -1350,6 +1352,7 @@ fn collect_trap_expression(
             | hir::ExprKind::EnumMember { .. }
             | hir::ExprKind::Unary { .. }
             | hir::ExprKind::Binary { .. }
+            | hir::ExprKind::AbsenceTest { .. }
             | hir::ExprKind::Assign { .. }
             | hir::ExprKind::Cast(_)
             | hir::ExprKind::Zero
@@ -1721,6 +1724,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
         | hir::ExprKind::EnumMember { .. }
         | hir::ExprKind::Unary { .. }
         | hir::ExprKind::Binary { .. }
+        | hir::ExprKind::AbsenceTest { .. }
         | hir::ExprKind::Assign { .. }
         | hir::ExprKind::Cast(_)
         | hir::ExprKind::DescriptorLit { .. }
@@ -2029,6 +2033,7 @@ fn walk_expr<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::Expr)) {
         | K::Cast(operand)
         | K::JsonResultValue(operand)
         | K::Length(operand) => walk_expr(operand, visit),
+        K::AbsenceTest { value, .. } => walk_expr(value, visit),
         K::Binary { left, right, .. } => {
             walk_expr(left, visit);
             walk_expr(right, visit);
@@ -2155,6 +2160,7 @@ fn walk_place_children<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::
         | hir::ExprKind::EnumMember { .. }
         | hir::ExprKind::Unary { .. }
         | hir::ExprKind::Binary { .. }
+        | hir::ExprKind::AbsenceTest { .. }
         | hir::ExprKind::Assign { .. }
         | hir::ExprKind::Cast(_)
         | hir::ExprKind::Call { .. }

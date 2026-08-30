@@ -8,20 +8,24 @@ use swc_ecma_ast as ast;
 
 use crate::diag::RuleCode;
 use crate::hir::{self, BinOp, ExprKind};
-use crate::types::{StringAliasId, Type};
-
-#[cfg(test)]
-use crate::types::ABSENT_STRING_ALIAS_DISCRIMINANT;
+use crate::types::Type;
 
 use super::expr::path_key;
 use super::{Checker, FnCtx, Local};
 
 /// Narrowing facts derived from a checked condition: paths known non-null
 /// or known present when the condition is true / false.
-pub(crate) fn narrow_paths(
-    cond: &hir::Expr,
-    alias_absence: &impl Fn(StringAliasId) -> i64,
-) -> (Vec<String>, Vec<String>) {
+pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
+    if let ExprKind::AbsenceTest { value, negated } = &cond.kind {
+        if let Some(key) = path_key(value) {
+            return if *negated {
+                (vec![key], Vec::new())
+            } else {
+                (Vec::new(), vec![key])
+            };
+        }
+        return (Vec::new(), Vec::new());
+    }
     if let ExprKind::Binary { op, left, right } = &cond.kind {
         match op {
             BinOp::Eq | BinOp::Ne => {
@@ -42,32 +46,11 @@ pub(crate) fn narrow_paths(
                         };
                     }
                 }
-                let is_absent = |expr: &hir::Expr| match (&expr.kind, &expr.ty) {
-                    (ExprKind::Int(value), Type::StringAlias(id)) => *value == alias_absence(*id),
-                    _ => false,
-                };
-                let (absent_side, other) = if is_absent(left) {
-                    (Some(()), right)
-                } else if is_absent(right) {
-                    (Some(()), left)
-                } else {
-                    (None, left)
-                };
-                if absent_side.is_some() && matches!(other.ty, Type::StringAlias(_)) {
-                    if let Some(key) = path_key(other) {
-                        return match op {
-                            // `p === undefined` -> p is present when false.
-                            BinOp::Eq => (Vec::new(), vec![key]),
-                            // `p !== undefined` -> p is present when true.
-                            _ => (vec![key], Vec::new()),
-                        };
-                    }
-                }
                 (Vec::new(), Vec::new())
             }
             BinOp::And => {
-                let (mut t1, _) = narrow_paths(left, alias_absence);
-                let (t2, _) = narrow_paths(right, alias_absence);
+                let (mut t1, _) = narrow_paths(left);
+                let (t2, _) = narrow_paths(right);
                 t1.extend(t2);
                 (t1, Vec::new())
             }
@@ -413,6 +396,10 @@ impl<'p> Checker<'p> {
                 self.check_let(v, fx, out);
                 false
             }
+            ast::Stmt::Decl(ast::Decl::Using(using)) => {
+                self.check_using(using, fx, out);
+                false
+            }
             ast::Stmt::Decl(other) => {
                 let pos = self.pos(other.span());
                 self.error(
@@ -532,7 +519,29 @@ impl<'p> Checker<'p> {
             return;
         }
         let mutable = v.kind == ast::VarDeclKind::Let;
-        for d in &v.decls {
+        self.check_bindings(&v.decls, mutable, false, fx, out);
+    }
+
+    fn check_using(&mut self, using: &ast::UsingDecl, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
+        if using.is_await {
+            self.error(
+                RuleCode::S100,
+                "`await using` is not in the decided surface",
+                self.pos(using.span),
+            );
+        }
+        self.check_bindings(&using.decls, false, !using.is_await, fx, out);
+    }
+
+    fn check_bindings(
+        &mut self,
+        declarations: &[ast::VarDeclarator],
+        mutable: bool,
+        dispose: bool,
+        fx: &mut FnCtx,
+        out: &mut Vec<hir::Stmt>,
+    ) {
+        for d in declarations {
             let ast::Pat::Ident(binding) = &d.name else {
                 let pos = self.pos(d.span);
                 self.error(
@@ -584,6 +593,25 @@ impl<'p> Checker<'p> {
                     t => t.clone(),
                 },
             };
+            if dispose && !matches!(ty, Type::Error) {
+                let valid = match &ty {
+                    Type::Class(id) => {
+                        !self.classes[id.0].is_value
+                            && !self.classes[id.0].is_descriptor
+                            && self.class_sigs[id.0]
+                                .methods
+                                .contains_key(hir::DISPOSE_METHOD_NAME)
+                    }
+                    _ => false,
+                };
+                if !valid {
+                    self.error(
+                        RuleCode::S100,
+                        "a `using` initializer must be a non-null reference class that declares `[Symbol.dispose](): void`; narrow nullable values first",
+                        pos.clone(),
+                    );
+                }
+            }
             let holds_capturing = self.is_capturing_value(&init, fx);
             let async_origins =
                 self.async_origins_at_copy_site(hir::AsyncCopySite::Binding, &init, fx);
@@ -607,6 +635,7 @@ impl<'p> Checker<'p> {
                 name,
                 ty,
                 mutable,
+                dispose,
                 init,
                 pos,
             });
@@ -712,9 +741,7 @@ impl<'p> Checker<'p> {
         let pos = self.pos(i.span);
         let cond = self.check_expr(&i.test, None, fx);
         self.require_bool(&cond);
-        let (then_extra, else_extra) = narrow_paths(&cond, &|id| {
-            self.string_aliases[id.0].absence_discriminant()
-        });
+        let (then_extra, else_extra) = narrow_paths(&cond);
 
         let mut base = fx.narrowed.clone();
 
@@ -771,9 +798,7 @@ impl<'p> Checker<'p> {
 
         let cond = self.check_expr(&w.test, None, fx);
         self.require_bool(&cond);
-        let (then_extra, _) = narrow_paths(&cond, &|id| {
-            self.string_aliases[id.0].absence_discriminant()
-        });
+        let (then_extra, _) = narrow_paths(&cond);
 
         let mut base = fx.narrowed.clone();
         fx.narrowed.extend(then_extra.clone());
@@ -817,10 +842,7 @@ impl<'p> Checker<'p> {
             self.require_bool(&checked);
             checked
         });
-        let then_extra = cond
-            .as_ref()
-            .map(|c| narrow_paths(c, &|id| self.string_aliases[id.0].absence_discriminant()).0)
-            .unwrap_or_default();
+        let then_extra = cond.as_ref().map(|c| narrow_paths(c).0).unwrap_or_default();
 
         let mut base = fx.narrowed.clone();
         fx.narrowed.extend(then_extra.clone());
@@ -918,6 +940,7 @@ impl<'p> Checker<'p> {
             name: subject_name.clone(),
             ty: subject_ty,
             mutable: false,
+            dispose: false,
             init: subject,
             pos: pos.clone(),
         };
@@ -946,6 +969,7 @@ impl<'p> Checker<'p> {
                     name: step_name.clone(),
                     ty: step_ty.clone(),
                     mutable: false,
+                    dispose: false,
                     init: next,
                     pos: pos.clone(),
                 },
@@ -966,6 +990,7 @@ impl<'p> Checker<'p> {
                     name,
                     ty: elem_ty.clone(),
                     mutable,
+                    dispose: false,
                     init: hir::Expr {
                         kind: ExprKind::Field {
                             obj: Box::new(step_local()),
@@ -1006,30 +1031,51 @@ impl<'p> Checker<'p> {
         &mut self,
         head: &ast::ForHead,
     ) -> Option<(String, bool, crate::diag::Pos, Option<Type>)> {
-        let ast::ForHead::VarDecl(decl) = head else {
-            self.error(
-                RuleCode::S100,
-                "`for…of` requires a `const` or `let` identifier binding",
-                self.pos(head.span()),
-            );
-            return None;
+        let (declarations, mutable, declaration_pos) = match head {
+            ast::ForHead::VarDecl(decl) => {
+                if decl.kind == ast::VarDeclKind::Var {
+                    self.error(
+                        RuleCode::S100,
+                        "`var` is not in the language; use `let` or `const`",
+                        self.pos(decl.span),
+                    );
+                }
+                (
+                    &decl.decls,
+                    decl.kind == ast::VarDeclKind::Let,
+                    self.pos(decl.span),
+                )
+            }
+            ast::ForHead::UsingDecl(using) => {
+                self.error(
+                    RuleCode::S100,
+                    if using.is_await {
+                        "`await using` in a `for` head is not in the decided surface"
+                    } else {
+                        "`using` in a `for` head is not in the decided surface"
+                    },
+                    self.pos(using.span),
+                );
+                (&using.decls, false, self.pos(using.span))
+            }
+            _ => {
+                self.error(
+                    RuleCode::S100,
+                    "`for…of` requires a `const` or `let` identifier binding",
+                    self.pos(head.span()),
+                );
+                return None;
+            }
         };
-        if decl.kind == ast::VarDeclKind::Var {
-            self.error(
-                RuleCode::S100,
-                "`var` is not in the language; use `let` or `const`",
-                self.pos(decl.span),
-            );
-        }
-        if decl.decls.len() != 1 {
+        if declarations.len() != 1 {
             self.error(
                 RuleCode::S100,
                 "`for…of` requires exactly one identifier binding",
-                self.pos(decl.span),
+                declaration_pos,
             );
             return None;
         }
-        let binding = &decl.decls[0];
+        let binding = &declarations[0];
         if binding.init.is_some() {
             self.error(
                 RuleCode::S100,
@@ -1051,7 +1097,7 @@ impl<'p> Checker<'p> {
             .map(|ann| self.resolve_type(&ann.type_ann));
         Some((
             ident.id.sym.to_string(),
-            decl.kind == ast::VarDeclKind::Let,
+            mutable,
             self.pos(ident.id.span),
             annotation,
         ))
@@ -1210,13 +1256,19 @@ impl<'p> Checker<'p> {
             self.reserve_block_declarations(&case.cons, fx);
             if let Some(scope) = fx.scopes.last_mut() {
                 for statement in &case.cons {
-                    let ast::Stmt::Decl(ast::Decl::Var(declaration)) = statement else {
+                    let ast::Stmt::Decl(declaration) = statement else {
                         continue;
                     };
-                    if declaration.kind == ast::VarDeclKind::Var {
-                        continue;
-                    }
-                    for declarator in &declaration.decls {
+                    let declarators = match declaration {
+                        ast::Decl::Var(declaration)
+                            if declaration.kind != ast::VarDeclKind::Var =>
+                        {
+                            &declaration.decls
+                        }
+                        ast::Decl::Using(declaration) => &declaration.decls,
+                        _ => continue,
+                    };
+                    for declarator in declarators {
                         if let ast::Pat::Ident(binding) = &declarator.name {
                             scope
                                 .switch_declarations
@@ -1350,7 +1402,7 @@ mod tests {
             },
             Type::Bool,
         );
-        let (when_true, when_false) = narrow_paths(&cond, &|_| ABSENT_STRING_ALIAS_DISCRIMINANT);
+        let (when_true, when_false) = narrow_paths(&cond);
         assert_eq!(when_true, vec!["p".to_string()]);
         assert!(when_false.is_empty());
 
@@ -1362,7 +1414,7 @@ mod tests {
             },
             Type::Bool,
         );
-        let (when_true, when_false) = narrow_paths(&cond_eq, &|_| ABSENT_STRING_ALIAS_DISCRIMINANT);
+        let (when_true, when_false) = narrow_paths(&cond_eq);
         assert!(when_true.is_empty());
         assert_eq!(when_false, vec!["p".to_string()]);
     }
@@ -1382,36 +1434,27 @@ mod tests {
                 alias.clone(),
             )
         };
-        let absent = || {
-            expr(
-                ExprKind::Int(ABSENT_STRING_ALIAS_DISCRIMINANT),
-                alias.clone(),
-            )
-        };
-
         let not_equal = expr(
-            ExprKind::Binary {
-                op: BinOp::Ne,
-                left: Box::new(member()),
-                right: Box::new(absent()),
+            ExprKind::AbsenceTest {
+                value: Box::new(member()),
+                negated: true,
             },
             Type::Bool,
         );
         assert_eq!(
-            narrow_paths(&not_equal, &|_| ABSENT_STRING_ALIAS_DISCRIMINANT),
+            narrow_paths(&not_equal),
             (vec!["sampler.compare".to_string()], Vec::new())
         );
 
         let equal = expr(
-            ExprKind::Binary {
-                op: BinOp::Eq,
-                left: Box::new(absent()),
-                right: Box::new(member()),
+            ExprKind::AbsenceTest {
+                value: Box::new(member()),
+                negated: false,
             },
             Type::Bool,
         );
         assert_eq!(
-            narrow_paths(&equal, &|_| ABSENT_STRING_ALIAS_DISCRIMINANT),
+            narrow_paths(&equal),
             (Vec::new(), vec!["sampler.compare".to_string()])
         );
     }

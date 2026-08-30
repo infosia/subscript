@@ -497,6 +497,8 @@ pub enum Stmt {
         ty: Type,
         /// True for `let`, false for `const`.
         mutable: bool,
+        /// True when scope exit must call this binding's dispose method.
+        dispose: bool,
         /// Checked initializer.
         init: Expr,
         /// Position of the declaration.
@@ -3062,6 +3064,13 @@ pub enum ExprKind {
         /// Right operand.
         right: Box<Expr>,
     },
+    /// A test of a string-alias value against its reserved absence marker.
+    AbsenceTest {
+        /// The absence-capable value.
+        value: Box<Expr>,
+        /// True for `!== undefined`; false for `=== undefined`.
+        negated: bool,
+    },
     /// Assignment (plain or compound). The target is a `Local`, `Global`,
     /// `Field`, or `Index` expression.
     Assign {
@@ -3294,6 +3303,7 @@ impl Expr {
             | K::AsyncHandleTransfer { value: operand, .. } => {
                 vec![HirChild::Expr(operand)]
             }
+            K::AbsenceTest { value, .. } => vec![HirChild::Expr(value)],
             K::Binary { left, right, .. }
             | K::Assign {
                 target: left,
@@ -3375,6 +3385,7 @@ impl Expr {
             | K::AsyncHandleTransfer { value: operand, .. } => {
                 vec![HirChildMut::Expr(operand)]
             }
+            K::AbsenceTest { value, .. } => vec![HirChildMut::Expr(value)],
             K::Binary { left, right, .. }
             | K::Assign {
                 target: left,
@@ -3992,6 +4003,7 @@ impl Expr {
             | K::Zero
             | K::Unary { .. }
             | K::Binary { .. }
+            | K::AbsenceTest { .. }
             | K::Cast(_)
             | K::Length(_)
             | K::Index { .. }
@@ -4262,6 +4274,7 @@ mod tests {
                     name: String::new(),
                     ty: Type::I32,
                     mutable: false,
+                    dispose: false,
                     init: child_expr(1),
                     pos: pos.clone(),
                 },

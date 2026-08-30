@@ -13,6 +13,9 @@ mod layout;
 mod stmt;
 mod tyres;
 
+#[cfg(test)]
+pub(crate) use expr::{take_classified_places, PlaceKind};
+
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -353,10 +356,25 @@ struct UsingBinding {
 }
 
 struct SwitchUsingStorage {
-    pos: Pos,
+    source: String,
     active: String,
     storage: String,
     ty: Type,
+}
+
+fn has_dispose_binding(statements: &[hir::Stmt]) -> bool {
+    statements.iter().any(|statement| match statement {
+        hir::Stmt::Let { dispose, .. } => *dispose,
+        hir::Stmt::If { then, els, .. } => {
+            has_dispose_binding(then) || els.as_deref().is_some_and(has_dispose_binding)
+        }
+        hir::Stmt::While { body, .. }
+        | hir::Stmt::For { body, .. }
+        | hir::Stmt::ForOf { body, .. }
+        | hir::Stmt::Block(body) => has_dispose_binding(body),
+        hir::Stmt::Switch { cases, .. } => cases.iter().any(|case| has_dispose_binding(&case.body)),
+        _ => false,
+    })
 }
 
 /// One function (or lambda) frame.
@@ -1088,13 +1106,17 @@ impl<'p> Checker<'p> {
             return;
         };
         for statement in statements {
-            let ast::Stmt::Decl(ast::Decl::Var(declaration)) = statement else {
+            let ast::Stmt::Decl(declaration) = statement else {
                 continue;
             };
-            if declaration.kind == ast::VarDeclKind::Var {
-                continue;
-            }
-            for declarator in &declaration.decls {
+            let declarators = match declaration {
+                ast::Decl::Var(declaration) if declaration.kind != ast::VarDeclKind::Var => {
+                    &declaration.decls
+                }
+                ast::Decl::Using(declaration) => &declaration.decls,
+                _ => continue,
+            };
+            for declarator in declarators {
                 if let ast::Pat::Ident(binding) = &declarator.name {
                     let name = binding.id.sym.to_string();
                     if !scope.vars.contains_key(&name) {
@@ -3701,95 +3723,10 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn lower_using_function(&mut self, function: &ast::Function) -> (ast::Function, Vec<Pos>) {
-        let mut lowered = function.clone();
-        let mut bindings = Vec::new();
-        if let Some(body) = &mut lowered.body {
-            self.lower_using_statements(&mut body.stmts, &mut bindings);
-        }
-        (lowered, bindings)
-    }
-
-    fn lower_using_statements(&mut self, statements: &mut [ast::Stmt], bindings: &mut Vec<Pos>) {
-        for statement in statements {
-            match statement {
-                ast::Stmt::Decl(ast::Decl::Using(using)) => {
-                    if using.is_await {
-                        self.error(
-                            RuleCode::S100,
-                            "`await using` is not in the decided surface",
-                            self.pos(using.span),
-                        );
-                    } else {
-                        for declarator in &using.decls {
-                            if let ast::Pat::Ident(binding) = &declarator.name {
-                                bindings.push(self.pos(binding.id.span));
-                            }
-                        }
-                    }
-                    *statement = ast::Stmt::Decl(ast::Decl::Var(Box::new(ast::VarDecl {
-                        span: using.span,
-                        ctxt: Default::default(),
-                        kind: ast::VarDeclKind::Const,
-                        declare: false,
-                        decls: using.decls.clone(),
-                    })));
-                }
-                ast::Stmt::Block(block) => {
-                    self.lower_using_statements(&mut block.stmts, bindings);
-                }
-                ast::Stmt::If(if_statement) => {
-                    self.lower_using_statement(&mut if_statement.cons, bindings);
-                    if let Some(alternate) = &mut if_statement.alt {
-                        self.lower_using_statement(alternate, bindings);
-                    }
-                }
-                ast::Stmt::While(while_statement) => {
-                    self.lower_using_statement(&mut while_statement.body, bindings);
-                }
-                ast::Stmt::For(for_statement) => {
-                    self.lower_using_statement(&mut for_statement.body, bindings);
-                }
-                ast::Stmt::ForOf(for_of) => {
-                    if let ast::ForHead::UsingDecl(using) = &for_of.left {
-                        self.error(
-                            RuleCode::S100,
-                            if using.is_await {
-                                "`await using` in a `for` head is not in the decided surface"
-                            } else {
-                                "`using` in a `for` head is not in the decided surface"
-                            },
-                            self.pos(using.span),
-                        );
-                        for_of.left = ast::ForHead::VarDecl(Box::new(ast::VarDecl {
-                            span: using.span,
-                            ctxt: Default::default(),
-                            kind: ast::VarDeclKind::Const,
-                            declare: false,
-                            decls: using.decls.clone(),
-                        }));
-                    }
-                    self.lower_using_statement(&mut for_of.body, bindings);
-                }
-                ast::Stmt::Switch(switch_statement) => {
-                    for case in &mut switch_statement.cases {
-                        self.lower_using_statements(&mut case.cons, bindings);
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    fn lower_using_statement(&mut self, statement: &mut ast::Stmt, bindings: &mut Vec<Pos>) {
-        self.lower_using_statements(std::slice::from_mut(statement), bindings);
-    }
-
-    fn is_using_position(positions: &[Pos], pos: &Pos) -> bool {
-        positions.iter().any(|candidate| candidate == pos)
-    }
-
-    fn dispose_calls(scopes: &[Vec<UsingBinding>], first_scope: usize) -> Vec<hir::Stmt> {
+    fn make_disposal_statements(
+        scopes: &[Vec<UsingBinding>],
+        first_scope: usize,
+    ) -> Vec<hir::Stmt> {
         let mut calls = Vec::new();
         for scope in scopes[first_scope..].iter().rev() {
             for binding in scope.iter().rev() {
@@ -3827,23 +3764,9 @@ impl<'p> Checker<'p> {
         calls
     }
 
-    fn rewrite_using_body(
-        &mut self,
-        body: Vec<hir::Stmt>,
-        positions: &[Pos],
-        ret: &Type,
-    ) -> Vec<hir::Stmt> {
-        if positions.is_empty() {
-            return body;
-        }
-        let mut scopes = Vec::new();
-        self.rewrite_using_scope(body, positions, ret, &mut scopes, (None, None), (true, &[]))
-    }
-
-    fn rewrite_using_scope(
+    fn insert_scope_exit_disposals(
         &mut self,
         statements: Vec<hir::Stmt>,
-        positions: &[Pos],
         ret: &Type,
         scopes: &mut Vec<Vec<UsingBinding>>,
         control_scopes: (Option<usize>, Option<usize>),
@@ -3861,38 +3784,20 @@ impl<'p> Checker<'p> {
                     name,
                     ty,
                     mutable,
+                    dispose,
                     init,
                     pos,
                 } => {
-                    let is_using = Self::is_using_position(positions, &pos);
-                    if is_using && !matches!(ty, Type::Error) {
-                        let valid = match &ty {
-                            Type::Class(id) => {
-                                !self.classes[id.0].is_value
-                                    && !self.classes[id.0].is_descriptor
-                                    && self.class_sigs[id.0]
-                                        .methods
-                                        .contains_key(hir::DISPOSE_METHOD_NAME)
-                            }
-                            _ => false,
-                        };
-                        if !valid {
-                            self.error(
-                                RuleCode::S100,
-                                "a `using` initializer must be a non-null reference class that declares `[Symbol.dispose](): void`; narrow nullable values first",
-                                pos.clone(),
-                            );
-                        }
-                    }
                     rewritten.push(hir::Stmt::Let {
                         name: name.clone(),
                         ty: ty.clone(),
                         mutable,
+                        dispose,
                         init,
                         pos: pos.clone(),
                     });
-                    if is_using {
-                        let storage = switch_storage.iter().find(|storage| storage.pos == pos);
+                    if dispose {
+                        let storage = switch_storage.iter().find(|storage| storage.source == name);
                         let dispose_name = storage
                             .map(|storage| storage.storage.clone())
                             .unwrap_or_else(|| name.clone());
@@ -3954,10 +3859,11 @@ impl<'p> Checker<'p> {
                                 name: name.clone(),
                                 ty: ret.clone(),
                                 mutable: false,
+                                dispose: false,
                                 init: value,
                                 pos: pos.clone(),
                             });
-                            rewritten.extend(Self::dispose_calls(scopes, 0));
+                            rewritten.extend(Self::make_disposal_statements(scopes, 0));
                             rewritten.push(hir::Stmt::Return {
                                 value: Some(hir::Expr {
                                     kind: hir::ExprKind::Local(name),
@@ -3967,37 +3873,36 @@ impl<'p> Checker<'p> {
                                 pos,
                             });
                         } else {
-                            rewritten.extend(Self::dispose_calls(scopes, 0));
+                            rewritten.extend(Self::make_disposal_statements(scopes, 0));
                             rewritten.push(hir::Stmt::Return {
                                 value: Some(value),
                                 pos,
                             });
                         }
                     } else {
-                        rewritten.extend(Self::dispose_calls(scopes, 0));
+                        rewritten.extend(Self::make_disposal_statements(scopes, 0));
                         rewritten.push(hir::Stmt::Return { value: None, pos });
                     }
                 }
                 hir::Stmt::Break(pos) => {
                     if let Some(first_scope) = break_scope {
-                        rewritten.extend(Self::dispose_calls(scopes, first_scope));
+                        rewritten.extend(Self::make_disposal_statements(scopes, first_scope));
                     }
                     rewritten.push(hir::Stmt::Break(pos));
                 }
                 hir::Stmt::Continue(pos) => {
                     if let Some(first_scope) = continue_scope {
-                        rewritten.extend(Self::dispose_calls(scopes, first_scope));
+                        rewritten.extend(Self::make_disposal_statements(scopes, first_scope));
                     }
                     rewritten.push(hir::Stmt::Continue(pos));
                 }
                 hir::Stmt::Block(body) => {
-                    let body = self.rewrite_using_scope(
+                    let body = self.insert_scope_exit_disposals(
                         body,
-                        positions,
                         ret,
                         scopes,
                         (break_scope, continue_scope),
-                        (true, switch_storage),
+                        (true, &[]),
                     );
                     rewritten.push(hir::Stmt::Block(body));
                 }
@@ -4007,22 +3912,20 @@ impl<'p> Checker<'p> {
                     els,
                     pos,
                 } => {
-                    let then = self.rewrite_using_scope(
+                    let then = self.insert_scope_exit_disposals(
                         then,
-                        positions,
                         ret,
                         scopes,
                         (break_scope, continue_scope),
-                        (true, switch_storage),
+                        (true, &[]),
                     );
                     let els = els.map(|body| {
-                        self.rewrite_using_scope(
+                        self.insert_scope_exit_disposals(
                             body,
-                            positions,
                             ret,
                             scopes,
                             (break_scope, continue_scope),
-                            (true, switch_storage),
+                            (true, &[]),
                         )
                     });
                     rewritten.push(hir::Stmt::If {
@@ -4034,13 +3937,12 @@ impl<'p> Checker<'p> {
                 }
                 hir::Stmt::While { cond, body, pos } => {
                     let loop_scope = scopes.len();
-                    let body = self.rewrite_using_scope(
+                    let body = self.insert_scope_exit_disposals(
                         body,
-                        positions,
                         ret,
                         scopes,
                         (Some(loop_scope), Some(loop_scope)),
-                        (true, switch_storage),
+                        (true, &[]),
                     );
                     rewritten.push(hir::Stmt::While { cond, body, pos });
                 }
@@ -4052,13 +3954,12 @@ impl<'p> Checker<'p> {
                     pos,
                 } => {
                     let loop_scope = scopes.len();
-                    let body = self.rewrite_using_scope(
+                    let body = self.insert_scope_exit_disposals(
                         body,
-                        positions,
                         ret,
                         scopes,
                         (Some(loop_scope), Some(loop_scope)),
-                        (true, switch_storage),
+                        (true, &[]),
                     );
                     rewritten.push(hir::Stmt::For {
                         init,
@@ -4077,13 +3978,12 @@ impl<'p> Checker<'p> {
                     pos,
                 } => {
                     let loop_scope = scopes.len();
-                    let body = self.rewrite_using_scope(
+                    let body = self.insert_scope_exit_disposals(
                         body,
-                        positions,
                         ret,
                         scopes,
                         (Some(loop_scope), Some(loop_scope)),
-                        (true, switch_storage),
+                        (true, &[]),
                     );
                     rewritten.push(hir::Stmt::ForOf {
                         name,
@@ -4099,43 +3999,50 @@ impl<'p> Checker<'p> {
                     let mut switch_bindings = Vec::new();
                     for case in &cases {
                         for statement in &case.body {
-                            let hir::Stmt::Let { ty, pos, .. } = statement else {
+                            let hir::Stmt::Let {
+                                name,
+                                ty,
+                                dispose: true,
+                                pos,
+                                ..
+                            } = statement
+                            else {
                                 continue;
                             };
-                            if Self::is_using_position(positions, pos) {
-                                let id = self.next_using_switch_id;
-                                self.next_using_switch_id += 1;
-                                let active = format!("[[using.active#{id}]]");
-                                let storage = format!("[[using.value#{id}]]");
-                                rewritten.push(hir::Stmt::Let {
-                                    name: active.clone(),
+                            let id = self.next_using_switch_id;
+                            self.next_using_switch_id += 1;
+                            let active = format!("[[using.active#{id}]]");
+                            let storage = format!("[[using.value#{id}]]");
+                            rewritten.push(hir::Stmt::Let {
+                                name: active.clone(),
+                                ty: Type::Bool,
+                                mutable: true,
+                                dispose: false,
+                                init: hir::Expr {
+                                    kind: hir::ExprKind::Bool(false),
                                     ty: Type::Bool,
-                                    mutable: true,
-                                    init: hir::Expr {
-                                        kind: hir::ExprKind::Bool(false),
-                                        ty: Type::Bool,
-                                        pos: pos.clone(),
-                                    },
                                     pos: pos.clone(),
-                                });
-                                rewritten.push(hir::Stmt::Let {
-                                    name: storage.clone(),
+                                },
+                                pos: pos.clone(),
+                            });
+                            rewritten.push(hir::Stmt::Let {
+                                name: storage.clone(),
+                                ty: ty.clone(),
+                                mutable: true,
+                                dispose: false,
+                                init: hir::Expr {
+                                    kind: hir::ExprKind::Null,
                                     ty: ty.clone(),
-                                    mutable: true,
-                                    init: hir::Expr {
-                                        kind: hir::ExprKind::Null,
-                                        ty: ty.clone(),
-                                        pos: pos.clone(),
-                                    },
                                     pos: pos.clone(),
-                                });
-                                switch_bindings.push(SwitchUsingStorage {
-                                    pos: pos.clone(),
-                                    active,
-                                    storage,
-                                    ty: ty.clone(),
-                                });
-                            }
+                                },
+                                pos: pos.clone(),
+                            });
+                            switch_bindings.push(SwitchUsingStorage {
+                                source: name.clone(),
+                                active,
+                                storage,
+                                ty: ty.clone(),
+                            });
                         }
                     }
                     scopes.push(Vec::new());
@@ -4143,9 +4050,8 @@ impl<'p> Checker<'p> {
                         .into_iter()
                         .map(|case| hir::SwitchCase {
                             test: case.test,
-                            body: self.rewrite_using_scope(
+                            body: self.insert_scope_exit_disposals(
                                 case.body,
-                                positions,
                                 ret,
                                 scopes,
                                 (Some(switch_scope), continue_scope),
@@ -4156,9 +4062,10 @@ impl<'p> Checker<'p> {
                         .collect::<Vec<_>>();
                     let scope = scopes.pop().unwrap_or_default();
                     if let Some(last_case) = cases.last_mut() {
-                        last_case
-                            .body
-                            .extend(Self::dispose_calls(std::slice::from_ref(&scope), 0));
+                        last_case.body.extend(Self::make_disposal_statements(
+                            std::slice::from_ref(&scope),
+                            0,
+                        ));
                     }
                     rewritten.push(hir::Stmt::Switch { disc, cases, pos });
                 }
@@ -4168,7 +4075,10 @@ impl<'p> Checker<'p> {
         if open_scope {
             let scope = scopes.pop().unwrap_or_default();
             if !scope.is_empty() {
-                rewritten.extend(Self::dispose_calls(std::slice::from_ref(&scope), 0));
+                rewritten.extend(Self::make_disposal_statements(
+                    std::slice::from_ref(&scope),
+                    0,
+                ));
             }
         }
         rewritten
@@ -4185,8 +4095,6 @@ impl<'p> Checker<'p> {
         this_ty: Option<Type>,
         pos: Pos,
     ) -> Option<hir::Function> {
-        let (lowered, using_positions) = self.lower_using_function(f);
-        let f = &lowered;
         let mut fx = FnCtx::new(sig.ret.clone(), sig.is_generator, this_ty);
         fx.frames[0].is_async = sig.is_async;
         if sig.is_generator {
@@ -4224,7 +4132,17 @@ impl<'p> Checker<'p> {
                 origin,
             );
         }
-        let body = self.rewrite_using_body(body, &using_positions, &sig.ret);
+        let body = if has_dispose_binding(&body) {
+            self.insert_scope_exit_disposals(
+                body,
+                &sig.ret,
+                &mut Vec::new(),
+                (None, None),
+                (true, &[]),
+            )
+        } else {
+            body
+        };
         let ret = if sig.is_generator {
             let yield_ty = fx.frames[0].yield_ty.clone().unwrap_or(Type::Void);
             let ret = Type::Generator(Box::new(yield_ty));
@@ -4434,6 +4352,15 @@ impl<'p> Checker<'p> {
                         for s in &block.stmts {
                             self.check_stmt(s, &mut fx, &mut body);
                         }
+                    }
+                    if has_dispose_binding(&body) {
+                        body = self.insert_scope_exit_disposals(
+                            body,
+                            &Type::Void,
+                            &mut Vec::new(),
+                            (None, None),
+                            (true, &[]),
+                        );
                     }
                     self.classes[id.0].ctor = Some(hir::Function {
                         name: "constructor".to_string(),
