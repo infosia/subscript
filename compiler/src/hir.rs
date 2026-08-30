@@ -3018,6 +3018,29 @@ pub enum WorkerFn {
     OutboxPost,
 }
 
+impl WorkerFn {
+    /// Worker operations in stable intrinsic-number order.
+    pub const ALL: [Self; 8] = [
+        Self::Spawn(0),
+        Self::Post,
+        Self::Poll,
+        Self::Close,
+        Self::Join,
+        Self::InboxWait,
+        Self::InboxPoll,
+        Self::OutboxPost,
+    ];
+
+    /// Removes the worker-entry payload from the operation identity.
+    #[must_use]
+    pub fn intrinsic_identity(self) -> Self {
+        match self {
+            Self::Spawn(_) => Self::Spawn(0),
+            other => other,
+        }
+    }
+}
+
 /// One interpolation segment of a template literal.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -4875,5 +4898,12 @@ mod tests {
             top_level: Vec::new(),
         };
         assert!(m.functions.is_empty());
+    }
+
+    #[test]
+    fn worker_intrinsic_identity_uses_the_all_table_order() {
+        assert_eq!(WorkerFn::ALL.len(), 8);
+        assert_eq!(WorkerFn::Spawn(37).intrinsic_identity(), WorkerFn::ALL[0]);
+        assert_eq!(WorkerFn::OutboxPost.intrinsic_identity(), WorkerFn::ALL[7]);
     }
 }

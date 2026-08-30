@@ -23,7 +23,7 @@ use subscript_runtime::{
 
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions, Lowered};
 use crate::native::{missing_symbol, register_symbols};
-use crate::NativeLibrary;
+use crate::{NativeLibrary, RunConfig, RunOutput};
 
 /// Optional environment-variable override naming an existing parent-owned
 /// output file. JIT run helpers otherwise create and own a temporary file;
@@ -130,928 +130,252 @@ impl std::fmt::Display for RunError {
 
 impl std::error::Error for RunError {}
 
+macro_rules! runtime_symbols {
+    ($($name:ident),+ $(,)?) => {
+        &[$((stringify!($name), ffi::$name as *const u8)),+]
+    };
+}
+
 /// Registers every runtime symbol the lowering imports.
 ///
 /// The dev tier binds them by address; the ship tier resolves the same
-/// names from the runtime static library at link time, so this list and
-/// the lowering's imports must stay in step with `runtime::ffi`.
+/// names from the runtime static library at link time. The macro derives
+/// each name/address pair from one FFI identifier.
 pub(crate) fn register_runtime(builder: &mut JITBuilder) {
-    let syms: &[(&str, *const u8)] = &[
-        ("subscript_rt_print", ffi::subscript_rt_print as *const u8),
-        (
-            "subscript_rt_collect",
-            ffi::subscript_rt_collect as *const u8,
-        ),
-        ("subscript_rt_alloc", ffi::subscript_rt_alloc as *const u8),
-        (
-            "subscript_rt_globals_init",
-            ffi::subscript_rt_globals_init as *const u8,
-        ),
-        (
-            "subscript_rt_boundary_scratch_mark",
-            ffi::subscript_rt_boundary_scratch_mark as *const u8,
-        ),
-        (
-            "subscript_rt_boundary_scratch_alloc",
-            ffi::subscript_rt_boundary_scratch_alloc as *const u8,
-        ),
-        (
-            "subscript_rt_boundary_scratch_release",
-            ffi::subscript_rt_boundary_scratch_release as *const u8,
-        ),
-        (
-            "subscript_rt_async_kick",
-            ffi::subscript_rt_async_kick as *const u8,
-        ),
-        (
-            "subscript_rt_async_register",
-            ffi::subscript_rt_async_register as *const u8,
-        ),
-        (
-            "subscript_rt_async_retain",
-            ffi::subscript_rt_async_retain as *const u8,
-        ),
-        (
-            "subscript_rt_async_release",
-            ffi::subscript_rt_async_release as *const u8,
-        ),
-        (
-            "subscript_rt_async_release_array",
-            ffi::subscript_rt_async_release_array as *const u8,
-        ),
-        (
-            "subscript_rt_async_retain_array",
-            ffi::subscript_rt_async_retain_array as *const u8,
-        ),
-        (
-            "subscript_rt_async_is_stale",
-            ffi::subscript_rt_async_is_stale as *const u8,
-        ),
-        (
-            "subscript_rt_async_complete",
-            ffi::subscript_rt_async_complete as *const u8,
-        ),
-        (
-            "subscript_rt_async_result",
-            ffi::subscript_rt_async_result as *const u8,
-        ),
-        ("subscript_rt_delete", ffi::subscript_rt_delete as *const u8),
-        ("subscript_rt_trap", ffi::subscript_rt_trap as *const u8),
-        (
-            "subscript_rt_trap_index_out_of_bounds",
-            ffi::subscript_rt_trap_index_out_of_bounds as *const u8,
-        ),
-        (
-            "subscript_rt_trap_wire_enum",
-            ffi::subscript_rt_trap_wire_enum as *const u8,
-        ),
-        (
-            "subscript_rt_root_add",
-            ffi::subscript_rt_root_add as *const u8,
-        ),
-        (
-            "subscript_rt_shadow_push",
-            ffi::subscript_rt_shadow_push as *const u8,
-        ),
-        (
-            "subscript_rt_shadow_pop",
-            ffi::subscript_rt_shadow_pop as *const u8,
-        ),
-        (
-            "subscript_rt_str_lit",
-            ffi::subscript_rt_str_lit as *const u8,
-        ),
-        (
-            "subscript_rt_str_from_view",
-            ffi::subscript_rt_str_from_view as *const u8,
-        ),
-        (
-            "subscript_rt_str_len",
-            ffi::subscript_rt_str_len as *const u8,
-        ),
-        (
-            "subscript_rt_str_concat",
-            ffi::subscript_rt_str_concat as *const u8,
-        ),
-        (
-            "subscript_rt_str_slice",
-            ffi::subscript_rt_str_slice as *const u8,
-        ),
-        ("subscript_rt_str_eq", ffi::subscript_rt_str_eq as *const u8),
-        (
-            "subscript_rt_fmt_i32",
-            ffi::subscript_rt_fmt_i32 as *const u8,
-        ),
-        (
-            "subscript_rt_fmt_u32",
-            ffi::subscript_rt_fmt_u32 as *const u8,
-        ),
-        (
-            "subscript_rt_fmt_i64",
-            ffi::subscript_rt_fmt_i64 as *const u8,
-        ),
-        (
-            "subscript_rt_fmt_u64",
-            ffi::subscript_rt_fmt_u64 as *const u8,
-        ),
-        (
-            "subscript_rt_fmt_f32",
-            ffi::subscript_rt_fmt_f32 as *const u8,
-        ),
-        (
-            "subscript_rt_fmt_f64",
-            ffi::subscript_rt_fmt_f64 as *const u8,
-        ),
-        (
-            "subscript_rt_fmt_bool",
-            ffi::subscript_rt_fmt_bool as *const u8,
-        ),
-        (
-            "subscript_rt_json_begin",
-            ffi::subscript_rt_json_begin as *const u8,
-        ),
-        (
-            "subscript_rt_json_begin_tracked",
-            ffi::subscript_rt_json_begin_tracked as *const u8,
-        ),
-        (
-            "subscript_rt_json_finish",
-            ffi::subscript_rt_json_finish as *const u8,
-        ),
-        (
-            "subscript_rt_json_raw",
-            ffi::subscript_rt_json_raw as *const u8,
-        ),
-        (
-            "subscript_rt_json_str",
-            ffi::subscript_rt_json_str as *const u8,
-        ),
-        (
-            "subscript_rt_json_i32",
-            ffi::subscript_rt_json_i32 as *const u8,
-        ),
-        (
-            "subscript_rt_json_u32",
-            ffi::subscript_rt_json_u32 as *const u8,
-        ),
-        (
-            "subscript_rt_json_i64",
-            ffi::subscript_rt_json_i64 as *const u8,
-        ),
-        (
-            "subscript_rt_json_u64",
-            ffi::subscript_rt_json_u64 as *const u8,
-        ),
-        (
-            "subscript_rt_json_f32",
-            ffi::subscript_rt_json_f32 as *const u8,
-        ),
-        (
-            "subscript_rt_json_f64",
-            ffi::subscript_rt_json_f64 as *const u8,
-        ),
-        (
-            "subscript_rt_json_bool",
-            ffi::subscript_rt_json_bool as *const u8,
-        ),
-        (
-            "subscript_rt_json_date",
-            ffi::subscript_rt_json_date as *const u8,
-        ),
-        (
-            "subscript_rt_json_null",
-            ffi::subscript_rt_json_null as *const u8,
-        ),
-        (
-            "subscript_rt_json_visit",
-            ffi::subscript_rt_json_visit as *const u8,
-        ),
-        (
-            "subscript_rt_json_leave",
-            ffi::subscript_rt_json_leave as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_begin",
-            ffi::subscript_rt_json_parse_begin as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_end",
-            ffi::subscript_rt_json_parse_end as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_root",
-            ffi::subscript_rt_json_parse_root as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_is_kind",
-            ffi::subscript_rt_json_parse_is_kind as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_number_fits",
-            ffi::subscript_rt_json_parse_number_fits as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_number",
-            ffi::subscript_rt_json_parse_number as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_integer",
-            ffi::subscript_rt_json_parse_integer as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_bool",
-            ffi::subscript_rt_json_parse_bool as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_string",
-            ffi::subscript_rt_json_parse_string as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_array_len",
-            ffi::subscript_rt_json_parse_array_len as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_array_get",
-            ffi::subscript_rt_json_parse_array_get as *const u8,
-        ),
-        (
-            "subscript_rt_json_parse_object_get",
-            ffi::subscript_rt_json_parse_object_get as *const u8,
-        ),
-        (
-            "subscript_rt_f16_from_f64",
-            ffi::subscript_rt_f16_from_f64 as *const u8,
-        ),
-        (
-            "subscript_rt_f16_to_f64",
-            ffi::subscript_rt_f16_to_f64 as *const u8,
-        ),
-        ("subscript_rt_fmod", ffi::subscript_rt_fmod as *const u8),
-        (
-            "subscript_rt_array_new",
-            ffi::subscript_rt_array_new as *const u8,
-        ),
-        (
-            "subscript_rt_array_with_capacity",
-            ffi::subscript_rt_array_with_capacity as *const u8,
-        ),
-        (
-            "subscript_rt_array_from_bytes",
-            ffi::subscript_rt_array_from_bytes as *const u8,
-        ),
-        (
-            "subscript_rt_array_byte_range",
-            ffi::subscript_rt_array_byte_range as *const u8,
-        ),
-        (
-            "subscript_rt_array_len",
-            ffi::subscript_rt_array_len as *const u8,
-        ),
-        (
-            "subscript_rt_array_push",
-            ffi::subscript_rt_array_push as *const u8,
-        ),
-        (
-            "subscript_rt_array_pop",
-            ffi::subscript_rt_array_pop as *const u8,
-        ),
-        (
-            "subscript_rt_array_ptr",
-            ffi::subscript_rt_array_ptr as *const u8,
-        ),
-        (
-            "subscript_rt_assoc_iter_begin",
-            ffi::subscript_rt_assoc_iter_begin as *const u8,
-        ),
-        (
-            "subscript_rt_assoc_iter_copy",
-            ffi::subscript_rt_assoc_iter_copy as *const u8,
-        ),
-        (
-            "subscript_rt_assoc_iter_end",
-            ffi::subscript_rt_assoc_iter_end as *const u8,
-        ),
-        (
-            "subscript_rt_str_iter_code_point",
-            ffi::subscript_rt_str_iter_code_point as *const u8,
-        ),
-        (
-            "subscript_rt_array_spread_array",
-            ffi::subscript_rt_array_spread_array as *const u8,
-        ),
-        (
-            "subscript_rt_array_spread_fixed",
-            ffi::subscript_rt_array_spread_fixed as *const u8,
-        ),
-        (
-            "subscript_rt_array_spread_assoc",
-            ffi::subscript_rt_array_spread_assoc as *const u8,
-        ),
-        (
-            "subscript_rt_array_spread_string",
-            ffi::subscript_rt_array_spread_string as *const u8,
-        ),
-        (
-            "subscript_rt_str_data",
-            ffi::subscript_rt_str_data as *const u8,
-        ),
-        (
-            "subscript_rt_array_data",
-            ffi::subscript_rt_array_data as *const u8,
-        ),
-        (
-            "subscript_rt_cb_bind",
-            ffi::subscript_rt_cb_bind as *const u8,
-        ),
-        (
-            "subscript_rt_cb_trampoline",
-            ffi::subscript_rt_cb_trampoline as *const u8,
-        ),
-        // Math intrinsics (stdlib.md §1): the ship tier resolves the
-        // same opaque symbols from the runtime static library.
-        (
-            "subscript_rt_math_abs",
-            ffi::subscript_rt_math_abs as *const u8,
-        ),
-        (
-            "subscript_rt_math_acos",
-            ffi::subscript_rt_math_acos as *const u8,
-        ),
-        (
-            "subscript_rt_math_acosh",
-            ffi::subscript_rt_math_acosh as *const u8,
-        ),
-        (
-            "subscript_rt_math_asin",
-            ffi::subscript_rt_math_asin as *const u8,
-        ),
-        (
-            "subscript_rt_math_asinh",
-            ffi::subscript_rt_math_asinh as *const u8,
-        ),
-        (
-            "subscript_rt_math_atan",
-            ffi::subscript_rt_math_atan as *const u8,
-        ),
-        (
-            "subscript_rt_math_atanh",
-            ffi::subscript_rt_math_atanh as *const u8,
-        ),
-        (
-            "subscript_rt_math_cbrt",
-            ffi::subscript_rt_math_cbrt as *const u8,
-        ),
-        (
-            "subscript_rt_math_ceil",
-            ffi::subscript_rt_math_ceil as *const u8,
-        ),
-        (
-            "subscript_rt_math_cos",
-            ffi::subscript_rt_math_cos as *const u8,
-        ),
-        (
-            "subscript_rt_math_cosh",
-            ffi::subscript_rt_math_cosh as *const u8,
-        ),
-        (
-            "subscript_rt_math_exp",
-            ffi::subscript_rt_math_exp as *const u8,
-        ),
-        (
-            "subscript_rt_math_expm1",
-            ffi::subscript_rt_math_expm1 as *const u8,
-        ),
-        (
-            "subscript_rt_math_floor",
-            ffi::subscript_rt_math_floor as *const u8,
-        ),
-        (
-            "subscript_rt_math_log",
-            ffi::subscript_rt_math_log as *const u8,
-        ),
-        (
-            "subscript_rt_math_log1p",
-            ffi::subscript_rt_math_log1p as *const u8,
-        ),
-        (
-            "subscript_rt_math_log10",
-            ffi::subscript_rt_math_log10 as *const u8,
-        ),
-        (
-            "subscript_rt_math_log2",
-            ffi::subscript_rt_math_log2 as *const u8,
-        ),
-        (
-            "subscript_rt_math_round",
-            ffi::subscript_rt_math_round as *const u8,
-        ),
-        (
-            "subscript_rt_math_sign",
-            ffi::subscript_rt_math_sign as *const u8,
-        ),
-        (
-            "subscript_rt_math_sin",
-            ffi::subscript_rt_math_sin as *const u8,
-        ),
-        (
-            "subscript_rt_math_sinh",
-            ffi::subscript_rt_math_sinh as *const u8,
-        ),
-        (
-            "subscript_rt_math_sqrt",
-            ffi::subscript_rt_math_sqrt as *const u8,
-        ),
-        (
-            "subscript_rt_math_tan",
-            ffi::subscript_rt_math_tan as *const u8,
-        ),
-        (
-            "subscript_rt_math_tanh",
-            ffi::subscript_rt_math_tanh as *const u8,
-        ),
-        (
-            "subscript_rt_math_trunc",
-            ffi::subscript_rt_math_trunc as *const u8,
-        ),
-        (
-            "subscript_rt_math_atan2",
-            ffi::subscript_rt_math_atan2 as *const u8,
-        ),
-        (
-            "subscript_rt_math_hypot",
-            ffi::subscript_rt_math_hypot as *const u8,
-        ),
-        (
-            "subscript_rt_math_pow",
-            ffi::subscript_rt_math_pow as *const u8,
-        ),
-        (
-            "subscript_rt_math_max",
-            ffi::subscript_rt_math_max as *const u8,
-        ),
-        (
-            "subscript_rt_math_min",
-            ffi::subscript_rt_math_min as *const u8,
-        ),
-        (
-            "subscript_rt_math_random",
-            ffi::subscript_rt_math_random as *const u8,
-        ),
-        (
-            "subscript_rt_math_clz32",
-            ffi::subscript_rt_math_clz32 as *const u8,
-        ),
-        (
-            "subscript_rt_math_imul",
-            ffi::subscript_rt_math_imul as *const u8,
-        ),
-        (
-            "subscript_rt_math_fround",
-            ffi::subscript_rt_math_fround as *const u8,
-        ),
-        (
-            "subscript_rt_math_f32_to_bits",
-            ffi::subscript_rt_math_f32_to_bits as *const u8,
-        ),
-        (
-            "subscript_rt_math_f32_from_bits",
-            ffi::subscript_rt_math_f32_from_bits as *const u8,
-        ),
-        // Number and parsing intrinsics (stdlib.md §11, Q25/Q26).
-        (
-            "subscript_rt_num_is_nan",
-            ffi::subscript_rt_num_is_nan as *const u8,
-        ),
-        (
-            "subscript_rt_num_is_finite",
-            ffi::subscript_rt_num_is_finite as *const u8,
-        ),
-        (
-            "subscript_rt_num_is_integer",
-            ffi::subscript_rt_num_is_integer as *const u8,
-        ),
-        (
-            "subscript_rt_num_is_safe_integer",
-            ffi::subscript_rt_num_is_safe_integer as *const u8,
-        ),
-        (
-            "subscript_rt_num_parse_int",
-            ffi::subscript_rt_num_parse_int as *const u8,
-        ),
-        (
-            "subscript_rt_num_parse_float",
-            ffi::subscript_rt_num_parse_float as *const u8,
-        ),
-        (
-            "subscript_rt_num_to_fixed",
-            ffi::subscript_rt_num_to_fixed as *const u8,
-        ),
-        (
-            "subscript_rt_num_to_string_f32",
-            ffi::subscript_rt_num_to_string_f32 as *const u8,
-        ),
-        (
-            "subscript_rt_num_to_string_f64",
-            ffi::subscript_rt_num_to_string_f64 as *const u8,
-        ),
-        (
-            "subscript_rt_num_to_exponential",
-            ffi::subscript_rt_num_to_exponential as *const u8,
-        ),
-        (
-            "subscript_rt_num_to_precision",
-            ffi::subscript_rt_num_to_precision as *const u8,
-        ),
-        // Date intrinsics (stdlib.md §3): same opaque-symbol rule; the
-        // ship tier resolves these from the runtime static library.
-        // String method intrinsics (stdlib.md §8): one opaque symbol
-        // per accepted method, StrFn::ALL order.
-        (
-            "subscript_rt_str_index_of",
-            ffi::subscript_rt_str_index_of as *const u8,
-        ),
-        (
-            "subscript_rt_str_last_index_of",
-            ffi::subscript_rt_str_last_index_of as *const u8,
-        ),
-        (
-            "subscript_rt_str_includes",
-            ffi::subscript_rt_str_includes as *const u8,
-        ),
-        (
-            "subscript_rt_str_starts_with",
-            ffi::subscript_rt_str_starts_with as *const u8,
-        ),
-        (
-            "subscript_rt_str_ends_with",
-            ffi::subscript_rt_str_ends_with as *const u8,
-        ),
-        (
-            "subscript_rt_str_char_code_at",
-            ffi::subscript_rt_str_char_code_at as *const u8,
-        ),
-        (
-            "subscript_rt_str_split",
-            ffi::subscript_rt_str_split as *const u8,
-        ),
-        (
-            "subscript_rt_str_trim",
-            ffi::subscript_rt_str_trim as *const u8,
-        ),
-        (
-            "subscript_rt_str_trim_start",
-            ffi::subscript_rt_str_trim_start as *const u8,
-        ),
-        (
-            "subscript_rt_str_trim_end",
-            ffi::subscript_rt_str_trim_end as *const u8,
-        ),
-        (
-            "subscript_rt_str_repeat",
-            ffi::subscript_rt_str_repeat as *const u8,
-        ),
-        (
-            "subscript_rt_str_pad_start",
-            ffi::subscript_rt_str_pad_start as *const u8,
-        ),
-        (
-            "subscript_rt_str_pad_end",
-            ffi::subscript_rt_str_pad_end as *const u8,
-        ),
-        (
-            "subscript_rt_str_to_upper",
-            ffi::subscript_rt_str_to_upper as *const u8,
-        ),
-        (
-            "subscript_rt_str_to_lower",
-            ffi::subscript_rt_str_to_lower as *const u8,
-        ),
-        (
-            "subscript_rt_str_replace",
-            ffi::subscript_rt_str_replace as *const u8,
-        ),
-        (
-            "subscript_rt_str_replace_all",
-            ffi::subscript_rt_str_replace_all as *const u8,
-        ),
-        (
-            "subscript_rt_str_substring",
-            ffi::subscript_rt_str_substring as *const u8,
-        ),
-        (
-            "subscript_rt_str_substr",
-            ffi::subscript_rt_str_substr as *const u8,
-        ),
-        (
-            "subscript_rt_str_char_at",
-            ffi::subscript_rt_str_char_at as *const u8,
-        ),
-        (
-            "subscript_rt_str_code_point_at",
-            ffi::subscript_rt_str_code_point_at as *const u8,
-        ),
-        // Array method intrinsics (stdlib.md §9): one opaque symbol
-        // per accepted method, ArrFn::ALL order.
-        (
-            "subscript_rt_arr_index_of",
-            ffi::subscript_rt_arr_index_of as *const u8,
-        ),
-        (
-            "subscript_rt_arr_last_index_of",
-            ffi::subscript_rt_arr_last_index_of as *const u8,
-        ),
-        (
-            "subscript_rt_arr_includes",
-            ffi::subscript_rt_arr_includes as *const u8,
-        ),
-        (
-            "subscript_rt_arr_join",
-            ffi::subscript_rt_arr_join as *const u8,
-        ),
-        (
-            "subscript_rt_arr_slice",
-            ffi::subscript_rt_arr_slice as *const u8,
-        ),
-        (
-            "subscript_rt_arr_fill",
-            ffi::subscript_rt_arr_fill as *const u8,
-        ),
-        (
-            "subscript_rt_arr_reverse",
-            ffi::subscript_rt_arr_reverse as *const u8,
-        ),
-        (
-            "subscript_rt_arr_concat",
-            ffi::subscript_rt_arr_concat as *const u8,
-        ),
-        (
-            "subscript_rt_arr_for_each",
-            ffi::subscript_rt_arr_for_each as *const u8,
-        ),
-        (
-            "subscript_rt_arr_map",
-            ffi::subscript_rt_arr_map as *const u8,
-        ),
-        (
-            "subscript_rt_arr_filter",
-            ffi::subscript_rt_arr_filter as *const u8,
-        ),
-        (
-            "subscript_rt_arr_reduce",
-            ffi::subscript_rt_arr_reduce as *const u8,
-        ),
-        (
-            "subscript_rt_arr_some",
-            ffi::subscript_rt_arr_some as *const u8,
-        ),
-        (
-            "subscript_rt_arr_every",
-            ffi::subscript_rt_arr_every as *const u8,
-        ),
-        (
-            "subscript_rt_arr_find_index",
-            ffi::subscript_rt_arr_find_index as *const u8,
-        ),
-        (
-            "subscript_rt_arr_sort",
-            ffi::subscript_rt_arr_sort as *const u8,
-        ),
-        (
-            "subscript_rt_arr_reduce_right",
-            ffi::subscript_rt_arr_reduce_right as *const u8,
-        ),
-        (
-            "subscript_rt_arr_splice",
-            ffi::subscript_rt_arr_splice as *const u8,
-        ),
-        (
-            "subscript_rt_arr_shift",
-            ffi::subscript_rt_arr_shift as *const u8,
-        ),
-        (
-            "subscript_rt_arr_unshift",
-            ffi::subscript_rt_arr_unshift as *const u8,
-        ),
-        (
-            "subscript_rt_arr_copy_within",
-            ffi::subscript_rt_arr_copy_within as *const u8,
-        ),
-        (
-            "subscript_rt_fixed_arr_for_each",
-            ffi::subscript_rt_fixed_arr_for_each as *const u8,
-        ),
-        (
-            "subscript_rt_fixed_arr_map",
-            ffi::subscript_rt_fixed_arr_map as *const u8,
-        ),
-        (
-            "subscript_rt_fixed_arr_filter",
-            ffi::subscript_rt_fixed_arr_filter as *const u8,
-        ),
-        (
-            "subscript_rt_fixed_arr_reduce",
-            ffi::subscript_rt_fixed_arr_reduce as *const u8,
-        ),
-        (
-            "subscript_rt_fixed_arr_some",
-            ffi::subscript_rt_fixed_arr_some as *const u8,
-        ),
-        (
-            "subscript_rt_fixed_arr_every",
-            ffi::subscript_rt_fixed_arr_every as *const u8,
-        ),
-        (
-            "subscript_rt_fixed_arr_find_index",
-            ffi::subscript_rt_fixed_arr_find_index as *const u8,
-        ),
-        (
-            "subscript_rt_fixed_arr_reduce_right",
-            ffi::subscript_rt_fixed_arr_reduce_right as *const u8,
-        ),
-        // Map/Set intrinsics (stdlib.md §10, Q24).
-        (
-            "subscript_rt_map_new",
-            ffi::subscript_rt_map_new as *const u8,
-        ),
-        (
-            "subscript_rt_assoc_size",
-            ffi::subscript_rt_assoc_size as *const u8,
-        ),
-        (
-            "subscript_rt_assoc_has",
-            ffi::subscript_rt_assoc_has as *const u8,
-        ),
-        (
-            "subscript_rt_assoc_delete",
-            ffi::subscript_rt_assoc_delete as *const u8,
-        ),
-        (
-            "subscript_rt_assoc_clear",
-            ffi::subscript_rt_assoc_clear as *const u8,
-        ),
-        (
-            "subscript_rt_map_get",
-            ffi::subscript_rt_map_get as *const u8,
-        ),
-        (
-            "subscript_rt_map_get_or",
-            ffi::subscript_rt_map_get_or as *const u8,
-        ),
-        (
-            "subscript_rt_map_set",
-            ffi::subscript_rt_map_set as *const u8,
-        ),
-        (
-            "subscript_rt_map_for_each",
-            ffi::subscript_rt_map_for_each as *const u8,
-        ),
-        (
-            "subscript_rt_map_group_by",
-            ffi::subscript_rt_map_group_by as *const u8,
-        ),
-        (
-            "subscript_rt_set_new",
-            ffi::subscript_rt_set_new as *const u8,
-        ),
-        (
-            "subscript_rt_set_add",
-            ffi::subscript_rt_set_add as *const u8,
-        ),
-        (
-            "subscript_rt_set_for_each",
-            ffi::subscript_rt_set_for_each as *const u8,
-        ),
-        (
-            "subscript_rt_set_union",
-            ffi::subscript_rt_set_union as *const u8,
-        ),
-        (
-            "subscript_rt_set_intersection",
-            ffi::subscript_rt_set_intersection as *const u8,
-        ),
-        (
-            "subscript_rt_set_difference",
-            ffi::subscript_rt_set_difference as *const u8,
-        ),
-        (
-            "subscript_rt_set_symmetric_difference",
-            ffi::subscript_rt_set_symmetric_difference as *const u8,
-        ),
-        (
-            "subscript_rt_set_is_subset_of",
-            ffi::subscript_rt_set_is_subset_of as *const u8,
-        ),
-        (
-            "subscript_rt_set_is_superset_of",
-            ffi::subscript_rt_set_is_superset_of as *const u8,
-        ),
-        (
-            "subscript_rt_set_is_disjoint_from",
-            ffi::subscript_rt_set_is_disjoint_from as *const u8,
-        ),
-        (
-            "subscript_rt_date_utc",
-            ffi::subscript_rt_date_utc as *const u8,
-        ),
-        (
-            "subscript_rt_date_new",
-            ffi::subscript_rt_date_new as *const u8,
-        ),
-        (
-            "subscript_rt_date_now",
-            ffi::subscript_rt_date_now as *const u8,
-        ),
-        (
-            "subscript_rt_date_get",
-            ffi::subscript_rt_date_get as *const u8,
-        ),
-        (
-            "subscript_rt_date_to_iso",
-            ffi::subscript_rt_date_to_iso as *const u8,
-        ),
-        (
-            "subscript_rt_worker_spawn",
-            ffi::subscript_rt_worker_spawn as *const u8,
-        ),
-        (
-            "subscript_rt_worker_post",
-            ffi::subscript_rt_worker_post as *const u8,
-        ),
-        (
-            "subscript_rt_worker_poll",
-            ffi::subscript_rt_worker_poll as *const u8,
-        ),
-        (
-            "subscript_rt_worker_close",
-            ffi::subscript_rt_worker_close as *const u8,
-        ),
-        (
-            "subscript_rt_worker_join",
-            ffi::subscript_rt_worker_join as *const u8,
-        ),
-        (
-            "subscript_rt_worker_inbox_wait",
-            ffi::subscript_rt_worker_inbox_wait as *const u8,
-        ),
-        (
-            "subscript_rt_worker_inbox_poll",
-            ffi::subscript_rt_worker_inbox_poll as *const u8,
-        ),
-        (
-            "subscript_rt_worker_outbox_post",
-            ffi::subscript_rt_worker_outbox_post as *const u8,
-        ),
-    ];
-    for (name, addr) in syms {
-        builder.symbol(*name, *addr);
-    }
-    let regex_symbols: &[(&str, *const u8)] = &[
-        (
-            "subscript_rt_regex_new",
-            ffi::subscript_rt_regex_new as *const u8,
-        ),
-        (
-            "subscript_rt_regex_test",
-            ffi::subscript_rt_regex_test as *const u8,
-        ),
-        (
-            "subscript_rt_regex_source",
-            ffi::subscript_rt_regex_source as *const u8,
-        ),
-        (
-            "subscript_rt_regex_flags",
-            ffi::subscript_rt_regex_flags as *const u8,
-        ),
-        (
-            "subscript_rt_regex_search",
-            ffi::subscript_rt_regex_search as *const u8,
-        ),
-        (
-            "subscript_rt_regex_replace",
-            ffi::subscript_rt_regex_replace as *const u8,
-        ),
-        (
-            "subscript_rt_regex_replace_all",
-            ffi::subscript_rt_regex_replace_all as *const u8,
-        ),
-        (
-            "subscript_rt_regex_split",
-            ffi::subscript_rt_regex_split as *const u8,
-        ),
-        (
-            "subscript_rt_regex_match_start",
-            ffi::subscript_rt_regex_match_start as *const u8,
-        ),
-        (
-            "subscript_rt_regex_match_end",
-            ffi::subscript_rt_regex_match_end as *const u8,
-        ),
-    ];
-    for (name, address) in regex_symbols {
+    let symbols: &[(&str, *const u8)] = runtime_symbols!(
+        subscript_rt_print,
+        subscript_rt_collect,
+        subscript_rt_alloc,
+        subscript_rt_globals_init,
+        subscript_rt_boundary_scratch_mark,
+        subscript_rt_boundary_scratch_alloc,
+        subscript_rt_boundary_scratch_release,
+        subscript_rt_async_kick,
+        subscript_rt_async_register,
+        subscript_rt_async_retain,
+        subscript_rt_async_release,
+        subscript_rt_async_release_array,
+        subscript_rt_async_retain_array,
+        subscript_rt_async_is_stale,
+        subscript_rt_async_complete,
+        subscript_rt_async_result,
+        subscript_rt_delete,
+        subscript_rt_trap,
+        subscript_rt_trap_index_out_of_bounds,
+        subscript_rt_trap_wire_enum,
+        subscript_rt_root_add,
+        subscript_rt_shadow_push,
+        subscript_rt_shadow_pop,
+        subscript_rt_str_lit,
+        subscript_rt_str_from_view,
+        subscript_rt_str_len,
+        subscript_rt_str_concat,
+        subscript_rt_str_slice,
+        subscript_rt_str_eq,
+        subscript_rt_fmt_i32,
+        subscript_rt_fmt_u32,
+        subscript_rt_fmt_i64,
+        subscript_rt_fmt_u64,
+        subscript_rt_fmt_f32,
+        subscript_rt_fmt_f64,
+        subscript_rt_fmt_bool,
+        subscript_rt_json_begin,
+        subscript_rt_json_begin_tracked,
+        subscript_rt_json_finish,
+        subscript_rt_json_raw,
+        subscript_rt_json_str,
+        subscript_rt_json_i32,
+        subscript_rt_json_u32,
+        subscript_rt_json_i64,
+        subscript_rt_json_u64,
+        subscript_rt_json_f32,
+        subscript_rt_json_f64,
+        subscript_rt_json_bool,
+        subscript_rt_json_date,
+        subscript_rt_json_null,
+        subscript_rt_json_visit,
+        subscript_rt_json_leave,
+        subscript_rt_json_parse_begin,
+        subscript_rt_json_parse_end,
+        subscript_rt_json_parse_root,
+        subscript_rt_json_parse_is_kind,
+        subscript_rt_json_parse_number_fits,
+        subscript_rt_json_parse_number,
+        subscript_rt_json_parse_integer,
+        subscript_rt_json_parse_bool,
+        subscript_rt_json_parse_string,
+        subscript_rt_json_parse_array_len,
+        subscript_rt_json_parse_array_get,
+        subscript_rt_json_parse_object_get,
+        subscript_rt_f16_from_f64,
+        subscript_rt_f16_to_f64,
+        subscript_rt_fmod,
+        subscript_rt_array_new,
+        subscript_rt_array_with_capacity,
+        subscript_rt_array_from_bytes,
+        subscript_rt_array_byte_range,
+        subscript_rt_array_len,
+        subscript_rt_array_push,
+        subscript_rt_array_pop,
+        subscript_rt_array_ptr,
+        subscript_rt_assoc_iter_begin,
+        subscript_rt_assoc_iter_copy,
+        subscript_rt_assoc_iter_end,
+        subscript_rt_str_iter_code_point,
+        subscript_rt_array_spread_array,
+        subscript_rt_array_spread_fixed,
+        subscript_rt_array_spread_assoc,
+        subscript_rt_array_spread_string,
+        subscript_rt_str_data,
+        subscript_rt_array_data,
+        subscript_rt_cb_bind,
+        subscript_rt_cb_trampoline,
+        subscript_rt_math_abs,
+        subscript_rt_math_acos,
+        subscript_rt_math_acosh,
+        subscript_rt_math_asin,
+        subscript_rt_math_asinh,
+        subscript_rt_math_atan,
+        subscript_rt_math_atanh,
+        subscript_rt_math_cbrt,
+        subscript_rt_math_ceil,
+        subscript_rt_math_cos,
+        subscript_rt_math_cosh,
+        subscript_rt_math_exp,
+        subscript_rt_math_expm1,
+        subscript_rt_math_floor,
+        subscript_rt_math_log,
+        subscript_rt_math_log1p,
+        subscript_rt_math_log10,
+        subscript_rt_math_log2,
+        subscript_rt_math_round,
+        subscript_rt_math_sign,
+        subscript_rt_math_sin,
+        subscript_rt_math_sinh,
+        subscript_rt_math_sqrt,
+        subscript_rt_math_tan,
+        subscript_rt_math_tanh,
+        subscript_rt_math_trunc,
+        subscript_rt_math_atan2,
+        subscript_rt_math_hypot,
+        subscript_rt_math_pow,
+        subscript_rt_math_max,
+        subscript_rt_math_min,
+        subscript_rt_math_random,
+        subscript_rt_math_clz32,
+        subscript_rt_math_imul,
+        subscript_rt_math_fround,
+        subscript_rt_math_f32_to_bits,
+        subscript_rt_math_f32_from_bits,
+        subscript_rt_num_is_nan,
+        subscript_rt_num_is_finite,
+        subscript_rt_num_is_integer,
+        subscript_rt_num_is_safe_integer,
+        subscript_rt_num_parse_int,
+        subscript_rt_num_parse_float,
+        subscript_rt_num_to_fixed,
+        subscript_rt_num_to_string_f32,
+        subscript_rt_num_to_string_f64,
+        subscript_rt_num_to_exponential,
+        subscript_rt_num_to_precision,
+        subscript_rt_str_index_of,
+        subscript_rt_str_last_index_of,
+        subscript_rt_str_includes,
+        subscript_rt_str_starts_with,
+        subscript_rt_str_ends_with,
+        subscript_rt_str_char_code_at,
+        subscript_rt_str_split,
+        subscript_rt_str_trim,
+        subscript_rt_str_trim_start,
+        subscript_rt_str_trim_end,
+        subscript_rt_str_repeat,
+        subscript_rt_str_pad_start,
+        subscript_rt_str_pad_end,
+        subscript_rt_str_to_upper,
+        subscript_rt_str_to_lower,
+        subscript_rt_str_replace,
+        subscript_rt_str_replace_all,
+        subscript_rt_str_substring,
+        subscript_rt_str_substr,
+        subscript_rt_str_char_at,
+        subscript_rt_str_code_point_at,
+        subscript_rt_arr_index_of,
+        subscript_rt_arr_last_index_of,
+        subscript_rt_arr_includes,
+        subscript_rt_arr_join,
+        subscript_rt_arr_slice,
+        subscript_rt_arr_fill,
+        subscript_rt_arr_reverse,
+        subscript_rt_arr_concat,
+        subscript_rt_arr_for_each,
+        subscript_rt_arr_map,
+        subscript_rt_arr_filter,
+        subscript_rt_arr_reduce,
+        subscript_rt_arr_some,
+        subscript_rt_arr_every,
+        subscript_rt_arr_find_index,
+        subscript_rt_arr_sort,
+        subscript_rt_arr_reduce_right,
+        subscript_rt_arr_splice,
+        subscript_rt_arr_shift,
+        subscript_rt_arr_unshift,
+        subscript_rt_arr_copy_within,
+        subscript_rt_fixed_arr_for_each,
+        subscript_rt_fixed_arr_map,
+        subscript_rt_fixed_arr_filter,
+        subscript_rt_fixed_arr_reduce,
+        subscript_rt_fixed_arr_some,
+        subscript_rt_fixed_arr_every,
+        subscript_rt_fixed_arr_find_index,
+        subscript_rt_fixed_arr_reduce_right,
+        subscript_rt_map_new,
+        subscript_rt_assoc_size,
+        subscript_rt_assoc_has,
+        subscript_rt_assoc_delete,
+        subscript_rt_assoc_clear,
+        subscript_rt_map_get,
+        subscript_rt_map_get_or,
+        subscript_rt_map_set,
+        subscript_rt_map_for_each,
+        subscript_rt_map_group_by,
+        subscript_rt_set_new,
+        subscript_rt_set_add,
+        subscript_rt_set_for_each,
+        subscript_rt_set_union,
+        subscript_rt_set_intersection,
+        subscript_rt_set_difference,
+        subscript_rt_set_symmetric_difference,
+        subscript_rt_set_is_subset_of,
+        subscript_rt_set_is_superset_of,
+        subscript_rt_set_is_disjoint_from,
+        subscript_rt_date_utc,
+        subscript_rt_date_new,
+        subscript_rt_date_now,
+        subscript_rt_date_get,
+        subscript_rt_date_to_iso,
+        subscript_rt_worker_spawn,
+        subscript_rt_worker_post,
+        subscript_rt_worker_poll,
+        subscript_rt_worker_close,
+        subscript_rt_worker_join,
+        subscript_rt_worker_inbox_wait,
+        subscript_rt_worker_inbox_poll,
+        subscript_rt_worker_outbox_post,
+        subscript_rt_regex_new,
+        subscript_rt_regex_test,
+        subscript_rt_regex_source,
+        subscript_rt_regex_flags,
+        subscript_rt_regex_search,
+        subscript_rt_regex_replace,
+        subscript_rt_regex_replace_all,
+        subscript_rt_regex_split,
+        subscript_rt_regex_match_start,
+        subscript_rt_regex_match_end,
+    );
+    for (name, address) in symbols {
         builder.symbol(*name, *address);
     }
 }
-
 /// Checks `files`, lowers the typed HIR through the shared CLIF
 /// lowering, and finalizes the code in a live JIT module.
 fn compile_jit(
@@ -1706,7 +1030,52 @@ fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {
 /// when generated or foreign code ends outside the trap protocol, and
 /// [`RunError::Internal`] on backend failures.
 pub fn run_jit(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
-    run_jit_with_native_libraries(files, &[])
+    Ok(run_jit_configured(files, RunConfig::default())?.stdout)
+}
+
+/// Runs the development tier with one complete option record.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_jit`]. Host hooks are
+/// shipping-tier options and produce [`RunError::Internal`] here.
+pub fn run_jit_configured(
+    files: &[SourceFile],
+    config: RunConfig<'_>,
+) -> Result<RunOutput, RunError> {
+    if config.pre_entry_hook.is_some() || config.post_run_hook.is_some() {
+        return Err(RunError::Internal(internal(
+            "host hooks are not available in the development tier",
+        )));
+    }
+    let (module, lowered) = compile_jit(files, config.native_libraries)?;
+    let outcome = if config.memory_accounting {
+        execute_entry(
+            &module,
+            &lowered,
+            config.fail_alloc_after,
+            config.freed_handle_diagnostics,
+            None,
+        )
+        .map(|run| RunOutput {
+            memory_accounting: Some(memory_accounting(&run.ctx)),
+            stdout: run.stdout,
+        })
+    } else {
+        execute_entry_retained(
+            &module,
+            &lowered,
+            config.fail_alloc_after,
+            config.freed_handle_diagnostics,
+        )
+        .map(|stdout| RunOutput {
+            stdout,
+            memory_accounting: None,
+        })
+    };
+    // SAFETY: all executions above returned and no pointer into JIT memory survives.
+    unsafe { module.free_memory() };
+    outcome
 }
 
 /// Runs `files` through the dev JIT and returns its exact stdout bytes
@@ -1739,13 +1108,19 @@ pub fn run_jit_with_memory_accounting_and_native_libraries(
     libraries: &[NativeLibrary],
     freed_handle_diagnostics: bool,
 ) -> Result<(Vec<u8>, JitMemoryAccounting), RunError> {
-    let (module, lowered) = compile_jit(files, libraries)?;
-    let outcome = execute_entry(&module, &lowered, None, freed_handle_diagnostics, None)
-        .map(|run| (run.stdout, memory_accounting(&run.ctx)));
-    // SAFETY: all executions above have returned and no pointer into
-    // the JIT-allocated code/data survives (the Context held none).
-    unsafe { module.free_memory() };
-    outcome
+    let output = run_jit_configured(
+        files,
+        RunConfig {
+            native_libraries: libraries,
+            freed_handle_diagnostics,
+            memory_accounting: true,
+            ..RunConfig::default()
+        },
+    )?;
+    let accounting = output.memory_accounting.ok_or_else(|| {
+        RunError::Internal(internal("configured accounting run returned no accounting"))
+    })?;
+    Ok((output.stdout, accounting))
 }
 
 /// Checks, lowers, and runs `files` through the dev JIT with the
@@ -1765,12 +1140,14 @@ pub fn run_jit_with_native_libraries(
     files: &[SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
-    let (module, lowered) = compile_jit(files, libraries)?;
-    let outcome = execute_entry_retained(&module, &lowered, None, false);
-    // SAFETY: all executions above have returned and no pointer into
-    // the JIT-allocated code/data survives (the Context held none).
-    unsafe { module.free_memory() };
-    outcome
+    Ok(run_jit_configured(
+        files,
+        RunConfig {
+            native_libraries: libraries,
+            ..RunConfig::default()
+        },
+    )?
+    .stdout)
 }
 
 /// Runs the dev JIT with freed-handle diagnostics enabled and the
@@ -1792,12 +1169,15 @@ pub fn run_jit_with_freed_handle_diagnostics_and_native_libraries(
     files: &[SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
-    let (module, lowered) = compile_jit(files, libraries)?;
-    let outcome = execute_entry_retained(&module, &lowered, None, true);
-    // SAFETY: all executions above have returned and no pointer into
-    // the JIT-allocated code/data survives (the Context held none).
-    unsafe { module.free_memory() };
-    outcome
+    Ok(run_jit_configured(
+        files,
+        RunConfig {
+            native_libraries: libraries,
+            freed_handle_diagnostics: true,
+            ..RunConfig::default()
+        },
+    )?
+    .stdout)
 }
 
 /// Runs the dev tier while refusing the `n`-th object-level Context
@@ -1815,12 +1195,14 @@ pub fn run_jit_with_freed_handle_diagnostics_and_native_libraries(
 ///
 /// Returns the same [`RunError`] variants as [`run_jit`].
 pub fn run_jit_with_alloc_failure(files: &[SourceFile], n: u64) -> Result<Vec<u8>, RunError> {
-    let (module, lowered) = compile_jit(files, &[])?;
-    let outcome = execute_entry_retained(&module, &lowered, Some(n), false);
-    // SAFETY: all executions above have returned and no pointer into
-    // the JIT-allocated code/data survives (the Context held none).
-    unsafe { module.free_memory() };
-    outcome
+    Ok(run_jit_configured(
+        files,
+        RunConfig {
+            fail_alloc_after: Some(n),
+            ..RunConfig::default()
+        },
+    )?
+    .stdout)
 }
 
 /// Timed samples for one subject of the P4 performance gate

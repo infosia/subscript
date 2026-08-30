@@ -4,7 +4,6 @@
 //! suspension live-ins. This module assigns target storage and emits CLIF.
 
 use std::collections::{HashMap, HashSet};
-use std::ops::Range;
 
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
@@ -23,7 +22,8 @@ use crate::layout::{closure_environment_layout, is_unsigned, managed_words, Layo
 use crate::lir_types::{
     array_element_kind, array_format_kind, association_key_kind, boundary_box_class,
     boundary_class_contains_pointer, boundary_class_needs_scratch, boundary_class_requires_build,
-    is_userdata_slot,
+    capture_parameters, data_type, explicit_parameters, foreign_parameter_type_matches,
+    is_userdata_slot, operand_type, runtime_trap_kind, value_type,
 };
 use crate::lower::{
     checked_layout_add, checked_layout_mul, internal, round_up_layout, FnKey, GlobalSlot, ModLower,
@@ -669,85 +669,6 @@ fn shift_mask(ty: &Type) -> Result<i64, String> {
     })
 }
 
-fn lir_padding_ranges(
-    module: &l::Module,
-    layouts: &Layouts,
-    ty: &Type,
-) -> Result<Vec<Range<u32>>, String> {
-    fn collect(
-        module: &l::Module,
-        layouts: &Layouts,
-        ty: &Type,
-        base: u32,
-        ranges: &mut Vec<Range<u32>>,
-    ) -> Result<(), String> {
-        match ty {
-            Type::Class(id) if layouts.class(id.0)?.is_value => {
-                let class = module
-                    .classes
-                    .get(id.0)
-                    .filter(|class| class.id == *id)
-                    .ok_or_else(|| internal(format!("class id {} is missing", id.0)))?;
-                let layout = layouts.class(id.0)?;
-                let mut cursor = 0u32;
-                for (field, &offset) in class.fields.iter().zip(&layout.field_offsets) {
-                    if cursor < offset {
-                        ranges.push(
-                            checked_layout_add(base, cursor, "padding range start")?
-                                ..checked_layout_add(base, offset, "padding range end")?,
-                        );
-                    }
-                    let field_base = checked_layout_add(base, offset, "padding field base")?;
-                    collect(module, layouts, &field.ty, field_base, ranges)?;
-                    let (field_size, _) = layouts.size_align(&field.ty)?;
-                    cursor = checked_layout_add(offset, field_size, "padding field end")?;
-                }
-                if cursor < layout.size {
-                    ranges.push(
-                        checked_layout_add(base, cursor, "padding tail start")?
-                            ..checked_layout_add(base, layout.size, "padding tail end")?,
-                    );
-                }
-            }
-            Type::FixedArray(element, length) => {
-                let stride = layouts.stride(element)?;
-                for index in 0..*length {
-                    let offset = checked_layout_mul(index, stride, "padding array offset")?;
-                    let element_base = checked_layout_add(base, offset, "padding element base")?;
-                    collect(module, layouts, element, element_base, ranges)?;
-                }
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    let mut ranges = Vec::new();
-    collect(module, layouts, ty, 0, &mut ranges)?;
-    Ok(ranges)
-}
-
-fn data_type(value: &l::ValueType) -> Result<&Type, String> {
-    match value {
-        l::ValueType::Data(ty) => Ok(ty),
-        other => Err(internal(format!("expected data value type, got {other:?}"))),
-    }
-}
-
-fn foreign_parameter_type_matches(
-    module: &l::Module,
-    actual: &l::ValueType,
-    declared: &Type,
-) -> bool {
-    if actual == &l::ValueType::Data(declared.clone()) {
-        return true;
-    }
-    let l::ValueType::Address(address) = actual else {
-        return false;
-    };
-    boundary_box_class(module, declared).is_some_and(|class| address.pointee == Type::Class(class))
-}
-
 fn value_repr(layouts: &Layouts, value: &l::ValueType) -> Result<Repr, String> {
     match value {
         l::ValueType::Data(ty) => layouts.repr(ty),
@@ -821,20 +742,6 @@ fn receiver_parameter(function: &l::Function) -> Option<&l::Parameter> {
         .parameters
         .iter()
         .find(|parameter| parameter.kind == l::ParameterKind::Receiver)
-}
-
-fn capture_parameters(function: &l::Function) -> impl Iterator<Item = &l::Parameter> {
-    function
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.kind == l::ParameterKind::Capture)
-}
-
-fn explicit_parameters(function: &l::Function) -> impl Iterator<Item = &l::Parameter> {
-    function
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.kind == l::ParameterKind::Explicit)
 }
 
 fn function_has_receiver(function: &l::Function) -> bool {
@@ -1299,12 +1206,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     }
 
     fn value_type(&self, id: l::ValueId) -> Result<&l::ValueType, String> {
-        self.function
-            .values
-            .get(id.0 as usize)
-            .filter(|value| value.id == id)
-            .map(|value| &value.ty)
-            .ok_or_else(|| internal(format!("value {} is missing", id.0)))
+        value_type(self.function, id)
     }
 
     fn value(&mut self, id: l::ValueId) -> Result<RV, String> {
@@ -1414,10 +1316,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     }
 
     fn operand_type(&self, operand: &l::Operand) -> Result<l::ValueType, String> {
-        Ok(match operand {
-            l::Operand::Value(value) => self.value_type(*value)?.clone(),
-            l::Operand::Constant(constant) => l::ValueType::Data(constant.ty.clone()),
-        })
+        operand_type(self.function, operand)
     }
 
     fn position_id(&mut self, position: &Pos) -> i64 {
@@ -1553,7 +1452,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .builder
             .ins()
             .icmp_imm(IntCC::Equal, state, rtc::LIVE_STATE as i64);
-        self.guard(live, TrapKind::UseAfterDelete, position)
+        let kind = runtime_trap_kind(&l::TrapKind::DevOnlyLifetime)
+            .ok_or_else(|| internal("lifetime trap has no direct runtime kind"))?;
+        self.guard(live, kind, position)
     }
 
     fn reload_epoch_check(&mut self, frame: Value, position: &Pos) -> Result<(), String> {
@@ -1577,10 +1478,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .load(types::I32, flags(), frame, GENERATOR_EPOCH_OFFSET);
             self.builder.ins().icmp(IntCC::Equal, current, created)
         };
-        self.guard(valid, TrapKind::StaleCoroutine, position)
+        let kind = runtime_trap_kind(&l::TrapKind::DevReloadOnlyStaleCoroutine)
+            .ok_or_else(|| internal("stale-coroutine trap has no direct runtime kind"))?;
+        self.guard(valid, kind, position)
     }
 
     fn emit_trap(&mut self, trap: &l::Trap, operand: TrapOperand) -> Result<(), String> {
+        let runtime_kind = runtime_trap_kind(&trap.kind);
+        let direct_kind = || {
+            runtime_kind
+                .ok_or_else(|| internal(format!("trap {:?} has no direct runtime kind", trap.kind)))
+        };
         let value = match operand {
             TrapOperand::Value(value) | TrapOperand::Condition(value) => Some(value),
             _ => None,
@@ -1594,12 +1502,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             l::TrapKind::Unreachable => {
                 let false_value = self.iconst(types::I8, 0);
-                self.guard(false_value, TrapKind::UnreachableReached, &trap.pos)?;
+                self.guard(false_value, direct_kind()?, &trap.pos)?;
             }
             l::TrapKind::DivisionByZero => {
                 let divisor = value.ok_or_else(|| internal("division trap has no divisor"))?;
                 let nonzero = self.builder.ins().icmp_imm(IntCC::NotEqual, divisor, 0);
-                self.guard(nonzero, TrapKind::DivisionByZero, &trap.pos)?;
+                self.guard(nonzero, direct_kind()?, &trap.pos)?;
             }
             l::TrapKind::IndexRead | l::TrapKind::IndexWrite => match operand {
                 TrapOperand::Pending => self.trap_check(),
@@ -1608,6 +1516,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     index,
                     length,
                 } => {
+                    if direct_kind()? != TrapKind::IndexOutOfBounds {
+                        return Err(internal("index trap has a non-index runtime kind"));
+                    }
                     self.index_guard(condition, index, length, &trap.pos)?;
                 }
                 TrapOperand::Value(_)
@@ -1619,12 +1530,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::TrapKind::JsonResultValue(_) => {
                 let condition =
                     value.ok_or_else(|| internal("JSON result trap has no condition"))?;
-                self.guard(condition, TrapKind::JsonResultValue, &trap.pos)?;
+                self.guard(condition, direct_kind()?, &trap.pos)?;
             }
             l::TrapKind::NullNarrowing => {
                 let pointer = value.ok_or_else(|| internal("null trap has no pointer"))?;
                 let nonnull = self.builder.ins().icmp_imm(IntCC::NotEqual, pointer, 0);
-                self.guard(nonnull, TrapKind::NullNarrowing, &trap.pos)?;
+                self.guard(nonnull, direct_kind()?, &trap.pos)?;
             }
             l::TrapKind::ClassMismatch(class) => {
                 let pointer = value.ok_or_else(|| internal("class trap has no pointer"))?;
@@ -1636,7 +1547,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .builder
                     .ins()
                     .icmp_imm(IntCC::Equal, class_id, class.0 as i64);
-                self.guard(matches, TrapKind::ClassMismatch, &trap.pos)?;
+                self.guard(matches, direct_kind()?, &trap.pos)?;
             }
             l::TrapKind::DevOnlyLifetime => match operand {
                 TrapOperand::Pending => self.trap_check(),
@@ -1652,6 +1563,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.reload_epoch_check(frame, &trap.pos)?;
             }
             l::TrapKind::WireEnumValue(alias) => {
+                if direct_kind()? != TrapKind::WireEnumUnknownValue {
+                    return Err(internal("wire-enum trap has a non-wire runtime kind"));
+                }
                 let TrapOperand::WireValue { wire, valid } = operand else {
                     return Err(internal("wire enum trap has no wire operand"));
                 };
@@ -2661,19 +2575,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     fn format_value(
         &mut self,
         value: RV,
-        ty: &Type,
+        format: l::FormatKind,
         trap: Option<&l::Trap>,
         pos: &Pos,
     ) -> Result<Value, String> {
         let value = self.expect_scalar(value)?;
-        if ty == &Type::Str {
+        if format == l::FormatKind::Str {
             return Ok(value);
         }
         let position = trap.map_or(pos, |trap| &trap.pos);
         let position = self.position_id(position);
         let position = self.iconst(types::I32, position);
-        if let Type::StringAlias(alias) = ty {
-            let table = self.ml.string_alias_table_data(*alias)?;
+        if let l::FormatKind::StringAlias(alias) = format {
+            let table = self.ml.string_alias_table_data(alias)?;
             let global = self
                 .ml
                 .module
@@ -2715,32 +2629,40 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             return Ok(result);
         }
-        let (function, argument) = match ty {
-            Type::I8 | Type::I16 => (
-                self.ml.rt.fmt_i32,
-                self.builder.ins().sextend(types::I32, value),
-            ),
-            Type::U8 | Type::U16 => (
-                self.ml.rt.fmt_u32,
-                self.builder.ins().uextend(types::I32, value),
-            ),
-            Type::I32 | Type::Enum(_) => (self.ml.rt.fmt_i32, value),
-            Type::U32 => (self.ml.rt.fmt_u32, value),
-            Type::I64 | Type::Date => (self.ml.rt.fmt_i64, value),
-            Type::U64 => (self.ml.rt.fmt_u64, value),
-            Type::F32 => (self.ml.rt.fmt_f32, value),
-            Type::F64 => (self.ml.rt.fmt_f64, value),
-            Type::F16 => {
+        let (function, argument) = match format {
+            l::FormatKind::I32 => {
+                let argument = if self.builder.func.dfg.value_type(value) == types::I32 {
+                    value
+                } else {
+                    self.builder.ins().sextend(types::I32, value)
+                };
+                (self.ml.rt.fmt_i32, argument)
+            }
+            l::FormatKind::U32 => {
+                let argument = if self.builder.func.dfg.value_type(value) == types::I32 {
+                    value
+                } else {
+                    self.builder.ins().uextend(types::I32, value)
+                };
+                (self.ml.rt.fmt_u32, argument)
+            }
+            l::FormatKind::I64 => (self.ml.rt.fmt_i64, value),
+            l::FormatKind::U64 => (self.ml.rt.fmt_u64, value),
+            l::FormatKind::F32 => (self.ml.rt.fmt_f32, value),
+            l::FormatKind::F64 => (self.ml.rt.fmt_f64, value),
+            l::FormatKind::F16 => {
                 let wide = self
                     .call_runtime(self.ml.rt.f16_to_f64, &[value], false)?
                     .ok_or_else(|| internal("f16 formatting conversion has no result"))?;
                 (self.ml.rt.fmt_f64, wide)
             }
-            Type::Bool => (
+            l::FormatKind::Bool => (
                 self.ml.rt.fmt_bool,
                 self.builder.ins().uextend(types::I32, value),
             ),
-            other => return Err(internal(format!("cannot format {other:?}"))),
+            l::FormatKind::Str | l::FormatKind::StringAlias(_) => {
+                return Err(internal("direct string format reached numeric dispatch"))
+            }
         };
         let result = self
             .call_runtime(function, &[self.ctx, argument, position], false)?
@@ -2755,7 +2677,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         &mut self,
         parts: &[l::TemplatePart],
         operands: &[RV],
-        operand_types: &[l::ValueType],
         traps: &[l::Trap],
         pos: &Pos,
     ) -> Result<RV, String> {
@@ -2770,19 +2691,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.string_literal(text, trap.map_or(&[], std::slice::from_ref), pos)?;
                     self.expect_scalar(piece)?
                 }
-                l::TemplatePart::Operand(index) => {
+                l::TemplatePart::Operand { index, format } => {
                     let index = *index as usize;
                     let value = *operands
                         .get(index)
                         .ok_or_else(|| internal("template operand index is out of range"))?;
-                    let ty = data_type(
-                        operand_types
-                            .get(index)
-                            .ok_or_else(|| internal("template operand type is missing"))?,
-                    )?;
-                    let trap = (ty != &Type::Str).then(|| traps.get(trap_cursor)).flatten();
+                    let trap = (*format != l::FormatKind::Str)
+                        .then(|| traps.get(trap_cursor))
+                        .flatten();
                     trap_cursor += usize::from(trap.is_some());
-                    self.format_value(value, ty, trap, pos)?
+                    self.format_value(value, *format, trap, pos)?
                 }
             };
             accumulated = Some(match accumulated {
@@ -3964,7 +3882,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let data = self
                     .call_runtime(self.ml.rt.array_data, &[self.ctx, handle], false)?
                     .ok_or_else(|| internal("Context.BytesOf has no array data"))?;
-                for range in lir_padding_ranges(self.ml.lir, &self.ml.layouts, ty)? {
+                for range in self.ml.layouts.padding_ranges(ty)? {
                     let start = self.address_offset(data, i64::from(range.start));
                     self.zero_bytes(start, range.end - range.start, 1);
                 }
@@ -3994,7 +3912,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     )?
                     .ok_or_else(|| internal("Context.BytesInto has no target range"))?;
                 self.copy_bytes(range, source, size, 1);
-                for padding in lir_padding_ranges(self.ml.lir, &self.ml.layouts, ty)? {
+                for padding in self.ml.layouts.padding_ranges(ty)? {
                     let start = self.address_offset(range, i64::from(padding.start));
                     self.zero_bytes(start, padding.end - padding.start, 1);
                 }
@@ -6395,13 +6313,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     &instruction.pos,
                 )?,
             ),
-            l::InstructionKind::Template(parts) => Some(self.template(
-                parts,
-                &operands,
-                &operand_types,
-                &instruction.traps,
-                &instruction.pos,
-            )?),
+            l::InstructionKind::Template(parts) => {
+                Some(self.template(parts, &operands, &instruction.traps, &instruction.pos)?)
+            }
             l::InstructionKind::MakeClosure(function) => {
                 Some(self.make_closure(*function, &operands)?)
             }

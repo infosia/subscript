@@ -22,7 +22,7 @@ use subscript_runtime::TrapKind;
 use crate::jit::{AbnormalTermination, RunError, TrapReport};
 use crate::lower::internal;
 use crate::native::missing_symbol;
-use crate::NativeLibrary;
+use crate::{NativeLibrary, RunConfig, RunOutput};
 
 #[cfg(unix)]
 #[path = "../clang_resolver.rs"]
@@ -666,7 +666,29 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), RunError> {
 /// [`RunError::Internal`] on emission, toolchain, compile, link, or
 /// execution failures.
 pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, None, false, &[], None, None)
+    Ok(run_c_aot_configured(files, RunConfig::default())?.stdout)
+}
+
+/// Runs the shipping tier with one complete option record.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_c_aot`]. A request for
+/// development-tier memory accounting produces [`RunError::Internal`].
+pub fn run_c_aot_configured(
+    files: &[SourceFile],
+    config: RunConfig<'_>,
+) -> Result<RunOutput, RunError> {
+    if config.memory_accounting {
+        return Err(RunError::Internal(internal(
+            "Context memory accounting is not available in the shipping tier",
+        )));
+    }
+    let stdout = execute_c_aot(files, config)?;
+    Ok(RunOutput {
+        stdout,
+        memory_accounting: None,
+    })
 }
 
 /// Compiles, links, and runs `files` through the emitted-C ship tier with
@@ -681,7 +703,14 @@ pub fn run_c_aot_with_native_libraries(
     files: &[SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, None, false, libraries, None, None)
+    Ok(run_c_aot_configured(
+        files,
+        RunConfig {
+            native_libraries: libraries,
+            ..RunConfig::default()
+        },
+    )?
+    .stdout)
 }
 
 /// Compiles, links, and runs `files` through the emitted-C ship tier with
@@ -709,7 +738,16 @@ pub fn run_c_aot_with_native_libraries_and_host_hooks(
     pre_entry_hook: Option<&str>,
     post_run_hook: Option<&str>,
 ) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, None, false, libraries, pre_entry_hook, post_run_hook)
+    Ok(run_c_aot_configured(
+        files,
+        RunConfig {
+            native_libraries: libraries,
+            pre_entry_hook,
+            post_run_hook,
+            ..RunConfig::default()
+        },
+    )?
+    .stdout)
 }
 
 /// Runs the emitted-C ship tier with freed-handle diagnostics enabled and
@@ -727,7 +765,15 @@ pub fn run_c_aot_with_freed_handle_diagnostics_and_native_libraries(
     files: &[SourceFile],
     libraries: &[NativeLibrary],
 ) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, None, true, libraries, None, None)
+    Ok(run_c_aot_configured(
+        files,
+        RunConfig {
+            native_libraries: libraries,
+            freed_handle_diagnostics: true,
+            ..RunConfig::default()
+        },
+    )?
+    .stdout)
 }
 
 /// Runs the emitted-C ship tier while refusing the `n`-th object-level
@@ -742,7 +788,14 @@ pub fn run_c_aot_with_freed_handle_diagnostics_and_native_libraries(
 ///
 /// Returns the same [`RunError`] variants as [`run_c_aot`].
 pub fn run_c_aot_with_alloc_failure(files: &[SourceFile], n: u64) -> Result<Vec<u8>, RunError> {
-    run_c_aot_configured(files, Some(n), false, &[], None, None)
+    Ok(run_c_aot_configured(
+        files,
+        RunConfig {
+            fail_alloc_after: Some(n),
+            ..RunConfig::default()
+        },
+    )?
+    .stdout)
 }
 
 fn validate_host_hook_name(name: &str) -> Result<(), RunError> {
@@ -811,14 +864,15 @@ fn aot_entry_with_host_hooks(
     Ok(entry)
 }
 
-fn run_c_aot_configured(
-    files: &[SourceFile],
-    fail_alloc_after: Option<u64>,
-    freed_handle_diagnostics: bool,
-    libraries: &[NativeLibrary],
-    pre_entry_hook: Option<&str>,
-    post_run_hook: Option<&str>,
-) -> Result<Vec<u8>, RunError> {
+fn execute_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<Vec<u8>, RunError> {
+    let RunConfig {
+        native_libraries: libraries,
+        fail_alloc_after,
+        freed_handle_diagnostics,
+        pre_entry_hook,
+        post_run_hook,
+        ..
+    } = config;
     let hir = check_program(files).map_err(RunError::Rejected)?;
     let program = crate::emit_c(&hir).map_err(|e| RunError::Internal(internal(e)))?;
     require_native_symbols(&program.foreign_symbols, libraries)?;

@@ -4,6 +4,81 @@ use std::collections::HashSet;
 
 use subscript_compiler::{hir, lir as l};
 use subscript_compiler::{ClassId, Type};
+use subscript_runtime::TrapKind;
+
+fn internal(message: impl AsRef<str>) -> String {
+    format!("internal error: {}", message.as_ref())
+}
+
+pub(crate) fn runtime_trap_kind(kind: &l::TrapKind) -> Option<TrapKind> {
+    Some(match kind {
+        l::TrapKind::Allocation => TrapKind::AllocationFailure,
+        l::TrapKind::Call => return None,
+        l::TrapKind::Unreachable => TrapKind::UnreachableReached,
+        l::TrapKind::DivisionByZero => TrapKind::DivisionByZero,
+        l::TrapKind::IndexRead | l::TrapKind::IndexWrite => TrapKind::IndexOutOfBounds,
+        l::TrapKind::JsonResultValue(_) => TrapKind::JsonResultValue,
+        l::TrapKind::NullNarrowing => TrapKind::NullNarrowing,
+        l::TrapKind::ClassMismatch(_) => TrapKind::ClassMismatch,
+        l::TrapKind::DevOnlyLifetime => TrapKind::UseAfterDelete,
+        l::TrapKind::DevReloadOnlyStaleCoroutine => TrapKind::StaleCoroutine,
+        l::TrapKind::WireEnumValue(_) => TrapKind::WireEnumUnknownValue,
+    })
+}
+
+pub(crate) fn data_type(ty: &l::ValueType) -> Result<&Type, String> {
+    match ty {
+        l::ValueType::Data(ty) => Ok(ty),
+        other => Err(internal(format!("expected a data type, found {other:?}"))),
+    }
+}
+
+pub(crate) fn value_type(function: &l::Function, id: l::ValueId) -> Result<&l::ValueType, String> {
+    function
+        .values
+        .get(id.0 as usize)
+        .filter(|value| value.id == id)
+        .map(|value| &value.ty)
+        .ok_or_else(|| internal(format!("value {} is missing", id.0)))
+}
+
+pub(crate) fn operand_type(
+    function: &l::Function,
+    operand: &l::Operand,
+) -> Result<l::ValueType, String> {
+    Ok(match operand {
+        l::Operand::Value(value) => value_type(function, *value)?.clone(),
+        l::Operand::Constant(constant) => l::ValueType::Data(constant.ty.clone()),
+    })
+}
+
+pub(crate) fn foreign_parameter_type_matches(
+    module: &l::Module,
+    actual: &l::ValueType,
+    declared: &Type,
+) -> bool {
+    if actual == &l::ValueType::Data(declared.clone()) {
+        return true;
+    }
+    let l::ValueType::Address(address) = actual else {
+        return false;
+    };
+    boundary_box_class(module, declared).is_some_and(|class| address.pointee == Type::Class(class))
+}
+
+pub(crate) fn explicit_parameters(function: &l::Function) -> impl Iterator<Item = &l::Parameter> {
+    function
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.kind == l::ParameterKind::Explicit)
+}
+
+pub(crate) fn capture_parameters(function: &l::Function) -> impl Iterator<Item = &l::Parameter> {
+    function
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.kind == l::ParameterKind::Capture)
+}
 
 pub(crate) fn lir_class_is_value(module: &l::Module, class: ClassId) -> bool {
     module
@@ -226,5 +301,46 @@ pub(crate) fn boundary_type_requires_build(module: &l::Module, ty: &Type) -> Res
             boundary_class_requires_build(module, *class)
         }
         _ => Ok(false),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use subscript_compiler::StringAliasId;
+
+    use super::*;
+
+    #[test]
+    fn every_lir_trap_kind_has_its_recorded_runtime_kind() {
+        let cases = [
+            (l::TrapKind::Allocation, Some(TrapKind::AllocationFailure)),
+            (l::TrapKind::Call, None),
+            (l::TrapKind::Unreachable, Some(TrapKind::UnreachableReached)),
+            (l::TrapKind::DivisionByZero, Some(TrapKind::DivisionByZero)),
+            (l::TrapKind::IndexRead, Some(TrapKind::IndexOutOfBounds)),
+            (l::TrapKind::IndexWrite, Some(TrapKind::IndexOutOfBounds)),
+            (
+                l::TrapKind::JsonResultValue(l::FieldId(1)),
+                Some(TrapKind::JsonResultValue),
+            ),
+            (l::TrapKind::NullNarrowing, Some(TrapKind::NullNarrowing)),
+            (
+                l::TrapKind::ClassMismatch(ClassId(2)),
+                Some(TrapKind::ClassMismatch),
+            ),
+            (l::TrapKind::DevOnlyLifetime, Some(TrapKind::UseAfterDelete)),
+            (
+                l::TrapKind::DevReloadOnlyStaleCoroutine,
+                Some(TrapKind::StaleCoroutine),
+            ),
+            (
+                l::TrapKind::WireEnumValue(StringAliasId(3)),
+                Some(TrapKind::WireEnumUnknownValue),
+            ),
+        ];
+        assert_eq!(cases.len(), 12);
+        for (lir, runtime) in cases {
+            assert_eq!(runtime_trap_kind(&lir), runtime, "{lir:?}");
+        }
     }
 }

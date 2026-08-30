@@ -572,7 +572,56 @@ pub enum TemplatePart {
     /// Literal bytes.
     Text(String),
     /// Index into the instruction's operand list.
-    Operand(u32),
+    Operand {
+        /// Index into the instruction's operand list.
+        index: u32,
+        /// Formatting operation selected by HIR lowering.
+        format: FormatKind,
+    },
+}
+
+/// One template-interpolation formatting operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormatKind {
+    /// Signed narrow, `i32`, or enum formatting.
+    I32,
+    /// Unsigned narrow or `u32` formatting.
+    U32,
+    /// `i64` or `Date` formatting.
+    I64,
+    /// `u64` formatting.
+    U64,
+    /// Binary16 formatting through an exact widening.
+    F16,
+    /// Binary32 formatting.
+    F32,
+    /// Binary64 formatting.
+    F64,
+    /// Boolean formatting.
+    Bool,
+    /// An existing string value.
+    Str,
+    /// A nominal string-alias member.
+    StringAlias(StringAliasId),
+}
+
+impl FormatKind {
+    /// Reports whether this formatter accepts `ty`.
+    #[must_use]
+    pub fn accepts(&self, ty: &Type) -> bool {
+        match self {
+            Self::I32 => matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::Enum(_)),
+            Self::U32 => matches!(ty, Type::U8 | Type::U16 | Type::U32),
+            Self::I64 => matches!(ty, Type::I64 | Type::Date),
+            Self::U64 => *ty == Type::U64,
+            Self::F16 => *ty == Type::F16,
+            Self::F32 => *ty == Type::F32,
+            Self::F64 => *ty == Type::F64,
+            Self::Bool => *ty == Type::Bool,
+            Self::Str => *ty == Type::Str,
+            Self::StringAlias(alias) => ty == &Type::StringAlias(*alias),
+        }
+    }
 }
 
 /// A resolved call target. Declared functions carry their complete typed
@@ -631,8 +680,18 @@ pub struct IntrinsicOperation {
     pub operation: u16,
     /// Stable semantic variant name carried by LIR.
     pub semantic_name: String,
+    /// Runtime C symbol for operations with one context-independent entry.
+    pub runtime_symbol: Option<String>,
     /// Shard of the checker-derived intrinsic and built-in signature table.
     pub signatures: Vec<CallSignature>,
+}
+
+impl IntrinsicOperation {
+    /// Returns the operation's context-independent runtime C symbol.
+    #[must_use]
+    pub fn runtime_symbol(&self) -> Option<&str> {
+        self.runtime_symbol.as_deref()
+    }
 }
 
 /// One checker-derived intrinsic or built-in call signature.
@@ -1212,6 +1271,30 @@ mod tests {
         assert!(InstructionKind::Call(async_target()).produces_fresh_async_owner());
         assert!(InstructionKind::AsyncHandleCreate(async_target()).produces_fresh_async_owner());
         assert!(!InstructionKind::Copy.produces_fresh_async_owner());
+    }
+
+    #[test]
+    fn template_formats_accept_only_their_contract_types() {
+        assert!(FormatKind::I32.accepts(&Type::I16));
+        assert!(FormatKind::I32.accepts(&Type::Enum(EnumId(0))));
+        assert!(
+            FormatKind::StringAlias(StringAliasId(2)).accepts(&Type::StringAlias(StringAliasId(2)))
+        );
+        assert!(!FormatKind::StringAlias(StringAliasId(2))
+            .accepts(&Type::StringAlias(StringAliasId(3))));
+        assert!(!FormatKind::Str.accepts(&Type::Object));
+    }
+
+    #[test]
+    fn intrinsic_operation_returns_its_carried_runtime_symbol() {
+        let operation = IntrinsicOperation {
+            family: IntrinsicFamily::Math,
+            operation: 0,
+            semantic_name: "Abs".to_string(),
+            runtime_symbol: Some("subscript_rt_math_abs".to_string()),
+            signatures: Vec::new(),
+        };
+        assert_eq!(operation.runtime_symbol(), Some("subscript_rt_math_abs"));
     }
 
     #[test]

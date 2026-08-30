@@ -1810,7 +1810,7 @@ fn instruction_arity(
         K::Template(parts) => Arity::MatchesPayload(
             parts
                 .iter()
-                .filter(|part| matches!(part, l::TemplatePart::Operand(_)))
+                .filter(|part| matches!(part, l::TemplatePart::Operand { .. }))
                 .count(),
         ),
         K::MakeClosure(target) => {

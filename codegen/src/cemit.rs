@@ -13,12 +13,13 @@ use subscript_compiler::Pos;
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
-use crate::layout::{type_contains_managed, Layouts};
+use crate::layout::{is_unsigned, type_contains_managed, Layouts};
 use crate::lir::verify_module;
 use crate::lir_types::{
-    array_element_kind, array_format_kind, association_key_kind, boundary_box_class,
-    boundary_class_contains_pointer, boundary_class_needs_scratch, boundary_class_requires_build,
-    boundary_type_requires_build, is_userdata_slot,
+    array_element_kind, array_format_kind, association_key_kind, boundary_class_contains_pointer,
+    boundary_class_needs_scratch, boundary_class_requires_build, boundary_type_requires_build,
+    capture_parameters, data_type, explicit_parameters, foreign_parameter_type_matches,
+    is_userdata_slot, operand_type, runtime_trap_kind, value_type,
 };
 use crate::root_storage::{self, RootStoragePlan};
 
@@ -390,41 +391,6 @@ fn internal(message: impl AsRef<str>) -> String {
     format!("internal error: {}", message.as_ref())
 }
 
-fn data_type(ty: &l::ValueType) -> Result<&Type, String> {
-    match ty {
-        l::ValueType::Data(ty) => Ok(ty),
-        other => Err(internal(format!("expected a data type, found {other:?}"))),
-    }
-}
-
-fn foreign_parameter_type_matches(
-    module: &l::Module,
-    actual: &l::ValueType,
-    declared: &Type,
-) -> bool {
-    if actual == &l::ValueType::Data(declared.clone()) {
-        return true;
-    }
-    let l::ValueType::Address(address) = actual else {
-        return false;
-    };
-    boundary_box_class(module, declared).is_some_and(|class| address.pointee == Type::Class(class))
-}
-
-fn explicit_parameters(function: &l::Function) -> impl Iterator<Item = &l::Parameter> {
-    function
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.kind == l::ParameterKind::Explicit)
-}
-
-fn capture_parameters(function: &l::Function) -> impl Iterator<Item = &l::Parameter> {
-    function
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.kind == l::ParameterKind::Capture)
-}
-
 fn runtime_traps(function: &l::Function) -> Vec<l::Trap> {
     let mut traps = Vec::new();
     for block in &function.blocks {
@@ -597,14 +563,13 @@ impl<'m> Emitter<'m> {
             .ok_or_else(|| internal(format!("method {} is missing", id.0)))
     }
 
-    fn operation_name(&self, intrinsic: &l::Intrinsic) -> Result<&str, String> {
+    fn operation(&self, intrinsic: &l::Intrinsic) -> Result<&l::IntrinsicOperation, String> {
         self.module
             .intrinsic_operations
             .iter()
             .find(|operation| {
                 operation.family == intrinsic.family && operation.operation == intrinsic.operation
             })
-            .map(|operation| operation.semantic_name.as_str())
             .ok_or_else(|| {
                 internal(format!(
                     "intrinsic {:?}.{} is missing from the module table",
@@ -2603,12 +2568,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn value_type(&self, id: l::ValueId) -> Result<&l::ValueType, String> {
-        self.function
-            .values
-            .get(id.0 as usize)
-            .filter(|value| value.id == id)
-            .map(|value| &value.ty)
-            .ok_or_else(|| internal(format!("value {} is missing", id.0)))
+        value_type(self.function, id)
     }
 
     fn folded_address_expression(&mut self, value: l::ValueId) -> Result<String, String> {
@@ -3179,7 +3139,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.emit_spread_array(out, instruction, spreads, &operands, &operand_types, result)
             }
             l::InstructionKind::Template(parts) => {
-                self.emit_template(out, instruction, parts, &operands, &operand_types, result)
+                self.emit_template(out, instruction, parts, &operands, result)
             }
             l::InstructionKind::MakeClosure(function) => {
                 self.emit_closure(out, instruction, *function, &operands, result)
@@ -3201,7 +3161,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     result,
                     &format!("sub_f{}(ctx{separator}{})", function.0, operands.join(", ")),
                 )?;
-                self.consume_runtime_traps(out, &instruction.traps, true)
+                self.consume_runtime_traps(out, &instruction.traps, true, true)
             }
             l::InstructionKind::AsyncHandleRetain => {
                 let call = self.emitter.runtime_call(
@@ -3312,10 +3272,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn operand_type(&self, operand: &l::Operand) -> Result<l::ValueType, String> {
-        match operand {
-            l::Operand::Value(value) => Ok(self.value_type(*value)?.clone()),
-            l::Operand::Constant(constant) => Ok(l::ValueType::Data(constant.ty.clone())),
-        }
+        operand_type(self.function, operand)
     }
 
     fn constant(&mut self, constant: &l::Constant) -> Result<String, String> {
@@ -3481,7 +3438,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::Terminator::Trap(trap) => {
                 self.consume(trap);
                 let pos = self.emitter.pos_id(&trap.pos);
-                let kind = trap_runtime_kind(&trap.kind)? as u32;
+                let kind = runtime_trap_kind(&trap.kind).ok_or_else(|| {
+                    internal(format!("trap {:?} has no direct runtime kind", trap.kind))
+                })? as u32;
                 let call = self.emitter.runtime_call(
                     "void",
                     "subscript_rt_trap",
@@ -4232,7 +4191,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         trap: &l::Trap,
     ) -> Result<(), String> {
         let pos = self.emitter.pos_id(&trap.pos);
-        let kind = trap_runtime_kind(&trap.kind)? as u32;
+        let kind = runtime_trap_kind(&trap.kind)
+            .ok_or_else(|| internal(format!("trap {:?} has no direct runtime kind", trap.kind)))?
+            as u32;
         let call = self.emitter.runtime_call(
             "void",
             "subscript_rt_trap",
@@ -4778,7 +4739,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             ],
         );
         self.assign(out, Some(destination), &call)?;
-        self.consume_call_traps(out, &instruction.traps, true)
+        self.consume_runtime_traps(out, &instruction.traps, true, false)
     }
 
     fn emit_spread_array(
@@ -4931,7 +4892,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         instruction: &l::Instruction,
         parts: &[l::TemplatePart],
         operands: &[String],
-        operand_types: &[l::ValueType],
         result: Option<String>,
     ) -> Result<(), String> {
         let destination = result.ok_or_else(|| internal("template has no result"))?;
@@ -4990,10 +4950,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         ],
                     )
                 }
-                l::TemplatePart::Operand(index) => {
+                l::TemplatePart::Operand { index, format } => {
                     let index = *index as usize;
-                    let ty = data_type(&operand_types[index])?;
-                    if *ty == Type::Str {
+                    if *format == l::FormatKind::Str {
                         operands[index].clone()
                     } else {
                         let trap = instruction
@@ -5002,7 +4961,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                             .ok_or_else(|| internal("template format has no allocation trap"))?;
                         trap_index += 1;
                         self.consume(trap);
-                        self.format_value(ty, &operands[index], trap)?
+                        self.format_value(*format, &operands[index], trap)?
                     }
                 }
             };
@@ -5049,9 +5008,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         )
     }
 
-    fn format_value(&mut self, ty: &Type, value: &str, trap: &l::Trap) -> Result<String, String> {
+    fn format_value(
+        &mut self,
+        format: l::FormatKind,
+        value: &str,
+        trap: &l::Trap,
+    ) -> Result<String, String> {
         let pos = self.emitter.pos_id(&trap.pos);
-        if let Type::StringAlias(alias) = ty {
+        if let l::FormatKind::StringAlias(alias) = format {
             let definition = self
                 .emitter
                 .module
@@ -5087,22 +5051,22 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 ],
             ));
         }
-        let (name, ctype, argument) = match ty {
-            Type::I8 | Type::I16 | Type::I32 | Type::Enum(_) => (
+        let (name, ctype, argument) = match format {
+            l::FormatKind::I32 => (
                 "subscript_rt_fmt_i32",
                 "int32_t",
                 format!("(int32_t)({value})"),
             ),
-            Type::U8 | Type::U16 | Type::U32 => (
+            l::FormatKind::U32 => (
                 "subscript_rt_fmt_u32",
                 "uint32_t",
                 format!("(uint32_t)({value})"),
             ),
-            Type::I64 | Type::Date => ("subscript_rt_fmt_i64", "int64_t", value.into()),
-            Type::U64 => ("subscript_rt_fmt_u64", "uint64_t", value.into()),
-            Type::F32 => ("subscript_rt_fmt_f32", "float", value.into()),
-            Type::F64 => ("subscript_rt_fmt_f64", "double", value.into()),
-            Type::F16 => {
+            l::FormatKind::I64 => ("subscript_rt_fmt_i64", "int64_t", value.into()),
+            l::FormatKind::U64 => ("subscript_rt_fmt_u64", "uint64_t", value.into()),
+            l::FormatKind::F32 => ("subscript_rt_fmt_f32", "float", value.into()),
+            l::FormatKind::F64 => ("subscript_rt_fmt_f64", "double", value.into()),
+            l::FormatKind::F16 => {
                 let wide = self.emitter.runtime_call(
                     "double",
                     "subscript_rt_f16_to_f64",
@@ -5111,12 +5075,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 );
                 ("subscript_rt_fmt_f64", "double", wide)
             }
-            Type::Bool => (
+            l::FormatKind::Bool => (
                 "subscript_rt_fmt_bool",
                 "uint32_t",
                 format!("(uint32_t)({value})"),
             ),
-            other => return Err(internal(format!("cannot format {other:?}"))),
+            l::FormatKind::Str | l::FormatKind::StringAlias(_) => {
+                return Err(internal("direct string format reached numeric dispatch"))
+            }
         };
         Ok(self.emitter.runtime_call(
             "void*",
@@ -5572,7 +5538,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.emit_script_call(out, *function, operands, result)?;
                 let check_pending =
                     script_call_requires_pending_check(self.emitter.function(*function)?);
-                self.consume_call_traps(out, &instruction.traps, check_pending)
+                self.consume_runtime_traps(out, &instruction.traps, check_pending, false)
             }
             l::CallTargetKind::StaticClosure(function) => {
                 let callable = operands
@@ -5592,14 +5558,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 }
                 let check_pending =
                     script_call_requires_pending_check(self.emitter.function(*function)?);
-                self.consume_call_traps(out, &instruction.traps, check_pending)
+                self.consume_runtime_traps(out, &instruction.traps, check_pending, false)
             }
             l::CallTargetKind::Method(method) => {
                 let function = self.emitter.method_function(*method)?;
                 self.emit_script_call(out, function, operands, result)?;
                 let check_pending =
                     script_call_requires_pending_check(self.emitter.function(function)?);
-                self.consume_call_traps(out, &instruction.traps, check_pending)
+                self.consume_runtime_traps(out, &instruction.traps, check_pending, false)
             }
             l::CallTargetKind::Indirect => {
                 let callable = operands
@@ -5629,7 +5595,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 } else {
                     let _ = writeln!(out, "    {expression};");
                 }
-                self.consume_call_traps(out, &instruction.traps, true)
+                self.consume_runtime_traps(out, &instruction.traps, true, false)
             }
             l::CallTargetKind::Foreign(function) => {
                 self.emit_foreign_call(out, instruction, *function, operands, operand_types, result)
@@ -5668,29 +5634,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             let _ = writeln!(out, "    {result} = {expression};");
         } else {
             let _ = writeln!(out, "    {expression};");
-        }
-        Ok(())
-    }
-
-    fn consume_call_traps(
-        &mut self,
-        out: &mut String,
-        traps: &[l::Trap],
-        check_pending: bool,
-    ) -> Result<(), String> {
-        let mut checked = false;
-        for trap in traps {
-            match trap.kind {
-                l::TrapKind::Call | l::TrapKind::Allocation => {
-                    self.consume(trap);
-                    checked = true;
-                }
-                l::TrapKind::DevOnlyLifetime => {}
-                ref other => return Err(internal(format!("script call carries trap {other:?}"))),
-            }
-        }
-        if checked && check_pending {
-            self.emit_pending_check(out);
         }
         Ok(())
     }
@@ -6319,7 +6262,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     ],
                 );
                 let _ = writeln!(out, "        (void){call};");
-                self.consume_runtime_traps(out, &instruction.traps, true)?;
+                self.consume_runtime_traps(out, &instruction.traps, true, true)?;
                 out.push_str("    }\n");
                 self.assign(out, result, &format!("(int32_t)({header}->len)"))
             }
@@ -6347,7 +6290,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 );
                 let _ = element;
                 let _ = writeln!(out, "    {call};");
-                self.consume_runtime_traps(out, &instruction.traps, true)
+                self.consume_runtime_traps(out, &instruction.traps, true, true)
             }
             l::BuiltinMethod::StringSlice => self.emit_simple_runtime_intrinsic(
                 out,
@@ -6375,7 +6318,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         .value_ctype(target.return_type.as_ref().unwrap())?
                 );
                 let _ = writeln!(out, "    {destination}.done = ((SubCoroutinePrefix*)({}))->resume(ctx, {}, &{destination}.value);", operands[0], operands[0]);
-                self.consume_runtime_traps(out, &instruction.traps, true)
+                self.consume_runtime_traps(out, &instruction.traps, true, true)
             }
         }
     }
@@ -6385,12 +6328,18 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         out: &mut String,
         traps: &[l::Trap],
         pending: bool,
+        accepts_stale_coroutine: bool,
     ) -> Result<(), String> {
         let mut check = false;
         for trap in traps {
             match trap.kind {
-                l::TrapKind::DevOnlyLifetime | l::TrapKind::DevReloadOnlyStaleCoroutine => {
-                    self.consume(trap)
+                l::TrapKind::DevOnlyLifetime => {
+                    if accepts_stale_coroutine {
+                        self.consume(trap);
+                    }
+                }
+                l::TrapKind::DevReloadOnlyStaleCoroutine if accepts_stale_coroutine => {
+                    self.consume(trap);
                 }
                 l::TrapKind::Allocation | l::TrapKind::Call => {
                     self.consume(trap);
@@ -6415,7 +6364,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         operand_types: &[l::ValueType],
         result: Option<String>,
     ) -> Result<(), String> {
-        let name = self.emitter.operation_name(intrinsic)?.to_string();
+        let operation = self.emitter.operation(intrinsic)?;
+        let name = operation.semantic_name.clone();
+        let runtime_symbol = operation.runtime_symbol().map(str::to_owned);
         match intrinsic.family {
             l::IntrinsicFamily::Ambient => match name.as_str() {
                 "Print" => self.emit_simple_runtime_intrinsic(
@@ -6473,7 +6424,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 other => Err(internal(format!("unknown Ambient intrinsic {other}"))),
             },
             l::IntrinsicFamily::Math => {
-                let symbol = math_symbol(&name)?;
+                let symbol = runtime_symbol
+                    .as_deref()
+                    .ok_or_else(|| internal(format!("Math.{name} has no runtime symbol")))?;
                 self.emit_simple_runtime_intrinsic(
                     out,
                     instruction,
@@ -6486,7 +6439,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 )
             }
             l::IntrinsicFamily::Number => {
-                let symbol = number_symbol(&name)?;
+                let symbol = runtime_symbol
+                    .as_deref()
+                    .ok_or_else(|| internal(format!("Number.{name} has no runtime symbol")))?;
                 let position = !matches!(
                     name.as_str(),
                     "IsNaN" | "IsFinite" | "IsInteger" | "IsSafeInteger"
@@ -6512,7 +6467,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 result,
             ),
             l::IntrinsicFamily::Json => {
-                let symbol = json_symbol(&name)?;
+                let symbol = runtime_symbol
+                    .as_deref()
+                    .ok_or_else(|| internal(format!("JSON.{name} has no runtime symbol")))?;
                 self.emit_simple_runtime_intrinsic(
                     out,
                     instruction,
@@ -6525,7 +6482,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 )
             }
             l::IntrinsicFamily::String => {
-                let symbol = string_symbol(&name)?;
+                let symbol = runtime_symbol
+                    .as_deref()
+                    .ok_or_else(|| internal(format!("String.{name} has no runtime symbol")))?;
                 let position = !matches!(
                     name.as_str(),
                     "IndexOf" | "LastIndexOf" | "Includes" | "StartsWith" | "EndsWith"
@@ -6542,7 +6501,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 )
             }
             l::IntrinsicFamily::Regex => {
-                let symbol = regex_symbol(&name)?;
+                let symbol = runtime_symbol
+                    .as_deref()
+                    .ok_or_else(|| internal(format!("Regex.{name} has no runtime symbol")))?;
                 self.emit_simple_runtime_intrinsic(
                     out,
                     instruction,
@@ -6577,6 +6538,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 instruction,
                 target,
                 &name,
+                runtime_symbol.as_deref(),
                 operands,
                 operand_types,
                 result,
@@ -6597,6 +6559,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 target,
                 intrinsic,
                 &name,
+                runtime_symbol.as_deref(),
                 operands,
                 operand_types,
                 result,
@@ -6642,7 +6605,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         } else {
             let _ = writeln!(out, "    {call};");
         }
-        self.consume_runtime_traps(out, &instruction.traps, true)
+        self.consume_runtime_traps(out, &instruction.traps, true, true)
     }
 
     fn emit_date_intrinsic(
@@ -6674,7 +6637,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 &["ctx".into(), operands[0].clone(), format!("{field}u")],
             );
             let _ = writeln!(out, "    {destination} = {call};");
-            return self.consume_runtime_traps(out, &instruction.traps, true);
+            return self.consume_runtime_traps(out, &instruction.traps, true, true);
         }
         let (symbol, position) = match name {
             "New" => ("subscript_rt_date_new", true),
@@ -6841,7 +6804,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 );
                 let _ = writeln!(out, "    {call};");
                 self.assign(out, result, &receiver)?;
-                return self.consume_runtime_traps(out, &instruction.traps, true);
+                return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
             "Reverse" => {
                 let call = self.emitter.runtime_call(
@@ -6852,7 +6815,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 );
                 let _ = writeln!(out, "    {call};");
                 self.assign(out, result, &receiver)?;
-                return self.consume_runtime_traps(out, &instruction.traps, true);
+                return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
             "Shift" => {
                 let destination = result.ok_or_else(|| internal("Array.Shift has no result"))?;
@@ -6874,7 +6837,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     ],
                 );
                 let _ = writeln!(out, "    {call};");
-                return self.consume_runtime_traps(out, &instruction.traps, true);
+                return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
             "CopyWithin" => {
                 let call = self.emitter.runtime_call(
@@ -6897,7 +6860,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 );
                 let _ = writeln!(out, "    {call};");
                 self.assign(out, result, &receiver)?;
-                return self.consume_runtime_traps(out, &instruction.traps, true);
+                return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
             "ForEach" | "Filter" | "Some" | "Every" | "FindIndex" => {
                 let callback = argument(1)?;
@@ -6951,7 +6914,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 );
                 let _ = writeln!(out, "    {call};");
                 self.assign(out, result, &receiver)?;
-                return self.consume_runtime_traps(out, &instruction.traps, true);
+                return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
             "Map" => {
                 let callback = argument(1)?;
@@ -7034,7 +6997,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let call = self.emitter.runtime_call("void", symbol, &types, &args);
                 let _ = writeln!(out, "    {call};");
                 self.assign(out, result, &temporary)?;
-                return self.consume_runtime_traps(out, &instruction.traps, true);
+                return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
             other => return Err(internal(format!("unknown Array intrinsic {other}"))),
         };
@@ -7043,7 +7006,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         } else {
             let _ = writeln!(out, "    {call};");
         }
-        self.consume_runtime_traps(out, &instruction.traps, true)
+        self.consume_runtime_traps(out, &instruction.traps, true, true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -7100,7 +7063,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 ],
             );
             self.assign(out, result, &call)?;
-            return self.consume_runtime_traps(out, &instruction.traps, true);
+            return self.consume_runtime_traps(out, &instruction.traps, true, true);
         }
         let (key, value) = if name == "New" {
             let Some(l::ValueType::Data(Type::Map(key, value))) = target.return_type.as_ref()
@@ -7135,7 +7098,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 ],
             );
             self.assign(out, result, &call)?;
-            return self.consume_runtime_traps(out, &instruction.traps, true);
+            return self.consume_runtime_traps(out, &instruction.traps, true, true);
         }
         let receiver = operands
             .first()
@@ -7275,7 +7238,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             other => return Err(internal(format!("unknown Map intrinsic {other}"))),
         }
-        self.consume_runtime_traps(out, &instruction.traps, true)
+        self.consume_runtime_traps(out, &instruction.traps, true, true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -7285,6 +7248,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         instruction: &l::Instruction,
         target: &l::CallTarget,
         name: &str,
+        runtime_symbol: Option<&str>,
         operands: &[String],
         operand_types: &[l::ValueType],
         result: Option<String>,
@@ -7320,7 +7284,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 ],
             );
             self.assign(out, result, &call)?;
-            return self.consume_runtime_traps(out, &instruction.traps, true);
+            return self.consume_runtime_traps(out, &instruction.traps, true, true);
         }
         let receiver = operands
             .first()
@@ -7411,7 +7375,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let _ = writeln!(out, "    {call};");
             }
             "Union" | "Intersection" | "Difference" | "SymmetricDifference" => {
-                let symbol = set_symbol(name)?;
+                let symbol = runtime_symbol
+                    .ok_or_else(|| internal(format!("Set.{name} has no runtime symbol")))?;
                 let position = self.emitter.pos_id(&instruction.pos);
                 let call = self.emitter.runtime_call(
                     "void*",
@@ -7434,7 +7399,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "IsSubsetOf" | "IsSupersetOf" | "IsDisjointFrom" => {
                 let call = self.emitter.runtime_call(
                     "int32_t",
-                    set_symbol(name)?,
+                    runtime_symbol
+                        .ok_or_else(|| internal(format!("Set.{name} has no runtime symbol")))?,
                     &["void*".into(), "void*".into(), "void*".into()],
                     &["ctx".into(), receiver.clone(), argument(1)?],
                 );
@@ -7442,7 +7408,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             other => return Err(internal(format!("unknown Set intrinsic {other}"))),
         }
-        self.consume_runtime_traps(out, &instruction.traps, true)
+        self.consume_runtime_traps(out, &instruction.traps, true, true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -7494,7 +7460,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     &["void*".into(), "const void*".into()],
                     &["ctx".into(), destination],
                 );
-                emit_padding_zero(self.emitter.module, self.emitter, out, &data, ty)?;
+                emit_padding_zero(self.emitter, out, &data, ty)?;
             }
             "BytesInto" => {
                 let source = operands
@@ -7526,7 +7492,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     ],
                 );
                 let _ = writeln!(out, "    void* {range} = {call};\n    if (*(const uint32_t*)ctx != 0u) goto unwind;\n    memcpy({range}, &{source}, sizeof({ctype}));");
-                emit_padding_zero(self.emitter.module, self.emitter, out, &range, ty)?;
+                emit_padding_zero(self.emitter, out, &range, ty)?;
             }
             "FromBytes" => {
                 let bytes = operands
@@ -7560,7 +7526,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             other => return Err(internal(format!("unknown Context byte intrinsic {other}"))),
         }
-        self.consume_runtime_traps(out, &instruction.traps, false)
+        self.consume_runtime_traps(out, &instruction.traps, false, true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -7571,6 +7537,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         target: &l::CallTarget,
         intrinsic: &l::Intrinsic,
         name: &str,
+        runtime_symbol: Option<&str>,
         operands: &[String],
         operand_types: &[l::ValueType],
         result: Option<String>,
@@ -7608,13 +7575,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 ],
             );
             self.assign(out, result, &call)?;
-            return self.consume_runtime_traps(out, &instruction.traps, true);
+            return self.consume_runtime_traps(out, &instruction.traps, true, true);
         }
         self.emit_simple_runtime_intrinsic(
             out,
             instruction,
             target,
-            worker_symbol(name)?,
+            runtime_symbol
+                .ok_or_else(|| internal(format!("Worker.{name} has no runtime symbol")))?,
             operands,
             operand_types,
             false,
@@ -7684,87 +7652,21 @@ fn array_symbol(name: &str, fixed: bool) -> Result<&'static str, String> {
     })
 }
 
-fn set_symbol(name: &str) -> Result<&'static str, String> {
-    Ok(match name {
-        "Union" => "subscript_rt_set_union",
-        "Intersection" => "subscript_rt_set_intersection",
-        "Difference" => "subscript_rt_set_difference",
-        "SymmetricDifference" => "subscript_rt_set_symmetric_difference",
-        "IsSubsetOf" => "subscript_rt_set_is_subset_of",
-        "IsSupersetOf" => "subscript_rt_set_is_superset_of",
-        "IsDisjointFrom" => "subscript_rt_set_is_disjoint_from",
-        other => return Err(internal(format!("unknown Set intrinsic {other}"))),
-    })
-}
-
-fn worker_symbol(name: &str) -> Result<&'static str, String> {
-    Ok(match name {
-        "Post" => "subscript_rt_worker_post",
-        "Poll" => "subscript_rt_worker_poll",
-        "Close" => "subscript_rt_worker_close",
-        "Join" => "subscript_rt_worker_join",
-        "InboxWait" => "subscript_rt_worker_inbox_wait",
-        "InboxPoll" => "subscript_rt_worker_inbox_poll",
-        "OutboxPost" => "subscript_rt_worker_outbox_post",
-        other => return Err(internal(format!("unknown Worker intrinsic {other}"))),
-    })
-}
-
 fn emit_padding_zero(
-    module: &l::Module,
     emitter: &Emitter<'_>,
     out: &mut String,
     pointer: &str,
     ty: &Type,
 ) -> Result<(), String> {
-    match ty {
-        Type::Class(id) if emitter.class(*id)?.is_value => {
-            let class = emitter.class(*id)?;
-            let ctype = emitter.class_name(*id);
-            if let Some(first) = class.fields.first() {
-                let _ = writeln!(
-                    out,
-                    "    memset((unsigned char*)({pointer}), 0, offsetof({ctype}, d{}));",
-                    first.id.0
-                );
-            }
-            for (index, field) in class.fields.iter().enumerate() {
-                let field_pointer = format!(
-                    "((unsigned char*)({pointer}) + offsetof({ctype}, d{}))",
-                    field.id.0
-                );
-                emit_padding_zero(module, emitter, out, &field_pointer, &field.ty)?;
-                let start = format!(
-                    "offsetof({ctype}, d{}) + sizeof((({ctype}*)0)->d{})",
-                    field.id.0, field.id.0
-                );
-                let end = class.fields.get(index + 1).map_or_else(
-                    || format!("sizeof({ctype})"),
-                    |next| format!("offsetof({ctype}, d{})", next.id.0),
-                );
-                let _ = writeln!(
-                    out,
-                    "    memset((unsigned char*)({pointer}) + ({start}), 0, ({end}) - ({start}));"
-                );
-            }
-        }
-        Type::FixedArray(element, count) => {
-            let element_type = emitter.ctype(element)?;
-            for index in 0..*count {
-                let element_pointer =
-                    format!("((unsigned char*)({pointer}) + {index}u * sizeof({element_type}))");
-                emit_padding_zero(module, emitter, out, &element_pointer, element)?;
-            }
-        }
-        _ => {
-            let _ = module;
-        }
+    for range in emitter.layouts.padding_ranges(ty)? {
+        let _ = writeln!(
+            out,
+            "    memset((unsigned char*)({pointer}) + {}u, 0, {}u);",
+            range.start,
+            range.end - range.start
+        );
     }
     Ok(())
-}
-
-fn is_unsigned(ty: &Type) -> bool {
-    matches!(ty, Type::U8 | Type::U16 | Type::U32 | Type::U64)
 }
 
 fn binary_symbol(operator: l::BinaryOp) -> Result<&'static str, String> {
@@ -7860,145 +7762,6 @@ fn float_to_int_helper(ty: &Type) -> Result<&'static str, String> {
     })
 }
 
-fn math_symbol(name: &str) -> Result<&'static str, String> {
-    Ok(match name {
-        "Abs" => "subscript_rt_math_abs",
-        "Acos" => "subscript_rt_math_acos",
-        "Acosh" => "subscript_rt_math_acosh",
-        "Asin" => "subscript_rt_math_asin",
-        "Asinh" => "subscript_rt_math_asinh",
-        "Atan" => "subscript_rt_math_atan",
-        "Atanh" => "subscript_rt_math_atanh",
-        "Cbrt" => "subscript_rt_math_cbrt",
-        "Ceil" => "subscript_rt_math_ceil",
-        "Cos" => "subscript_rt_math_cos",
-        "Cosh" => "subscript_rt_math_cosh",
-        "Exp" => "subscript_rt_math_exp",
-        "Expm1" => "subscript_rt_math_expm1",
-        "Floor" => "subscript_rt_math_floor",
-        "Log" => "subscript_rt_math_log",
-        "Log1p" => "subscript_rt_math_log1p",
-        "Log10" => "subscript_rt_math_log10",
-        "Log2" => "subscript_rt_math_log2",
-        "Round" => "subscript_rt_math_round",
-        "Sign" => "subscript_rt_math_sign",
-        "Sin" => "subscript_rt_math_sin",
-        "Sinh" => "subscript_rt_math_sinh",
-        "Sqrt" => "subscript_rt_math_sqrt",
-        "Tan" => "subscript_rt_math_tan",
-        "Tanh" => "subscript_rt_math_tanh",
-        "Trunc" => "subscript_rt_math_trunc",
-        "Atan2" => "subscript_rt_math_atan2",
-        "Hypot" => "subscript_rt_math_hypot",
-        "Pow" => "subscript_rt_math_pow",
-        "Max" => "subscript_rt_math_max",
-        "Min" => "subscript_rt_math_min",
-        "Random" => "subscript_rt_math_random",
-        "Clz32" => "subscript_rt_math_clz32",
-        "Imul" => "subscript_rt_math_imul",
-        "Fround" => "subscript_rt_math_fround",
-        "F32ToBits" => "subscript_rt_math_f32_to_bits",
-        "F32FromBits" => "subscript_rt_math_f32_from_bits",
-        other => return Err(internal(format!("unknown Math intrinsic {other}"))),
-    })
-}
-
-fn number_symbol(name: &str) -> Result<&'static str, String> {
-    Ok(match name {
-        "IsNaN" => "subscript_rt_num_is_nan",
-        "IsFinite" => "subscript_rt_num_is_finite",
-        "IsInteger" => "subscript_rt_num_is_integer",
-        "IsSafeInteger" => "subscript_rt_num_is_safe_integer",
-        "ParseInt" => "subscript_rt_num_parse_int",
-        "ParseFloat" => "subscript_rt_num_parse_float",
-        "ToFixed" => "subscript_rt_num_to_fixed",
-        "ToStringF32" => "subscript_rt_num_to_string_f32",
-        "ToStringF64" => "subscript_rt_num_to_string_f64",
-        "ToExponential" => "subscript_rt_num_to_exponential",
-        "ToPrecision" => "subscript_rt_num_to_precision",
-        other => return Err(internal(format!("unknown Number intrinsic {other}"))),
-    })
-}
-
-fn json_symbol(name: &str) -> Result<&'static str, String> {
-    Ok(match name {
-        "Begin" => "subscript_rt_json_begin",
-        "BeginTracked" => "subscript_rt_json_begin_tracked",
-        "Finish" => "subscript_rt_json_finish",
-        "Raw" => "subscript_rt_json_raw",
-        "Str" => "subscript_rt_json_str",
-        "I32" => "subscript_rt_json_i32",
-        "U32" => "subscript_rt_json_u32",
-        "I64" => "subscript_rt_json_i64",
-        "U64" => "subscript_rt_json_u64",
-        "F32" => "subscript_rt_json_f32",
-        "F64" => "subscript_rt_json_f64",
-        "Bool" => "subscript_rt_json_bool",
-        "Date" => "subscript_rt_json_date",
-        "Null" => "subscript_rt_json_null",
-        "Visit" => "subscript_rt_json_visit",
-        "Leave" => "subscript_rt_json_leave",
-        "ParseBegin" => "subscript_rt_json_parse_begin",
-        "ParseEnd" => "subscript_rt_json_parse_end",
-        "ParseRoot" => "subscript_rt_json_parse_root",
-        "ParseIsKind" => "subscript_rt_json_parse_is_kind",
-        "ParseNumberFits" => "subscript_rt_json_parse_number_fits",
-        "ParseNumber" => "subscript_rt_json_parse_number",
-        "ParseInteger" => "subscript_rt_json_parse_integer",
-        "ParseBool" => "subscript_rt_json_parse_bool",
-        "ParseString" => "subscript_rt_json_parse_string",
-        "ParseArrayLen" => "subscript_rt_json_parse_array_len",
-        "ParseArrayGet" => "subscript_rt_json_parse_array_get",
-        "ParseObjectGet" => "subscript_rt_json_parse_object_get",
-        other => return Err(internal(format!("unknown JSON intrinsic {other}"))),
-    })
-}
-
-fn string_symbol(name: &str) -> Result<&'static str, String> {
-    Ok(match name {
-        "Slice" => "subscript_rt_str_slice",
-        "IndexOf" => "subscript_rt_str_index_of",
-        "LastIndexOf" => "subscript_rt_str_last_index_of",
-        "Includes" => "subscript_rt_str_includes",
-        "StartsWith" => "subscript_rt_str_starts_with",
-        "EndsWith" => "subscript_rt_str_ends_with",
-        "CharCodeAt" => "subscript_rt_str_char_code_at",
-        "Split" => "subscript_rt_str_split",
-        "Trim" => "subscript_rt_str_trim",
-        "TrimStart" => "subscript_rt_str_trim_start",
-        "TrimEnd" => "subscript_rt_str_trim_end",
-        "Repeat" => "subscript_rt_str_repeat",
-        "PadStart" => "subscript_rt_str_pad_start",
-        "PadEnd" => "subscript_rt_str_pad_end",
-        "ToUpperCase" => "subscript_rt_str_to_upper",
-        "ToLowerCase" => "subscript_rt_str_to_lower",
-        "Replace" => "subscript_rt_str_replace",
-        "ReplaceAll" => "subscript_rt_str_replace_all",
-        "Substring" => "subscript_rt_str_substring",
-        "Substr" => "subscript_rt_str_substr",
-        "CharAt" => "subscript_rt_str_char_at",
-        "CodePointAt" => "subscript_rt_str_code_point_at",
-        "Concat" => "subscript_rt_str_concat",
-        other => return Err(internal(format!("unknown String intrinsic {other}"))),
-    })
-}
-
-fn regex_symbol(name: &str) -> Result<&'static str, String> {
-    Ok(match name {
-        "New" => "subscript_rt_regex_new",
-        "Test" => "subscript_rt_regex_test",
-        "Source" => "subscript_rt_regex_source",
-        "Flags" => "subscript_rt_regex_flags",
-        "Search" => "subscript_rt_regex_search",
-        "Replace" => "subscript_rt_regex_replace",
-        "ReplaceAll" => "subscript_rt_regex_replace_all",
-        "Split" => "subscript_rt_regex_split",
-        "MatchStart" => "subscript_rt_regex_match_start",
-        "MatchEnd" => "subscript_rt_regex_match_end",
-        other => return Err(internal(format!("unknown Regex intrinsic {other}"))),
-    })
-}
-
 fn int_literal(value: i64, ty: &Type) -> String {
     match ty {
         Type::U8 => format!("((uint8_t){})", value as u8),
@@ -8052,25 +7815,6 @@ fn float_literal(value: f64, ty: &Type) -> String {
         }
         result
     }
-}
-
-fn trap_runtime_kind(kind: &l::TrapKind) -> Result<TrapKind, String> {
-    Ok(match kind {
-        l::TrapKind::Allocation => TrapKind::AllocationFailure,
-        l::TrapKind::Unreachable => TrapKind::UnreachableReached,
-        l::TrapKind::DivisionByZero => TrapKind::DivisionByZero,
-        l::TrapKind::IndexRead | l::TrapKind::IndexWrite => TrapKind::IndexOutOfBounds,
-        l::TrapKind::JsonResultValue(_) => TrapKind::JsonResultValue,
-        l::TrapKind::NullNarrowing => TrapKind::NullNarrowing,
-        l::TrapKind::ClassMismatch(_) => TrapKind::ClassMismatch,
-        l::TrapKind::DevReloadOnlyStaleCoroutine => TrapKind::StaleCoroutine,
-        l::TrapKind::WireEnumValue(_) => TrapKind::WireEnumUnknownValue,
-        l::TrapKind::Call | l::TrapKind::DevOnlyLifetime => {
-            return Err(internal(format!(
-                "trap {kind:?} has no direct runtime kind"
-            )))
-        }
-    })
 }
 
 fn c_string_literal(bytes: &[u8]) -> String {

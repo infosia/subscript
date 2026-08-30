@@ -43,7 +43,6 @@ use cranelift_codegen::settings::Configurable;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use subscript_compiler::hir as front_end;
-use subscript_compiler::types::MAX_AGGREGATE_BYTES;
 use subscript_compiler::{lir, Pos, StringAliasId, Type};
 
 use front_end::{
@@ -51,7 +50,10 @@ use front_end::{
     StrRet,
 };
 
-use crate::layout::{Layouts, Repr};
+use crate::layout::{
+    checked_add_size as checked_layout_add, checked_mul_size as checked_layout_mul,
+    round_up_layout, Layouts, Repr,
+};
 
 pub(crate) use func::define_function;
 
@@ -334,44 +336,6 @@ pub(crate) struct ModLower<'a, M: Module> {
 /// guaranteed does not hold; never a user-facing diagnostic).
 pub(crate) fn internal(msg: impl Into<String>) -> String {
     format!("internal lowering error: {}", msg.into())
-}
-
-fn ensure_layout_size(size: u32, context: &str) -> Result<u32, String> {
-    if size <= MAX_AGGREGATE_BYTES {
-        Ok(size)
-    } else {
-        Err(internal(format!(
-            "{context} is {size} bytes; maximum supported aggregate size is \
-             {MAX_AGGREGATE_BYTES} bytes"
-        )))
-    }
-}
-
-pub(super) fn checked_layout_add(left: u32, right: u32, context: &str) -> Result<u32, String> {
-    let size = left
-        .checked_add(right)
-        .ok_or_else(|| internal(format!("{context} overflows u32")))?;
-    ensure_layout_size(size, context)
-}
-
-pub(super) fn checked_layout_mul(left: u32, right: u32, context: &str) -> Result<u32, String> {
-    let size = left
-        .checked_mul(right)
-        .ok_or_else(|| internal(format!("{context} overflows u32")))?;
-    ensure_layout_size(size, context)
-}
-
-pub(super) fn round_up_layout(value: u32, align: u32, context: &str) -> Result<u32, String> {
-    if !align.is_power_of_two() {
-        return Err(internal(format!("{context} has invalid alignment {align}")));
-    }
-    let mask = align
-        .checked_sub(1)
-        .ok_or_else(|| internal(format!("{context} has zero alignment")))?;
-    let sum = value
-        .checked_add(mask)
-        .ok_or_else(|| internal(format!("{context} overflows u32 during alignment")))?;
-    ensure_layout_size(sum & !mask, context)
 }
 
 impl<'a, M: Module> ModLower<'a, M> {

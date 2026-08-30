@@ -48,6 +48,8 @@ pub(crate) struct ClassLayout {
     pub align: u32,
     /// Field byte offsets, in declaration order.
     pub field_offsets: Vec<u32>,
+    /// Field types in declaration order.
+    field_types: Vec<Type>,
     /// True for `@CStruct class`.
     pub is_value: bool,
 }
@@ -152,7 +154,7 @@ pub fn value_class_layouts(module: &hir::Module) -> Result<Vec<StructLayout>, St
 pub fn padding_ranges(module: &hir::Module, ty: &Type) -> Result<Vec<Range<u32>>, String> {
     reject_discovery_hir(module)?;
     let layouts = Layouts::build(module)?;
-    layouts.padding_ranges(module, ty)
+    layouts.padding_ranges(ty)
 }
 
 fn reject_discovery_hir(module: &hir::Module) -> Result<(), String> {
@@ -165,7 +167,7 @@ fn reject_discovery_hir(module: &hir::Module) -> Result<(), String> {
     Ok(())
 }
 
-fn ensure_supported_size(size: u32, context: &str) -> Result<u32, String> {
+pub(crate) fn ensure_supported_size(size: u32, context: &str) -> Result<u32, String> {
     if size <= MAX_AGGREGATE_BYTES {
         Ok(size)
     } else {
@@ -176,33 +178,35 @@ fn ensure_supported_size(size: u32, context: &str) -> Result<u32, String> {
     }
 }
 
-fn checked_add_size(left: u32, right: u32, context: &str) -> Result<u32, String> {
+pub(crate) fn checked_add_size(left: u32, right: u32, context: &str) -> Result<u32, String> {
     let size = left
         .checked_add(right)
         .ok_or_else(|| internal(format!("{context} overflows u32")))?;
     ensure_supported_size(size, context)
 }
 
-fn checked_mul_size(left: u32, right: u32, context: &str) -> Result<u32, String> {
+pub(crate) fn checked_mul_size(left: u32, right: u32, context: &str) -> Result<u32, String> {
     let size = left
         .checked_mul(right)
         .ok_or_else(|| internal(format!("{context} overflows u32")))?;
     ensure_supported_size(size, context)
 }
 
-fn round_up(value: u32, align: u32) -> Result<u32, String> {
+pub(crate) fn round_up(value: u32, align: u32) -> Result<u32, String> {
+    round_up_layout(value, align, "aligned aggregate layout")
+}
+
+pub(crate) fn round_up_layout(value: u32, align: u32, context: &str) -> Result<u32, String> {
     if !align.is_power_of_two() {
-        return Err(internal(format!("invalid layout alignment {align}")));
+        return Err(internal(format!("{context} has invalid alignment {align}")));
     }
     let mask = align
         .checked_sub(1)
-        .ok_or_else(|| internal("zero layout alignment"))?;
-    let sum = value.checked_add(mask).ok_or_else(|| {
-        internal(format!(
-            "rounding {value} to alignment {align} overflows u32"
-        ))
-    })?;
-    ensure_supported_size(sum & !mask, "aligned aggregate layout")
+        .ok_or_else(|| internal(format!("{context} has zero alignment")))?;
+    let sum = value
+        .checked_add(mask)
+        .ok_or_else(|| internal(format!("{context} overflows u32 during alignment")))?;
+    ensure_supported_size(sum & !mask, context)
 }
 
 /// Build-time state: memoized class layouts plus an in-progress set
@@ -256,6 +260,7 @@ impl<'m> Builder<'m> {
             size,
             align,
             field_offsets,
+            field_types: class.fields.clone(),
             is_value: class.is_value,
         };
         self.visiting[id] = false;
@@ -433,32 +438,23 @@ impl Layouts {
     }
 
     /// Returns each padding range for `ty` from these precomputed layouts.
-    pub(crate) fn padding_ranges(
-        &self,
-        module: &hir::Module,
-        ty: &Type,
-    ) -> Result<Vec<Range<u32>>, String> {
+    pub(crate) fn padding_ranges(&self, ty: &Type) -> Result<Vec<Range<u32>>, String> {
         let mut ranges = Vec::new();
-        self.collect_padding_ranges(module, ty, 0, &mut ranges)?;
+        self.collect_padding_ranges(ty, 0, &mut ranges)?;
         Ok(ranges)
     }
 
     fn collect_padding_ranges(
         &self,
-        module: &hir::Module,
         ty: &Type,
         base: u32,
         ranges: &mut Vec<Range<u32>>,
     ) -> Result<(), String> {
         match ty {
             Type::Class(id) if self.class(id.0)?.is_value => {
-                let class = module
-                    .classes
-                    .get(id.0)
-                    .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?;
                 let layout = self.class(id.0)?;
                 let mut cursor = 0u32;
-                for (field, &offset) in class.fields.iter().zip(&layout.field_offsets) {
+                for (field_ty, &offset) in layout.field_types.iter().zip(&layout.field_offsets) {
                     if cursor < offset {
                         ranges.push(
                             checked_add_size(base, cursor, "padding range start")?
@@ -466,8 +462,8 @@ impl Layouts {
                         );
                     }
                     let field_base = checked_add_size(base, offset, "padding field base")?;
-                    self.collect_padding_ranges(module, &field.ty, field_base, ranges)?;
-                    let (field_size, _) = self.size_align(&field.ty)?;
+                    self.collect_padding_ranges(field_ty, field_base, ranges)?;
+                    let (field_size, _) = self.size_align(field_ty)?;
                     cursor = checked_add_size(offset, field_size, "padding field end")?;
                 }
                 if cursor < layout.size {
@@ -482,7 +478,7 @@ impl Layouts {
                 for index in 0..*length {
                     let offset = checked_mul_size(index, stride, "padding array offset")?;
                     let element_base = checked_add_size(base, offset, "padding element base")?;
-                    self.collect_padding_ranges(module, element, element_base, ranges)?;
+                    self.collect_padding_ranges(element, element_base, ranges)?;
                 }
             }
             _ => {}

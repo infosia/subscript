@@ -43,21 +43,49 @@ mod ship;
 pub use cemit::CProgram;
 pub use emit_files::{emit_c_files, EmitCFilesError, EmittedCFiles};
 pub use jit::{
-    jit_bench, jit_bench_with_warmup_floor, jit_compile_time, run_jit, run_jit_with_alloc_failure,
-    run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_memory_accounting,
-    run_jit_with_memory_accounting_and_native_libraries, run_jit_with_native_libraries,
-    AbnormalTermination, BenchSamples, JitMemoryAccounting, RunError, TrapReport,
-    JIT_OUTPUT_FILE_ENV,
+    jit_bench, jit_bench_with_warmup_floor, jit_compile_time, run_jit, run_jit_configured,
+    run_jit_with_alloc_failure, run_jit_with_freed_handle_diagnostics_and_native_libraries,
+    run_jit_with_memory_accounting, run_jit_with_memory_accounting_and_native_libraries,
+    run_jit_with_native_libraries, AbnormalTermination, BenchSamples, JitMemoryAccounting,
+    RunError, TrapReport, JIT_OUTPUT_FILE_ENV,
 };
 pub use layout::{padding_ranges, value_class_layouts, FieldLayout, StructLayout};
 pub use ship::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, host_c_compiler,
-    include_directory_arg, run_c_aot, run_c_aot_with_alloc_failure,
+    include_directory_arg, run_c_aot, run_c_aot_configured, run_c_aot_with_alloc_failure,
     run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
     run_c_aot_with_native_libraries_and_host_hooks, runtime_staticlib_name, runtime_staticlib_path,
     runtime_system_libraries, tool_output_report, CCompilerStyle, HostCCompiler, AOT_ENTRY_C,
     HOST_HEADER_C, RUNTIME_STATICLIB_ENV, WINDOWS_SYSTEM_LIBRARIES,
 };
+
+/// Options shared by the development and shipping tier runners.
+#[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
+pub struct RunConfig<'a> {
+    /// Native libraries available to foreign calls.
+    pub native_libraries: &'a [NativeLibrary],
+    /// Object-level Context allocation number to reject.
+    pub fail_alloc_after: Option<u64>,
+    /// Enables retained freed-handle diagnostics.
+    pub freed_handle_diagnostics: bool,
+    /// Requests post-run Context accounting from the development tier.
+    pub memory_accounting: bool,
+    /// Shipping-tier hook called after initialization and before the entry.
+    pub pre_entry_hook: Option<&'a str>,
+    /// Shipping-tier hook called after the run and before Context release.
+    pub post_run_hook: Option<&'a str>,
+}
+
+/// Output from one configured tier run.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct RunOutput {
+    /// Exact stdout bytes.
+    pub stdout: Vec<u8>,
+    /// Development-tier Context accounting when requested.
+    pub memory_accounting: Option<JitMemoryAccounting>,
+}
 
 /// Lowers checked HIR to verified LIR and emits ship-tier C.
 ///
@@ -104,6 +132,29 @@ mod tests {
     use super::*;
     use subscript_compiler::SourceFile;
     use subscript_runtime::TrapKind;
+
+    #[test]
+    fn configured_tier_runs_use_the_default_contract() {
+        let config = RunConfig::default();
+        assert!(config.native_libraries.is_empty());
+        assert_eq!(config.fail_alloc_after, None);
+        assert!(!config.freed_handle_diagnostics);
+        assert!(!config.memory_accounting);
+        assert_eq!(config.pre_entry_hook, None);
+        assert_eq!(config.post_run_hook, None);
+
+        let files = [SourceFile::new(
+            "configured.ts",
+            "export function main(): void { print(\"configured\"); }\n",
+        )];
+        let jit = run_jit_configured(&files, RunConfig::default()).expect("configured JIT run");
+        let ship =
+            run_c_aot_configured(&files, RunConfig::default()).expect("configured C-AOT run");
+        assert_eq!(jit.stdout, b"configured\n");
+        assert_eq!(ship.stdout, jit.stdout);
+        assert!(jit.memory_accounting.is_none());
+        assert!(ship.memory_accounting.is_none());
+    }
 
     fn run(src: &str) -> Result<Vec<u8>, RunError> {
         run_jit(&[SourceFile::new("test.ts", src)])

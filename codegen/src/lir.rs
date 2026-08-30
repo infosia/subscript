@@ -835,6 +835,8 @@ fn intrinsic_operations() -> Vec<l::IntrinsicOperation> {
                     family,
                     operation: operation as u16,
                     semantic_name: format!("{value:?}"),
+                    runtime_symbol: intrinsic_runtime_symbol(family, &format!("{value:?}"))
+                        .map(str::to_string),
                     signatures: Vec::new(),
                 }),
         );
@@ -861,26 +863,162 @@ fn intrinsic_operations() -> Vec<l::IntrinsicOperation> {
     append(&mut table, l::IntrinsicFamily::Map, &hir::MapFn::ALL);
     append(&mut table, l::IntrinsicFamily::Set, &hir::SetFn::ALL);
     table.extend(
-        [
-            "Spawn",
-            "Post",
-            "Poll",
-            "Close",
-            "Join",
-            "InboxWait",
-            "InboxPoll",
-            "OutboxPost",
-        ]
-        .into_iter()
-        .enumerate()
-        .map(|(operation, semantic_name)| l::IntrinsicOperation {
-            family: l::IntrinsicFamily::Worker,
-            operation: operation as u16,
-            semantic_name: semantic_name.to_string(),
-            signatures: Vec::new(),
-        }),
+        hir::WorkerFn::ALL
+            .iter()
+            .enumerate()
+            .map(|(operation, value)| {
+                let semantic_name = format!("{value:?}");
+                l::IntrinsicOperation {
+                    family: l::IntrinsicFamily::Worker,
+                    operation: operation as u16,
+                    semantic_name: semantic_name
+                        .split_once('(')
+                        .map_or(semantic_name.as_str(), |(name, _)| name)
+                        .to_string(),
+                    runtime_symbol: intrinsic_runtime_symbol(
+                        l::IntrinsicFamily::Worker,
+                        semantic_name
+                            .split_once('(')
+                            .map_or(semantic_name.as_str(), |(name, _)| name),
+                    )
+                    .map(str::to_string),
+                    signatures: Vec::new(),
+                }
+            }),
     );
     table
+}
+
+fn intrinsic_runtime_symbol(family: l::IntrinsicFamily, name: &str) -> Option<&'static str> {
+    Some(match (family, name) {
+        (l::IntrinsicFamily::Ambient, "Print") => "subscript_rt_print",
+        (l::IntrinsicFamily::Ambient, "Collect") => "subscript_rt_collect",
+        (l::IntrinsicFamily::Ambient, "UnsafeDelete") => "subscript_rt_delete",
+        (l::IntrinsicFamily::Math, "Abs") => "subscript_rt_math_abs",
+        (l::IntrinsicFamily::Math, "Acos") => "subscript_rt_math_acos",
+        (l::IntrinsicFamily::Math, "Acosh") => "subscript_rt_math_acosh",
+        (l::IntrinsicFamily::Math, "Asin") => "subscript_rt_math_asin",
+        (l::IntrinsicFamily::Math, "Asinh") => "subscript_rt_math_asinh",
+        (l::IntrinsicFamily::Math, "Atan") => "subscript_rt_math_atan",
+        (l::IntrinsicFamily::Math, "Atanh") => "subscript_rt_math_atanh",
+        (l::IntrinsicFamily::Math, "Cbrt") => "subscript_rt_math_cbrt",
+        (l::IntrinsicFamily::Math, "Ceil") => "subscript_rt_math_ceil",
+        (l::IntrinsicFamily::Math, "Cos") => "subscript_rt_math_cos",
+        (l::IntrinsicFamily::Math, "Cosh") => "subscript_rt_math_cosh",
+        (l::IntrinsicFamily::Math, "Exp") => "subscript_rt_math_exp",
+        (l::IntrinsicFamily::Math, "Expm1") => "subscript_rt_math_expm1",
+        (l::IntrinsicFamily::Math, "Floor") => "subscript_rt_math_floor",
+        (l::IntrinsicFamily::Math, "Log") => "subscript_rt_math_log",
+        (l::IntrinsicFamily::Math, "Log1p") => "subscript_rt_math_log1p",
+        (l::IntrinsicFamily::Math, "Log10") => "subscript_rt_math_log10",
+        (l::IntrinsicFamily::Math, "Log2") => "subscript_rt_math_log2",
+        (l::IntrinsicFamily::Math, "Round") => "subscript_rt_math_round",
+        (l::IntrinsicFamily::Math, "Sign") => "subscript_rt_math_sign",
+        (l::IntrinsicFamily::Math, "Sin") => "subscript_rt_math_sin",
+        (l::IntrinsicFamily::Math, "Sinh") => "subscript_rt_math_sinh",
+        (l::IntrinsicFamily::Math, "Sqrt") => "subscript_rt_math_sqrt",
+        (l::IntrinsicFamily::Math, "Tan") => "subscript_rt_math_tan",
+        (l::IntrinsicFamily::Math, "Tanh") => "subscript_rt_math_tanh",
+        (l::IntrinsicFamily::Math, "Trunc") => "subscript_rt_math_trunc",
+        (l::IntrinsicFamily::Math, "Atan2") => "subscript_rt_math_atan2",
+        (l::IntrinsicFamily::Math, "Hypot") => "subscript_rt_math_hypot",
+        (l::IntrinsicFamily::Math, "Pow") => "subscript_rt_math_pow",
+        (l::IntrinsicFamily::Math, "Max") => "subscript_rt_math_max",
+        (l::IntrinsicFamily::Math, "Min") => "subscript_rt_math_min",
+        (l::IntrinsicFamily::Math, "Random") => "subscript_rt_math_random",
+        (l::IntrinsicFamily::Math, "Clz32") => "subscript_rt_math_clz32",
+        (l::IntrinsicFamily::Math, "Imul") => "subscript_rt_math_imul",
+        (l::IntrinsicFamily::Math, "Fround") => "subscript_rt_math_fround",
+        (l::IntrinsicFamily::Math, "F32ToBits") => "subscript_rt_math_f32_to_bits",
+        (l::IntrinsicFamily::Math, "F32FromBits") => "subscript_rt_math_f32_from_bits",
+        (l::IntrinsicFamily::Number, "IsNaN") => "subscript_rt_num_is_nan",
+        (l::IntrinsicFamily::Number, "IsFinite") => "subscript_rt_num_is_finite",
+        (l::IntrinsicFamily::Number, "IsInteger") => "subscript_rt_num_is_integer",
+        (l::IntrinsicFamily::Number, "IsSafeInteger") => "subscript_rt_num_is_safe_integer",
+        (l::IntrinsicFamily::Number, "ParseInt") => "subscript_rt_num_parse_int",
+        (l::IntrinsicFamily::Number, "ParseFloat") => "subscript_rt_num_parse_float",
+        (l::IntrinsicFamily::Number, "ToFixed") => "subscript_rt_num_to_fixed",
+        (l::IntrinsicFamily::Number, "ToStringF32") => "subscript_rt_num_to_string_f32",
+        (l::IntrinsicFamily::Number, "ToStringF64") => "subscript_rt_num_to_string_f64",
+        (l::IntrinsicFamily::Number, "ToExponential") => "subscript_rt_num_to_exponential",
+        (l::IntrinsicFamily::Number, "ToPrecision") => "subscript_rt_num_to_precision",
+        (l::IntrinsicFamily::Json, "Begin") => "subscript_rt_json_begin",
+        (l::IntrinsicFamily::Json, "BeginTracked") => "subscript_rt_json_begin_tracked",
+        (l::IntrinsicFamily::Json, "Finish") => "subscript_rt_json_finish",
+        (l::IntrinsicFamily::Json, "Raw") => "subscript_rt_json_raw",
+        (l::IntrinsicFamily::Json, "Str") => "subscript_rt_json_str",
+        (l::IntrinsicFamily::Json, "I32") => "subscript_rt_json_i32",
+        (l::IntrinsicFamily::Json, "U32") => "subscript_rt_json_u32",
+        (l::IntrinsicFamily::Json, "I64") => "subscript_rt_json_i64",
+        (l::IntrinsicFamily::Json, "U64") => "subscript_rt_json_u64",
+        (l::IntrinsicFamily::Json, "F32") => "subscript_rt_json_f32",
+        (l::IntrinsicFamily::Json, "F64") => "subscript_rt_json_f64",
+        (l::IntrinsicFamily::Json, "Bool") => "subscript_rt_json_bool",
+        (l::IntrinsicFamily::Json, "Date") => "subscript_rt_json_date",
+        (l::IntrinsicFamily::Json, "Null") => "subscript_rt_json_null",
+        (l::IntrinsicFamily::Json, "Visit") => "subscript_rt_json_visit",
+        (l::IntrinsicFamily::Json, "Leave") => "subscript_rt_json_leave",
+        (l::IntrinsicFamily::Json, "ParseBegin") => "subscript_rt_json_parse_begin",
+        (l::IntrinsicFamily::Json, "ParseEnd") => "subscript_rt_json_parse_end",
+        (l::IntrinsicFamily::Json, "ParseRoot") => "subscript_rt_json_parse_root",
+        (l::IntrinsicFamily::Json, "ParseIsKind") => "subscript_rt_json_parse_is_kind",
+        (l::IntrinsicFamily::Json, "ParseNumberFits") => "subscript_rt_json_parse_number_fits",
+        (l::IntrinsicFamily::Json, "ParseNumber") => "subscript_rt_json_parse_number",
+        (l::IntrinsicFamily::Json, "ParseInteger") => "subscript_rt_json_parse_integer",
+        (l::IntrinsicFamily::Json, "ParseBool") => "subscript_rt_json_parse_bool",
+        (l::IntrinsicFamily::Json, "ParseString") => "subscript_rt_json_parse_string",
+        (l::IntrinsicFamily::Json, "ParseArrayLen") => "subscript_rt_json_parse_array_len",
+        (l::IntrinsicFamily::Json, "ParseArrayGet") => "subscript_rt_json_parse_array_get",
+        (l::IntrinsicFamily::Json, "ParseObjectGet") => "subscript_rt_json_parse_object_get",
+        (l::IntrinsicFamily::String, "Slice") => "subscript_rt_str_slice",
+        (l::IntrinsicFamily::String, "IndexOf") => "subscript_rt_str_index_of",
+        (l::IntrinsicFamily::String, "LastIndexOf") => "subscript_rt_str_last_index_of",
+        (l::IntrinsicFamily::String, "Includes") => "subscript_rt_str_includes",
+        (l::IntrinsicFamily::String, "StartsWith") => "subscript_rt_str_starts_with",
+        (l::IntrinsicFamily::String, "EndsWith") => "subscript_rt_str_ends_with",
+        (l::IntrinsicFamily::String, "CharCodeAt") => "subscript_rt_str_char_code_at",
+        (l::IntrinsicFamily::String, "Split") => "subscript_rt_str_split",
+        (l::IntrinsicFamily::String, "Trim") => "subscript_rt_str_trim",
+        (l::IntrinsicFamily::String, "TrimStart") => "subscript_rt_str_trim_start",
+        (l::IntrinsicFamily::String, "TrimEnd") => "subscript_rt_str_trim_end",
+        (l::IntrinsicFamily::String, "Repeat") => "subscript_rt_str_repeat",
+        (l::IntrinsicFamily::String, "PadStart") => "subscript_rt_str_pad_start",
+        (l::IntrinsicFamily::String, "PadEnd") => "subscript_rt_str_pad_end",
+        (l::IntrinsicFamily::String, "ToUpperCase") => "subscript_rt_str_to_upper",
+        (l::IntrinsicFamily::String, "ToLowerCase") => "subscript_rt_str_to_lower",
+        (l::IntrinsicFamily::String, "Replace") => "subscript_rt_str_replace",
+        (l::IntrinsicFamily::String, "ReplaceAll") => "subscript_rt_str_replace_all",
+        (l::IntrinsicFamily::String, "Substring") => "subscript_rt_str_substring",
+        (l::IntrinsicFamily::String, "Substr") => "subscript_rt_str_substr",
+        (l::IntrinsicFamily::String, "CharAt") => "subscript_rt_str_char_at",
+        (l::IntrinsicFamily::String, "CodePointAt") => "subscript_rt_str_code_point_at",
+        (l::IntrinsicFamily::String, "Concat") => "subscript_rt_str_concat",
+        (l::IntrinsicFamily::Regex, "New") => "subscript_rt_regex_new",
+        (l::IntrinsicFamily::Regex, "Test") => "subscript_rt_regex_test",
+        (l::IntrinsicFamily::Regex, "Source") => "subscript_rt_regex_source",
+        (l::IntrinsicFamily::Regex, "Flags") => "subscript_rt_regex_flags",
+        (l::IntrinsicFamily::Regex, "Search") => "subscript_rt_regex_search",
+        (l::IntrinsicFamily::Regex, "Replace") => "subscript_rt_regex_replace",
+        (l::IntrinsicFamily::Regex, "ReplaceAll") => "subscript_rt_regex_replace_all",
+        (l::IntrinsicFamily::Regex, "Split") => "subscript_rt_regex_split",
+        (l::IntrinsicFamily::Regex, "MatchStart") => "subscript_rt_regex_match_start",
+        (l::IntrinsicFamily::Regex, "MatchEnd") => "subscript_rt_regex_match_end",
+        (l::IntrinsicFamily::Set, "Union") => "subscript_rt_set_union",
+        (l::IntrinsicFamily::Set, "Intersection") => "subscript_rt_set_intersection",
+        (l::IntrinsicFamily::Set, "Difference") => "subscript_rt_set_difference",
+        (l::IntrinsicFamily::Set, "SymmetricDifference") => "subscript_rt_set_symmetric_difference",
+        (l::IntrinsicFamily::Set, "IsSubsetOf") => "subscript_rt_set_is_subset_of",
+        (l::IntrinsicFamily::Set, "IsSupersetOf") => "subscript_rt_set_is_superset_of",
+        (l::IntrinsicFamily::Set, "IsDisjointFrom") => "subscript_rt_set_is_disjoint_from",
+        (l::IntrinsicFamily::Worker, "Post") => "subscript_rt_worker_post",
+        (l::IntrinsicFamily::Worker, "Poll") => "subscript_rt_worker_poll",
+        (l::IntrinsicFamily::Worker, "Close") => "subscript_rt_worker_close",
+        (l::IntrinsicFamily::Worker, "Join") => "subscript_rt_worker_join",
+        (l::IntrinsicFamily::Worker, "InboxWait") => "subscript_rt_worker_inbox_wait",
+        (l::IntrinsicFamily::Worker, "InboxPoll") => "subscript_rt_worker_inbox_poll",
+        (l::IntrinsicFamily::Worker, "OutboxPost") => "subscript_rt_worker_outbox_post",
+        _ => return None,
+    })
 }
 
 fn lower_operation_signature(signature: &hir::OperationSignature) -> l::CallSignature {
@@ -961,7 +1099,7 @@ fn lower_operation_signature(signature: &hir::OperationSignature) -> l::CallSign
         ),
         hir::OperationSignatureTarget::Worker(function) => intrinsic(
             l::IntrinsicFamily::Worker,
-            worker_operation(*function),
+            intrinsic_index(&hir::WorkerFn::ALL, &function.intrinsic_identity()),
             None,
             match function {
                 hir::WorkerFn::Spawn(index) => Some(*index as u32),
@@ -1251,7 +1389,7 @@ impl AddressTaken<'_> {
             K::Call { callee, args } => {
                 match callee {
                     hir::Callee::Value(value) => self.expr(value),
-                    hir::Callee::Method { recv, .. } if self.is_value_class(&recv.ty) => {
+                    hir::Callee::Method { recv, .. } if is_value_class(self.module, &recv.ty) => {
                         self.place(recv);
                     }
                     hir::Callee::Method { recv, .. } => self.expr(recv),
@@ -1346,7 +1484,7 @@ impl AddressTaken<'_> {
         match &expr.kind {
             hir::ExprKind::Local(name) => self.mark(name),
             hir::ExprKind::Field { obj, .. } => {
-                if self.is_stored_aggregate(&obj.ty) && is_place_expr(obj) {
+                if is_stored_aggregate(self.module, &obj.ty) && is_place_expr(obj) {
                     self.place(obj);
                 } else {
                     self.expr(obj);
@@ -1363,14 +1501,6 @@ impl AddressTaken<'_> {
             hir::ExprKind::Global(_) | hir::ExprKind::This => {}
             _ => self.expr(expr),
         }
-    }
-
-    fn is_value_class(&self, ty: &Type) -> bool {
-        matches!(ty, Type::Class(id) if self.module.classes.get(id.0).is_some_and(|class| class.is_value))
-    }
-
-    fn is_stored_aggregate(&self, ty: &Type) -> bool {
-        matches!(ty, Type::FixedArray(..) | Type::IterResult(_)) || self.is_value_class(ty)
     }
 
     fn is_boundary_struct_pointer(&self, ty: &Type) -> bool {
@@ -1410,6 +1540,14 @@ fn is_place_expr(expr: &hir::Expr) -> bool {
             | hir::ExprKind::Field { .. }
             | hir::ExprKind::Index { .. }
     )
+}
+
+fn is_value_class(module: &hir::Module, ty: &Type) -> bool {
+    matches!(ty, Type::Class(id) if module.classes.get(id.0).is_some_and(|class| class.is_value))
+}
+
+fn is_stored_aggregate(module: &hir::Module, ty: &Type) -> bool {
+    matches!(ty, Type::FixedArray(..) | Type::IterResult(_)) || is_value_class(module, ty)
 }
 
 #[derive(Clone)]
@@ -3895,7 +4033,27 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         hir::TplPart::Expr(value) => {
                             let index = operands.len() as u32;
                             operands.push(self.require_expr(value)?);
-                            lowered_parts.push(l::TemplatePart::Operand(index));
+                            let format = match value.ty {
+                                Type::I8 | Type::I16 | Type::I32 | Type::Enum(_) => {
+                                    l::FormatKind::I32
+                                }
+                                Type::U8 | Type::U16 | Type::U32 => l::FormatKind::U32,
+                                Type::I64 | Type::Date => l::FormatKind::I64,
+                                Type::U64 => l::FormatKind::U64,
+                                Type::F16 => l::FormatKind::F16,
+                                Type::F32 => l::FormatKind::F32,
+                                Type::F64 => l::FormatKind::F64,
+                                Type::Bool => l::FormatKind::Bool,
+                                Type::Str => l::FormatKind::Str,
+                                Type::StringAlias(alias) => l::FormatKind::StringAlias(alias),
+                                ref other => {
+                                    return Err(self.error(
+                                        &value.pos,
+                                        format!("template operand {other:?} is not formattable"),
+                                    ))
+                                }
+                            };
+                            lowered_parts.push(l::TemplatePart::Operand { index, format });
                         }
                         other => {
                             return Err(self.error(
@@ -4669,7 +4827,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             )),
             hir::Callee::Worker(value) => Ok(intrinsic_resolution(
                 l::IntrinsicFamily::Worker,
-                worker_operation(*value),
+                intrinsic_index(&hir::WorkerFn::ALL, &value.intrinsic_identity()),
                 None,
                 match value {
                     hir::WorkerFn::Spawn(index) => Some(*index as u32),
@@ -4711,7 +4869,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .cloned()
                 .ok_or_else(|| self.error(&expr.pos, "method body is missing"))?;
             let (receiver, prepared) = if class.is_value {
-                if self.is_place_expr(recv) {
+                if is_place_expr(recv) {
                     let place = self.prepare_place(recv)?;
                     let placeholder = self.materialize_address(&place, &recv.pos)?;
                     (placeholder, Some(PreparedBase::Place(Box::new(place))))
@@ -5175,7 +5333,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         if !self.is_boundary_box_narrowing(expected, &argument.ty) {
             return self.require_expr(argument);
         }
-        let value = if self.is_place_expr(argument) {
+        let value = if is_place_expr(argument) {
             let place = self.prepare_place(argument)?;
             self.materialize_address_inner(&place, &argument.pos, false)?
         } else {
@@ -5269,12 +5427,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok((id, closure))
     }
 
-    fn lower_async_call(
+    fn resolve_async_target(
         &mut self,
         callee: &hir::AsyncCallee,
         args: &[hir::Expr],
-        expr: &hir::Expr,
-    ) -> Result<Option<l::Operand>, LowerError> {
+        return_type: Option<l::ValueType>,
+        pos: &Pos,
+    ) -> Result<(l::CallTarget, Vec<l::Operand>, Vec<StoredOperand>), LowerError> {
         let (kind, mut operands, params) = match callee {
             hir::AsyncCallee::Function(name) => {
                 let record = self
@@ -5282,9 +5441,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .free_functions
                     .get(name)
                     .cloned()
-                    .ok_or_else(|| {
-                        self.error(&expr.pos, format!("unknown async function `{name}`"))
-                    })?;
+                    .ok_or_else(|| self.error(pos, format!("unknown async function `{name}`")))?;
                 let function = self
                     .lowering
                     .hir
@@ -5292,7 +5449,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .iter()
                     .find(|function| function.name == *name)
                     .cloned()
-                    .ok_or_else(|| self.error(&expr.pos, "async function body is missing"))?;
+                    .ok_or_else(|| self.error(pos, "async function body is missing"))?;
                 (
                     l::CallTargetKind::Function(record.id),
                     Vec::new(),
@@ -5308,7 +5465,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 receiver,
                 name,
             } => {
-                let record = self.lowering.method_record(class.0, name, &expr.pos)?;
+                let record = self.lowering.method_record(class.0, name, pos)?;
                 let function = self
                     .lowering
                     .hir
@@ -5316,7 +5473,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .get(class.0)
                     .and_then(|class| class.methods.iter().find(|method| method.name == *name))
                     .cloned()
-                    .ok_or_else(|| self.error(&expr.pos, "async method body is missing"))?;
+                    .ok_or_else(|| self.error(pos, "async method body is missing"))?;
                 (
                     l::CallTargetKind::Method(record.method.expect("async method id")),
                     vec![self.require_expr(receiver)?],
@@ -5340,11 +5497,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         );
         let explicit_offset = operands.len();
         operands.extend(self.lower_call_arguments(&params, args, None, false)?);
-        let return_type = (expr.ty != Type::Void).then(|| l::ValueType::Data(expr.ty.clone()));
         let target = l::CallTarget {
             kind,
             parameter_types,
-            return_type: return_type.clone(),
+            return_type,
         };
         let stored = params
             .iter()
@@ -5358,6 +5514,18 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone()),
             })
             .collect();
+        Ok((target, operands, stored))
+    }
+
+    fn lower_async_call(
+        &mut self,
+        callee: &hir::AsyncCallee,
+        args: &[hir::Expr],
+        expr: &hir::Expr,
+    ) -> Result<Option<l::Operand>, LowerError> {
+        let return_type = (expr.ty != Type::Void).then(|| l::ValueType::Data(expr.ty.clone()));
+        let (target, operands, stored) =
+            self.resolve_async_target(callee, args, return_type.clone(), &expr.pos)?;
         self.acquire_stored_operands(&operands, stored)?;
         let typed_operands = operands
             .into_iter()
@@ -5395,92 +5563,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         args: &[hir::Expr],
         expr: &hir::Expr,
     ) -> Result<l::Operand, LowerError> {
-        let (kind, mut operands, params) = match callee {
-            hir::AsyncCallee::Function(name) => {
-                let record = self
-                    .lowering
-                    .free_functions
-                    .get(name)
-                    .cloned()
-                    .ok_or_else(|| {
-                        self.error(&expr.pos, format!("unknown async function `{name}`"))
-                    })?;
-                let function = self
-                    .lowering
-                    .hir
-                    .functions
-                    .iter()
-                    .find(|function| function.name == *name)
-                    .cloned()
-                    .ok_or_else(|| self.error(&expr.pos, "async function body is missing"))?;
-                (
-                    l::CallTargetKind::Function(record.id),
-                    Vec::new(),
-                    function
-                        .params
-                        .iter()
-                        .map(CallParam::from)
-                        .collect::<Vec<_>>(),
-                )
-            }
-            hir::AsyncCallee::Method {
-                class,
-                receiver,
-                name,
-            } => {
-                let record = self.lowering.method_record(class.0, name, &expr.pos)?;
-                let function = self
-                    .lowering
-                    .hir
-                    .classes
-                    .get(class.0)
-                    .and_then(|class| class.methods.iter().find(|method| method.name == *name))
-                    .cloned()
-                    .ok_or_else(|| self.error(&expr.pos, "async method body is missing"))?;
-                (
-                    l::CallTargetKind::Method(record.method.expect("async method id")),
-                    vec![self.require_expr(receiver)?],
-                    function
-                        .params
-                        .iter()
-                        .map(CallParam::from)
-                        .collect::<Vec<_>>(),
-                )
-            }
-        };
-        let mut parameter_types = if let hir::AsyncCallee::Method { class, .. } = callee {
-            vec![l::ValueType::Data(Type::Class(*class))]
-        } else {
-            Vec::new()
-        };
-        parameter_types.extend(
-            params
-                .iter()
-                .map(|parameter| l::ValueType::Data(parameter.ty.clone())),
-        );
-        let explicit_offset = operands.len();
-        operands.extend(self.lower_call_arguments(&params, args, None, false)?);
         let Type::AsyncHandle(value) = &expr.ty else {
             return Err(self.error(&expr.pos, "async handle creation has a non-handle type"));
         };
         let return_type = (**value != Type::Void).then(|| l::ValueType::Data((**value).clone()));
-        let target = l::CallTarget {
-            kind,
-            parameter_types,
-            return_type,
-        };
-        let stored = params
-            .iter()
-            .enumerate()
-            .map(|(index, parameter)| StoredOperand {
-                index: explicit_offset + index,
-                ty: l::ValueType::Data(parameter.ty.clone()),
-                action: OwnerStoreAction::Acquire(hir::AsyncCopySite::CallArgument),
-                pos: args
-                    .get(index)
-                    .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone()),
-            })
-            .collect();
+        let (target, operands, stored) =
+            self.resolve_async_target(callee, args, return_type, &expr.pos)?;
         self.emit_store_instruction(
             l::InstructionKind::AsyncHandleCreate(target),
             operands,
@@ -5599,7 +5687,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 PreparedPlaceKind::Global(global, ty)
             }
             hir::ExprKind::Field { obj, name } => {
-                let base = if self.is_stored_aggregate(&obj.ty) && self.is_place_expr(obj) {
+                let base = if is_stored_aggregate(self.lowering.hir, &obj.ty) && is_place_expr(obj)
+                {
                     PreparedBase::Place(Box::new(self.prepare_place(obj)?))
                 } else {
                     PreparedBase::Value(self.require_expr(obj)?)
@@ -5613,7 +5702,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 index,
                 checked,
             } => {
-                let base = if matches!(obj.ty, Type::FixedArray(..)) && self.is_place_expr(obj) {
+                let base = if matches!(obj.ty, Type::FixedArray(..)) && is_place_expr(obj) {
                     PreparedBase::Place(Box::new(self.prepare_place(obj)?))
                 } else {
                     PreparedBase::Value(self.require_expr(obj)?)
@@ -5917,29 +6006,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             | PreparedPlaceKind::Global(_, ty)
             | PreparedPlaceKind::Field { ty, .. }
             | PreparedPlaceKind::Index { ty, .. } => ty,
-        }
-    }
-
-    fn is_place_expr(&self, expr: &hir::Expr) -> bool {
-        matches!(
-            expr.kind,
-            hir::ExprKind::Local(_)
-                | hir::ExprKind::Global(_)
-                | hir::ExprKind::Field { .. }
-                | hir::ExprKind::Index { .. }
-        )
-    }
-
-    fn is_stored_aggregate(&self, ty: &Type) -> bool {
-        match ty {
-            Type::FixedArray(..) | Type::IterResult(_) => true,
-            Type::Class(id) => self
-                .lowering
-                .hir
-                .classes
-                .get(id.0)
-                .is_some_and(|class| class.is_value),
-            _ => false,
         }
     }
 
@@ -6258,20 +6324,6 @@ fn intrinsic_index<T: PartialEq>(values: &[T], value: &T) -> u16 {
         .iter()
         .position(|candidate| candidate == value)
         .expect("HIR intrinsic belongs to its ALL table") as u16
-}
-
-fn worker_operation(value: hir::WorkerFn) -> u16 {
-    match value {
-        hir::WorkerFn::Spawn(_) => 0,
-        hir::WorkerFn::Post => 1,
-        hir::WorkerFn::Poll => 2,
-        hir::WorkerFn::Close => 3,
-        hir::WorkerFn::Join => 4,
-        hir::WorkerFn::InboxWait => 5,
-        hir::WorkerFn::InboxPoll => 6,
-        hir::WorkerFn::OutboxPost => 7,
-        _ => u16::MAX,
-    }
 }
 
 fn convert_unary(value: hir::UnOp) -> l::UnaryOp {
@@ -6772,10 +6824,20 @@ fn reachable_blocks(function: &l::Function) -> Vec<bool> {
 fn classify_local_storage(function: &mut l::Function) {
     let predecessors = predecessors(function);
     let dominators = dominators(function, &predecessors);
+    let mut store_blocks = vec![BTreeSet::new(); function.locals.len()];
+    for block in &function.blocks {
+        for instruction in &block.instructions {
+            if let l::InstructionKind::StoreLocal(local) = instruction.kind {
+                if let Some(stores) = store_blocks.get_mut(local.0 as usize) {
+                    stores.insert(block.id);
+                }
+            }
+        }
+    }
     let required = function
         .locals
         .iter()
-        .filter(|local| local_requires_frame(function, local.id, &dominators))
+        .filter(|local| local_requires_frame(function, local.id, &store_blocks, &dominators))
         .map(|local| local.id)
         .collect::<HashSet<_>>();
     for local in &mut function.locals {
@@ -6790,19 +6852,21 @@ fn classify_local_storage(function: &mut l::Function) {
 fn local_requires_frame(
     function: &l::Function,
     local: l::LocalId,
+    store_blocks: &[BTreeSet<l::BlockId>],
     dominators: &[BTreeSet<l::BlockId>],
 ) -> bool {
+    let Some(store_blocks) = store_blocks.get(local.0 as usize) else {
+        return false;
+    };
     function.blocks.iter().any(|suspend| {
         let l::Terminator::Suspend { successor, .. } = suspend.terminator else {
             return false;
         };
-        let definition_dominates = function.blocks.iter().any(|definition| {
-            definition.instructions.iter().any(
-                |instruction| matches!(instruction.kind, l::InstructionKind::StoreLocal(id) if id == local),
-            ) && (definition.id == suspend.id
+        let definition_dominates = store_blocks.iter().any(|definition| {
+            *definition == suspend.id
                 || dominators
                     .get(suspend.id.0 as usize)
-                    .is_some_and(|blocks| blocks.contains(&definition.id)))
+                    .is_some_and(|blocks| blocks.contains(definition))
         });
         definition_dominates && local_read_before_redefinition(function, successor, local)
     })
@@ -7050,14 +7114,7 @@ fn counted_instruction_stores<'i>(
         l::InstructionKind::StoreLocal(_) | l::InstructionKind::StoreGlobal(_) => Some(0),
         l::InstructionKind::StoreAddress => Some(1),
         l::InstructionKind::ArrayLiteral | l::InstructionKind::ArraySpreadLiteral(_) => Some(0),
-        l::InstructionKind::Call(target) => match target.kind {
-            l::CallTargetKind::Function(_) | l::CallTargetKind::Intrinsic(_) => Some(0),
-            l::CallTargetKind::StaticClosure(_) => Some(1),
-            l::CallTargetKind::Method(_)
-            | l::CallTargetKind::Indirect
-            | l::CallTargetKind::BuiltinMethod(_) => Some(1),
-            l::CallTargetKind::Foreign(_) => None,
-        },
+        l::InstructionKind::Call(target) => counted_operand_start(&target.kind),
         l::InstructionKind::AsyncHandleCreate(target) => match target.kind {
             l::CallTargetKind::Function(_) => Some(0),
             l::CallTargetKind::Method(_) => Some(1),
@@ -7093,14 +7150,7 @@ fn counted_terminator_stores(
             kind: l::SuspendKind::AsyncCall { target, operands },
             ..
         } => {
-            let start = match target.kind {
-                l::CallTargetKind::Function(_) | l::CallTargetKind::Intrinsic(_) => Some(0),
-                l::CallTargetKind::StaticClosure(_) => Some(1),
-                l::CallTargetKind::Method(_)
-                | l::CallTargetKind::Indirect
-                | l::CallTargetKind::BuiltinMethod(_) => Some(1),
-                l::CallTargetKind::Foreign(_) => None,
-            };
+            let start = counted_operand_start(&target.kind);
             start
                 .into_iter()
                 .flat_map(|start| operands.iter().copied().enumerate().skip(start))
@@ -7109,6 +7159,17 @@ fn counted_terminator_stores(
                 .collect()
         }
         _ => Vec::new(),
+    }
+}
+
+fn counted_operand_start(kind: &l::CallTargetKind) -> Option<usize> {
+    match kind {
+        l::CallTargetKind::Function(_) | l::CallTargetKind::Intrinsic(_) => Some(0),
+        l::CallTargetKind::StaticClosure(_)
+        | l::CallTargetKind::Method(_)
+        | l::CallTargetKind::Indirect
+        | l::CallTargetKind::BuiltinMethod(_) => Some(1),
+        l::CallTargetKind::Foreign(_) => None,
     }
 }
 
@@ -7930,7 +7991,13 @@ fn verify_instruction_contract(
         l::InstructionKind::Template(parts) => {
             let valid_indices = parts.iter().all(|part| match part {
                 l::TemplatePart::Text(_) => true,
-                l::TemplatePart::Operand(index) => (*index as usize) < operand_types.len(),
+                l::TemplatePart::Operand { index, format } => operand_types
+                    .get(*index as usize)
+                    .and_then(|ty| match ty {
+                        l::ValueType::Data(ty) => Some(ty),
+                        _ => None,
+                    })
+                    .is_some_and(|ty| format.accepts(ty)),
             });
             if !valid_indices || result_type != Some(l::ValueType::Data(Type::Str)) {
                 bad("template signature is invalid", errors);
@@ -8916,22 +8983,8 @@ fn check_dominates(
     let Some(definition) = definitions.get(value.0 as usize).and_then(|site| *site) else {
         return;
     };
-    let valid = match definition {
-        DefinitionSite::Entry => true,
-        DefinitionSite::BlockEntry(block) => {
-            block == use_block
-                || dominators
-                    .get(use_block.0 as usize)
-                    .is_some_and(|set| set.contains(&block))
-        }
-        DefinitionSite::Instruction(block, index) => {
-            (block == use_block && index < use_index)
-                || (block != use_block
-                    && dominators
-                        .get(use_block.0 as usize)
-                        .is_some_and(|set| set.contains(&block)))
-        }
-    };
+    let use_site = DefinitionSite::Instruction(use_block, use_index);
+    let valid = definition_dominates_definition(definition, use_site, dominators);
     if !valid {
         errors.push(finding(
             function,

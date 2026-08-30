@@ -7,6 +7,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::ops::Range;
 use std::rc::{Rc, Weak};
 
 use subscript_compiler::lir as l;
@@ -15,6 +16,8 @@ use subscript_compiler::{ClassId, Pos, Type};
 use subscript_runtime::context::Context;
 use subscript_runtime::ffi;
 use subscript_runtime::trap::TrapKind as RuntimeTrapKind;
+
+use crate::lir_types::runtime_trap_kind;
 
 /// A failure observed while executing a verified LIR module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -258,6 +261,7 @@ enum TrapPhase {
     After,
 }
 
+#[derive(Clone, Copy)]
 struct Layout {
     size: usize,
     align: usize,
@@ -281,6 +285,8 @@ struct Interpreter<'m> {
     roots: Vec<Rc<Cell<usize>>>,
     field_layouts: HashMap<l::FieldId, (usize, Type)>,
     class_layouts: HashMap<ClassId, Layout>,
+    layout_cache: HashMap<String, Layout>,
+    padding_cache: HashMap<String, Vec<Range<usize>>>,
     poison_registry: HashMap<l::ValueId, Vec<Weak<RefCell<Option<Invalidation>>>>>,
     async_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
     // Runtime helpers can report while an instruction is still executing.
@@ -298,6 +304,8 @@ impl<'m> Interpreter<'m> {
             roots: Vec::new(),
             field_layouts: HashMap::new(),
             class_layouts: HashMap::new(),
+            layout_cache: HashMap::new(),
+            padding_cache: HashMap::new(),
             poison_registry: HashMap::new(),
             async_handles: RefCell::new(HashMap::new()),
             active_traps: Vec::new(),
@@ -1117,7 +1125,6 @@ impl<'m> Interpreter<'m> {
             l::InstructionKind::Template(parts) => Some(Value::Handle(self.template(
                 parts,
                 &operands,
-                function,
                 instruction,
             )?)),
             l::InstructionKind::Call(target) => Some(self.invoke_target(
@@ -1675,13 +1682,10 @@ impl<'m> Interpreter<'m> {
     }
 
     fn trap_error(&self, trap: &l::Trap) -> InterpretError {
-        let kind = match trap.kind {
-            l::TrapKind::IndexRead | l::TrapKind::IndexWrite => {
-                RuntimeTrapKind::IndexOutOfBounds.rule().to_string()
-            }
-            l::TrapKind::JsonResultValue(_) => "JsonResultValue".to_string(),
-            _ => format!("{:?}", trap.kind),
-        };
+        let kind = runtime_trap_kind(&trap.kind).map_or_else(
+            || format!("{:?}", trap.kind),
+            |kind| kind.rule().to_string(),
+        );
         InterpretError::Trap {
             kind,
             pos: trap.pos.clone(),
@@ -3682,8 +3686,45 @@ impl<'m> Interpreter<'m> {
     }
 
     fn compute_class_layouts(&mut self) -> Result<(), InterpretError> {
+        let class_ids = self
+            .module
+            .classes
+            .iter()
+            .map(|class| class.id)
+            .collect::<Vec<_>>();
+        for id in class_ids {
+            let _ = self.class_layout(id)?;
+        }
+        let mut types = Vec::new();
         for class in &self.module.classes {
-            let _ = self.class_layout(class.id)?;
+            types.push(Type::Class(class.id));
+            types.extend(class.fields.iter().map(|field| field.ty.clone()));
+        }
+        types.extend(self.module.globals.iter().map(|global| global.ty.clone()));
+        for foreign in &self.module.foreign_functions {
+            types.push(foreign.return_type.clone());
+            types.extend(
+                foreign
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.ty.clone()),
+            );
+        }
+        for function in &self.module.functions {
+            types.push(function.return_type.clone());
+            types.extend(function.locals.iter().map(|local| match &local.ty {
+                l::ValueType::Data(ty)
+                | l::ValueType::Address(l::AddressType { pointee: ty, .. }) => ty.clone(),
+                l::ValueType::Iterator(iterator) => iterator.element.clone(),
+            }));
+            types.extend(function.values.iter().map(|value| match &value.ty {
+                l::ValueType::Data(ty)
+                | l::ValueType::Address(l::AddressType { pointee: ty, .. }) => ty.clone(),
+                l::ValueType::Iterator(iterator) => iterator.element.clone(),
+            }));
+        }
+        for ty in types {
+            let _ = self.type_layout(&ty)?;
         }
         Ok(())
     }
@@ -3707,9 +3748,21 @@ impl<'m> Interpreter<'m> {
         self.class_layouts.insert(id, Layout { size: 0, align: 1 });
         let mut offset = 0usize;
         let mut aggregate_align = 1usize;
+        let mut padding = Vec::new();
         for field in &class.fields {
             let layout = self.type_layout(&field.ty)?;
-            offset = align_up(offset, layout.align);
+            let field_offset = align_up(offset, layout.align);
+            if offset < field_offset {
+                padding.push(offset..field_offset);
+            }
+            if let Some(field_padding) = self.padding_cache.get(&format!("{:?}", field.ty)) {
+                padding.extend(
+                    field_padding
+                        .iter()
+                        .map(|range| field_offset + range.start..field_offset + range.end),
+                );
+            }
+            offset = field_offset;
             self.field_layouts
                 .insert(field.id, (offset, field.ty.clone()));
             offset = offset.checked_add(layout.size).ok_or_else(|| {
@@ -3724,6 +3777,9 @@ impl<'m> Interpreter<'m> {
             size: align_up(offset, aggregate_align),
             align: aggregate_align,
         };
+        if offset < layout.size {
+            padding.push(offset..layout.size);
+        }
         self.class_layouts.insert(
             id,
             Layout {
@@ -3731,49 +3787,87 @@ impl<'m> Interpreter<'m> {
                 align: layout.align,
             },
         );
+        self.padding_cache
+            .insert(format!("{:?}", Type::Class(id)), padding);
         Ok(layout)
     }
 
     fn type_layout(&mut self, ty: &Type) -> Result<Layout, InterpretError> {
-        if let Some((size, align)) = scalar_size_align(ty) {
-            return Ok(Layout {
-                size: size as usize,
-                align: align as usize,
-            });
+        let key = format!("{ty:?}");
+        if let Some(layout) = self.layout_cache.get(&key).copied() {
+            return Ok(layout);
         }
-        match ty {
-            Type::Class(id) => {
-                let class = self
-                    .module
-                    .classes
-                    .get(id.0)
-                    .ok_or_else(|| self.invalid(None, format!("class {:?} is missing", id)))?;
-                if class.is_value {
-                    self.class_layout(*id)
-                } else {
-                    Ok(Layout { size: 8, align: 8 })
+        let (layout, padding) = if let Some((size, align)) = scalar_size_align(ty) {
+            (
+                Layout {
+                    size: size as usize,
+                    align: align as usize,
+                },
+                Vec::new(),
+            )
+        } else {
+            match ty {
+                Type::Class(id) => {
+                    let class =
+                        self.module.classes.get(id.0).ok_or_else(|| {
+                            self.invalid(None, format!("class {:?} is missing", id))
+                        })?;
+                    if class.is_value {
+                        let layout = self.class_layout(*id)?;
+                        let padding = self.padding_cache.get(&key).cloned().unwrap_or_default();
+                        (layout, padding)
+                    } else {
+                        (Layout { size: 8, align: 8 }, Vec::new())
+                    }
                 }
+                Type::FixedArray(element_ty, count) => {
+                    let element_key = format!("{element_ty:?}");
+                    let element = self.type_layout(element_ty)?;
+                    let stride = align_up(element.size, element.align);
+                    let element_padding = self
+                        .padding_cache
+                        .get(&element_key)
+                        .cloned()
+                        .unwrap_or_default();
+                    let mut padding = Vec::new();
+                    for index in 0..*count as usize {
+                        let base = index * stride;
+                        padding.extend(
+                            element_padding
+                                .iter()
+                                .map(|range| base + range.start..base + range.end),
+                        );
+                        if element.size < stride {
+                            padding.push(base + element.size..base + stride);
+                        }
+                    }
+                    (
+                        Layout {
+                            size: stride.checked_mul(*count as usize).ok_or_else(|| {
+                                self.invalid(None, "fixed-array layout overflows host usize")
+                            })?,
+                            align: element.align,
+                        },
+                        padding,
+                    )
+                }
+                Type::IterResult(value) => {
+                    let value = self.type_layout(value)?;
+                    let value_offset = align_up(1, value.align);
+                    (
+                        Layout {
+                            size: align_up(value_offset + value.size, value.align),
+                            align: value.align,
+                        },
+                        Vec::new(),
+                    )
+                }
+                other => return Err(self.invalid(None, format!("no storage layout for {other:?}"))),
             }
-            Type::FixedArray(element, count) => {
-                let element = self.type_layout(element)?;
-                let stride = align_up(element.size, element.align);
-                Ok(Layout {
-                    size: stride.checked_mul(*count as usize).ok_or_else(|| {
-                        self.invalid(None, "fixed-array layout overflows host usize")
-                    })?,
-                    align: element.align,
-                })
-            }
-            Type::IterResult(value) => {
-                let value = self.type_layout(value)?;
-                let value_offset = align_up(1, value.align);
-                Ok(Layout {
-                    size: align_up(value_offset + value.size, value.align),
-                    align: value.align,
-                })
-            }
-            other => Err(self.invalid(None, format!("no storage layout for {other:?}"))),
-        }
+        };
+        self.layout_cache.insert(key, layout);
+        self.padding_cache.insert(format!("{ty:?}"), padding);
+        Ok(layout)
     }
 
     fn zero(&self, ty: &Type) -> Value {
@@ -3827,45 +3921,7 @@ impl<'m> Interpreter<'m> {
     }
 
     fn layout_cached(&self, ty: &Type) -> Option<Layout> {
-        if let Some((size, align)) = scalar_size_align(ty) {
-            return Some(Layout {
-                size: size as usize,
-                align: align as usize,
-            });
-        }
-        match ty {
-            Type::Class(id) => {
-                if self
-                    .module
-                    .classes
-                    .get(id.0)
-                    .is_some_and(|class| class.is_value)
-                {
-                    self.class_layouts.get(id).map(|layout| Layout {
-                        size: layout.size,
-                        align: layout.align,
-                    })
-                } else {
-                    Some(Layout { size: 8, align: 8 })
-                }
-            }
-            Type::FixedArray(element, count) => {
-                let element = self.layout_cached(element)?;
-                Some(Layout {
-                    size: align_up(element.size, element.align) * *count as usize,
-                    align: element.align,
-                })
-            }
-            Type::IterResult(value) => {
-                let value = self.layout_cached(value)?;
-                let offset = align_up(1, value.align);
-                Some(Layout {
-                    size: align_up(offset + value.size, value.align),
-                    align: value.align,
-                })
-            }
-            _ => None,
-        }
+        self.layout_cache.get(&format!("{ty:?}")).copied()
     }
 
     fn address_pointee(
@@ -4225,46 +4281,12 @@ impl<'m> Interpreter<'m> {
     }
 
     fn zero_padding(&self, ty: &Type, bytes: &mut [u8], base: usize) -> Result<(), InterpretError> {
-        match ty {
-            Type::Class(id)
-                if self
-                    .module
-                    .classes
-                    .get(id.0)
-                    .is_some_and(|class| class.is_value) =>
-            {
-                let class = self.module.classes[id.0].clone();
-                let class_layout = self.class_layouts.get(id).ok_or_else(|| {
-                    self.invalid(None, format!("class {:?} has no cached layout", id))
-                })?;
-                let mut cursor = 0usize;
-                for field in class.fields {
-                    let (offset, field_ty) = self.field_info(l::FieldRef::Class(field.id))?;
-                    self.zero_byte_range(bytes, base + cursor, base + offset)?;
-                    self.zero_padding(&field_ty, bytes, base + offset)?;
-                    let field_layout = self.layout_cached(&field_ty).ok_or_else(|| {
-                        self.invalid(None, format!("field {:?} has no layout", field.id))
-                    })?;
-                    cursor = offset + field_layout.size;
-                }
-                self.zero_byte_range(bytes, base + cursor, base + class_layout.size)?;
-            }
-            Type::FixedArray(element, count) => {
-                let element_layout = self.layout_cached(element).ok_or_else(|| {
-                    self.invalid(None, "fixed-array element has no padding layout")
-                })?;
-                let stride = align_up(element_layout.size, element_layout.align);
-                for index in 0..*count as usize {
-                    let element_base = base + index * stride;
-                    self.zero_padding(element, bytes, element_base)?;
-                    self.zero_byte_range(
-                        bytes,
-                        element_base + element_layout.size,
-                        element_base + stride,
-                    )?;
-                }
-            }
-            _ => {}
+        let ranges = self
+            .padding_cache
+            .get(&format!("{ty:?}"))
+            .ok_or_else(|| self.invalid(None, format!("{ty:?} has no padding layout")))?;
+        for range in ranges {
+            self.zero_byte_range(bytes, base + range.start, base + range.end)?;
         }
         Ok(())
     }
@@ -4972,40 +4994,36 @@ impl<'m> Interpreter<'m> {
         &mut self,
         parts: &[l::TemplatePart],
         operands: &[Value],
-        function: &l::Function,
         instruction: &l::Instruction,
     ) -> Result<*mut u8, InterpretError> {
         let mut bytes = Vec::new();
         for part in parts {
             match part {
                 l::TemplatePart::Text(text) => bytes.extend_from_slice(text.as_bytes()),
-                l::TemplatePart::Operand(index) => {
+                l::TemplatePart::Operand { index, format } => {
                     let value = operands.get(*index as usize).ok_or_else(|| {
                         self.invalid(
                             Some(instruction.pos.clone()),
                             format!("template operand {index} is missing"),
                         )
                     })?;
-                    let ty = self.instruction_operand_type(function, instruction, *index as usize);
-                    bytes.extend_from_slice(&self.format_value(value, ty)?);
+                    bytes.extend_from_slice(&self.format_value(value, *format)?);
                 }
             }
         }
         self.alloc_string(&bytes, &instruction.pos)
     }
 
-    fn format_value(&self, value: &Value, ty: Option<&Type>) -> Result<Vec<u8>, InterpretError> {
-        Ok(match value {
-            Value::I(value)
-                if matches!(ty, Some(Type::I8 | Type::I16 | Type::I32 | Type::Enum(_))) =>
-            {
+    fn format_value(
+        &self,
+        value: &Value,
+        format: l::FormatKind,
+    ) -> Result<Vec<u8>, InterpretError> {
+        Ok(match (format, value) {
+            (l::FormatKind::I32, Value::I(value)) => {
                 subscript_runtime::fmt::fmt_i32(*value as i32).into_bytes()
             }
-            Value::I(value) if matches!(ty, Some(Type::StringAlias(_))) => {
-                let alias = match ty {
-                    Some(Type::StringAlias(alias)) => alias,
-                    _ => return Err(self.invalid(None, "string-alias formatter has no alias type")),
-                };
+            (l::FormatKind::StringAlias(alias), Value::I(value)) => {
                 let alias = self
                     .module
                     .string_aliases
@@ -5024,21 +5042,30 @@ impl<'m> Interpreter<'m> {
                     .as_bytes()
                     .to_vec()
             }
-            Value::I(value) => subscript_runtime::fmt::fmt_i64(*value).into_bytes(),
-            Value::U(value) if matches!(ty, Some(Type::U8 | Type::U16 | Type::U32)) => {
+            (l::FormatKind::I64, Value::I(value)) => {
+                subscript_runtime::fmt::fmt_i64(*value).into_bytes()
+            }
+            (l::FormatKind::U32, Value::U(value)) => {
                 subscript_runtime::fmt::fmt_u32(*value as u32).into_bytes()
             }
-            Value::U(value) if matches!(ty, Some(Type::F16)) => {
+            (l::FormatKind::F16, Value::U(value)) => {
                 subscript_runtime::fmt::fmt_f64(ffi::subscript_rt_f16_to_f64(*value as u16))
                     .into_bytes()
             }
-            Value::U(value) => subscript_runtime::fmt::fmt_u64(*value).into_bytes(),
-            Value::F32(value) => subscript_runtime::fmt::fmt_f32(*value).into_bytes(),
-            Value::F64(value) => subscript_runtime::fmt::fmt_f64(*value).into_bytes(),
-            Value::Bool(value) => subscript_runtime::fmt::fmt_bool(*value).into_bytes(),
-            Value::Handle(handle) => self.string_bytes(*handle)?,
-            Value::Null => b"null".to_vec(),
-            other => return Err(type_error("interpolatable scalar", other)),
+            (l::FormatKind::U64, Value::U(value)) => {
+                subscript_runtime::fmt::fmt_u64(*value).into_bytes()
+            }
+            (l::FormatKind::F32, Value::F32(value)) => {
+                subscript_runtime::fmt::fmt_f32(*value).into_bytes()
+            }
+            (l::FormatKind::F64, Value::F64(value)) => {
+                subscript_runtime::fmt::fmt_f64(*value).into_bytes()
+            }
+            (l::FormatKind::Bool, Value::Bool(value)) => {
+                subscript_runtime::fmt::fmt_bool(*value).into_bytes()
+            }
+            (l::FormatKind::Str, Value::Handle(handle)) => self.string_bytes(*handle)?,
+            (_, other) => return Err(type_error("interpolatable scalar", other)),
         })
     }
 
@@ -5408,21 +5435,13 @@ unsafe fn callback_state<'a>(env: *const u8) -> &'a mut CallbackState {
 }
 
 fn runtime_trap_matches_lir(runtime: RuntimeTrapKind, lir: &l::TrapKind) -> bool {
+    if runtime_trap_kind(lir) == Some(runtime) {
+        return true;
+    }
     match runtime {
-        RuntimeTrapKind::AllocationFailure => *lir == l::TrapKind::Allocation,
-        RuntimeTrapKind::IndexOutOfBounds => {
-            matches!(lir, l::TrapKind::IndexRead | l::TrapKind::IndexWrite)
-        }
-        RuntimeTrapKind::NullNarrowing => *lir == l::TrapKind::NullNarrowing,
-        RuntimeTrapKind::ClassMismatch => matches!(lir, l::TrapKind::ClassMismatch(_)),
         RuntimeTrapKind::DoubleDelete
-        | RuntimeTrapKind::UseAfterDelete
         | RuntimeTrapKind::InvalidDelete
         | RuntimeTrapKind::CallbackUserdataFreed => *lir == l::TrapKind::DevOnlyLifetime,
-        RuntimeTrapKind::DivisionByZero => *lir == l::TrapKind::DivisionByZero,
-        RuntimeTrapKind::StaleCoroutine => *lir == l::TrapKind::DevReloadOnlyStaleCoroutine,
-        RuntimeTrapKind::JsonResultValue => matches!(lir, l::TrapKind::JsonResultValue(_)),
-        RuntimeTrapKind::WireEnumUnknownValue => matches!(lir, l::TrapKind::WireEnumValue(_)),
         RuntimeTrapKind::EmptyPop
         | RuntimeTrapKind::StringSlice
         | RuntimeTrapKind::Internal
@@ -5433,9 +5452,8 @@ fn runtime_trap_matches_lir(runtime: RuntimeTrapKind, lir: &l::TrapKind) -> bool
         | RuntimeTrapKind::JsonCycle
         | RuntimeTrapKind::Regex
         | RuntimeTrapKind::RegexBudget
-        | RuntimeTrapKind::WorkerTrapped
-        | RuntimeTrapKind::UnreachableReached => *lir == l::TrapKind::Call,
-        _ => *lir == l::TrapKind::Call,
+        | RuntimeTrapKind::WorkerTrapped => *lir == l::TrapKind::Call,
+        _ => false,
     }
 }
 
