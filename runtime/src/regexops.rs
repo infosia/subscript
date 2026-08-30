@@ -178,6 +178,15 @@ impl RegexStore {
     pub(crate) fn remove_value(&mut self, handle: usize) {
         self.values.remove(&handle);
     }
+
+    #[cfg(test)]
+    pub(crate) fn rekey_value_for_test(&mut self, from: usize, to: usize) {
+        let value = self
+            .values
+            .remove(&from)
+            .expect("the test RegExp value must exist");
+        assert!(self.values.insert(to, value).is_none());
+    }
 }
 
 fn trap_regex(ctx: &mut Context, message: impl Into<String>, pos_id: u32) {

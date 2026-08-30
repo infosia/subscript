@@ -363,6 +363,67 @@ unsafe fn len_of(ctx: *mut Context, h: *const u8) -> usize {
     unsafe { (*ctx).array_len(h) }.max(0) as usize
 }
 
+/// Element storage used by the shared callback loops.
+///
+/// Dynamic arrays re-resolve their length and storage on every visit.
+/// Fixed arrays report their constant length and read the caller buffer.
+#[derive(Clone, Copy)]
+enum ElementSource {
+    Dynamic(*mut u8),
+    Fixed {
+        data: *const u8,
+        len: usize,
+        elem_size: usize,
+    },
+}
+
+impl ElementSource {
+    /// True when this source or callback cannot enter script code.
+    unsafe fn cb_blocked(self, ctx: *mut Context, code: *const u8) -> bool {
+        code.is_null()
+            || match self {
+                ElementSource::Dynamic(handle) => handle.is_null(),
+                ElementSource::Fixed { data, len, .. } => data.is_null() && len != 0,
+            }
+            // SAFETY: caller contract.
+            || unsafe { (*ctx).trapped() }
+    }
+
+    /// Returns the source element width.
+    unsafe fn elem_size(self, ctx: *mut Context) -> usize {
+        match self {
+            // SAFETY: caller contract.
+            ElementSource::Dynamic(handle) => unsafe { (*ctx).array_elem_size(handle) },
+            ElementSource::Fixed { elem_size, .. } => elem_size,
+        }
+    }
+
+    /// Returns the source length for the current iteration.
+    unsafe fn len(self, ctx: *mut Context) -> usize {
+        match self {
+            // SAFETY: caller contract.
+            ElementSource::Dynamic(handle) => unsafe { len_of(ctx, handle) },
+            ElementSource::Fixed { len, .. } => len,
+        }
+    }
+
+    /// Reads one element after the current length check.
+    unsafe fn read<T: Copy>(self, ctx: *mut Context, index: usize) -> T {
+        match self {
+            // SAFETY: caller contract and the current length check.
+            ElementSource::Dynamic(handle) => unsafe { read_elem(ctx, handle, index) },
+            ElementSource::Fixed { data, .. } => {
+                // SAFETY: caller contract and the current length check.
+                unsafe {
+                    data.add(index * std::mem::size_of::<T>())
+                        .cast::<T>()
+                        .read_unaligned()
+                }
+            }
+        }
+    }
+}
+
 /// Reads `size` (1/2/4/8) bytes at `p` zero-extended to `u64`.
 ///
 /// # Safety
@@ -977,26 +1038,40 @@ pub unsafe fn for_each(
     indexed: bool,
 ) {
     // SAFETY: caller contract.
-    if unsafe { cb_blocked(ctx, h, code) } {
+    unsafe { for_each_source(ctx, ElementSource::Dynamic(h), code, env, kind, indexed) };
+}
+
+/// Shared dynamic-array and fixed-array `forEach` loop.
+unsafe fn for_each_source(
+    ctx: *mut Context,
+    source: ElementSource,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    indexed: bool,
+) {
+    // SAFETY: caller contract.
+    if unsafe { source.cb_blocked(ctx, code) } {
         return;
     }
     // SAFETY: caller contract.
-    let esz = unsafe { (*ctx).array_elem_size(h) };
+    let esz = unsafe { source.elem_size(ctx) };
     // SAFETY: caller contract.
     let Some(abi) = (unsafe { abi_or_trap(ctx, kind, esz) }) else {
         return;
     };
     // SAFETY: caller contract.
-    let n = unsafe { len_of(ctx, h) };
+    let n = unsafe { source.len(ctx) };
     with_abi!(abi, T, {
         for i in 0..n {
-            // A callback may mutate the array; stop at the current end.
+            // A callback may mutate a dynamic array. A fixed source
+            // returns the same constant length on every iteration.
             // SAFETY: caller contract.
-            if unsafe { len_of(ctx, h) } <= i {
+            if unsafe { source.len(ctx) } <= i {
                 break;
             }
             // SAFETY: `i` in bounds; `size_of::<T>() == esz` by dispatch.
-            let v: T = unsafe { read_elem(ctx, h, i) };
+            let v: T = unsafe { source.read(ctx, i) };
             // SAFETY: callback contract (caller).
             let () = unsafe { call_value::<T, ()>(code, ctx, env, v, i as i32, indexed) };
             // SAFETY: caller contract.
@@ -1028,11 +1103,39 @@ pub unsafe fn map(
     indexed: bool,
 ) -> *mut u8 {
     // SAFETY: caller contract.
-    if unsafe { cb_blocked(ctx, h, code) } {
+    unsafe {
+        map_source(
+            ctx,
+            ElementSource::Dynamic(h),
+            code,
+            env,
+            elem_kind,
+            ret_kind,
+            ret_size,
+            pos_id,
+            indexed,
+        )
+    }
+}
+
+/// Shared dynamic-array and fixed-array `map` loop.
+unsafe fn map_source(
+    ctx: *mut Context,
+    source: ElementSource,
+    code: *const u8,
+    env: *const u8,
+    elem_kind: ElemKind,
+    ret_kind: ElemKind,
+    ret_size: usize,
+    pos_id: u32,
+    indexed: bool,
+) -> *mut u8 {
+    // SAFETY: caller contract.
+    if unsafe { source.cb_blocked(ctx, code) } {
         return std::ptr::null_mut();
     }
     // SAFETY: caller contract.
-    let esz = unsafe { (*ctx).array_elem_size(h) };
+    let esz = unsafe { source.elem_size(ctx) };
     // SAFETY: caller contract.
     let (Some(ea), Some(ra)) = (unsafe { abi_or_trap(ctx, elem_kind, esz) }, unsafe {
         abi_or_trap(ctx, ret_kind, ret_size)
@@ -1044,17 +1147,22 @@ pub unsafe fn map(
     if out.is_null() {
         return std::ptr::null_mut();
     }
+    // The result is runtime-owned until this call returns to generated
+    // code. Keep it live across every callback-triggered collection.
+    let mut root = out as usize;
+    // SAFETY: `root` stays live until the matching pop below.
+    unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
     // SAFETY: caller contract.
-    let n = unsafe { len_of(ctx, h) };
+    let n = unsafe { source.len(ctx) };
     with_abi!(ea, T, {
         with_abi!(ra, R, {
             for i in 0..n {
                 // SAFETY: caller contract.
-                if unsafe { len_of(ctx, h) } <= i {
+                if unsafe { source.len(ctx) } <= i {
                     break;
                 }
                 // SAFETY: `i` in bounds; widths match by dispatch.
-                let v: T = unsafe { read_elem(ctx, h, i) };
+                let v: T = unsafe { source.read(ctx, i) };
                 // SAFETY: callback contract (caller).
                 let r: R = unsafe { call_value::<T, R>(code, ctx, env, v, i as i32, indexed) };
                 // SAFETY: caller contract.
@@ -1069,6 +1177,8 @@ pub unsafe fn map(
             }
         })
     });
+    // SAFETY: balances the result root above.
+    unsafe { (*ctx).shadow_pop() };
     out
 }
 
@@ -1090,11 +1200,35 @@ pub unsafe fn filter(
     indexed: bool,
 ) -> *mut u8 {
     // SAFETY: caller contract.
-    if unsafe { cb_blocked(ctx, h, code) } {
+    unsafe {
+        filter_source(
+            ctx,
+            ElementSource::Dynamic(h),
+            code,
+            env,
+            kind,
+            pos_id,
+            indexed,
+        )
+    }
+}
+
+/// Shared dynamic-array and fixed-array `filter` loop.
+unsafe fn filter_source(
+    ctx: *mut Context,
+    source: ElementSource,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    pos_id: u32,
+    indexed: bool,
+) -> *mut u8 {
+    // SAFETY: caller contract.
+    if unsafe { source.cb_blocked(ctx, code) } {
         return std::ptr::null_mut();
     }
     // SAFETY: caller contract.
-    let esz = unsafe { (*ctx).array_elem_size(h) };
+    let esz = unsafe { source.elem_size(ctx) };
     // SAFETY: caller contract.
     let Some(abi) = (unsafe { abi_or_trap(ctx, kind, esz) }) else {
         return std::ptr::null_mut();
@@ -1104,16 +1238,21 @@ pub unsafe fn filter(
     if out.is_null() {
         return std::ptr::null_mut();
     }
+    // The result is runtime-owned until this call returns to generated
+    // code. Keep it live across every callback-triggered collection.
+    let mut root = out as usize;
+    // SAFETY: `root` stays live until the matching pop below.
+    unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
     // SAFETY: caller contract.
-    let n = unsafe { len_of(ctx, h) };
+    let n = unsafe { source.len(ctx) };
     with_abi!(abi, T, {
         for i in 0..n {
             // SAFETY: caller contract.
-            if unsafe { len_of(ctx, h) } <= i {
+            if unsafe { source.len(ctx) } <= i {
                 break;
             }
             // SAFETY: `i` in bounds; widths match by dispatch.
-            let v: T = unsafe { read_elem(ctx, h, i) };
+            let v: T = unsafe { source.read(ctx, i) };
             // SAFETY: callback contract (caller). A language boolean
             // returns as its low byte on both tiers.
             let keep: u8 = unsafe { call_value::<T, u8>(code, ctx, env, v, i as i32, indexed) };
@@ -1129,6 +1268,8 @@ pub unsafe fn filter(
             }
         }
     });
+    // SAFETY: balances the result root above.
+    unsafe { (*ctx).shadow_pop() };
     out
 }
 
@@ -1150,7 +1291,7 @@ enum ReduceDirection {
 /// `acc_size` bytes.
 unsafe fn reduce_direction(
     ctx: *mut Context,
-    h: *mut u8,
+    source: ElementSource,
     code: *const u8,
     env: *const u8,
     elem_kind: ElemKind,
@@ -1164,11 +1305,11 @@ unsafe fn reduce_direction(
         return;
     }
     // SAFETY: caller contract.
-    if unsafe { cb_blocked(ctx, h, code) } {
+    if unsafe { source.cb_blocked(ctx, code) } {
         return;
     }
     // SAFETY: caller contract.
-    let esz = unsafe { (*ctx).array_elem_size(h) };
+    let esz = unsafe { source.elem_size(ctx) };
     // SAFETY: caller contract.
     let (Some(ea), Some(aa)) = (unsafe { abi_or_trap(ctx, elem_kind, esz) }, unsafe {
         abi_or_trap(ctx, acc_kind, acc_size)
@@ -1176,7 +1317,7 @@ unsafe fn reduce_direction(
         return;
     };
     // SAFETY: caller contract.
-    let n = unsafe { len_of(ctx, h) };
+    let n = unsafe { source.len(ctx) };
     with_abi!(ea, T, {
         with_abi!(aa, A, {
             // SAFETY: `acc_ptr` readable for `acc_size == size_of::<A>()`.
@@ -1187,14 +1328,14 @@ unsafe fn reduce_direction(
                     ReduceDirection::Right => n - 1 - step,
                 };
                 // SAFETY: caller contract.
-                if unsafe { len_of(ctx, h) } <= i {
+                if unsafe { source.len(ctx) } <= i {
                     if matches!(direction, ReduceDirection::Left) {
                         break;
                     }
                     continue;
                 }
                 // SAFETY: `i` in bounds; widths match by dispatch.
-                let v: T = unsafe { read_elem(ctx, h, i) };
+                let v: T = unsafe { source.read(ctx, i) };
                 // SAFETY: callback contract (caller).
                 let r: A = unsafe { call_reduce(code, ctx, env, acc, v, i as i32, indexed) };
                 // SAFETY: caller contract.
@@ -1234,7 +1375,7 @@ pub unsafe fn reduce(
     unsafe {
         reduce_direction(
             ctx,
-            h,
+            ElementSource::Dynamic(h),
             code,
             env,
             elem_kind,
@@ -1268,7 +1409,7 @@ pub unsafe fn reduce_right(
     unsafe {
         reduce_direction(
             ctx,
-            h,
+            ElementSource::Dynamic(h),
             code,
             env,
             elem_kind,
@@ -1301,7 +1442,7 @@ enum SearchMode {
 /// `(ctx, env, T, i32) -> boolean`.
 unsafe fn search(
     ctx: *mut Context,
-    h: *mut u8,
+    source: ElementSource,
     code: *const u8,
     env: *const u8,
     kind: ElemKind,
@@ -1315,25 +1456,25 @@ unsafe fn search(
     };
     let trapped_result = if mode == SearchMode::FindIndex { -1 } else { 0 };
     // SAFETY: caller contract.
-    if unsafe { cb_blocked(ctx, h, code) } {
+    if unsafe { source.cb_blocked(ctx, code) } {
         return trapped_result;
     }
     // SAFETY: caller contract.
-    let esz = unsafe { (*ctx).array_elem_size(h) };
+    let esz = unsafe { source.elem_size(ctx) };
     // SAFETY: caller contract.
     let Some(abi) = (unsafe { abi_or_trap(ctx, kind, esz) }) else {
         return trapped_result;
     };
     // SAFETY: caller contract.
-    let n = unsafe { len_of(ctx, h) };
+    let n = unsafe { source.len(ctx) };
     with_abi!(abi, T, {
         for i in 0..n {
             // SAFETY: caller contract.
-            if unsafe { len_of(ctx, h) } <= i {
+            if unsafe { source.len(ctx) } <= i {
                 break;
             }
             // SAFETY: `i` in bounds; widths match by dispatch.
-            let v: T = unsafe { read_elem(ctx, h, i) };
+            let v: T = unsafe { source.read(ctx, i) };
             // SAFETY: callback contract (caller).
             let r: u8 = unsafe { call_value::<T, u8>(code, ctx, env, v, i as i32, indexed) };
             // SAFETY: caller contract.
@@ -1366,7 +1507,17 @@ pub unsafe fn some(
     indexed: bool,
 ) -> i32 {
     // SAFETY: forwarded contract.
-    unsafe { search(ctx, h, code, env, kind, SearchMode::Some, indexed) }
+    unsafe {
+        search(
+            ctx,
+            ElementSource::Dynamic(h),
+            code,
+            env,
+            kind,
+            SearchMode::Some,
+            indexed,
+        )
+    }
 }
 
 /// `every(f)`: 1 when every element satisfies `f` (short-circuits on
@@ -1384,7 +1535,17 @@ pub unsafe fn every(
     indexed: bool,
 ) -> i32 {
     // SAFETY: forwarded contract.
-    unsafe { search(ctx, h, code, env, kind, SearchMode::Every, indexed) }
+    unsafe {
+        search(
+            ctx,
+            ElementSource::Dynamic(h),
+            code,
+            env,
+            kind,
+            SearchMode::Every,
+            indexed,
+        )
+    }
 }
 
 /// `findIndex(f)`: the first satisfying index (short-circuits), or −1.
@@ -1401,35 +1562,20 @@ pub unsafe fn find_index(
     indexed: bool,
 ) -> i32 {
     // SAFETY: forwarded contract.
-    unsafe { search(ctx, h, code, env, kind, SearchMode::FindIndex, indexed) }
-}
-
-// ----- FixedArray callback operations (Q27) -----
-
-/// Reads element `i` from an in-place fixed buffer. The generated tier
-/// supplies its concrete element width separately and [`abi_or_trap`]
-/// proves that it matches `T` before this helper is reached.
-///
-/// # Safety
-///
-/// `data` is readable for `(i + 1) * size_of::<T>()` bytes.
-unsafe fn fixed_read<T>(data: *const u8, i: usize) -> T {
-    // SAFETY: caller contract.
     unsafe {
-        data.add(i * std::mem::size_of::<T>())
-            .cast::<T>()
-            .read_unaligned()
+        search(
+            ctx,
+            ElementSource::Dynamic(h),
+            code,
+            env,
+            kind,
+            SearchMode::FindIndex,
+            indexed,
+        )
     }
 }
 
-unsafe fn fixed_cb_blocked(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    code: *const u8,
-) -> bool {
-    code.is_null() || (data.is_null() && len != 0) || unsafe { (*ctx).trapped() }
-}
+// ----- FixedArray callback operations (Q27) -----
 
 /// Q27 `FixedArray.forEach`: direct iteration over the caller's
 /// fixed-length in-place storage.
@@ -1448,21 +1594,21 @@ pub unsafe fn fixed_for_each(
     kind: ElemKind,
     indexed: bool,
 ) {
-    if unsafe { fixed_cb_blocked(ctx, data, len, code) } {
-        return;
-    }
-    let Some(abi) = (unsafe { abi_or_trap(ctx, kind, elem_size) }) else {
-        return;
+    // SAFETY: caller contract.
+    unsafe {
+        for_each_source(
+            ctx,
+            ElementSource::Fixed {
+                data,
+                len,
+                elem_size,
+            },
+            code,
+            env,
+            kind,
+            indexed,
+        )
     };
-    with_abi!(abi, T, {
-        for i in 0..len {
-            let value: T = unsafe { fixed_read(data, i) };
-            let (): () = unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
-            if unsafe { (*ctx).trapped() } {
-                break;
-            }
-        }
-    });
 }
 
 /// Q27 `FixedArray.map`: a fresh dynamic array of callback results.
@@ -1484,38 +1630,24 @@ pub unsafe fn fixed_map(
     pos_id: u32,
     indexed: bool,
 ) -> *mut u8 {
-    if unsafe { fixed_cb_blocked(ctx, data, len, code) } {
-        return std::ptr::null_mut();
+    // SAFETY: caller contract.
+    unsafe {
+        map_source(
+            ctx,
+            ElementSource::Fixed {
+                data,
+                len,
+                elem_size,
+            },
+            code,
+            env,
+            elem_kind,
+            ret_kind,
+            ret_size,
+            pos_id,
+            indexed,
+        )
     }
-    let (Some(ea), Some(ra)) = (unsafe { abi_or_trap(ctx, elem_kind, elem_size) }, unsafe {
-        abi_or_trap(ctx, ret_kind, ret_size)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let out = unsafe { &mut *ctx }.array_new(ret_size, pos_id);
-    if out.is_null() {
-        return out;
-    }
-    // The result is runtime-owned until this call returns to generated
-    // code; keep it live if a callback explicitly collects.
-    let mut root = out as usize;
-    unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
-    with_abi!(ea, T, {
-        with_abi!(ra, R, {
-            for i in 0..len {
-                let value: T = unsafe { fixed_read(data, i) };
-                let result: R = unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
-                if unsafe { (*ctx).trapped() } {
-                    break;
-                }
-                if unsafe { (*ctx).array_push(out, (&result as *const R).cast(), pos_id) } < 0 {
-                    break;
-                }
-            }
-        })
-    });
-    unsafe { (*ctx).shadow_pop() };
-    out
 }
 
 /// Q27 `FixedArray.filter`: selected elements in a fresh dynamic array.
@@ -1534,77 +1666,22 @@ pub unsafe fn fixed_filter(
     pos_id: u32,
     indexed: bool,
 ) -> *mut u8 {
-    if unsafe { fixed_cb_blocked(ctx, data, len, code) } {
-        return std::ptr::null_mut();
+    // SAFETY: caller contract.
+    unsafe {
+        filter_source(
+            ctx,
+            ElementSource::Fixed {
+                data,
+                len,
+                elem_size,
+            },
+            code,
+            env,
+            kind,
+            pos_id,
+            indexed,
+        )
     }
-    let Some(abi) = (unsafe { abi_or_trap(ctx, kind, elem_size) }) else {
-        return std::ptr::null_mut();
-    };
-    let out = unsafe { &mut *ctx }.array_new(elem_size, pos_id);
-    if out.is_null() {
-        return out;
-    }
-    let mut root = out as usize;
-    unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
-    with_abi!(abi, T, {
-        for i in 0..len {
-            let value: T = unsafe { fixed_read(data, i) };
-            let keep: u8 = unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
-            if unsafe { (*ctx).trapped() } {
-                break;
-            }
-            if keep != 0
-                && unsafe { (*ctx).array_push(out, (&value as *const T).cast(), pos_id) } < 0
-            {
-                break;
-            }
-        }
-    });
-    unsafe { (*ctx).shadow_pop() };
-    out
-}
-
-unsafe fn fixed_reduce_direction(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    elem_size: usize,
-    code: *const u8,
-    env: *const u8,
-    elem_kind: ElemKind,
-    acc_kind: ElemKind,
-    acc_size: usize,
-    acc_ptr: *mut u8,
-    direction: ReduceDirection,
-    indexed: bool,
-) {
-    if acc_ptr.is_null() || unsafe { fixed_cb_blocked(ctx, data, len, code) } {
-        return;
-    }
-    let (Some(ea), Some(aa)) = (unsafe { abi_or_trap(ctx, elem_kind, elem_size) }, unsafe {
-        abi_or_trap(ctx, acc_kind, acc_size)
-    }) else {
-        return;
-    };
-    with_abi!(ea, T, {
-        with_abi!(aa, A, {
-            let mut acc: A = unsafe { acc_ptr.cast::<A>().read_unaligned() };
-            for step in 0..len {
-                let i = match direction {
-                    ReduceDirection::Left => step,
-                    ReduceDirection::Right => len - 1 - step,
-                };
-                let value: T = unsafe { fixed_read(data, i) };
-                let result: A =
-                    unsafe { call_reduce(code, ctx, env, acc, value, i as i32, indexed) };
-                if unsafe { (*ctx).trapped() } {
-                    break;
-                }
-                acc = result;
-            }
-            unsafe { acc_ptr.cast::<A>().write_unaligned(acc) };
-        })
-    });
 }
 
 /// Q27 `FixedArray.reduce`.
@@ -1627,11 +1704,13 @@ pub unsafe fn fixed_reduce(
     indexed: bool,
 ) {
     unsafe {
-        fixed_reduce_direction(
+        reduce_direction(
             ctx,
-            data,
-            len,
-            elem_size,
+            ElementSource::Fixed {
+                data,
+                len,
+                elem_size,
+            },
             code,
             env,
             elem_kind,
@@ -1663,11 +1742,13 @@ pub unsafe fn fixed_reduce_right(
     indexed: bool,
 ) {
     unsafe {
-        fixed_reduce_direction(
+        reduce_direction(
             ctx,
-            data,
-            len,
-            elem_size,
+            ElementSource::Fixed {
+                data,
+                len,
+                elem_size,
+            },
             code,
             env,
             elem_kind,
@@ -1678,47 +1759,6 @@ pub unsafe fn fixed_reduce_right(
             indexed,
         )
     };
-}
-
-unsafe fn fixed_search(
-    ctx: *mut Context,
-    data: *const u8,
-    len: usize,
-    elem_size: usize,
-    code: *const u8,
-    env: *const u8,
-    kind: ElemKind,
-    mode: SearchMode,
-    indexed: bool,
-) -> i32 {
-    let miss = match mode {
-        SearchMode::Some => 0,
-        SearchMode::Every => 1,
-        SearchMode::FindIndex => -1,
-    };
-    let trapped_result = if mode == SearchMode::FindIndex { -1 } else { 0 };
-    if unsafe { fixed_cb_blocked(ctx, data, len, code) } {
-        return trapped_result;
-    }
-    let Some(abi) = (unsafe { abi_or_trap(ctx, kind, elem_size) }) else {
-        return trapped_result;
-    };
-    with_abi!(abi, T, {
-        for i in 0..len {
-            let value: T = unsafe { fixed_read(data, i) };
-            let result: u8 = unsafe { call_value(code, ctx, env, value, i as i32, indexed) };
-            if unsafe { (*ctx).trapped() } {
-                return trapped_result;
-            }
-            match mode {
-                SearchMode::Some if result != 0 => return 1,
-                SearchMode::Every if result == 0 => return 0,
-                SearchMode::FindIndex if result != 0 => return i as i32,
-                _ => {}
-            }
-        }
-    });
-    miss
 }
 
 /// Q27 `FixedArray.some`.
@@ -1737,11 +1777,13 @@ pub unsafe fn fixed_some(
     indexed: bool,
 ) -> i32 {
     unsafe {
-        fixed_search(
+        search(
             ctx,
-            data,
-            len,
-            elem_size,
+            ElementSource::Fixed {
+                data,
+                len,
+                elem_size,
+            },
             code,
             env,
             kind,
@@ -1767,11 +1809,13 @@ pub unsafe fn fixed_every(
     indexed: bool,
 ) -> i32 {
     unsafe {
-        fixed_search(
+        search(
             ctx,
-            data,
-            len,
-            elem_size,
+            ElementSource::Fixed {
+                data,
+                len,
+                elem_size,
+            },
             code,
             env,
             kind,
@@ -1797,11 +1841,13 @@ pub unsafe fn fixed_find_index(
     indexed: bool,
 ) -> i32 {
     unsafe {
-        fixed_search(
+        search(
             ctx,
-            data,
-            len,
-            elem_size,
+            ElementSource::Fixed {
+                data,
+                len,
+                elem_size,
+            },
             code,
             env,
             kind,

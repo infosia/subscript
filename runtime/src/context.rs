@@ -1887,6 +1887,20 @@ impl Context {
             .retain(|_, handle| *handle != payload);
     }
 
+    /// Releases the Context-owned state for one live classed allocation.
+    ///
+    /// The caller must keep the allocation header live until this function
+    /// returns. Map and Set release work reads that header and recursively
+    /// retires its separate storage.
+    fn release_class_state(&mut self, class_id: u32, payload: usize) {
+        match class_id {
+            CLASS_MAP | CLASS_SET => self.clear_container_on_delete(payload),
+            CLASS_STRING => self.clear_string_interns_on_delete(payload),
+            CLASS_REGEX => self.regex.remove_value(payload),
+            _ => {}
+        }
+    }
+
     /// Ship-tier release: a live classed block goes to its class's free
     /// list; a large record is freed and dropped. Map/Set storage is
     /// cleared after the same membership/header read that release already
@@ -1904,15 +1918,7 @@ impl Context {
                 }
                 (block.add(8) as *const u32).read()
             };
-            if matches!(class_id, CLASS_MAP | CLASS_SET) {
-                self.clear_container_on_delete(payload);
-            }
-            if class_id == CLASS_STRING {
-                self.clear_string_interns_on_delete(payload);
-            }
-            if class_id == CLASS_REGEX {
-                self.regex.remove_value(payload);
-            }
+            self.release_class_state(class_id, payload);
             // SAFETY: the live-grid check above proves `block` is still
             // owned. Container clearing only retires its separate child
             // allocations, so the state word and payload free-list link
@@ -1928,15 +1934,7 @@ impl Context {
             // SAFETY: removing the exact live record proves `a.base`
             // heads an owned allocation whose class-id word is readable.
             let class_id = unsafe { (a.base.add(8) as *const u32).read() };
-            if matches!(class_id, CLASS_MAP | CLASS_SET) {
-                self.clear_container_on_delete(payload);
-            }
-            if class_id == CLASS_STRING {
-                self.clear_string_interns_on_delete(payload);
-            }
-            if class_id == CLASS_REGEX {
-                self.regex.remove_value(payload);
-            }
+            self.release_class_state(class_id, payload);
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `arena_alloc_large`; the record was just removed so this
             // frees it exactly once. Container clearing only retired
@@ -2086,29 +2084,13 @@ impl Context {
         };
         // SAFETY: exact live-map membership proves the header is readable.
         let class_id = unsafe { (allocation.base.add(8) as *const u32).read() };
-        if matches!(class_id, CLASS_MAP | CLASS_SET) {
-            // End the allocation-table borrow before clearing: backing
-            // storage is retired through recursive `delete` calls.
-            self.clear_container_on_delete(payload);
-        }
-        if class_id == CLASS_STRING {
-            self.clear_string_interns_on_delete(payload);
-        }
+        // End the allocation-table borrow before release work. Map and Set
+        // storage retires through recursive `delete` calls.
+        self.release_class_state(class_id, payload);
         let released_class_id = self.dispose_dev_allocation(payload);
-        let Some(released_class_id) = released_class_id else {
-            self.trap(
-                TrapKind::Internal,
-                "Map/Set header disappeared while deleting its storage",
-                pos_id,
-            );
-            return;
-        };
-        // Both class IDs read the same live header, and
-        // clearing Map/Set child storage does not mutate the header.
-        debug_assert_eq!(released_class_id, class_id);
-        if class_id == CLASS_REGEX {
-            self.regex.remove_value(payload);
-        }
+        // Exact membership above proves disposal succeeds. Release work
+        // does not mutate the allocation record or its class id.
+        debug_assert_eq!(released_class_id, Some(class_id));
     }
 
     /// True when `payload` is a live allocation (test/inspection aid).
@@ -4506,6 +4488,101 @@ mod tests {
                 stats.container_delete_entries.load(SeqCst),
                 container_entries_before + 1
             );
+        }
+    }
+
+    #[test]
+    fn class_release_state_is_identical_on_all_three_free_paths() {
+        use std::sync::atomic::Ordering::SeqCst;
+
+        #[derive(Clone, Copy, Debug)]
+        enum FreePath {
+            Dev,
+            ArenaChunk,
+            ArenaLarge,
+        }
+
+        const INTERN_BYTES: &[u8] = b"release-table-test";
+        let classes = [CLASS_MAP, CLASS_SET, CLASS_STRING, CLASS_REGEX];
+        let paths = [FreePath::Dev, FreePath::ArenaChunk, FreePath::ArenaLarge];
+
+        for path in paths {
+            for class_id in classes {
+                let mut ctx = match path {
+                    FreePath::Dev => Context::new(),
+                    FreePath::ArenaChunk | FreePath::ArenaLarge => Context::new_releasing(),
+                };
+                let payload_size = match path {
+                    FreePath::ArenaLarge => LARGEST_BLOCK + 1,
+                    FreePath::Dev | FreePath::ArenaChunk => {
+                        std::mem::size_of::<crate::assocops::AssocHeader>()
+                    }
+                };
+                let payload = ctx.alloc(payload_size, class_id, 0);
+                assert!(!payload.is_null(), "{path:?} class {class_id}");
+
+                let stats = ctx.test_stats();
+                let container_entries_before = stats.container_delete_entries.load(SeqCst);
+                match class_id {
+                    CLASS_STRING => {
+                        ctx.interned.insert(
+                            (INTERN_BYTES.as_ptr() as usize, INTERN_BYTES.len()),
+                            payload as usize,
+                        );
+                        ctx.astral_code_points.insert('x' as u32, payload as usize);
+                    }
+                    CLASS_REGEX => {
+                        let pattern = ctx.alloc_str(b"a", 0);
+                        let flags = ctx.alloc_str(b"", 0);
+                        let registered = crate::regexops::new(&mut ctx, pattern, flags, 0);
+                        assert!(!registered.is_null(), "{path:?}");
+                        ctx.regex_store()
+                            .rekey_value_for_test(registered as usize, payload as usize);
+                        ctx.delete(registered as usize, 0);
+                        assert!(
+                            ctx.regex_store()
+                                .value_handles()
+                                .contains(&(payload as usize)),
+                            "{path:?}"
+                        );
+                    }
+                    CLASS_MAP | CLASS_SET => {}
+                    _ => unreachable!(),
+                }
+
+                ctx.delete(payload as usize, 0);
+
+                assert!(!ctx.is_live(payload as usize), "{path:?} class {class_id}");
+                assert!(!ctx.trapped(), "{path:?} class {class_id}");
+                match class_id {
+                    CLASS_MAP | CLASS_SET => assert_eq!(
+                        stats.container_delete_entries.load(SeqCst),
+                        container_entries_before + 1,
+                        "{path:?} class {class_id}"
+                    ),
+                    CLASS_STRING => {
+                        assert!(
+                            ctx.interned
+                                .values()
+                                .all(|handle| *handle != payload as usize),
+                            "{path:?}"
+                        );
+                        assert!(
+                            ctx.astral_code_points
+                                .values()
+                                .all(|handle| *handle != payload as usize),
+                            "{path:?}"
+                        );
+                    }
+                    CLASS_REGEX => assert!(
+                        !ctx.regex_store()
+                            .value_handles()
+                            .contains(&(payload as usize)),
+                        "{path:?}"
+                    ),
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 
