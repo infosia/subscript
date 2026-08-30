@@ -142,131 +142,36 @@ fn walk_lets<'h>(stmts: &'h [hir::Stmt], out: &mut Vec<(&'h Type, &'h Pos)>) {
     for stmt in stmts {
         match stmt {
             hir::Stmt::Let { ty, pos, .. } => out.push((ty, pos)),
-            hir::Stmt::If { then, els, .. } => {
-                walk_lets(then, out);
-                if let Some(els) = els {
-                    walk_lets(els, out);
-                }
-            }
-            hir::Stmt::While { body, .. } => walk_lets(body, out),
-            hir::Stmt::For { init, body, .. } => {
-                if let Some(init) = init {
-                    walk_lets(std::slice::from_ref(init), out);
-                }
-                walk_lets(body, out);
-            }
-            hir::Stmt::ForOf { ty, body, pos, .. } => {
-                out.push((ty, pos));
-                walk_lets(body, out);
-            }
-            hir::Stmt::Switch { cases, .. } => {
-                for case in cases {
-                    walk_lets(&case.body, out);
-                }
-            }
-            hir::Stmt::Block(body) => walk_lets(body, out),
+            hir::Stmt::ForOf { ty, pos, .. } => out.push((ty, pos)),
             _ => {}
+        }
+        for child in stmt.children() {
+            if let hir::HirChild::Stmt(stmt) = child {
+                walk_lets(std::slice::from_ref(stmt), out);
+            }
         }
     }
 }
 
 fn count_async_calls_expr(expr: &hir::Expr) -> u64 {
-    use hir::ExprKind as K;
-    match &expr.kind {
-        K::AsyncCall { callee, args } => {
-            1 + callee.receiver().map_or(0, count_async_calls_expr)
-                + args.iter().map(count_async_calls_expr).sum::<u64>()
-        }
-        K::Unary { operand, .. } | K::Cast(operand) => count_async_calls_expr(operand),
-        K::Binary { left, right, .. }
-        | K::Assign {
-            target: left,
-            value: right,
-            ..
-        } => count_async_calls_expr(left) + count_async_calls_expr(right),
-        K::Call { callee, args } => {
-            let callee = match callee {
-                hir::Callee::Value(value) => count_async_calls_expr(value),
-                hir::Callee::Method { recv, .. } => count_async_calls_expr(recv),
-                _ => 0,
-            };
-            callee + args.iter().map(count_async_calls_expr).sum::<u64>()
-        }
-        K::New { args, .. } => args.iter().map(count_async_calls_expr).sum(),
-        K::DescriptorLit { fields, .. } => {
-            fields.iter().flatten().map(count_async_calls_expr).sum()
-        }
-        K::Field { obj, .. } | K::JsonResultValue(obj) | K::Length(obj) => {
-            count_async_calls_expr(obj)
-        }
-        K::Index { obj, index, .. } => count_async_calls_expr(obj) + count_async_calls_expr(index),
-        K::ArrayLit(elems) => elems.iter().map(count_async_calls_expr).sum(),
-        K::ArraySpreadLit(elems) => elems
-            .iter()
-            .map(|elem| count_async_calls_expr(&elem.expr))
-            .sum(),
-        K::Template(parts) => parts
-            .iter()
-            .map(|part| match part {
-                hir::TplPart::Expr(value) => count_async_calls_expr(value),
-                _ => 0,
+    u64::from(matches!(expr.kind, hir::ExprKind::AsyncCall { .. }))
+        + expr
+            .children()
+            .into_iter()
+            .map(|child| match child {
+                hir::HirChild::Expr(expr) => count_async_calls_expr(expr),
+                hir::HirChild::Stmt(stmt) => count_async_calls(std::slice::from_ref(stmt)),
             })
-            .sum(),
-        K::Cond { cond, then, els } => {
-            count_async_calls_expr(cond)
-                + count_async_calls_expr(then)
-                + count_async_calls_expr(els)
-        }
-        K::Yield(value) => value.as_deref().map_or(0, count_async_calls_expr),
-        K::Lambda { body, .. } => count_async_calls(body),
-        _ => 0,
-    }
+            .sum::<u64>()
 }
 
 fn count_async_calls(stmts: &[hir::Stmt]) -> u64 {
     stmts
         .iter()
-        .map(|stmt| match stmt {
-            hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => count_async_calls_expr(init),
-            hir::Stmt::Return { value, .. } => value.as_ref().map_or(0, count_async_calls_expr),
-            hir::Stmt::If {
-                cond, then, els, ..
-            } => {
-                count_async_calls_expr(cond)
-                    + count_async_calls(then)
-                    + els.as_deref().map_or(0, count_async_calls)
-            }
-            hir::Stmt::While { cond, body, .. } => {
-                count_async_calls_expr(cond) + count_async_calls(body)
-            }
-            hir::Stmt::For {
-                init,
-                cond,
-                step,
-                body,
-                ..
-            } => {
-                init.as_deref()
-                    .map_or(0, |stmt| count_async_calls(std::slice::from_ref(stmt)))
-                    + cond.as_ref().map_or(0, count_async_calls_expr)
-                    + step.as_ref().map_or(0, count_async_calls_expr)
-                    + count_async_calls(body)
-            }
-            hir::Stmt::ForOf { subject, body, .. } => {
-                count_async_calls_expr(subject) + count_async_calls(body)
-            }
-            hir::Stmt::Switch { disc, cases, .. } => {
-                count_async_calls_expr(disc)
-                    + cases
-                        .iter()
-                        .map(|case| {
-                            case.test.as_ref().map_or(0, count_async_calls_expr)
-                                + count_async_calls(&case.body)
-                        })
-                        .sum::<u64>()
-            }
-            hir::Stmt::Block(body) => count_async_calls(body),
-            _ => 0,
+        .flat_map(hir::Stmt::children)
+        .map(|child| match child {
+            hir::HirChild::Expr(expr) => count_async_calls_expr(expr),
+            hir::HirChild::Stmt(stmt) => count_async_calls(std::slice::from_ref(stmt)),
         })
         .sum()
 }
@@ -623,156 +528,28 @@ impl<'a> Validator<'a> {
     }
 
     fn validate_closures_expr(&mut self, expr: &hir::Expr) {
-        use hir::ExprKind as K;
-
-        match &expr.kind {
-            K::Unary { operand, .. } | K::Cast(operand) | K::Length(operand) => {
-                self.validate_closures_expr(operand);
-            }
-            K::Binary { left, right, .. } => {
-                self.validate_closures_expr(left);
-                self.validate_closures_expr(right);
-            }
-            K::Assign { target, value, .. } => {
-                self.validate_closures_expr(target);
-                self.validate_closures_expr(value);
-            }
-            K::Call { callee, args } => {
-                match callee {
-                    hir::Callee::Value(value) => self.validate_closures_expr(value),
-                    hir::Callee::Method { recv, .. } => {
-                        self.validate_closures_expr(recv);
-                    }
-                    _ => {}
-                }
-                for arg in args {
-                    self.validate_closures_expr(arg);
+        if let hir::ExprKind::Lambda { captures, .. } = &expr.kind {
+            self.closure_layout(captures, &expr.pos);
+        }
+        for child in expr.children() {
+            match child {
+                hir::HirChild::Expr(expr) => self.validate_closures_expr(expr),
+                hir::HirChild::Stmt(stmt) => {
+                    self.validate_closures_stmts(std::slice::from_ref(stmt));
                 }
             }
-            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
-                if let Some(receiver) = callee.receiver() {
-                    self.validate_closures_expr(receiver);
-                }
-                for arg in args {
-                    self.validate_closures_expr(arg);
-                }
-            }
-            K::AsyncHandleAwait(handle) | K::AsyncHandleTransfer { value: handle, .. } => {
-                self.validate_closures_expr(handle);
-            }
-            K::New { args, .. } | K::ArrayLit(args) => {
-                for arg in args {
-                    self.validate_closures_expr(arg);
-                }
-            }
-            K::DescriptorLit { fields, .. } => {
-                for value in fields.iter().flatten() {
-                    self.validate_closures_expr(value);
-                }
-            }
-            K::ArraySpreadLit(elems) => {
-                for elem in elems {
-                    self.validate_closures_expr(&elem.expr);
-                }
-            }
-            K::Field { obj, .. } | K::JsonResultValue(obj) => {
-                self.validate_closures_expr(obj);
-            }
-            K::Index { obj, index, .. } => {
-                self.validate_closures_expr(obj);
-                self.validate_closures_expr(index);
-            }
-            K::Template(parts) => {
-                for part in parts {
-                    if let hir::TplPart::Expr(value) = part {
-                        self.validate_closures_expr(value);
-                    }
-                }
-            }
-            K::Lambda { body, captures, .. } => {
-                self.closure_layout(captures, &expr.pos);
-                self.validate_closures_stmts(body);
-            }
-            K::Yield(Some(value)) => self.validate_closures_expr(value),
-            K::Cond { cond, then, els } => {
-                self.validate_closures_expr(cond);
-                self.validate_closures_expr(then);
-                self.validate_closures_expr(els);
-            }
-            K::Int(_)
-            | K::Float(_)
-            | K::Bool(_)
-            | K::Str(_)
-            | K::Null
-            | K::This
-            | K::Local(_)
-            | K::Global(_)
-            | K::FuncRef(_)
-            | K::EnumMember { .. }
-            | K::Zero
-            | K::RawNew { .. }
-            | K::AsyncSuspend
-            | K::Yield(None) => {}
         }
     }
 
     fn validate_closures_stmts(&mut self, stmts: &[hir::Stmt]) {
         for stmt in stmts {
-            match stmt {
-                hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => {
-                    self.validate_closures_expr(init);
-                }
-                hir::Stmt::Return { value, .. } => {
-                    if let Some(value) = value {
-                        self.validate_closures_expr(value);
+            for child in stmt.children() {
+                match child {
+                    hir::HirChild::Expr(expr) => self.validate_closures_expr(expr),
+                    hir::HirChild::Stmt(stmt) => {
+                        self.validate_closures_stmts(std::slice::from_ref(stmt));
                     }
                 }
-                hir::Stmt::If {
-                    cond, then, els, ..
-                } => {
-                    self.validate_closures_expr(cond);
-                    self.validate_closures_stmts(then);
-                    if let Some(els) = els {
-                        self.validate_closures_stmts(els);
-                    }
-                }
-                hir::Stmt::While { cond, body, .. } => {
-                    self.validate_closures_expr(cond);
-                    self.validate_closures_stmts(body);
-                }
-                hir::Stmt::For {
-                    init,
-                    cond,
-                    step,
-                    body,
-                    ..
-                } => {
-                    if let Some(init) = init {
-                        self.validate_closures_stmts(std::slice::from_ref(init));
-                    }
-                    if let Some(cond) = cond {
-                        self.validate_closures_expr(cond);
-                    }
-                    if let Some(step) = step {
-                        self.validate_closures_expr(step);
-                    }
-                    self.validate_closures_stmts(body);
-                }
-                hir::Stmt::ForOf { subject, body, .. } => {
-                    self.validate_closures_expr(subject);
-                    self.validate_closures_stmts(body);
-                }
-                hir::Stmt::Switch { disc, cases, .. } => {
-                    self.validate_closures_expr(disc);
-                    for case in cases {
-                        if let Some(test) = &case.test {
-                            self.validate_closures_expr(test);
-                        }
-                        self.validate_closures_stmts(&case.body);
-                    }
-                }
-                hir::Stmt::Block(body) => self.validate_closures_stmts(body),
-                hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
             }
         }
     }
@@ -820,29 +597,41 @@ impl<'a> Validator<'a> {
         }
 
         match &expr.kind {
-            K::Unary { operand, .. } | K::Cast(operand) | K::Length(operand) => {
-                self.validate_expr_frame(operand, false, frame);
-            }
-            K::Binary { left, right, .. } => {
-                self.validate_expr_frame(left, false, frame);
-                self.validate_expr_frame(right, false, frame);
-            }
-            K::Assign { target, value, .. } => {
-                self.validate_expr_frame(target, false, frame);
-                self.validate_expr_frame(value, false, frame);
-            }
-            K::Call { callee, args } => {
-                match callee {
-                    hir::Callee::Value(value) => {
-                        self.validate_expr_frame(value, false, frame);
-                    }
-                    hir::Callee::Method { recv, .. } => {
-                        self.validate_expr_frame(recv, false, frame);
-                    }
-                    _ => {}
+            K::Lambda {
+                params,
+                body,
+                captures,
+                ..
+            } => {
+                if let Some(layout) = self.closure_storage_layout(captures) {
+                    self.add_frame_slot(frame, layout, "closure environment storage", &expr.pos);
                 }
+                self.validate_plain_frame(params, body, &expr.pos, false);
+                return;
+            }
+            K::AsyncHandleTransfer { value, .. } => {
+                self.validate_expr_frame(value, destination, frame);
+                return;
+            }
+            K::Cond { cond, then, els } => {
+                self.validate_expr_frame(cond, false, frame);
+                self.validate_expr_frame(then, destination, frame);
+                self.validate_expr_frame(els, destination, frame);
+                return;
+            }
+            _ => {}
+        }
+
+        for child in expr.children() {
+            match child {
+                hir::HirChild::Expr(child) => self.validate_expr_frame(child, false, frame),
+                hir::HirChild::Stmt(_) => unreachable!("lambda children returned after handling"),
+            }
+        }
+
+        match &expr.kind {
+            K::Call { args, .. } => {
                 for arg in args {
-                    self.validate_expr_frame(arg, false, frame);
                     if self.is_aggregate(&arg.ty) {
                         self.add_type_slot(
                             frame,
@@ -863,12 +652,8 @@ impl<'a> Validator<'a> {
                     &expr.pos,
                 );
             }
-            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
-                if let Some(receiver) = callee.receiver() {
-                    self.validate_expr_frame(receiver, false, frame);
-                }
+            K::AsyncCall { args, .. } | K::AsyncHandleCreate { args, .. } => {
                 for arg in args {
-                    self.validate_expr_frame(arg, false, frame);
                     if self.is_aggregate(&arg.ty) {
                         self.add_type_slot(
                             frame,
@@ -885,8 +670,7 @@ impl<'a> Validator<'a> {
                     &expr.pos,
                 );
             }
-            K::AsyncHandleAwait(handle) => {
-                self.validate_expr_frame(handle, false, frame);
+            K::AsyncHandleAwait(_) => {
                 self.add_frame_slot(
                     frame,
                     Layout { size: 16, align: 8 },
@@ -894,12 +678,8 @@ impl<'a> Validator<'a> {
                     &expr.pos,
                 );
             }
-            K::AsyncHandleTransfer { value, .. } => {
-                self.validate_expr_frame(value, destination, frame);
-            }
             K::New { args, .. } => {
                 for arg in args {
-                    self.validate_expr_frame(arg, false, frame);
                     if self.is_aggregate(&arg.ty) {
                         self.add_type_slot(
                             frame,
@@ -912,7 +692,6 @@ impl<'a> Validator<'a> {
             }
             K::DescriptorLit { fields, .. } => {
                 for value in fields.iter().flatten() {
-                    self.validate_expr_frame(value, false, frame);
                     if self.is_aggregate(&value.ty) {
                         self.add_type_slot(
                             frame,
@@ -923,16 +702,8 @@ impl<'a> Validator<'a> {
                     }
                 }
             }
-            K::Field { obj, .. } | K::JsonResultValue(obj) => {
-                self.validate_expr_frame(obj, false, frame);
-            }
-            K::Index { obj, index, .. } => {
-                self.validate_expr_frame(obj, false, frame);
-                self.validate_expr_frame(index, false, frame);
-            }
             K::ArrayLit(elems) => {
                 for elem in elems {
-                    self.validate_expr_frame(elem, false, frame);
                     if matches!(expr.ty, Type::Array(_)) && !self.is_aggregate(&elem.ty) {
                         self.add_frame_slot(
                             frame,
@@ -945,7 +716,6 @@ impl<'a> Validator<'a> {
             }
             K::ArraySpreadLit(elems) => {
                 for elem in elems {
-                    self.validate_expr_frame(&elem.expr, false, frame);
                     self.add_frame_slot(
                         frame,
                         Layout { size: 8, align: 8 },
@@ -954,44 +724,7 @@ impl<'a> Validator<'a> {
                     );
                 }
             }
-            K::Template(parts) => {
-                for part in parts {
-                    if let hir::TplPart::Expr(value) = part {
-                        self.validate_expr_frame(value, false, frame);
-                    }
-                }
-            }
-            K::Lambda {
-                params,
-                body,
-                captures,
-                ..
-            } => {
-                if let Some(layout) = self.closure_storage_layout(captures) {
-                    self.add_frame_slot(frame, layout, "closure environment storage", &expr.pos);
-                }
-                self.validate_plain_frame(params, body, &expr.pos, false);
-            }
-            K::Yield(Some(value)) => self.validate_expr_frame(value, false, frame),
-            K::Cond { cond, then, els } => {
-                self.validate_expr_frame(cond, false, frame);
-                self.validate_expr_frame(then, destination, frame);
-                self.validate_expr_frame(els, destination, frame);
-            }
-            K::Int(_)
-            | K::Float(_)
-            | K::Bool(_)
-            | K::Str(_)
-            | K::Null
-            | K::This
-            | K::Local(_)
-            | K::Global(_)
-            | K::FuncRef(_)
-            | K::EnumMember { .. }
-            | K::Zero
-            | K::RawNew { .. }
-            | K::AsyncSuspend
-            | K::Yield(None) => {}
+            _ => {}
         }
     }
 
@@ -1010,69 +743,28 @@ impl<'a> Validator<'a> {
                     let destination = !generator && self.is_aggregate(ty);
                     self.validate_expr_frame(init, destination, frame);
                 }
-                hir::Stmt::Expr(expr) => self.validate_expr_frame(expr, false, frame),
-                hir::Stmt::Return { value, .. } => {
-                    if let Some(value) = value {
-                        self.validate_expr_frame(value, false, frame);
-                    }
-                }
-                hir::Stmt::If {
-                    cond, then, els, ..
-                } => {
-                    self.validate_expr_frame(cond, false, frame);
-                    self.validate_stmts_frame(then, frame, generator);
-                    if let Some(els) = els {
-                        self.validate_stmts_frame(els, frame, generator);
-                    }
-                }
-                hir::Stmt::While { cond, body, .. } => {
-                    self.validate_expr_frame(cond, false, frame);
-                    self.validate_stmts_frame(body, frame, generator);
-                }
-                hir::Stmt::For {
-                    init,
-                    cond,
-                    step,
-                    body,
-                    ..
-                } => {
-                    if let Some(init) = init {
-                        self.validate_stmts_frame(std::slice::from_ref(init), frame, generator);
-                    }
-                    if let Some(cond) = cond {
-                        self.validate_expr_frame(cond, false, frame);
-                    }
-                    if let Some(step) = step {
-                        self.validate_expr_frame(step, false, frame);
-                    }
-                    self.validate_stmts_frame(body, frame, generator);
-                }
                 hir::Stmt::ForOf {
-                    ty,
-                    subject,
-                    body,
-                    pos,
-                    ..
+                    ty, subject, pos, ..
                 } => {
                     if !generator && self.is_aggregate(ty) && !self.has_managed_interior(ty) {
                         self.add_type_slot(frame, ty, "`for…of` binding storage", pos);
                     }
                     self.validate_expr_frame(subject, false, frame);
-                    self.validate_stmts_frame(body, frame, generator);
                 }
-                hir::Stmt::Switch { disc, cases, .. } => {
-                    self.validate_expr_frame(disc, false, frame);
-                    for case in cases {
-                        if let Some(test) = &case.test {
-                            self.validate_expr_frame(test, false, frame);
-                        }
-                        self.validate_stmts_frame(&case.body, frame, generator);
+                _ => {}
+            }
+            for child in stmt.children() {
+                match child {
+                    hir::HirChild::Expr(expr)
+                        if !matches!(stmt, hir::Stmt::Let { .. } | hir::Stmt::ForOf { .. }) =>
+                    {
+                        self.validate_expr_frame(expr, false, frame);
+                    }
+                    hir::HirChild::Expr(_) => {}
+                    hir::HirChild::Stmt(stmt) => {
+                        self.validate_stmts_frame(std::slice::from_ref(stmt), frame, generator);
                     }
                 }
-                hir::Stmt::Block(body) => {
-                    self.validate_stmts_frame(body, frame, generator);
-                }
-                hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
             }
         }
     }

@@ -2301,7 +2301,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 other => return Err(internal(format!("cannot convert f16 to {other:?}"))),
             }));
         }
-        if source.is_integer() && target.is_integer() {
+        if (source.is_integer() || matches!(source, Type::Enum(_))) && target.is_integer() {
             let Repr::Scalar(source_repr) = self.ml.layouts.repr(source)? else {
                 return Err(internal("integer source has a non-scalar representation"));
             };

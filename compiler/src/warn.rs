@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use crate::hir::{self, AmbientFn, Callee, Expr, ExprKind, MapFn, SetFn, Stmt, TplPart};
+use crate::hir::{self, AmbientFn, Callee, Expr, ExprKind, MapFn, SetFn, Stmt};
 use crate::Pos;
 
 /// Stable code carried by every warning.
@@ -188,15 +188,6 @@ impl WarningChecker<'_> {
                         );
                     }
                 }
-                Stmt::If {
-                    cond, then, els, ..
-                } => {
-                    self.scan_w001_expr(cond, loop_depth, collect_mutes, AllocationSink::Use);
-                    self.analyze_w001_stmts(then, loop_depth, collect_mutes);
-                    if let Some(els) = els {
-                        self.analyze_w001_stmts(els, loop_depth, collect_mutes);
-                    }
-                }
                 Stmt::While { cond, body, .. } => {
                     self.scan_w001_expr(cond, loop_depth, collect_mutes, AllocationSink::Use);
                     self.analyze_w001_stmts(body, loop_depth + 1, collect_mutes);
@@ -227,6 +218,15 @@ impl WarningChecker<'_> {
                     self.scan_w001_expr(subject, loop_depth, collect_mutes, AllocationSink::Use);
                     self.analyze_w001_stmts(body, loop_depth + 1, collect_mutes);
                 }
+                Stmt::If {
+                    cond, then, els, ..
+                } => {
+                    self.scan_w001_expr(cond, loop_depth, collect_mutes, AllocationSink::Use);
+                    self.analyze_w001_stmts(then, loop_depth, collect_mutes);
+                    if let Some(els) = els {
+                        self.analyze_w001_stmts(els, loop_depth, collect_mutes);
+                    }
+                }
                 Stmt::Switch { disc, cases, .. } => {
                     self.scan_w001_expr(disc, loop_depth, collect_mutes, AllocationSink::Use);
                     for case in cases {
@@ -244,7 +244,23 @@ impl WarningChecker<'_> {
                 Stmt::Block(body) => {
                     self.analyze_w001_stmts(body, loop_depth, collect_mutes);
                 }
-                Stmt::Break(_) | Stmt::Continue(_) => {}
+                _ => {
+                    for child in stmt.children() {
+                        match child {
+                            hir::HirChild::Expr(expr) => self.scan_w001_expr(
+                                expr,
+                                loop_depth,
+                                collect_mutes,
+                                AllocationSink::Use,
+                            ),
+                            hir::HirChild::Stmt(stmt) => self.analyze_w001_stmts(
+                                std::slice::from_ref(stmt),
+                                loop_depth,
+                                collect_mutes,
+                            ),
+                        }
+                    }
+                }
             }
         }
     }
@@ -269,13 +285,6 @@ impl WarningChecker<'_> {
         }
 
         match &expr.kind {
-            ExprKind::Unary { operand, .. } => {
-                self.scan_w001_expr(operand, loop_depth, collect_mutes, AllocationSink::Use);
-            }
-            ExprKind::Binary { left, right, .. } => {
-                self.scan_w001_expr(left, loop_depth, collect_mutes, AllocationSink::Use);
-                self.scan_w001_expr(right, loop_depth, collect_mutes, AllocationSink::Use);
-            }
             ExprKind::Assign { target, value, .. } => {
                 self.scan_w001_expr(target, loop_depth, collect_mutes, AllocationSink::Use);
                 let value_sink = match target.kind {
@@ -286,9 +295,11 @@ impl WarningChecker<'_> {
                     _ => AllocationSink::Use,
                 };
                 self.scan_w001_expr(value, loop_depth, collect_mutes, value_sink);
+                return;
             }
             ExprKind::Cast(inner) => {
                 self.scan_w001_expr(inner, loop_depth, collect_mutes, sink);
+                return;
             }
             ExprKind::Call { callee, args } => {
                 match callee {
@@ -311,6 +322,7 @@ impl WarningChecker<'_> {
                 for arg in args {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, argument_sink);
                 }
+                return;
             }
             ExprKind::AsyncCall { callee, args }
             | ExprKind::AsyncHandleCreate { callee, args, .. } => {
@@ -325,34 +337,25 @@ impl WarningChecker<'_> {
                 for arg in args {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
-            }
-            ExprKind::AsyncHandleAwait(handle)
-            | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
-                self.scan_w001_expr(handle, loop_depth, collect_mutes, AllocationSink::Use);
+                return;
             }
             ExprKind::New { args, .. } => {
                 for arg in args {
                     self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
+                return;
             }
             ExprKind::DescriptorLit { fields, .. } => {
                 for value in fields.iter().flatten() {
                     self.scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
-            }
-            ExprKind::Field { obj, .. }
-            | ExprKind::JsonResultValue(obj)
-            | ExprKind::Length(obj) => {
-                self.scan_w001_expr(obj, loop_depth, collect_mutes, AllocationSink::Use);
-            }
-            ExprKind::Index { obj, index, .. } => {
-                self.scan_w001_expr(obj, loop_depth, collect_mutes, AllocationSink::Use);
-                self.scan_w001_expr(index, loop_depth, collect_mutes, AllocationSink::Use);
+                return;
             }
             ExprKind::ArrayLit(elems) => {
                 for elem in elems {
                     self.scan_w001_expr(elem, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
+                return;
             }
             ExprKind::ArraySpreadLit(elems) => {
                 for elem in elems {
@@ -363,38 +366,27 @@ impl WarningChecker<'_> {
                         AllocationSink::Escape,
                     );
                 }
+                return;
             }
-            ExprKind::Template(parts) => {
-                for part in parts {
-                    if let TplPart::Expr(expr) = part {
-                        self.scan_w001_expr(expr, loop_depth, collect_mutes, AllocationSink::Use);
-                    }
-                }
-            }
-            ExprKind::Lambda { .. } => {}
+            ExprKind::Lambda { .. } => return,
             ExprKind::Yield(value) => {
                 if let Some(value) = value {
                     self.scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
+                return;
             }
             ExprKind::Cond { cond, then, els } => {
                 self.scan_w001_expr(cond, loop_depth, collect_mutes, AllocationSink::Use);
                 self.scan_w001_expr(then, loop_depth, collect_mutes, sink);
                 self.scan_w001_expr(els, loop_depth, collect_mutes, sink);
+                return;
             }
-            ExprKind::Int(_)
-            | ExprKind::Float(_)
-            | ExprKind::Bool(_)
-            | ExprKind::Str(_)
-            | ExprKind::Null
-            | ExprKind::This
-            | ExprKind::Local(_)
-            | ExprKind::Global(_)
-            | ExprKind::FuncRef(_)
-            | ExprKind::EnumMember { .. }
-            | ExprKind::RawNew { .. }
-            | ExprKind::AsyncSuspend
-            | ExprKind::Zero => {}
+            _ => {}
+        }
+        for child in expr.children() {
+            if let hir::HirChild::Expr(child) = child {
+                self.scan_w001_expr(child, loop_depth, collect_mutes, AllocationSink::Use);
+            }
         }
     }
 
@@ -454,20 +446,6 @@ impl WarningChecker<'_> {
                         fresh.remove(name);
                     }
                 }
-                Stmt::Return { value, .. } => {
-                    if let Some(value) = value {
-                        self.scan_w003_expr(value, loop_depth, &fresh);
-                    }
-                }
-                Stmt::If {
-                    cond, then, els, ..
-                } => {
-                    self.scan_w003_expr(cond, loop_depth, &fresh);
-                    self.analyze_w003_stmts(then, loop_depth, &fresh);
-                    if let Some(els) = els {
-                        self.analyze_w003_stmts(els, loop_depth, &fresh);
-                    }
-                }
                 Stmt::While { cond, body, .. } => {
                     self.scan_w003_expr(cond, loop_depth, &fresh);
                     self.analyze_w003_stmts(body, loop_depth + 1, &fresh);
@@ -508,6 +486,15 @@ impl WarningChecker<'_> {
                     body_fresh.remove(name);
                     self.analyze_w003_stmts(body, loop_depth + 1, &body_fresh);
                 }
+                Stmt::If {
+                    cond, then, els, ..
+                } => {
+                    self.scan_w003_expr(cond, loop_depth, &fresh);
+                    self.analyze_w003_stmts(then, loop_depth, &fresh);
+                    if let Some(els) = els {
+                        self.analyze_w003_stmts(els, loop_depth, &fresh);
+                    }
+                }
                 Stmt::Switch { disc, cases, .. } => {
                     self.scan_w003_expr(disc, loop_depth, &fresh);
                     for case in cases {
@@ -518,7 +505,20 @@ impl WarningChecker<'_> {
                     }
                 }
                 Stmt::Block(body) => self.analyze_w003_stmts(body, loop_depth, &fresh),
-                Stmt::Break(_) | Stmt::Continue(_) => {}
+                _ => {
+                    for child in stmt.children() {
+                        match child {
+                            hir::HirChild::Expr(expr) => {
+                                self.scan_w003_expr(expr, loop_depth, &fresh);
+                            }
+                            hir::HirChild::Stmt(stmt) => self.analyze_w003_stmts(
+                                std::slice::from_ref(stmt),
+                                loop_depth,
+                                &fresh,
+                            ),
+                        }
+                    }
+                }
             }
         }
     }
@@ -541,99 +541,13 @@ impl WarningChecker<'_> {
             ));
         }
 
-        match &expr.kind {
-            ExprKind::Unary { operand, .. } | ExprKind::Cast(operand) => {
-                self.scan_w003_expr(operand, loop_depth, fresh);
+        if matches!(expr.kind, ExprKind::Lambda { .. }) {
+            return;
+        }
+        for child in expr.children() {
+            if let hir::HirChild::Expr(child) = child {
+                self.scan_w003_expr(child, loop_depth, fresh);
             }
-            ExprKind::Binary { left, right, .. } => {
-                self.scan_w003_expr(left, loop_depth, fresh);
-                self.scan_w003_expr(right, loop_depth, fresh);
-            }
-            ExprKind::Assign { target, value, .. } => {
-                self.scan_w003_expr(target, loop_depth, fresh);
-                self.scan_w003_expr(value, loop_depth, fresh);
-            }
-            ExprKind::Call { callee, args } => {
-                match callee {
-                    Callee::Value(value) => self.scan_w003_expr(value, loop_depth, fresh),
-                    Callee::Method { recv, .. } => self.scan_w003_expr(recv, loop_depth, fresh),
-                    _ => {}
-                }
-                for arg in args {
-                    self.scan_w003_expr(arg, loop_depth, fresh);
-                }
-            }
-            ExprKind::AsyncCall { callee, args }
-            | ExprKind::AsyncHandleCreate { callee, args, .. } => {
-                if let Some(receiver) = callee.receiver() {
-                    self.scan_w003_expr(receiver, loop_depth, fresh);
-                }
-                for arg in args {
-                    self.scan_w003_expr(arg, loop_depth, fresh);
-                }
-            }
-            ExprKind::AsyncHandleAwait(handle)
-            | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
-                self.scan_w003_expr(handle, loop_depth, fresh)
-            }
-            ExprKind::New { args, .. } => {
-                for arg in args {
-                    self.scan_w003_expr(arg, loop_depth, fresh);
-                }
-            }
-            ExprKind::DescriptorLit { fields, .. } => {
-                for value in fields.iter().flatten() {
-                    self.scan_w003_expr(value, loop_depth, fresh);
-                }
-            }
-            ExprKind::Field { obj, .. }
-            | ExprKind::JsonResultValue(obj)
-            | ExprKind::Length(obj) => self.scan_w003_expr(obj, loop_depth, fresh),
-            ExprKind::Index { obj, index, .. } => {
-                self.scan_w003_expr(obj, loop_depth, fresh);
-                self.scan_w003_expr(index, loop_depth, fresh);
-            }
-            ExprKind::ArrayLit(elems) => {
-                for elem in elems {
-                    self.scan_w003_expr(elem, loop_depth, fresh);
-                }
-            }
-            ExprKind::ArraySpreadLit(elems) => {
-                for elem in elems {
-                    self.scan_w003_expr(&elem.expr, loop_depth, fresh);
-                }
-            }
-            ExprKind::Template(parts) => {
-                for part in parts {
-                    if let TplPart::Expr(expr) = part {
-                        self.scan_w003_expr(expr, loop_depth, fresh);
-                    }
-                }
-            }
-            ExprKind::Yield(value) => {
-                if let Some(value) = value {
-                    self.scan_w003_expr(value, loop_depth, fresh);
-                }
-            }
-            ExprKind::Cond { cond, then, els } => {
-                self.scan_w003_expr(cond, loop_depth, fresh);
-                self.scan_w003_expr(then, loop_depth, fresh);
-                self.scan_w003_expr(els, loop_depth, fresh);
-            }
-            ExprKind::Lambda { .. }
-            | ExprKind::Int(_)
-            | ExprKind::Float(_)
-            | ExprKind::Bool(_)
-            | ExprKind::Str(_)
-            | ExprKind::Null
-            | ExprKind::This
-            | ExprKind::Local(_)
-            | ExprKind::Global(_)
-            | ExprKind::FuncRef(_)
-            | ExprKind::EnumMember { .. }
-            | ExprKind::RawNew { .. }
-            | ExprKind::AsyncSuspend
-            | ExprKind::Zero => {}
         }
     }
 
@@ -668,11 +582,13 @@ impl WarningChecker<'_> {
                         self.analyze_w002_block(&case.body);
                     }
                 }
-                Stmt::Let { .. }
-                | Stmt::Expr(_)
-                | Stmt::Return { .. }
-                | Stmt::Break(_)
-                | Stmt::Continue(_) => {}
+                _ => {
+                    for child in stmt.children() {
+                        if let hir::HirChild::Stmt(child) = child {
+                            self.analyze_w002_block(std::slice::from_ref(child));
+                        }
+                    }
+                }
             }
 
             if matches!(
@@ -693,57 +609,32 @@ impl WarningChecker<'_> {
     }
 
     fn warn_w002_direct_uses(&mut self, stmt: &Stmt, freed: &HashSet<String>) {
-        match stmt {
-            Stmt::Let { init, .. } | Stmt::Expr(init) => {
-                self.warn_w002_expr_uses(init, freed);
-            }
-            Stmt::Return { value, .. } => {
-                if let Some(value) = value {
-                    self.warn_w002_expr_uses(value, freed);
+        let for_init = match stmt {
+            Stmt::For { init, .. } => init.as_deref(),
+            _ => None,
+        };
+        for child in stmt.children() {
+            match child {
+                hir::HirChild::Expr(expr) => self.warn_w002_expr_uses(expr, freed),
+                hir::HirChild::Stmt(child)
+                    if for_init.is_some_and(|init| std::ptr::eq(init, child)) =>
+                {
+                    self.warn_w002_direct_uses(child, freed);
                 }
+                hir::HirChild::Stmt(_) => {}
             }
-            Stmt::If { cond, .. } | Stmt::While { cond, .. } => {
-                self.warn_w002_expr_uses(cond, freed);
-            }
-            Stmt::For {
-                init, cond, step, ..
-            } => {
-                if let Some(init) = init {
-                    self.warn_w002_direct_uses(init, freed);
-                }
-                if let Some(cond) = cond {
-                    self.warn_w002_expr_uses(cond, freed);
-                }
-                if let Some(step) = step {
-                    self.warn_w002_expr_uses(step, freed);
-                }
-            }
-            Stmt::ForOf { subject, .. } => self.warn_w002_expr_uses(subject, freed),
-            Stmt::Switch { disc, cases, .. } => {
-                self.warn_w002_expr_uses(disc, freed);
-                for case in cases {
-                    if let Some(test) = &case.test {
-                        self.warn_w002_expr_uses(test, freed);
-                    }
-                }
-            }
-            Stmt::Block(_) | Stmt::Break(_) | Stmt::Continue(_) => {}
         }
     }
 
     fn warn_w002_expr_uses(&mut self, expr: &Expr, freed: &HashSet<String>) {
         match &expr.kind {
-            ExprKind::Local(name) => {
-                if freed.contains(name) {
-                    self.push(Warning::new(
-                        WarnCode::W002,
-                        format!(
-                            "`{name}` is used after `Context.free({name})` without an intervening reassignment"
-                        ),
-                        expr.pos.clone(),
-                    ));
-                }
-            }
+            ExprKind::Local(name) if freed.contains(name) => self.push(Warning::new(
+                WarnCode::W002,
+                format!(
+                    "`{name}` is used after `Context.free({name})` without an intervening reassignment"
+                ),
+                expr.pos.clone(),
+            )),
             ExprKind::Unary { operand, .. } | ExprKind::Cast(operand) => {
                 self.warn_w002_expr_uses(operand, freed);
             }
@@ -752,247 +643,51 @@ impl WarningChecker<'_> {
                 if !matches!(op, hir::BinOp::And | hir::BinOp::Or) {
                     self.warn_w002_expr_uses(right, freed);
                 }
+                return;
             }
             ExprKind::Assign { op, target, value } => {
                 if op.is_some() || !matches!(target.kind, ExprKind::Local(_)) {
                     self.warn_w002_expr_uses(target, freed);
                 }
                 self.warn_w002_expr_uses(value, freed);
+                return;
             }
-            ExprKind::Call { callee, args } => {
-                match callee {
-                    Callee::Value(value) => self.warn_w002_expr_uses(value, freed),
-                    Callee::Method { recv, .. } => self.warn_w002_expr_uses(recv, freed),
-                    _ => {}
-                }
-                for arg in args {
-                    self.warn_w002_expr_uses(arg, freed);
-                }
+            ExprKind::Cond { cond, .. } => {
+                self.warn_w002_expr_uses(cond, freed);
+                return;
             }
-            ExprKind::AsyncCall { callee, args }
-            | ExprKind::AsyncHandleCreate { callee, args, .. } => {
-                if let Some(receiver) = callee.receiver() {
-                    self.warn_w002_expr_uses(receiver, freed);
-                }
-                for arg in args {
-                    self.warn_w002_expr_uses(arg, freed);
-                }
+            ExprKind::Lambda { .. } => return,
+            _ => {}
+        }
+        for child in expr.children() {
+            if let hir::HirChild::Expr(child) = child {
+                self.warn_w002_expr_uses(child, freed);
             }
-            ExprKind::AsyncHandleAwait(handle)
-            | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
-                self.warn_w002_expr_uses(handle, freed)
-            }
-            ExprKind::New { args, .. } => {
-                for arg in args {
-                    self.warn_w002_expr_uses(arg, freed);
-                }
-            }
-            ExprKind::DescriptorLit { fields, .. } => {
-                for value in fields.iter().flatten() {
-                    self.warn_w002_expr_uses(value, freed);
-                }
-            }
-            ExprKind::Field { obj, .. }
-            | ExprKind::JsonResultValue(obj)
-            | ExprKind::Length(obj) => self.warn_w002_expr_uses(obj, freed),
-            ExprKind::Index { obj, index, .. } => {
-                self.warn_w002_expr_uses(obj, freed);
-                self.warn_w002_expr_uses(index, freed);
-            }
-            ExprKind::ArrayLit(elems) => {
-                for elem in elems {
-                    self.warn_w002_expr_uses(elem, freed);
-                }
-            }
-            ExprKind::ArraySpreadLit(elems) => {
-                for elem in elems {
-                    self.warn_w002_expr_uses(&elem.expr, freed);
-                }
-            }
-            ExprKind::Template(parts) => {
-                for part in parts {
-                    if let TplPart::Expr(expr) = part {
-                        self.warn_w002_expr_uses(expr, freed);
-                    }
-                }
-            }
-            ExprKind::Yield(value) => {
-                if let Some(value) = value {
-                    self.warn_w002_expr_uses(value, freed);
-                }
-            }
-            ExprKind::Cond { cond, .. } => self.warn_w002_expr_uses(cond, freed),
-            ExprKind::Lambda { .. }
-            | ExprKind::Int(_)
-            | ExprKind::Float(_)
-            | ExprKind::Bool(_)
-            | ExprKind::Str(_)
-            | ExprKind::Null
-            | ExprKind::This
-            | ExprKind::Global(_)
-            | ExprKind::FuncRef(_)
-            | ExprKind::EnumMember { .. }
-            | ExprKind::RawNew { .. }
-            | ExprKind::AsyncSuspend
-            | ExprKind::Zero => {}
         }
     }
 
     fn analyze_lambdas_in_stmts(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
-            match stmt {
-                Stmt::Let { init, .. } | Stmt::Expr(init) => {
-                    self.analyze_lambdas_in_expr(init);
-                }
-                Stmt::Return { value, .. } => {
-                    if let Some(value) = value {
-                        self.analyze_lambdas_in_expr(value);
+            for child in stmt.children() {
+                match child {
+                    hir::HirChild::Expr(expr) => self.analyze_lambdas_in_expr(expr),
+                    hir::HirChild::Stmt(stmt) => {
+                        self.analyze_lambdas_in_stmts(std::slice::from_ref(stmt));
                     }
                 }
-                Stmt::If {
-                    cond, then, els, ..
-                } => {
-                    self.analyze_lambdas_in_expr(cond);
-                    self.analyze_lambdas_in_stmts(then);
-                    if let Some(els) = els {
-                        self.analyze_lambdas_in_stmts(els);
-                    }
-                }
-                Stmt::While { cond, body, .. } => {
-                    self.analyze_lambdas_in_expr(cond);
-                    self.analyze_lambdas_in_stmts(body);
-                }
-                Stmt::For {
-                    init,
-                    cond,
-                    step,
-                    body,
-                    ..
-                } => {
-                    if let Some(init) = init {
-                        self.analyze_lambdas_in_stmts(std::slice::from_ref(init.as_ref()));
-                    }
-                    if let Some(cond) = cond {
-                        self.analyze_lambdas_in_expr(cond);
-                    }
-                    if let Some(step) = step {
-                        self.analyze_lambdas_in_expr(step);
-                    }
-                    self.analyze_lambdas_in_stmts(body);
-                }
-                Stmt::ForOf { subject, body, .. } => {
-                    self.analyze_lambdas_in_expr(subject);
-                    self.analyze_lambdas_in_stmts(body);
-                }
-                Stmt::Switch { disc, cases, .. } => {
-                    self.analyze_lambdas_in_expr(disc);
-                    for case in cases {
-                        if let Some(test) = &case.test {
-                            self.analyze_lambdas_in_expr(test);
-                        }
-                        self.analyze_lambdas_in_stmts(&case.body);
-                    }
-                }
-                Stmt::Block(body) => self.analyze_lambdas_in_stmts(body),
-                Stmt::Break(_) | Stmt::Continue(_) => {}
             }
         }
     }
 
     fn analyze_lambdas_in_expr(&mut self, expr: &Expr) {
-        match &expr.kind {
-            ExprKind::Lambda { body, .. } => self.analyze_body(body),
-            ExprKind::Unary { operand, .. } | ExprKind::Cast(operand) => {
-                self.analyze_lambdas_in_expr(operand);
+        if let ExprKind::Lambda { body, .. } = &expr.kind {
+            self.analyze_body(body);
+            return;
+        }
+        for child in expr.children() {
+            if let hir::HirChild::Expr(child) = child {
+                self.analyze_lambdas_in_expr(child);
             }
-            ExprKind::Binary { left, right, .. } => {
-                self.analyze_lambdas_in_expr(left);
-                self.analyze_lambdas_in_expr(right);
-            }
-            ExprKind::Assign { target, value, .. } => {
-                self.analyze_lambdas_in_expr(target);
-                self.analyze_lambdas_in_expr(value);
-            }
-            ExprKind::Call { callee, args } => {
-                match callee {
-                    Callee::Value(value) => self.analyze_lambdas_in_expr(value),
-                    Callee::Method { recv, .. } => self.analyze_lambdas_in_expr(recv),
-                    _ => {}
-                }
-                for arg in args {
-                    self.analyze_lambdas_in_expr(arg);
-                }
-            }
-            ExprKind::AsyncCall { callee, args }
-            | ExprKind::AsyncHandleCreate { callee, args, .. } => {
-                if let Some(receiver) = callee.receiver() {
-                    self.analyze_lambdas_in_expr(receiver);
-                }
-                for arg in args {
-                    self.analyze_lambdas_in_expr(arg);
-                }
-            }
-            ExprKind::AsyncHandleAwait(handle)
-            | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
-                self.analyze_lambdas_in_expr(handle)
-            }
-            ExprKind::New { args, .. } => {
-                for arg in args {
-                    self.analyze_lambdas_in_expr(arg);
-                }
-            }
-            ExprKind::DescriptorLit { fields, .. } => {
-                for value in fields.iter().flatten() {
-                    self.analyze_lambdas_in_expr(value);
-                }
-            }
-            ExprKind::Field { obj, .. }
-            | ExprKind::JsonResultValue(obj)
-            | ExprKind::Length(obj) => self.analyze_lambdas_in_expr(obj),
-            ExprKind::Index { obj, index, .. } => {
-                self.analyze_lambdas_in_expr(obj);
-                self.analyze_lambdas_in_expr(index);
-            }
-            ExprKind::ArrayLit(elems) => {
-                for elem in elems {
-                    self.analyze_lambdas_in_expr(elem);
-                }
-            }
-            ExprKind::ArraySpreadLit(elems) => {
-                for elem in elems {
-                    self.analyze_lambdas_in_expr(&elem.expr);
-                }
-            }
-            ExprKind::Template(parts) => {
-                for part in parts {
-                    if let TplPart::Expr(expr) = part {
-                        self.analyze_lambdas_in_expr(expr);
-                    }
-                }
-            }
-            ExprKind::Yield(value) => {
-                if let Some(value) = value {
-                    self.analyze_lambdas_in_expr(value);
-                }
-            }
-            ExprKind::Cond { cond, then, els } => {
-                self.analyze_lambdas_in_expr(cond);
-                self.analyze_lambdas_in_expr(then);
-                self.analyze_lambdas_in_expr(els);
-            }
-            ExprKind::Int(_)
-            | ExprKind::Float(_)
-            | ExprKind::Bool(_)
-            | ExprKind::Str(_)
-            | ExprKind::Null
-            | ExprKind::This
-            | ExprKind::Local(_)
-            | ExprKind::Global(_)
-            | ExprKind::FuncRef(_)
-            | ExprKind::EnumMember { .. }
-            | ExprKind::RawNew { .. }
-            | ExprKind::AsyncSuspend
-            | ExprKind::Zero => {}
         }
     }
 }
@@ -1102,112 +797,26 @@ fn contains_collect_in_stmts(stmts: &[Stmt]) -> bool {
 }
 
 fn contains_collect_in_stmt(stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::Let { init, .. } | Stmt::Expr(init) => contains_collect_in_expr(init),
-        Stmt::Return { value, .. } => value.as_ref().is_some_and(contains_collect_in_expr),
-        Stmt::If {
-            cond, then, els, ..
-        } => {
-            contains_collect_in_expr(cond)
-                || contains_collect_in_stmts(then)
-                || els.as_deref().is_some_and(contains_collect_in_stmts)
-        }
-        Stmt::While { cond, body, .. } => {
-            contains_collect_in_expr(cond) || contains_collect_in_stmts(body)
-        }
-        Stmt::For {
-            init,
-            cond,
-            step,
-            body,
-            ..
-        } => {
-            init.as_deref().is_some_and(contains_collect_in_stmt)
-                || cond.as_ref().is_some_and(contains_collect_in_expr)
-                || step.as_ref().is_some_and(contains_collect_in_expr)
-                || contains_collect_in_stmts(body)
-        }
-        Stmt::ForOf { subject, body, .. } => {
-            contains_collect_in_expr(subject) || contains_collect_in_stmts(body)
-        }
-        Stmt::Switch { disc, cases, .. } => {
-            contains_collect_in_expr(disc)
-                || cases.iter().any(|case| {
-                    case.test.as_ref().is_some_and(contains_collect_in_expr)
-                        || contains_collect_in_stmts(&case.body)
-                })
-        }
-        Stmt::Block(body) => contains_collect_in_stmts(body),
-        Stmt::Break(_) | Stmt::Continue(_) => false,
-    }
+    stmt.children().into_iter().any(|child| match child {
+        hir::HirChild::Expr(expr) => contains_collect_in_expr(expr),
+        hir::HirChild::Stmt(stmt) => contains_collect_in_stmt(stmt),
+    })
 }
 
 fn contains_collect_in_expr(expr: &Expr) -> bool {
-    match &expr.kind {
-        ExprKind::Call { callee, args } => {
-            if matches!(callee, Callee::Ambient(AmbientFn::Collect)) {
-                return true;
-            }
-            let callee_has_collect = match callee {
-                Callee::Value(value) => contains_collect_in_expr(value),
-                Callee::Method { recv, .. } => contains_collect_in_expr(recv),
-                _ => false,
-            };
-            callee_has_collect || args.iter().any(contains_collect_in_expr)
-        }
-        ExprKind::AsyncCall { callee, args } | ExprKind::AsyncHandleCreate { callee, args, .. } => {
-            callee.receiver().is_some_and(contains_collect_in_expr)
-                || args.iter().any(contains_collect_in_expr)
-        }
-        ExprKind::AsyncHandleAwait(handle)
-        | ExprKind::AsyncHandleTransfer { value: handle, .. } => contains_collect_in_expr(handle),
-        ExprKind::Unary { operand, .. } | ExprKind::Cast(operand) => {
-            contains_collect_in_expr(operand)
-        }
-        ExprKind::Binary { left, right, .. } => {
-            contains_collect_in_expr(left) || contains_collect_in_expr(right)
-        }
-        ExprKind::Assign { target, value, .. } => {
-            contains_collect_in_expr(target) || contains_collect_in_expr(value)
-        }
-        ExprKind::New { args, .. } => args.iter().any(contains_collect_in_expr),
-        ExprKind::DescriptorLit { fields, .. } => {
-            fields.iter().flatten().any(contains_collect_in_expr)
-        }
-        ExprKind::Field { obj, .. } | ExprKind::JsonResultValue(obj) | ExprKind::Length(obj) => {
-            contains_collect_in_expr(obj)
-        }
-        ExprKind::Index { obj, index, .. } => {
-            contains_collect_in_expr(obj) || contains_collect_in_expr(index)
-        }
-        ExprKind::ArrayLit(elems) => elems.iter().any(contains_collect_in_expr),
-        ExprKind::ArraySpreadLit(elems) => elems
-            .iter()
-            .any(|element| contains_collect_in_expr(&element.expr)),
-        ExprKind::Template(parts) => parts
-            .iter()
-            .any(|part| matches!(part, TplPart::Expr(expr) if contains_collect_in_expr(expr))),
-        ExprKind::Yield(value) => value.as_deref().is_some_and(contains_collect_in_expr),
-        ExprKind::Cond { cond, then, els } => {
-            contains_collect_in_expr(cond)
-                || contains_collect_in_expr(then)
-                || contains_collect_in_expr(els)
-        }
-        ExprKind::Lambda { .. }
-        | ExprKind::Int(_)
-        | ExprKind::Float(_)
-        | ExprKind::Bool(_)
-        | ExprKind::Str(_)
-        | ExprKind::Null
-        | ExprKind::This
-        | ExprKind::Local(_)
-        | ExprKind::Global(_)
-        | ExprKind::FuncRef(_)
-        | ExprKind::EnumMember { .. }
-        | ExprKind::RawNew { .. }
-        | ExprKind::AsyncSuspend
-        | ExprKind::Zero => false,
+    if matches!(expr.kind, ExprKind::Lambda { .. }) {
+        return false;
     }
+    matches!(
+        &expr.kind,
+        ExprKind::Call {
+            callee: Callee::Ambient(AmbientFn::Collect),
+            ..
+        }
+    ) || expr.children().into_iter().any(|child| match child {
+        hir::HirChild::Expr(expr) => contains_collect_in_expr(expr),
+        hir::HirChild::Stmt(stmt) => contains_collect_in_stmt(stmt),
+    })
 }
 
 #[derive(Debug, Default)]
@@ -1231,8 +840,8 @@ fn scan_candidate_stmts(stmts: &[Stmt], name: &str, state: &mut CandidateUse) {
                 if value_is_candidate(init, name) {
                     state.escaped = true;
                 }
+                continue;
             }
-            Stmt::Expr(expr) => scan_candidate_expr(expr, name, state),
             Stmt::Return { value, .. } => {
                 if let Some(value) = value {
                     if value_is_candidate(value, name) {
@@ -1240,53 +849,17 @@ fn scan_candidate_stmts(stmts: &[Stmt], name: &str, state: &mut CandidateUse) {
                     }
                     scan_candidate_expr(value, name, state);
                 }
+                continue;
             }
-            Stmt::If {
-                cond, then, els, ..
-            } => {
-                scan_candidate_expr(cond, name, state);
-                scan_candidate_stmts(then, name, state);
-                if let Some(els) = els {
-                    scan_candidate_stmts(els, name, state);
+            _ => {}
+        }
+        for child in stmt.children() {
+            match child {
+                hir::HirChild::Expr(expr) => scan_candidate_expr(expr, name, state),
+                hir::HirChild::Stmt(stmt) => {
+                    scan_candidate_stmts(std::slice::from_ref(stmt), name, state);
                 }
             }
-            Stmt::While { cond, body, .. } => {
-                scan_candidate_expr(cond, name, state);
-                scan_candidate_stmts(body, name, state);
-            }
-            Stmt::For {
-                init,
-                cond,
-                step,
-                body,
-                ..
-            } => {
-                if let Some(init) = init {
-                    scan_candidate_stmts(std::slice::from_ref(init.as_ref()), name, state);
-                }
-                if let Some(cond) = cond {
-                    scan_candidate_expr(cond, name, state);
-                }
-                if let Some(step) = step {
-                    scan_candidate_expr(step, name, state);
-                }
-                scan_candidate_stmts(body, name, state);
-            }
-            Stmt::ForOf { subject, body, .. } => {
-                scan_candidate_expr(subject, name, state);
-                scan_candidate_stmts(body, name, state);
-            }
-            Stmt::Switch { disc, cases, .. } => {
-                scan_candidate_expr(disc, name, state);
-                for case in cases {
-                    if let Some(test) = &case.test {
-                        scan_candidate_expr(test, name, state);
-                    }
-                    scan_candidate_stmts(&case.body, name, state);
-                }
-            }
-            Stmt::Block(body) => scan_candidate_stmts(body, name, state),
-            Stmt::Break(_) | Stmt::Continue(_) => {}
         }
     }
 }
@@ -1303,38 +876,17 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
             } else if args.iter().any(|arg| value_is_candidate(arg, name)) {
                 state.escaped = true;
             }
-            match callee {
-                Callee::Value(value) => scan_candidate_expr(value, name, state),
-                Callee::Method { recv, .. } => {
-                    if value_is_candidate(recv, name) {
-                        state.escaped = true;
-                    }
-                    scan_candidate_expr(recv, name, state);
+            if let Callee::Method { recv, .. } = callee {
+                if value_is_candidate(recv, name) {
+                    state.escaped = true;
                 }
-                _ => {}
-            }
-            for arg in args {
-                scan_candidate_expr(arg, name, state);
             }
         }
         ExprKind::AsyncCall { callee, args } | ExprKind::AsyncHandleCreate { callee, args, .. } => {
-            if callee
+            state.escaped |= callee
                 .receiver()
                 .is_some_and(|receiver| value_is_candidate(receiver, name))
-                || args.iter().any(|arg| value_is_candidate(arg, name))
-            {
-                state.escaped = true;
-            }
-            if let Some(receiver) = callee.receiver() {
-                scan_candidate_expr(receiver, name, state);
-            }
-            for arg in args {
-                scan_candidate_expr(arg, name, state);
-            }
-        }
-        ExprKind::AsyncHandleAwait(handle)
-        | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
-            scan_candidate_expr(handle, name, state)
+                || args.iter().any(|arg| value_is_candidate(arg, name));
         }
         ExprKind::Assign { target, value, .. } => {
             if value_is_candidate(value, name)
@@ -1351,100 +903,44 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
             if matches!(&target.kind, ExprKind::Local(target_name) if target_name == name) {
                 state.escaped = true;
             }
-            scan_candidate_expr(target, name, state);
-            scan_candidate_expr(value, name, state);
         }
         ExprKind::Lambda { captures, .. } => {
             if captures.iter().any(|capture| capture.name == name) {
                 state.escaped = true;
             }
+            return;
         }
         ExprKind::ArrayLit(elems) => {
-            if elems.iter().any(|elem| value_is_candidate(elem, name)) {
-                state.escaped = true;
-            }
-            for elem in elems {
-                scan_candidate_expr(elem, name, state);
-            }
+            state.escaped |= elems.iter().any(|elem| value_is_candidate(elem, name));
         }
         ExprKind::ArraySpreadLit(elems) => {
-            if elems
+            state.escaped |= elems
                 .iter()
-                .any(|element| value_is_candidate(&element.expr, name))
-            {
-                state.escaped = true;
-            }
-            for elem in elems {
-                scan_candidate_expr(&elem.expr, name, state);
-            }
-        }
-        ExprKind::Unary { operand, .. } | ExprKind::Cast(operand) => {
-            scan_candidate_expr(operand, name, state);
-        }
-        ExprKind::Binary { left, right, .. } => {
-            scan_candidate_expr(left, name, state);
-            scan_candidate_expr(right, name, state);
+                .any(|element| value_is_candidate(&element.expr, name));
         }
         ExprKind::New { args, .. } => {
-            if args.iter().any(|arg| value_is_candidate(arg, name)) {
-                state.escaped = true;
-            }
-            for arg in args {
-                scan_candidate_expr(arg, name, state);
-            }
+            state.escaped |= args.iter().any(|arg| value_is_candidate(arg, name));
         }
         ExprKind::DescriptorLit { fields, .. } => {
-            if fields
+            state.escaped |= fields
                 .iter()
                 .flatten()
-                .any(|value| value_is_candidate(value, name))
-            {
-                state.escaped = true;
-            }
-            for value in fields.iter().flatten() {
-                scan_candidate_expr(value, name, state);
-            }
-        }
-        ExprKind::Field { obj, .. } | ExprKind::JsonResultValue(obj) | ExprKind::Length(obj) => {
-            scan_candidate_expr(obj, name, state)
-        }
-        ExprKind::Index { obj, index, .. } => {
-            scan_candidate_expr(obj, name, state);
-            scan_candidate_expr(index, name, state);
-        }
-        ExprKind::Template(parts) => {
-            for part in parts {
-                if let TplPart::Expr(expr) = part {
-                    scan_candidate_expr(expr, name, state);
-                }
-            }
+                .any(|value| value_is_candidate(value, name));
         }
         ExprKind::Yield(value) => {
-            if let Some(value) = value {
-                if value_is_candidate(value, name) {
-                    state.escaped = true;
-                }
-                scan_candidate_expr(value, name, state);
+            state.escaped |= value
+                .as_deref()
+                .is_some_and(|value| value_is_candidate(value, name));
+        }
+        _ => {}
+    }
+    for child in expr.children() {
+        match child {
+            hir::HirChild::Expr(expr) => scan_candidate_expr(expr, name, state),
+            hir::HirChild::Stmt(stmt) => {
+                scan_candidate_stmts(std::slice::from_ref(stmt), name, state);
             }
         }
-        ExprKind::Cond { cond, then, els } => {
-            scan_candidate_expr(cond, name, state);
-            scan_candidate_expr(then, name, state);
-            scan_candidate_expr(els, name, state);
-        }
-        ExprKind::Int(_)
-        | ExprKind::Float(_)
-        | ExprKind::Bool(_)
-        | ExprKind::Str(_)
-        | ExprKind::Null
-        | ExprKind::This
-        | ExprKind::Local(_)
-        | ExprKind::Global(_)
-        | ExprKind::FuncRef(_)
-        | ExprKind::EnumMember { .. }
-        | ExprKind::RawNew { .. }
-        | ExprKind::AsyncSuspend
-        | ExprKind::Zero => {}
     }
 }
 

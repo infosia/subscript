@@ -213,108 +213,39 @@ impl Analyzer {
                 }
             }
             hir::Stmt::Block(body) => self.scoped_stmts(body),
-            hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
+            _ => {
+                for child in stmt.children_mut() {
+                    match child {
+                        hir::HirChildMut::Expr(expr) => self.expr(expr),
+                        hir::HirChildMut::Stmt(stmt) => self.stmt(stmt),
+                    }
+                }
+            }
         }
     }
 
     fn expr(&mut self, expr: &mut hir::Expr) {
-        match &mut expr.kind {
-            K::Unary { operand, .. } => self.expr(operand),
-            K::Binary { left, right, .. } => {
-                self.expr(left);
-                self.expr(right);
+        if let K::Lambda { body, .. } = &mut expr.kind {
+            Analyzer::default().stmts(body);
+            return;
+        }
+        for child in expr.children_mut() {
+            match child {
+                hir::HirChildMut::Expr(child) => self.expr(child),
+                hir::HirChildMut::Stmt(statement) => self.stmt(statement),
             }
-            K::Assign { target, value, .. } => {
-                self.expr(target);
-                self.expr(value);
-            }
-            K::Cast(inner) => self.expr(inner),
-            K::Call { callee, args } => {
-                match callee {
-                    hir::Callee::Value(value) => self.expr(value),
-                    hir::Callee::Method { recv, .. } => self.expr(recv),
-                    _ => {}
-                }
-                for arg in args {
-                    self.expr(arg);
-                }
-            }
-            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
-                if let Some(receiver) = callee.receiver_mut() {
-                    self.expr(receiver);
-                }
-                for arg in args {
-                    self.expr(arg);
-                }
-            }
-            K::AsyncHandleAwait(handle) | K::AsyncHandleTransfer { value: handle, .. } => {
-                self.expr(handle);
-            }
-            K::New { args, .. } => {
-                for arg in args {
-                    self.expr(arg);
-                }
-            }
-            K::DescriptorLit { fields, .. } => {
-                for value in fields.iter_mut().flatten() {
-                    self.expr(value);
-                }
-            }
-            K::Field { obj, .. } | K::JsonResultValue(obj) | K::Length(obj) => self.expr(obj),
-            K::Index {
-                obj,
-                index,
-                checked,
-            } => {
-                self.expr(obj);
-                self.expr(index);
-                *checked = match &obj.ty {
-                    Type::FixedArray(_, len) => !self.index_in_bounds(index, *len),
-                    // Dynamic arrays have no compile-time length proof.
-                    _ => true,
-                };
-            }
-            K::ArrayLit(elems) => {
-                for elem in elems {
-                    self.expr(elem);
-                }
-            }
-            K::ArraySpreadLit(elems) => {
-                for elem in elems {
-                    self.expr(&mut elem.expr);
-                }
-            }
-            K::Template(parts) => {
-                for part in parts {
-                    if let hir::TplPart::Expr(expr) = part {
-                        self.expr(expr);
-                    }
-                }
-            }
-            K::Lambda { body, .. } => Analyzer::default().stmts(body),
-            K::Yield(value) => {
-                if let Some(value) = value {
-                    self.expr(value);
-                }
-            }
-            K::Cond { cond, then, els } => {
-                self.expr(cond);
-                self.expr(then);
-                self.expr(els);
-            }
-            K::Int(_)
-            | K::Float(_)
-            | K::Bool(_)
-            | K::Str(_)
-            | K::Null
-            | K::This
-            | K::Local(_)
-            | K::Global(_)
-            | K::FuncRef(_)
-            | K::EnumMember { .. }
-            | K::Zero
-            | K::RawNew { .. }
-            | K::AsyncSuspend => {}
+        }
+        if let K::Index {
+            obj,
+            index,
+            checked,
+        } = &mut expr.kind
+        {
+            *checked = match &obj.ty {
+                Type::FixedArray(_, len) => !self.index_in_bounds(index, *len),
+                // Dynamic arrays have no compile-time length proof.
+                _ => true,
+            };
         }
     }
 
@@ -416,121 +347,20 @@ fn stmts_assign_to(stmts: &[hir::Stmt], name: &str) -> bool {
 }
 
 fn stmt_assigns_to(stmt: &hir::Stmt, name: &str) -> bool {
-    match stmt {
-        hir::Stmt::Let { init, .. } => expr_assigns_to(init, name),
-        hir::Stmt::Expr(expr) => expr_assigns_to(expr, name),
-        hir::Stmt::Return { value, .. } => value
-            .as_ref()
-            .is_some_and(|value| expr_assigns_to(value, name)),
-        hir::Stmt::If {
-            cond, then, els, ..
-        } => {
-            expr_assigns_to(cond, name)
-                || stmts_assign_to(then, name)
-                || els
-                    .as_ref()
-                    .is_some_and(|branch| stmts_assign_to(branch, name))
-        }
-        hir::Stmt::While { cond, body, .. } => {
-            expr_assigns_to(cond, name) || stmts_assign_to(body, name)
-        }
-        hir::Stmt::For {
-            init,
-            cond,
-            step,
-            body,
-            ..
-        } => {
-            init.as_deref()
-                .is_some_and(|init| stmt_assigns_to(init, name))
-                || cond
-                    .as_ref()
-                    .is_some_and(|cond| expr_assigns_to(cond, name))
-                || step
-                    .as_ref()
-                    .is_some_and(|step| expr_assigns_to(step, name))
-                || stmts_assign_to(body, name)
-        }
-        hir::Stmt::ForOf { subject, body, .. } => {
-            expr_assigns_to(subject, name) || stmts_assign_to(body, name)
-        }
-        hir::Stmt::Switch { disc, cases, .. } => {
-            expr_assigns_to(disc, name)
-                || cases.iter().any(|case| {
-                    case.test
-                        .as_ref()
-                        .is_some_and(|test| expr_assigns_to(test, name))
-                        || stmts_assign_to(&case.body, name)
-                })
-        }
-        hir::Stmt::Block(body) => stmts_assign_to(body, name),
-        hir::Stmt::Break(_) | hir::Stmt::Continue(_) => false,
-    }
+    stmt.children().into_iter().any(|child| match child {
+        hir::HirChild::Expr(expr) => expr_assigns_to(expr, name),
+        hir::HirChild::Stmt(stmt) => stmt_assigns_to(stmt, name),
+    })
 }
 
 fn expr_assigns_to(expr: &hir::Expr, name: &str) -> bool {
-    match &expr.kind {
-        K::Assign { target, value, .. } => {
-            matches!(&target.kind, K::Local(local) if local == name)
-                || expr_assigns_to(target, name)
-                || expr_assigns_to(value, name)
-        }
-        K::Unary { operand, .. } => expr_assigns_to(operand, name),
-        K::Binary { left, right, .. } => {
-            expr_assigns_to(left, name) || expr_assigns_to(right, name)
-        }
-        K::Cast(inner) => expr_assigns_to(inner, name),
-        K::Call { callee, args } => {
-            let callee_assigns = match callee {
-                hir::Callee::Value(value) => expr_assigns_to(value, name),
-                hir::Callee::Method { recv, .. } => expr_assigns_to(recv, name),
-                _ => false,
-            };
-            callee_assigns || args.iter().any(|arg| expr_assigns_to(arg, name))
-        }
-        K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
-            callee
-                .receiver()
-                .is_some_and(|receiver| expr_assigns_to(receiver, name))
-                || args.iter().any(|arg| expr_assigns_to(arg, name))
-        }
-        K::AsyncHandleAwait(handle) | K::AsyncHandleTransfer { value: handle, .. } => {
-            expr_assigns_to(handle, name)
-        }
-        K::New { args, .. } => args.iter().any(|arg| expr_assigns_to(arg, name)),
-        K::DescriptorLit { fields, .. } => fields
-            .iter()
-            .flatten()
-            .any(|value| expr_assigns_to(value, name)),
-        K::Field { obj, .. } | K::JsonResultValue(obj) | K::Length(obj) => {
-            expr_assigns_to(obj, name)
-        }
-        K::Index { obj, index, .. } => expr_assigns_to(obj, name) || expr_assigns_to(index, name),
-        K::ArrayLit(elems) => elems.iter().any(|elem| expr_assigns_to(elem, name)),
-        K::ArraySpreadLit(elems) => elems.iter().any(|elem| expr_assigns_to(&elem.expr, name)),
-        K::Template(parts) => parts.iter().any(|part| match part {
-            hir::TplPart::Expr(expr) => expr_assigns_to(expr, name),
-            hir::TplPart::Text(_) => false,
-        }),
-        K::Cond { cond, then, els } => {
-            expr_assigns_to(cond, name) || expr_assigns_to(then, name) || expr_assigns_to(els, name)
-        }
-        K::Yield(value) => value
-            .as_deref()
-            .is_some_and(|value| expr_assigns_to(value, name)),
-        K::Lambda { .. }
-        | K::Int(_)
-        | K::Float(_)
-        | K::Bool(_)
-        | K::Str(_)
-        | K::Null
-        | K::This
-        | K::Local(_)
-        | K::Global(_)
-        | K::FuncRef(_)
-        | K::EnumMember { .. }
-        | K::Zero
-        | K::RawNew { .. }
-        | K::AsyncSuspend => false,
+    if matches!(expr.kind, K::Lambda { .. }) {
+        return false;
     }
+    matches!(&expr.kind, K::Assign { target, .. }
+        if matches!(&target.kind, K::Local(local) if local == name))
+        || expr.children().into_iter().any(|child| match child {
+            hir::HirChild::Expr(expr) => expr_assigns_to(expr, name),
+            hir::HirChild::Stmt(stmt) => stmt_assigns_to(stmt, name),
+        })
 }

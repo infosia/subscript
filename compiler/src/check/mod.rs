@@ -149,13 +149,13 @@ fn parse_integer_spelling(raw: &str, negate: bool) -> Option<i128> {
 
 /// The integer value of a non-negative numeric-literal expression (a flag
 /// member initializer, §13.2), or `None` for any other expression. Source
-/// spellings are read at u64 width; synthesized nodes retain the f64 path.
+/// spellings are read exactly; synthesized nodes retain the f64 path.
 fn int_literal_value(e: &ast::Expr) -> Option<i64> {
     match e {
         ast::Expr::Lit(ast::Lit::Num(n)) => {
             if let Some(raw) = n.raw.as_deref() {
                 let value = parse_integer_spelling(raw, false)?;
-                return (value >= 0 && value <= i128::from(u64::MAX)).then_some(value as i64);
+                return u64::try_from(value).ok().map(|value| value as i64);
             }
             let v = n.value;
             if v.is_finite() && v.fract() == 0.0 && v >= 0.0 {
@@ -810,10 +810,9 @@ impl<'a> ModuleEffectScanner<'a> {
             }
             hir::AsyncCallee::Method {
                 class,
-                receiver,
+                receiver: _,
                 name,
             } => {
-                self.expr(receiver);
                 let label = self.classes.get(class.0).map_or_else(
                     || name.clone(),
                     |definition| format!("{}.{}", definition.name, name),
@@ -830,59 +829,11 @@ impl<'a> ModuleEffectScanner<'a> {
     }
 
     fn stmt(&mut self, statement: &hir::Stmt) {
-        match statement {
-            hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => self.expr(init),
-            hir::Stmt::Return { value, .. } => {
-                if let Some(value) = value {
-                    self.expr(value);
-                }
+        for child in statement.children() {
+            match child {
+                hir::HirChild::Expr(expression) => self.expr(expression),
+                hir::HirChild::Stmt(statement) => self.stmt(statement),
             }
-            hir::Stmt::If {
-                cond, then, els, ..
-            } => {
-                self.expr(cond);
-                self.stmts(then);
-                if let Some(els) = els {
-                    self.stmts(els);
-                }
-            }
-            hir::Stmt::While { cond, body, .. } => {
-                self.expr(cond);
-                self.stmts(body);
-            }
-            hir::Stmt::For {
-                init,
-                cond,
-                step,
-                body,
-                ..
-            } => {
-                if let Some(init) = init {
-                    self.stmt(init);
-                }
-                if let Some(cond) = cond {
-                    self.expr(cond);
-                }
-                if let Some(step) = step {
-                    self.expr(step);
-                }
-                self.stmts(body);
-            }
-            hir::Stmt::ForOf { subject, body, .. } => {
-                self.expr(subject);
-                self.stmts(body);
-            }
-            hir::Stmt::Switch { disc, cases, .. } => {
-                self.expr(disc);
-                for case in cases {
-                    if let Some(test) = &case.test {
-                        self.expr(test);
-                    }
-                    self.stmts(&case.body);
-                }
-            }
-            hir::Stmt::Block(body) => self.stmts(body),
-            hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
         }
     }
 
@@ -891,33 +842,13 @@ impl<'a> ModuleEffectScanner<'a> {
 
         match &expression.kind {
             K::Global(name) => self.record_access(name, Vec::new()),
-            K::Unary { operand, .. }
-            | K::Cast(operand)
-            | K::JsonResultValue(operand)
-            | K::Length(operand)
-            | K::AsyncHandleAwait(operand)
-            | K::AsyncHandleTransfer { value: operand, .. } => self.expr(operand),
-            K::Binary { left, right, .. } => {
-                self.expr(left);
-                self.expr(right);
-            }
-            K::Assign { target, value, .. } => {
-                self.expr(target);
-                self.expr(value);
-            }
-            K::Call { callee, args } => {
+            K::Call { callee, .. } => {
                 match callee {
                     hir::Callee::Func(name) => {
                         self.record_call(ModuleFunction::Free(name.clone()), name.clone());
                     }
-                    hir::Callee::Value(value) => {
-                        self.expr(value);
-                        self.record_indirect_call();
-                    }
-                    hir::Callee::Method { recv, name } => {
-                        self.expr(recv);
-                        self.method_call(recv, name);
-                    }
+                    hir::Callee::Value(_) => self.record_indirect_call(),
+                    hir::Callee::Method { recv, name } => self.method_call(recv, name),
                     _ => {}
                 }
                 let invokes_callback = match callee {
@@ -931,14 +862,8 @@ impl<'a> ModuleEffectScanner<'a> {
                 if invokes_callback {
                     self.record_indirect_call();
                 }
-                for argument in args {
-                    self.expr(argument);
-                }
             }
-            K::New { class, args } => {
-                for argument in args {
-                    self.expr(argument);
-                }
+            K::New { class, .. } => {
                 let label = self.classes.get(class.0).map_or_else(
                     || "constructor".to_string(),
                     |definition| format!("{}.constructor", definition.name),
@@ -951,67 +876,27 @@ impl<'a> ModuleEffectScanner<'a> {
                     .get(class.0)
                     .map(|definition| &definition.fields);
                 for (index, field) in fields.iter().enumerate() {
-                    if let Some(value) = field {
-                        self.expr(value);
-                    } else if let Some(default) = defaults
-                        .and_then(|fields| fields.get(index))
-                        .and_then(|field| field.init.as_ref())
-                    {
-                        self.expr(default);
+                    if field.is_none() {
+                        if let Some(default) = defaults
+                            .and_then(|fields| fields.get(index))
+                            .and_then(|field| field.init.as_ref())
+                        {
+                            self.expr(default);
+                        }
                     }
                 }
             }
-            K::Field { obj, .. } => self.expr(obj),
-            K::Index { obj, index, .. } => {
-                self.expr(obj);
-                self.expr(index);
-            }
-            K::ArrayLit(elements) => {
-                for element in elements {
-                    self.expr(element);
-                }
-            }
-            K::ArraySpreadLit(elements) => {
-                for element in elements {
-                    self.expr(&element.expr);
-                }
-            }
-            K::Template(parts) => {
-                for part in parts {
-                    if let hir::TplPart::Expr(value) = part {
-                        self.expr(value);
-                    }
-                }
-            }
-            K::Yield(value) => {
-                if let Some(value) = value {
-                    self.expr(value);
-                }
-            }
-            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
+            K::AsyncCall { callee, .. } | K::AsyncHandleCreate { callee, .. } => {
                 self.async_callee(callee);
-                for argument in args {
-                    self.expr(argument);
-                }
             }
-            K::Cond { cond, then, els } => {
-                self.expr(cond);
-                self.expr(then);
-                self.expr(els);
+            K::Lambda { .. } => return,
+            _ => {}
+        }
+        for child in expression.children() {
+            match child {
+                hir::HirChild::Expr(expression) => self.expr(expression),
+                hir::HirChild::Stmt(statement) => self.stmt(statement),
             }
-            K::Int(_)
-            | K::Float(_)
-            | K::Bool(_)
-            | K::Str(_)
-            | K::Null
-            | K::This
-            | K::Local(_)
-            | K::FuncRef(_)
-            | K::EnumMember { .. }
-            | K::Zero
-            | K::RawNew { .. }
-            | K::Lambda { .. }
-            | K::AsyncSuspend => {}
         }
     }
 }
@@ -1936,7 +1821,7 @@ impl<'p> Checker<'p> {
         let name = e.id.sym.to_string();
         let pos = self.pos(e.id.span);
         let mut members = Vec::new();
-        // `None` means the previous member's value + 1 overflows i64, so
+        // `None` means the previous member's value + 1 overflows i32, so
         // the next implicit value has no representation.
         let mut next: Option<i64> = Some(0);
         for m in &e.members {
@@ -1960,7 +1845,7 @@ impl<'p> Checker<'p> {
                         self.error(
                             RuleCode::S008,
                             format!(
-                                "implicit value for enum member `{}` overflows i64",
+                                "implicit value for enum member `{}` overflows i32",
                                 member_name
                             ),
                             p,
@@ -1969,7 +1854,7 @@ impl<'p> Checker<'p> {
                     }
                 },
                 Some(init) => match self.const_int_of(init) {
-                    Some(v) => v,
+                    Some(v) => i64::from(v),
                     None => {
                         let p = self.pos(init.span());
                         self.error(
@@ -1981,7 +1866,10 @@ impl<'p> Checker<'p> {
                     }
                 },
             };
-            next = value.checked_add(1);
+            next = i32::try_from(value)
+                .ok()
+                .and_then(|value| value.checked_add(1))
+                .map(i64::from);
             members.push((member_name, value));
         }
         let id = EnumId(self.enums.len());
@@ -2183,15 +2071,22 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn const_int_of(&self, e: &ast::Expr) -> Option<i64> {
-        match e {
-            ast::Expr::Lit(ast::Lit::Num(n)) if n.value.fract() == 0.0 => Some(n.value as i64),
-            ast::Expr::Unary(u) if u.op == ast::UnaryOp::Minus => {
-                self.const_int_of(&u.arg).map(|v| -v)
+    fn const_int_of(&self, e: &ast::Expr) -> Option<i32> {
+        fn read(e: &ast::Expr, negate: bool) -> Option<i32> {
+            match e {
+                ast::Expr::Lit(ast::Lit::Num(number)) => {
+                    let raw = number.raw.as_deref()?;
+                    i32::try_from(parse_integer_spelling(raw, negate)?).ok()
+                }
+                ast::Expr::Unary(unary) if unary.op == ast::UnaryOp::Minus && !negate => {
+                    read(&unary.arg, true)
+                }
+                ast::Expr::Paren(paren) => read(&paren.expr, negate),
+                _ => None,
             }
-            ast::Expr::Paren(p) => self.const_int_of(&p.expr),
-            _ => None,
         }
+
+        read(e, false)
     }
 
     // ----- mirror (`.d.ts`) ingestion (P5.2) -----

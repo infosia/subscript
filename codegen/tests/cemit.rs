@@ -19,6 +19,7 @@ mod trap_corpus;
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 
+use subscript_codegen::{interpreter::interpret, lir::lower_module};
 use subscript_codegen::{
     run_c_aot, run_c_aot_with_alloc_failure,
     run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
@@ -30,7 +31,7 @@ use subscript_codegen::{
 // list, so these symbols have no use.
 #[cfg(not(all(windows, target_env = "msvc")))]
 use subscript_codegen::{host_c_compiler, runtime_system_libraries};
-use subscript_compiler::SourceFile;
+use subscript_compiler::{check_program, SourceFile};
 use subscript_runtime::TrapKind;
 
 type TrapOutcome = ((TrapKind, String, subscript_compiler::Pos), Vec<u8>);
@@ -196,6 +197,30 @@ fn assert_tiers_print(src: &str, expected: &str) {
             expected,
             "{tier} printed unexpected bytes"
         );
+    }
+}
+
+#[test]
+fn enum_casts_use_target_integer_width_on_all_tiers() {
+    let source = r#"
+enum Values { Negative = -1, Minimum = -2147483648 }
+export function main(): void {
+  print(`${Values.Negative as i8} ${Values.Negative as u8}`);
+  print(`${Values.Negative as i16} ${Values.Negative as u16}`);
+  print(`${Values.Negative as i32} ${Values.Negative as u32}`);
+  print(`${Values.Minimum as i64} ${Values.Minimum as u64}`);
+}
+"#;
+    let expected = b"-1 255\n-1 65535\n-1 4294967295\n-2147483648 18446744071562067968\n";
+    let files = [SourceFile::new("test.ts", source)];
+    let hir = check_program(&files).expect("enum-width source checks");
+    let lir = lower_module(&hir).expect("enum-width source lowers");
+    for (tier, output) in [
+        ("dev-JIT", run_jit(&files).expect("dev-JIT run")),
+        ("ship-C-AOT", run_c_aot(&files).expect("ship-C-AOT run")),
+        ("interpreter", interpret(&lir).expect("interpreter run")),
+    ] {
+        assert_eq!(output, expected, "{tier} enum conversion output");
     }
 }
 

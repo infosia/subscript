@@ -2268,7 +2268,7 @@ mod tests {
     #[test]
     fn m1_enum_implicit_value_overflow_is_s008_not_a_panic() {
         let err = check_one(
-            "enum E { A = 9223372036854775807, B }\nexport function main(): void {\n  print(`${E.A as i32}`);\n}\n",
+            "enum E { A = 2147483647, B }\nexport function main(): void {\n  print(`${E.A as i32}`);\n}\n",
         )
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S008);

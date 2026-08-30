@@ -613,6 +613,24 @@ pub struct Expr {
     pub pos: Pos,
 }
 
+/// One immediate node below an HIR expression or statement.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum HirChild<'a> {
+    /// An expression child.
+    Expr(&'a Expr),
+    /// A statement child.
+    Stmt(&'a Stmt),
+}
+
+/// One mutable immediate node below an HIR expression or statement.
+#[derive(Debug)]
+pub(crate) enum HirChildMut<'a> {
+    /// An expression child.
+    Expr(&'a mut Expr),
+    /// A statement child.
+    Stmt(&'a mut Stmt),
+}
+
 /// Closed set of sites that copy or consume a counted async owner (§70.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AsyncCopySite {
@@ -3234,6 +3252,282 @@ pub enum SpreadKind {
 }
 
 impl Expr {
+    /// Returns every immediate expression or statement child in source order.
+    pub(crate) fn children(&self) -> Vec<HirChild<'_>> {
+        use ExprKind as K;
+
+        match &self.kind {
+            K::Unary { operand, .. }
+            | K::Cast(operand)
+            | K::JsonResultValue(operand)
+            | K::Length(operand)
+            | K::AsyncHandleAwait(operand)
+            | K::AsyncHandleTransfer { value: operand, .. } => {
+                vec![HirChild::Expr(operand)]
+            }
+            K::Binary { left, right, .. }
+            | K::Assign {
+                target: left,
+                value: right,
+                ..
+            } => vec![HirChild::Expr(left), HirChild::Expr(right)],
+            K::Call { callee, args } => {
+                let mut children = Vec::with_capacity(args.len() + 1);
+                match callee {
+                    Callee::Value(value) => children.push(HirChild::Expr(value)),
+                    Callee::Method { recv, .. } => children.push(HirChild::Expr(recv)),
+                    _ => {}
+                }
+                children.extend(args.iter().map(HirChild::Expr));
+                children
+            }
+            K::New { args, .. } => args.iter().map(HirChild::Expr).collect(),
+            K::DescriptorLit { fields, .. } => {
+                fields.iter().flatten().map(HirChild::Expr).collect()
+            }
+            K::Field { obj, .. } => vec![HirChild::Expr(obj)],
+            K::Index { obj, index, .. } => {
+                vec![HirChild::Expr(obj), HirChild::Expr(index)]
+            }
+            K::ArrayLit(elements) => elements.iter().map(HirChild::Expr).collect(),
+            K::ArraySpreadLit(elements) => elements
+                .iter()
+                .map(|element| HirChild::Expr(&element.expr))
+                .collect(),
+            K::Template(parts) => parts
+                .iter()
+                .filter_map(|part| match part {
+                    TplPart::Expr(expr) => Some(HirChild::Expr(expr)),
+                    TplPart::Text(_) => None,
+                })
+                .collect(),
+            K::Lambda { body, .. } => body.iter().map(HirChild::Stmt).collect(),
+            K::Yield(Some(value)) => vec![HirChild::Expr(value)],
+            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
+                let mut children = Vec::with_capacity(args.len() + 1);
+                if let Some(receiver) = callee.receiver() {
+                    children.push(HirChild::Expr(receiver));
+                }
+                children.extend(args.iter().map(HirChild::Expr));
+                children
+            }
+            K::Cond { cond, then, els } => vec![
+                HirChild::Expr(cond),
+                HirChild::Expr(then),
+                HirChild::Expr(els),
+            ],
+            K::Int(_)
+            | K::Float(_)
+            | K::Bool(_)
+            | K::Str(_)
+            | K::Null
+            | K::This
+            | K::Local(_)
+            | K::Global(_)
+            | K::FuncRef(_)
+            | K::EnumMember { .. }
+            | K::Zero
+            | K::RawNew { .. }
+            | K::Yield(None)
+            | K::AsyncSuspend => Vec::new(),
+        }
+    }
+
+    /// Returns every mutable immediate child in source order.
+    pub(crate) fn children_mut(&mut self) -> Vec<HirChildMut<'_>> {
+        use ExprKind as K;
+
+        match &mut self.kind {
+            K::Unary { operand, .. }
+            | K::Cast(operand)
+            | K::JsonResultValue(operand)
+            | K::Length(operand)
+            | K::AsyncHandleAwait(operand)
+            | K::AsyncHandleTransfer { value: operand, .. } => {
+                vec![HirChildMut::Expr(operand)]
+            }
+            K::Binary { left, right, .. }
+            | K::Assign {
+                target: left,
+                value: right,
+                ..
+            } => vec![HirChildMut::Expr(left), HirChildMut::Expr(right)],
+            K::Call { callee, args } => {
+                let mut children = Vec::with_capacity(args.len() + 1);
+                match callee {
+                    Callee::Value(value) => children.push(HirChildMut::Expr(value)),
+                    Callee::Method { recv, .. } => children.push(HirChildMut::Expr(recv)),
+                    _ => {}
+                }
+                children.extend(args.iter_mut().map(HirChildMut::Expr));
+                children
+            }
+            K::New { args, .. } => args.iter_mut().map(HirChildMut::Expr).collect(),
+            K::DescriptorLit { fields, .. } => {
+                fields.iter_mut().flatten().map(HirChildMut::Expr).collect()
+            }
+            K::Field { obj, .. } => vec![HirChildMut::Expr(obj)],
+            K::Index { obj, index, .. } => {
+                vec![HirChildMut::Expr(obj), HirChildMut::Expr(index)]
+            }
+            K::ArrayLit(elements) => elements.iter_mut().map(HirChildMut::Expr).collect(),
+            K::ArraySpreadLit(elements) => elements
+                .iter_mut()
+                .map(|element| HirChildMut::Expr(&mut element.expr))
+                .collect(),
+            K::Template(parts) => parts
+                .iter_mut()
+                .filter_map(|part| match part {
+                    TplPart::Expr(expr) => Some(HirChildMut::Expr(expr)),
+                    TplPart::Text(_) => None,
+                })
+                .collect(),
+            K::Lambda { body, .. } => body.iter_mut().map(HirChildMut::Stmt).collect(),
+            K::Yield(Some(value)) => vec![HirChildMut::Expr(value)],
+            K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
+                let mut children = Vec::with_capacity(args.len() + 1);
+                if let Some(receiver) = callee.receiver_mut() {
+                    children.push(HirChildMut::Expr(receiver));
+                }
+                children.extend(args.iter_mut().map(HirChildMut::Expr));
+                children
+            }
+            K::Cond { cond, then, els } => vec![
+                HirChildMut::Expr(cond),
+                HirChildMut::Expr(then),
+                HirChildMut::Expr(els),
+            ],
+            K::Int(_)
+            | K::Float(_)
+            | K::Bool(_)
+            | K::Str(_)
+            | K::Null
+            | K::This
+            | K::Local(_)
+            | K::Global(_)
+            | K::FuncRef(_)
+            | K::EnumMember { .. }
+            | K::Zero
+            | K::RawNew { .. }
+            | K::Yield(None)
+            | K::AsyncSuspend => Vec::new(),
+        }
+    }
+}
+
+impl Stmt {
+    /// Returns every immediate expression or statement child in source order.
+    pub(crate) fn children(&self) -> Vec<HirChild<'_>> {
+        match self {
+            Stmt::Let { init, .. } | Stmt::Expr(init) => vec![HirChild::Expr(init)],
+            Stmt::Return { value, .. } => value.iter().map(HirChild::Expr).collect(),
+            Stmt::If {
+                cond, then, els, ..
+            } => {
+                let mut children =
+                    Vec::with_capacity(1 + then.len() + els.as_ref().map_or(0, Vec::len));
+                children.push(HirChild::Expr(cond));
+                children.extend(then.iter().map(HirChild::Stmt));
+                children.extend(els.iter().flatten().map(HirChild::Stmt));
+                children
+            }
+            Stmt::While { cond, body, .. } => {
+                let mut children = Vec::with_capacity(1 + body.len());
+                children.push(HirChild::Expr(cond));
+                children.extend(body.iter().map(HirChild::Stmt));
+                children
+            }
+            Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
+                let mut children = Vec::with_capacity(3 + body.len());
+                children.extend(init.iter().map(|stmt| HirChild::Stmt(stmt)));
+                children.extend(cond.iter().map(HirChild::Expr));
+                children.extend(step.iter().map(HirChild::Expr));
+                children.extend(body.iter().map(HirChild::Stmt));
+                children
+            }
+            Stmt::ForOf { subject, body, .. } => {
+                let mut children = Vec::with_capacity(1 + body.len());
+                children.push(HirChild::Expr(subject));
+                children.extend(body.iter().map(HirChild::Stmt));
+                children
+            }
+            Stmt::Switch { disc, cases, .. } => {
+                let mut children = Vec::new();
+                children.push(HirChild::Expr(disc));
+                for case in cases {
+                    children.extend(case.test.iter().map(HirChild::Expr));
+                    children.extend(case.body.iter().map(HirChild::Stmt));
+                }
+                children
+            }
+            Stmt::Block(body) => body.iter().map(HirChild::Stmt).collect(),
+            Stmt::Break(_) | Stmt::Continue(_) => Vec::new(),
+        }
+    }
+
+    /// Returns every mutable immediate child in source order.
+    pub(crate) fn children_mut(&mut self) -> Vec<HirChildMut<'_>> {
+        match self {
+            Stmt::Let { init, .. } | Stmt::Expr(init) => vec![HirChildMut::Expr(init)],
+            Stmt::Return { value, .. } => value.iter_mut().map(HirChildMut::Expr).collect(),
+            Stmt::If {
+                cond, then, els, ..
+            } => {
+                let mut children =
+                    Vec::with_capacity(1 + then.len() + els.as_ref().map_or(0, Vec::len));
+                children.push(HirChildMut::Expr(cond));
+                children.extend(then.iter_mut().map(HirChildMut::Stmt));
+                children.extend(els.iter_mut().flatten().map(HirChildMut::Stmt));
+                children
+            }
+            Stmt::While { cond, body, .. } => {
+                let mut children = Vec::with_capacity(1 + body.len());
+                children.push(HirChildMut::Expr(cond));
+                children.extend(body.iter_mut().map(HirChildMut::Stmt));
+                children
+            }
+            Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
+                let mut children = Vec::with_capacity(3 + body.len());
+                children.extend(init.iter_mut().map(|stmt| HirChildMut::Stmt(stmt)));
+                children.extend(cond.iter_mut().map(HirChildMut::Expr));
+                children.extend(step.iter_mut().map(HirChildMut::Expr));
+                children.extend(body.iter_mut().map(HirChildMut::Stmt));
+                children
+            }
+            Stmt::ForOf { subject, body, .. } => {
+                let mut children = Vec::with_capacity(1 + body.len());
+                children.push(HirChildMut::Expr(subject));
+                children.extend(body.iter_mut().map(HirChildMut::Stmt));
+                children
+            }
+            Stmt::Switch { disc, cases, .. } => {
+                let mut children = Vec::new();
+                children.push(HirChildMut::Expr(disc));
+                for case in cases {
+                    children.extend(case.test.iter_mut().map(HirChildMut::Expr));
+                    children.extend(case.body.iter_mut().map(HirChildMut::Stmt));
+                }
+                children
+            }
+            Stmt::Block(body) => body.iter_mut().map(HirChildMut::Stmt).collect(),
+            Stmt::Break(_) | Stmt::Continue(_) => Vec::new(),
+        }
+    }
+}
+
+impl Expr {
     /// The ordered trap sites owned directly by this operation.
     ///
     /// Sites in child expressions are carried by those children and occur
@@ -3706,6 +4000,43 @@ mod tests {
     use super::*;
     use crate::diag::Pos;
 
+    fn child_expr(value: i64) -> Expr {
+        Expr {
+            kind: ExprKind::Int(value),
+            ty: Type::I32,
+            pos: Pos::new("children.ts", 1, 1),
+        }
+    }
+
+    fn child_stmt(value: i64) -> Stmt {
+        Stmt::Expr(child_expr(value))
+    }
+
+    fn child_values(children: Vec<HirChild<'_>>) -> Vec<i64> {
+        children
+            .into_iter()
+            .map(|child| match child {
+                HirChild::Expr(Expr {
+                    kind: ExprKind::Int(value),
+                    ..
+                })
+                | HirChild::Stmt(Stmt::Expr(Expr {
+                    kind: ExprKind::Int(value),
+                    ..
+                })) => *value,
+                other => panic!("unexpected test child {other:?}"),
+            })
+            .collect()
+    }
+
+    fn test_expr(kind: ExprKind) -> Expr {
+        Expr {
+            kind,
+            ty: Type::I32,
+            pos: Pos::new("children.ts", 1, 1),
+        }
+    }
+
     #[test]
     fn expr_carries_type_and_pos() {
         let e = Expr {
@@ -3715,6 +4046,273 @@ mod tests {
         };
         assert_eq!(e.ty, Type::I32);
         assert_eq!(e.pos.line, 1);
+    }
+
+    #[test]
+    fn expr_children_yield_every_child() {
+        let leaf_kinds = vec![
+            ExprKind::Int(0),
+            ExprKind::Float(0.0),
+            ExprKind::Bool(false),
+            ExprKind::Str(String::new()),
+            ExprKind::Null,
+            ExprKind::This,
+            ExprKind::Local(String::new()),
+            ExprKind::Global(String::new()),
+            ExprKind::FuncRef(String::new()),
+            ExprKind::EnumMember {
+                id: EnumId(0),
+                member: String::new(),
+                value: 0,
+            },
+            ExprKind::Zero,
+            ExprKind::RawNew { class: ClassId(0) },
+            ExprKind::Yield(None),
+            ExprKind::AsyncSuspend,
+        ];
+        for kind in leaf_kinds {
+            assert!(test_expr(kind).children().is_empty());
+        }
+
+        let cases = vec![
+            (
+                ExprKind::Unary {
+                    op: UnOp::Neg,
+                    operand: Box::new(child_expr(1)),
+                },
+                vec![1],
+            ),
+            (
+                ExprKind::Binary {
+                    op: BinOp::Add,
+                    left: Box::new(child_expr(1)),
+                    right: Box::new(child_expr(2)),
+                },
+                vec![1, 2],
+            ),
+            (
+                ExprKind::Assign {
+                    op: None,
+                    target: Box::new(child_expr(1)),
+                    value: Box::new(child_expr(2)),
+                },
+                vec![1, 2],
+            ),
+            (ExprKind::Cast(Box::new(child_expr(1))), vec![1]),
+            (
+                ExprKind::Call {
+                    callee: Callee::Value(Box::new(child_expr(1))),
+                    args: vec![child_expr(2)],
+                },
+                vec![1, 2],
+            ),
+            (
+                ExprKind::Call {
+                    callee: Callee::Method {
+                        recv: Box::new(child_expr(1)),
+                        name: String::new(),
+                    },
+                    args: vec![child_expr(2)],
+                },
+                vec![1, 2],
+            ),
+            (
+                ExprKind::New {
+                    class: ClassId(0),
+                    args: vec![child_expr(1), child_expr(2)],
+                },
+                vec![1, 2],
+            ),
+            (
+                ExprKind::DescriptorLit {
+                    class: ClassId(0),
+                    fields: vec![Some(child_expr(1)), None, Some(child_expr(2))],
+                },
+                vec![1, 2],
+            ),
+            (
+                ExprKind::Field {
+                    obj: Box::new(child_expr(1)),
+                    name: String::new(),
+                },
+                vec![1],
+            ),
+            (ExprKind::JsonResultValue(Box::new(child_expr(1))), vec![1]),
+            (ExprKind::Length(Box::new(child_expr(1))), vec![1]),
+            (
+                ExprKind::Index {
+                    obj: Box::new(child_expr(1)),
+                    index: Box::new(child_expr(2)),
+                    checked: true,
+                },
+                vec![1, 2],
+            ),
+            (
+                ExprKind::ArrayLit(vec![child_expr(1), child_expr(2)]),
+                vec![1, 2],
+            ),
+            (
+                ExprKind::ArraySpreadLit(vec![
+                    ArrayLitElem {
+                        expr: child_expr(1),
+                        spread: None,
+                    },
+                    ArrayLitElem {
+                        expr: child_expr(2),
+                        spread: Some(SpreadKind::Array),
+                    },
+                ]),
+                vec![1, 2],
+            ),
+            (
+                ExprKind::Template(vec![
+                    TplPart::Text(String::new()),
+                    TplPart::Expr(child_expr(1)),
+                    TplPart::Expr(child_expr(2)),
+                ]),
+                vec![1, 2],
+            ),
+            (
+                ExprKind::Lambda {
+                    params: Vec::new(),
+                    ret: Type::Void,
+                    body: vec![child_stmt(1), child_stmt(2)],
+                    captures: Vec::new(),
+                },
+                vec![1, 2],
+            ),
+            (ExprKind::Yield(Some(Box::new(child_expr(1)))), vec![1]),
+            (
+                ExprKind::AsyncCall {
+                    callee: AsyncCallee::Method {
+                        class: ClassId(0),
+                        receiver: Box::new(child_expr(1)),
+                        name: String::new(),
+                    },
+                    args: vec![child_expr(2)],
+                },
+                vec![1, 2],
+            ),
+            (
+                ExprKind::AsyncHandleCreate {
+                    callee: AsyncCallee::Method {
+                        class: ClassId(0),
+                        receiver: Box::new(child_expr(1)),
+                        name: String::new(),
+                    },
+                    args: vec![child_expr(2)],
+                    origin: 0,
+                },
+                vec![1, 2],
+            ),
+            (ExprKind::AsyncHandleAwait(Box::new(child_expr(1))), vec![1]),
+            (
+                ExprKind::AsyncHandleTransfer {
+                    value: Box::new(child_expr(1)),
+                    origin: 0,
+                },
+                vec![1],
+            ),
+            (
+                ExprKind::Cond {
+                    cond: Box::new(child_expr(1)),
+                    then: Box::new(child_expr(2)),
+                    els: Box::new(child_expr(3)),
+                },
+                vec![1, 2, 3],
+            ),
+        ];
+        for (kind, expected) in cases {
+            assert_eq!(child_values(test_expr(kind).children()), expected);
+        }
+    }
+
+    #[test]
+    fn stmt_children_yield_every_child() {
+        let pos = Pos::new("children.ts", 1, 1);
+        let cases = vec![
+            (
+                Stmt::Let {
+                    name: String::new(),
+                    ty: Type::I32,
+                    mutable: false,
+                    init: child_expr(1),
+                    pos: pos.clone(),
+                },
+                vec![1],
+            ),
+            (Stmt::Expr(child_expr(1)), vec![1]),
+            (
+                Stmt::Return {
+                    value: Some(child_expr(1)),
+                    pos: pos.clone(),
+                },
+                vec![1],
+            ),
+            (
+                Stmt::Return {
+                    value: None,
+                    pos: pos.clone(),
+                },
+                Vec::new(),
+            ),
+            (
+                Stmt::If {
+                    cond: child_expr(1),
+                    then: vec![child_stmt(2)],
+                    els: Some(vec![child_stmt(3)]),
+                    pos: pos.clone(),
+                },
+                vec![1, 2, 3],
+            ),
+            (
+                Stmt::While {
+                    cond: child_expr(1),
+                    body: vec![child_stmt(2)],
+                    pos: pos.clone(),
+                },
+                vec![1, 2],
+            ),
+            (
+                Stmt::For {
+                    init: Some(Box::new(child_stmt(1))),
+                    cond: Some(child_expr(2)),
+                    step: Some(child_expr(3)),
+                    body: vec![child_stmt(4)],
+                    pos: pos.clone(),
+                },
+                vec![1, 2, 3, 4],
+            ),
+            (
+                Stmt::ForOf {
+                    name: String::new(),
+                    ty: Type::I32,
+                    subject: child_expr(1),
+                    kind: ForOfKind::ArrayValues,
+                    body: vec![child_stmt(2)],
+                    pos: pos.clone(),
+                },
+                vec![1, 2],
+            ),
+            (
+                Stmt::Switch {
+                    disc: child_expr(1),
+                    cases: vec![SwitchCase {
+                        test: Some(child_expr(2)),
+                        body: vec![child_stmt(3)],
+                        pos: pos.clone(),
+                    }],
+                    pos: pos.clone(),
+                },
+                vec![1, 2, 3],
+            ),
+            (Stmt::Block(vec![child_stmt(1), child_stmt(2)]), vec![1, 2]),
+            (Stmt::Break(pos.clone()), Vec::new()),
+            (Stmt::Continue(pos), Vec::new()),
+        ];
+        for (stmt, expected) in cases {
+            assert_eq!(child_values(stmt.children()), expected);
+        }
     }
 
     #[test]

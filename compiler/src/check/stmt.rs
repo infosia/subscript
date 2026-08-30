@@ -210,80 +210,179 @@ fn assigned_roots_stmt(s: &ast::Stmt, out: &mut HashSet<String>) {
     }
 }
 
+trait AstExprChildren {
+    fn children(&self) -> Vec<&ast::Expr>;
+}
+
+impl AstExprChildren for ast::Expr {
+    fn children(&self) -> Vec<&ast::Expr> {
+        match self {
+            ast::Expr::Array(array) => array
+                .elems
+                .iter()
+                .flatten()
+                .map(|element| element.expr.as_ref())
+                .collect(),
+            ast::Expr::Object(object) => object
+                .props
+                .iter()
+                .flat_map(|property| match property {
+                    ast::PropOrSpread::Spread(spread) => vec![spread.expr.as_ref()],
+                    ast::PropOrSpread::Prop(property) => match property.as_ref() {
+                        ast::Prop::KeyValue(property) => vec![property.value.as_ref()],
+                        ast::Prop::Assign(property) => vec![property.value.as_ref()],
+                        ast::Prop::Shorthand(_)
+                        | ast::Prop::Getter(_)
+                        | ast::Prop::Setter(_)
+                        | ast::Prop::Method(_) => Vec::new(),
+                    },
+                })
+                .collect(),
+            ast::Expr::Unary(unary) => vec![&unary.arg],
+            ast::Expr::Update(update) => vec![&update.arg],
+            ast::Expr::Bin(binary) => vec![&binary.left, &binary.right],
+            ast::Expr::Assign(assign) => {
+                let mut children = Vec::with_capacity(2);
+                match &assign.left {
+                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(member)) => {
+                        children.push(member.obj.as_ref());
+                        if let ast::MemberProp::Computed(property) = &member.prop {
+                            children.push(property.expr.as_ref());
+                        }
+                    }
+                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::Paren(paren)) => {
+                        children.push(paren.expr.as_ref());
+                    }
+                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::TsAs(as_expr)) => {
+                        children.push(as_expr.expr.as_ref());
+                    }
+                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::TsSatisfies(satisfies)) => {
+                        children.push(satisfies.expr.as_ref());
+                    }
+                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::TsNonNull(non_null)) => {
+                        children.push(non_null.expr.as_ref());
+                    }
+                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::TsTypeAssertion(
+                        assertion,
+                    )) => {
+                        children.push(assertion.expr.as_ref());
+                    }
+                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::TsInstantiation(
+                        instance,
+                    )) => {
+                        children.push(instance.expr.as_ref());
+                    }
+                    _ => {}
+                }
+                children.push(assign.right.as_ref());
+                children
+            }
+            ast::Expr::Member(member) => {
+                let mut children = vec![member.obj.as_ref()];
+                if let ast::MemberProp::Computed(property) = &member.prop {
+                    children.push(property.expr.as_ref());
+                }
+                children
+            }
+            ast::Expr::SuperProp(property) => match &property.prop {
+                ast::SuperProp::Computed(property) => vec![property.expr.as_ref()],
+                ast::SuperProp::Ident(_) => Vec::new(),
+            },
+            ast::Expr::Cond(cond) => vec![&cond.test, &cond.cons, &cond.alt],
+            ast::Expr::Call(call) => {
+                let mut children = Vec::with_capacity(call.args.len() + 1);
+                if let ast::Callee::Expr(callee) = &call.callee {
+                    children.push(callee.as_ref());
+                }
+                children.extend(call.args.iter().map(|argument| argument.expr.as_ref()));
+                children
+            }
+            ast::Expr::New(new) => {
+                let mut children = vec![new.callee.as_ref()];
+                children.extend(
+                    new.args
+                        .iter()
+                        .flatten()
+                        .map(|argument| argument.expr.as_ref()),
+                );
+                children
+            }
+            ast::Expr::Seq(sequence) => sequence.exprs.iter().map(Box::as_ref).collect(),
+            ast::Expr::Tpl(template) => template.exprs.iter().map(Box::as_ref).collect(),
+            ast::Expr::TaggedTpl(template) => std::iter::once(template.tag.as_ref())
+                .chain(template.tpl.exprs.iter().map(Box::as_ref))
+                .collect(),
+            ast::Expr::Arrow(arrow) => match arrow.body.as_ref() {
+                ast::BlockStmtOrExpr::Expr(expr) => vec![expr],
+                ast::BlockStmtOrExpr::BlockStmt(_) => Vec::new(),
+            },
+            ast::Expr::Yield(yield_expr) => yield_expr.arg.iter().map(Box::as_ref).collect(),
+            ast::Expr::Await(await_expr) => vec![&await_expr.arg],
+            ast::Expr::Paren(paren) => vec![&paren.expr],
+            ast::Expr::TsTypeAssertion(assertion) => vec![&assertion.expr],
+            ast::Expr::TsConstAssertion(assertion) => vec![&assertion.expr],
+            ast::Expr::TsNonNull(non_null) => vec![&non_null.expr],
+            ast::Expr::TsAs(as_expr) => vec![&as_expr.expr],
+            ast::Expr::TsInstantiation(instance) => vec![&instance.expr],
+            ast::Expr::TsSatisfies(satisfies) => vec![&satisfies.expr],
+            ast::Expr::OptChain(chain) => match chain.base.as_ref() {
+                ast::OptChainBase::Member(member) => {
+                    let mut children = vec![member.obj.as_ref()];
+                    if let ast::MemberProp::Computed(property) = &member.prop {
+                        children.push(property.expr.as_ref());
+                    }
+                    children
+                }
+                ast::OptChainBase::Call(call) => std::iter::once(call.callee.as_ref())
+                    .chain(call.args.iter().map(|argument| argument.expr.as_ref()))
+                    .collect(),
+            },
+            ast::Expr::This(_)
+            | ast::Expr::Fn(_)
+            | ast::Expr::Ident(_)
+            | ast::Expr::Lit(_)
+            | ast::Expr::Class(_)
+            | ast::Expr::MetaProp(_)
+            | ast::Expr::JSXMember(_)
+            | ast::Expr::JSXNamespacedName(_)
+            | ast::Expr::JSXEmpty(_)
+            | ast::Expr::JSXElement(_)
+            | ast::Expr::JSXFragment(_)
+            | ast::Expr::PrivateName(_)
+            | ast::Expr::Invalid(_) => Vec::new(),
+        }
+    }
+}
+
 fn assigned_roots_expr(e: &ast::Expr, out: &mut HashSet<String>) {
     match e {
-        ast::Expr::Assign(a) => {
-            match &a.left {
-                ast::AssignTarget::Simple(ast::SimpleAssignTarget::Ident(binding)) => {
-                    out.insert(binding.id.sym.to_string());
-                }
-                ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(m)) => {
-                    if let Some(root) = member_root(m) {
-                        out.insert(root);
-                    }
-                }
-                _ => {}
+        ast::Expr::Assign(a) => match &a.left {
+            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Ident(binding)) => {
+                out.insert(binding.id.sym.to_string());
             }
-            assigned_roots_expr(&a.right, out);
-        }
+            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(m)) => {
+                if let Some(root) = member_root(m) {
+                    out.insert(root);
+                }
+            }
+            _ => {}
+        },
         ast::Expr::Update(u) => {
             if let ast::Expr::Ident(id) = &*u.arg {
                 out.insert(id.sym.to_string());
             }
-            assigned_roots_expr(&u.arg, out);
         }
-        ast::Expr::Bin(b) => {
-            assigned_roots_expr(&b.left, out);
-            assigned_roots_expr(&b.right, out);
-        }
-        ast::Expr::Unary(u) => assigned_roots_expr(&u.arg, out),
-        ast::Expr::Paren(p) => assigned_roots_expr(&p.expr, out),
-        ast::Expr::Member(m) => assigned_roots_expr(&m.obj, out),
-        ast::Expr::Cond(c) => {
-            assigned_roots_expr(&c.test, out);
-            assigned_roots_expr(&c.cons, out);
-            assigned_roots_expr(&c.alt, out);
-        }
-        ast::Expr::Call(c) => {
-            if let ast::Callee::Expr(callee) = &c.callee {
-                assigned_roots_expr(callee, out);
-            }
-            for arg in &c.args {
-                assigned_roots_expr(&arg.expr, out);
-            }
-        }
-        ast::Expr::New(n) => {
-            if let Some(args) = &n.args {
-                for arg in args {
-                    assigned_roots_expr(&arg.expr, out);
+        ast::Expr::Arrow(arrow) => {
+            if let ast::BlockStmtOrExpr::BlockStmt(block) = arrow.body.as_ref() {
+                for statement in &block.stmts {
+                    assigned_roots_stmt(statement, out);
                 }
             }
         }
-        ast::Expr::Tpl(t) => {
-            for e in &t.exprs {
-                assigned_roots_expr(e, out);
-            }
-        }
-        ast::Expr::Array(a) => {
-            for e in a.elems.iter().flatten() {
-                assigned_roots_expr(&e.expr, out);
-            }
-        }
-        ast::Expr::TsAs(a) => assigned_roots_expr(&a.expr, out),
-        ast::Expr::Yield(y) => {
-            if let Some(arg) = &y.arg {
-                assigned_roots_expr(arg, out);
-            }
-        }
-        ast::Expr::Arrow(a) => match &*a.body {
-            ast::BlockStmtOrExpr::Expr(e) => assigned_roots_expr(e, out),
-            ast::BlockStmtOrExpr::BlockStmt(b) => {
-                for s in &b.stmts {
-                    assigned_roots_stmt(s, out);
-                }
-            }
-        },
         _ => {}
+    }
+    for child in e.children() {
+        assigned_roots_expr(child, out);
     }
 }
 
@@ -1321,5 +1420,28 @@ mod tests {
     fn root_of_takes_first_segment() {
         assert_eq!(root_of("node.next"), "node");
         assert_eq!(root_of("node"), "node");
+    }
+
+    #[test]
+    fn assigned_roots_expr_walks_object_literal_values() {
+        let source = crate::SourceFile::new(
+            "object.ts",
+            "export function f(): void { use({ value: (root.field = 1) }); }\n",
+        );
+        let program = swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
+            crate::parse::parse_program(&[source]).expect("object source parses")
+        });
+        let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) =
+            &program.files[0].module.body[0]
+        else {
+            panic!("expected an exported declaration");
+        };
+        let ast::Decl::Fn(function) = &export.decl else {
+            panic!("expected a function declaration");
+        };
+        let body = function.function.body.as_ref().expect("function body");
+        let mut assigned = HashSet::new();
+        assigned_roots_stmt(&body.stmts[0], &mut assigned);
+        assert_eq!(assigned, HashSet::from(["root".to_string()]));
     }
 }
