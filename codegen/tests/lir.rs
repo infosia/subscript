@@ -1375,7 +1375,7 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 116;
+const RELEASE_RUNNABLE_COUNT: usize = 118;
 const DEBUG_RUNNABLE_COUNT: usize = 115;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
