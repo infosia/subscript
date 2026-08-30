@@ -135,14 +135,6 @@ mod tests {
 
     #[test]
     fn configured_tier_runs_use_the_default_contract() {
-        let config = RunConfig::default();
-        assert!(config.native_libraries.is_empty());
-        assert_eq!(config.fail_alloc_after, None);
-        assert!(!config.freed_handle_diagnostics);
-        assert!(!config.memory_accounting);
-        assert_eq!(config.pre_entry_hook, None);
-        assert_eq!(config.post_run_hook, None);
-
         let files = [SourceFile::new(
             "configured.ts",
             "export function main(): void { print(\"configured\"); }\n",

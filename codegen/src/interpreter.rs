@@ -17,7 +17,7 @@ use subscript_runtime::context::Context;
 use subscript_runtime::ffi;
 use subscript_runtime::trap::TrapKind as RuntimeTrapKind;
 
-use crate::lir_types::runtime_trap_kind;
+use crate::lir_types::{runtime_trap_kind, runtime_trap_site};
 
 /// A failure observed while executing a verified LIR module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1697,15 +1697,7 @@ impl<'m> Interpreter<'m> {
         let Some(trap) = self.context.trap_record() else {
             return Ok(());
         };
-        let pos = self
-            .active_traps
-            .iter()
-            .find(|site| runtime_trap_matches_lir(trap.kind, &site.kind))
-            .or_else(|| {
-                self.active_traps
-                    .iter()
-                    .find(|site| site.kind == l::TrapKind::Call)
-            })
+        let pos = runtime_trap_site(trap.kind, &self.active_traps)
             .map_or_else(|| pos.clone(), |site| site.pos.clone());
         Err(InterpretError::Trap {
             kind: trap.kind.rule().to_string(),
@@ -2523,7 +2515,7 @@ impl<'m> Interpreter<'m> {
             } as i64),
             // SAFETY: live strings; shared concat implementation.
             "Concat" => Value::Handle(unsafe {
-                ffi::subscript_rt_str_method_concat(context, receiver, handle(1)?, 0)
+                ffi::subscript_rt_str_concat(context, receiver, handle(1)?, 0)
             }),
             _ => return Err(self.invalid(None, format!("unknown String intrinsic {operation}"))),
         };
@@ -3364,7 +3356,9 @@ impl<'m> Interpreter<'m> {
                 })
             }
             // SAFETY: live Map receiver.
-            "Size" => Value::I(unsafe { ffi::subscript_rt_map_size(context, receiver()?) } as i64),
+            "Size" => {
+                Value::I(unsafe { ffi::subscript_rt_assoc_size(context, receiver()?) } as i64)
+            }
             "Get" => {
                 let key = packed_key()?;
                 let mut out = vec![0; value_layout.size];
@@ -3422,20 +3416,20 @@ impl<'m> Interpreter<'m> {
                 let key = packed_key()?;
                 // SAFETY: live receiver and exact key storage.
                 Value::Bool(
-                    unsafe { ffi::subscript_rt_map_has(context, receiver()?, key.as_ptr()) } != 0,
+                    unsafe { ffi::subscript_rt_assoc_has(context, receiver()?, key.as_ptr()) } != 0,
                 )
             }
             "Delete" => {
                 let key = packed_key()?;
                 // SAFETY: live receiver and exact key storage.
                 Value::Bool(
-                    unsafe { ffi::subscript_rt_map_delete(context, receiver()?, key.as_ptr()) }
+                    unsafe { ffi::subscript_rt_assoc_delete(context, receiver()?, key.as_ptr()) }
                         != 0,
                 )
             }
             "Clear" => {
                 // SAFETY: live receiver.
-                unsafe { ffi::subscript_rt_map_clear(context, receiver()?) };
+                unsafe { ffi::subscript_rt_assoc_clear(context, receiver()?) };
                 Value::Void
             }
             "ForEach" => {
@@ -3532,7 +3526,9 @@ impl<'m> Interpreter<'m> {
                 })
             }
             // SAFETY: live Set receiver.
-            "Size" => Value::I(unsafe { ffi::subscript_rt_set_size(context, receiver()?) } as i64),
+            "Size" => {
+                Value::I(unsafe { ffi::subscript_rt_assoc_size(context, receiver()?) } as i64)
+            }
             "Add" => {
                 let key = packed_key()?;
                 // SAFETY: live receiver and exact key storage.
@@ -3544,20 +3540,20 @@ impl<'m> Interpreter<'m> {
                 let key = packed_key()?;
                 // SAFETY: live receiver and exact key storage.
                 Value::Bool(
-                    unsafe { ffi::subscript_rt_set_has(context, receiver()?, key.as_ptr()) } != 0,
+                    unsafe { ffi::subscript_rt_assoc_has(context, receiver()?, key.as_ptr()) } != 0,
                 )
             }
             "Delete" => {
                 let key = packed_key()?;
                 // SAFETY: live receiver and exact key storage.
                 Value::Bool(
-                    unsafe { ffi::subscript_rt_set_delete(context, receiver()?, key.as_ptr()) }
+                    unsafe { ffi::subscript_rt_assoc_delete(context, receiver()?, key.as_ptr()) }
                         != 0,
                 )
             }
             "Clear" => {
                 // SAFETY: live receiver.
-                unsafe { ffi::subscript_rt_set_clear(context, receiver()?) };
+                unsafe { ffi::subscript_rt_assoc_clear(context, receiver()?) };
                 Value::Void
             }
             "ForEach" => {
@@ -5432,29 +5428,6 @@ unsafe fn callback_state<'a>(env: *const u8) -> &'a mut CallbackState {
     // SAFETY: every runtime callback using these bridges receives the address
     // of a live stack-owned `CallbackState` as its environment.
     unsafe { &mut *env.cast_mut().cast::<CallbackState>() }
-}
-
-fn runtime_trap_matches_lir(runtime: RuntimeTrapKind, lir: &l::TrapKind) -> bool {
-    if runtime_trap_kind(lir) == Some(runtime) {
-        return true;
-    }
-    match runtime {
-        RuntimeTrapKind::DoubleDelete
-        | RuntimeTrapKind::InvalidDelete
-        | RuntimeTrapKind::CallbackUserdataFreed => *lir == l::TrapKind::DevOnlyLifetime,
-        RuntimeTrapKind::EmptyPop
-        | RuntimeTrapKind::StringSlice
-        | RuntimeTrapKind::Internal
-        | RuntimeTrapKind::DateRange
-        | RuntimeTrapKind::StrRange
-        | RuntimeTrapKind::NumberRange
-        | RuntimeTrapKind::JsonNumber
-        | RuntimeTrapKind::JsonCycle
-        | RuntimeTrapKind::Regex
-        | RuntimeTrapKind::RegexBudget
-        | RuntimeTrapKind::WorkerTrapped => *lir == l::TrapKind::Call,
-        _ => false,
-    }
 }
 
 unsafe fn callback_interpreter(state: &mut CallbackState) -> &mut Interpreter<'static> {

@@ -359,8 +359,8 @@ unsafe fn read_elem<T: Copy>(ctx: *mut Context, h: *mut u8, i: usize) -> T {
 /// # Safety
 ///
 /// `h` is a live array of this context.
-unsafe fn len_of(ctx: *mut Context, h: *const u8) -> usize {
-    if h.is_null() || !unsafe { &mut *ctx }.require_live_handle(h as usize, 0) {
+unsafe fn len_of(ctx: *mut Context, h: *const u8, pos_id: u32) -> usize {
+    if h.is_null() || !unsafe { &mut *ctx }.require_live_handle(h as usize, pos_id) {
         return 0;
     }
     // SAFETY: caller contract.
@@ -403,10 +403,10 @@ impl ElementSource {
     }
 
     /// Returns the source length for the current iteration.
-    unsafe fn len(self, ctx: *mut Context) -> usize {
+    unsafe fn len(self, ctx: *mut Context, pos_id: u32) -> usize {
         match self {
             // SAFETY: caller contract.
-            ElementSource::Dynamic(handle) => unsafe { len_of(ctx, handle) },
+            ElementSource::Dynamic(handle) => unsafe { len_of(ctx, handle, pos_id) },
             ElementSource::Fixed { len, .. } => len,
         }
     }
@@ -472,7 +472,7 @@ unsafe fn position(
         return -1;
     }
     // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let (n, esz) = unsafe { (len_of(ctx, h, 0), (*ctx).array_elem_size(h)) };
     // The code generators never produce this element shape. The trap prevents
     // a silent wrong comparison. It means a defect in this compiler, not a
     // program fault or a build mismatch.
@@ -539,11 +539,11 @@ pub unsafe fn join(
     if h.is_null() || sep.is_null() {
         return std::ptr::null_mut();
     }
-    // SAFETY: caller contract. Copied out so the borrow does not overlap
-    // the alloc below.
+    // SAFETY: caller contract. Context string allocations keep immutable input
+    // allocation addresses stable.
     let sep_bytes = unsafe { (*ctx).str_view(sep) };
     // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let (n, esz) = unsafe { (len_of(ctx, h, pos_id), (*ctx).array_elem_size(h)) };
     let mut out: Vec<u8> = Vec::new();
     for i in 0..n {
         if i > 0 {
@@ -637,7 +637,7 @@ pub unsafe fn slice(ctx: *mut Context, h: *mut u8, start: i32, end: i32, pos_id:
         return std::ptr::null_mut();
     }
     // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let (n, esz) = unsafe { (len_of(ctx, h, pos_id), (*ctx).array_elem_size(h)) };
     let (lo, hi) = (clamp_index(start, n), clamp_index(end, n));
     // SAFETY: caller contract.
     let out = unsafe { &mut *ctx }.array_new(esz, pos_id);
@@ -669,7 +669,7 @@ pub unsafe fn fill(ctx: *mut Context, h: *mut u8, x: *const u8, start: i32, end:
         return;
     }
     // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let (n, esz) = unsafe { (len_of(ctx, h, 0), (*ctx).array_elem_size(h)) };
     let (lo, hi) = (clamp_index(start, n), clamp_index(end, n));
     for i in lo..hi {
         // SAFETY: `i < n`; caller contract.
@@ -691,7 +691,7 @@ pub unsafe fn reverse(ctx: *mut Context, h: *mut u8) {
         return;
     }
     // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let (n, esz) = unsafe { (len_of(ctx, h, 0), (*ctx).array_elem_size(h)) };
     let mut tmp = vec![0u8; esz];
     for i in 0..n / 2 {
         let j = n - 1 - i;
@@ -742,7 +742,7 @@ pub unsafe fn concat(ctx: *mut Context, a: *mut u8, b: *mut u8, pos_id: u32) -> 
     }
     for src in [a, b] {
         // SAFETY: caller contract.
-        let n = unsafe { len_of(ctx, src) };
+        let n = unsafe { len_of(ctx, src, pos_id) };
         // SAFETY: source storage contains `n` initialized elements.
         let data = unsafe { (*ctx).array_data(src) };
         // SAFETY: matching element sizes.
@@ -775,7 +775,7 @@ pub unsafe fn splice(
         return std::ptr::null_mut();
     }
     // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let (n, esz) = unsafe { (len_of(ctx, h, pos_id), (*ctx).array_elem_size(h)) };
     let lo = clamp_index(start, n);
     let count = usize::try_from(delete_count.max(0))
         .unwrap_or(usize::MAX)
@@ -829,7 +829,7 @@ pub unsafe fn shift(ctx: *mut Context, h: *mut u8, dst: *mut u8, pos_id: u32) {
         return;
     }
     // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let (n, esz) = unsafe { (len_of(ctx, h, pos_id), (*ctx).array_elem_size(h)) };
     if n == 0 {
         // SAFETY: caller contract.
         unsafe { &mut *ctx }.trap(TrapKind::EmptyPop, "shift() on an empty array", pos_id);
@@ -860,7 +860,7 @@ pub unsafe fn unshift(ctx: *mut Context, h: *mut u8, x: *const u8, pos_id: u32) 
     // Copy before growth so the operation is correct even if `x`
     // aliases receiver storage retired by `array_push`.
     // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let (n, esz) = unsafe { (len_of(ctx, h, pos_id), (*ctx).array_elem_size(h)) };
     // SAFETY: `x` is readable for `esz` bytes.
     let value = unsafe { std::slice::from_raw_parts(x, esz) }.to_vec();
     // SAFETY: caller contract; `value` is one readable element.
@@ -890,7 +890,7 @@ pub unsafe fn copy_within(ctx: *mut Context, h: *mut u8, target: i32, start: i32
         return;
     }
     // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
+    let (n, esz) = unsafe { (len_of(ctx, h, 0), (*ctx).array_elem_size(h)) };
     let (to, from, final_) = (
         clamp_index(target, n),
         clamp_index(start, n),
@@ -963,13 +963,13 @@ unsafe fn for_each_source(
         return;
     };
     // SAFETY: caller contract.
-    let n = unsafe { source.len(ctx) };
+    let n = unsafe { source.len(ctx, 0) };
     with_abi!(abi, T, {
         for i in 0..n {
             // A callback may mutate a dynamic array. A fixed source
             // returns the same constant length on every iteration.
             // SAFETY: caller contract.
-            if unsafe { source.len(ctx) } <= i {
+            if unsafe { source.len(ctx, 0) } <= i {
                 break;
             }
             // SAFETY: `i` in bounds; `size_of::<T>() == esz` by dispatch.
@@ -1055,12 +1055,12 @@ unsafe fn map_source(
     // SAFETY: `root` stays live until the matching pop below.
     unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
     // SAFETY: caller contract.
-    let n = unsafe { source.len(ctx) };
+    let n = unsafe { source.len(ctx, pos_id) };
     with_abi!(ea, T, {
         with_abi!(ra, R, {
             for i in 0..n {
                 // SAFETY: caller contract.
-                if unsafe { source.len(ctx) } <= i {
+                if unsafe { source.len(ctx, pos_id) } <= i {
                     break;
                 }
                 // SAFETY: `i` in bounds; widths match by dispatch.
@@ -1146,11 +1146,11 @@ unsafe fn filter_source(
     // SAFETY: `root` stays live until the matching pop below.
     unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
     // SAFETY: caller contract.
-    let n = unsafe { source.len(ctx) };
+    let n = unsafe { source.len(ctx, pos_id) };
     with_abi!(abi, T, {
         for i in 0..n {
             // SAFETY: caller contract.
-            if unsafe { source.len(ctx) } <= i {
+            if unsafe { source.len(ctx, pos_id) } <= i {
                 break;
             }
             // SAFETY: `i` in bounds; widths match by dispatch.
@@ -1219,7 +1219,7 @@ unsafe fn reduce_direction(
         return;
     };
     // SAFETY: caller contract.
-    let n = unsafe { source.len(ctx) };
+    let n = unsafe { source.len(ctx, 0) };
     with_abi!(ea, T, {
         with_abi!(aa, A, {
             // SAFETY: `acc_ptr` readable for `acc_size == size_of::<A>()`.
@@ -1230,7 +1230,7 @@ unsafe fn reduce_direction(
                     ReduceDirection::Right => n - 1 - step,
                 };
                 // SAFETY: caller contract.
-                if unsafe { source.len(ctx) } <= i {
+                if unsafe { source.len(ctx, 0) } <= i {
                     if matches!(direction, ReduceDirection::Left) {
                         break;
                     }
@@ -1368,11 +1368,11 @@ unsafe fn search(
         return trapped_result;
     };
     // SAFETY: caller contract.
-    let n = unsafe { source.len(ctx) };
+    let n = unsafe { source.len(ctx, 0) };
     with_abi!(abi, T, {
         for i in 0..n {
             // SAFETY: caller contract.
-            if unsafe { source.len(ctx) } <= i {
+            if unsafe { source.len(ctx, 0) } <= i {
                 break;
             }
             // SAFETY: `i` in bounds; widths match by dispatch.
@@ -1840,7 +1840,7 @@ pub unsafe fn sort(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u
         return;
     };
     // SAFETY: caller contract.
-    let n = unsafe { len_of(ctx, h) };
+    let n = unsafe { len_of(ctx, h, 0) };
     if n < 2 {
         return;
     }
@@ -1856,7 +1856,7 @@ pub unsafe fn sort(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u
             return; // comparator trapped: the array is untouched
         }
         // SAFETY: caller contract.
-        if unsafe { len_of(ctx, h) } != n {
+        if unsafe { len_of(ctx, h, 0) } != n {
             return; // a comparator resized the array: keep it as-is
         }
         for (i, v) in buf.iter().enumerate() {

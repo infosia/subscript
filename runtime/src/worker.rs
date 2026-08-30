@@ -404,7 +404,6 @@ pub(crate) unsafe fn outbox_post(
         return PostResult::Closed;
     }
     // SAFETY: the worker entry receives its live stack-owned endpoint.
-    // SAFETY: the worker entry receives its live stack-owned endpoint.
     let queue = &unsafe { &*outbox }.queue;
     // SAFETY: forwarded fixed-payload contract.
     unsafe { queue.post_fixed(payload) }

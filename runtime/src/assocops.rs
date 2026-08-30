@@ -61,9 +61,8 @@ impl KeyKind {
     }
 }
 
-unsafe fn header_kind(header: &AssocHeader) -> KeyKind {
-    // SAFETY: `new` validates the tag before it stores the header.
-    unsafe { KeyKind::from_u32(header.key_kind as u32).unwrap_unchecked() }
+fn header_kind(header: &AssocHeader) -> KeyKind {
+    KeyKind::from_u32(header.key_kind as u32).unwrap_or(KeyKind::Bits)
 }
 
 /// Managed payload of a `Map` or `Set`.
@@ -615,7 +614,7 @@ pub(crate) unsafe fn insert(
     }
     // SAFETY: caller contract.
     let h = unsafe { &*handle.cast::<AssocHeader>() };
-    let kind = unsafe { header_kind(h) };
+    let kind = header_kind(h);
     // SAFETY: key is readable for key_size.
     let hash = unsafe { hash_key(ctx, kind, key, h.key_size as usize) };
     // SAFETY: header/index are valid.
@@ -669,7 +668,7 @@ unsafe fn find_entry(ctx: *mut Context, handle: *mut u8, key: *const u8) -> Opti
     if key.is_null() || h.bucket_cap == 0 {
         return None;
     }
-    let kind = unsafe { header_kind(h) };
+    let kind = header_kind(h);
     // SAFETY: caller supplies a readable key.
     let hash = unsafe { hash_key(ctx, kind, key, h.key_size as usize) };
     // SAFETY: valid container storage.
@@ -754,7 +753,7 @@ pub(crate) unsafe fn delete(ctx: *mut Context, handle: *mut u8, key: *const u8) 
     if key.is_null() || h.bucket_cap == 0 {
         return false;
     }
-    let kind = unsafe { header_kind(h) };
+    let kind = header_kind(h);
     // SAFETY: readable key and valid index.
     let hash = unsafe { hash_key(ctx, kind, key, h.key_size as usize) };
     // SAFETY: valid index.

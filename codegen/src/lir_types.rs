@@ -26,6 +26,36 @@ pub(crate) fn runtime_trap_kind(kind: &l::TrapKind) -> Option<TrapKind> {
     })
 }
 
+fn runtime_trap_matches_lir(runtime: TrapKind, lir: &l::TrapKind) -> bool {
+    if runtime_trap_kind(lir) == Some(runtime) {
+        return true;
+    }
+    match runtime {
+        TrapKind::DoubleDelete | TrapKind::InvalidDelete | TrapKind::CallbackUserdataFreed => {
+            *lir == l::TrapKind::DevOnlyLifetime
+        }
+        TrapKind::EmptyPop
+        | TrapKind::StringSlice
+        | TrapKind::Internal
+        | TrapKind::DateRange
+        | TrapKind::StrRange
+        | TrapKind::NumberRange
+        | TrapKind::JsonNumber
+        | TrapKind::JsonCycle
+        | TrapKind::Regex
+        | TrapKind::RegexBudget
+        | TrapKind::WorkerTrapped => *lir == l::TrapKind::Call,
+        _ => false,
+    }
+}
+
+pub(crate) fn runtime_trap_site(runtime: TrapKind, sites: &[l::Trap]) -> Option<&l::Trap> {
+    sites
+        .iter()
+        .find(|site| runtime_trap_matches_lir(runtime, &site.kind))
+        .or_else(|| sites.iter().find(|site| site.kind == l::TrapKind::Call))
+}
+
 pub(crate) fn data_type(ty: &l::ValueType) -> Result<&Type, String> {
     match ty {
         l::ValueType::Data(ty) => Ok(ty),
@@ -342,5 +372,14 @@ mod tests {
         for (lir, runtime) in cases {
             assert_eq!(runtime_trap_kind(&lir), runtime, "{lir:?}");
         }
+
+        let call = l::Trap {
+            kind: l::TrapKind::Call,
+            pos: subscript_compiler::Pos::new("call.ts", 7, 11),
+        };
+        assert_eq!(
+            runtime_trap_site(TrapKind::UnreachableReached, &[call]).map(|site| site.pos.clone()),
+            Some(subscript_compiler::Pos::new("call.ts", 7, 11))
+        );
     }
 }

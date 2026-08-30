@@ -6328,17 +6328,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         out: &mut String,
         traps: &[l::Trap],
         pending: bool,
-        accepts_stale_coroutine: bool,
+        accepts_dev_traps: bool,
     ) -> Result<(), String> {
         let mut check = false;
         for trap in traps {
             match trap.kind {
                 l::TrapKind::DevOnlyLifetime => {
-                    if accepts_stale_coroutine {
+                    if accepts_dev_traps {
                         self.consume(trap);
                     }
                 }
-                l::TrapKind::DevReloadOnlyStaleCoroutine if accepts_stale_coroutine => {
+                l::TrapKind::DevReloadOnlyStaleCoroutine if accepts_dev_traps => {
                     self.consume(trap);
                 }
                 l::TrapKind::Allocation | l::TrapKind::Call => {

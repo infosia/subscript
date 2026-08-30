@@ -572,9 +572,6 @@ pub unsafe extern "C" fn subscript_rt_assoc_size(ctx: *mut Context, handle: *con
     unsafe { crate::assocops::len(handle) }
 }
 
-pub use subscript_rt_assoc_size as subscript_rt_map_size;
-pub use subscript_rt_assoc_size as subscript_rt_set_size;
-
 /// `Map.set`: inserts or overwrites and returns the receiver.
 ///
 /// # Safety
@@ -684,9 +681,6 @@ pub unsafe extern "C" fn subscript_rt_assoc_has(
     i32::from(unsafe { crate::assocops::has(ctx, handle, key) })
 }
 
-pub use subscript_rt_assoc_has as subscript_rt_map_has;
-pub use subscript_rt_assoc_has as subscript_rt_set_has;
-
 /// `Map.delete` / `Set.delete`.
 ///
 /// # Safety
@@ -707,9 +701,6 @@ pub unsafe extern "C" fn subscript_rt_assoc_delete(
     i32::from(unsafe { crate::assocops::delete(ctx, handle, key) })
 }
 
-pub use subscript_rt_assoc_delete as subscript_rt_map_delete;
-pub use subscript_rt_assoc_delete as subscript_rt_set_delete;
-
 /// `Map.clear` / `Set.clear`: eagerly retires ordered and index storage.
 ///
 /// # Safety
@@ -725,9 +716,6 @@ pub unsafe extern "C" fn subscript_rt_assoc_clear(ctx: *mut Context, handle: *mu
     // SAFETY: caller contract.
     unsafe { crate::assocops::clear(&mut *ctx, handle) };
 }
-
-pub use subscript_rt_assoc_clear as subscript_rt_map_clear;
-pub use subscript_rt_assoc_clear as subscript_rt_set_clear;
 
 /// `Map.forEach` in insertion order.
 ///
@@ -1146,8 +1134,8 @@ pub unsafe extern "C" fn subscript_rt_str_slice(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handle. Copied out so the borrow does not
-    // overlap the mutable trap/alloc calls below.
+    // SAFETY: live string handle. Context string allocations keep immutable
+    // input allocation addresses stable.
     // SAFETY: live string handle.
     let len = unsafe { ctx.str_bytes(s).len() };
     let (lo, hi, end_boundary) = crate::strops::slice_range(len, start, end);
@@ -1313,8 +1301,8 @@ pub unsafe extern "C" fn subscript_rt_str_char_code_at(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handle. Copied out so the borrow does not
-    // overlap the mutable trap call below.
+    // SAFETY: live string handle. Context string allocations keep immutable
+    // input allocation addresses stable.
     let (len, byte) = {
         // SAFETY: live string handle.
         let bytes = unsafe { ctx.str_bytes(s) };
@@ -1351,8 +1339,8 @@ unsafe fn str_alloc_range(
 ) -> *mut u8 {
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: `s` is a live string handle. Copy before trapping or
-    // allocating through the mutable Context.
+    // SAFETY: `s` is live. Context string allocations keep immutable input
+    // allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
     let text = std::str::from_utf8(bytes).unwrap_or_default();
     if !text.is_char_boundary(lo) || !text.is_char_boundary(checked_hi) {
@@ -1456,7 +1444,8 @@ pub unsafe extern "C" fn subscript_rt_str_char_at(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handle. Copy before trap/allocation.
+    // SAFETY: live string handle. Context string allocations keep immutable
+    // input allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
     let (index, ch) = match code_point_at(bytes, i) {
         Ok(found) => found,
@@ -1492,7 +1481,8 @@ pub unsafe extern "C" fn subscript_rt_str_code_point_at(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handle. Copy before trapping.
+    // SAFETY: live string handle. Context string allocations keep immutable
+    // input allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
     match code_point_at(bytes, i) {
         Ok((_, ch)) => ch as i32,
@@ -1515,8 +1505,6 @@ pub unsafe extern "C" fn subscript_rt_str_code_point_at(
     }
 }
 
-pub use subscript_rt_str_concat as subscript_rt_str_method_concat;
-
 /// `split(sep)`: a fresh `string[]` of the pieces between separator
 /// matches (JS piece order; no match → `[whole]`). An empty separator
 /// traps (Q21: byte-splitting would fracture UTF-8 code points) and
@@ -1538,8 +1526,8 @@ pub unsafe extern "C" fn subscript_rt_str_split(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handles. Copied out so the borrows do not
-    // overlap the mutable trap/alloc calls below.
+    // SAFETY: live string handles. Context string allocations keep immutable
+    // input allocation addresses stable.
     let hay = unsafe { ctx.str_view(s) };
     // SAFETY: live string handles.
     let sep = unsafe { ctx.str_view(sep) };
@@ -1587,8 +1575,8 @@ unsafe fn str_trim_with(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handle. Copied out so the borrow does not
-    // overlap the mutable alloc call below.
+    // SAFETY: live string handle. Context string allocations keep immutable
+    // input allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
     ctx.alloc_str(strip(bytes), pos_id)
 }
@@ -1667,8 +1655,8 @@ pub unsafe extern "C" fn subscript_rt_str_repeat(
         );
         return std::ptr::null_mut();
     }
-    // SAFETY: live string handle. Copied out so the borrow does not
-    // overlap the mutable alloc call below.
+    // SAFETY: live string handle. Context string allocations keep immutable
+    // input allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
     ctx.alloc_str(&crate::strops::repeat(bytes, n), pos_id)
 }
@@ -1786,8 +1774,8 @@ unsafe fn str_case_with(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handle. Copied out so the borrow does not
-    // overlap the mutable alloc call below.
+    // SAFETY: live string handle. Context string allocations keep immutable
+    // input allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
     ctx.alloc_str(&map(bytes), pos_id)
 }
@@ -1841,8 +1829,8 @@ pub unsafe extern "C" fn subscript_rt_str_replace(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handles. Copied out so the borrows do not
-    // overlap the mutable alloc call below.
+    // SAFETY: live string handles. Context string allocations keep immutable
+    // input allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
     // SAFETY: live string handles.
     let pat = unsafe { ctx.str_view(pat) };
@@ -1872,8 +1860,8 @@ pub unsafe extern "C" fn subscript_rt_str_replace_all(
     }
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    // SAFETY: live string handles. Copied out so the borrows do not
-    // overlap the mutable trap/alloc calls below.
+    // SAFETY: live string handles. Context string allocations keep immutable
+    // input allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
     // SAFETY: live string handles.
     let pat = unsafe { ctx.str_view(pat) };
@@ -2783,8 +2771,8 @@ pub unsafe extern "C" fn subscript_rt_num_parse_int(
     let Some(radix) = checked_range(ctx, radix, 2, 36, "parseInt radix", pos_id) else {
         return f64::NAN;
     };
-    // SAFETY: live string handle. Copy out before any mutable Context
-    // operation, keeping the borrow boundary explicit.
+    // SAFETY: live string handle. Context string allocations keep immutable
+    // input allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
     let value = std::str::from_utf8(bytes).unwrap_or_default();
     crate::num::parse_int(value, radix)
@@ -5924,7 +5912,7 @@ mod tests {
             assert_eq!(ctx.str_bytes(out_of_range), b"");
             assert_eq!(subscript_rt_str_code_point_at(p, s, 1, 0), 'é' as i32);
             let suffix = subscript_rt_str_lit(p, b"!".as_ptr(), 1, 0);
-            let joined = subscript_rt_str_method_concat(p, s, suffix, 0);
+            let joined = subscript_rt_str_concat(p, s, suffix, 0);
             assert_eq!(ctx.str_bytes(joined), "héllo!".as_bytes());
             subscript_rt_shadow_pop(p);
         }
@@ -6469,7 +6457,7 @@ mod tests {
         unsafe {
             let map = subscript_rt_map_new(p, 4, 4, 0, 1);
             subscript_rt_delete(p, map, 2);
-            assert_eq!(subscript_rt_map_size(p, map), 0);
+            assert_eq!(subscript_rt_assoc_size(p, map), 0);
         }
         assert_eq!(
             ctx.trap_record().map(|r| (r.kind, r.pos_id)),
@@ -6527,6 +6515,13 @@ mod tests {
         );
         let trap = ctx.trap_record().expect("array method trap");
         assert_eq!((trap.kind, trap.pos_id), (TrapKind::UseAfterDelete, 0));
+        assert_eq!(trap.message, TrapKind::UseAfterDelete.message(None));
+
+        ctx.clear_trap();
+        // SAFETY: the array method validates the retained dead receiver first.
+        let _ = unsafe { subscript_rt_arr_slice(p, array, 0, 1, 79) };
+        let trap = ctx.trap_record().expect("positioned array method trap");
+        assert_eq!((trap.kind, trap.pos_id), (TrapKind::UseAfterDelete, 79));
         assert_eq!(trap.message, TrapKind::UseAfterDelete.message(None));
     }
 

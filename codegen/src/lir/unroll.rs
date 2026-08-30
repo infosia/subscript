@@ -304,17 +304,7 @@ fn integer_constant(constant: &l::Constant) -> Option<(Type, i64)> {
 }
 
 fn integer_limits(ty: &Type) -> Option<(i128, i128)> {
-    Some(match ty {
-        Type::I8 => (i128::from(i8::MIN), i128::from(i8::MAX)),
-        Type::U8 => (0, i128::from(u8::MAX)),
-        Type::I16 => (i128::from(i16::MIN), i128::from(i16::MAX)),
-        Type::U16 => (0, i128::from(u16::MAX)),
-        Type::I32 => (i128::from(i32::MIN), i128::from(i32::MAX)),
-        Type::U32 => (0, i128::from(u32::MAX)),
-        Type::I64 => (i128::from(i64::MIN), i128::from(i64::MAX)),
-        Type::U64 => (0, i128::from(u64::MAX)),
-        _ => return None,
-    })
+    ty.int_bounds()
 }
 
 fn trip_count(

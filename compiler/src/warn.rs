@@ -705,10 +705,12 @@ fn callback_info_has_fresh_userdata(
 }
 
 fn is_fresh_userdata_argument(module: &hir::Module, expr: &Expr, fresh: &HashSet<String>) -> bool {
-    expr.flow_leaves().any(|leaf| {
-        is_reference_new_allocation(module, leaf)
-            || matches!(&leaf.kind, ExprKind::Local(name) if fresh.contains(name))
-    })
+    // Conditional userdata is a recorded W003 candidate, not a decided case.
+    match &expr.kind {
+        ExprKind::Cast(inner) => is_fresh_userdata_argument(module, inner, fresh),
+        ExprKind::Local(name) => fresh.contains(name),
+        _ => is_reference_new_allocation(module, expr),
+    }
 }
 
 fn contains_collect_in_stmts(stmts: &[Stmt]) -> bool {
@@ -1049,5 +1051,20 @@ declare function fixtureRegister(info: FixtureCallbackInfo): void;
                 .collect::<Vec<_>>(),
             [5, 6]
         );
+    }
+
+    #[test]
+    fn conditional_fresh_callback_userdata_does_not_warn() {
+        let source =
+            "class LogSink { value: i32; constructor(value: i32) { this.value = value; } }\n\
+             export function main(): void {\n\
+             \x20 const keep: LogSink = new LogSink(0);\n\
+             \x20 for (let i: i32 = 0; i < 2; i += 1) {\n\
+             \x20   fixtureRegister(new FixtureCallbackInfo((message, userdata1, userdata2) => {}, i > 1 ? new LogSink(i) : keep, null));\n\
+             \x20 }\n\
+             }\n";
+        assert!(callback_warnings(source)
+            .iter()
+            .all(|warning| warning.code != WarnCode::W003));
     }
 }
