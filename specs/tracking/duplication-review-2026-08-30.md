@@ -176,3 +176,76 @@ deleted `RegExp`, `AsyncHandle`, or `Func | null` is unreachable, since
 not tracked; the MINOR list is reproduced below when the pass is
 ordered); the r170/r171 message text; two §75.3 shapes without a
 corpus entry; the acceptance widenings recorded in the §74 filters.
+
+## The MINOR findings (not started; line numbers at `f99d4cb`)
+
+### codegen (17)
+- Cm7: LIR trap kind to runtime trap kind mapped three ways. Fix: `impl l::TrapKind { fn runtime_kind(&self) -> Option<TrapKind> }` next to the contract.
+- Cm8: six helpers duplicated verbatim between the two transcribers. Fix: move all six to `lir_types.rs`.
+- Cm9: padding-range walk in four copies. Fix: `Layouts::padding_ranges(ty)` with no module argument; the C emitter and the interpreter consume the ranges.
+- Cm10: layout arithmetic helpers duplicated. Fix: export the `layout.rs` set with `pub(crate)`.
+- Cm11: `is_unsigned` twice. Fix: delete the cemit copy.
+- Cm12: in-file duplicates in `lir.rs`. Fix: one free function per predicate.
+- Cm13: `lower_async_call` and `lower_async_handle_create` share their first 85 lines. Fix: extract `resolve_async_target` and keep only the terminator/instruction tail in each.
+- Cm14: dominance decision in two shapes. Fix: `check_dominates` calls `definition_dominates_definition` with a synthesized use site.
+- Cm15: call-target operand start index table twice. Fix: one `fn counted_operand_start(kind: &CallTargetKind) -> Option<usize>`.
+- Cm16: Worker intrinsic numbering in two tables. Fix: a `WorkerFn::ALL` table in `hir` and `intrinsic_index`.
+- Cm17: runtime symbol names kept in four tables. Fix: `l::IntrinsicOperation` carries `runtime_symbol`; a macro emits the `jit.rs` pairs from the `ffi` names.
+- Cm18: template format dispatch is a per-transcriber type table. Fix: the `Template` instruction carries a `FormatKind` per piece (core principle 8).
+- Cm19: interpreter computes storage layout twice in one file. Fix: memoize every `type_layout` result and make `layout_cached` a map read.
+- Cm20: `operand_is_fresh_owner` scans every block per query. Fix: insert the result id into the set at emit time and delete the walk.
+- Cm21: `local_requires_frame` is quadratic over blocks per local. Fix: compute the store-block set per local once before the loop.
+- Cm22: `consume_call_traps` and `consume_runtime_traps` differ by one accepted kind. Fix: one function with an `accepts_stale_coroutine: bool` argument, or accept the union in one place.
+- Cm23: tier run entry points are five thin wrappers each. Fix: one public `RunConfig` struct with `Default` and one `run` per tier.
+
+### compiler (21)
+- Cm7: three integer-range tables plus two width tables. Fix: `Type::int_bounds() -> Option<(i128, i128)>` and `Type::bit_width()` in `types.rs`; the f64-exact cap and the i64 lattice cap are one `min`/`clamp` at the caller.
+- Cm8: the ambient-name shadow rule is written eleven times. Fix: `fn ambient_visible(&self, name, fx) -> bool` and `fn ambient_namespace(&self, obj, fx) -> Option<&'static str>`.
+- Cm9: the literal-shift-amount check and the compound operator typing exist twice. Fix: `check_assign` calls `bin_result(op, target_read, value)` for the compound case and takes its type.
+- Cm10: two tables over `ast::AssignOp` and three copies of the `++`/`--` spelling. Fix: one `fn assign_op(op) -> Option<(BinOp, &'static str)>`; one `update_spelling(u)` helper.
+- Cm11: `module_decl` (`check/mod.rs:36`) re-implemented ad hoc. Fix: call `module_decl(item)`.
+- Cm12: the spread-argument rejection is written four times. Fix: route the Set-algebra argument and the callback argument through `check_args` with a one-parameter signature.
+- Cm13: the 15-arm plain-scalar whitelist appears twice. Fix: `fn plain_value_leaf(&self, ty) -> bool`; the message walk uses it and adds only the path.
+- Cm14: method-lookup enums carry non-method members that lookup filters and consumers re-reject. Fix: separate instance-method enums from constructor/static identities, so the lookup return type has no unreachable arm.
+- Cm15: `ParamSig { name: String::new(), ty, has_default: false }` is built 34 times in `check/expr.rs`. Fix: `ParamSig::positional(ty)`.
+- Cm16: `async_origins_at_copy_site` (`check/expr.rs:186-203`) is a nine-arm match where every arm calls `expr_async_origins`; `site` is unused. Fix: delete the function; callers call `expr_async_origins`.
+- Cm17: "AsyncHandle or AsyncHandle[]" predicate written three times. Fix: `Type::carries_async_handle()`.
+- Cm18: three value-flow walkers with the same arm set (`Local`, `Cast`, `Cond`, `Assign`, `ArrayLit`). Fix: `hir::Expr::flow_leaves()` iterator; each predicate is `any` over it.
+- Cm19: container-to-element table exists twice. Fix: `Type::iteration_element() -> Option<(IterKind, Type)>`; both enums map from `IterKind`.
+- Cm20: `validate_generator_layout` (`check/layout.rs:508-600`) repeats the place-and-check block four times (receiver, params, lets, child frames). Fix: one `place(&mut end, layout, pos, what) -> bool` closure.
+- Cm21: `AmbientFn` has three name tables. Fix: `AmbientFn::name()` as `MathFn` has; lookup and label read it.
+- Cm22: JSON synthesis re-declares locals and hand-copies kind codes. Fix: one `JsonLocals` struct built once per helper; `JsonKind` constants next to `json_number_target`.
+- Cm23: `reduce_acc_context` (`check/expr.rs:4757-4783`) resolves the annotation, truncates `self.diags` to hide its errors, then `check_lambda_with` resolves it again. Fix: resolve once and pass the type into the lambda check.
+- Cm24: `callback_params_for_arity` (`check/expr.rs:4880-4886`) derives the Q rule from `method.starts_with("Map.")`. Fix: pass the rule with the method label.
+- Cm25: `check_named_call` has two identical "is not generic" arms. Fix: one guard before the match on `c.type_args`.
+- Cm26: the `w001` and `w003` statement walks carry the same `loop_depth` bookkeeping. Fix: covered by finding 3; one walk with a per-statement callback.
+- Cm27: the `_ =>` arms in `check/mod.rs:889` (`ModuleEffects::expr`) and `check/mod.rs:832` duplicate the walk in finding 3 for a second module-level pass over every body. Fix: covered by finding 3; the effects pass folds over `children()`.
+
+### runtime (27)
+- Rm5: Allocation header written at four sites, class id read at ten sites through raw offsets. Sites: writes `context.rs:1606-1609`, `1712-1715`, `1734-1737`, `1810-1813`; reads `context.rs:1905, 1930, 1959, 2031, 2088, 2297, 2318, 2334, 2388, 2393` use `base.add(8)` while `CLASS_ID_OFFSET` / `POS_ID_OFFSET` (`165-167`) exist. Consolidation: `write_header(base, class, pos)` and `header_class_id(base)`.
+- Rm6: Dev `alloc` and `arena_alloc_large` have the same layout / `alloc_zeroed` / two-trap sequence. Sites: `context.rs:1588-1610` and `context.rs:1790-1815`. Consolidation: one `alloc_system_block(size, class, pos) -> Option<(base, layout)>`.
+- Rm7: Three chunk walks that test `LIVE_STATE` per block. Sites: `context.rs:2189-2200` (`live_count`), `2216-2230` (`live_bytes`), `2284-2303` (`visit_live_allocations`). Consolidation: one `live_blocks()` iterator yielding `(base, block_size)`.
+- Rm8: `collect_with_trace` repeats the same push loop nine times with a hand-built `MarkSource::Root { set, index, word }`. Sites: `context.rs:2412-2530`. Consolidation: `push_root_set(name, impl Iterator<Item = usize>)`.
+- Rm9: The dev mark walk and the arena mark walk both implement "stamp, `class_holds_no_handle`, scan payload words". Sites: `context.rs:2559-2588` and `context.rs:2699-2750`. Consolidation: one `scan_payload(payload, size, class_id, work, tracer)` called by both after the tier-specific stamp.
+- Rm10: `str_slice` reimplements the relative-index clamp and the UTF-8 boundary check plus allocation. Sites: `ffi.rs:1224-1231` (closure `relative`) against `arrops.rs:656-661` (`clamp_index`) and `strops.rs:127-140` (`substr_range`); `ffi.rs:1239-1256` against `str_alloc_range` (`ffi.rs:1435-1461`). Consolidation: `strops::slice_range(len, start, end)` and a call to `str_alloc_range`.
+- Rm11: `str_char_at` and `str_code_point_at` share the copy / index filter / `is_char_boundary` / `chars().next()` walk. Sites: `ffi.rs:1518-1556` and `ffi.rs:1558-1599`. Consolidation: one `code_point_at(bytes, i) -> Result<(usize, char), Reason>`.
+- Rm12: Twenty-three string operations copy the receiver into a `Vec<u8>` "so the borrow does not overlap" (`ffi.rs:1223, 1447, 1530, 1570, 1634, 1636, 1683, 1763, 1882, 1937-1941, 1968-1972, 2344, 2363, 2580, 2840, 2933, 2962`; `arrops.rs:581, 645`). `str_concat` (`ffi.rs:1172-1181`) and `str_pad` (`ffi.rs:1795-1803`) already show the pointer-snapshot form, and the comment at `ffi.rs:1170` states the invariant (an allocation does not move an immutable input). Consolidation: one `str_view(handle) -> (ptr, len)` helper; every entry uses it.
+- Rm13: `alloc_formatted` is `Context::alloc_str`. Sites: `ffi.rs:2148-2153` against `context.rs:2845-2850`. Consolidation: delete `alloc_formatted`.
+- Rm14: Four identical integer format wrappers where the JSON side already uses a macro. Sites: `ffi.rs:2161-2210` (`fmt_i32/u32/i64/u64`) against `json_integer!` at `ffi.rs:2374-2394`. Consolidation: the same macro shape.
+- Rm15: `json_f32` / `json_f64` and `json_begin` / `json_begin_tracked` are pairwise identical apart from the type or a `bool`. Sites: `ffi.rs:2396-2446`, `ffi.rs:2270-2312`. Consolidation: one body each with a parameter.
+- Rm16: Ten JSON-parse wrappers repeat `match Option { Some(v) => v, None => { json_parser_invalid(..); default } }`. Sites: `ffi.rs:2590-2860`. Consolidation: `fn parsed<T>(ctx, value: Option<T>, default: T, op, pos) -> T`.
+- Rm17: Radix and digit validation is written twice per entry with the same message in both branches. Sites: `ffi.rs:2996-3011` (`to_fixed`), `ffi.rs:3026-3045` and `3063-3082` (`to_string_f32/f64`), `ffi.rs:2927-2934` (`parse_int`). Consolidation: `fn checked_range(ctx, value: i32, lo, hi, what, pos) -> Option<u32>`.
+- Rm18: `parse_int` / `parse_float` trap on a non-UTF-8 language string. Sites: `ffi.rs:2937-2944`, `2966-2973`. Language strings are UTF-8 by construction (`ffi.rs:1237-1238`); every other entry uses `unwrap_or_default`. The branch is unreachable. Consolidation: `from_utf8(..).unwrap_or_default()` as elsewhere, or one shared `str_text(handle)`.
+- Rm19: Map/Set FFI pairs have identical bodies. Sites: `ffi.rs:576-606` (`map_size`/`set_size`), `697-735` (`map_has`/`set_has`), `737-775` (`map_delete`/`set_delete`), `777-811` (`map_clear`/`set_clear`). Consolidation: one `subscript_rt_assoc_*` symbol per operation; the code generators already pass the same handle shape.
+- Rm20: `fixed_arr_search_entry` and `fixed_arr_reduce_entry` re-encode a selection (`operation: u8` 0/1/2, `right: bool`) that `arrops` already expresses as `SearchMode` and `ReduceDirection`. Sites: `ffi.rs:4440-4499`, `ffi.rs:4548-4606` against `arrops.rs:1137-1149`, `1286-1300`. The dynamic wrappers (`ffi.rs:4264-4334`) call the three `arrops` entries directly. Consolidation: make `arrops::fixed_search(mode)` / `fixed_reduce_direction(dir)` `pub(crate)` and pass the enum.
+- Rm21: Four spread loops push element-by-element; `array_spread_array` duplicates `arrops::concat`'s copy loop. Sites: `ffi.rs:3653-3685` against `arrops.rs:752-800`; `ffi.rs:3687-3719`, `3721-3754`, `3756-3793`. Consolidation: `Context::array_extend(out, ptr, count)` used by concat, slice, splice, and the spreads.
+- Rm22: Linear-probe bucket insertion is written twice. Sites: `assocops.rs:456-470` (`rehash`) and `assocops.rs:519-533` (`compact_entries`). Consolidation: `bucket_insert(buckets, cap, hash, entry)`.
+- Rm23: Set-algebra key iteration is written three ways. Sites: `assocops.rs:975-983` (`ordered_key_copy`) against `iteration_entry` / `iteration_copy` (`1217-1268`); `set_is_disjoint_from` (`1169-1199`) repeats `set_all_in` (`1130-1145`) with the negated predicate. Consolidation: one `ordered_keys(source)` iterator; `any_in` / `all_in` on it.
+- Rm24: Key-kind decoding falls back differently at five sites. Sites: `assocops.rs:405`, `641`, `969` use `KeyKind::from_u32(..).unwrap_or(KeyKind::Bits)`; `assocops.rs:695` and `831` return a miss. `new` validates the kind once (`assocops.rs:130-137`). Consolidation: `fn header_kind(h) -> KeyKind` (the stored value is valid by construction) used everywhere.
+- Rm25: `index_of`, `last_index_of`, `includes` are one loop with a direction and an equality function. Sites: `arrops.rs:479-560`. Consolidation: `position(ctx, h, x, kind, reverse, eq)`.
+- Rm26: `splice` and `shift` shrink the array by popping into a discarded buffer once per removed element. Sites: `arrops.rs:849-853`, `arrops.rs:887-889`. Consolidation: `Context::array_truncate(handle, new_len)`.
+- Rm27: Two subject-reading mechanisms and four budget-trap blocks in `regexops`. Sites: `text_from_handle` (`regexops.rs:187-209`, used by `replace`, `replace_all`, `split`, `new`) against `text_parts` + `text_from_parts` (`211-243`, used by `test`, `search`); the budget trap at `regexops.rs:284-292`, `491-499`, `558-566`, `583-591`. Consolidation: one `subject(ctx, handle, what, pos)` and one `budgeted_find(ctx, compiled, text, at, pos) -> Option<Option<CaptureMatch>>` (`find_and_record` at `271-296` already has the shape).
+- Rm28: `Worker::post` and `outbox_post` have the same zero-size / null / `queue.post` body; `materialize_parent` is an alias of `materialize`. Sites: `worker.rs:213-229` against `worker.rs:395-421`; `worker.rs:422-424`. Consolidation: `Queue::post_fixed(payload: *const u8) -> PostResult`; delete the alias.
+- Rm30: Three observer setters share the set-or-clear-userdata body. Sites: `context.rs:1347-1354`, `1445-1452`, `1456-1466`. Consolidation: one generic `set_observer(slot, userdata_slot, observer, userdata)`.
+- Rm31: Receiver liveness is checked per wrapper, not per family. Sites: every Map/Set entry checks (`ffi.rs:448-1030`); of the array entries only `array_byte_range` (`3608`) and `array_push` (`3646`) check; `array_pop` (`3795`), `array_ptr` (`3811`), and every `arr_*` entry (`3859-4690`) do not. Consolidation: the check belongs in the `Context` array primitives (`array_len`, `array_elem_ptr`, `array_push`, `array_pop`) once, or in one wrapper macro.
+- Rm32: `subscript_rt_str_method_concat` (`ffi.rs:1601-1610`) is a second symbol for `subscript_rt_str_concat`. Consolidation: the code generators emit one symbol.
