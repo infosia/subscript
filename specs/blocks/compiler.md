@@ -10368,6 +10368,16 @@ over `HandleKind`, written next to the enum with a comment that names the
 question it answers. No other table over `Type` variants decides the
 question.
 
+**Rule 1a.** A filter has one of two natures, and the comment names
+it. A *fact* filter (collector-managed; dereference reaches a Context
+allocation) takes the answer the runtime gives. An *acceptance* filter
+(which `T | null` unions the checker accepts, S011; which operands
+`===` accepts, S100; which `as` conversions and `Map`/`Set` keys are
+accepted, S014) is a language decision: it keeps the answer the corpus
+records. A change to an acceptance filter's answer is a corpus decision
+(core principle 2), never a consolidation. The round that consolidates
+records every candidate widening in the report and changes none.
+
 **Rule 2.** `codegen/src/layout.rs` (`is_managed`,
 `type_contains_managed`, `has_managed_interior`, `managed_words`) is the
 one place in `codegen/` that decides which words the collector scans, and
