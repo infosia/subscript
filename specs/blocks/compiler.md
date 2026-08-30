@@ -878,6 +878,40 @@ touch; the hand-loop decomposition above measured hand loops, not the
 benchmark's spelling. Both were the orchestrator's estimates, and the
 measurements replace them.)*
 
+### 8.1e A runtime result is rooted while script code runs, and release work is one table
+
+*(Owner decision, 2026-08-30; review finding.)*
+
+**Rule 1 — a runtime operation roots every allocation it holds across a
+call into script code.** `map`, `filter`, `groupBy`, and every other
+runtime entry that allocates a result and then calls a callback push the
+result handle on the shadow stack before the first call and pop it after
+the last. `Context.collect()` inside the callback (Q7) then keeps the
+result. The rule applies to the dynamic-array family and the fixed-array
+family alike; the two families are one loop over an element source,
+written once in `runtime/src/arrops.rs`.
+
+Measured before the rule (`arrops::map`, `arrops::filter` did not root;
+`fixed_map`, `fixed_filter`, and `group_by` did): `a173` traps
+`[internal]: array storage disappeared while growing it` on the dev tier
+at the first push after the callback's collect. A known callback (§8.1d
+B) does not reach the runtime loop, so `a171` did not see it.
+
+**Rule 2 — the release work for a class is one function.** `Context`
+frees an allocation on three paths: the dev `delete`, the arena chunk
+sweep, and the arena large-record sweep. The per-class work (container
+entry clear for `CLASS_MAP` and `CLASS_SET`, intern removal for
+`CLASS_STRING`, compiled-pattern removal for `CLASS_REGEX`) is one
+function that every path calls with the class id and the payload. A
+class that needs release work is added in that function only. A runtime
+unit test frees one allocation of each such class on each of the three
+paths and checks the same post-state.
+
+**Corpus.** `a173-callback-collect-rooted`: `map` and `filter` through a
+function value, and `filter` on a `FixedArray`, each calling
+`Context.collect()` per element; the printed results are complete. The
+golden is the same on both tiers and the interpreter.
+
 ### 8.2 Hot reload (dev tier)
 
 Per §1's rules, made testable:

@@ -374,6 +374,8 @@ trap flag and stops immediately if set (the trap surfaces through
 the standing per-call check in generated code; kind/message/position
 identical across tiers — a trapping-callback cross-tier test is part
 of the gate).
+The runtime roots a result it holds across a callback (`compiler.md`
+§8.1e rule 1), so `Context.collect()` in the callback keeps it.
 
 Accepted members on `T[]` (checker: `ArrFn` intrinsics; runtime
 `subscript_rt_arr_*`, one implementation, both tiers):
