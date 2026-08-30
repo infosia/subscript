@@ -10316,3 +10316,78 @@ literal. Each new HIR kind had to be added at 26 sites.
 **Check.** A unit test in `compiler/` builds one expression of every
 `ExprKind` and one statement of every `Stmt` kind and checks that
 `children()` yields every child expression the constructor received.
+
+## 73. The LIR terminator walks itself
+
+*(Owner decision, 2026-08-30; review finding.)*
+
+**Rule 1.** `Terminator` in `compiler/src/lir.rs` exposes three methods,
+and no consumer writes its own `match` over `Terminator` to find edges
+or values:
+
+- `targets()` — every `BlockTarget` in order (branch, both conditional
+  arms, switch arms then default, suspend successor with its
+  arguments);
+- `successors()` — the block ids of `targets()`;
+- `value_uses()` — every value the terminator reads: the condition, the
+  switch value, the return value, every target argument, the suspend
+  kind's operands (`AsyncCall` operands, `AsyncHandle` handle), and the
+  suspend `resume_value` is not a read.
+
+**Rule 2.** `Suspend.invalidates` is not a read. It names the arrays
+whose storage can move across the suspension (§68.2 item 9). A consumer
+that needs "mentions" (reads plus invalidations) adds `invalidates`
+itself, and says why at the site.
+
+Measured before the rules: eleven hand-written walks in `codegen/`
+(`lir.rs`, `lir/unroll.rs`, `root_storage.rs`, `cemit.rs`). Three
+counted `invalidates` as a use; the liveness walk `lir_live_ins` and
+`verify_suspend_definition_boundaries` did not. The C emitter and the
+liveness computation disagreed on what a suspend uses.
+
+**Check.** A unit test builds one terminator of every kind with distinct
+values in every operand position and checks that `value_uses()` yields
+each one once and that `successors()` yields every target. The fact
+check (`lir_facts.rs`) reports any `match` site over `Terminator` outside
+`compiler/src/lir.rs` that reads targets or operands — enforced by
+review, not by the build.
+
+## 74. One handle-kind table
+
+*(Owner decision, 2026-08-30; review findings.)*
+
+**Rule 1.** `compiler/src/types.rs` defines `HandleKind` (one variant
+per managed shape: `Str`, `RegExp`, `Object`, `Array`, `Map`, `Set`,
+`Generator`, `AsyncHandle`, `Worker`, `Inbox`, `Outbox`, `Func`,
+`ReferenceClass`, `FuncBox` for `Func | null`, `BoundaryBox` for
+`T | null` with `T` a value boundary class, §33.5) and one function
+`Type::handle_kind(&self, classes) -> Option<HandleKind>`. Every
+predicate over "is this a handle" — collector-managed, reference shape
+for nullability, reference equality, trap-site dereference — is a filter
+over `HandleKind`, written next to the enum with a comment that names the
+question it answers. No other table over `Type` variants decides the
+question.
+
+**Rule 2.** `codegen/src/layout.rs` (`is_managed`,
+`type_contains_managed`, `has_managed_interior`, `managed_words`) is the
+one place in `codegen/` that decides which words the collector scans, and
+it reads `HandleKind`. `cemit.rs` calls it; the C emitter keeps no copy.
+
+**Rule 3.** Whether `Worker`, `Inbox`, `Outbox`, and a bare `Func` are
+collector-managed is a fact of the runtime class table
+(`runtime/src/context.rs`, `worker.rs`): a kind is managed if the runtime
+allocates its payload in the Context and the marker can reach it. The
+round that lands this section measures each and records the answer here.
+
+Measured before the rules: four tables in `compiler/` (`check/layout.rs`
+`is_managed`, `hir.rs` `reference_value`, `types.rs`
+`is_reference_shape`, `check/mod.rs` `is_reference_class`) and three in
+`codegen/` (`layout.rs` twice, `cemit.rs` twice). `cemit.rs` counted
+`Worker`, `Inbox`, `Outbox`, and `Func` as managed; `layout.rs` did not.
+`RegExp` reached one of the four compiler tables. The two tiers rooted
+different sets.
+
+**Check.** A unit test in `compiler/` lists every `Type` variant and
+asserts `handle_kind` returns the recorded answer for each. A unit test
+in `codegen/` asserts that `cemit`'s rooted-local decision for a
+hand-built module equals `root_storage::plan`'s for every local.
