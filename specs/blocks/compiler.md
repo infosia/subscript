@@ -10575,3 +10575,54 @@ leaves it. The round does not stop for it.
 is a conditional (`c ? new X() : keep`): the pass measured that
 `flow_leaves()` widened the warning to that shape and restored the old
 `Local`/`Cast` walk. A warn-corpus entry decides it.
+
+## 79. A divergence diagnostic shows the TypeScript form and the subscript form
+
+*(Owner decision, 2026-08-30.)*
+
+A reject diagnostic at a construct that `tsc` accepts is a divergence
+from TypeScript. The diagnostic shows both forms in code.
+
+**Rule 1 — one table.** `compiler/src/divergence.rs` defines
+`Divergence`, one variant per divergence topic, and one table that
+gives each variant: `ts` (a TypeScript fragment that `tsc` accepts),
+`subscript` (the fragment this language accepts for the same intent,
+or the sentence "no equivalent; <what to do instead>"), `why` (one
+sentence, 25 words or fewer), and `collision` (the `collisions.md`
+heading id, `C1`..`C14`, or a `compiler.md` section id when
+`collisions.md` has no heading). No other place holds the fragments.
+
+**Rule 2 — the diagnostic carries the fact.** `Diagnostic` gains
+`divergence: Option<Divergence>`. A checker site that rejects a
+construct `tsc` accepts passes the variant. A site that rejects a
+construct `tsc` also rejects passes `None`.
+
+**Rule 3 — the render.** After the `= rule:` line the renderer prints:
+
+```
+  = TypeScript accepts:
+  |   <ts fragment, one line per line>
+  = subscript:
+  |   <subscript fragment>
+  = why: <why> (collisions.md C7)
+```
+
+The block is absent when `divergence` is `None`. The existing lines
+do not change, so every pinned message and position stays.
+
+**Rule 4 — the gate is total.** `compiler/tests/corpus_reject.rs`
+renders the expected diagnostic of every reject entry. An entry whose
+header says `tsc: accepts` must render a divergence block. An entry
+whose header says `tsc: rejects` must render none. The test reports
+every violating entry at once (CLAUDE.md workflow: a total check,
+not named sites).
+
+**Rule 5 — the table is checked against the record.** A unit test
+reads `specs/blocks/collisions.md` (`include_str!`) and asserts that
+every `collision` id in the table names an existing `### C<n>` heading,
+and that every `### C<n>` heading has at least one variant. A second
+test asserts every `ts` fragment differs from its `subscript` fragment
+and every `why` is 25 words or fewer.
+
+**Corpus.** No new entry: the 126 existing `tsc: accepts` reject
+entries are the pins, and rule 4 makes each one carry a block.
