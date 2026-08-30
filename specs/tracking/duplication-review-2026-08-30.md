@@ -25,15 +25,15 @@ runtime MAJOR 4 / MINOR 28.
 | C1 | compiler | four handle-type tables, drifted | §74 rule 1 | 3 |
 | G1 | codegen | managed-type table in `layout.rs` and `cemit.rs`, drifted | §74 rules 2–3 | 3 |
 | G4 | codegen | eleven Terminator walks; `invalidates` counted as a use in three | §73 | 4 |
-| G2 | codegen | local-storage verifier is a copy of the lowering walk | pending | 5 |
-| G3 | codegen | fresh-async-owner classification in three tables | pending | 5 |
-| G5 | codegen | embedded-boundary-header derived four times | pending | 5 |
-| G6 | codegen | boundary-struct-pointer predicate six times, two wrong | pending | 5 |
-| C4 | compiler | assignment re-derives the place kind from the lowered `get` call | pending | 6 |
-| C5 | compiler | absence test erased to an `Int` sentinel | pending | 6 |
-| C6 | compiler | `using` lowered in two passes keyed by `Pos` | pending | 6 |
-| R3 | runtime | emitted-check trap messages are copies of the runtime's | pending | 7 |
-| R4 | runtime | `===`/SameValueZero written in `arrops` and `assocops` | pending | 7 |
+| G2 | codegen | local-storage verifier is a copy of the lowering walk | §75.4 | 5 |
+| G3 | codegen | fresh-async-owner classification in three tables | §75.1 | 5 |
+| G5 | codegen | embedded-boundary-header derived four times | §75.2 | 5 |
+| G6 | codegen | boundary-struct-pointer predicate six times, two wrong | §75.3 | 5 |
+| C4 | compiler | assignment re-derives the place kind from the lowered `get` call | §76.1 | 6 |
+| C5 | compiler | absence test erased to an `Int` sentinel | §76.2 | 6 |
+| C6 | compiler | `using` lowered in two passes keyed by `Pos` | §76.3 | 6 |
+| R3 | runtime | emitted-check trap messages are copies of the runtime's | §77 rule 1 | 7 |
+| R4 | runtime | `===`/SameValueZero written in `arrops` and `assocops` | §77 rule 2 | 7 |
 
 ## Round 1 — runtime rooting and release (landed `f0cc4ed`)
 

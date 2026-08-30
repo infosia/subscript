@@ -883,10 +883,10 @@ measurements replace them.)*
 *(Owner decision, 2026-08-30; review finding.)*
 
 **Rule 1 — a runtime operation roots every allocation it holds across a
-call into script code.** `map`, `filter`, `groupBy`, and every other
-runtime entry that allocates a result and then calls a callback push the
-result handle on the shadow stack before the first call and pop it after
-the last. `Context.collect()` inside the callback (Q7) then keeps the
+call into script code.** This applies to `map`, `filter`, `groupBy`, and
+every other runtime entry that allocates a result and then calls a
+callback. The entry pushes the result handle on the shadow stack before
+the first call. It pops the handle after the last call. `Context.collect()` inside the callback (Q7) then keeps the
 result. The rule applies to the dynamic-array family and the fixed-array
 family alike; the two families are one loop over an element source,
 written once in `runtime/src/arrops.rs`.
@@ -10272,11 +10272,12 @@ rejection. This section decides them.
 
 ### 72.1 Integer literals
 
-**Rule 1.** The checker reads an integer literal from its source
-spelling (`raw`, through `parse_integer_spelling`, R26) in one function.
-Every consumer — a numeric expression, a `declare const` flag, an enum
-member initializer — calls that function and applies its own range. No
-consumer reads the `f64` value of the literal.
+**Rule 1.** `parse_integer_spelling(raw, negate)` is the one reader of
+an integer literal's source spelling (R26). Each consumer — a numeric
+expression, a `declare const` flag, an enum member initializer — owns
+its expression shape (negation, parentheses; a nested negation such as
+`-(-5)` is accepted) and its range, and calls the reader for the digits.
+No consumer reads the `f64` value of the literal.
 
 **Rule 2.** An enum is a 4-byte integer (`types.rs`: `Type::Enum` is
 `(4, 4)`). An enum member value is an `i32`. A member initializer outside
@@ -10407,8 +10408,11 @@ different sets.
 
 **Check.** A unit test in `compiler/` lists every `Type` variant and
 asserts `handle_kind` returns the recorded answer for each. A unit test
-in `codegen/` asserts that `cemit`'s rooted-local decision for a
-hand-built module equals `root_storage::plan`'s for every local.
+in `codegen/` asserts the expected managed word count for a local of
+every handle kind and every `ForOfKind` iterator (a bare `Func` has 0
+managed words; every iterator has 4). A test that compares the C
+emitter's decision with the shared plan compares one function with
+itself after this section and is not a check (core principle 9).
 
 ## 75. Four LIR facts the form carries once
 
@@ -10453,11 +10457,11 @@ the new answer differ, and whether any corpus entry reaches it.
 ### 75.4 The interpreter checks storage classes; the verifier keeps no copy
 
 **Rule 4.** `verify_local_storage_classes` is deleted. It was the
-lowering's classification walk with the result negated, and it could not
+lowering's classification walk with the result negated, and it did not
 fail (core principle 9). The independent witness is the interpreter: at
 every `Suspend` it poisons every local of storage class `Activation`
-(§68.2 rule 7a), and a `LoadLocal` of a poisoned local is an interpreter
-error that names the local and the suspend. A hand-built LIR test
+(§68.2 rule 7a), and a `LoadLocal` or `AddressOfLocal` of a poisoned
+local is an interpreter error that names the local and the suspend. A hand-built LIR test
 constructs the violating form (an `Activation` local read after a
 suspend with no intervening store) and checks the interpreter reports
 it.
@@ -10505,6 +10509,11 @@ Measured before the rule: pass 1 rewrote `using` to `const` and
 recorded binding positions; pass 2 re-identified the bindings over the
 checked HIR by `Pos` equality (475 lines).
 
+`using` in a lambda body stays `S100` (§60: nested declarations are not
+in the decided surface); `r172-using-in-lambda` pins it. The first
+landing of this rule accepted it, measured 2026-08-30, and the
+correction restored the rejection.
+
 **Check.** No corpus golden moves. The existing `using`, accessor,
 index-signature, and absence entries are the pins. A unit test builds
 each `Place` variant from source and checks the classification.
@@ -10525,8 +10534,9 @@ bounds for array length {n}`, `use of a deleted allocation`).
 **Rule 2.** Element equality (stdlib §9 `===`, §10 SameValueZero) and
 the integer-width read are one module, used by `arrops` and `assocops`:
 `value_eq(kind, width, p, q, same_value_zero)` and one `read_uint`. A
-unit test enumerates every kind and width and checks both callers
-agree.
+unit test enumerates every kind and width and checks the expected
+answer for each (`NaN` unequal under `===`, equal under SameValueZero;
+strings by content; handles by identity).
 
 Measured before the rule: `arrops.rs` `elem_eq`/`elem_same_value_zero`
 and `assocops.rs` `keys_equal` were two tables; `F16` existed in one.
