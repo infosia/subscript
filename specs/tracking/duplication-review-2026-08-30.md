@@ -277,3 +277,26 @@ Clippy 7/18/13. Gate on main: 1,152 passed, 0 failed.
 
 **The MINOR pass is COMPLETE.** Three rounds, 66 items, all done. A
 Phase Review of `52d3ae3`..`d955917` follows.
+
+## Phase Review of the MINOR pass (`52d3ae3`..`d955917`)
+
+One fresh reviewer: CRITICAL 0, MAJOR 1, MINOR 11. All fixed in one
+round, landed `2695f47`.
+
+MAJOR: `flow_leaves()` widened W003 to a conditional userdata argument
+(`c ? new X() : keep`), a warning-output move §78 rule 1 forbids; the
+old `Local`/`Cast` walk is restored and the shape is a recorded
+candidate in §78. MINOR: the Rust aliases of the merged symbols
+deleted; `unroll.rs` reads `Type::int_bounds()`; a deleted-receiver
+trap reports its position; `header_kind` no longer uses
+`unwrap_unchecked`; stale comments; one duplicated SAFETY line; the
+tier runner wrappers stay because the CLI and tests call them.
+
+`tools/hygiene.sh`: exit 0 at `2695f47`. Gate on main: 1,153 passed,
+0 failed. Clippy 7/18/13.
+
+**The duplication review is COMPLETE**: 16 MAJOR and 66 MINOR findings
+landed in ten rounds and two Phase Reviews. Open decisions: the
+acceptance widenings recorded in the §74 filters and §78 (W003
+conditional userdata); the two §75.3 shapes without a corpus entry;
+the r170/r171 message text.
