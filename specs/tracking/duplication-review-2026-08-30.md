@@ -145,3 +145,34 @@ no `F16` tag). Clippy 7/21/13. Gate on main: 1,140 passed, 0 failed.
 All 16 MAJOR findings landed in seven rounds (`5487643`..`479676b`).
 The MINORs (66) are not started. A Phase Review of the cumulative diff
 follows.
+
+## Phase Review of the MAJOR pass (`f850e3d`..`5b87ad1`)
+
+One fresh reviewer: CRITICAL 0, MAJOR 4, MINOR 10. All 14 fixed in one
+round, landed `a7b9da3`.
+
+MAJOR: `using` in a lambda body had become accepted (§60 says S100;
+`r172` pins it); `has_dispose_binding` was a hand-written `Stmt` walk;
+`HandleKind::contains_managed` counted a bare `Func` against the §74
+rule 3 record; `children()` was `pub(crate)` and two codegen walks
+stayed hand-written.
+
+Correction to a handoff claim: `managed_words(Func)` was 2 at
+`f850e3d` (`has_managed_interior` listed `Func`), not 0. The value is
+now 0 by §74 rule 3 (the environment lives in activation or coroutine
+storage and the shared plan roots it). Both tiers share the change, so
+`a175-closure-environment-collect` pins the environment across
+`Context.collect` on all three tiers (core principle 12).
+
+Measured for §74's `needs_lifetime_trap`: a dev-tier dereference of a
+deleted `RegExp`, `AsyncHandle`, or `Func | null` is unreachable, since
+`Context.free` accepts `object` only.
+
+`tools/hygiene.sh`: exit 0 at `a7b9da3`. Gate on main: 1,141 passed,
+0 failed. Clippy 7/21/13.
+
+**The MAJOR pass is COMPLETE.** Open: 66 MINORs from the three reviews
+(`review-codegen`, `review-compiler`, `review-runtime` reports are
+not tracked; the MINOR list is reproduced below when the pass is
+ordered); the r170/r171 message text; two §75.3 shapes without a
+corpus entry; the acceptance widenings recorded in the §74 filters.
