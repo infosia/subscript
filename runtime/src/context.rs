@@ -166,6 +166,66 @@ pub const CLASS_ID_OFFSET: i32 = -8;
 /// Byte offset of the allocating position id relative to the payload pointer.
 pub const POS_ID_OFFSET: i32 = -4;
 
+/// Writes the state, class, and position words of an allocation header.
+///
+/// # Safety
+///
+/// `base` must point to at least [`HEADER_SIZE`] writable bytes.
+unsafe fn write_header(base: *mut u8, class_id: u32, pos_id: u32) {
+    // SAFETY: the caller supplies a complete writable header.
+    unsafe {
+        base.cast::<u64>().write(LIVE_STATE);
+        base.add((HEADER_SIZE as i32 + CLASS_ID_OFFSET) as usize)
+            .cast::<u32>()
+            .write(class_id);
+        base.add((HEADER_SIZE as i32 + POS_ID_OFFSET) as usize)
+            .cast::<u32>()
+            .write(pos_id);
+    }
+}
+
+/// Reads the class word of an initialized allocation header.
+///
+/// # Safety
+///
+/// `base` must point to a readable initialized allocation header.
+unsafe fn header_class_id(base: *const u8) -> u32 {
+    // SAFETY: the caller supplies a complete readable header.
+    unsafe {
+        base.add((HEADER_SIZE as i32 + CLASS_ID_OFFSET) as usize)
+            .cast::<u32>()
+            .read()
+    }
+}
+
+/// Reads the position word of an initialized allocation header.
+///
+/// # Safety
+///
+/// `base` must point to a readable initialized allocation header.
+unsafe fn header_pos_id(base: *const u8) -> u32 {
+    // SAFETY: the caller supplies a complete readable header.
+    unsafe {
+        base.add((HEADER_SIZE as i32 + POS_ID_OFFSET) as usize)
+            .cast::<u32>()
+            .read()
+    }
+}
+
+fn set_observer<T: Copy>(
+    slot: &mut Option<T>,
+    userdata_slot: &mut *mut c_void,
+    observer: Option<T>,
+    userdata: *mut c_void,
+) {
+    *slot = observer;
+    *userdata_slot = if observer.is_some() {
+        userdata
+    } else {
+        std::ptr::null_mut()
+    };
+}
+
 /// Class id used for string allocations.
 pub const CLASS_STRING: u32 = 0xFFFF_FF01;
 
@@ -810,7 +870,7 @@ impl Context {
             );
             return std::ptr::null_mut();
         };
-        crate::worker::materialize_parent(self, receive)
+        crate::worker::materialize(self, receive)
     }
 
     pub(crate) fn worker_close(&mut self, worker: *mut Worker) {
@@ -1345,12 +1405,12 @@ impl Context {
     /// Installs a host observer for the first trap in each uncleared
     /// run. Passing `None` clears the observer and its userdata.
     pub fn set_trap_observer(&mut self, observer: Option<TrapObserver>, userdata: *mut c_void) {
-        self.trap_observer = observer;
-        self.trap_observer_userdata = if observer.is_some() {
-            userdata
-        } else {
-            std::ptr::null_mut()
-        };
+        set_observer(
+            &mut self.trap_observer,
+            &mut self.trap_observer_userdata,
+            observer,
+            userdata,
+        );
     }
 
     /// Runs `call` while the observer-active guard is raised.
@@ -1443,12 +1503,12 @@ impl Context {
     /// Installs a host observer for printed lines. Passing `None` clears
     /// the observer and its userdata.
     pub fn set_print_observer(&mut self, observer: Option<PrintObserver>, userdata: *mut c_void) {
-        self.print_observer = observer;
-        self.print_observer_userdata = if observer.is_some() {
-            userdata
-        } else {
-            std::ptr::null_mut()
-        };
+        set_observer(
+            &mut self.print_observer,
+            &mut self.print_observer_userdata,
+            observer,
+            userdata,
+        );
     }
 
     /// Installs the host observer for optional runtime diagnostics
@@ -1458,12 +1518,12 @@ impl Context {
         observer: Option<DiagnosticsObserver>,
         userdata: *mut c_void,
     ) {
-        self.diagnostics_observer = observer;
-        self.diagnostics_observer_userdata = if observer.is_some() {
-            userdata
-        } else {
-            std::ptr::null_mut()
-        };
+        set_observer(
+            &mut self.diagnostics_observer,
+            &mut self.diagnostics_observer_userdata,
+            observer,
+            userdata,
+        );
     }
 
     /// Sets the callback-binding count at which newly interned records are
@@ -1558,6 +1618,37 @@ impl Context {
         self.alloc_fail_countdown = (n != 0).then_some(n);
     }
 
+    /// Allocates one zeroed system block and initializes its header.
+    fn alloc_system_block(
+        &mut self,
+        size: usize,
+        class_id: u32,
+        pos_id: u32,
+    ) -> Option<(*mut u8, Layout)> {
+        let total = HEADER_SIZE.saturating_add(size.max(1));
+        let Ok(layout) = Layout::from_size_align(total, 16) else {
+            self.trap(
+                TrapKind::AllocationFailure,
+                format!("allocation of {size} bytes is not representable"),
+                pos_id,
+            );
+            return None;
+        };
+        // SAFETY: `layout` has non-zero size (>= HEADER_SIZE + 1).
+        let base = unsafe { alloc_zeroed(layout) };
+        if base.is_null() {
+            self.trap(
+                TrapKind::AllocationFailure,
+                format!("allocation of {size} bytes failed"),
+                pos_id,
+            );
+            return None;
+        }
+        // SAFETY: `base` is a fresh allocation with a complete header.
+        unsafe { write_header(base, class_id, pos_id) };
+        Some((base, layout))
+    }
+
     /// Allocates `size` payload bytes tagged `class_id`.
     ///
     /// Returns the payload pointer, or null after an allocation trap.
@@ -1582,33 +1673,10 @@ impl Context {
         if self.uses_ship_arena() {
             return self.arena_alloc(size, class_id, pos_id);
         }
-        let total = HEADER_SIZE.saturating_add(size.max(1));
-        let Ok(layout) = Layout::from_size_align(total, 16) else {
-            self.trap(
-                TrapKind::AllocationFailure,
-                format!("allocation of {size} bytes is not representable"),
-                pos_id,
-            );
+        let Some((base, layout)) = self.alloc_system_block(size, class_id, pos_id) else {
             return std::ptr::null_mut();
         };
-        // SAFETY: `layout` has non-zero size (>= HEADER_SIZE + 1).
-        let base = unsafe { alloc_zeroed(layout) };
-        if base.is_null() {
-            self.trap(
-                TrapKind::AllocationFailure,
-                format!("allocation of {size} bytes failed"),
-                pos_id,
-            );
-            return std::ptr::null_mut();
-        }
-        // SAFETY: `base` is a fresh allocation of at least HEADER_SIZE
-        // bytes; the header writes stay inside it.
-        unsafe {
-            (base as *mut u64).write(LIVE_STATE);
-            (base.add(8) as *mut u32).write(class_id);
-            (base.add(12) as *mut u32).write(pos_id);
-        }
-        // SAFETY: HEADER_SIZE <= total.
+        // SAFETY: the system block includes a complete header.
         let payload = unsafe { base.add(HEADER_SIZE) };
         self.allocations.insert(
             payload as usize,
@@ -1710,9 +1778,7 @@ impl Context {
                     std::ptr::write_bytes(payload, 0, block_size - HEADER_SIZE);
                 }
                 let base = payload.sub(HEADER_SIZE);
-                (base as *mut u64).write(LIVE_STATE);
-                (base.add(8) as *mut u32).write(class_id);
-                (base.add(12) as *mut u32).write(pos_id);
+                write_header(base, class_id, pos_id);
             }
             return payload;
         }
@@ -1732,9 +1798,7 @@ impl Context {
         // header needs writing.
         let payload = unsafe {
             let base = chunk.base.add(chunk.bump * block_size);
-            (base as *mut u64).write(LIVE_STATE);
-            (base.add(8) as *mut u32).write(class_id);
-            (base.add(12) as *mut u32).write(pos_id);
+            write_header(base, class_id, pos_id);
             base.add(HEADER_SIZE)
         };
         chunk.bump += 1;
@@ -1786,33 +1850,11 @@ impl Context {
     /// id; the payload size lives in the record (a large payload may exceed
     /// `u32`).
     fn arena_alloc_large(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
-        let total = HEADER_SIZE.saturating_add(size.max(1));
-        let Ok(layout) = Layout::from_size_align(total, 16) else {
-            self.trap(
-                TrapKind::AllocationFailure,
-                format!("allocation of {size} bytes is not representable"),
-                pos_id,
-            );
+        let Some((base, layout)) = self.alloc_system_block(size, class_id, pos_id) else {
             return std::ptr::null_mut();
         };
-        // SAFETY: `layout` has non-zero size (>= HEADER_SIZE + 1).
-        let base = unsafe { alloc_zeroed(layout) };
-        if base.is_null() {
-            self.trap(
-                TrapKind::AllocationFailure,
-                format!("allocation of {size} bytes failed"),
-                pos_id,
-            );
-            return std::ptr::null_mut();
-        }
-        // SAFETY: `base` is a fresh allocation of at least HEADER_SIZE
-        // bytes; the header writes stay inside it.
-        let payload = unsafe {
-            (base as *mut u64).write(LIVE_STATE);
-            (base.add(8) as *mut u32).write(class_id);
-            (base.add(12) as *mut u32).write(pos_id);
-            base.add(HEADER_SIZE)
-        };
+        // SAFETY: the system block includes a complete header.
+        let payload = unsafe { base.add(HEADER_SIZE) };
         self.large.insert(
             payload as usize,
             LargeAlloc {
@@ -1916,7 +1958,7 @@ impl Context {
                 if (block as *const u64).read() != LIVE_STATE {
                     return;
                 }
-                (block.add(8) as *const u32).read()
+                header_class_id(block)
             };
             self.release_class_state(class_id, payload);
             // SAFETY: the live-grid check above proves `block` is still
@@ -1933,7 +1975,7 @@ impl Context {
         if let Some(a) = self.large.remove(&payload) {
             // SAFETY: removing the exact live record proves `a.base`
             // heads an owned allocation whose class-id word is readable.
-            let class_id = unsafe { (a.base.add(8) as *const u32).read() };
+            let class_id = unsafe { header_class_id(a.base) };
             self.release_class_state(class_id, payload);
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `arena_alloc_large`; the record was just removed so this
@@ -1954,7 +1996,7 @@ impl Context {
         let allocation = self.allocations.remove(&payload)?;
         // SAFETY: exact live-map membership proves the complete initialized
         // header remains owned by this Context.
-        let class_id = unsafe { (allocation.base.add(8) as *const u32).read() };
+        let class_id = allocation.class_id;
         Self::retain_or_release_removed_allocation(
             &mut self.dead_allocations,
             &mut self.retained_allocations,
@@ -2026,7 +2068,7 @@ impl Context {
         let allocation = self.allocations.remove(&payload)?;
         // SAFETY: exact live-map membership proves the complete initialized
         // header remains owned by this Context.
-        let class_id = unsafe { (allocation.base.add(8) as *const u32).read() };
+        let class_id = allocation.class_id;
         // SAFETY: `base`/`layout` came from `alloc_zeroed` in `alloc`; the
         // live record was just removed, so this frees it exactly once.
         unsafe { dealloc(allocation.base, allocation.layout) };
@@ -2083,14 +2125,11 @@ impl Context {
             return;
         };
         // SAFETY: exact live-map membership proves the header is readable.
-        let class_id = unsafe { (allocation.base.add(8) as *const u32).read() };
+        let class_id = unsafe { header_class_id(allocation.base) };
         // End the allocation-table borrow before release work. Map and Set
         // storage retires through recursive `delete` calls.
         self.release_class_state(class_id, payload);
-        let released_class_id = self.dispose_dev_allocation(payload);
-        // Exact membership above proves disposal succeeds. Release work
-        // does not mutate the allocation record or its class id.
-        debug_assert_eq!(released_class_id, Some(class_id));
+        let _ = self.dispose_dev_allocation(payload);
     }
 
     /// True when `payload` is a live allocation (test/inspection aid).
@@ -2161,25 +2200,26 @@ impl Context {
         false
     }
 
+    /// Iterates live classed arena blocks as `(header, block_size)`.
+    fn live_blocks(&self) -> impl Iterator<Item = (*mut u8, usize)> + '_ {
+        self.chunks.iter().flat_map(|chunk| {
+            (0..chunk.bump).filter_map(move |bi| {
+                // SAFETY: `bi < bump`, so the header lies in the owned chunk.
+                let base = unsafe { chunk.base.add(bi * chunk.block_size) };
+                // SAFETY: `base` points to a complete initialized header.
+                (unsafe { base.cast::<u64>().read() } == LIVE_STATE)
+                    .then_some((base, chunk.block_size))
+            })
+        })
+    }
+
     /// Number of live allocations (test/inspection aid). Ship tier: a
     /// chunk walk (live blocks below each watermark) plus the large
     /// records.
     #[must_use]
     pub fn live_count(&self) -> usize {
         if self.uses_ship_arena() {
-            let mut n = self.large.len();
-            for chunk in &self.chunks {
-                for bi in 0..chunk.bump {
-                    // SAFETY: `bi < bump`, so the block is inside the
-                    // owned chunk; only its state word is read.
-                    let state =
-                        unsafe { (chunk.base.add(bi * chunk.block_size) as *const u64).read() };
-                    if state == LIVE_STATE {
-                        n += 1;
-                    }
-                }
-            }
-            return n;
+            return self.large.len() + self.live_blocks().count();
         }
         self.allocations.len()
     }
@@ -2196,16 +2236,8 @@ impl Context {
                 .large
                 .values()
                 .fold(0usize, |sum, a| sum.saturating_add(a.payload_size));
-            for chunk in &self.chunks {
-                for bi in 0..chunk.bump {
-                    // SAFETY: `bi < bump`, so the state word lies inside
-                    // the Context-owned chunk.
-                    let state =
-                        unsafe { (chunk.base.add(bi * chunk.block_size) as *const u64).read() };
-                    if state == LIVE_STATE {
-                        bytes = bytes.saturating_add(chunk.block_size - HEADER_SIZE);
-                    }
-                }
+            for (_, block_size) in self.live_blocks() {
+                bytes = bytes.saturating_add(block_size - HEADER_SIZE);
             }
             return bytes;
         }
@@ -2263,42 +2295,27 @@ impl Context {
         };
         let mut count = 0u64;
         if self.uses_ship_arena() {
-            for chunk in &self.chunks {
-                for bi in 0..chunk.bump {
-                    // SAFETY: `bi < bump`, so the complete header lies
-                    // inside this Context-owned chunk.
-                    let base = unsafe { chunk.base.add(bi * chunk.block_size) };
-                    // SAFETY: the state word lies in the header.
-                    if unsafe { (base as *const u64).read() } != LIVE_STATE {
-                        continue;
-                    }
-                    // SAFETY: class_id and pos_id are initialized header
-                    // words for every live block.
-                    let (class_id, pos_id) = unsafe {
-                        (
-                            (base.add(8) as *const u32).read(),
-                            (base.add(12) as *const u32).read(),
-                        )
-                    };
-                    // SAFETY: the host supplied `visitor` and its userdata.
-                    unsafe {
-                        visitor(
-                            userdata,
-                            class_id,
-                            pos_id,
-                            (chunk.block_size - HEADER_SIZE) as u64,
-                        )
-                    };
-                    count += 1;
-                }
+            for (base, block_size) in self.live_blocks() {
+                // SAFETY: `live_blocks` returns initialized live headers.
+                let (class_id, pos_id) = unsafe { (header_class_id(base), header_pos_id(base)) };
+                // SAFETY: the host supplied `visitor` and its userdata.
+                unsafe {
+                    visitor(
+                        userdata,
+                        class_id,
+                        pos_id,
+                        (block_size - HEADER_SIZE) as u64,
+                    )
+                };
+                count += 1;
             }
             for allocation in self.large.values() {
                 // Every retained large record is live. The complete
                 // header was initialized by `arena_alloc_large`.
                 let (class_id, pos_id) = unsafe {
                     (
-                        (allocation.base.add(8) as *const u32).read(),
-                        (allocation.base.add(12) as *const u32).read(),
+                        header_class_id(allocation.base),
+                        header_pos_id(allocation.base),
                     )
                 };
                 // SAFETY: the host supplied `visitor` and its userdata.
@@ -2313,8 +2330,8 @@ impl Context {
             // header for the lifetime of the Context.
             let (class_id, pos_id) = unsafe {
                 (
-                    (allocation.base.add(8) as *const u32).read(),
-                    (allocation.base.add(12) as *const u32).read(),
+                    header_class_id(allocation.base),
+                    header_pos_id(allocation.base),
                 )
             };
             // SAFETY: the host supplied `visitor` and its userdata.
@@ -2367,12 +2384,12 @@ impl Context {
             if let Some((block, _)) = self.arena_lookup_block(address) {
                 // SAFETY: arena membership gives an owned block with a
                 // complete initialized header.
-                Some(unsafe { (block.add(8) as *const u32).read() })
+                Some(unsafe { header_class_id(block) })
             } else {
                 self.large.get(&address).map(|allocation| {
                     // SAFETY: exact large-map membership gives an owned
                     // allocation with a complete initialized header.
-                    unsafe { (allocation.base.add(8) as *const u32).read() }
+                    unsafe { header_class_id(allocation.base) }
                 })
             }
         } else {
@@ -2385,133 +2402,133 @@ impl Context {
         }
     }
 
+    fn push_root_set(
+        &self,
+        work: &mut Vec<usize>,
+        tracer: &mut Option<MarkTracer>,
+        set: &'static str,
+        values: impl Iterator<Item = (usize, usize, usize)>,
+    ) {
+        for (index, word, address) in values {
+            self.push_mark_word(work, tracer, address, MarkSource::Root { set, index, word });
+        }
+    }
+
+    fn scan_payload(
+        &self,
+        payload: *const u8,
+        size: usize,
+        class_id: u32,
+        work: &mut Vec<usize>,
+        tracer: &mut Option<MarkTracer>,
+    ) {
+        if class_holds_no_handle(class_id) {
+            return;
+        }
+        for word in 0..size / 8 {
+            // SAFETY: the caller supplies an owned payload of `size` bytes.
+            let address = unsafe { payload.add(word * 8).cast::<usize>().read_unaligned() };
+            self.push_mark_word(
+                work,
+                tracer,
+                address,
+                MarkSource::Payload {
+                    class_id,
+                    address: payload as usize,
+                    word,
+                },
+            );
+        }
+    }
+
     fn collect_with_trace(&mut self, trace_target: Option<MarkTraceTarget>) -> Vec<String> {
         let mut work: Vec<usize> = Vec::new();
         let mut tracer = trace_target.map(MarkTracer::new);
-        for (index, &(base, words)) in self.roots.iter().enumerate() {
-            for i in 0..words {
-                // SAFETY: root ranges are addresses of live global
-                // slots registered by generated code; reading their
-                // words is valid for the duration of the script run.
-                let address = unsafe { ((base + i * 8) as *const usize).read_unaligned() };
-                self.push_mark_word(
-                    &mut work,
-                    &mut tracer,
-                    address,
-                    MarkSource::Root {
-                        set: "roots",
-                        index,
-                        word: i,
-                    },
-                );
-            }
-        }
-        for (index, &(base, slots)) in self.shadow.iter().enumerate() {
-            for i in 0..slots {
-                // SAFETY: shadow frames are live stack ranges registered
-                // by the running generated code.
-                let address = unsafe { ((base + i * 8) as *const usize).read_unaligned() };
-                self.push_mark_word(
-                    &mut work,
-                    &mut tracer,
-                    address,
-                    MarkSource::Root {
-                        set: "shadow",
-                        index,
-                        word: i,
-                    },
-                );
-            }
-        }
-        for (index, root) in self.async_roots.iter().enumerate() {
-            self.push_mark_word(
-                &mut work,
-                &mut tracer,
-                root.frame as usize,
-                MarkSource::Root {
-                    set: "async_roots",
-                    index,
-                    word: 0,
-                },
-            );
-        }
-        for (index, address) in self.active_async_frames.iter().copied().enumerate() {
-            self.push_mark_word(
-                &mut work,
-                &mut tracer,
-                address,
-                MarkSource::Root {
-                    set: "active_async_frames",
-                    index,
-                    word: 0,
-                },
-            );
-        }
+        let roots = self
+            .roots
+            .iter()
+            .enumerate()
+            .flat_map(|(index, &(base, words))| {
+                (0..words).map(move |word| {
+                    // SAFETY: generated code registered this live root range.
+                    let address = unsafe { ((base + word * 8) as *const usize).read_unaligned() };
+                    (index, word, address)
+                })
+            });
+        self.push_root_set(&mut work, &mut tracer, "roots", roots);
+        let shadow = self
+            .shadow
+            .iter()
+            .enumerate()
+            .flat_map(|(index, &(base, slots))| {
+                (0..slots).map(move |word| {
+                    // SAFETY: generated code registered this live shadow range.
+                    let address = unsafe { ((base + word * 8) as *const usize).read_unaligned() };
+                    (index, word, address)
+                })
+            });
+        self.push_root_set(&mut work, &mut tracer, "shadow", shadow);
+        let async_roots = self
+            .async_roots
+            .iter()
+            .enumerate()
+            .map(|(index, root)| (index, 0, root.frame as usize));
+        self.push_root_set(&mut work, &mut tracer, "async_roots", async_roots);
+        let active_async_frames = self
+            .active_async_frames
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, address)| (index, 0, address));
+        self.push_root_set(
+            &mut work,
+            &mut tracer,
+            "active_async_frames",
+            active_async_frames,
+        );
         // Counted frames are roots even when the only holders form a cycle.
         // This deliberately makes such a cycle leak (§70.3.6); collection
         // must not reinterpret the reference-count ownership model.
-        for (index, address) in self.async_frames.keys().copied().enumerate() {
-            self.push_mark_word(
-                &mut work,
-                &mut tracer,
-                address,
-                MarkSource::Root {
-                    set: "async_frames",
-                    index,
-                    word: 0,
-                },
-            );
-        }
-        for (index, completion) in self
+        let async_frames = self
+            .async_frames
+            .keys()
+            .copied()
+            .enumerate()
+            .map(|(index, address)| (index, 0, address));
+        self.push_root_set(&mut work, &mut tracer, "async_frames", async_frames);
+        let completions = self
             .async_frames
             .values()
             .filter_map(|meta| meta.completion.as_deref())
             .enumerate()
-        {
-            for (word_index, word) in completion
-                .chunks_exact(core::mem::size_of::<usize>())
-                .enumerate()
-            {
-                // SAFETY: `word` is exactly one native word of Context-owned
-                // completion storage; unaligned reads preserve aggregate
-                // layouts while exposing any managed handle to the marker.
-                let address = unsafe { word.as_ptr().cast::<usize>().read_unaligned() };
-                self.push_mark_word(
-                    &mut work,
-                    &mut tracer,
-                    address,
-                    MarkSource::Root {
-                        set: "completion",
-                        index,
-                        word: word_index,
-                    },
-                );
-            }
-        }
-        for (index, address) in self.interned.values().copied().enumerate() {
-            self.push_mark_word(
-                &mut work,
-                &mut tracer,
-                address,
-                MarkSource::Root {
-                    set: "interned",
-                    index,
-                    word: 0,
-                },
-            );
-        }
-        for (index, address) in self.astral_code_points.values().copied().enumerate() {
-            self.push_mark_word(
-                &mut work,
-                &mut tracer,
-                address,
-                MarkSource::Root {
-                    set: "astral_code_points",
-                    index,
-                    word: 0,
-                },
-            );
-        }
+            .flat_map(|(index, completion)| {
+                completion
+                    .chunks_exact(core::mem::size_of::<usize>())
+                    .enumerate()
+                    .map(move |(word_index, word)| {
+                        // SAFETY: `word` is exactly one native word of Context-owned
+                        // completion storage; unaligned reads preserve aggregate
+                        // layouts while exposing any managed handle to the marker.
+                        let address = unsafe { word.as_ptr().cast::<usize>().read_unaligned() };
+                        (index, word_index, address)
+                    })
+            });
+        self.push_root_set(&mut work, &mut tracer, "completion", completions);
+        let interned = self
+            .interned
+            .values()
+            .copied()
+            .enumerate()
+            .map(|(index, address)| (index, 0, address));
+        self.push_root_set(&mut work, &mut tracer, "interned", interned);
+        let astral = self
+            .astral_code_points
+            .values()
+            .copied()
+            .enumerate()
+            .map(|(index, address)| (index, 0, address));
+        self.push_root_set(&mut work, &mut tracer, "astral_code_points", astral);
+        let mut callbacks = Vec::new();
         for (index, binding) in self.callbacks.iter().enumerate() {
             for (word, userdata) in [binding.userdata1, binding.userdata2]
                 .into_iter()
@@ -2519,19 +2536,11 @@ impl Context {
             {
                 let address = userdata as usize;
                 if !userdata.is_null() && self.is_live(address) {
-                    self.push_mark_word(
-                        &mut work,
-                        &mut tracer,
-                        address,
-                        MarkSource::Root {
-                            set: "callbacks",
-                            index,
-                            word,
-                        },
-                    );
+                    callbacks.push((index, word, address));
                 }
             }
         }
+        self.push_root_set(&mut work, &mut tracer, "callbacks", callbacks.into_iter());
 
         if self.uses_ship_arena() {
             // Ship tier (§8.1b): mark state lives in the block header
@@ -2555,25 +2564,8 @@ impl Context {
                 continue;
             };
             marked_count += 1;
-            if class_holds_no_handle(class_id) {
-                continue;
-            }
             let payload = addr as *const u8;
-            for i in 0..words {
-                // SAFETY: the payload is owned by this context and at
-                // least `payload_size` bytes; reads stay inside it.
-                let w = unsafe { (payload.add(i * 8) as *const usize).read_unaligned() };
-                self.push_mark_word(
-                    &mut work,
-                    &mut tracer,
-                    w,
-                    MarkSource::Payload {
-                        class_id,
-                        address: addr,
-                        word: i,
-                    },
-                );
-            }
+            self.scan_payload(payload, words * 8, class_id, &mut work, &mut tracer);
         }
 
         self.sweep_dev_allocations(self.allocations.len() - marked_count);
@@ -2704,28 +2696,15 @@ impl Context {
             } else {
                 continue;
             };
-            // SAFETY: `block` heads an owned allocation whose payload is
-            // at least `payload_size` bytes. The class id is in its header.
-            unsafe {
+            // SAFETY: `block` heads an owned allocation with a complete
+            // header and at least `payload_size` payload bytes.
+            let (payload, class_id) = unsafe {
                 let payload = block.add(HEADER_SIZE);
-                let class_id = (payload.offset(CLASS_ID_OFFSET as isize) as *const u32).read();
-                (block as *mut u64).write(MARK_STATE);
-                if class_holds_no_handle(class_id) {
-                    continue;
-                }
-                for i in 0..payload_size / 8 {
-                    self.push_mark_word(
-                        work,
-                        tracer,
-                        (payload.add(i * 8) as *const usize).read_unaligned(),
-                        MarkSource::Payload {
-                            class_id,
-                            address: addr,
-                            word: i,
-                        },
-                    );
-                }
-            }
+                let class_id = header_class_id(block);
+                block.cast::<u64>().write(MARK_STATE);
+                (payload, class_id)
+            };
+            self.scan_payload(payload, payload_size, class_id, work, tracer);
         }
     }
 
@@ -2790,13 +2769,13 @@ impl Context {
     /// Allocates an immutable string and writes its bytes in place.
     ///
     /// The payload is `[len: u64][bytes]`. The writer receives exactly
-    /// `len` bytes and must return `len` after it writes every byte.
+    /// `len` bytes and must write every byte.
     /// Returns the payload pointer, or null after an allocation trap.
     pub fn alloc_str_with(
         &mut self,
         len: usize,
         pos_id: u32,
-        writer: impl FnOnce(&mut [u8]) -> usize,
+        writer: impl FnOnce(&mut [u8]),
     ) -> *mut u8 {
         let Some(payload_len) = 8usize.checked_add(len) else {
             self.trap(
@@ -2816,8 +2795,7 @@ impl Context {
         unsafe {
             (p as *mut u64).write(len as u64);
             let destination = std::slice::from_raw_parts_mut(p.add(8), len);
-            let written = writer(destination);
-            debug_assert_eq!(written, len, "a string writer must fill every byte");
+            writer(destination);
         }
         p
     }
@@ -2827,7 +2805,6 @@ impl Context {
     pub fn alloc_str(&mut self, bytes: &[u8], pos_id: u32) -> *mut u8 {
         self.alloc_str_with(bytes.len(), pos_id, |destination| {
             destination.copy_from_slice(bytes);
-            bytes.len()
         })
     }
 
@@ -2895,6 +2872,23 @@ impl Context {
             let len = (handle as *const u64).read() as usize;
             std::slice::from_raw_parts(handle.add(8), len)
         }
+    }
+
+    /// Returns a string view whose borrow is independent of the Context.
+    ///
+    /// This uses the `subscript_rt_str_concat` invariant: allocating another
+    /// Context string does not move an immutable input allocation. The caller
+    /// must not delete or collect the handle while the returned view is live.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a live string handle owned by this Context.
+    pub(crate) unsafe fn str_view<'a>(&self, handle: *const u8) -> &'a [u8] {
+        // SAFETY: the caller owns the lifetime under the documented invariant.
+        let bytes = unsafe { self.str_bytes(handle) };
+        // SAFETY: rebuilding from the stable pointer detaches only the Rust
+        // borrow; the caller preserves the allocation for the returned view.
+        unsafe { std::slice::from_raw_parts(bytes.as_ptr(), bytes.len()) }
     }
 
     /// The address of a string handle's UTF-8 bytes (the C `const char*`
@@ -3091,6 +3085,9 @@ impl Context {
         size: u32,
         pos_id: u32,
     ) -> *mut u8 {
+        if handle.is_null() || !self.require_live_handle(handle as usize, pos_id) {
+            return std::ptr::null_mut();
+        }
         // SAFETY: the caller guarantees a live array payload.
         let header = unsafe { &*(handle as *const ArrayHeader) };
         let end = u64::from(offset) + u64::from(size);
@@ -3144,6 +3141,9 @@ impl Context {
     /// `handle` must be an array payload owned by this context; `src`
     /// must be readable for the array's element size.
     pub unsafe fn array_push(&mut self, handle: *mut u8, src: *const u8, pos_id: u32) -> i32 {
+        if handle.is_null() || !self.require_live_handle(handle as usize, pos_id) {
+            return -1;
+        }
         // SAFETY: caller guarantees an array payload.
         let h = unsafe { &mut *(handle as *mut ArrayHeader) };
         if h.len == h.cap {
@@ -3216,6 +3216,9 @@ impl Context {
     /// `handle` must be an array payload owned by this context; `dst`
     /// must be writable for the array's element size.
     pub unsafe fn array_pop(&mut self, handle: *mut u8, dst: *mut u8, pos_id: u32) {
+        if handle.is_null() || !self.require_live_handle(handle as usize, pos_id) {
+            return;
+        }
         // SAFETY: caller guarantees an array payload.
         let h = unsafe { &mut *(handle as *mut ArrayHeader) };
         if h.len == 0 {
@@ -3238,6 +3241,9 @@ impl Context {
     ///
     /// `handle` must be an array payload owned by this context.
     pub unsafe fn array_elem_ptr(&mut self, handle: *mut u8, idx: i32, pos_id: u32) -> *mut u8 {
+        if handle.is_null() || !self.require_live_handle(handle as usize, pos_id) {
+            return std::ptr::null_mut();
+        }
         // SAFETY: caller guarantees an array payload.
         let h = unsafe { &*(handle as *const ArrayHeader) };
         if idx < 0 || idx as u64 >= h.len {
@@ -3251,6 +3257,59 @@ impl Context {
         }
         // SAFETY: 0 <= idx < len <= cap.
         unsafe { h.data.add(idx as usize * h.elem_size as usize) }
+    }
+
+    /// Appends `count` consecutive elements from `src`.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a live array. `src` must contain `count` readable
+    /// elements with the receiver's element size.
+    pub(crate) unsafe fn array_extend(
+        &mut self,
+        handle: *mut u8,
+        src: *const u8,
+        count: usize,
+        pos_id: u32,
+    ) -> bool {
+        if count == 0 && src.is_null() {
+            return true;
+        }
+        if handle.is_null() || !self.require_live_handle(handle as usize, pos_id) {
+            return false;
+        }
+        if count == 0 {
+            return true;
+        }
+        if src.is_null() {
+            return false;
+        }
+        // SAFETY: the receiver follows this function's contract.
+        let width = unsafe { self.array_elem_size(handle) };
+        for index in 0..count {
+            // SAFETY: the caller supplies `count` consecutive elements.
+            let element = unsafe { src.add(index * width) };
+            // SAFETY: forwarded receiver and element contracts.
+            if unsafe { self.array_push(handle, element, pos_id) } < 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Shrinks an array to `new_len` without copying removed elements.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a live array and `new_len` must not exceed its length.
+    pub(crate) unsafe fn array_truncate(&mut self, handle: *mut u8, new_len: usize, pos_id: u32) {
+        if handle.is_null() || !self.require_live_handle(handle as usize, pos_id) {
+            return;
+        }
+        // SAFETY: liveness and the caller contract establish the header.
+        let header = unsafe { &mut *handle.cast::<ArrayHeader>() };
+        debug_assert!(new_len <= header.len as usize);
+        header.len = new_len.min(header.len as usize) as u64;
     }
 }
 
@@ -5182,7 +5241,6 @@ mod tests {
             let handle = ctx.alloc_str_with(5, 17, |destination| {
                 assert_eq!(destination.len(), 5, "{tier}");
                 destination.copy_from_slice(b"write");
-                destination.len()
             });
             assert!(!handle.is_null(), "{tier}");
             // SAFETY: `handle` is a live string in this Context.
@@ -5202,7 +5260,6 @@ mod tests {
 
         let reused = ctx.alloc_str_with(1, 0, |destination| {
             destination[0] = b'z';
-            1
         });
         assert_eq!(reused, first, "the string free list must reuse the block");
         // SAFETY: `reused` is a live string in this Context. The padding

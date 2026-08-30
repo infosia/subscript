@@ -120,6 +120,27 @@ pub fn substring_range(len: usize, start: i32, end: i32) -> (usize, usize) {
     }
 }
 
+/// Normalizes `slice(start, end)` against a byte length.
+///
+/// Negative indices count from the end. Both indices clamp to the string
+/// bounds. The second result never precedes the first. The third result is
+/// the independently normalized end boundary used for UTF-8 validation.
+#[must_use]
+pub fn slice_range(len: usize, start: i32, end: i32) -> (usize, usize, usize) {
+    let len = i64::try_from(len).unwrap_or(i64::MAX);
+    let relative = |index: i32| {
+        let index = i64::from(index);
+        (if index < 0 {
+            (len + index).max(0)
+        } else {
+            index.min(len)
+        }) as usize
+    };
+    let lo = relative(start);
+    let end_boundary = relative(end);
+    (lo, end_boundary.max(lo), end_boundary)
+}
+
 /// Normalizes `substr(start, length)` against a byte length. A negative
 /// start counts back from the end, a start past the end clamps to the
 /// end, and a non-positive length produces an empty range.
@@ -486,6 +507,9 @@ mod tests {
         assert_eq!(substring_range(5, -2, 3), (0, 3));
         assert_eq!(substring_range(5, 4, 1), (1, 4));
         assert_eq!(substring_range(5, 99, 2), (2, 5));
+        assert_eq!(slice_range(5, -2, 99), (3, 5, 5));
+        assert_eq!(slice_range(5, 4, 1), (4, 4, 1));
+        assert_eq!(slice_range(5, -99, -1), (0, 4, 4));
         assert_eq!(substr_range(5, -2, i32::MAX), (3, 5));
         assert_eq!(substr_range(5, -99, 2), (0, 2));
         assert_eq!(substr_range(5, 2, 0), (2, 2));

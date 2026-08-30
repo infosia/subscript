@@ -7150,7 +7150,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "Size" => {
                 let call = self.emitter.runtime_call(
                     "int32_t",
-                    "subscript_rt_map_size",
+                    "subscript_rt_assoc_size",
                     &["void*".into(), "void*".into()],
                     &["ctx".into(), receiver.clone()],
                 );
@@ -7229,9 +7229,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "Has" | "Delete" => {
                 let key_pointer = self.materialize(out, &argument(1)?, key)?;
                 let symbol = if name == "Has" {
-                    "subscript_rt_map_has"
+                    "subscript_rt_assoc_has"
                 } else {
-                    "subscript_rt_map_delete"
+                    "subscript_rt_assoc_delete"
                 };
                 let call = self.emitter.runtime_call(
                     "int32_t",
@@ -7244,7 +7244,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "Clear" => {
                 let call = self.emitter.runtime_call(
                     "void",
-                    "subscript_rt_map_clear",
+                    "subscript_rt_assoc_clear",
                     &["void*".into(), "void*".into()],
                     &["ctx".into(), receiver.clone()],
                 );
@@ -7335,7 +7335,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "Size" => {
                 let call = self.emitter.runtime_call(
                     "int32_t",
-                    "subscript_rt_set_size",
+                    "subscript_rt_assoc_size",
                     &["void*".into(), "void*".into()],
                     &["ctx".into(), receiver.clone()],
                 );
@@ -7366,9 +7366,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "Has" | "Delete" => {
                 let key_pointer = self.materialize(out, &argument(1)?, key)?;
                 let symbol = if name == "Has" {
-                    "subscript_rt_set_has"
+                    "subscript_rt_assoc_has"
                 } else {
-                    "subscript_rt_set_delete"
+                    "subscript_rt_assoc_delete"
                 };
                 let call = self.emitter.runtime_call(
                     "int32_t",
@@ -7381,7 +7381,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "Clear" => {
                 let call = self.emitter.runtime_call(
                     "void",
-                    "subscript_rt_set_clear",
+                    "subscript_rt_assoc_clear",
                     &["void*".into(), "void*".into()],
                     &["ctx".into(), receiver.clone()],
                 );
@@ -7978,7 +7978,7 @@ fn string_symbol(name: &str) -> Result<&'static str, String> {
         "Substr" => "subscript_rt_str_substr",
         "CharAt" => "subscript_rt_str_char_at",
         "CodePointAt" => "subscript_rt_str_code_point_at",
-        "Concat" => "subscript_rt_str_method_concat",
+        "Concat" => "subscript_rt_str_concat",
         other => return Err(internal(format!("unknown String intrinsic {other}"))),
     })
 }

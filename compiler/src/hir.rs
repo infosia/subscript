@@ -1970,7 +1970,7 @@ impl StrFn {
             StrFn::Substr => "subscript_rt_str_substr",
             StrFn::CharAt => "subscript_rt_str_char_at",
             StrFn::CodePointAt => "subscript_rt_str_code_point_at",
-            StrFn::Concat => "subscript_rt_str_method_concat",
+            StrFn::Concat => "subscript_rt_str_concat",
         }
     }
 
@@ -2525,13 +2525,13 @@ impl MapFn {
     pub fn symbol(self) -> &'static str {
         match self {
             MapFn::New => "subscript_rt_map_new",
-            MapFn::Size => "subscript_rt_map_size",
+            MapFn::Size => "subscript_rt_assoc_size",
             MapFn::Get => "subscript_rt_map_get",
             MapFn::GetOr => "subscript_rt_map_get_or",
             MapFn::Set => "subscript_rt_map_set",
-            MapFn::Has => "subscript_rt_map_has",
-            MapFn::Delete => "subscript_rt_map_delete",
-            MapFn::Clear => "subscript_rt_map_clear",
+            MapFn::Has => "subscript_rt_assoc_has",
+            MapFn::Delete => "subscript_rt_assoc_delete",
+            MapFn::Clear => "subscript_rt_assoc_clear",
             MapFn::ForEach => "subscript_rt_map_for_each",
             MapFn::GroupBy => "subscript_rt_map_group_by",
         }
@@ -2663,11 +2663,11 @@ impl SetFn {
     pub fn symbol(self) -> &'static str {
         match self {
             SetFn::New => "subscript_rt_set_new",
-            SetFn::Size => "subscript_rt_set_size",
+            SetFn::Size => "subscript_rt_assoc_size",
             SetFn::Add => "subscript_rt_set_add",
-            SetFn::Has => "subscript_rt_set_has",
-            SetFn::Delete => "subscript_rt_set_delete",
-            SetFn::Clear => "subscript_rt_set_clear",
+            SetFn::Has => "subscript_rt_assoc_has",
+            SetFn::Delete => "subscript_rt_assoc_delete",
+            SetFn::Clear => "subscript_rt_assoc_clear",
             SetFn::ForEach => "subscript_rt_set_for_each",
             SetFn::Union => "subscript_rt_set_union",
             SetFn::Intersection => "subscript_rt_set_intersection",
@@ -4641,12 +4641,22 @@ mod tests {
     fn map_set_fn_tables_match_the_section_10_contract() {
         for (i, f) in MapFn::ALL.iter().enumerate() {
             assert_eq!(*f as usize, i, "MapFn::ALL out of order at {i}");
-            assert!(f.symbol().starts_with("subscript_rt_map_"));
+            assert!(
+                f.symbol().starts_with("subscript_rt_map_")
+                    || f.symbol().starts_with("subscript_rt_assoc_")
+            );
         }
         for (i, f) in SetFn::ALL.iter().enumerate() {
             assert_eq!(*f as usize, i, "SetFn::ALL out of order at {i}");
-            assert!(f.symbol().starts_with("subscript_rt_set_"));
+            assert!(
+                f.symbol().starts_with("subscript_rt_set_")
+                    || f.symbol().starts_with("subscript_rt_assoc_")
+            );
         }
+        assert_eq!(MapFn::Size.symbol(), SetFn::Size.symbol());
+        assert_eq!(MapFn::Has.symbol(), SetFn::Has.symbol());
+        assert_eq!(MapFn::Delete.symbol(), SetFn::Delete.symbol());
+        assert_eq!(MapFn::Clear.symbol(), SetFn::Clear.symbol());
         assert!(MapFn::New.allocates());
         assert!(MapFn::Set.allocates());
         assert!(MapFn::GroupBy.allocates());

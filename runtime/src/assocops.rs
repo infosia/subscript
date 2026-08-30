@@ -61,6 +61,11 @@ impl KeyKind {
     }
 }
 
+unsafe fn header_kind(header: &AssocHeader) -> KeyKind {
+    // SAFETY: `new` validates the tag before it stores the header.
+    unsafe { KeyKind::from_u32(header.key_kind as u32).unwrap_unchecked() }
+}
+
 /// Managed payload of a `Map` or `Set`.
 ///
 /// All fields are eight bytes so both child handles are visible to the
@@ -374,7 +379,7 @@ unsafe fn lookup(ctx: *mut Context, h: &AssocHeader, key: *const u8, hash: u64) 
                 && unsafe {
                     keys_equal(
                         ctx,
-                        KeyKind::from_u32(h.key_kind as u32).unwrap_or(KeyKind::Bits),
+                        header_kind(h),
                         entry_key(h, entry),
                         key,
                         h.key_size as usize,
@@ -392,6 +397,21 @@ unsafe fn lookup(ctx: *mut Context, h: &AssocHeader, key: *const u8, hash: u64) 
     Lookup {
         bucket: first_tombstone.unwrap_or(0),
         entry: None,
+    }
+}
+
+unsafe fn bucket_insert(buckets: *mut u8, cap: usize, hash: u64, entry: usize) {
+    let mut bucket = hash as usize & (cap - 1);
+    loop {
+        // SAFETY: `bucket` is masked into the bucket allocation.
+        let slot = unsafe { buckets.add(bucket * 8).cast::<u64>() };
+        // SAFETY: the slot is readable and writable.
+        if unsafe { slot.read_unaligned() } == EMPTY {
+            // SAFETY: the slot is writable.
+            unsafe { slot.write_unaligned(entry as u64 + 1) };
+            return;
+        }
+        bucket = (bucket + 1) & (cap - 1);
     }
 }
 
@@ -438,18 +458,8 @@ unsafe fn rehash(ctx: &mut Context, handle: *mut u8, new_cap: usize, pos_id: u32
         }
         // SAFETY: active entry prefix is readable.
         let hash = unsafe { entry_hash(h, entry) };
-        let mut bucket = hash as usize & (new_cap - 1);
-        loop {
-            // SAFETY: bucket is masked into the allocation.
-            let slot = unsafe { buckets.add(bucket * 8).cast::<u64>() };
-            // SAFETY: slot is readable.
-            if unsafe { slot.read_unaligned() } == EMPTY {
-                // SAFETY: slot is writable.
-                unsafe { slot.write_unaligned(entry as u64 + 1) };
-                break;
-            }
-            bucket = (bucket + 1) & (new_cap - 1);
-        }
+        // SAFETY: the new zeroed index has `new_cap` slots.
+        unsafe { bucket_insert(buckets, new_cap, hash, entry) };
     }
     let old = h.buckets;
     if !old.is_null() {
@@ -504,18 +514,8 @@ unsafe fn compact_entries(handle: *mut u8) -> bool {
         }
         // SAFETY: the packed entry prefix is readable.
         let hash = unsafe { entry_hash(h, write) };
-        let mut bucket = hash as usize & (bucket_cap - 1);
-        loop {
-            // SAFETY: bucket is masked inside the zeroed index block.
-            let slot = unsafe { h.buckets.add(bucket * 8).cast::<u64>() };
-            // SAFETY: slot is readable.
-            if unsafe { slot.read_unaligned() } == EMPTY {
-                // SAFETY: slot is writable.
-                unsafe { slot.write_unaligned(write as u64 + 1) };
-                break;
-            }
-            bucket = (bucket + 1) & (bucket_cap - 1);
-        }
+        // SAFETY: the cleared index has `bucket_cap` slots.
+        unsafe { bucket_insert(h.buckets, bucket_cap, hash, write) };
         write += 1;
     }
 
@@ -615,7 +615,7 @@ pub(crate) unsafe fn insert(
     }
     // SAFETY: caller contract.
     let h = unsafe { &*handle.cast::<AssocHeader>() };
-    let kind = KeyKind::from_u32(h.key_kind as u32).unwrap_or(KeyKind::Bits);
+    let kind = unsafe { header_kind(h) };
     // SAFETY: key is readable for key_size.
     let hash = unsafe { hash_key(ctx, kind, key, h.key_size as usize) };
     // SAFETY: header/index are valid.
@@ -669,7 +669,7 @@ unsafe fn find_entry(ctx: *mut Context, handle: *mut u8, key: *const u8) -> Opti
     if key.is_null() || h.bucket_cap == 0 {
         return None;
     }
-    let kind = KeyKind::from_u32(h.key_kind as u32)?;
+    let kind = unsafe { header_kind(h) };
     // SAFETY: caller supplies a readable key.
     let hash = unsafe { hash_key(ctx, kind, key, h.key_size as usize) };
     // SAFETY: valid container storage.
@@ -754,9 +754,7 @@ pub(crate) unsafe fn delete(ctx: *mut Context, handle: *mut u8, key: *const u8) 
     if key.is_null() || h.bucket_cap == 0 {
         return false;
     }
-    let Some(kind) = KeyKind::from_u32(h.key_kind as u32) else {
-        return false;
-    };
+    let kind = unsafe { header_kind(h) };
     // SAFETY: readable key and valid index.
     let hash = unsafe { hash_key(ctx, kind, key, h.key_size as usize) };
     // SAFETY: valid index.
@@ -941,26 +939,48 @@ unsafe fn set_shapes_match(left: *mut u8, right: *mut u8) -> bool {
 unsafe fn new_set_like(ctx: *mut Context, source: *mut u8, pos_id: u32) -> *mut u8 {
     let (key_size, kind) = unsafe {
         let h = &*source.cast::<AssocHeader>();
-        (
-            h.key_size as usize,
-            KeyKind::from_u32(h.key_kind as u32).unwrap_or(KeyKind::Bits),
-        )
+        (h.key_size as usize, header_kind(h))
     };
     new(unsafe { &mut *ctx }, key_size, 0, kind, true, pos_id)
 }
 
-unsafe fn ordered_key_copy(source: *mut u8, index: usize, out: &mut [u8; 8]) -> bool {
-    let h = unsafe { &*source.cast::<AssocHeader>() };
-    if index >= h.order_len as usize || !unsafe { entry_active(h, index) } {
-        return false;
-    }
-    let size = h.key_size as usize;
-    unsafe { std::ptr::copy_nonoverlapping(entry_key(h, index), out.as_mut_ptr(), size) };
-    true
+struct OrderedKeys {
+    header: *const AssocHeader,
+    index: usize,
 }
 
-unsafe fn set_order_len(source: *mut u8) -> usize {
-    unsafe { (*source.cast::<AssocHeader>()).order_len as usize }
+unsafe fn ordered_key_at(header: &AssocHeader, index: usize) -> Option<*const u8> {
+    if index >= header.order_len as usize || !unsafe { entry_active(header, index) } {
+        return None;
+    }
+    // SAFETY: the active entry contains its initialized key.
+    Some(unsafe { entry_key(header, index) })
+}
+
+impl Iterator for OrderedKeys {
+    type Item = *const u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // SAFETY: `ordered_keys` receives a live container. The iterator is
+        // used synchronously while that container remains live.
+        let header = unsafe { &*self.header };
+        while self.index < header.order_len as usize {
+            let index = self.index;
+            self.index += 1;
+            // SAFETY: the header stays live for the iterator duration.
+            if let Some(key) = unsafe { ordered_key_at(header, index) } {
+                return Some(key);
+            }
+        }
+        None
+    }
+}
+
+unsafe fn ordered_keys(source: *mut u8) -> OrderedKeys {
+    OrderedKeys {
+        header: source.cast::<AssocHeader>(),
+        index: 0,
+    }
 }
 
 unsafe fn set_insert_ordered(
@@ -970,17 +990,13 @@ unsafe fn set_insert_ordered(
     membership: Option<(*mut u8, bool)>,
     pos_id: u32,
 ) {
-    let mut key = [0u8; 8];
-    for index in 0..unsafe { set_order_len(source) } {
-        if !unsafe { ordered_key_copy(source, index, &mut key) } {
-            continue;
-        }
+    for key in unsafe { ordered_keys(source) } {
         if let Some((other, wanted)) = membership {
-            if unsafe { has(ctx, other, key.as_ptr()) } != wanted {
+            if unsafe { has(ctx, other, key) } != wanted {
                 continue;
             }
         }
-        unsafe { insert(ctx, out, key.as_ptr(), std::ptr::null(), pos_id) };
+        unsafe { insert(ctx, out, key, std::ptr::null(), pos_id) };
         if unsafe { (*ctx).trapped() } {
             break;
         }
@@ -1105,15 +1121,11 @@ pub(crate) unsafe fn set_symmetric_difference(
 }
 
 unsafe fn set_all_in(ctx: *mut Context, source: *mut u8, other: *mut u8) -> bool {
-    let mut key = [0u8; 8];
-    for index in 0..unsafe { set_order_len(source) } {
-        if unsafe { ordered_key_copy(source, index, &mut key) }
-            && !unsafe { has(ctx, other, key.as_ptr()) }
-        {
-            return false;
-        }
-    }
-    true
+    unsafe { ordered_keys(source) }.all(|key| unsafe { has(ctx, other, key) })
+}
+
+unsafe fn set_any_in(ctx: *mut Context, source: *mut u8, other: *mut u8) -> bool {
+    unsafe { ordered_keys(source) }.any(|key| unsafe { has(ctx, other, key) })
 }
 
 /// Tests whether every receiver key occurs in the argument.
@@ -1156,15 +1168,7 @@ pub(crate) unsafe fn set_is_disjoint_from(
     } else {
         (right, left)
     };
-    let mut key = [0u8; 8];
-    for index in 0..unsafe { set_order_len(source) } {
-        if unsafe { ordered_key_copy(source, index, &mut key) }
-            && unsafe { has(ctx, other, key.as_ptr()) }
-        {
-            return false;
-        }
-    }
-    true
+    !unsafe { set_any_in(ctx, source, other) }
 }
 
 /// Begins the traversal shared by `forEach`, fused `for…of`, and
@@ -1199,11 +1203,9 @@ unsafe fn iteration_entry(handle: *mut u8, index: usize) -> Option<(*const u8, *
     // shorten the container.
     // SAFETY: caller contract.
     let h = unsafe { &*handle.cast::<AssocHeader>() };
-    if index >= h.order_len as usize || !unsafe { entry_active(h, index) } {
-        return None;
-    }
+    let key = unsafe { ordered_key_at(h, index) }?;
     // SAFETY: active ordered slot.
-    Some(unsafe { (entry_key(h, index), entry_value(h, index)) })
+    Some(unsafe { (key, entry_value(h, index)) })
 }
 
 /// Copies one still-active ordered key or value into `out`.
@@ -1383,14 +1385,9 @@ mod tests {
     }
 
     fn i32_set_keys(set: *mut u8) -> Vec<i32> {
-        let mut keys = Vec::new();
-        let mut scratch = [0u8; 8];
-        for index in 0..unsafe { set_order_len(set) } {
-            if unsafe { ordered_key_copy(set, index, &mut scratch) } {
-                keys.push(unsafe { scratch.as_ptr().cast::<i32>().read_unaligned() });
-            }
-        }
-        keys
+        unsafe { ordered_keys(set) }
+            .map(|key| unsafe { key.cast::<i32>().read_unaligned() })
+            .collect()
     }
 
     unsafe extern "C" fn map_i32_bridge(

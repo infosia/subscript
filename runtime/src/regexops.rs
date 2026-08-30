@@ -193,19 +193,15 @@ fn trap_regex(ctx: &mut Context, message: impl Into<String>, pos_id: u32) {
     ctx.trap(TrapKind::Regex, message, pos_id);
 }
 
-fn text_from_handle(
-    ctx: &mut Context,
-    handle: *const u8,
-    what: &str,
-    pos_id: u32,
-) -> Option<String> {
+fn subject<'a>(ctx: &mut Context, handle: *const u8, what: &str, pos_id: u32) -> Option<&'a str> {
     if handle.is_null() {
         trap_regex(ctx, format!("{what} is null"), pos_id);
         return None;
     }
-    // SAFETY: generated code passes a live language string.
-    match std::str::from_utf8(unsafe { ctx.str_bytes(handle) }) {
-        Ok(text) => Some(text.to_string()),
+    // SAFETY: generated code passes a live language string. Regex operations
+    // do not delete or collect it while this stable view is live.
+    match std::str::from_utf8(unsafe { ctx.str_view(handle) }) {
+        Ok(text) => Some(text),
         Err(_) => {
             ctx.trap(
                 TrapKind::Internal,
@@ -215,40 +211,6 @@ fn text_from_handle(
             None
         }
     }
-}
-
-fn text_parts(
-    ctx: &mut Context,
-    handle: *const u8,
-    what: &str,
-    pos_id: u32,
-) -> Option<(*const u8, usize)> {
-    if handle.is_null() {
-        trap_regex(ctx, format!("{what} is null"), pos_id);
-        return None;
-    }
-    // SAFETY: generated code passes a live language string.
-    let bytes = unsafe { ctx.str_bytes(handle) };
-    if std::str::from_utf8(bytes).is_err() {
-        ctx.trap(
-            TrapKind::Internal,
-            format!("{what} is not valid UTF-8"),
-            pos_id,
-        );
-        return None;
-    }
-    Some((bytes.as_ptr(), bytes.len()))
-}
-
-unsafe fn text_from_parts<'a>(data: *const u8, len: usize) -> &'a str {
-    // SAFETY: `text_parts` validated the bytes. Context allocations are
-    // stable and no regex scalar operation deletes or collects strings.
-    // Miri's Stacked Borrows model flags the synthetic lifetime because
-    // the two callers subsequently borrow the owning Context mutably.
-    // Those callers only mutate regex/trap state, which is disjoint from
-    // the separately allocated string payload, and neither calls an
-    // allocation, delete, or collection operation while `str` is live.
-    unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(data, len)) }
 }
 
 fn matcher(ctx: &mut Context, handle: *const u8, pos_id: u32) -> Option<(Arc<Regex>, bool)> {
@@ -277,6 +239,27 @@ fn find_from(
         .map(|found| found.map(CaptureMatch::from_regress))
 }
 
+fn budgeted_find(
+    ctx: &mut Context,
+    compiled: &Regex,
+    text: &str,
+    start: usize,
+    pos_id: u32,
+) -> Option<Option<CaptureMatch>> {
+    let budget = ctx.regex_budget();
+    match find_from(compiled, text, start, budget) {
+        Ok(found) => Some(found),
+        Err(_) => {
+            ctx.trap(
+                TrapKind::RegexBudget,
+                format!("regular-expression execution exhausted its budget of {budget}"),
+                pos_id,
+            );
+            None
+        }
+    }
+}
+
 fn find_and_record(
     ctx: &mut Context,
     regex: *const u8,
@@ -284,23 +267,9 @@ fn find_and_record(
     pos_id: u32,
 ) -> Option<Option<CaptureMatch>> {
     let (compiled, _) = matcher(ctx, regex, pos_id)?;
-    match find_from(&compiled, text, 0, ctx.regex_budget()) {
-        Ok(found) => {
-            ctx.regex_store().record(regex, found.clone());
-            Some(found)
-        }
-        Err(_) => {
-            ctx.trap(
-                TrapKind::RegexBudget,
-                format!(
-                    "regular-expression execution exhausted its budget of {}",
-                    ctx.regex_budget()
-                ),
-                pos_id,
-            );
-            None
-        }
-    }
+    let found = budgeted_find(ctx, &compiled, text, 0, pos_id)?;
+    ctx.regex_store().record(regex, found.clone());
+    Some(found)
 }
 
 /// Compiles or reuses a cached pattern and allocates one RegExp handle.
@@ -310,27 +279,27 @@ pub(crate) fn new(
     flags_handle: *const u8,
     pos_id: u32,
 ) -> *mut u8 {
-    let Some(pattern) = text_from_handle(ctx, pattern_handle, "RegExp pattern", pos_id) else {
+    let Some(pattern) = subject(ctx, pattern_handle, "RegExp pattern", pos_id) else {
         return std::ptr::null_mut();
     };
-    let Some(flags_text) = text_from_handle(ctx, flags_handle, "RegExp flags", pos_id) else {
+    let Some(flags_text) = subject(ctx, flags_handle, "RegExp flags", pos_id) else {
         return std::ptr::null_mut();
     };
-    let flags = match checked_flags(&flags_text) {
+    let flags = match checked_flags(flags_text) {
         Ok(flags) => flags,
         Err(error) => {
             trap_regex(ctx, error, pos_id);
             return std::ptr::null_mut();
         }
     };
-    let compiled = match ctx.regex_store().compile(&pattern, &flags) {
+    let compiled = match ctx.regex_store().compile(pattern, &flags) {
         Ok(compiled) => compiled,
         Err(error) => {
             trap_regex(ctx, format!("invalid regular expression: {error}"), pos_id);
             return std::ptr::null_mut();
         }
     };
-    let source = ctx.alloc_str(&normalized_source(&pattern), pos_id);
+    let source = ctx.alloc_str(&normalized_source(pattern), pos_id);
     if source.is_null() {
         return std::ptr::null_mut();
     }
@@ -362,11 +331,9 @@ pub(crate) fn new(
 
 /// Tests for a match and records its capture extents.
 pub(crate) fn test(ctx: &mut Context, regex: *const u8, subject: *const u8, pos_id: u32) -> i32 {
-    let Some((data, len)) = text_parts(ctx, subject, "RegExp subject", pos_id) else {
+    let Some(text) = self::subject(ctx, subject, "RegExp subject", pos_id) else {
         return 0;
     };
-    // SAFETY: `text_parts` validated a stable live string allocation.
-    let text = unsafe { text_from_parts(data, len) };
     find_and_record(ctx, regex, text, pos_id)
         .map(|found| i32::from(found.is_some()))
         .unwrap_or(0)
@@ -392,11 +359,9 @@ pub(crate) fn flags(ctx: &mut Context, regex: *const u8, pos_id: u32) -> *mut u8
 
 /// Returns the first match's UTF-8 byte offset, or -1.
 pub(crate) fn search(ctx: &mut Context, subject: *const u8, regex: *const u8, pos_id: u32) -> i32 {
-    let Some((data, len)) = text_parts(ctx, subject, "RegExp subject", pos_id) else {
+    let Some(text) = self::subject(ctx, subject, "RegExp subject", pos_id) else {
         return -1;
     };
-    // SAFETY: `text_parts` validated a stable live string allocation.
-    let text = unsafe { text_from_parts(data, len) };
     find_and_record(ctx, regex, text, pos_id)
         .map(|found| found.map_or(-1, |found| found.range.start as i32))
         .unwrap_or(-1)
@@ -436,13 +401,13 @@ pub(crate) fn replace(
     if global {
         return replace_all(ctx, subject, regex, replacement, pos_id);
     }
-    let Some(text) = text_from_handle(ctx, subject, "RegExp subject", pos_id) else {
+    let Some(text) = self::subject(ctx, subject, "RegExp subject", pos_id) else {
         return std::ptr::null_mut();
     };
-    let Some(replacement) = text_from_handle(ctx, replacement, "RegExp replacement", pos_id) else {
+    let Some(replacement) = self::subject(ctx, replacement, "RegExp replacement", pos_id) else {
         return std::ptr::null_mut();
     };
-    let Some(found) = find_and_record(ctx, regex, &text, pos_id) else {
+    let Some(found) = find_and_record(ctx, regex, text, pos_id) else {
         return std::ptr::null_mut();
     };
     let mut out = Vec::new();
@@ -472,10 +437,10 @@ pub(crate) fn replace_all(
     replacement: *const u8,
     pos_id: u32,
 ) -> *mut u8 {
-    let Some(text) = text_from_handle(ctx, subject, "RegExp subject", pos_id) else {
+    let Some(text) = self::subject(ctx, subject, "RegExp subject", pos_id) else {
         return std::ptr::null_mut();
     };
-    let Some(replacement) = text_from_handle(ctx, replacement, "RegExp replacement", pos_id) else {
+    let Some(replacement) = self::subject(ctx, replacement, "RegExp replacement", pos_id) else {
         return std::ptr::null_mut();
     };
     let Some((compiled, global)) = matcher(ctx, regex, pos_id) else {
@@ -494,19 +459,8 @@ pub(crate) fn replace_all(
     let mut search_at = 0usize;
     let mut last = None;
     loop {
-        let found = match find_from(&compiled, &text, search_at, ctx.regex_budget()) {
-            Ok(found) => found,
-            Err(_) => {
-                ctx.trap(
-                    TrapKind::RegexBudget,
-                    format!(
-                        "regular-expression execution exhausted its budget of {}",
-                        ctx.regex_budget()
-                    ),
-                    pos_id,
-                );
-                return std::ptr::null_mut();
-            }
+        let Some(found) = budgeted_find(ctx, &compiled, text, search_at, pos_id) else {
+            return std::ptr::null_mut();
         };
         let Some(found) = found else {
             break;
@@ -520,7 +474,7 @@ pub(crate) fn replace_all(
                 last = Some(found);
                 break;
             }
-            next_code_point(&text, found.range.end)
+            next_code_point(text, found.range.end)
         } else {
             found.range.end
         };
@@ -550,7 +504,7 @@ pub(crate) fn split(
     regex: *const u8,
     pos_id: u32,
 ) -> *mut u8 {
-    let Some(text) = text_from_handle(ctx, subject, "RegExp subject", pos_id) else {
+    let Some(text) = self::subject(ctx, subject, "RegExp subject", pos_id) else {
         return std::ptr::null_mut();
     };
     let Some((compiled, _)) = matcher(ctx, regex, pos_id) else {
@@ -561,19 +515,8 @@ pub(crate) fn split(
         return std::ptr::null_mut();
     }
     if text.is_empty() {
-        let found = match find_from(&compiled, &text, 0, ctx.regex_budget()) {
-            Ok(found) => found,
-            Err(_) => {
-                ctx.trap(
-                    TrapKind::RegexBudget,
-                    format!(
-                        "regular-expression execution exhausted its budget of {}",
-                        ctx.regex_budget()
-                    ),
-                    pos_id,
-                );
-                return std::ptr::null_mut();
-            }
+        let Some(found) = budgeted_find(ctx, &compiled, text, 0, pos_id) else {
+            return std::ptr::null_mut();
         };
         ctx.regex_store().record(regex, found.clone());
         if found.is_none() && !push_string(ctx, array, b"", pos_id) {
@@ -586,19 +529,8 @@ pub(crate) fn split(
     let mut search_at = 0usize;
     let mut last = None;
     while search_at < text.len() {
-        let found = match find_from(&compiled, &text, search_at, ctx.regex_budget()) {
-            Ok(found) => found,
-            Err(_) => {
-                ctx.trap(
-                    TrapKind::RegexBudget,
-                    format!(
-                        "regular-expression execution exhausted its budget of {}",
-                        ctx.regex_budget()
-                    ),
-                    pos_id,
-                );
-                return std::ptr::null_mut();
-            }
+        let Some(found) = budgeted_find(ctx, &compiled, text, search_at, pos_id) else {
+            return std::ptr::null_mut();
         };
         let Some(found) = found else {
             break;
@@ -607,7 +539,7 @@ pub(crate) fn split(
             break;
         }
         if found.range.start == previous_end && found.range.start == found.range.end {
-            search_at = next_code_point(&text, search_at);
+            search_at = next_code_point(text, search_at);
             continue;
         }
         if !push_string(

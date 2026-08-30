@@ -111,6 +111,23 @@ impl Queue {
         true
     }
 
+    unsafe fn post_fixed(&self, payload: *const u8) -> PostResult {
+        let bytes = if self.payload_size == 0 {
+            &[]
+        } else {
+            if payload.is_null() {
+                return PostResult::NullPayload;
+            }
+            // SAFETY: the caller supplies one readable fixed-size payload.
+            unsafe { std::slice::from_raw_parts(payload, self.payload_size) }
+        };
+        if self.post(bytes) {
+            PostResult::Posted
+        } else {
+            PostResult::Closed
+        }
+    }
+
     fn poll(&self) -> Receive {
         let mut state = self.lock();
         if let Some(message) = state.messages.pop_front() {
@@ -211,21 +228,7 @@ impl Worker {
     }
 
     unsafe fn post(&self, payload: *const u8) -> PostResult {
-        let bytes = if self.input.payload_size == 0 {
-            &[]
-        } else {
-            if payload.is_null() {
-                return PostResult::NullPayload;
-            }
-            // SAFETY: the caller guarantees one readable fixed-size input
-            // payload; the queue copies it before this call returns.
-            unsafe { std::slice::from_raw_parts(payload, self.input.payload_size) }
-        };
-        if self.input.post(bytes) {
-            PostResult::Posted
-        } else {
-            PostResult::Closed
-        }
+        unsafe { self.input.post_fixed(payload) }
     }
 
     fn poll(&self) -> Receive {
@@ -359,7 +362,7 @@ fn run_worker(
     outcome
 }
 
-fn materialize(ctx: &mut Context, receive: Receive) -> *mut u8 {
+pub(crate) fn materialize(ctx: &mut Context, receive: Receive) -> *mut u8 {
     let Receive::Message(message) = receive else {
         return std::ptr::null_mut();
     };
@@ -401,26 +404,10 @@ pub(crate) unsafe fn outbox_post(
         return PostResult::Closed;
     }
     // SAFETY: the worker entry receives its live stack-owned endpoint.
+    // SAFETY: the worker entry receives its live stack-owned endpoint.
     let queue = &unsafe { &*outbox }.queue;
-    let bytes = if queue.payload_size == 0 {
-        &[]
-    } else {
-        if payload.is_null() {
-            return PostResult::NullPayload;
-        }
-        // SAFETY: the caller guarantees one readable fixed-size output
-        // payload; the queue copies it before this call returns.
-        unsafe { std::slice::from_raw_parts(payload, queue.payload_size) }
-    };
-    if queue.post(bytes) {
-        PostResult::Posted
-    } else {
-        PostResult::Closed
-    }
-}
-
-pub(crate) fn materialize_parent(ctx: &mut Context, receive: Receive) -> *mut u8 {
-    materialize(ctx, receive)
+    // SAFETY: forwarded fixed-payload contract.
+    unsafe { queue.post_fixed(payload) }
 }
 
 #[cfg(test)]

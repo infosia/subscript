@@ -750,10 +750,6 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             "subscript_rt_str_code_point_at",
             ffi::subscript_rt_str_code_point_at as *const u8,
         ),
-        (
-            "subscript_rt_str_method_concat",
-            ffi::subscript_rt_str_method_concat as *const u8,
-        ),
         // Array method intrinsics (stdlib.md §9): one opaque symbol
         // per accepted method, ArrFn::ALL order.
         (
@@ -878,8 +874,20 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             ffi::subscript_rt_map_new as *const u8,
         ),
         (
-            "subscript_rt_map_size",
-            ffi::subscript_rt_map_size as *const u8,
+            "subscript_rt_assoc_size",
+            ffi::subscript_rt_assoc_size as *const u8,
+        ),
+        (
+            "subscript_rt_assoc_has",
+            ffi::subscript_rt_assoc_has as *const u8,
+        ),
+        (
+            "subscript_rt_assoc_delete",
+            ffi::subscript_rt_assoc_delete as *const u8,
+        ),
+        (
+            "subscript_rt_assoc_clear",
+            ffi::subscript_rt_assoc_clear as *const u8,
         ),
         (
             "subscript_rt_map_get",
@@ -894,18 +902,6 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             ffi::subscript_rt_map_set as *const u8,
         ),
         (
-            "subscript_rt_map_has",
-            ffi::subscript_rt_map_has as *const u8,
-        ),
-        (
-            "subscript_rt_map_delete",
-            ffi::subscript_rt_map_delete as *const u8,
-        ),
-        (
-            "subscript_rt_map_clear",
-            ffi::subscript_rt_map_clear as *const u8,
-        ),
-        (
             "subscript_rt_map_for_each",
             ffi::subscript_rt_map_for_each as *const u8,
         ),
@@ -918,24 +914,8 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
             ffi::subscript_rt_set_new as *const u8,
         ),
         (
-            "subscript_rt_set_size",
-            ffi::subscript_rt_set_size as *const u8,
-        ),
-        (
             "subscript_rt_set_add",
             ffi::subscript_rt_set_add as *const u8,
-        ),
-        (
-            "subscript_rt_set_has",
-            ffi::subscript_rt_set_has as *const u8,
-        ),
-        (
-            "subscript_rt_set_delete",
-            ffi::subscript_rt_set_delete as *const u8,
-        ),
-        (
-            "subscript_rt_set_clear",
-            ffi::subscript_rt_set_clear as *const u8,
         ),
         (
             "subscript_rt_set_for_each",

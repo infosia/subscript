@@ -360,6 +360,9 @@ unsafe fn read_elem<T: Copy>(ctx: *mut Context, h: *mut u8, i: usize) -> T {
 ///
 /// `h` is a live array of this context.
 unsafe fn len_of(ctx: *mut Context, h: *const u8) -> usize {
+    if h.is_null() || !unsafe { &mut *ctx }.require_live_handle(h as usize, 0) {
+        return 0;
+    }
     // SAFETY: caller contract.
     unsafe { (*ctx).array_len(h) }.max(0) as usize
 }
@@ -457,13 +460,14 @@ pub(crate) unsafe fn elem_value_eq(
     unsafe { value_eq(ctx, value_kind(kind), size, p, x, same_value_zero) }
 }
 
-/// `indexOf(x)`: first index under per-kind `===` equality, or −1.
-///
-/// # Safety
-///
-/// `h` is a live array of `ctx` (or null); `x` is readable for the
-/// element size; string elements/needles are live handles.
-pub unsafe fn index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKind) -> i32 {
+unsafe fn position(
+    ctx: *mut Context,
+    h: *mut u8,
+    x: *const u8,
+    kind: ElemKind,
+    reverse: bool,
+    same_value_zero: bool,
+) -> i32 {
     if h.is_null() || x.is_null() {
         return -1;
     }
@@ -476,15 +480,26 @@ pub unsafe fn index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKi
     if unsafe { abi_or_trap(ctx, kind, esz) }.is_none() {
         return -1;
     }
-    for i in 0..n {
+    for step in 0..n {
+        let i = if reverse { n - 1 - step } else { step };
         // SAFETY: `i < n`; caller contract.
         let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
         // SAFETY: element storage and needle are `esz` readable bytes.
-        if unsafe { elem_value_eq(ctx, kind, esz, p, x, false) } {
+        if unsafe { elem_value_eq(ctx, kind, esz, p, x, same_value_zero) } {
             return i as i32;
         }
     }
     -1
+}
+
+/// `indexOf(x)`: first index under per-kind `===` equality, or −1.
+///
+/// # Safety
+///
+/// `h` is a live array of `ctx` (or null); `x` is readable for the
+/// element size; string elements/needles are live handles.
+pub unsafe fn index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKind) -> i32 {
+    unsafe { position(ctx, h, x, kind, false, false) }
 }
 
 /// `lastIndexOf(x)`: last index or −1.
@@ -493,25 +508,7 @@ pub unsafe fn index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKi
 ///
 /// As [`index_of`].
 pub unsafe fn last_index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKind) -> i32 {
-    if h.is_null() || x.is_null() {
-        return -1;
-    }
-    // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
-    // As `index_of`: an unsupported element shape traps.
-    // SAFETY: caller contract.
-    if unsafe { abi_or_trap(ctx, kind, esz) }.is_none() {
-        return -1;
-    }
-    for i in (0..n).rev() {
-        // SAFETY: `i < n`; caller contract.
-        let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
-        // SAFETY: as `index_of`.
-        if unsafe { elem_value_eq(ctx, kind, esz, p, x, false) } {
-            return i as i32;
-        }
-    }
-    -1
+    unsafe { position(ctx, h, x, kind, true, false) }
 }
 
 /// `includes(x)`: 1 when found under SameValueZero equality, else 0.
@@ -520,25 +517,7 @@ pub unsafe fn last_index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: E
 ///
 /// As [`index_of`].
 pub unsafe fn includes(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKind) -> i32 {
-    if h.is_null() || x.is_null() {
-        return 0;
-    }
-    // SAFETY: caller contract.
-    let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
-    // As `index_of`: an unsupported element shape traps.
-    // SAFETY: caller contract.
-    if unsafe { abi_or_trap(ctx, kind, esz) }.is_none() {
-        return 0;
-    }
-    for i in 0..n {
-        // SAFETY: `i < n`; caller contract.
-        let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
-        // SAFETY: element storage and needle are `esz` readable bytes.
-        if unsafe { elem_value_eq(ctx, kind, esz, p, x, true) } {
-            return 1;
-        }
-    }
-    0
+    i32::from(unsafe { position(ctx, h, x, kind, false, true) } >= 0)
 }
 
 // ----- join -----
@@ -562,13 +541,13 @@ pub unsafe fn join(
     }
     // SAFETY: caller contract. Copied out so the borrow does not overlap
     // the alloc below.
-    let sep_bytes: Vec<u8> = unsafe { (*ctx).str_bytes(sep) }.to_vec();
+    let sep_bytes = unsafe { (*ctx).str_view(sep) };
     // SAFETY: caller contract.
     let (n, esz) = unsafe { (len_of(ctx, h), (*ctx).array_elem_size(h)) };
     let mut out: Vec<u8> = Vec::new();
     for i in 0..n {
         if i > 0 {
-            out.extend_from_slice(&sep_bytes);
+            out.extend_from_slice(sep_bytes);
         }
         // SAFETY: `i < n`; caller contract.
         let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
@@ -624,10 +603,10 @@ pub unsafe fn join(
                 // SAFETY: an 8-byte string handle.
                 let s = unsafe { p.cast::<*const u8>().read_unaligned() };
                 if !s.is_null() {
-                    // SAFETY: live string handle. Copied to keep the
-                    // borrow away from the alloc below.
-                    let bytes: Vec<u8> = unsafe { (*ctx).str_bytes(s) }.to_vec();
-                    out.extend_from_slice(&bytes);
+                    // SAFETY: live string handle. Context string allocations
+                    // keep immutable input allocation addresses stable.
+                    let bytes = unsafe { (*ctx).str_view(s) };
+                    out.extend_from_slice(bytes);
                 }
             }
         }
@@ -665,15 +644,16 @@ pub unsafe fn slice(ctx: *mut Context, h: *mut u8, start: i32, end: i32, pos_id:
     if out.is_null() {
         return std::ptr::null_mut();
     }
-    for i in lo..hi {
-        // SAFETY: `i < n`; caller contract.
-        let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
-        // SAFETY: `out` is a live `esz`-element array; `p` is readable
-        // for `esz` bytes.
-        if unsafe { (*ctx).array_push(out, p, pos_id) } < 0 {
-            break; // allocation-failure trap: return the valid partial
-        }
-    }
+    // SAFETY: the clamped range is inside the source data allocation.
+    let data = unsafe { (*ctx).array_data(h) };
+    let start = if lo == 0 {
+        data
+    } else {
+        // SAFETY: `lo < hi <= n` when this branch contributes elements.
+        unsafe { data.add(lo * esz) }
+    };
+    // SAFETY: output width matches the source range.
+    let _ = unsafe { (*ctx).array_extend(out, start, hi.saturating_sub(lo), pos_id) };
     out
 }
 
@@ -763,13 +743,11 @@ pub unsafe fn concat(ctx: *mut Context, a: *mut u8, b: *mut u8, pos_id: u32) -> 
     for src in [a, b] {
         // SAFETY: caller contract.
         let n = unsafe { len_of(ctx, src) };
-        for i in 0..n {
-            // SAFETY: `i < n`; caller contract.
-            let p = unsafe { (*ctx).array_elem_ptr(src, i as i32, 0) };
-            // SAFETY: matching element sizes.
-            if unsafe { (*ctx).array_push(out, p, pos_id) } < 0 {
-                return out; // valid partial after an allocation trap
-            }
+        // SAFETY: source storage contains `n` initialized elements.
+        let data = unsafe { (*ctx).array_data(src) };
+        // SAFETY: matching element sizes.
+        if !unsafe { (*ctx).array_extend(out, data, n, pos_id) } {
+            return out; // valid partial after an allocation trap
         }
     }
     out
@@ -807,13 +785,17 @@ pub unsafe fn splice(
     if out.is_null() {
         return std::ptr::null_mut();
     }
-    for i in lo..lo + count {
-        // SAFETY: `i < n`; caller contract.
-        let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
-        // SAFETY: `out` is a live array with the same element width.
-        if unsafe { (*ctx).array_push(out, p, pos_id) } < 0 {
-            return out; // allocation trap: receiver stays unchanged
-        }
+    // SAFETY: caller contract; source storage contains `n` elements.
+    let data = unsafe { (*ctx).array_data(h) };
+    let removed = if lo == 0 {
+        data
+    } else {
+        // SAFETY: `lo <= n`; a zero count does not dereference the pointer.
+        unsafe { data.add(lo * esz) }
+    };
+    // SAFETY: the selected range contains `count` elements.
+    if !unsafe { (*ctx).array_extend(out, removed, count, pos_id) } {
+        return out; // allocation trap: receiver stays unchanged
     }
     if count == 0 {
         return out;
@@ -830,12 +812,8 @@ pub unsafe fn splice(
             (n - lo - count) * esz,
         );
     }
-    let mut discarded = vec![0u8; esz];
-    for _ in 0..count {
-        // SAFETY: each iteration removes one of the known `count` live
-        // tail slots; `discarded` is writable for `esz` bytes.
-        unsafe { (*ctx).array_pop(h, discarded.as_mut_ptr(), pos_id) };
-    }
+    // SAFETY: `count <= n`; this only removes the moved tail suffix.
+    unsafe { (*ctx).array_truncate(h, n - count, pos_id) };
     out
 }
 
@@ -864,10 +842,8 @@ pub unsafe fn shift(ctx: *mut Context, h: *mut u8, dst: *mut u8, pos_id: u32) {
     // arrays longer than two elements, so this is memmove semantics.
     let data = unsafe { (*ctx).array_data(h) }.cast_mut();
     unsafe { std::ptr::copy(data.add(esz), data, (n - 1) * esz) };
-    let mut discarded = vec![0u8; esz];
-    // SAFETY: `n > 0`; the tail slot is live and `discarded` is
-    // writable for one element.
-    unsafe { (*ctx).array_pop(h, discarded.as_mut_ptr(), pos_id) };
+    // SAFETY: `n > 0`; this removes the copied tail slot.
+    unsafe { (*ctx).array_truncate(h, n - 1, pos_id) };
 }
 
 /// `unshift(x)`: prepends exactly one element and returns the new
