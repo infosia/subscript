@@ -2122,7 +2122,7 @@ impl Context {
         }
         self.trap(
             TrapKind::UseAfterDelete,
-            "use of a deleted allocation",
+            TrapKind::UseAfterDelete.message(None),
             pos_id,
         );
         false
@@ -3244,7 +3244,7 @@ impl Context {
             let len = h.len;
             self.trap(
                 TrapKind::IndexOutOfBounds,
-                format!("index {idx} out of bounds for array length {len}"),
+                TrapKind::IndexOutOfBounds.message(Some((idx, len))),
                 pos_id,
             );
             return std::ptr::null_mut();

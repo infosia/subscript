@@ -37,6 +37,7 @@
 
 use crate::context::Context;
 use crate::trap::TrapKind;
+use crate::valeq::{read_uint, value_eq, ValueKind};
 
 /// Marshaling kind of an array element (ABI contract with the
 /// compiler's `hir::ArrElemKind`; the codes must agree — a codegen test
@@ -424,29 +425,19 @@ impl ElementSource {
     }
 }
 
-/// Reads `size` (1/2/4/8) bytes at `p` zero-extended to `u64`.
-///
-/// # Safety
-///
-/// `p` is readable for `size` bytes.
-unsafe fn read_uint(p: *const u8, size: usize) -> u64 {
-    // SAFETY: caller contract; unaligned reads.
-    unsafe {
-        match size {
-            1 => u64::from(p.read_unaligned()),
-            2 => u64::from(p.cast::<u16>().read_unaligned()),
-            4 => u64::from(p.cast::<u32>().read_unaligned()),
-            8 => p.cast::<u64>().read_unaligned(),
-            _ => 0,
-        }
+// ----- equality searches (indexOf / lastIndexOf / includes) -----
+
+fn value_kind(kind: ElemKind) -> ValueKind {
+    match kind {
+        ElemKind::Int | ElemKind::SignedInt => ValueKind::Bits,
+        ElemKind::F16 => ValueKind::F16,
+        ElemKind::F32 => ValueKind::F32,
+        ElemKind::F64 => ValueKind::F64,
+        ElemKind::Str => ValueKind::Str,
     }
 }
 
-// ----- equality searches (indexOf / lastIndexOf / includes) -----
-
-/// `===` equality of the element at `p` and the needle at `x`
-/// (stdlib.md §9: bitwise per width for integers/handles/`Date`,
-/// IEEE for floats — `NaN` never equal — content for strings).
+/// Compares an array element and a needle with the selected equality mode.
 ///
 /// # Safety
 ///
@@ -454,81 +445,16 @@ unsafe fn read_uint(p: *const u8, size: usize) -> u64 {
 /// [`abi_of`] accepts (the searches check it once, before the loop, as
 /// the callback operations do); string handles are live handles of
 /// `ctx` (or null).
-unsafe fn elem_eq(
+pub(crate) unsafe fn elem_value_eq(
     ctx: *mut Context,
     kind: ElemKind,
     size: usize,
     p: *const u8,
     x: *const u8,
+    same_value_zero: bool,
 ) -> bool {
-    match kind {
-        ElemKind::Int | ElemKind::SignedInt => {
-            // SAFETY: caller contract.
-            unsafe { read_uint(p, size) == read_uint(x, size) }
-        }
-        // SAFETY: caller contract (4/8 readable bytes).
-        ElemKind::F32 => unsafe {
-            p.cast::<f32>().read_unaligned() == x.cast::<f32>().read_unaligned()
-        },
-        // SAFETY: caller contract.
-        ElemKind::F64 => unsafe {
-            p.cast::<f64>().read_unaligned() == x.cast::<f64>().read_unaligned()
-        },
-        // SAFETY: caller contract (2 readable bytes).
-        ElemKind::F16 => unsafe {
-            let a = crate::half::to_f64(p.cast::<u16>().read_unaligned());
-            let b = crate::half::to_f64(x.cast::<u16>().read_unaligned());
-            a == b
-        },
-        ElemKind::Str => {
-            // SAFETY: caller contract (8 readable bytes each).
-            let a = unsafe { p.cast::<*const u8>().read_unaligned() };
-            let b = unsafe { x.cast::<*const u8>().read_unaligned() };
-            if a.is_null() || b.is_null() {
-                return a == b;
-            }
-            // SAFETY: live string handles of `ctx`.
-            unsafe { (*ctx).str_bytes(a) == (*ctx).str_bytes(b) }
-        }
-    }
-}
-
-/// SameValueZero equality for `includes`: `===` except that two NaNs
-/// compare equal. The float-width cases are explicit; all other element
-/// kinds retain [`elem_eq`].
-///
-/// # Safety
-///
-/// As [`elem_eq`].
-unsafe fn elem_same_value_zero(
-    ctx: *mut Context,
-    kind: ElemKind,
-    size: usize,
-    p: *const u8,
-    x: *const u8,
-) -> bool {
-    match kind {
-        // SAFETY: caller contract (4 readable bytes each).
-        ElemKind::F32 => unsafe {
-            let a = p.cast::<f32>().read_unaligned();
-            let b = x.cast::<f32>().read_unaligned();
-            a == b || (a.is_nan() && b.is_nan())
-        },
-        // SAFETY: caller contract (8 readable bytes each).
-        ElemKind::F64 => unsafe {
-            let a = p.cast::<f64>().read_unaligned();
-            let b = x.cast::<f64>().read_unaligned();
-            a == b || (a.is_nan() && b.is_nan())
-        },
-        // SAFETY: caller contract (2 readable bytes each).
-        ElemKind::F16 => unsafe {
-            let a = crate::half::to_f64(p.cast::<u16>().read_unaligned());
-            let b = crate::half::to_f64(x.cast::<u16>().read_unaligned());
-            a == b || (a.is_nan() && b.is_nan())
-        },
-        // SAFETY: forwarded contract.
-        _ => unsafe { elem_eq(ctx, kind, size, p, x) },
-    }
+    // SAFETY: caller contract is the shared equality contract.
+    unsafe { value_eq(ctx, value_kind(kind), size, p, x, same_value_zero) }
 }
 
 /// `indexOf(x)`: first index under per-kind `===` equality, or −1.
@@ -554,7 +480,7 @@ pub unsafe fn index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKi
         // SAFETY: `i < n`; caller contract.
         let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
         // SAFETY: element storage and needle are `esz` readable bytes.
-        if unsafe { elem_eq(ctx, kind, esz, p, x) } {
+        if unsafe { elem_value_eq(ctx, kind, esz, p, x, false) } {
             return i as i32;
         }
     }
@@ -581,7 +507,7 @@ pub unsafe fn last_index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: E
         // SAFETY: `i < n`; caller contract.
         let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
         // SAFETY: as `index_of`.
-        if unsafe { elem_eq(ctx, kind, esz, p, x) } {
+        if unsafe { elem_value_eq(ctx, kind, esz, p, x, false) } {
             return i as i32;
         }
     }
@@ -608,7 +534,7 @@ pub unsafe fn includes(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKi
         // SAFETY: `i < n`; caller contract.
         let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
         // SAFETY: element storage and needle are `esz` readable bytes.
-        if unsafe { elem_same_value_zero(ctx, kind, esz, p, x) } {
+        if unsafe { elem_value_eq(ctx, kind, esz, p, x, true) } {
             return 1;
         }
     }

@@ -31,6 +31,7 @@ pub mod num;
 pub(crate) mod regexops;
 pub mod strops;
 pub mod trap;
+mod valeq;
 pub mod worker;
 
 pub use context::{

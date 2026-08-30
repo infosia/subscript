@@ -18,6 +18,7 @@
 
 use crate::context::{Context, CLASS_MAP, CLASS_MAP_DATA, CLASS_MAP_INDEX, CLASS_SET};
 use crate::trap::TrapKind;
+use crate::valeq::{read_uint, value_eq, ValueKind};
 
 const EMPTY: u64 = 0;
 const TOMBSTONE: u64 = u64::MAX;
@@ -213,19 +214,6 @@ unsafe fn entry_value(h: &AssocHeader, index: usize) -> *const u8 {
     unsafe { entry_ptr(h, index).add(value_offset(h)) }
 }
 
-unsafe fn read_bits(ptr: *const u8, size: usize) -> u64 {
-    // SAFETY: caller supplies a readable key slot of `size` bytes.
-    unsafe {
-        match size {
-            1 => u64::from(ptr.read_unaligned()),
-            2 => u64::from(ptr.cast::<u16>().read_unaligned()),
-            4 => u64::from(ptr.cast::<u32>().read_unaligned()),
-            8 => ptr.cast::<u64>().read_unaligned(),
-            _ => 0,
-        }
-    }
-}
-
 fn mix64(mut value: u64) -> u64 {
     // MurmurHash3's 64-bit finalizer: deterministic, seed-free, and
     // avalanches narrow integer and pointer bit patterns well.
@@ -272,7 +260,7 @@ unsafe fn hash_key(ctx: *mut Context, kind: KeyKind, key: *const u8, size: usize
     match kind {
         KeyKind::Bits | KeyKind::Ref => {
             // SAFETY: caller guarantees a readable key slot.
-            mix64(unsafe { read_bits(key, size) })
+            mix64(unsafe { read_uint(key, size) })
         }
         KeyKind::F32 => {
             // SAFETY: the validated shape is four readable bytes.
@@ -297,41 +285,30 @@ unsafe fn hash_key(ctx: *mut Context, kind: KeyKind, key: *const u8, size: usize
     }
 }
 
-unsafe fn keys_equal(
+fn value_kind(kind: KeyKind) -> ValueKind {
+    match kind {
+        KeyKind::Bits | KeyKind::Ref => ValueKind::Bits,
+        KeyKind::F32 => ValueKind::F32,
+        KeyKind::F64 => ValueKind::F64,
+        KeyKind::Str => ValueKind::Str,
+    }
+}
+
+/// Compares two associative key slots with SameValueZero semantics.
+///
+/// # Safety
+///
+/// Both slots must match the validated key kind and size. String slots must
+/// contain null or live handles of `ctx`.
+pub(crate) unsafe fn keys_equal(
     ctx: *mut Context,
     kind: KeyKind,
     left: *const u8,
     right: *const u8,
     size: usize,
 ) -> bool {
-    match kind {
-        KeyKind::Bits | KeyKind::Ref => {
-            // SAFETY: caller guarantees two readable key slots.
-            unsafe { read_bits(left, size) == read_bits(right, size) }
-        }
-        // SAFETY: validated shapes are readable for the float width.
-        KeyKind::F32 => unsafe {
-            let a = left.cast::<f32>().read_unaligned();
-            let b = right.cast::<f32>().read_unaligned();
-            a == b || (a.is_nan() && b.is_nan())
-        },
-        // SAFETY: as above.
-        KeyKind::F64 => unsafe {
-            let a = left.cast::<f64>().read_unaligned();
-            let b = right.cast::<f64>().read_unaligned();
-            a == b || (a.is_nan() && b.is_nan())
-        },
-        KeyKind::Str => {
-            // SAFETY: both key slots contain handles.
-            let a = unsafe { left.cast::<*const u8>().read_unaligned() };
-            let b = unsafe { right.cast::<*const u8>().read_unaligned() };
-            if a.is_null() || b.is_null() {
-                return a == b;
-            }
-            // SAFETY: both are live strings of this Context.
-            unsafe { (*ctx).str_bytes(a) == (*ctx).str_bytes(b) }
-        }
-    }
+    // SAFETY: associative shapes satisfy the shared equality contract.
+    unsafe { value_eq(ctx, value_kind(kind), size, left, right, true) }
 }
 
 /// Copies a new key into ordered storage, canonicalizing the

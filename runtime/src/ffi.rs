@@ -208,18 +208,7 @@ pub unsafe extern "C" fn subscript_rt_trap(ctx: *mut Context, kind: u32, pos_id:
     // An unknown kind means the code generator and runtime disagree;
     // report it as an internal fault instead of misattributing it.
     let kind = TrapKind::from_u32(kind).unwrap_or(TrapKind::Internal);
-    let message = match kind {
-        TrapKind::IndexOutOfBounds => "index out of bounds",
-        TrapKind::NullNarrowing => "`as` narrowing applied to null",
-        TrapKind::ClassMismatch => "`as` narrowing to a class the instance does not have",
-        TrapKind::UseAfterDelete => "use of a deleted allocation",
-        TrapKind::DivisionByZero => "integer division by zero",
-        TrapKind::Internal => "unknown trap kind raised by generated code",
-        TrapKind::StaleCoroutine => "stale coroutine after reload",
-        TrapKind::JsonResultValue => "`JsonResult.value` read when `ok` is false",
-        other => other.rule(),
-    };
-    ctx.trap(kind, message, pos_id);
+    ctx.trap(kind, kind.message(None), pos_id);
 }
 
 /// Records an emitted array-bounds trap with its materialized index and
@@ -238,7 +227,7 @@ pub unsafe extern "C" fn subscript_rt_trap_index_out_of_bounds(
     // SAFETY: shared contract.
     unsafe { &mut *ctx }.trap(
         TrapKind::IndexOutOfBounds,
-        format!("index {index} out of bounds for array length {length}"),
+        TrapKind::IndexOutOfBounds.message(Some((index, u64::from(length)))),
         pos_id,
     );
 }
@@ -6682,7 +6671,56 @@ mod tests {
         unsafe { subscript_rt_trap(p, TrapKind::UseAfterDelete as u32, 12) };
         let r = ctx.trap_record().expect("trap");
         assert_eq!(r.kind, TrapKind::UseAfterDelete);
+        assert_eq!(r.message, "use of a deleted allocation");
         assert_eq!(r.pos_id, 12);
+    }
+
+    #[test]
+    fn trap_messages_runtime_and_emitted_checks_agree() {
+        let mut runtime_ctx = Context::new();
+        let array = runtime_ctx.array_new(4, 0);
+        // SAFETY: `array` is a live array handle of `runtime_ctx`.
+        unsafe { runtime_ctx.array_elem_ptr(array, -1, 1) };
+        let runtime_bounds = runtime_ctx
+            .trap_record()
+            .expect("runtime bounds trap")
+            .message
+            .clone();
+
+        let mut emitted_ctx = Context::new();
+        let emitted_ptr: *mut Context = &mut *emitted_ctx;
+        // SAFETY: valid context and materialized bounds.
+        unsafe { subscript_rt_trap_index_out_of_bounds(emitted_ptr, -1, 0, 1) };
+        assert_eq!(
+            emitted_ctx
+                .trap_record()
+                .expect("emitted bounds trap")
+                .message,
+            runtime_bounds
+        );
+
+        let mut runtime_ctx = Context::new();
+        assert!(runtime_ctx.set_freed_handle_diagnostics(true, 0, usize::MAX));
+        let array = runtime_ctx.array_new(4, 0);
+        runtime_ctx.delete(array as usize, 0);
+        assert!(!runtime_ctx.require_live_handle(array as usize, 2));
+        let runtime_deleted = runtime_ctx
+            .trap_record()
+            .expect("runtime deleted-allocation trap")
+            .message
+            .clone();
+
+        let mut emitted_ctx = Context::new();
+        let emitted_ptr: *mut Context = &mut *emitted_ctx;
+        // SAFETY: valid context and stable trap kind.
+        unsafe { subscript_rt_trap(emitted_ptr, TrapKind::UseAfterDelete as u32, 2) };
+        assert_eq!(
+            emitted_ctx
+                .trap_record()
+                .expect("emitted deleted-allocation trap")
+                .message,
+            runtime_deleted
+        );
     }
 
     #[test]

@@ -9,6 +9,7 @@
 //! early from every active script frame. The JIT entry then reads the
 //! record. See `Context` for the flag's layout guarantee.
 
+use std::borrow::Cow;
 use std::fmt;
 
 /// The kind of runtime fault. Values are stable across the C boundary
@@ -147,6 +148,32 @@ impl TrapKind {
             TrapKind::WireEnumUnknownValue => "wire-enum-unknown-value",
         }
     }
+
+    /// Returns the runtime message for an emitted check or a shared raise.
+    ///
+    /// Array bounds contain the materialized index and length when the check
+    /// supplies them. Other kinds ignore `array_bounds`.
+    #[must_use]
+    pub fn message(self, array_bounds: Option<(i32, u64)>) -> Cow<'static, str> {
+        match (self, array_bounds) {
+            (TrapKind::IndexOutOfBounds, Some((index, length))) => Cow::Owned(format!(
+                "index {index} out of bounds for array length {length}"
+            )),
+            (TrapKind::IndexOutOfBounds, None) => Cow::Borrowed("index out of bounds"),
+            (TrapKind::NullNarrowing, _) => Cow::Borrowed("`as` narrowing applied to null"),
+            (TrapKind::ClassMismatch, _) => {
+                Cow::Borrowed("`as` narrowing to a class the instance does not have")
+            }
+            (TrapKind::UseAfterDelete, _) => Cow::Borrowed("use of a deleted allocation"),
+            (TrapKind::DivisionByZero, _) => Cow::Borrowed("integer division by zero"),
+            (TrapKind::Internal, _) => Cow::Borrowed("unknown trap kind raised by generated code"),
+            (TrapKind::StaleCoroutine, _) => Cow::Borrowed("stale coroutine after reload"),
+            (TrapKind::JsonResultValue, _) => {
+                Cow::Borrowed("`JsonResult.value` read when `ok` is false")
+            }
+            (other, _) => Cow::Borrowed(other.rule()),
+        }
+    }
 }
 
 impl fmt::Display for TrapKind {
@@ -199,6 +226,18 @@ mod tests {
         assert_eq!(
             TrapKind::IndexOutOfBounds.to_string(),
             "index-out-of-bounds"
+        );
+    }
+
+    #[test]
+    fn trap_kind_message_is_canonical_for_runtime_and_emitted_checks() {
+        assert_eq!(
+            TrapKind::IndexOutOfBounds.message(Some((-1, 3))),
+            "index -1 out of bounds for array length 3"
+        );
+        assert_eq!(
+            TrapKind::UseAfterDelete.message(None),
+            "use of a deleted allocation"
         );
     }
 
