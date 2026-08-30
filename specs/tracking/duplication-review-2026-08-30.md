@@ -122,3 +122,13 @@ reaches neither input — a corpus entry for each shape is open (core
 principle 12). `verify_local_storage_classes` deleted; the interpreter
 poisons Activation locals at every Suspend. 443 lines removed, 327
 added. Clippy 7/21/13. Gate on main: 1,135 passed, 0 failed.
+
+## Round 6 — three checker facts (landed `1224881`)
+
+`Place` classified before member lowering (seven variants);
+`ExprKind::AbsenceTest` replaces the `Int` sentinel and `narrow_paths`
+loses its alias closure; `using` is `Stmt::Let { dispose: true }` with
+one scope-exit pass (195 lines removed, 122 added in `check/mod.rs`).
+The round stopped once: the `dispose` field needed pattern updates in
+`codegen/src/lir.rs`, outside the handoff's file list; the list was
+widened. Clippy 7/21/13. Gate on main: 1,137 passed, 0 failed.
