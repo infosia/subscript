@@ -250,3 +250,12 @@ corpus entry; the acceptance widenings recorded in the §74 filters.
 - Rm30: Three observer setters share the set-or-clear-userdata body. Sites: `context.rs:1347-1354`, `1445-1452`, `1456-1466`. Consolidation: one generic `set_observer(slot, userdata_slot, observer, userdata)`.
 - Rm31: Receiver liveness is checked per wrapper, not per family. Sites: every Map/Set entry checks (`ffi.rs:448-1030`); of the array entries only `array_byte_range` (`3608`) and `array_push` (`3646`) check; `array_pop` (`3795`), `array_ptr` (`3811`), and every `arr_*` entry (`3859-4690`) do not. Consolidation: the check belongs in the `Context` array primitives (`array_len`, `array_elem_ptr`, `array_push`, `array_pop`) once, or in one wrapper macro.
 - Rm32: `subscript_rt_str_method_concat` (`ffi.rs:1601-1610`) is a second symbol for `subscript_rt_str_concat`. Consolidation: the code generators emit one symbol.
+
+## MINOR pass — runtime (landed `79ea54b`)
+
+Rm5–Rm32 all done. 1,317 lines removed, 1,053 added. Symbols removed:
+the eight Map/Set pairs became `subscript_rt_assoc_size/has/delete/clear`;
+`subscript_rt_str_method_concat` deleted (§78 rule 2). `array_len`,
+`array_pop`, `array_ptr`, and every `arr_*` entry now check receiver
+liveness with the existing dev-tier trap kind and message (Rm31).
+Clippy 7/18/13. Gate on main: 1,142 passed, 0 failed.
