@@ -56,3 +56,21 @@ The round stopped once on the corpus inventory assertions
 `js_corpus.rs`, `lir.rs`, `generated-docs/`), which the handoff did
 not name. Rule: a corpus addition updates every inventory assertion and
 regenerates `generated-docs/` in the same commit as the entry.
+
+## Round 2 — integer literals, enum widening, one HIR walk (landed `ea92d8a`)
+
+Red at `154e221`: `a174` failed in the dev JIT with a Cranelift verifier
+error (`arg 1 has type i32, expected i64`); `r170` and `r171` were
+accepted and ran.
+
+Fix: `parse_integer_spelling(raw, negate) -> Option<i128>` is the one
+reader; enum members are range-checked to `i32`. The enum-to-integer
+`Cast` lowered in the C emitter and the interpreter already; Cranelift
+did not extend the source. `hir::Expr::children()` and
+`hir::Stmt::children()` replace 13 + 13 walks; 1,484 lines removed,
+1,142 added.
+
+Measured: `a174` golden on all three tiers; `r170`, `r171` report `S100`
+at the initializer (the message text still reads "enum members must
+have integer literal values"; a range-specific message is a MINOR for
+the next pass). Clippy 7/21/13. Gate on main: 1,125 passed, 0 failed.
