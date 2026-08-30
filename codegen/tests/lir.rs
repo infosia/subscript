@@ -1378,8 +1378,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 118;
-const DEBUG_RUNNABLE_COUNT: usize = 117;
+const RELEASE_RUNNABLE_COUNT: usize = 119;
+const DEBUG_RUNNABLE_COUNT: usize = 118;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1615,6 +1615,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a174-enum-widening-cast",
         "enum to sized-integer conversion at every target width",
+    ),
+    (
+        "a175-closure-environment-collect",
+        "a capturing lambda's environment across collection",
     ),
     (
         "a15-manual-lifetime",
