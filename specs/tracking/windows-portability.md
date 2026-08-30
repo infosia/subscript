@@ -1138,3 +1138,27 @@ defect: the helper it uses does not fork on any platform, and the run
 measures the wrong `live_bytes` in 2 to 10 runs of 100, on every
 profile.
 `s70-held-async-handle.md` holds the measurement and the open finding.
+
+## Gate state at `a2beca7`, 2026-08-30
+
+| Gate | Result |
+|---|---|
+| `cargo test --workspace` | 1098 passed, 0 failed, 1 ignored |
+| `cargo test --workspace --release` | 1097 passed, 0 failed, 1 ignored |
+| `cargo fmt --check` | exit 0 |
+| clippy compiler / runtime / codegen | 7 / 22 / 13 |
+| `perf_gate_meets_every_threshold` | passed |
+| `tsc` | exit 0 |
+| `tools/hygiene.sh` | exit 0 |
+
+The `0541c96` record had one release failure,
+`counted_store_corpus_matches_the_interpreter`. `ebc46fd` cleared it.
+This host is x86-64, so it is the second instruction set that measures
+the a162 fix. The arm64 host never reproduced the retention, because its
+allocator did not reuse the released frame address.
+
+The commit-message scan of `be38e09` reads `git log --all`. It reported
+two commits on a local branch, `backup/pre-trailer-fix`, that a history
+rewrite left behind. `main` carried no trailer, and `git diff ade4d89
+507eaa6` was empty, so the branch held no content. The branch is deleted.
+The scan reads local refs, so a local branch alone can fail this gate.
