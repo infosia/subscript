@@ -1376,7 +1376,7 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
 ];
 
 const RELEASE_RUNNABLE_COUNT: usize = 118;
-const DEBUG_RUNNABLE_COUNT: usize = 115;
+const DEBUG_RUNNABLE_COUNT: usize = 117;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1604,6 +1604,14 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a172-array-callback-mutation",
         "fixed callback ranges while the receiver grows or shrinks",
+    ),
+    (
+        "a173-callback-collect-rooted",
+        "a result array rooted across a callback that collects",
+    ),
+    (
+        "a174-enum-widening-cast",
+        "enum to sized-integer conversion at every target width",
     ),
     (
         "a15-manual-lifetime",

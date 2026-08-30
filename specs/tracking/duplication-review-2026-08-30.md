@@ -97,3 +97,16 @@ handles, `Worker`, `Inbox`, `Outbox` (S100).
 
 Measured: `Worker`, `Inbox`, `Outbox`, bare `Func` not managed (§74
 rule 3 record). Clippy 7/21/13. Gate on main: 1,131 passed, 0 failed.
+
+## Round 4 — the terminator walks itself (landed `e3b9d4f`)
+
+`Terminator::targets()`, `successors()`, `value_uses()`, `map_values()`
+replace eleven walks; 607 lines removed, 481 added. Reads versus
+mentions: liveness, address escape, and C declaration references read;
+value replacement, unroll's external-use check, the root plan's
+interference, and copy elimination mention (each with a one-line reason
+at the site). Clippy 7/21/13. Gate on main: 1,133 passed, 0 failed.
+
+The debug-profile interpreter ledger (`DEBUG_INTERPRETER_SUBSET`,
+`DEBUG_RUNNABLE_COUNT`) had not gained `a173` and `a174`; added with
+this round's record. The inventory list of round 1 gains that ledger.
