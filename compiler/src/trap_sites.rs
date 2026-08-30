@@ -62,39 +62,12 @@ impl Interval {
 }
 
 fn int_type_range(ty: &Type) -> Option<Interval> {
-    Some(match ty {
-        Type::I8 => Interval {
-            lo: i64::from(i8::MIN),
-            hi: i64::from(i8::MAX),
-        },
-        Type::U8 => Interval {
-            lo: 0,
-            hi: i64::from(u8::MAX),
-        },
-        Type::I16 => Interval {
-            lo: i64::from(i16::MIN),
-            hi: i64::from(i16::MAX),
-        },
-        Type::U16 => Interval {
-            lo: 0,
-            hi: i64::from(u16::MAX),
-        },
-        Type::I32 => Interval {
-            lo: i64::from(i32::MIN),
-            hi: i64::from(i32::MAX),
-        },
-        Type::U32 => Interval {
-            lo: 0,
-            hi: i64::from(u32::MAX),
-        },
-        Type::I64 => Interval {
-            lo: i64::MIN,
-            hi: i64::MAX,
-        },
-        // The lattice is i64-valued, so u64's upper bound is not
-        // representable and cannot support a proof.
-        Type::U64 => return None,
-        _ => return None,
+    let (lo, hi) = ty.int_bounds()?;
+    // The lattice is i64-valued, so an upper bound outside it cannot
+    // support a proof.
+    (hi <= i128::from(i64::MAX)).then_some(Interval {
+        lo: lo.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64,
+        hi: hi as i64,
     })
 }
 

@@ -621,8 +621,7 @@ impl<'p> Checker<'p> {
                 }
             }
             let holds_capturing = self.is_capturing_value(&init, fx);
-            let async_origins =
-                self.async_origins_at_copy_site(hir::AsyncCopySite::Binding, &init, fx);
+            let async_origins = self.expr_async_origins(&init, fx);
             self.declare_local(
                 &name,
                 Local {
@@ -689,11 +688,7 @@ impl<'p> Checker<'p> {
                         );
                     }
                     if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
-                        let origins = self.async_origins_at_copy_site(
-                            hir::AsyncCopySite::Return,
-                            &checked,
-                            fx,
-                        );
+                        let origins = self.expr_async_origins(&checked, fx);
                         fx.handle_async_origins(&origins);
                     }
                     Some(checked)
@@ -913,8 +908,7 @@ impl<'p> Checker<'p> {
         assigned_roots_stmt(&f.body, &mut roots);
         fx.narrowed.retain(|k| !roots.contains(root_of(k)));
 
-        let binding_async_origins =
-            self.async_origins_at_copy_site(hir::AsyncCopySite::ForOfBinding, &subject, fx);
+        let binding_async_origins = self.expr_async_origins(&subject, fx);
         fx.scopes.push(Default::default());
         self.declare_local(
             &name,
@@ -1183,20 +1177,17 @@ impl<'p> Checker<'p> {
         self.in_for_of_subject = true;
         let subject = self.check_expr(expression, None, fx);
         self.in_for_of_subject = saved_for_of_subject;
-        let selected = match &subject.ty {
-            Type::Array(elem) => Some((Some(hir::ForOfKind::ArrayValues), (**elem).clone(), false)),
-            Type::FixedArray(elem, _) => Some((
-                Some(hir::ForOfKind::FixedArrayValues),
-                (**elem).clone(),
-                false,
-            )),
-            Type::Map(key, _) => Some((Some(hir::ForOfKind::MapKeys), (**key).clone(), false)),
-            Type::Set(key) => Some((Some(hir::ForOfKind::SetValues), (**key).clone(), false)),
-            Type::Str => Some((Some(hir::ForOfKind::StringCodePoints), Type::Str, false)),
-            Type::Generator(value) => Some((None, (**value).clone(), true)),
-            Type::Error => return (subject, None, Type::Error, false),
-            _ => None,
-        };
+        let selected = subject
+            .ty
+            .iteration_element()
+            .map(|(kind, element)| (Some(hir::ForOfKind::from(kind)), element, false))
+            .or_else(|| match &subject.ty {
+                Type::Generator(value) => Some((None, (**value).clone(), true)),
+                _ => None,
+            });
+        if matches!(subject.ty, Type::Error) {
+            return (subject, None, Type::Error, false);
+        }
         if let Some((kind, elem, generator)) = selected {
             return (subject, kind, elem, generator);
         }

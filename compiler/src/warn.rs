@@ -122,6 +122,58 @@ struct WarningChecker<'m> {
     warnings: Vec<Warning>,
 }
 
+fn walk_statements<S: Clone>(
+    statements: &[Stmt],
+    loop_depth: usize,
+    state: &mut S,
+    visit: &mut impl FnMut(&Stmt, &[Stmt], usize, &mut S),
+) {
+    for (index, statement) in statements.iter().enumerate() {
+        let remaining = &statements[index + 1..];
+        match statement {
+            Stmt::While { body, .. } | Stmt::ForOf { body, .. } => {
+                let mut nested = state.clone();
+                visit(statement, remaining, loop_depth, &mut nested);
+                walk_statements(body, loop_depth + 1, &mut nested, visit);
+            }
+            Stmt::For { init, body, .. } => {
+                let mut nested = state.clone();
+                if let Some(init) = init {
+                    walk_statements(
+                        std::slice::from_ref(init.as_ref()),
+                        loop_depth,
+                        &mut nested,
+                        visit,
+                    );
+                }
+                visit(statement, remaining, loop_depth, &mut nested);
+                walk_statements(body, loop_depth + 1, &mut nested, visit);
+            }
+            Stmt::If { then, els, .. } => {
+                let mut branch = state.clone();
+                visit(statement, remaining, loop_depth, &mut branch);
+                walk_statements(then, loop_depth, &mut branch.clone(), visit);
+                if let Some(els) = els {
+                    walk_statements(els, loop_depth, &mut branch, visit);
+                }
+            }
+            Stmt::Switch { cases, .. } => {
+                let mut branch = state.clone();
+                visit(statement, remaining, loop_depth, &mut branch);
+                for case in cases {
+                    walk_statements(&case.body, loop_depth, &mut branch.clone(), visit);
+                }
+            }
+            Stmt::Block(body) => {
+                let mut nested = state.clone();
+                visit(statement, remaining, loop_depth, &mut nested);
+                walk_statements(body, loop_depth, &mut nested, visit);
+            }
+            _ => visit(statement, remaining, loop_depth, state),
+        }
+    }
+}
+
 impl WarningChecker<'_> {
     fn analyze_function(&mut self, function: &hir::Function) {
         for param in &function.params {
@@ -147,15 +199,18 @@ impl WarningChecker<'_> {
     }
 
     fn analyze_w001_stmts(&mut self, stmts: &[Stmt], loop_depth: usize, collect_mutes: bool) {
-        for (index, stmt) in stmts.iter().enumerate() {
-            match stmt {
+        walk_statements(
+            stmts,
+            loop_depth,
+            &mut (),
+            &mut |stmt, remaining, loop_depth, _| match stmt {
                 Stmt::Let { name, init, .. } => {
                     if !collect_mutes
                         && loop_depth > 0
                         && is_reference_allocation(self.module, init)
                     {
                         let mut use_state = CandidateUse::default();
-                        scan_candidate_stmts(&stmts[index + 1..], name, &mut use_state);
+                        scan_candidate_stmts(remaining, name, &mut use_state);
                         if !use_state.escaped && !use_state.released {
                             self.push(Warning::new(
                                 WarnCode::W001,
@@ -185,81 +240,20 @@ impl WarningChecker<'_> {
                         );
                     }
                 }
-                Stmt::While { cond, body, .. } => {
-                    self.scan_w001_expr(cond, loop_depth, collect_mutes, AllocationSink::Use);
-                    self.analyze_w001_stmts(body, loop_depth + 1, collect_mutes);
-                }
-                Stmt::For {
-                    init,
-                    cond,
-                    step,
-                    body,
-                    ..
-                } => {
-                    if let Some(init) = init {
-                        self.analyze_w001_stmts(
-                            std::slice::from_ref(init.as_ref()),
-                            loop_depth,
-                            collect_mutes,
-                        );
-                    }
-                    if let Some(cond) = cond {
-                        self.scan_w001_expr(cond, loop_depth, collect_mutes, AllocationSink::Use);
-                    }
-                    if let Some(step) = step {
-                        self.scan_w001_expr(step, loop_depth, collect_mutes, AllocationSink::Use);
-                    }
-                    self.analyze_w001_stmts(body, loop_depth + 1, collect_mutes);
-                }
-                Stmt::ForOf { subject, body, .. } => {
-                    self.scan_w001_expr(subject, loop_depth, collect_mutes, AllocationSink::Use);
-                    self.analyze_w001_stmts(body, loop_depth + 1, collect_mutes);
-                }
-                Stmt::If {
-                    cond, then, els, ..
-                } => {
-                    self.scan_w001_expr(cond, loop_depth, collect_mutes, AllocationSink::Use);
-                    self.analyze_w001_stmts(then, loop_depth, collect_mutes);
-                    if let Some(els) = els {
-                        self.analyze_w001_stmts(els, loop_depth, collect_mutes);
-                    }
-                }
-                Stmt::Switch { disc, cases, .. } => {
-                    self.scan_w001_expr(disc, loop_depth, collect_mutes, AllocationSink::Use);
-                    for case in cases {
-                        if let Some(test) = &case.test {
+                _ => {
+                    for child in stmt.children() {
+                        if let hir::HirChild::Expr(expr) = child {
                             self.scan_w001_expr(
-                                test,
+                                expr,
                                 loop_depth,
                                 collect_mutes,
                                 AllocationSink::Use,
                             );
                         }
-                        self.analyze_w001_stmts(&case.body, loop_depth, collect_mutes);
                     }
                 }
-                Stmt::Block(body) => {
-                    self.analyze_w001_stmts(body, loop_depth, collect_mutes);
-                }
-                _ => {
-                    for child in stmt.children() {
-                        match child {
-                            hir::HirChild::Expr(expr) => self.scan_w001_expr(
-                                expr,
-                                loop_depth,
-                                collect_mutes,
-                                AllocationSink::Use,
-                            ),
-                            hir::HirChild::Stmt(stmt) => self.analyze_w001_stmts(
-                                std::slice::from_ref(stmt),
-                                loop_depth,
-                                collect_mutes,
-                            ),
-                        }
-                    }
-                }
-            }
-        }
+            },
+        );
     }
 
     fn scan_w001_expr(
@@ -428,105 +422,37 @@ impl WarningChecker<'_> {
         inherited_fresh: &HashSet<String>,
     ) {
         let mut fresh = inherited_fresh.clone();
-        for stmt in stmts {
-            match stmt {
+        walk_statements(
+            stmts,
+            loop_depth,
+            &mut fresh,
+            &mut |stmt, _, loop_depth, fresh| match stmt {
                 Stmt::Let { name, init, .. } => {
-                    self.scan_w003_expr(init, loop_depth, &fresh);
+                    self.scan_w003_expr(init, loop_depth, fresh);
                     fresh.remove(name);
                     if loop_depth > 0 && is_reference_new_allocation(self.module, init) {
                         fresh.insert(name.clone());
                     }
                 }
                 Stmt::Expr(expr) => {
-                    self.scan_w003_expr(expr, loop_depth, &fresh);
+                    self.scan_w003_expr(expr, loop_depth, fresh);
                     if let Some(name) = directly_reassigned_local(stmt) {
                         fresh.remove(name);
                     }
                 }
-                Stmt::While { cond, body, .. } => {
-                    self.scan_w003_expr(cond, loop_depth, &fresh);
-                    self.analyze_w003_stmts(body, loop_depth + 1, &fresh);
+                Stmt::ForOf { name, subject, .. } => {
+                    self.scan_w003_expr(subject, loop_depth, fresh);
+                    fresh.remove(name);
                 }
-                Stmt::For {
-                    init,
-                    cond,
-                    step,
-                    body,
-                    ..
-                } => {
-                    let mut body_fresh = fresh.clone();
-                    if let Some(init) = init {
-                        self.scan_w003_stmt_header(init, loop_depth, &fresh);
-                        if let Stmt::Let { name, init, .. } = init.as_ref() {
-                            body_fresh.remove(name);
-                            if loop_depth > 0 && is_reference_new_allocation(self.module, init) {
-                                body_fresh.insert(name.clone());
-                            }
-                        }
-                    }
-                    if let Some(cond) = cond {
-                        self.scan_w003_expr(cond, loop_depth, &body_fresh);
-                    }
-                    if let Some(step) = step {
-                        self.scan_w003_expr(step, loop_depth, &body_fresh);
-                    }
-                    self.analyze_w003_stmts(body, loop_depth + 1, &body_fresh);
-                }
-                Stmt::ForOf {
-                    name,
-                    subject,
-                    body,
-                    ..
-                } => {
-                    self.scan_w003_expr(subject, loop_depth, &fresh);
-                    let mut body_fresh = fresh.clone();
-                    body_fresh.remove(name);
-                    self.analyze_w003_stmts(body, loop_depth + 1, &body_fresh);
-                }
-                Stmt::If {
-                    cond, then, els, ..
-                } => {
-                    self.scan_w003_expr(cond, loop_depth, &fresh);
-                    self.analyze_w003_stmts(then, loop_depth, &fresh);
-                    if let Some(els) = els {
-                        self.analyze_w003_stmts(els, loop_depth, &fresh);
-                    }
-                }
-                Stmt::Switch { disc, cases, .. } => {
-                    self.scan_w003_expr(disc, loop_depth, &fresh);
-                    for case in cases {
-                        if let Some(test) = &case.test {
-                            self.scan_w003_expr(test, loop_depth, &fresh);
-                        }
-                        self.analyze_w003_stmts(&case.body, loop_depth, &fresh);
-                    }
-                }
-                Stmt::Block(body) => self.analyze_w003_stmts(body, loop_depth, &fresh),
                 _ => {
                     for child in stmt.children() {
-                        match child {
-                            hir::HirChild::Expr(expr) => {
-                                self.scan_w003_expr(expr, loop_depth, &fresh);
-                            }
-                            hir::HirChild::Stmt(stmt) => self.analyze_w003_stmts(
-                                std::slice::from_ref(stmt),
-                                loop_depth,
-                                &fresh,
-                            ),
+                        if let hir::HirChild::Expr(expr) = child {
+                            self.scan_w003_expr(expr, loop_depth, fresh);
                         }
                     }
                 }
-            }
-        }
-    }
-
-    fn scan_w003_stmt_header(&mut self, stmt: &Stmt, loop_depth: usize, fresh: &HashSet<String>) {
-        match stmt {
-            Stmt::Let { init, .. } | Stmt::Expr(init) => {
-                self.scan_w003_expr(init, loop_depth, fresh);
-            }
-            _ => {}
-        }
+            },
+        );
     }
 
     fn scan_w003_expr(&mut self, expr: &Expr, loop_depth: usize, fresh: &HashSet<String>) {
@@ -779,14 +705,10 @@ fn callback_info_has_fresh_userdata(
 }
 
 fn is_fresh_userdata_argument(module: &hir::Module, expr: &Expr, fresh: &HashSet<String>) -> bool {
-    if is_reference_new_allocation(module, expr) {
-        return true;
-    }
-    match &expr.kind {
-        ExprKind::Local(name) => fresh.contains(name),
-        ExprKind::Cast(inner) => is_fresh_userdata_argument(module, inner, fresh),
-        _ => false,
-    }
+    expr.flow_leaves().any(|leaf| {
+        is_reference_new_allocation(module, leaf)
+            || matches!(&leaf.kind, ExprKind::Local(name) if fresh.contains(name))
+    })
 }
 
 fn contains_collect_in_stmts(stmts: &[Stmt]) -> bool {
@@ -942,15 +864,8 @@ fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
 }
 
 fn value_is_candidate(expr: &Expr, name: &str) -> bool {
-    match &expr.kind {
-        ExprKind::Local(local) => local == name,
-        ExprKind::Cast(inner) => value_is_candidate(inner, name),
-        ExprKind::Cond { then, els, .. } => {
-            value_is_candidate(then, name) || value_is_candidate(els, name)
-        }
-        ExprKind::Assign { value, .. } => value_is_candidate(value, name),
-        _ => false,
-    }
+    expr.flow_leaves()
+        .any(|leaf| matches!(&leaf.kind, ExprKind::Local(local) if local == name))
 }
 
 fn directly_reassigned_local(stmt: &Stmt) -> Option<&str> {

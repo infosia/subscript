@@ -183,6 +183,66 @@ fn unparen_expr(mut e: &ast::Expr) -> &ast::Expr {
     e
 }
 
+fn assign_op(op: ast::AssignOp) -> Option<(BinOp, &'static str)> {
+    use ast::AssignOp as A;
+    Some(match op {
+        A::AddAssign => (BinOp::Add, "+="),
+        A::SubAssign => (BinOp::Sub, "-="),
+        A::MulAssign => (BinOp::Mul, "*="),
+        A::DivAssign => (BinOp::Div, "/="),
+        A::ModAssign => (BinOp::Rem, "%="),
+        A::BitAndAssign => (BinOp::BitAnd, "&="),
+        A::BitOrAssign => (BinOp::BitOr, "|="),
+        A::BitXorAssign => (BinOp::BitXor, "^="),
+        A::LShiftAssign => (BinOp::Shl, "<<="),
+        A::RShiftAssign => (BinOp::Shr, ">>="),
+        A::ZeroFillRShiftAssign => (BinOp::UShr, ">>>="),
+        _ => return None,
+    })
+}
+
+fn assign_binary_op(op: BinOp) -> Option<ast::BinaryOp> {
+    use ast::BinaryOp as B;
+    Some(match op {
+        BinOp::Add => B::Add,
+        BinOp::Sub => B::Sub,
+        BinOp::Mul => B::Mul,
+        BinOp::Div => B::Div,
+        BinOp::Rem => B::Mod,
+        BinOp::BitAnd => B::BitAnd,
+        BinOp::BitOr => B::BitOr,
+        BinOp::BitXor => B::BitXor,
+        BinOp::Shl => B::LShift,
+        BinOp::Shr => B::RShift,
+        BinOp::UShr => B::ZeroFillRShift,
+        _ => return None,
+    })
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BinUse {
+    Expression,
+    CompoundAssignment,
+}
+
+struct BinResult {
+    expr: hir::Expr,
+    terminal: bool,
+}
+
+fn update_spelling(update: &ast::UpdateExpr, target: &str) -> String {
+    let operator = if update.op == ast::UpdateOp::PlusPlus {
+        "++"
+    } else {
+        "--"
+    };
+    if update.prefix {
+        format!("`{operator}{target}`")
+    } else {
+        format!("`{target}{operator}`")
+    }
+}
+
 /// Returns the nominal class supplied by an object literal's context.
 /// Q33/R17 permits descriptor construction through either `D` or `D | null`;
 /// retaining plain classes here also preserves their specific S005 rejection.
@@ -203,6 +263,23 @@ enum DescriptorProp<'a> {
     Shorthand(&'a ast::Ident),
 }
 
+#[derive(Clone, Copy)]
+struct CallbackSpec<'a> {
+    method: &'a str,
+    q_rule: &'static str,
+    allow_index: bool,
+}
+
+impl<'a> CallbackSpec<'a> {
+    fn new(method: &'a str, q_rule: &'static str, allow_index: bool) -> Self {
+        Self {
+            method,
+            q_rule,
+            allow_index,
+        }
+    }
+}
+
 fn regex_literal(e: &ast::Expr) -> Option<&ast::Regex> {
     match e {
         ast::Expr::Lit(ast::Lit::Regex(regex)) => Some(regex),
@@ -211,35 +288,12 @@ fn regex_literal(e: &ast::Expr) -> Option<&ast::Regex> {
     }
 }
 
-fn int_range(ty: &Type) -> Option<(i128, i128)> {
-    match ty {
-        Type::I8 => Some((i128::from(i8::MIN), i128::from(i8::MAX))),
-        Type::U8 => Some((0, i128::from(u8::MAX))),
-        Type::I16 => Some((i128::from(i16::MIN), i128::from(i16::MAX))),
-        Type::U16 => Some((0, i128::from(u16::MAX))),
-        Type::I32 => Some((i128::from(i32::MIN), i128::from(i32::MAX))),
-        Type::U32 => Some((0, i128::from(u32::MAX))),
-        Type::I64 => Some((i128::from(i64::MIN), i128::from(i64::MAX))),
-        Type::U64 => Some((0, i128::from(u64::MAX))),
-        _ => None,
-    }
-}
-
 /// The pre-R26 f64 range retained for synthesized numeric nodes without a
 /// source spelling. Such nodes are exact within this channel's old cap.
 fn synthesized_int_range(ty: &Type) -> Option<(i64, i64)> {
-    const EXACT: i64 = 9_007_199_254_740_991;
-    match ty {
-        Type::I8 => Some((i64::from(i8::MIN), i64::from(i8::MAX))),
-        Type::U8 => Some((0, i64::from(u8::MAX))),
-        Type::I16 => Some((i64::from(i16::MIN), i64::from(i16::MAX))),
-        Type::U16 => Some((0, i64::from(u16::MAX))),
-        Type::I32 => Some((i64::from(i32::MIN), i64::from(i32::MAX))),
-        Type::U32 => Some((0, i64::from(u32::MAX))),
-        Type::I64 => Some((-EXACT, EXACT)),
-        Type::U64 => Some((0, EXACT)),
-        _ => None,
-    }
+    const EXACT: i128 = 9_007_199_254_740_991;
+    let (lo, hi) = ty.int_bounds()?;
+    Some((lo.max(-EXACT) as i64, hi.min(EXACT) as i64))
 }
 
 /// Reinterprets HIR integer bits according to the expression's sized type.
@@ -257,17 +311,32 @@ fn int_value_at_type(bits: i64, ty: &Type) -> Option<i128> {
     })
 }
 
-fn integer_width(ty: &Type) -> Option<i64> {
-    Some(match ty {
-        Type::I8 | Type::U8 => 8,
-        Type::I16 | Type::U16 => 16,
-        Type::I32 | Type::U32 => 32,
-        Type::I64 | Type::U64 => 64,
-        _ => return None,
-    })
-}
-
 impl<'p> Checker<'p> {
+    fn ambient_visible(&self, name: &str, fx: &FnCtx) -> bool {
+        !fx.owns_local_name(name) && self.scope_item(name).is_none()
+    }
+
+    pub(super) fn ambient_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> Option<&'static str> {
+        let ast::Expr::Ident(id) = obj else {
+            return None;
+        };
+        let name = match id.sym.as_ref() {
+            "Context" => "Context",
+            "Math" => "Math",
+            "Number" => "Number",
+            "JSON" => "JSON",
+            "Date" => "Date",
+            "Map" => "Map",
+            "Set" => "Set",
+            "RegExp" => "RegExp",
+            "Worker" => "Worker",
+            "Promise" => "Promise",
+            "Object" => "Object",
+            _ => return None,
+        };
+        self.ambient_visible(name, fx).then_some(name)
+    }
+
     /// Returns the must-await origins carried through one checked value.
     pub(crate) fn expr_async_origins(&self, expr: &hir::Expr, fx: &FnCtx) -> HashSet<u32> {
         use hir::ExprKind as K;
@@ -277,61 +346,27 @@ impl<'p> Checker<'p> {
             K::Local(name) => fx.local_async_origins(name),
             K::ArrayLit(elements) => elements
                 .iter()
-                .flat_map(|element| {
-                    self.async_origins_at_copy_site(hir::AsyncCopySite::ArrayElement, element, fx)
-                })
+                .flat_map(|element| self.expr_async_origins(element, fx))
                 .collect(),
             K::ArraySpreadLit(elements) => elements
                 .iter()
-                .flat_map(|element| {
-                    self.async_origins_at_copy_site(
-                        hir::AsyncCopySite::SpreadElement,
-                        &element.expr,
-                        fx,
-                    )
-                })
+                .flat_map(|element| self.expr_async_origins(&element.expr, fx))
                 .collect(),
             K::Index { obj, .. }
             | K::Field { obj, .. }
             | K::Cast(obj)
             | K::JsonResultValue(obj) => self.expr_async_origins(obj, fx),
             K::Cond { then, els, .. } => self
-                .async_origins_at_copy_site(hir::AsyncCopySite::ConditionalResult, then, fx)
+                .expr_async_origins(then, fx)
                 .into_iter()
-                .chain(self.async_origins_at_copy_site(
-                    hir::AsyncCopySite::ConditionalResult,
-                    els,
-                    fx,
-                ))
+                .chain(self.expr_async_origins(els, fx))
                 .collect(),
             _ => HashSet::new(),
         }
     }
 
-    /// Reads must-await origins through the shared closed copy-site set.
-    pub(crate) fn async_origins_at_copy_site(
-        &self,
-        site: hir::AsyncCopySite,
-        expr: &hir::Expr,
-        fx: &FnCtx,
-    ) -> HashSet<u32> {
-        match site {
-            hir::AsyncCopySite::Binding
-            | hir::AsyncCopySite::Assignment
-            | hir::AsyncCopySite::ArrayElement
-            | hir::AsyncCopySite::SpreadElement
-            | hir::AsyncCopySite::CallArgument
-            | hir::AsyncCopySite::Return
-            | hir::AsyncCopySite::ForOfBinding
-            | hir::AsyncCopySite::ConditionalResult
-            | hir::AsyncCopySite::DiscardedResult => self.expr_async_origins(expr, fx),
-        }
-    }
-
     fn track_async_call_result(&mut self, value: hir::Expr, fx: &mut FnCtx) -> hir::Expr {
-        let carries_handle = matches!(value.ty, Type::AsyncHandle(_))
-            || matches!(&value.ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_)));
-        if !carries_handle {
+        if !value.ty.carries_async_handle() {
             return value;
         }
         let pos = value.pos.clone();
@@ -1111,8 +1146,9 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let integer = if let Some(raw) = n.raw.as_deref() {
-            let (lo, hi) =
-                int_range(&target).unwrap_or((i128::from(i64::MIN), i128::from(i64::MAX)));
+            let (lo, hi) = target
+                .int_bounds()
+                .unwrap_or((i128::from(i64::MIN), i128::from(i64::MAX)));
             super::parse_integer_spelling(raw, negate)
                 .filter(|value| *value >= lo && *value <= hi)
                 .map(|value| value as i64)
@@ -1203,7 +1239,8 @@ impl<'p> Checker<'p> {
             self.apply_narrowing(&mut expr, fx);
             return expr;
         }
-        match self.scope_item(&name) {
+        let item = self.scope_item(&name);
+        match item {
             Some(ScopeItem::Poisoned) => self.err_expr(pos),
             Some(ScopeItem::Global(g)) => {
                 // A mirror flag member (§13.2) folds to its C value here, so
@@ -1527,16 +1564,7 @@ impl<'p> Checker<'p> {
         #[cfg(test)]
         place.record_kind();
         if matches!(&place, Place::IndexSignature { .. }) {
-            let operator = if u.op == ast::UpdateOp::PlusPlus {
-                "++"
-            } else {
-                "--"
-            };
-            let spelling = if u.prefix {
-                format!("`{operator}a[i]`")
-            } else {
-                format!("`a[i]{operator}`")
-            };
+            let spelling = update_spelling(u, "a[i]");
             self.error(
                 RuleCode::S100,
                 format!("{spelling} is not supported for a class index signature"),
@@ -1552,16 +1580,7 @@ impl<'p> Checker<'p> {
         } = &place
         {
             if receiver.is_some() {
-                let operator = if u.op == ast::UpdateOp::PlusPlus {
-                    "++"
-                } else {
-                    "--"
-                };
-                let spelling = if u.prefix {
-                    format!("`{operator}x.{name}`")
-                } else {
-                    format!("`x.{name}{operator}`")
-                };
+                let spelling = update_spelling(u, &format!("x.{name}"));
                 self.error(
                     RuleCode::S100,
                     format!("{spelling} is not supported for a class accessor"),
@@ -1570,16 +1589,7 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             } else {
                 let class_name = self.classes[class.0].name.clone();
-                let operator = if u.op == ast::UpdateOp::PlusPlus {
-                    "++"
-                } else {
-                    "--"
-                };
-                let spelling = if u.prefix {
-                    format!("`{operator}{class_name}.{name}`")
-                } else {
-                    format!("`{class_name}.{name}{operator}`")
-                };
+                let spelling = update_spelling(u, &format!("{class_name}.{name}"));
                 self.error(
                     RuleCode::S100,
                     format!("{spelling} is not supported for a static accessor"),
@@ -1711,7 +1721,8 @@ impl<'p> Checker<'p> {
                     };
                     right = self.check_expr(&b.right, c.as_ref(), fx);
                 }
-                self.bin_result(b.op, left, right, pos)
+                self.bin_result(b.op, left, right, pos, BinUse::Expression)
+                    .expr
             }
         }
     }
@@ -1777,20 +1788,33 @@ impl<'p> Checker<'p> {
         left: hir::Expr,
         right: hir::Expr,
         pos: Pos,
-    ) -> hir::Expr {
+        use_kind: BinUse,
+    ) -> BinResult {
         use ast::BinaryOp as B;
         let lt = left.ty.clone();
         let rt = right.ty.clone();
-        let err = matches!(lt, Type::Error) || matches!(rt, Type::Error);
+        let operand_error = matches!(lt, Type::Error) || matches!(rt, Type::Error);
+        let suppress_error = match use_kind {
+            BinUse::Expression => operand_error,
+            BinUse::CompoundAssignment => matches!(lt, Type::Error),
+        };
         let mixed_numeric = lt.is_numeric() && rt.is_numeric() && lt != rt;
         let arithmetic = matches!(op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
-        if arithmetic && (lt == Type::F16 || rt == Type::F16) {
+        let f16_arithmetic = arithmetic
+            && match use_kind {
+                BinUse::Expression => lt == Type::F16 || rt == Type::F16,
+                BinUse::CompoundAssignment => lt == Type::F16,
+            };
+        if f16_arithmetic {
             self.error(
                 RuleCode::S014,
                 "arithmetic on `f16` is not supported; compute via `as f32`",
                 pos.clone(),
             );
-            return self.err_expr(pos);
+            return BinResult {
+                expr: self.err_expr(pos),
+                terminal: true,
+            };
         }
         let mk = |op: BinOp, ty: Type| hir::Expr {
             kind: ExprKind::Binary {
@@ -1803,12 +1827,14 @@ impl<'p> Checker<'p> {
         };
         let (hop, ty, ok) = match op {
             B::Add => {
-                if lt == Type::Str && rt == Type::Str {
+                if use_kind == BinUse::CompoundAssignment && (lt.is_numeric() || lt == Type::Str) {
+                    (BinOp::Add, lt.clone(), true)
+                } else if lt == Type::Str && rt == Type::Str {
                     (BinOp::Add, Type::Str, true)
                 } else if lt.is_numeric() && lt == rt {
                     (BinOp::Add, lt.clone(), true)
                 } else {
-                    (BinOp::Add, Type::Error, err)
+                    (BinOp::Add, Type::Error, suppress_error)
                 }
             }
             B::Sub | B::Mul | B::Div | B::Mod => {
@@ -1818,10 +1844,10 @@ impl<'p> Checker<'p> {
                     B::Div => BinOp::Div,
                     _ => BinOp::Rem,
                 };
-                if lt.is_numeric() && lt == rt {
+                if lt.is_numeric() && (use_kind == BinUse::CompoundAssignment || lt == rt) {
                     (hop, lt.clone(), true)
                 } else {
-                    (hop, Type::Error, err)
+                    (hop, Type::Error, suppress_error)
                 }
             }
             B::Lt | B::LtEq | B::Gt | B::GtEq => {
@@ -1865,14 +1891,16 @@ impl<'p> Checker<'p> {
                 };
                 if lt.is_integer() && lt == rt {
                     (hop, lt.clone(), true)
+                } else if use_kind == BinUse::CompoundAssignment && lt.is_integer() {
+                    (hop, lt.clone(), true)
                 } else if lt.is_integer() && rt.is_integer() {
                     // Q18: mixed-width bitwise requires `as`.
-                    (hop, Type::Error, err)
+                    (hop, Type::Error, suppress_error)
                 } else {
-                    (hop, Type::Error, err)
+                    (hop, Type::Error, suppress_error)
                 }
             }
-            _ => (BinOp::Add, Type::Error, err),
+            _ => (BinOp::Add, Type::Error, suppress_error),
         };
         let literal_shift_amount = match &right.kind {
             ExprKind::Int(bits) => int_value_at_type(*bits, &right.ty),
@@ -1881,10 +1909,10 @@ impl<'p> Checker<'p> {
         if ok
             && matches!(op, B::LShift | B::RShift | B::ZeroFillRShift)
             && literal_shift_amount
-                .is_some_and(|amount| amount >= i128::from(integer_width(&lt).unwrap_or(i64::MAX)))
+                .is_some_and(|amount| amount >= i128::from(lt.bit_width().unwrap_or(u32::MAX)))
         {
             let amount = literal_shift_amount.unwrap_or(0);
-            let width = integer_width(&lt).unwrap_or(0);
+            let width = lt.bit_width().unwrap_or(0);
             let name = self.type_name(&lt);
             self.error(
                 RuleCode::S008,
@@ -1894,10 +1922,34 @@ impl<'p> Checker<'p> {
                 ),
                 right.pos.clone(),
             );
-            return self.err_expr(pos);
+            if use_kind == BinUse::CompoundAssignment {
+                return BinResult {
+                    expr: mk(hop, if operand_error { Type::Error } else { ty }),
+                    terminal: false,
+                };
+            }
+            return BinResult {
+                expr: self.err_expr(pos),
+                terminal: true,
+            };
         }
-        if ok || err {
-            return mk(hop, if err { Type::Error } else { ty });
+        if ok || suppress_error {
+            return BinResult {
+                expr: mk(hop, if operand_error { Type::Error } else { ty }),
+                terminal: false,
+            };
+        }
+        if use_kind == BinUse::CompoundAssignment {
+            let name = self.type_name(&lt);
+            self.error(
+                RuleCode::S100,
+                format!("compound assignment is not defined for `{}`", name),
+                pos.clone(),
+            );
+            return BinResult {
+                expr: self.err_expr(pos),
+                terminal: false,
+            };
         }
         // Q20: Dates are values erasing to i64, but the nominal wall
         // stands both ways — comparison crosses through `getTime()`.
@@ -1914,7 +1966,10 @@ impl<'p> Checker<'p> {
                 "Date direct comparison",
                 pos.clone(),
             );
-            return self.err_expr(pos);
+            return BinResult {
+                expr: self.err_expr(pos),
+                terminal: false,
+            };
         }
         let ln = self.type_name(&lt);
         let rn = self.type_name(&rt);
@@ -1942,7 +1997,10 @@ impl<'p> Checker<'p> {
                 pos.clone(),
             );
         }
-        self.err_expr(pos)
+        BinResult {
+            expr: self.err_expr(pos),
+            terminal: false,
+        }
     }
 
     fn check_cond(
@@ -2412,37 +2470,34 @@ impl<'p> Checker<'p> {
                 fx,
             );
             let (spread, element_ty) = if is_spread {
-                let selected = match &expr.ty {
-                    Type::Array(elem) => Some((hir::SpreadKind::Array, (**elem).clone())),
-                    Type::FixedArray(elem, _) => {
-                        Some((hir::SpreadKind::FixedArray, (**elem).clone()))
-                    }
-                    Type::Map(key, _) => Some((hir::SpreadKind::MapKeys, (**key).clone())),
-                    Type::Set(key) => Some((hir::SpreadKind::SetValues, (**key).clone())),
-                    Type::Str => Some((hir::SpreadKind::StringCodePoints, Type::Str)),
-                    Type::Generator(_) => {
-                        self.error(
-                            RuleCode::S014,
-                            "Generator<T> is single-use; array-literal spread would consume \
+                let selected = expr
+                    .ty
+                    .iteration_element()
+                    .map(|(kind, element)| (hir::SpreadKind::from(kind), element))
+                    .or_else(|| match &expr.ty {
+                        Type::Generator(_) => {
+                            self.error(
+                                RuleCode::S014,
+                                "Generator<T> is single-use; array-literal spread would consume \
                              a value expression",
-                            self.pos(slot.spread.unwrap_or(a.span)),
-                        );
-                        None
-                    }
-                    Type::Error => None,
-                    other => {
-                        let actual = self.type_name(other);
-                        self.error(
-                            RuleCode::S014,
-                            format!(
-                                "array-literal spread accepts T[], FixedArray<T, N>, Map, \
+                                self.pos(slot.spread.unwrap_or(a.span)),
+                            );
+                            None
+                        }
+                        Type::Error => None,
+                        other => {
+                            let actual = self.type_name(other);
+                            self.error(
+                                RuleCode::S014,
+                                format!(
+                                    "array-literal spread accepts T[], FixedArray<T, N>, Map, \
                                  Set, or string; got `{actual}`"
-                            ),
-                            self.pos(slot.spread.unwrap_or(a.span)),
-                        );
-                        None
-                    }
-                };
+                                ),
+                                self.pos(slot.spread.unwrap_or(a.span)),
+                            );
+                            None
+                        }
+                    });
                 match selected {
                     Some((kind, ty)) => (Some(kind), ty),
                     None => (None, Type::Error),
@@ -2536,7 +2591,7 @@ impl<'p> Checker<'p> {
         }
         // `Context.<member>` (Q6/Q7/Q34): function members are intercepted
         // in call position; the namespace and its members are not values.
-        if name == "Context" && self.scope_item(&name).is_none() {
+        if name == "Context" && self.ambient_visible(&name, fx) {
             let detail = if prop == "suspend" {
                 "`Context.suspend` may only appear as the direct call in `await Context.suspend()` (Q34)".to_string()
             } else if crate::ambient::context_fn(prop).is_some()
@@ -2554,18 +2609,18 @@ impl<'p> Checker<'p> {
         // members are intercepted by `check_method_call` before this
         // point; here a member is a constant fold, a rejected
         // un-called function, or an out-of-subset rejection.
-        if name == "Math" && self.scope_item(&name).is_none() {
+        if name == "Math" && self.ambient_visible(&name, fx) {
             return Some(self.check_math_member(prop, prop_pos, for_write));
         }
         // `Number.<member>` (stdlib.md §11, Q25): predicate calls are
         // intercepted by `check_method_call`; here constants fold and
         // every other read/write receives the subset diagnostic.
-        if name == "Number" && self.scope_item(&name).is_none() {
+        if name == "Number" && self.ambient_visible(&name, fx) {
             return Some(self.check_number_member(prop, prop_pos, for_write));
         }
         // `JSON.<member>` (stdlib.md §13, Q28): accepted functions are
         // intercepted in call position; namespace members are not values.
-        if name == "JSON" && self.scope_item(&name).is_none() {
+        if name == "JSON" && self.ambient_visible(&name, fx) {
             let detail = if matches!(prop, "stringify" | "parse") {
                 format!("`JSON.{prop}` may only be called, not read as a value (Q28)")
             } else {
@@ -2577,10 +2632,10 @@ impl<'p> Checker<'p> {
         // `Date.<member>` (stdlib.md §3): the static function members
         // (`UTC`, `now`) are intercepted by `check_method_call` before
         // this point; here every member read is a rejection.
-        if name == "Date" && self.scope_item(&name).is_none() {
+        if name == "Date" && self.ambient_visible(&name, fx) {
             return Some(self.check_date_member(prop, prop_pos, for_write));
         }
-        if (name == "Map" || name == "Set") && self.scope_item(&name).is_none() {
+        if (name == "Map" || name == "Set") && self.ambient_visible(&name, fx) {
             if name == "Map" && prop == "groupBy" {
                 self.error(
                     RuleCode::S014,
@@ -2727,28 +2782,14 @@ impl<'p> Checker<'p> {
     /// the identifier `Math` with no local binding and no program
     /// declaration shadowing it.
     fn is_math_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
-        let ast::Expr::Ident(id) = obj else {
-            return false;
-        };
-        if id.sym.as_ref() != "Math" {
-            return false;
-        }
-        let shadowed = fx.owns_local_name("Math");
-        !shadowed && self.scope_item("Math").is_none()
+        self.ambient_namespace(obj, fx) == Some("Math")
     }
 
     /// True when `obj` is the ambient `Context` namespace (Q6/Q7):
     /// the identifier `Context` with no local binding and no program
     /// declaration shadowing it.
     fn is_context_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
-        let ast::Expr::Ident(id) = obj else {
-            return false;
-        };
-        if id.sym.as_ref() != "Context" {
-            return false;
-        }
-        let shadowed = fx.owns_local_name("Context");
-        !shadowed && self.scope_item("Context").is_none()
+        self.ambient_namespace(obj, fx) == Some("Context")
     }
 
     /// A `Math` member outside a call position (stdlib.md §1): a
@@ -2835,11 +2876,7 @@ impl<'p> Checker<'p> {
             _ => Type::F64,
         };
         let params: Vec<ParamSig> = (0..arity)
-            .map(|_| ParamSig {
-                name: String::new(),
-                ty: param_ty.clone(),
-                has_default: false,
-            })
+            .map(|_| ParamSig::positional(param_ty.clone()))
             .collect();
         let args = self.check_args(&params, &c.args, fx, &pos, &format!("Math.{}", f.name()));
         hir::Expr {
@@ -2858,14 +2895,7 @@ impl<'p> Checker<'p> {
 
     /// True when `obj` is the unshadowed ambient `Number` namespace.
     fn is_number_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
-        let ast::Expr::Ident(id) = obj else {
-            return false;
-        };
-        if id.sym.as_ref() != "Number" {
-            return false;
-        }
-        let shadowed = fx.owns_local_name("Number");
-        !shadowed && self.scope_item("Number").is_none()
+        self.ambient_namespace(obj, fx) == Some("Number")
     }
 
     /// A `Number` namespace member outside a call position: constants
@@ -2925,11 +2955,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let args = self.check_args(
-            &[ParamSig {
-                name: String::new(),
-                ty: Type::F64,
-                has_default: false,
-            }],
+            &[ParamSig::positional(Type::F64)],
             &c.args,
             fx,
             &pos,
@@ -2959,22 +2985,10 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let params: Vec<ParamSig> = match f {
             NumFn::ParseInt => vec![
-                ParamSig {
-                    name: String::new(),
-                    ty: Type::Str,
-                    has_default: false,
-                },
-                ParamSig {
-                    name: String::new(),
-                    ty: Type::I32,
-                    has_default: false,
-                },
+                ParamSig::positional(Type::Str),
+                ParamSig::positional(Type::I32),
             ],
-            NumFn::ParseFloat => vec![ParamSig {
-                name: String::new(),
-                ty: Type::Str,
-                has_default: false,
-            }],
+            NumFn::ParseFloat => vec![ParamSig::positional(Type::Str)],
             _ => {
                 self.error(
                     RuleCode::S100,
@@ -3018,29 +3032,25 @@ impl<'p> Checker<'p> {
     /// Consulted by both member access and `new Date(…)` so shadowing
     /// behaves identically in every position.
     fn date_is_ambient(&self, fx: &FnCtx) -> bool {
-        let shadowed = fx.owns_local_name("Date");
-        !shadowed && self.scope_item("Date").is_none()
+        self.ambient_visible("Date", fx)
     }
 
     /// True when `Map` / `Set` resolves to the ambient generic reference
     /// class rather than a local or program declaration.
     fn assoc_is_ambient(&self, name: &str, fx: &FnCtx) -> bool {
-        let shadowed = fx.owns_local_name(name);
-        !shadowed && self.scope_item(name).is_none()
+        self.ambient_visible(name, fx)
     }
 
     /// True when `RegExp` resolves to the ambient constructor rather
     /// than a local or program declaration.
     fn regexp_is_ambient(&self, fx: &FnCtx) -> bool {
-        let shadowed = fx.owns_local_name("RegExp");
-        !shadowed && self.scope_item("RegExp").is_none()
+        self.ambient_visible("RegExp", fx)
     }
 
     /// True when `Worker` resolves to Q35's ambient static namespace rather
     /// than a local or program declaration.
     fn worker_is_ambient(&self, fx: &FnCtx) -> bool {
-        let shadowed = fx.owns_local_name("Worker");
-        !shadowed && self.scope_item("Worker").is_none()
+        self.ambient_visible("Worker", fx)
     }
 
     /// Returns the innermost non-transferable field in one Q35 message
@@ -3053,22 +3063,10 @@ impl<'p> Checker<'p> {
         pos: &Pos,
         visiting: &mut std::collections::HashSet<ClassId>,
     ) -> Option<(Pos, String, Type)> {
+        if self.plain_value_leaf(ty) {
+            return None;
+        }
         match ty {
-            Type::I8
-            | Type::U8
-            | Type::I16
-            | Type::U16
-            | Type::I32
-            | Type::U32
-            | Type::I64
-            | Type::U64
-            | Type::F16
-            | Type::F32
-            | Type::F64
-            | Type::Bool
-            | Type::Enum(_)
-            | Type::StringAlias(_)
-            | Type::Error => None,
             Type::FixedArray(element, _) => {
                 self.non_transferable_message_field(element, path, pos, visiting)
             }
@@ -3326,11 +3324,7 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
         };
-        let params = [ParamSig {
-            name: String::new(),
-            ty: param,
-            has_default: false,
-        }];
+        let params = [ParamSig::positional(param)];
         let checked = self.check_args(&params, &c.args, fx, &pos, name);
         let mut args = Vec::with_capacity(2);
         args.push(recv);
@@ -3586,11 +3580,7 @@ impl<'p> Checker<'p> {
         let args_ast = n.args.as_deref().unwrap_or(&empty);
         match args_ast.len() {
             1 => {
-                let params = [ParamSig {
-                    name: String::new(),
-                    ty: Type::I64,
-                    has_default: false,
-                }];
+                let params = [ParamSig::positional(Type::I64)];
                 let args = self.check_args(&params, args_ast, fx, &pos, "new Date");
                 hir::Expr {
                     kind: ExprKind::Call {
@@ -3640,16 +3630,16 @@ impl<'p> Checker<'p> {
                 pos,
             };
         }
-        if let Some(f) = crate::ambient::date_method(name) {
+        if let Some(method) = crate::ambient::date_method(name) {
             self.check_args(&[], &c.args, fx, &pos, name);
-            let ty = if f == DateFn::ToIso {
+            let ty = if method == crate::ambient::DateMethod::ToIso {
                 Type::Str
             } else {
                 Type::I32
             };
             return hir::Expr {
                 kind: ExprKind::Call {
-                    callee: Callee::Date(f),
+                    callee: Callee::Date(method.operation()),
                     args: vec![recv],
                 },
                 ty,
@@ -3973,11 +3963,7 @@ impl<'p> Checker<'p> {
         }
         match f {
             A::IndexOf | A::LastIndexOf | A::Includes => {
-                let params = [ParamSig {
-                    name: String::new(),
-                    ty: elem.clone(),
-                    has_default: false,
-                }];
+                let params = [ParamSig::positional(elem.clone())];
                 let mut args = vec![recv];
                 args.extend(self.check_args(&params, &c.args, fx, &pos, f.name()));
                 let ty = if f == A::Includes {
@@ -4044,11 +4030,7 @@ impl<'p> Checker<'p> {
             }
             A::Fill => {
                 let params = [
-                    ParamSig {
-                        name: String::new(),
-                        ty: elem.clone(),
-                        has_default: false,
-                    },
+                    ParamSig::positional(elem.clone()),
                     ParamSig {
                         name: String::new(),
                         ty: Type::I32,
@@ -4089,11 +4071,7 @@ impl<'p> Checker<'p> {
                 mk(args, arr_ty, pos)
             }
             A::Concat => {
-                let params = [ParamSig {
-                    name: String::new(),
-                    ty: arr_ty.clone(),
-                    has_default: false,
-                }];
+                let params = [ParamSig::positional(arr_ty.clone())];
                 let mut args = vec![recv];
                 args.extend(self.check_args(&params, &c.args, fx, &pos, "concat"));
                 mk(args, arr_ty, pos)
@@ -4120,16 +4098,8 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 let params = [
-                    ParamSig {
-                        name: String::new(),
-                        ty: Type::I32,
-                        has_default: false,
-                    },
-                    ParamSig {
-                        name: String::new(),
-                        ty: Type::I32,
-                        has_default: false,
-                    },
+                    ParamSig::positional(Type::I32),
+                    ParamSig::positional(Type::I32),
                 ];
                 let mut args = vec![recv];
                 args.extend(self.check_args(&params, &c.args, fx, &pos, "splice"));
@@ -4158,11 +4128,7 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                let params = [ParamSig {
-                    name: String::new(),
-                    ty: elem,
-                    has_default: false,
-                }];
+                let params = [ParamSig::positional(elem)];
                 let checked = self.check_args(&params, &c.args, fx, &pos, "unshift");
                 // C5: `unshift` stores its argument in the array.
                 if let Some(value) = checked.first() {
@@ -4192,16 +4158,8 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 let params = [
-                    ParamSig {
-                        name: String::new(),
-                        ty: Type::I32,
-                        has_default: false,
-                    },
-                    ParamSig {
-                        name: String::new(),
-                        ty: Type::I32,
-                        has_default: false,
-                    },
+                    ParamSig::positional(Type::I32),
+                    ParamSig::positional(Type::I32),
                     ParamSig {
                         name: String::new(),
                         ty: Type::I32,
@@ -4237,8 +4195,7 @@ impl<'p> Checker<'p> {
                     vec![elem.clone(), elem],
                     Some(Type::I32),
                     fx,
-                    "sort",
-                    false,
+                    CallbackSpec::new("sort", "Q22", false),
                 );
                 mk(vec![recv, cb], arr_ty, pos)
             }
@@ -4280,7 +4237,7 @@ impl<'p> Checker<'p> {
                 // natural contextual type, so a plain literal init does
                 // not default to `i32` and poison `U`. Only an
                 // un-annotated arrow leaves `U` to `init` itself.
-                let (acc_ctx, checked_cb) = self.reduce_acc_context(&c.args[0], fx);
+                let (acc_ctx, checked_cb, resolved_acc) = self.reduce_acc_context(&c.args[0], fx);
                 let init = self.check_expr(&c.args[1].expr, acc_ctx.as_ref(), fx);
                 if matches!(init.ty, Type::Error) {
                     return self.err_expr(pos);
@@ -4323,16 +4280,15 @@ impl<'p> Checker<'p> {
                         v,
                         &[acc_ty.clone(), elem],
                         Some(&acc_ty),
-                        f.name(),
-                        true,
+                        CallbackSpec::new(f.name(), "Q27", true),
                     ),
-                    None => self.check_arr_callback(
+                    None => self.check_arr_callback_with_resolved(
                         &c.args[0],
                         vec![acc_ty.clone(), elem],
                         Some(acc_ty.clone()),
                         fx,
-                        f.name(),
-                        true,
+                        CallbackSpec::new(f.name(), "Q27", true),
+                        resolved_acc.as_ref(),
                     ),
                 };
                 mk(vec![recv, cb, init], acc_ty, pos)
@@ -4355,8 +4311,13 @@ impl<'p> Checker<'p> {
                     A::Map => None, // `U` inferred from the callback
                     _ => Some(Type::Bool),
                 };
-                let cb =
-                    self.check_arr_callback(&c.args[0], vec![elem], ret_ctx, fx, f.name(), true);
+                let cb = self.check_arr_callback(
+                    &c.args[0],
+                    vec![elem],
+                    ret_ctx,
+                    fx,
+                    CallbackSpec::new(f.name(), "Q27", true),
+                );
                 let ty = match f {
                     A::ForEach => Type::Void,
                     A::Filter => arr_ty,
@@ -4443,8 +4404,7 @@ impl<'p> Checker<'p> {
             vec![elem.clone()],
             None,
             fx,
-            "Map.groupBy",
-            false,
+            CallbackSpec::new("Map.groupBy", "Q27", false),
         );
         let key = match &callback.ty {
             Type::Func(ft) if ft.ret != Type::Void => ft.ret.clone(),
@@ -4517,6 +4477,7 @@ impl<'p> Checker<'p> {
             }
             return self.err_expr(pos);
         };
+        use crate::ambient::MapMethod as M;
         let map_ty = Type::Map(Box::new(key.clone()), Box::new(value.clone()));
         let mk = |f: MapFn, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             kind: ExprKind::Call {
@@ -4527,16 +4488,12 @@ impl<'p> Checker<'p> {
             pos,
         };
         match operation {
-            MapFn::Get => {
+            M::Get => {
                 if !self.map_get_value_ok(&value) {
                     self.reject_api_form("Map<K, scalar V>", "get(key)", "get(key)", prop_pos);
                     return self.err_expr(pos);
                 }
-                let params = [ParamSig {
-                    name: String::new(),
-                    ty: key,
-                    has_default: false,
-                }];
+                let params = [ParamSig::positional(key)];
                 let mut args = vec![recv];
                 args.extend(self.check_args(&params, &c.args, fx, &pos, "Map.get"));
                 let ty = if matches!(value, Type::Nullable(_)) {
@@ -4546,36 +4503,17 @@ impl<'p> Checker<'p> {
                 };
                 mk(MapFn::Get, args, ty, pos)
             }
-            MapFn::GetOr => {
+            M::GetOr => {
                 let params = [
-                    ParamSig {
-                        name: String::new(),
-                        ty: key,
-                        has_default: false,
-                    },
-                    ParamSig {
-                        name: String::new(),
-                        ty: value.clone(),
-                        has_default: false,
-                    },
+                    ParamSig::positional(key),
+                    ParamSig::positional(value.clone()),
                 ];
                 let mut args = vec![recv];
                 args.extend(self.check_args(&params, &c.args, fx, &pos, "Map.getOr"));
                 mk(MapFn::GetOr, args, value, pos)
             }
-            MapFn::Set => {
-                let params = [
-                    ParamSig {
-                        name: String::new(),
-                        ty: key,
-                        has_default: false,
-                    },
-                    ParamSig {
-                        name: String::new(),
-                        ty: value,
-                        has_default: false,
-                    },
-                ];
+            M::Set => {
+                let params = [ParamSig::positional(key), ParamSig::positional(value)];
                 let checked = self.check_args(&params, &c.args, fx, &pos, "Map.set");
                 if checked
                     .get(1)
@@ -4592,33 +4530,29 @@ impl<'p> Checker<'p> {
                 args.extend(checked);
                 mk(MapFn::Set, args, map_ty, pos)
             }
-            MapFn::Has | MapFn::Delete => {
-                let params = [ParamSig {
-                    name: String::new(),
-                    ty: key,
-                    has_default: false,
-                }];
+            M::Has | M::Delete => {
+                let params = [ParamSig::positional(key)];
                 let mut args = vec![recv];
                 args.extend(self.check_args(
                     &params,
                     &c.args,
                     fx,
                     &pos,
-                    if operation == MapFn::Has {
+                    if operation == M::Has {
                         "Map.has"
                     } else {
                         "Map.delete"
                     },
                 ));
-                mk(operation, args, Type::Bool, pos)
+                mk(operation.operation(), args, Type::Bool, pos)
             }
-            MapFn::Clear => {
+            M::Clear => {
                 let checked = self.check_args(&[], &c.args, fx, &pos, "Map.clear");
                 let mut args = vec![recv];
                 args.extend(checked);
                 mk(MapFn::Clear, args, Type::Void, pos)
             }
-            MapFn::ForEach => {
+            M::ForEach => {
                 if c.args.len() != 1 {
                     self.error(
                         RuleCode::S100,
@@ -4635,18 +4569,9 @@ impl<'p> Checker<'p> {
                     vec![value, key],
                     Some(Type::Void),
                     fx,
-                    "Map.forEach",
-                    false,
+                    CallbackSpec::new("Map.forEach", "Q24", false),
                 );
                 mk(MapFn::ForEach, vec![recv, callback], Type::Void, pos)
-            }
-            MapFn::New | MapFn::Size | MapFn::GroupBy => {
-                self.error(
-                    RuleCode::S100,
-                    "internal Map member-table mismatch",
-                    prop_pos,
-                );
-                self.err_expr(pos)
             }
         }
     }
@@ -4678,6 +4603,7 @@ impl<'p> Checker<'p> {
             }
             return self.err_expr(pos);
         };
+        use crate::ambient::SetMethod as S;
         let set_ty = Type::Set(Box::new(key.clone()));
         let mk = |f: SetFn, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             kind: ExprKind::Call {
@@ -4688,28 +4614,24 @@ impl<'p> Checker<'p> {
             pos,
         };
         match operation {
-            SetFn::Add | SetFn::Has | SetFn::Delete => {
-                let params = [ParamSig {
-                    name: String::new(),
-                    ty: key,
-                    has_default: false,
-                }];
+            S::Add | S::Has | S::Delete => {
+                let params = [ParamSig::positional(key)];
                 let mut args = vec![recv];
                 args.extend(self.check_args(&params, &c.args, fx, &pos, &format!("Set.{name}")));
                 let ty = match operation {
-                    SetFn::Add => set_ty,
-                    SetFn::Has | SetFn::Delete => Type::Bool,
+                    S::Add => set_ty,
+                    S::Has | S::Delete => Type::Bool,
                     _ => Type::Error,
                 };
-                mk(operation, args, ty, pos)
+                mk(operation.operation(), args, ty, pos)
             }
-            SetFn::Clear => {
+            S::Clear => {
                 let checked = self.check_args(&[], &c.args, fx, &pos, "Set.clear");
                 let mut args = vec![recv];
                 args.extend(checked);
                 mk(SetFn::Clear, args, Type::Void, pos)
             }
-            SetFn::ForEach => {
+            S::ForEach => {
                 if c.args.len() != 1 {
                     self.error(
                         RuleCode::S100,
@@ -4726,18 +4648,17 @@ impl<'p> Checker<'p> {
                     vec![key],
                     Some(Type::Void),
                     fx,
-                    "Set.forEach",
-                    false,
+                    CallbackSpec::new("Set.forEach", "Q24", false),
                 );
                 mk(SetFn::ForEach, vec![recv, callback], Type::Void, pos)
             }
-            SetFn::Union
-            | SetFn::Intersection
-            | SetFn::Difference
-            | SetFn::SymmetricDifference
-            | SetFn::IsSubsetOf
-            | SetFn::IsSupersetOf
-            | SetFn::IsDisjointFrom => {
+            S::Union
+            | S::Intersection
+            | S::Difference
+            | S::SymmetricDifference
+            | S::IsSubsetOf
+            | S::IsSupersetOf
+            | S::IsDisjointFrom => {
                 if c.args.len() != 1 {
                     self.error(
                         RuleCode::S100,
@@ -4749,16 +4670,16 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                if c.args[0].spread.is_some() {
-                    self.error(
-                        RuleCode::S014,
-                        "spread arguments require variadic parameters, which the language \
-                         does not have",
-                        self.pos(c.args[0].spread.unwrap_or_default()),
-                    );
+                let mut checked = self.check_args(
+                    &[ParamSig::positional(Type::Error)],
+                    &c.args,
+                    fx,
+                    &pos,
+                    &format!("Set.{name}"),
+                );
+                let Some(other) = checked.pop() else {
                     return self.err_expr(pos);
-                }
-                let other = self.check_expr(&c.args[0].expr, None, fx);
+                };
                 match &other.ty {
                     Type::Set(other_key) => {
                         self.require_assignable(
@@ -4781,21 +4702,13 @@ impl<'p> Checker<'p> {
                 }
                 let ty = if matches!(
                     operation,
-                    SetFn::IsSubsetOf | SetFn::IsSupersetOf | SetFn::IsDisjointFrom
+                    S::IsSubsetOf | S::IsSupersetOf | S::IsDisjointFrom
                 ) {
                     Type::Bool
                 } else {
                     set_ty
                 };
-                mk(operation, vec![recv, other], ty, pos)
-            }
-            SetFn::New | SetFn::Size => {
-                self.error(
-                    RuleCode::S100,
-                    "internal Set member-table mismatch",
-                    prop_pos,
-                );
-                self.err_expr(pos)
+                mk(operation.operation(), vec![recv, other], ty, pos)
             }
         }
     }
@@ -4816,28 +4729,30 @@ impl<'p> Checker<'p> {
         &mut self,
         arg: &ast::ExprOrSpread,
         fx: &mut FnCtx,
-    ) -> (Option<Type>, Option<hir::Expr>) {
+    ) -> (Option<Type>, Option<hir::Expr>, Option<Type>) {
         if arg.spread.is_some() {
-            return (None, None); // reported by `check_arr_callback`
+            return (None, None, None); // reported by `check_arr_callback`
         }
         if let ast::Expr::Arrow(a) = &*arg.expr {
             let Some(ast::Pat::Ident(binding)) = a.params.first() else {
-                return (None, None);
+                return (None, None, None);
             };
             let Some(ann) = binding.type_ann.as_ref() else {
-                return (None, None);
+                return (None, None, None);
             };
-            let mark = self.diags.len();
             let ty = self.resolve_type(&ann.type_ann);
-            self.diags.truncate(mark);
-            return ((!matches!(ty, Type::Error)).then_some(ty), None);
+            return (
+                (!matches!(ty, Type::Error)).then_some(ty.clone()),
+                None,
+                Some(ty),
+            );
         }
         let checked = self.check_expr(&arg.expr, None, fx);
         let acc = match &checked.ty {
             Type::Func(ft) => ft.params.first().cloned(),
             _ => None,
         };
-        (acc, Some(checked))
+        (acc, Some(checked), None)
     }
 
     /// Checks one callback argument of an `Array`, `Map`, or `Set`
@@ -4852,48 +4767,62 @@ impl<'p> Checker<'p> {
         params: Vec<Type>,
         ret: Option<Type>,
         fx: &mut FnCtx,
-        method: &str,
-        allow_index: bool,
+        spec: CallbackSpec<'_>,
     ) -> hir::Expr {
-        if let Some(spread) = arg.spread {
-            let p = self.pos(spread);
-            self.error(
-                RuleCode::S014,
-                "spread arguments require variadic parameters, which the language does not have",
-                p.clone(),
+        self.check_arr_callback_with_resolved(arg, params, ret, fx, spec, None)
+    }
+
+    fn check_arr_callback_with_resolved(
+        &mut self,
+        arg: &ast::ExprOrSpread,
+        params: Vec<Type>,
+        ret: Option<Type>,
+        fx: &mut FnCtx,
+        spec: CallbackSpec<'_>,
+        resolved_first: Option<&Type>,
+    ) -> hir::Expr {
+        if arg.spread.is_some() {
+            let checked = self.check_args(
+                &[ParamSig::positional(Type::Error)],
+                std::slice::from_ref(arg),
+                fx,
+                &self.pos(arg.expr.span()),
+                spec.method,
             );
+            let p = self.pos(arg.spread.unwrap_or_default());
+            debug_assert!(checked.is_empty());
             return self.err_expr(p);
         }
         let expr = &*arg.expr;
         if let ast::Expr::Arrow(a) = expr {
             let a_pos = self.pos(a.span);
-            let Some(expected) = self.callback_params_for_arity(
-                &params,
-                a.params.len(),
-                method,
-                allow_index,
-                a_pos.clone(),
-            ) else {
+            let Some(expected) =
+                self.callback_params_for_arity(&params, a.params.len(), spec, a_pos.clone())
+            else {
                 return self.err_expr(a_pos);
             };
-            let checked = self.check_lambda_with(a, Some(&expected), ret.as_ref(), fx, a_pos);
+            let checked =
+                self.check_lambda_with(a, Some(&expected), ret.as_ref(), resolved_first, fx, a_pos);
             // An annotation may override the context; the resulting
             // function type must still match one accepted shape (the
             // return stays free when it is inferred).
-            return self.expect_callback_shape(checked, &params, ret.as_ref(), method, allow_index);
+            return self.expect_callback_shape(checked, &params, ret.as_ref(), spec);
         }
         // A function value (named reference or function-typed local).
         // A dual-arity Array callback has no single contextual function
         // type; named and local function values already carry their full
         // declared type and are validated below.
-        let ctx_ty = (!allow_index).then(|| ret.as_ref()).flatten().map(|r| {
-            Type::Func(Box::new(FuncType {
-                params: params.clone(),
-                ret: r.clone(),
-            }))
-        });
+        let ctx_ty = (!spec.allow_index)
+            .then_some(ret.as_ref())
+            .flatten()
+            .map(|r| {
+                Type::Func(Box::new(FuncType {
+                    params: params.clone(),
+                    ret: r.clone(),
+                }))
+            });
         let checked = self.check_expr(expr, ctx_ty.as_ref(), fx);
-        self.expect_callback_shape(checked, &params, ret.as_ref(), method, allow_index)
+        self.expect_callback_shape(checked, &params, ret.as_ref(), spec)
     }
 
     /// Selects the contextual parameter list for a callback's source
@@ -4903,10 +4832,14 @@ impl<'p> Checker<'p> {
         &mut self,
         base: &[Type],
         actual: usize,
-        method: &str,
-        allow_index: bool,
+        spec: CallbackSpec<'_>,
         pos: Pos,
     ) -> Option<Vec<Type>> {
+        let CallbackSpec {
+            method,
+            q_rule,
+            allow_index,
+        } = spec;
         if actual == base.len() {
             return Some(base.to_vec());
         }
@@ -4920,13 +4853,6 @@ impl<'p> Checker<'p> {
             let _ = self.reject_api_form("T[]", "callback(value, index, array)", &actual, pos);
             return None;
         }
-        let q_rule = if method == "Map.groupBy" {
-            "Q27"
-        } else if method.starts_with("Map.") || method.starts_with("Set.") {
-            "Q24"
-        } else {
-            "Q22"
-        };
         self.error(
             RuleCode::S014,
             if allow_index {
@@ -4944,8 +4870,8 @@ impl<'p> Checker<'p> {
                 )
             } else {
                 format!(
-                    "`{method}` callbacks take exactly {} parameter(s); got {actual} (Q22)",
-                    base.len()
+                    "`{method}` callbacks take exactly {} parameter(s); got {actual} ({q_rule})",
+                    base.len(),
                 )
             },
             pos,
@@ -4962,9 +4888,13 @@ impl<'p> Checker<'p> {
         checked: hir::Expr,
         params: &[Type],
         ret: Option<&Type>,
-        method: &str,
-        allow_index: bool,
+        spec: CallbackSpec<'_>,
     ) -> hir::Expr {
+        let CallbackSpec {
+            method,
+            allow_index,
+            ..
+        } = spec;
         let ok = match &checked.ty {
             Type::Error => true,
             Type::Func(ft) => {
@@ -4984,13 +4914,7 @@ impl<'p> Checker<'p> {
                 || (allow_index && ft.params.len() == params.len() + 1);
             if !accepted_arity {
                 let pos = checked.pos.clone();
-                let _ = self.callback_params_for_arity(
-                    params,
-                    ft.params.len(),
-                    method,
-                    allow_index,
-                    pos.clone(),
-                );
+                let _ = self.callback_params_for_arity(params, ft.params.len(), spec, pos.clone());
                 return self.err_expr(pos);
             }
         }
@@ -5590,27 +5514,18 @@ impl<'p> Checker<'p> {
         statement_position: bool,
     ) -> hir::Expr {
         use ast::AssignOp as A;
-        let op = match a.op {
-            A::Assign => None,
-            A::AddAssign => Some(BinOp::Add),
-            A::SubAssign => Some(BinOp::Sub),
-            A::MulAssign => Some(BinOp::Mul),
-            A::DivAssign => Some(BinOp::Div),
-            A::ModAssign => Some(BinOp::Rem),
-            A::BitAndAssign => Some(BinOp::BitAnd),
-            A::BitOrAssign => Some(BinOp::BitOr),
-            A::BitXorAssign => Some(BinOp::BitXor),
-            A::LShiftAssign => Some(BinOp::Shl),
-            A::RShiftAssign => Some(BinOp::Shr),
-            A::ZeroFillRShiftAssign => Some(BinOp::UShr),
-            _ => {
-                self.error(
-                    RuleCode::S100,
-                    "assignment operator outside the decided surface",
-                    pos.clone(),
-                );
-                return self.err_expr(pos);
-            }
+        let operation = assign_op(a.op);
+        let op = if a.op == A::Assign {
+            None
+        } else if let Some((op, _)) = operation {
+            Some(op)
+        } else {
+            self.error(
+                RuleCode::S100,
+                "assignment operator outside the decided surface",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
         };
         let source = match &a.left {
             ast::AssignTarget::Simple(ast::SimpleAssignTarget::Ident(binding)) => {
@@ -5641,21 +5556,7 @@ impl<'p> Checker<'p> {
             _ => None,
         };
         if let Some((recv, index, signature)) = signature_write {
-            if op.is_some() {
-                let operator = match a.op {
-                    A::AddAssign => "+=",
-                    A::SubAssign => "-=",
-                    A::MulAssign => "*=",
-                    A::DivAssign => "/=",
-                    A::ModAssign => "%=",
-                    A::BitAndAssign => "&=",
-                    A::BitOrAssign => "|=",
-                    A::BitXorAssign => "^=",
-                    A::LShiftAssign => "<<=",
-                    A::RShiftAssign => ">>=",
-                    A::ZeroFillRShiftAssign => ">>>=",
-                    _ => "op=",
-                };
+            if let Some((_, operator)) = operation {
                 self.error(
                     RuleCode::S100,
                     format!("`a[i] {operator} v` is not supported for a class index signature"),
@@ -5708,21 +5609,7 @@ impl<'p> Checker<'p> {
         };
         if let Some((id, name)) = static_accessor_write {
             let class_name = self.classes[id.0].name.clone();
-            let operator = match a.op {
-                A::AddAssign => Some("+="),
-                A::SubAssign => Some("-="),
-                A::MulAssign => Some("*="),
-                A::DivAssign => Some("/="),
-                A::ModAssign => Some("%="),
-                A::BitAndAssign => Some("&="),
-                A::BitOrAssign => Some("|="),
-                A::BitXorAssign => Some("^="),
-                A::LShiftAssign => Some("<<="),
-                A::RShiftAssign => Some(">>="),
-                A::ZeroFillRShiftAssign => Some(">>>="),
-                _ => None,
-            };
-            if let Some(operator) = operator {
+            if let Some((_, operator)) = operation {
                 self.error(
                     RuleCode::S100,
                     format!(
@@ -5788,21 +5675,7 @@ impl<'p> Checker<'p> {
             _ => None,
         };
         if let Some((id, recv, name)) = accessor_write {
-            let operator = match a.op {
-                A::AddAssign => Some("+="),
-                A::SubAssign => Some("-="),
-                A::MulAssign => Some("*="),
-                A::DivAssign => Some("/="),
-                A::ModAssign => Some("%="),
-                A::BitAndAssign => Some("&="),
-                A::BitOrAssign => Some("|="),
-                A::BitXorAssign => Some("^="),
-                A::LShiftAssign => Some("<<="),
-                A::RShiftAssign => Some(">>="),
-                A::ZeroFillRShiftAssign => Some(">>>="),
-                _ => None,
-            };
-            if let Some(operator) = operator {
+            if let Some((_, operator)) = operation {
                 self.error(
                     RuleCode::S100,
                     format!("`x.{name} {operator} v` is not supported for a class accessor"),
@@ -5854,68 +5727,32 @@ impl<'p> Checker<'p> {
             };
         }
         let target = place.into_read(self);
-        if let Some(bin) = op {
-            // Compound assignment is same-type arithmetic on the target.
-            if target_ty == Type::F16
-                && matches!(
-                    bin,
-                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem
-                )
-            {
-                self.error(
-                    RuleCode::S014,
-                    "arithmetic on `f16` is not supported; compute via `as f32`",
-                    pos.clone(),
-                );
+        let result_ty = if let Some(bin) = op {
+            let Some(binary_op) = assign_binary_op(bin) else {
                 return self.err_expr(pos);
-            }
-            let numeric_ok = match bin {
-                BinOp::Add => target_ty.is_numeric() || target_ty == Type::Str,
-                BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => target_ty.is_numeric(),
-                _ => target_ty.is_integer(),
             };
-            if !numeric_ok && !matches!(target_ty, Type::Error) {
-                let name = self.type_name(&target_ty);
-                self.error(
-                    RuleCode::S100,
-                    format!("compound assignment is not defined for `{}`", name),
-                    pos.clone(),
-                );
+            let result = self.bin_result(
+                binary_op,
+                target.clone(),
+                value.clone(),
+                pos.clone(),
+                BinUse::CompoundAssignment,
+            );
+            if result.terminal {
+                return result.expr;
             }
-            let literal_shift_amount = match &value.kind {
-                ExprKind::Int(bits) => int_value_at_type(*bits, &value.ty),
-                _ => None,
-            };
-            if matches!(bin, BinOp::Shl | BinOp::Shr | BinOp::UShr)
-                && literal_shift_amount.is_some_and(|amount| {
-                    amount >= i128::from(integer_width(&target_ty).unwrap_or(i64::MAX))
-                })
-            {
-                let amount = literal_shift_amount.unwrap_or(0);
-                let width = integer_width(&target_ty).unwrap_or(0);
-                let name = self.type_name(&target_ty);
-                self.error(
-                    RuleCode::S008,
-                    format!(
-                        "literal shift amount {} is out of range for `{}` width {}",
-                        amount, name, width
-                    ),
-                    value.pos.clone(),
-                );
-            }
-        }
+            result.expr.ty
+        } else {
+            target_ty.clone()
+        };
         self.require_assignable(
             &value.ty.clone(),
             &target_ty,
             value.pos.clone(),
             "the assignment",
         );
-        if op.is_none()
-            && (matches!(target_ty, Type::AsyncHandle(_))
-                || matches!(&target_ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_))))
-        {
-            let origins =
-                self.async_origins_at_copy_site(hir::AsyncCopySite::Assignment, &value, fx);
+        if op.is_none() && target_ty.carries_async_handle() {
+            let origins = self.expr_async_origins(&value, fx);
             match &target.kind {
                 ExprKind::Local(name) => fx.set_local_async_origins(name, origins),
                 ExprKind::Index { obj, .. } => {
@@ -5960,7 +5797,7 @@ impl<'p> Checker<'p> {
                 target: Box::new(target),
                 value: Box::new(value),
             },
-            ty: target_ty,
+            ty: result_ty,
             pos,
         }
     }
@@ -6221,31 +6058,23 @@ impl<'p> Checker<'p> {
             };
             return self.check_indirect_call(callee, c, fx, pos);
         }
-        match self.scope_item(&name) {
+        let item = self.scope_item(&name);
+        if c.type_args.is_some()
+            && matches!(item, Some(ScopeItem::Func(_)) | Some(ScopeItem::Foreign(_)))
+        {
+            self.error(
+                RuleCode::S100,
+                format!("`{}` is not generic", name),
+                ident_pos.clone(),
+            );
+        }
+        match item {
             Some(ScopeItem::Poisoned) => {
                 self.check_poisoned_arguments(&c.args, fx);
                 self.err_expr(pos)
             }
-            Some(ScopeItem::Func(f)) => {
-                if c.type_args.is_some() {
-                    self.error(
-                        RuleCode::S100,
-                        format!("`{}` is not generic", name),
-                        ident_pos.clone(),
-                    );
-                }
-                self.check_direct_call(&f, c, fx, pos)
-            }
-            Some(ScopeItem::Foreign(f)) => {
-                if c.type_args.is_some() {
-                    self.error(
-                        RuleCode::S100,
-                        format!("`{}` is not generic", name),
-                        ident_pos.clone(),
-                    );
-                }
-                self.check_foreign_call(&f, c, fx, pos)
-            }
+            Some(ScopeItem::Func(f)) => self.check_direct_call(&f, c, fx, pos),
+            Some(ScopeItem::Foreign(f)) => self.check_foreign_call(&f, c, fx, pos),
             Some(ScopeItem::GenericFunc(key)) => {
                 let Some(type_args) = &c.type_args else {
                     self.error(
@@ -6429,19 +6258,14 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let params: Vec<ParamSig> = crate::ambient::ambient_params(ambient)
             .iter()
-            .map(|t| ParamSig {
-                name: String::new(),
-                ty: t.clone(),
-                has_default: false,
-            })
+            .map(|t| ParamSig::positional(t.clone()))
             .collect();
-        let name = match ambient {
-            AmbientFn::Print => "print",
-            AmbientFn::Unreachable => "unreachable",
-            AmbientFn::Collect => "Context.collect",
-            AmbientFn::UnsafeDelete => "Context.free",
+        let label = if matches!(ambient, AmbientFn::Collect | AmbientFn::UnsafeDelete) {
+            format!("Context.{}", ambient.name())
+        } else {
+            ambient.name().to_string()
         };
-        let args = self.check_args(&params, &c.args, fx, &pos, name);
+        let args = self.check_args(&params, &c.args, fx, &pos, &label);
         hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Ambient(ambient),
@@ -6656,11 +6480,7 @@ impl<'p> Checker<'p> {
                 let params: Vec<ParamSig> = ft
                     .params
                     .iter()
-                    .map(|t| ParamSig {
-                        name: String::new(),
-                        ty: t.clone(),
-                        has_default: false,
-                    })
+                    .map(|t| ParamSig::positional(t.clone()))
                     .collect();
                 let args = self.check_args(&params, &c.args, fx, &pos, "the function value");
                 let value = hir::Expr {
@@ -6743,10 +6563,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        if matches!(&*m.obj, ast::Expr::Ident(id) if id.sym.as_ref() == "Promise")
-            && !fx.owns_local_name("Promise")
-            && self.scope_item("Promise").is_none()
-        {
+        if self.ambient_namespace(&m.obj, fx) == Some("Promise") {
             self.error(
                 RuleCode::S013,
                 format!("Promise static `Promise.{name}(...)` is not in the language"),
@@ -6938,11 +6755,7 @@ impl<'p> Checker<'p> {
             }
             Type::Array(elem) => match name.as_str() {
                 "push" => {
-                    let params = [ParamSig {
-                        name: String::new(),
-                        ty: (*elem).clone(),
-                        has_default: false,
-                    }];
+                    let params = [ParamSig::positional((*elem).clone())];
                     let args = self.check_args(&params, &c.args, fx, &pos, "push");
                     // C5: `push` stores its argument in the array.
                     for arg in &args {
@@ -7158,11 +6971,7 @@ impl<'p> Checker<'p> {
                     "the argument",
                 );
                 if matches!(param_ty, Type::AsyncHandle(_) | Type::Array(_)) {
-                    let origins = self.async_origins_at_copy_site(
-                        hir::AsyncCopySite::CallArgument,
-                        &checked,
-                        fx,
-                    );
+                    let origins = self.expr_async_origins(&checked, fx);
                     fx.handle_async_origins(&origins);
                 }
             }
@@ -7409,7 +7218,7 @@ impl<'p> Checker<'p> {
             Some(ft) => (Some(ft.params.as_slice()), Some(&ft.ret)),
             None => (None, None),
         };
-        self.check_lambda_with(a, param_ctx, ret_ctx, fx, pos)
+        self.check_lambda_with(a, param_ctx, ret_ctx, None, fx, pos)
     }
 
     /// [`Self::check_lambda`] with the contextual function type split
@@ -7421,6 +7230,7 @@ impl<'p> Checker<'p> {
         a: &ast::ArrowExpr,
         param_ctx: Option<&[Type]>,
         ret_ctx: Option<&Type>,
+        resolved_first: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
@@ -7452,19 +7262,26 @@ impl<'p> Checker<'p> {
                 ast::Pat::Ident(b) if b.type_ann.is_none() && !b.id.optional => Some(b),
                 _ => None,
             };
-            let sig = if let Some(b) = unannotated_ident {
-                if let Some(t) = param_ctx.and_then(|p| p.get(i)) {
+            let sig =
+                if let (0, Some(resolved), ast::Pat::Ident(binding)) = (i, resolved_first, pat) {
                     ParamSig {
-                        name: b.id.sym.to_string(),
-                        ty: t.clone(),
+                        name: binding.id.sym.to_string(),
+                        ty: resolved.clone(),
                         has_default: false,
+                    }
+                } else if let Some(b) = unannotated_ident {
+                    if let Some(t) = param_ctx.and_then(|p| p.get(i)) {
+                        ParamSig {
+                            name: b.id.sym.to_string(),
+                            ty: t.clone(),
+                            has_default: false,
+                        }
+                    } else {
+                        self.resolve_param_pat(pat)
                     }
                 } else {
                     self.resolve_param_pat(pat)
-                }
-            } else {
-                self.resolve_param_pat(pat)
-            };
+                };
             params.push(sig);
         }
         let mut ret = a
@@ -7525,8 +7342,7 @@ impl<'p> Checker<'p> {
                     ret = Some(checked.ty.clone());
                 }
                 if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
-                    let origins =
-                        self.async_origins_at_copy_site(hir::AsyncCopySite::Return, &checked, fx);
+                    let origins = self.expr_async_origins(&checked, fx);
                     fx.handle_async_origins(&origins);
                 }
                 let value_pos = checked.pos.clone();
@@ -7606,5 +7422,30 @@ mod tests {
             .expect_err("f32FromBits rejects an f64 argument");
         assert_eq!(diagnostics[0].code, RuleCode::S007);
         assert_eq!(diagnostics[0].pos.line, 3);
+    }
+
+    #[test]
+    fn compound_assignment_keeps_its_specific_type_diagnostic() {
+        let source =
+            "export function main(): void {\n  let value: boolean = true;\n  value += true;\n}\n";
+        let diagnostics = check_program(&[SourceFile::new("test.ts", source)])
+            .expect_err("boolean compound assignment must fail");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message,
+            "compound assignment is not defined for `boolean`"
+        );
+    }
+
+    #[test]
+    fn compound_shift_keeps_the_literal_width_diagnostic() {
+        let source = "export function main(): void {\n  let value: u8 = 1;\n  value <<= 8;\n}\n";
+        let diagnostics = check_program(&[SourceFile::new("test.ts", source)])
+            .expect_err("wide literal compound shift must fail");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message,
+            "literal shift amount 8 is out of range for `u8` width 8"
+        );
     }
 }

@@ -629,20 +629,20 @@ pub(crate) fn sized_alias(name: &str) -> Option<Type> {
 
 /// Maps an ambient function name to its identity.
 pub(crate) fn ambient_fn(name: &str) -> Option<AmbientFn> {
-    Some(match name {
-        "print" => AmbientFn::Print,
-        "unreachable" => AmbientFn::Unreachable,
-        _ => return None,
-    })
+    AmbientFn::ALL
+        .iter()
+        .copied()
+        .filter(|function| matches!(function, AmbientFn::Print | AmbientFn::Unreachable))
+        .find(|function| function.name() == name)
 }
 
 /// Maps a `Context` namespace member name to its identity.
 pub(crate) fn context_fn(name: &str) -> Option<AmbientFn> {
-    Some(match name {
-        "collect" => AmbientFn::Collect,
-        "free" => AmbientFn::UnsafeDelete,
-        _ => return None,
-    })
+    AmbientFn::ALL
+        .iter()
+        .copied()
+        .filter(|function| matches!(function, AmbientFn::Collect | AmbientFn::UnsafeDelete))
+        .find(|function| function.name() == name)
 }
 
 /// Maps a typed `Context` byte member name to its operation.
@@ -710,12 +710,52 @@ pub(crate) fn number_global(name: &str) -> Option<NumFn> {
 /// the eight UTC accessors and `toISOString`. `getTime` is not here —
 /// it folds to the receiver value at check time — and the statics
 /// (`UTC`, `now`) are resolved on the `Date` namespace, not a receiver.
-pub(crate) fn date_method(name: &str) -> Option<DateFn> {
-    DateFn::ALL
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DateMethod {
+    GetUtcFullYear,
+    GetUtcMonth,
+    GetUtcDate,
+    GetUtcDay,
+    GetUtcHours,
+    GetUtcMinutes,
+    GetUtcSeconds,
+    GetUtcMilliseconds,
+    ToIso,
+}
+
+impl DateMethod {
+    const ALL: [Self; 9] = [
+        Self::GetUtcFullYear,
+        Self::GetUtcMonth,
+        Self::GetUtcDate,
+        Self::GetUtcDay,
+        Self::GetUtcHours,
+        Self::GetUtcMinutes,
+        Self::GetUtcSeconds,
+        Self::GetUtcMilliseconds,
+        Self::ToIso,
+    ];
+
+    pub(crate) fn operation(self) -> DateFn {
+        match self {
+            Self::GetUtcFullYear => DateFn::GetUtcFullYear,
+            Self::GetUtcMonth => DateFn::GetUtcMonth,
+            Self::GetUtcDate => DateFn::GetUtcDate,
+            Self::GetUtcDay => DateFn::GetUtcDay,
+            Self::GetUtcHours => DateFn::GetUtcHours,
+            Self::GetUtcMinutes => DateFn::GetUtcMinutes,
+            Self::GetUtcSeconds => DateFn::GetUtcSeconds,
+            Self::GetUtcMilliseconds => DateFn::GetUtcMilliseconds,
+            Self::ToIso => DateFn::ToIso,
+        }
+    }
+}
+
+pub(crate) fn date_method(name: &str) -> Option<DateMethod> {
+    DateMethod::ALL
         .iter()
         .copied()
-        .filter(|f| !matches!(f, DateFn::New | DateFn::Utc | DateFn::Now))
-        .find(|f| f.name() == name)
+        .find(|method| method.operation().name() == name)
 }
 
 /// Maps a `String` method name to its intrinsic (stdlib.md §8, Q21).
@@ -733,21 +773,104 @@ pub(crate) fn arr_method(name: &str) -> Option<ArrFn> {
 }
 
 /// Maps a `Map` method name to the intrinsic table the checker lowers.
-pub(crate) fn map_method(name: &str) -> Option<MapFn> {
-    MapFn::ALL
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MapMethod {
+    Get,
+    GetOr,
+    Set,
+    Has,
+    Delete,
+    Clear,
+    ForEach,
+}
+
+impl MapMethod {
+    const ALL: [Self; 7] = [
+        Self::Get,
+        Self::GetOr,
+        Self::Set,
+        Self::Has,
+        Self::Delete,
+        Self::Clear,
+        Self::ForEach,
+    ];
+
+    pub(crate) fn operation(self) -> MapFn {
+        match self {
+            Self::Get => MapFn::Get,
+            Self::GetOr => MapFn::GetOr,
+            Self::Set => MapFn::Set,
+            Self::Has => MapFn::Has,
+            Self::Delete => MapFn::Delete,
+            Self::Clear => MapFn::Clear,
+            Self::ForEach => MapFn::ForEach,
+        }
+    }
+}
+
+pub(crate) fn map_method(name: &str) -> Option<MapMethod> {
+    MapMethod::ALL
         .iter()
         .copied()
-        .filter(|f| !matches!(f, MapFn::New | MapFn::Size | MapFn::GroupBy))
-        .find(|f| f.name() == name)
+        .find(|method| method.operation().name() == name)
 }
 
 /// Maps a `Set` method name to the intrinsic table the checker lowers.
-pub(crate) fn set_method(name: &str) -> Option<SetFn> {
-    SetFn::ALL
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SetMethod {
+    Add,
+    Has,
+    Delete,
+    Clear,
+    ForEach,
+    Union,
+    Intersection,
+    Difference,
+    SymmetricDifference,
+    IsSubsetOf,
+    IsSupersetOf,
+    IsDisjointFrom,
+}
+
+impl SetMethod {
+    const ALL: [Self; 12] = [
+        Self::Add,
+        Self::Has,
+        Self::Delete,
+        Self::Clear,
+        Self::ForEach,
+        Self::Union,
+        Self::Intersection,
+        Self::Difference,
+        Self::SymmetricDifference,
+        Self::IsSubsetOf,
+        Self::IsSupersetOf,
+        Self::IsDisjointFrom,
+    ];
+
+    pub(crate) fn operation(self) -> SetFn {
+        match self {
+            Self::Add => SetFn::Add,
+            Self::Has => SetFn::Has,
+            Self::Delete => SetFn::Delete,
+            Self::Clear => SetFn::Clear,
+            Self::ForEach => SetFn::ForEach,
+            Self::Union => SetFn::Union,
+            Self::Intersection => SetFn::Intersection,
+            Self::Difference => SetFn::Difference,
+            Self::SymmetricDifference => SetFn::SymmetricDifference,
+            Self::IsSubsetOf => SetFn::IsSubsetOf,
+            Self::IsSupersetOf => SetFn::IsSupersetOf,
+            Self::IsDisjointFrom => SetFn::IsDisjointFrom,
+        }
+    }
+}
+
+pub(crate) fn set_method(name: &str) -> Option<SetMethod> {
+    SetMethod::ALL
         .iter()
         .copied()
-        .filter(|f| !matches!(f, SetFn::New | SetFn::Size))
-        .find(|f| f.name() == name)
+        .find(|method| method.operation().name() == name)
 }
 
 /// Checker-owned accepted API projection used by the Markdown
@@ -1186,9 +1309,12 @@ mod tests {
 
     #[test]
     fn date_method_lookup_covers_the_subset_and_nothing_else() {
-        assert_eq!(date_method("getUTCFullYear"), Some(DateFn::GetUtcFullYear));
-        assert_eq!(date_method("getUTCDay"), Some(DateFn::GetUtcDay));
-        assert_eq!(date_method("toISOString"), Some(DateFn::ToIso));
+        assert_eq!(
+            date_method("getUTCFullYear"),
+            Some(DateMethod::GetUtcFullYear)
+        );
+        assert_eq!(date_method("getUTCDay"), Some(DateMethod::GetUtcDay));
+        assert_eq!(date_method("toISOString"), Some(DateMethod::ToIso));
         // getTime folds at check time; it is not an intrinsic lookup.
         assert_eq!(date_method("getTime"), None);
         // Out-of-subset members resolve to nothing (Q20).
@@ -1246,18 +1372,18 @@ mod tests {
 
     #[test]
     fn map_set_method_lookups_cover_q27_stage_four() {
-        assert_eq!(map_method("get"), Some(MapFn::Get));
+        assert_eq!(map_method("get"), Some(MapMethod::Get));
         assert_eq!(map_method("groupBy"), None);
-        for f in [
-            SetFn::Union,
-            SetFn::Intersection,
-            SetFn::Difference,
-            SetFn::SymmetricDifference,
-            SetFn::IsSubsetOf,
-            SetFn::IsSupersetOf,
-            SetFn::IsDisjointFrom,
+        for method in [
+            SetMethod::Union,
+            SetMethod::Intersection,
+            SetMethod::Difference,
+            SetMethod::SymmetricDifference,
+            SetMethod::IsSubsetOf,
+            SetMethod::IsSupersetOf,
+            SetMethod::IsDisjointFrom,
         ] {
-            assert_eq!(set_method(f.name()), Some(f));
+            assert_eq!(set_method(method.operation().name()), Some(method));
         }
         assert_eq!(set_rejection("union"), None);
     }

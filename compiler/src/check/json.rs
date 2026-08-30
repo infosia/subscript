@@ -76,14 +76,7 @@ impl Checker<'_> {
 
     /// True when `obj` denotes the unshadowed ambient `JSON` namespace.
     pub(crate) fn is_json_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
-        let ast::Expr::Ident(id) = obj else {
-            return false;
-        };
-        if id.sym.as_ref() != "JSON" {
-            return false;
-        }
-        let locally_shadowed = fx.owns_local_name("JSON");
-        !locally_shadowed && self.scope_item("JSON").is_none()
+        self.ambient_namespace(obj, fx) == Some("JSON")
     }
 
     /// Checks and monomorphizes one `JSON.stringify(value)` call.
@@ -484,6 +477,7 @@ impl Checker<'_> {
             &pos,
         );
         let root_helper = names[json_type_index(&types, root)?].clone();
+        let locals = JsonLocals::new(&pos);
         let body = vec![
             hir::Stmt::Let {
                 name: "builder".to_string(),
@@ -495,17 +489,14 @@ impl Checker<'_> {
             },
             hir::Stmt::Expr(script_call(
                 root_helper,
-                vec![
-                    json_local("builder", Type::U64, &pos),
-                    json_local("value", root.clone(), &pos),
-                ],
+                vec![locals.builder(), locals.value(root.clone())],
                 Type::Void,
                 &pos,
             )),
             hir::Stmt::Return {
                 value: Some(self.json_call(
                     JsonFn::Finish,
-                    vec![json_local("builder", Type::U64, &pos)],
+                    vec![locals.builder()],
                     Type::Str,
                     &pos,
                 )),
@@ -551,29 +542,33 @@ impl Checker<'_> {
         names: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
-        let builder = || json_local("builder", Type::U64, pos);
-        let value = || json_local("value", ty.clone(), pos);
+        let locals = JsonLocals::new(pos);
         let append = |function: JsonFn, argument: hir::Expr| {
-            hir::Stmt::Expr(self.json_call(function, vec![builder(), argument], Type::Void, pos))
+            hir::Stmt::Expr(self.json_call(
+                function,
+                vec![locals.builder(), argument],
+                Type::Void,
+                pos,
+            ))
         };
         match ty {
             Type::I8 | Type::I16 => Ok(vec![append(
                 JsonFn::I32,
-                json_cast(value(), Type::I32, pos),
+                json_cast(locals.value(ty.clone()), Type::I32, pos),
             )]),
             Type::U8 | Type::U16 => Ok(vec![append(
                 JsonFn::U32,
-                json_cast(value(), Type::U32, pos),
+                json_cast(locals.value(ty.clone()), Type::U32, pos),
             )]),
-            Type::I32 => Ok(vec![append(JsonFn::I32, value())]),
-            Type::U32 => Ok(vec![append(JsonFn::U32, value())]),
-            Type::I64 => Ok(vec![append(JsonFn::I64, value())]),
-            Type::U64 => Ok(vec![append(JsonFn::U64, value())]),
-            Type::F32 => Ok(vec![append(JsonFn::F32, value())]),
-            Type::F64 => Ok(vec![append(JsonFn::F64, value())]),
-            Type::Bool => Ok(vec![append(JsonFn::Bool, value())]),
-            Type::Str => Ok(vec![append(JsonFn::Str, value())]),
-            Type::Date => Ok(vec![append(JsonFn::Date, value())]),
+            Type::I32 => Ok(vec![append(JsonFn::I32, locals.value(ty.clone()))]),
+            Type::U32 => Ok(vec![append(JsonFn::U32, locals.value(ty.clone()))]),
+            Type::I64 => Ok(vec![append(JsonFn::I64, locals.value(ty.clone()))]),
+            Type::U64 => Ok(vec![append(JsonFn::U64, locals.value(ty.clone()))]),
+            Type::F32 => Ok(vec![append(JsonFn::F32, locals.value(ty.clone()))]),
+            Type::F64 => Ok(vec![append(JsonFn::F64, locals.value(ty.clone()))]),
+            Type::Bool => Ok(vec![append(JsonFn::Bool, locals.value(ty.clone()))]),
+            Type::Str => Ok(vec![append(JsonFn::Str, locals.value(ty.clone()))]),
+            Type::Date => Ok(vec![append(JsonFn::Date, locals.value(ty.clone()))]),
             Type::Array(element) | Type::FixedArray(element, _) => {
                 self.json_array_body(ty, element, types, names, pos)
             }
@@ -586,24 +581,24 @@ impl Checker<'_> {
                 let cond = hir::Expr {
                     kind: ExprKind::Binary {
                         op: BinOp::Eq,
-                        left: Box::new(value()),
+                        left: Box::new(locals.value(ty.clone())),
                         right: Box::new(null),
                     },
                     ty: Type::Bool,
                     pos: pos.clone(),
                 };
-                let narrowed = json_local("value", (**inner).clone(), pos);
+                let narrowed = locals.value((**inner).clone());
                 Ok(vec![hir::Stmt::If {
                     cond,
                     then: vec![hir::Stmt::Expr(self.json_call(
                         JsonFn::Null,
-                        vec![builder()],
+                        vec![locals.builder()],
                         Type::Void,
                         pos,
                     ))],
                     els: Some(vec![hir::Stmt::Expr(script_call(
                         names[json_type_index(types, inner)?].clone(),
-                        vec![builder(), narrowed],
+                        vec![locals.builder(), narrowed],
                         Type::Void,
                         pos,
                     ))]),
@@ -613,12 +608,16 @@ impl Checker<'_> {
             Type::Class(id) => {
                 let object = self.json_object_body(*id, types, names, pos)?;
                 if !self.classes[id.0].is_value && tracked {
-                    let visit =
-                        self.json_call(JsonFn::Visit, vec![builder(), value()], Type::Bool, pos);
+                    let visit = self.json_call(
+                        JsonFn::Visit,
+                        vec![locals.builder(), locals.value(ty.clone())],
+                        Type::Bool,
+                        pos,
+                    );
                     let mut then = object;
                     then.push(hir::Stmt::Expr(self.json_call(
                         JsonFn::Leave,
-                        vec![builder(), value()],
+                        vec![locals.builder(), locals.value(ty.clone())],
                         Type::Void,
                         pos,
                     )));
@@ -644,13 +643,11 @@ impl Checker<'_> {
         names: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
-        let builder = || json_local("builder", Type::U64, pos);
-        let array = || json_local("value", array_ty.clone(), pos);
-        let index = || json_local("index", Type::I32, pos);
+        let locals = JsonLocals::new(pos);
         let raw = |text: &str| {
             hir::Stmt::Expr(self.json_call(
                 JsonFn::Raw,
-                vec![builder(), json_string(text, pos)],
+                vec![locals.builder(), json_string(text, pos)],
                 Type::Void,
                 pos,
             ))
@@ -658,9 +655,9 @@ impl Checker<'_> {
         let condition = hir::Expr {
             kind: ExprKind::Binary {
                 op: BinOp::Lt,
-                left: Box::new(index()),
+                left: Box::new(locals.index()),
                 right: Box::new(hir::Expr {
-                    kind: ExprKind::Length(Box::new(array())),
+                    kind: ExprKind::Length(Box::new(locals.value(array_ty.clone()))),
                     ty: Type::I32,
                     pos: pos.clone(),
                 }),
@@ -671,7 +668,7 @@ impl Checker<'_> {
         let comma_condition = hir::Expr {
             kind: ExprKind::Binary {
                 op: BinOp::Ne,
-                left: Box::new(index()),
+                left: Box::new(locals.index()),
                 right: Box::new(json_int(0, pos)),
             },
             ty: Type::Bool,
@@ -679,8 +676,8 @@ impl Checker<'_> {
         };
         let indexed = hir::Expr {
             kind: ExprKind::Index {
-                obj: Box::new(array()),
-                index: Box::new(index()),
+                obj: Box::new(locals.value(array_ty.clone())),
+                index: Box::new(locals.index()),
                 checked: true,
             },
             ty: element.clone(),
@@ -689,7 +686,7 @@ impl Checker<'_> {
         let step = hir::Expr {
             kind: ExprKind::Assign {
                 op: Some(BinOp::Add),
-                target: Box::new(index()),
+                target: Box::new(locals.index()),
                 value: Box::new(json_int(1, pos)),
             },
             ty: Type::I32,
@@ -717,7 +714,7 @@ impl Checker<'_> {
                     },
                     hir::Stmt::Expr(script_call(
                         element_helper,
-                        vec![builder(), indexed],
+                        vec![locals.builder(), indexed],
                         Type::Void,
                         pos,
                     )),
@@ -736,12 +733,11 @@ impl Checker<'_> {
         names: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
-        let builder = || json_local("builder", Type::U64, pos);
-        let object = || json_local("value", Type::Class(id), pos);
+        let locals = JsonLocals::new(pos);
         let raw = |text: &str| {
             hir::Stmt::Expr(self.json_call(
                 JsonFn::Raw,
-                vec![builder(), json_string(text, pos)],
+                vec![locals.builder(), json_string(text, pos)],
                 Type::Void,
                 pos,
             ))
@@ -753,14 +749,14 @@ impl Checker<'_> {
             }
             body.push(hir::Stmt::Expr(self.json_call(
                 JsonFn::Str,
-                vec![builder(), json_string(&field.name, pos)],
+                vec![locals.builder(), json_string(&field.name, pos)],
                 Type::Void,
                 pos,
             )));
             body.push(raw(":"));
             let field_value = hir::Expr {
                 kind: ExprKind::Field {
-                    obj: Box::new(object()),
+                    obj: Box::new(locals.value(Type::Class(id))),
                     name: field.name.clone(),
                 },
                 ty: field.ty.clone(),
@@ -768,7 +764,7 @@ impl Checker<'_> {
             };
             body.push(hir::Stmt::Expr(script_call(
                 names[json_type_index(types, &field.ty)?].clone(),
-                vec![builder(), field_value],
+                vec![locals.builder(), field_value],
                 Type::Void,
                 pos,
             )));
@@ -827,35 +823,44 @@ impl Checker<'_> {
         }
 
         let result_ty = Type::Class(result_id);
-        let result = || json_local("result", result_ty.clone(), &pos);
-        let parser = || json_local("parser", Type::U64, &pos);
-        let node = || json_local("node", Type::U64, &pos);
+        let locals = JsonLocals::new(&pos);
         let root_index = json_type_index(&types, root)?;
         let assign_ok = json_assign(
-            json_field(result(), "ok", Type::Bool, &pos),
+            json_field(locals.result(result_ty.clone()), "ok", Type::Bool, &pos),
             json_bool(true, &pos),
             Type::Bool,
             &pos,
         );
         let constructed = script_call(
             constructors[root_index].clone(),
-            vec![parser(), node()],
+            vec![locals.parser(), locals.node()],
             root.clone(),
             &pos,
         );
         let assign_value = json_assign(
-            json_field(result(), "value", root.clone(), &pos),
+            json_field(
+                locals.result(result_ty.clone()),
+                "value",
+                root.clone(),
+                &pos,
+            ),
             constructed,
             root.clone(),
             &pos,
         );
         let valid = script_call(
             validators[root_index].clone(),
-            vec![parser(), node()],
+            vec![locals.parser(), locals.node()],
             Type::Bool,
             &pos,
         );
-        let parser_present = json_binary(BinOp::Ne, parser(), json_u64(0, &pos), Type::Bool, &pos);
+        let parser_present = json_binary(
+            BinOp::Ne,
+            locals.parser(),
+            json_u64(0, &pos),
+            Type::Bool,
+            &pos,
+        );
         let wrapper = format!("[[json.parse#{call_id}.root]]");
         self.functions.push(hir::Function {
             name: wrapper.clone(),
@@ -882,12 +887,7 @@ impl Checker<'_> {
                     ty: Type::U64,
                     mutable: false,
                     dispose: false,
-                    init: self.json_call(
-                        JsonFn::ParseBegin,
-                        vec![json_local("text", Type::Str, &pos)],
-                        Type::U64,
-                        &pos,
-                    ),
+                    init: self.json_call(JsonFn::ParseBegin, vec![locals.text()], Type::U64, &pos),
                     pos: pos.clone(),
                 },
                 hir::Stmt::If {
@@ -900,7 +900,7 @@ impl Checker<'_> {
                             dispose: false,
                             init: self.json_call(
                                 JsonFn::ParseRoot,
-                                vec![parser()],
+                                vec![locals.parser()],
                                 Type::U64,
                                 &pos,
                             ),
@@ -914,7 +914,7 @@ impl Checker<'_> {
                         },
                         hir::Stmt::Expr(self.json_call(
                             JsonFn::ParseEnd,
-                            vec![parser()],
+                            vec![locals.parser()],
                             Type::Void,
                             &pos,
                         )),
@@ -923,7 +923,7 @@ impl Checker<'_> {
                     pos: pos.clone(),
                 },
                 hir::Stmt::Return {
-                    value: Some(result()),
+                    value: Some(locals.result(result_ty.clone())),
                     pos: pos.clone(),
                 },
             ],
@@ -939,12 +939,11 @@ impl Checker<'_> {
         validators: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
-        let parser = || json_local("parser", Type::U64, pos);
-        let node = || json_local("node", Type::U64, pos);
+        let locals = JsonLocals::new(pos);
         let kind = |code: i64| {
             self.json_call(
                 JsonFn::ParseIsKind,
-                vec![parser(), node(), json_int(code, pos)],
+                vec![locals.parser(), locals.node(), json_int(code, pos)],
                 Type::Bool,
                 pos,
             )
@@ -956,20 +955,20 @@ impl Checker<'_> {
         if let Some(target) = json_number_target(ty) {
             return Ok(vec![return_value(self.json_call(
                 JsonFn::ParseNumberFits,
-                vec![parser(), node(), json_int(target, pos)],
+                vec![locals.parser(), locals.node(), json_int(target, pos)],
                 Type::Bool,
                 pos,
             ))]);
         }
         match ty {
-            Type::Bool => Ok(vec![return_value(kind(1))]),
-            Type::Str => Ok(vec![return_value(kind(3))]),
+            Type::Bool => Ok(vec![return_value(kind(JsonKind::BOOL))]),
+            Type::Str => Ok(vec![return_value(kind(JsonKind::STRING))]),
             Type::Nullable(inner) => Ok(vec![hir::Stmt::If {
-                cond: kind(0),
+                cond: kind(JsonKind::NULL),
                 then: vec![return_value(json_bool(true, pos))],
                 els: Some(vec![return_value(script_call(
                     validators[json_type_index(types, inner)?].clone(),
-                    vec![parser(), node()],
+                    vec![locals.parser(), locals.node()],
                     Type::Bool,
                     pos,
                 ))]),
@@ -979,11 +978,15 @@ impl Checker<'_> {
                 self.json_array_validation_body(ty, element, types, validators, pos)
             }
             Type::Class(id) => {
-                let mut body = vec![json_return_false_unless(kind(5), pos)];
+                let mut body = vec![json_return_false_unless(kind(JsonKind::OBJECT), pos)];
                 for field in &self.classes[id.0].fields {
                     let field_node = self.json_call(
                         JsonFn::ParseObjectGet,
-                        vec![parser(), node(), json_string(&field.name, pos)],
+                        vec![
+                            locals.parser(),
+                            locals.node(),
+                            json_string(&field.name, pos),
+                        ],
                         Type::U64,
                         pos,
                     );
@@ -1003,7 +1006,7 @@ impl Checker<'_> {
                     body.push(json_return_false_unless(
                         script_call(
                             validators[json_type_index(types, &field.ty)?].clone(),
-                            vec![parser(), local],
+                            vec![locals.parser(), local],
                             Type::Bool,
                             pos,
                         ),
@@ -1025,15 +1028,16 @@ impl Checker<'_> {
         validators: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
-        let parser = || json_local("parser", Type::U64, pos);
-        let node = || json_local("node", Type::U64, pos);
-        let index = || json_local("index", Type::I32, pos);
-        let len = || json_local("length", Type::I32, pos);
+        let locals = JsonLocals::new(pos);
         let mut body = vec![
             json_return_false_unless(
                 self.json_call(
                     JsonFn::ParseIsKind,
-                    vec![parser(), node(), json_int(4, pos)],
+                    vec![
+                        locals.parser(),
+                        locals.node(),
+                        json_int(JsonKind::ARRAY, pos),
+                    ],
                     Type::Bool,
                     pos,
                 ),
@@ -1046,7 +1050,7 @@ impl Checker<'_> {
                 dispose: false,
                 init: self.json_call(
                     JsonFn::ParseArrayLen,
-                    vec![parser(), node()],
+                    vec![locals.parser(), locals.node()],
                     Type::I32,
                     pos,
                 ),
@@ -1057,7 +1061,7 @@ impl Checker<'_> {
             body.push(json_return_false_unless(
                 json_binary(
                     BinOp::Eq,
-                    len(),
+                    locals.length(),
                     json_int(i64::from(*expected), pos),
                     Type::Bool,
                     pos,
@@ -1066,7 +1070,13 @@ impl Checker<'_> {
             ));
         } else {
             body.push(json_return_false_unless(
-                json_binary(BinOp::Ge, len(), json_int(0, pos), Type::Bool, pos),
+                json_binary(
+                    BinOp::Ge,
+                    locals.length(),
+                    json_int(0, pos),
+                    Type::Bool,
+                    pos,
+                ),
                 pos,
             ));
         }
@@ -1080,19 +1090,24 @@ impl Checker<'_> {
         });
         let child = self.json_call(
             JsonFn::ParseArrayGet,
-            vec![parser(), node(), index()],
+            vec![locals.parser(), locals.node(), locals.index()],
             Type::U64,
             pos,
         );
         let element_validator = validators[json_type_index(types, element)?].clone();
         body.push(hir::Stmt::While {
-            cond: json_binary(BinOp::Lt, index(), len(), Type::Bool, pos),
+            cond: json_binary(BinOp::Lt, locals.index(), locals.length(), Type::Bool, pos),
             body: vec![
                 json_return_false_unless(
-                    script_call(element_validator, vec![parser(), child], Type::Bool, pos),
+                    script_call(
+                        element_validator,
+                        vec![locals.parser(), child],
+                        Type::Bool,
+                        pos,
+                    ),
                     pos,
                 ),
-                hir::Stmt::Expr(json_increment(index(), pos)),
+                hir::Stmt::Expr(json_increment(locals.index(), pos)),
             ],
             pos: pos.clone(),
         });
@@ -1110,16 +1125,19 @@ impl Checker<'_> {
         constructors: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
-        let parser = || json_local("parser", Type::U64, pos);
-        let node = || json_local("node", Type::U64, pos);
+        let locals = JsonLocals::new(pos);
         let return_value = |value: hir::Expr| hir::Stmt::Return {
             value: Some(value),
             pos: pos.clone(),
         };
         if let Some(target) = json_number_target(ty) {
             if matches!(ty, Type::F32 | Type::F64) {
-                let number =
-                    self.json_call(JsonFn::ParseNumber, vec![parser(), node()], Type::F64, pos);
+                let number = self.json_call(
+                    JsonFn::ParseNumber,
+                    vec![locals.parser(), locals.node()],
+                    Type::F64,
+                    pos,
+                );
                 return Ok(vec![return_value(if *ty == Type::F64 {
                     number
                 } else {
@@ -1128,7 +1146,7 @@ impl Checker<'_> {
             }
             let integer = self.json_call(
                 JsonFn::ParseInteger,
-                vec![parser(), node(), json_int(target, pos)],
+                vec![locals.parser(), locals.node(), json_int(target, pos)],
                 Type::U64,
                 pos,
             );
@@ -1141,20 +1159,24 @@ impl Checker<'_> {
         match ty {
             Type::Bool => Ok(vec![return_value(self.json_call(
                 JsonFn::ParseBool,
-                vec![parser(), node()],
+                vec![locals.parser(), locals.node()],
                 Type::Bool,
                 pos,
             ))]),
             Type::Str => Ok(vec![return_value(self.json_call(
                 JsonFn::ParseString,
-                vec![parser(), node()],
+                vec![locals.parser(), locals.node()],
                 Type::Str,
                 pos,
             ))]),
             Type::Nullable(inner) => Ok(vec![hir::Stmt::If {
                 cond: self.json_call(
                     JsonFn::ParseIsKind,
-                    vec![parser(), node(), json_int(0, pos)],
+                    vec![
+                        locals.parser(),
+                        locals.node(),
+                        json_int(JsonKind::NULL, pos),
+                    ],
                     Type::Bool,
                     pos,
                 ),
@@ -1165,7 +1187,7 @@ impl Checker<'_> {
                 })],
                 els: Some(vec![return_value(script_call(
                     constructors[json_type_index(types, inner)?].clone(),
-                    vec![parser(), node()],
+                    vec![locals.parser(), locals.node()],
                     (**inner).clone(),
                     pos,
                 ))]),
@@ -1175,7 +1197,6 @@ impl Checker<'_> {
                 self.json_array_construction_body(ty, element, types, constructors, pos)
             }
             Type::Class(id) => {
-                let value = || json_local("value", Type::Class(*id), pos);
                 let init = if self.classes[id.0].is_value {
                     json_zero(Type::Class(*id), pos)
                 } else {
@@ -1196,24 +1217,33 @@ impl Checker<'_> {
                 for field in &self.classes[id.0].fields {
                     let field_node = self.json_call(
                         JsonFn::ParseObjectGet,
-                        vec![parser(), node(), json_string(&field.name, pos)],
+                        vec![
+                            locals.parser(),
+                            locals.node(),
+                            json_string(&field.name, pos),
+                        ],
                         Type::U64,
                         pos,
                     );
                     let constructed = script_call(
                         constructors[json_type_index(types, &field.ty)?].clone(),
-                        vec![parser(), field_node],
+                        vec![locals.parser(), field_node],
                         field.ty.clone(),
                         pos,
                     );
                     body.push(hir::Stmt::Expr(json_assign(
-                        json_field(value(), &field.name, field.ty.clone(), pos),
+                        json_field(
+                            locals.value(Type::Class(*id)),
+                            &field.name,
+                            field.ty.clone(),
+                            pos,
+                        ),
                         constructed,
                         field.ty.clone(),
                         pos,
                     )));
                 }
-                body.push(return_value(value()));
+                body.push(return_value(locals.value(Type::Class(*id))));
                 Ok(body)
             }
             other => Err(format!("rejected JSON constructor type {other:?}")),
@@ -1228,10 +1258,7 @@ impl Checker<'_> {
         constructors: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
-        let parser = || json_local("parser", Type::U64, pos);
-        let node = || json_local("node", Type::U64, pos);
-        let value = || json_local("value", array_ty.clone(), pos);
-        let index = || json_local("index", Type::I32, pos);
+        let locals = JsonLocals::new(pos);
         let (length, init) = match array_ty {
             Type::FixedArray(_, length) => (
                 json_int(i64::from(*length), pos),
@@ -1240,7 +1267,7 @@ impl Checker<'_> {
             Type::Array(_) => (
                 self.json_call(
                     JsonFn::ParseArrayLen,
-                    vec![parser(), node()],
+                    vec![locals.parser(), locals.node()],
                     Type::I32,
                     pos,
                 ),
@@ -1284,13 +1311,13 @@ impl Checker<'_> {
         ];
         let child_node = self.json_call(
             JsonFn::ParseArrayGet,
-            vec![parser(), node(), index()],
+            vec![locals.parser(), locals.node(), locals.index()],
             Type::U64,
             pos,
         );
         let child = script_call(
             constructors[json_type_index(types, element)?].clone(),
-            vec![parser(), child_node],
+            vec![locals.parser(), child_node],
             element.clone(),
             pos,
         );
@@ -1298,7 +1325,7 @@ impl Checker<'_> {
             Type::Array(_) => hir::Expr {
                 kind: ExprKind::Call {
                     callee: Callee::Method {
-                        recv: Box::new(value()),
+                        recv: Box::new(locals.value(array_ty.clone())),
                         name: "push".to_string(),
                     },
                     args: vec![child],
@@ -1309,8 +1336,8 @@ impl Checker<'_> {
             Type::FixedArray(..) => json_assign(
                 hir::Expr {
                     kind: ExprKind::Index {
-                        obj: Box::new(value()),
-                        index: Box::new(index()),
+                        obj: Box::new(locals.value(array_ty.clone())),
+                        index: Box::new(locals.index()),
                         checked: true,
                     },
                     ty: element.clone(),
@@ -1328,21 +1355,15 @@ impl Checker<'_> {
         };
         self.register_operation_signature(&store);
         body.push(hir::Stmt::While {
-            cond: json_binary(
-                BinOp::Lt,
-                index(),
-                json_local("length", Type::I32, pos),
-                Type::Bool,
-                pos,
-            ),
+            cond: json_binary(BinOp::Lt, locals.index(), locals.length(), Type::Bool, pos),
             body: vec![
                 hir::Stmt::Expr(store),
-                hir::Stmt::Expr(json_increment(index(), pos)),
+                hir::Stmt::Expr(json_increment(locals.index(), pos)),
             ],
             pos: pos.clone(),
         });
         body.push(hir::Stmt::Return {
-            value: Some(value()),
+            value: Some(locals.value(array_ty.clone())),
             pos: pos.clone(),
         });
         Ok(body)
@@ -1371,6 +1392,52 @@ fn json_local(name: &str, ty: Type, pos: &Pos) -> hir::Expr {
         kind: ExprKind::Local(name.to_string()),
         ty,
         pos: pos.clone(),
+    }
+}
+
+struct JsonLocals<'a> {
+    pos: &'a Pos,
+}
+
+impl<'a> JsonLocals<'a> {
+    fn new(pos: &'a Pos) -> Self {
+        Self { pos }
+    }
+
+    fn local(&self, name: &str, ty: Type) -> hir::Expr {
+        json_local(name, ty, self.pos)
+    }
+
+    fn builder(&self) -> hir::Expr {
+        self.local("builder", Type::U64)
+    }
+
+    fn parser(&self) -> hir::Expr {
+        self.local("parser", Type::U64)
+    }
+
+    fn node(&self) -> hir::Expr {
+        self.local("node", Type::U64)
+    }
+
+    fn index(&self) -> hir::Expr {
+        self.local("index", Type::I32)
+    }
+
+    fn length(&self) -> hir::Expr {
+        self.local("length", Type::I32)
+    }
+
+    fn value(&self, ty: Type) -> hir::Expr {
+        self.local("value", ty)
+    }
+
+    fn result(&self, ty: Type) -> hir::Expr {
+        self.local("result", ty)
+    }
+
+    fn text(&self) -> hir::Expr {
+        self.local("text", Type::Str)
     }
 }
 
@@ -1478,6 +1545,16 @@ fn json_increment(index: hir::Expr, pos: &Pos) -> hir::Expr {
         ty: Type::I32,
         pos: pos.clone(),
     }
+}
+
+struct JsonKind;
+
+impl JsonKind {
+    const NULL: i64 = 0;
+    const BOOL: i64 = 1;
+    const STRING: i64 = 3;
+    const ARRAY: i64 = 4;
+    const OBJECT: i64 = 5;
 }
 
 /// Stable target codes mirrored by runtime::json's `NUMBER_*` constants.

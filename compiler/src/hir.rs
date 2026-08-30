@@ -7,7 +7,7 @@
 //! or more [`PoisonedImport`] records.
 
 use crate::diag::Pos;
-use crate::types::{ClassId, EnumId, HandleClass, HandleKind, Type};
+use crate::types::{ClassId, EnumId, HandleClass, HandleKind, IterKind, Type};
 
 /// Names the synchronous disposal hook after the checker lowers `[Symbol.dispose]`.
 pub const DISPOSE_METHOD_NAME: &str = "[[Symbol.dispose]]";
@@ -911,6 +911,17 @@ impl AmbientFn {
         AmbientFn::Collect,
         AmbientFn::UnsafeDelete,
     ];
+
+    /// Source name without its optional namespace prefix.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            AmbientFn::Print => "print",
+            AmbientFn::Unreachable => "unreachable",
+            AmbientFn::Collect => "collect",
+            AmbientFn::UnsafeDelete => "free",
+        }
+    }
 
     /// Whether the runtime call can leave the Context trapped.
     #[must_use]
@@ -3289,7 +3300,56 @@ pub enum SpreadKind {
     StringCodePoints,
 }
 
+impl From<IterKind> for SpreadKind {
+    fn from(kind: IterKind) -> Self {
+        match kind {
+            IterKind::Array => Self::Array,
+            IterKind::FixedArray => Self::FixedArray,
+            IterKind::MapKeys => Self::MapKeys,
+            IterKind::SetValues => Self::SetValues,
+            IterKind::StringCodePoints => Self::StringCodePoints,
+        }
+    }
+}
+
+impl From<IterKind> for ForOfKind {
+    fn from(kind: IterKind) -> Self {
+        match kind {
+            IterKind::Array => Self::ArrayValues,
+            IterKind::FixedArray => Self::FixedArrayValues,
+            IterKind::MapKeys => Self::MapKeys,
+            IterKind::SetValues => Self::SetValues,
+            IterKind::StringCodePoints => Self::StringCodePoints,
+        }
+    }
+}
+
 impl Expr {
+    /// Returns the leaves that can flow into this expression's value.
+    pub fn flow_leaves(&self) -> impl Iterator<Item = &Expr> {
+        fn collect<'a>(expression: &'a Expr, leaves: &mut Vec<&'a Expr>) {
+            match &expression.kind {
+                ExprKind::Cast(inner) | ExprKind::Assign { value: inner, .. } => {
+                    collect(inner, leaves);
+                }
+                ExprKind::Cond { then, els, .. } => {
+                    collect(then, leaves);
+                    collect(els, leaves);
+                }
+                ExprKind::ArrayLit(elements) => {
+                    for element in elements {
+                        collect(element, leaves);
+                    }
+                }
+                _ => leaves.push(expression),
+            }
+        }
+
+        let mut leaves = Vec::new();
+        collect(self, &mut leaves);
+        leaves.into_iter()
+    }
+
     /// Returns every immediate expression or statement child in source order.
     pub fn children(&self) -> Vec<HirChild<'_>> {
         use ExprKind as K;
@@ -4048,6 +4108,35 @@ mod tests {
                 other => panic!("unexpected test child {other:?}"),
             })
             .collect()
+    }
+
+    #[test]
+    fn flow_leaves_follow_only_value_positions() {
+        let expression = Expr {
+            kind: ExprKind::Cond {
+                cond: Box::new(child_expr(0)),
+                then: Box::new(Expr {
+                    kind: ExprKind::Cast(Box::new(child_expr(1))),
+                    ty: Type::I32,
+                    pos: Pos::new("flow.ts", 1, 1),
+                }),
+                els: Box::new(Expr {
+                    kind: ExprKind::ArrayLit(vec![child_expr(2), child_expr(3)]),
+                    ty: Type::Array(Box::new(Type::I32)),
+                    pos: Pos::new("flow.ts", 1, 1),
+                }),
+            },
+            ty: Type::I32,
+            pos: Pos::new("flow.ts", 1, 1),
+        };
+        let values = expression
+            .flow_leaves()
+            .map(|leaf| match leaf.kind {
+                ExprKind::Int(value) => value,
+                _ => -1,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(values, vec![1, 2, 3]);
     }
 
     fn test_expr(kind: ExprKind) -> Expr {

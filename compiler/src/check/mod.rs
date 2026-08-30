@@ -180,6 +180,16 @@ pub(crate) struct ParamSig {
     pub has_default: bool,
 }
 
+impl ParamSig {
+    fn positional(ty: Type) -> Self {
+        Self {
+            name: String::new(),
+            ty,
+            has_default: false,
+        }
+    }
+}
+
 /// A resolved function signature.
 #[derive(Debug, Clone)]
 pub(crate) struct FnSig {
@@ -2206,10 +2216,8 @@ impl<'p> Checker<'p> {
         let module = &self.prog.files[file].module;
         // Sub-pass 1: type aliases.
         for item in &module.body {
-            let decl = match item {
-                ast::ModuleItem::Stmt(ast::Stmt::Decl(d)) => d,
-                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(e)) => &e.decl,
-                _ => continue,
+            let Some(decl) = module_decl(item) else {
+                continue;
             };
             if let ast::Decl::TsTypeAlias(t) = decl {
                 if string_alias_members(&t.type_ann).is_some()
@@ -2223,10 +2231,8 @@ impl<'p> Checker<'p> {
         }
         // Sub-pass 2: struct shapes, foreign signatures, ambient consts.
         for item in &module.body {
-            let decl = match item {
-                ast::ModuleItem::Stmt(ast::Stmt::Decl(d)) => d,
-                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(e)) => &e.decl,
-                _ => continue,
+            let Some(decl) = module_decl(item) else {
+                continue;
             };
             match decl {
                 ast::Decl::Class(c) if c.class.type_params.is_none() => {
@@ -2474,10 +2480,8 @@ impl<'p> Checker<'p> {
     fn resolve_signatures(&mut self, file: usize) {
         let module = &self.prog.files[file].module;
         for item in &module.body {
-            let decl = match item {
-                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(e)) => &e.decl,
-                ast::ModuleItem::Stmt(ast::Stmt::Decl(d)) => d,
-                _ => continue,
+            let Some(decl) = module_decl(item) else {
+                continue;
             };
             match decl {
                 ast::Decl::Class(c) if c.class.type_params.is_none() => {
@@ -3539,23 +3543,32 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn value_field_ok(&self, ty: &Type) -> bool {
-        match ty {
+    pub(crate) fn plain_value_leaf(&self, ty: &Type) -> bool {
+        matches!(
+            ty,
             Type::I8
-            | Type::U8
-            | Type::I16
-            | Type::U16
-            | Type::I32
-            | Type::U32
-            | Type::I64
-            | Type::U64
-            | Type::F16
-            | Type::F32
-            | Type::F64
-            | Type::Bool
-            | Type::Enum(_)
-            | Type::StringAlias(_)
-            | Type::Error => true,
+                | Type::U8
+                | Type::I16
+                | Type::U16
+                | Type::I32
+                | Type::U32
+                | Type::I64
+                | Type::U64
+                | Type::F16
+                | Type::F32
+                | Type::F64
+                | Type::Bool
+                | Type::Enum(_)
+                | Type::StringAlias(_)
+                | Type::Error
+        )
+    }
+
+    fn value_field_ok(&self, ty: &Type) -> bool {
+        if self.plain_value_leaf(ty) {
+            return true;
+        }
+        match ty {
             Type::Class(id) => self.classes[id.0].is_value,
             Type::FixedArray(elem, _) => self.value_field_ok(elem),
             _ => false,
@@ -3586,10 +3599,8 @@ impl<'p> Checker<'p> {
     fn check_descriptor_defaults_in_file(&mut self, file: usize) {
         let module = &self.prog.files[file].module;
         for item in &module.body {
-            let decl = match item {
-                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) => &export.decl,
-                ast::ModuleItem::Stmt(ast::Stmt::Decl(decl)) => decl,
-                _ => continue,
+            let Some(decl) = module_decl(item) else {
+                continue;
             };
             let ast::Decl::Class(class) = decl else {
                 continue;
@@ -4195,9 +4206,7 @@ impl<'p> Checker<'p> {
                     ty: ps.ty.clone(),
                     mutable: true,
                     holds_capturing: false,
-                    async_origins: if matches!(ps.ty, Type::AsyncHandle(_))
-                        || matches!(&ps.ty, Type::Array(element) if matches!(&**element, Type::AsyncHandle(_)))
-                    {
+                    async_origins: if ps.ty.carries_async_handle() {
                         HashSet::from([fx.register_async_origin(pos.clone())])
                     } else {
                         HashSet::new()
@@ -4692,24 +4701,18 @@ impl<'p> Checker<'p> {
     /// requires boolean operands, and reading a capturing lambda back
     /// out of storage is impossible because storing one is rejected.
     pub(crate) fn is_capturing_value(&self, e: &hir::Expr, fx: &FnCtx) -> bool {
-        match &e.kind {
+        e.flow_leaves().any(|leaf| match &leaf.kind {
             hir::ExprKind::Lambda { captures, .. } => !captures.is_empty(),
             hir::ExprKind::Local(name) => fx
                 .scopes
                 .iter()
                 .rev()
-                .find_map(|s| s.vars.get(name))
-                .map(|l| l.holds_capturing)
-                .unwrap_or(false),
-            hir::ExprKind::Cond { then, els, .. } => {
-                self.is_capturing_value(then, fx) || self.is_capturing_value(els, fx)
-            }
-            hir::ExprKind::Assign { value, .. } => self.is_capturing_value(value, fx),
-            hir::ExprKind::ArrayLit(elems) => elems.iter().any(|e| self.is_capturing_value(e, fx)),
-            hir::ExprKind::ArraySpreadLit(elems) => elems
-                .iter()
-                .any(|e| e.spread.is_none() && self.is_capturing_value(&e.expr, fx)),
+                .find_map(|scope| scope.vars.get(name))
+                .is_some_and(|local| local.holds_capturing),
+            hir::ExprKind::ArraySpreadLit(elements) => elements.iter().any(|element| {
+                element.spread.is_none() && self.is_capturing_value(&element.expr, fx)
+            }),
             _ => false,
-        }
+        })
     }
 }

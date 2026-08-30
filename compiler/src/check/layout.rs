@@ -400,45 +400,61 @@ impl<'a> Validator<'a> {
     fn validate_generator_layout(&mut self, function: &hir::Function, receiver: Option<&Type>) {
         let mut end = 16u64;
         let mut last_pos = &function.pos;
+        let failure = std::cell::RefCell::new(None);
+        let place = |end: &mut u64, layout: Layout, pos: &Pos, what: &str| -> bool {
+            let next = raw_round_up(*end, layout.align.max(1))
+                .and_then(|offset| offset.checked_add(layout.size.max(1)));
+            let Some(next) = next.filter(|size| *size <= limit()) else {
+                failure.replace(Some(Diagnostic::new(
+                    RuleCode::S100,
+                    what.to_string(),
+                    pos.clone(),
+                )));
+                return false;
+            };
+            *end = next;
+            true
+        };
+        let report_failure = |diagnostics: &mut Vec<Diagnostic>| {
+            if let Some(diagnostic) = failure.borrow_mut().take() {
+                diagnostics.push(diagnostic);
+            }
+        };
         if let Some(receiver) = receiver {
             let Outcome::Layout(layout) = self.type_layout(receiver) else {
                 return;
             };
-            let next = raw_round_up(end, layout.align.max(1))
-                .and_then(|offset| offset.checked_add(layout.size.max(1)));
-            if next.is_none_or(|size| size > limit()) {
-                self.diagnostics.push(Diagnostic::new(
-                    RuleCode::S100,
-                    format!(
-                        "async frame layout exceeds the supported aggregate limit of \
+            if !place(
+                &mut end,
+                layout,
+                &function.pos,
+                &format!(
+                    "async frame layout exceeds the supported aggregate limit of \
                          {MAX_AGGREGATE_BYTES} bytes while placing the method receiver"
-                    ),
-                    function.pos.clone(),
-                ));
+                ),
+            ) {
+                report_failure(&mut self.diagnostics);
                 return;
             }
-            end = next.expect("async receiver size checked above");
         }
         for param in &function.params {
             last_pos = &param.pos;
             let Outcome::Layout(layout) = self.type_layout(&param.ty) else {
                 continue;
             };
-            let next = raw_round_up(end, layout.align.max(1))
-                .and_then(|offset| offset.checked_add(layout.size.max(1)));
-            if next.is_none_or(|size| size > limit()) {
-                self.diagnostics.push(Diagnostic::new(
-                    RuleCode::S100,
-                    format!(
-                        "generator frame layout exceeds the supported aggregate limit of \
+            if !place(
+                &mut end,
+                layout,
+                &param.pos,
+                &format!(
+                    "generator frame layout exceeds the supported aggregate limit of \
                          {MAX_AGGREGATE_BYTES} bytes while placing parameter `{}`",
-                        param.name
-                    ),
-                    param.pos.clone(),
-                ));
+                    param.name
+                ),
+            ) {
+                report_failure(&mut self.diagnostics);
                 return;
             }
-            end = next.expect("generator size checked above");
         }
         let mut lets = Vec::new();
         walk_lets(&function.body, &mut lets);
@@ -447,36 +463,50 @@ impl<'a> Validator<'a> {
             let Outcome::Layout(layout) = self.type_layout(ty) else {
                 continue;
             };
-            let next = raw_round_up(end, layout.align.max(1))
-                .and_then(|offset| offset.checked_add(layout.size.max(1)));
-            if next.is_none_or(|size| size > limit()) {
-                self.diagnostics.push(Diagnostic::new(
-                    RuleCode::S100,
-                    format!(
-                        "generator frame layout exceeds the supported aggregate limit of \
+            if !place(
+                &mut end,
+                layout,
+                pos,
+                &format!(
+                    "generator frame layout exceeds the supported aggregate limit of \
                          {MAX_AGGREGATE_BYTES} bytes while placing this local"
-                    ),
-                    pos.clone(),
-                ));
+                ),
+            ) {
+                report_failure(&mut self.diagnostics);
                 return;
             }
-            end = next.expect("generator size checked above");
         }
         if function.is_async {
-            let child_bytes = count_async_calls(&function.body).checked_mul(8);
-            let next = child_bytes.and_then(|bytes| end.checked_add(bytes));
-            if next.is_none_or(|size| size > limit()) {
-                self.diagnostics.push(Diagnostic::new(
-                    RuleCode::S100,
-                    format!(
-                        "async frame layout exceeds the supported aggregate limit of \
+            let child_layout = count_async_calls(&function.body).checked_mul(8);
+            if child_layout != Some(0)
+                && child_layout.is_none_or(|layout| {
+                    !place(
+                        &mut end,
+                        Layout {
+                            size: layout,
+                            align: 1,
+                        },
+                        &function.pos,
+                        &format!(
+                            "async frame layout exceeds the supported aggregate limit of \
                          {MAX_AGGREGATE_BYTES} bytes while placing awaited child frames"
-                    ),
-                    function.pos.clone(),
-                ));
+                        ),
+                    )
+                })
+            {
+                if failure.borrow().is_none() {
+                    failure.replace(Some(Diagnostic::new(
+                        RuleCode::S100,
+                        format!(
+                            "async frame layout exceeds the supported aggregate limit of \
+                             {MAX_AGGREGATE_BYTES} bytes while placing awaited child frames"
+                        ),
+                        function.pos.clone(),
+                    )));
+                }
+                report_failure(&mut self.diagnostics);
                 return;
             }
-            end = next.expect("async child-frame size checked above");
         }
         if raw_round_up(end, 8).is_none_or(|size| size > limit()) {
             self.diagnostics.push(Diagnostic::new(

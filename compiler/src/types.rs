@@ -273,6 +273,22 @@ pub enum Type {
     Error,
 }
 
+/// The element traversal shared by container consumers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum IterKind {
+    /// Dynamic-array values.
+    Array,
+    /// Fixed-array values.
+    FixedArray,
+    /// Map keys.
+    MapKeys,
+    /// Set values.
+    SetValues,
+    /// String code points.
+    StringCodePoints,
+}
+
 /// Parameter and return types of a function type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuncType {
@@ -314,6 +330,54 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
 }
 
 impl Type {
+    /// Returns the mathematical bounds of a sized integer type.
+    #[must_use]
+    pub fn int_bounds(&self) -> Option<(i128, i128)> {
+        Some(match self {
+            Type::I8 => (i128::from(i8::MIN), i128::from(i8::MAX)),
+            Type::U8 => (0, i128::from(u8::MAX)),
+            Type::I16 => (i128::from(i16::MIN), i128::from(i16::MAX)),
+            Type::U16 => (0, i128::from(u16::MAX)),
+            Type::I32 => (i128::from(i32::MIN), i128::from(i32::MAX)),
+            Type::U32 => (0, i128::from(u32::MAX)),
+            Type::I64 => (i128::from(i64::MIN), i128::from(i64::MAX)),
+            Type::U64 => (0, i128::from(u64::MAX)),
+            _ => return None,
+        })
+    }
+
+    /// Returns the bit width of a sized integer type.
+    #[must_use]
+    pub fn bit_width(&self) -> Option<u32> {
+        Some(match self {
+            Type::I8 | Type::U8 => 8,
+            Type::I16 | Type::U16 => 16,
+            Type::I32 | Type::U32 => 32,
+            Type::I64 | Type::U64 => 64,
+            _ => return None,
+        })
+    }
+
+    /// True when the type is an async handle or an array of async handles.
+    #[must_use]
+    pub fn carries_async_handle(&self) -> bool {
+        matches!(self, Type::AsyncHandle(_))
+            || matches!(self, Type::Array(element) if matches!(element.as_ref(), Type::AsyncHandle(_)))
+    }
+
+    /// Returns the element and traversal for a directly iterable container.
+    #[must_use]
+    pub fn iteration_element(&self) -> Option<(IterKind, Type)> {
+        Some(match self {
+            Type::Array(element) => (IterKind::Array, (**element).clone()),
+            Type::FixedArray(element, _) => (IterKind::FixedArray, (**element).clone()),
+            Type::Map(key, _) => (IterKind::MapKeys, (**key).clone()),
+            Type::Set(key) => (IterKind::SetValues, (**key).clone()),
+            Type::Str => (IterKind::StringCodePoints, Type::Str),
+            _ => return None,
+        })
+    }
+
     /// Returns the runtime handle representation, or `None` for a non-handle type.
     #[must_use]
     pub fn handle_kind(&self, classes: &[HandleClass]) -> Option<HandleKind> {
@@ -561,6 +625,60 @@ mod tests {
         assert!(Type::F16.is_float());
         assert!(Type::F32.is_float());
         assert!(!Type::Bool.is_numeric());
+    }
+
+    #[test]
+    fn integer_and_iteration_facts_cover_the_supported_types() {
+        let integer_cases = [
+            (Type::I8, i128::from(i8::MIN), i128::from(i8::MAX), 8),
+            (Type::U8, 0, i128::from(u8::MAX), 8),
+            (Type::I16, i128::from(i16::MIN), i128::from(i16::MAX), 16),
+            (Type::U16, 0, i128::from(u16::MAX), 16),
+            (Type::I32, i128::from(i32::MIN), i128::from(i32::MAX), 32),
+            (Type::U32, 0, i128::from(u32::MAX), 32),
+            (Type::I64, i128::from(i64::MIN), i128::from(i64::MAX), 64),
+            (Type::U64, 0, i128::from(u64::MAX), 64),
+        ];
+        for (ty, lo, hi, width) in integer_cases {
+            assert_eq!(ty.int_bounds(), Some((lo, hi)), "{ty:?}");
+            assert_eq!(ty.bit_width(), Some(width), "{ty:?}");
+        }
+        assert_eq!(Type::F64.int_bounds(), None);
+        assert_eq!(Type::F64.bit_width(), None);
+
+        let iteration_cases = [
+            (
+                Type::Array(Box::new(Type::I32)),
+                Some((IterKind::Array, Type::I32)),
+            ),
+            (
+                Type::FixedArray(Box::new(Type::U8), 3),
+                Some((IterKind::FixedArray, Type::U8)),
+            ),
+            (
+                Type::Map(Box::new(Type::Str), Box::new(Type::Bool)),
+                Some((IterKind::MapKeys, Type::Str)),
+            ),
+            (
+                Type::Set(Box::new(Type::I64)),
+                Some((IterKind::SetValues, Type::I64)),
+            ),
+            (Type::Str, Some((IterKind::StringCodePoints, Type::Str))),
+            (Type::Bool, None),
+        ];
+        for (ty, expected) in iteration_cases {
+            assert_eq!(ty.iteration_element(), expected, "{ty:?}");
+        }
+    }
+
+    #[test]
+    fn async_handle_carriage_covers_only_the_handle_and_its_array() {
+        assert!(Type::AsyncHandle(Box::new(Type::I32)).carries_async_handle());
+        assert!(
+            Type::Array(Box::new(Type::AsyncHandle(Box::new(Type::I32)))).carries_async_handle()
+        );
+        assert!(!Type::Array(Box::new(Type::I32)).carries_async_handle());
+        assert!(!Type::I32.carries_async_handle());
     }
 
     #[test]
