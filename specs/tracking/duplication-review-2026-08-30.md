@@ -259,3 +259,9 @@ the eight Map/Set pairs became `subscript_rt_assoc_size/has/delete/clear`;
 `array_pop`, `array_ptr`, and every `arr_*` entry now check receiver
 liveness with the existing dev-tier trap kind and message (Rm31).
 Clippy 7/18/13. Gate on main: 1,142 passed, 0 failed.
+
+## MINOR pass — compiler (landed `07448d8`)
+
+Cm7–Cm27 all done (Cm27 was already covered by `children()`). 1,098
+lines removed, 1,261 added; five unit tests. No diagnostic text moved.
+Clippy 7/18/13. Gate on main: 1,147 passed, 0 failed.
