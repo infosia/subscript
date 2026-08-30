@@ -10560,9 +10560,11 @@ re-derived and the differential gate is the check.
 table. The LIR golden text gains the field; that move is the only
 golden move the pass allows, and the round reports the diff.
 
-**Rule 4.** `lir::TrapKind::runtime_kind()` (`Gm7`) and
-`IntrinsicOperation::runtime_symbol()` (`Gm17`) are written next to the
-contract enums in `compiler/src/lir.rs`; every transcriber reads them.
+**Rule 4.** `IntrinsicOperation::runtime_symbol()` (`Gm17`) is written
+next to the contract enum in `compiler/src/lir.rs`. The LIR-to-runtime
+trap-kind map (`Gm7`) is one function in `codegen/src/lir_types.rs`,
+because `compiler/` does not depend on `runtime/`; every transcriber
+and the interpreter read it.
 
 **Rule 5.** An item the round finds unsound, or that needs a decision
 this section does not give, is reported and left; the round does not
