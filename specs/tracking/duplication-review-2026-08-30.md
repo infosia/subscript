@@ -110,3 +110,15 @@ at the site). Clippy 7/21/13. Gate on main: 1,133 passed, 0 failed.
 The debug-profile interpreter ledger (`DEBUG_INTERPRETER_SUBSET`,
 `DEBUG_RUNNABLE_COUNT`) had not gained `a173` and `a174`; added with
 this round's record. The inventory list of round 1 gains that ledger.
+
+## Round 5 — four LIR facts (landed `f5bb47d`)
+
+Fresh-owner bit on the LIR value from one instruction table (function
+parameters are not fresh owners; §70.3 rules 1–2). `is_embedded_header`
+set once. One `boundary_box_class`; the two one-condition sites
+differed on `T | null` with `T` a boundary reference class (old 1695)
+and with `T` a non-boundary value class (old 5029); the 173-entry trace
+reaches neither input — a corpus entry for each shape is open (core
+principle 12). `verify_local_storage_classes` deleted; the interpreter
+poisons Activation locals at every Suspend. 443 lines removed, 327
+added. Clippy 7/21/13. Gate on main: 1,135 passed, 0 failed.
