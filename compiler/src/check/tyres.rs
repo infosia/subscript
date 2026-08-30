@@ -606,10 +606,12 @@ impl<'p> Checker<'p> {
                 if self.in_assoc_key {
                     return Type::Nullable(Box::new(inner));
                 }
-                let ok = (inner.is_reference_shape() && !self.is_value_class(&inner))
-                    || matches!(&inner, Type::Class(id) if self.classes.get(id.0).is_some_and(
-                        |definition| definition.is_value && definition.is_boundary
-                    ));
+                let handle_classes = self
+                    .classes
+                    .iter()
+                    .map(crate::types::HandleClass::from)
+                    .collect::<Vec<_>>();
+                let ok = inner.is_reference_shape(&handle_classes);
                 if ok {
                     return Type::Nullable(Box::new(inner));
                 }

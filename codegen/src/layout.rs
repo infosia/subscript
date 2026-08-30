@@ -18,7 +18,7 @@ use std::ops::Range;
 use subscript_compiler::hir;
 use subscript_compiler::lir;
 use subscript_compiler::types::{
-    scalar_size_align as compiler_scalar_size_align, MAX_AGGREGATE_BYTES,
+    scalar_size_align as compiler_scalar_size_align, HandleClass, HandleKind, MAX_AGGREGATE_BYTES,
 };
 use subscript_compiler::Type;
 
@@ -50,14 +50,13 @@ pub(crate) struct ClassLayout {
     pub field_offsets: Vec<u32>,
     /// True for `@CStruct class`.
     pub is_value: bool,
-    /// True when the class came from a boundary mirror.
-    pub is_boundary: bool,
 }
 
 /// Precomputed layouts for every class in the module.
 #[derive(Debug)]
 pub(crate) struct Layouts {
     classes: Vec<ClassLayout>,
+    handle_classes: Vec<HandleClass>,
     /// Whether each value class contains one or more managed handles in its
     /// language-layout storage. Boundary structs may contain `string` fields
     /// even though source `@CStruct` classes keep the narrower whitelist.
@@ -258,7 +257,6 @@ impl<'m> Builder<'m> {
             align,
             field_offsets,
             is_value: class.is_value,
-            is_boundary: class.is_boundary,
         };
         self.visiting[id] = false;
         self.slots[id] = Some(layout.clone());
@@ -354,12 +352,25 @@ impl Layouts {
         for (i, slot) in b.slots.into_iter().enumerate() {
             classes.push(slot.ok_or_else(|| internal(format!("class {i} not laid out")))?);
         }
+        let handle_classes = shapes
+            .iter()
+            .map(|class| {
+                if !class.is_value {
+                    HandleClass::Reference
+                } else if class.is_boundary {
+                    HandleClass::BoundaryValue
+                } else {
+                    HandleClass::Value
+                }
+            })
+            .collect::<Vec<_>>();
         let mut managed_interior = vec![false; n];
         let mut managed_known = vec![false; n];
         let mut managed_visiting = vec![false; n];
         for id in 0..n {
             managed_interior[id] = class_contains_managed(
                 shapes,
+                &handle_classes,
                 id,
                 &mut managed_interior,
                 &mut managed_known,
@@ -368,6 +379,7 @@ impl Layouts {
         }
         Ok(Layouts {
             classes,
+            handle_classes,
             managed_interior,
         })
     }
@@ -592,26 +604,22 @@ pub(crate) fn closure_environment_layout(
 /// reference classes, dynamic arrays, coroutines, and their nullable
 /// forms.
 pub(crate) fn is_managed(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
-    Ok(match ty {
-        Type::Str
-        | Type::RegExp
-        | Type::Object
-        | Type::Array(_)
-        | Type::Map(..)
-        | Type::Set(_)
-        | Type::Generator(_)
-        | Type::AsyncHandle(_) => true,
-        Type::Nullable(inner) => {
-            is_managed(layouts, inner)?
-                || matches!(**inner, Type::Func(_))
-                || matches!(&**inner, Type::Class(id) if {
-                    let class = layouts.class(id.0)?;
-                    class.is_value && class.is_boundary
-                })
+    validate_handle_class(layouts, ty)?;
+    // Does this value point to a Context allocation that the marker can reach?
+    Ok(ty
+        .handle_kind(&layouts.handle_classes)
+        .is_some_and(HandleKind::is_collector_managed))
+}
+
+fn validate_handle_class(layouts: &Layouts, ty: &Type) -> Result<(), String> {
+    match ty {
+        Type::Class(id) => {
+            layouts.class(id.0)?;
         }
-        Type::Class(id) => !layouts.class(id.0)?.is_value,
-        _ => false,
-    })
+        Type::Nullable(inner) => validate_handle_class(layouts, inner)?,
+        _ => {}
+    }
+    Ok(())
 }
 
 /// True when a value of `ty` is or *contains* managed handles: a managed
@@ -619,17 +627,7 @@ pub(crate) fn is_managed(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
 /// elements do, or an `IterResult` whose value does. Such values must be
 /// visible to the collector wherever they are stored.
 pub(crate) fn has_managed_interior(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
-    if is_managed(layouts, ty)? {
-        return Ok(true);
-    }
-    Ok(match ty {
-        Type::Class(id) if layouts.class(id.0)?.is_value => {
-            layouts.class_has_managed_interior(id.0)?
-        }
-        Type::FixedArray(elem, _) => has_managed_interior(layouts, elem)?,
-        Type::IterResult(v) => has_managed_interior(layouts, v)?,
-        _ => false,
-    })
+    type_contains_managed(layouts, ty)
 }
 
 /// Computes the managed-interior bit for one class without depending on
@@ -638,6 +636,7 @@ pub(crate) fn has_managed_interior(layouts: &Layouts, ty: &Type) -> Result<bool,
 /// classes recursively expose their stored fields to the collector.
 fn class_contains_managed(
     classes: &[ClassShape],
+    handle_classes: &[HandleClass],
     id: usize,
     memo: &mut [bool],
     known: &mut [bool],
@@ -669,7 +668,7 @@ fn class_contains_managed(
     visiting[id] = true;
     let mut contains = false;
     for field in &class.fields {
-        if type_contains_managed(classes, field, memo, known, visiting)? {
+        if shape_type_contains_managed(classes, handle_classes, field, memo, known, visiting)? {
             contains = true;
             break;
         }
@@ -680,38 +679,54 @@ fn class_contains_managed(
     Ok(contains)
 }
 
-fn type_contains_managed(
+fn shape_type_contains_managed(
     classes: &[ClassShape],
+    handle_classes: &[HandleClass],
     ty: &Type,
     memo: &mut [bool],
     known: &mut [bool],
     visiting: &mut [bool],
 ) -> Result<bool, String> {
+    validate_shape_handle_class(classes, ty)?;
+    if let Some(kind) = ty.handle_kind(handle_classes) {
+        return Ok(kind.contains_managed());
+    }
     Ok(match ty {
-        Type::Str
-        | Type::RegExp
-        | Type::Object
-        | Type::Array(_)
-        | Type::Map(..)
-        | Type::Set(_)
-        | Type::Generator(_)
-        | Type::AsyncHandle(_) => true,
-        Type::Nullable(inner) => match &**inner {
-            // A nullable value-class slot is a managed box handle, not an
-            // embedded copy. Do not recurse into the payload: recursive
-            // boundary classes terminate at this handle.
-            Type::Class(id) => {
-                let class = classes
-                    .get(id.0)
-                    .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?;
-                !class.is_value || class.is_boundary
-            }
-            Type::Func(_) => true,
-            other => type_contains_managed(classes, other, memo, known, visiting)?,
-        },
-        Type::Class(id) => class_contains_managed(classes, id.0, memo, known, visiting)?,
-        Type::FixedArray(elem, _) => type_contains_managed(classes, elem, memo, known, visiting)?,
-        Type::IterResult(value) => type_contains_managed(classes, value, memo, known, visiting)?,
+        Type::Class(id) => {
+            class_contains_managed(classes, handle_classes, id.0, memo, known, visiting)?
+        }
+        Type::FixedArray(elem, _) => {
+            shape_type_contains_managed(classes, handle_classes, elem, memo, known, visiting)?
+        }
+        Type::IterResult(value) => {
+            shape_type_contains_managed(classes, handle_classes, value, memo, known, visiting)?
+        }
+        _ => false,
+    })
+}
+
+fn validate_shape_handle_class(classes: &[ClassShape], ty: &Type) -> Result<(), String> {
+    match ty {
+        Type::Class(id) => {
+            classes
+                .get(id.0)
+                .ok_or_else(|| internal(format!("class id {} out of range", id.0)))?;
+        }
+        Type::Nullable(inner) => validate_shape_handle_class(classes, inner)?,
+        _ => {}
+    }
+    Ok(())
+}
+
+pub(crate) fn type_contains_managed(layouts: &Layouts, ty: &Type) -> Result<bool, String> {
+    validate_handle_class(layouts, ty)?;
+    if let Some(kind) = ty.handle_kind(&layouts.handle_classes) {
+        return Ok(kind.contains_managed());
+    }
+    Ok(match ty {
+        Type::Class(id) => layouts.class_has_managed_interior(id.0)?,
+        Type::FixedArray(elem, _) => type_contains_managed(layouts, elem)?,
+        Type::IterResult(value) => type_contains_managed(layouts, value)?,
         _ => false,
     })
 }

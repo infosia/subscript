@@ -994,6 +994,45 @@ mod tests {
     }
 
     #[test]
+    fn array_nullable_union_keeps_the_s011_acceptance_boundary() {
+        let source = "export function main(): void {\n  let a: i32[] | null = null;\n}\n";
+        let files = [SourceFile::new("test.ts", source)];
+        let diagnostics =
+            check_program(&files).expect_err("dynamic arrays are not accepted as nullable unions");
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
+        assert_eq!(diagnostics[0].code, RuleCode::S011);
+        assert_eq!(
+            diagnostics[0].message,
+            "unions are limited to `Ref | null`; `i32[] | null` is not a reference type union"
+        );
+    }
+
+    #[test]
+    fn array_and_regexp_identity_keep_the_s100_acceptance_boundary() {
+        let source = "export function main(): void {\n\
+                      \x20 let a: i32[] = [1];\n\
+                      \x20 let b: i32[] = a;\n\
+                      \x20 let first: RegExp = /a/;\n\
+                      \x20 let second: RegExp = first;\n\
+                      \x20 print(`${a === b} ${first === second}`);\n\
+                      }\n";
+        let files = [SourceFile::new("test.ts", source)];
+        let diagnostics = check_program(&files)
+            .expect_err("array and RegExp identity equality remain outside the language");
+        assert_eq!(diagnostics.len(), 2, "diagnostics: {diagnostics:?}");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!(
+            diagnostics[0].message,
+            "operator not defined for `i32[]` and `i32[]`"
+        );
+        assert_eq!(diagnostics[1].code, RuleCode::S100);
+        assert_eq!(
+            diagnostics[1].message,
+            "operator not defined for `RegExp` and `RegExp`"
+        );
+    }
+
+    #[test]
     fn conditional_arms_narrow_in_both_condition_orders() {
         check_one(
             "class C { x: u32; constructor(x: u32) { this.x = x; } }\n\

@@ -12,7 +12,8 @@
 use crate::diag::{Diagnostic, Pos, RuleCode};
 use crate::hir;
 use crate::types::{
-    scalar_size_align, Type, CRANELIFT_FRAME_ALIGNMENT, MAX_AGGREGATE_BYTES, MAX_FRAME_BYTES,
+    scalar_size_align, HandleClass, HandleKind, Type, CRANELIFT_FRAME_ALIGNMENT,
+    MAX_AGGREGATE_BYTES, MAX_FRAME_BYTES,
 };
 
 use super::Checker;
@@ -315,25 +316,14 @@ impl<'a> Validator<'a> {
     }
 
     fn is_managed(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Str
-            | Type::RegExp
-            | Type::Object
-            | Type::Array(_)
-            | Type::Map(..)
-            | Type::Set(_)
-            | Type::Generator(_) => true,
-            Type::Nullable(inner) => {
-                self.is_managed(inner)
-                    || matches!(**inner, Type::Func(_))
-                    || matches!(&**inner, Type::Class(id)
-                    if self.classes.get(id.0).is_some_and(|class| {
-                        class.is_value && class.is_boundary
-                    }))
-            }
-            Type::Class(id) => self.classes.get(id.0).is_some_and(|class| !class.is_value),
-            _ => false,
-        }
+        let classes = self
+            .classes
+            .iter()
+            .map(HandleClass::from)
+            .collect::<Vec<_>>();
+        // Fact filter: does this value point to a Context allocation that the marker can reach?
+        ty.handle_kind(&classes)
+            .is_some_and(HandleKind::is_collector_managed)
     }
 
     fn has_managed_interior(&self, ty: &Type) -> bool {

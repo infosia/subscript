@@ -7,7 +7,7 @@
 //! or more [`PoisonedImport`] records.
 
 use crate::diag::Pos;
-use crate::types::{ClassId, EnumId, Type};
+use crate::types::{ClassId, EnumId, HandleClass, HandleKind, Type};
 
 /// Names the synchronous disposal hook after the checker lowers `[Symbol.dispose]`.
 pub const DISPOSE_METHOD_NAME: &str = "[[Symbol.dispose]]";
@@ -225,6 +225,18 @@ pub struct ClassDef {
     pub index_signature: Option<IndexSignature>,
     /// Position of the declaration.
     pub pos: Pos,
+}
+
+impl From<&ClassDef> for HandleClass {
+    fn from(class: &ClassDef) -> Self {
+        if !class.is_value {
+            Self::Reference
+        } else if class.is_boundary {
+            Self::BoundaryValue
+        } else {
+            Self::Value
+        }
+    }
 }
 
 /// An explicit alignment on an `@CStruct` value class.
@@ -3542,35 +3554,15 @@ impl Expr {
         let allocation = |pos: &Pos| TrapSite::Allocation { pos: pos.clone() };
         let call = |pos: &Pos| TrapSite::Call { pos: pos.clone() };
         let lifetime = |pos: &Pos| TrapSite::DevOnlyLifetime { pos: pos.clone() };
-        let class_is_reference = |id: ClassId| {
-            module
-                .classes
-                .get(id.0)
-                .is_some_and(|class| !class.is_value)
-        };
-        let class_is_boundary_box = |id: ClassId| {
-            module
-                .classes
-                .get(id.0)
-                .is_some_and(|class| class.is_value && class.is_boundary)
-        };
-        let reference_value = |ty: &Type| match ty {
-            Type::Class(id) => class_is_reference(*id),
-            Type::Array(_) | Type::Map(..) | Type::Set(_) | Type::Generator(_) | Type::Object => {
-                true
-            }
-            Type::Nullable(inner) => {
-                matches!(
-                    &**inner,
-                    Type::Object
-                        | Type::Array(_)
-                        | Type::Map(..)
-                        | Type::Set(_)
-                        | Type::Generator(_)
-                ) || matches!(&**inner, Type::Class(id)
-                    if class_is_reference(*id) || class_is_boundary_box(*id))
-            }
-            _ => false,
+        let handle_classes = module
+            .classes
+            .iter()
+            .map(HandleClass::from)
+            .collect::<Vec<_>>();
+        // Fact filter: can dereferencing this value observe a freed Context allocation?
+        let reference_value = |ty: &Type| {
+            ty.handle_kind(&handle_classes)
+                .is_some_and(HandleKind::needs_lifetime_trap)
         };
         let boundary_box_store = |stored: &Type, value: &Type| {
             matches!(stored, Type::Nullable(inner)

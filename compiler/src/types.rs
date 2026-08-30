@@ -42,6 +42,136 @@ pub struct EnumId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StringAliasId(pub usize);
 
+/// The handle-relevant shape of one class definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum HandleClass {
+    /// A script or boundary value class.
+    Value,
+    /// A boundary value class whose nullable form uses a managed box.
+    BoundaryValue,
+    /// A reference class whose values are managed handles.
+    Reference,
+}
+
+/// The runtime handle representation of a language type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum HandleKind {
+    /// A string allocation.
+    Str,
+    /// A regular-expression allocation.
+    RegExp,
+    /// A boundary-opaque object handle.
+    Object,
+    /// A dynamic-array allocation.
+    Array,
+    /// A map allocation.
+    Map,
+    /// A set allocation.
+    Set,
+    /// A generator-frame allocation.
+    Generator,
+    /// An asynchronous coroutine-frame handle.
+    AsyncHandle,
+    /// A parent-side worker handle.
+    Worker,
+    /// A worker-side inbox endpoint.
+    Inbox,
+    /// A worker-side outbox endpoint.
+    Outbox,
+    /// A bare function pair.
+    Func,
+    /// A reference-class allocation.
+    ReferenceClass,
+    /// The managed box for a nullable function.
+    FuncBox,
+    /// The managed box for a nullable boundary value class.
+    BoundaryBox,
+}
+
+impl HandleKind {
+    /// Fact filter: does this handle point to a Context allocation that the marker can reach?
+    #[must_use]
+    pub fn is_collector_managed(self) -> bool {
+        matches!(
+            self,
+            Self::Str
+                | Self::RegExp
+                | Self::Object
+                | Self::Array
+                | Self::Map
+                | Self::Set
+                | Self::Generator
+                | Self::AsyncHandle
+                | Self::ReferenceClass
+                | Self::FuncBox
+                | Self::BoundaryBox
+        )
+    }
+
+    /// Acceptance filter (S011): can this handle kind be the non-null member
+    /// of a reference union accepted by the language today?
+    ///
+    /// The runtime representation could also support `RegExp`, `Array`,
+    /// `Generator`, and `AsyncHandle`. Those are candidate widenings only;
+    /// the corpus does not accept them. An already-nullable type is likewise
+    /// not a new union member, and a plain value class has no nullable handle.
+    #[must_use]
+    pub fn supports_nullable(self) -> bool {
+        matches!(
+            self,
+            Self::Object
+                | Self::Map
+                | Self::Set
+                | Self::Worker
+                | Self::Inbox
+                | Self::Outbox
+                | Self::Func
+                | Self::ReferenceClass
+                | Self::FuncBox
+                | Self::BoundaryBox
+        )
+    }
+
+    /// Acceptance filter (S100/S014): does the language accept this handle
+    /// kind where the old reference-class surface is required?
+    ///
+    /// The runtime could support identity operations for `RegExp`, `Object`,
+    /// `Array`, `Generator`, `AsyncHandle`, `Worker`, `Inbox`, and `Outbox`,
+    /// plus nullable forms of identity handles. They remain candidate
+    /// widenings; equality, `as`, object narrowing, and Map/Set acceptance keep
+    /// the corpus-recorded `Map`, `Set`, and reference-class answer.
+    #[must_use]
+    pub fn uses_reference_identity(self) -> bool {
+        matches!(self, Self::Map | Self::Set | Self::ReferenceClass)
+    }
+
+    /// Fact filter: can dereferencing this handle observe a freed Context allocation?
+    #[must_use]
+    pub fn needs_lifetime_trap(self) -> bool {
+        matches!(
+            self,
+            Self::RegExp
+                | Self::Object
+                | Self::Array
+                | Self::Map
+                | Self::Set
+                | Self::Generator
+                | Self::AsyncHandle
+                | Self::ReferenceClass
+                | Self::FuncBox
+                | Self::BoundaryBox
+        )
+    }
+
+    /// Can the stored representation expose managed handles to the marker?
+    #[must_use]
+    pub fn contains_managed(self) -> bool {
+        self.is_collector_managed() || matches!(self, Self::Func)
+    }
+}
+
 /// A fully resolved language type.
 ///
 /// Sized numerics are all distinct; classes are nominal (two same-shaped
@@ -184,6 +314,41 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
 }
 
 impl Type {
+    /// Returns the runtime handle representation, or `None` for a non-handle type.
+    #[must_use]
+    pub fn handle_kind(&self, classes: &[HandleClass]) -> Option<HandleKind> {
+        match self {
+            Type::Str => Some(HandleKind::Str),
+            Type::RegExp => Some(HandleKind::RegExp),
+            Type::Object => Some(HandleKind::Object),
+            Type::Array(_) => Some(HandleKind::Array),
+            Type::Map(..) => Some(HandleKind::Map),
+            Type::Set(_) => Some(HandleKind::Set),
+            Type::Generator(_) => Some(HandleKind::Generator),
+            Type::AsyncHandle(_) => Some(HandleKind::AsyncHandle),
+            Type::Worker(..) => Some(HandleKind::Worker),
+            Type::Inbox(_) => Some(HandleKind::Inbox),
+            Type::Outbox(_) => Some(HandleKind::Outbox),
+            Type::Func(_) => Some(HandleKind::Func),
+            Type::Class(id) => matches!(classes.get(id.0), Some(HandleClass::Reference))
+                .then_some(HandleKind::ReferenceClass),
+            Type::Nullable(inner) => match inner.handle_kind(classes) {
+                Some(HandleKind::Func) => Some(HandleKind::FuncBox),
+                Some(kind) => Some(kind),
+                None if matches!(
+                    inner.as_ref(),
+                    Type::Class(id)
+                        if matches!(classes.get(id.0), Some(HandleClass::BoundaryValue))
+                ) =>
+                {
+                    Some(HandleKind::BoundaryBox)
+                }
+                None => None,
+            },
+            _ => None,
+        }
+    }
+
     /// True for all sized numeric types.
     #[must_use]
     pub fn is_numeric(&self) -> bool {
@@ -225,22 +390,36 @@ impl Type {
         matches!(self, Type::F16 | Type::F32 | Type::F64)
     }
 
-    /// True when the type may appear inside `Ref | null` (C7): reference
-    /// classes (checked by the caller against the class table), `object`,
-    /// and function types.
+    /// Acceptance filter (S011): can this type appear as the non-null member
+    /// of `Ref | null` under the corpus-recorded language surface?
+    ///
+    /// Candidate widenings that the runtime could represent but the language
+    /// does not accept today are `RegExp`, `Array`, `Generator`, and
+    /// `AsyncHandle`. Already-nullable types also retain the old `false`
+    /// answer; plain value classes remain outside this surface.
     #[must_use]
-    pub fn is_reference_shape(&self) -> bool {
-        matches!(
-            self,
-            Type::Class(_)
-                | Type::Map(..)
-                | Type::Set(_)
-                | Type::Worker(..)
-                | Type::Inbox(_)
-                | Type::Outbox(_)
-                | Type::Object
-                | Type::Func(_)
-        )
+    pub fn is_reference_shape(&self, classes: &[HandleClass]) -> bool {
+        if matches!(self, Type::Nullable(_)) {
+            return false;
+        }
+        Type::Nullable(Box::new(self.clone()))
+            .handle_kind(classes)
+            .is_some_and(HandleKind::supports_nullable)
+    }
+
+    /// Acceptance filter (S100/S014): does the old language surface treat
+    /// this non-null type as a reference class?
+    ///
+    /// Runtime-capable candidates deliberately not accepted are `RegExp`,
+    /// `Object`, `Array`, `Generator`, `AsyncHandle`, `Worker`, `Inbox`,
+    /// `Outbox`, and nullable identity handles. They remain candidates for a
+    /// separate corpus decision, not part of handle-table consolidation.
+    #[must_use]
+    pub fn uses_reference_identity(&self, classes: &[HandleClass]) -> bool {
+        !matches!(self, Type::Nullable(_))
+            && self
+                .handle_kind(classes)
+                .is_some_and(HandleKind::uses_reference_identity)
     }
 }
 
@@ -387,6 +566,196 @@ mod tests {
     #[test]
     fn nominal_classes_are_distinct_by_id() {
         assert_ne!(Type::Class(ClassId(0)), Type::Class(ClassId(1)));
+    }
+
+    #[test]
+    fn every_type_variant_has_the_recorded_handle_kind() {
+        let function = || {
+            Type::Func(Box::new(FuncType {
+                params: vec![Type::I32],
+                ret: Type::Bool,
+            }))
+        };
+        let classes = [
+            HandleClass::Value,
+            HandleClass::BoundaryValue,
+            HandleClass::Reference,
+        ];
+        let cases = vec![
+            (Type::I8, None),
+            (Type::U8, None),
+            (Type::I16, None),
+            (Type::U16, None),
+            (Type::I32, None),
+            (Type::U32, None),
+            (Type::I64, None),
+            (Type::U64, None),
+            (Type::F32, None),
+            (Type::F64, None),
+            (Type::F16, None),
+            (Type::Bool, None),
+            (Type::Str, Some(HandleKind::Str)),
+            (Type::Date, None),
+            (Type::RegExp, Some(HandleKind::RegExp)),
+            (Type::Void, None),
+            (Type::Null, None),
+            (Type::Object, Some(HandleKind::Object)),
+            (Type::Class(ClassId(0)), None),
+            (Type::Class(ClassId(1)), None),
+            (Type::Class(ClassId(2)), Some(HandleKind::ReferenceClass)),
+            (Type::Enum(EnumId(0)), None),
+            (Type::StringAlias(StringAliasId(0)), None),
+            (Type::FixedArray(Box::new(Type::I32), 2), None),
+            (Type::Array(Box::new(Type::I32)), Some(HandleKind::Array)),
+            (
+                Type::Map(Box::new(Type::I32), Box::new(Type::Bool)),
+                Some(HandleKind::Map),
+            ),
+            (Type::Set(Box::new(Type::I32)), Some(HandleKind::Set)),
+            (
+                Type::Worker(Box::new(Type::I32), Box::new(Type::Bool)),
+                Some(HandleKind::Worker),
+            ),
+            (Type::Inbox(Box::new(Type::I32)), Some(HandleKind::Inbox)),
+            (Type::Outbox(Box::new(Type::I32)), Some(HandleKind::Outbox)),
+            (function(), Some(HandleKind::Func)),
+            (
+                Type::Nullable(Box::new(function())),
+                Some(HandleKind::FuncBox),
+            ),
+            (
+                Type::Nullable(Box::new(Type::Class(ClassId(1)))),
+                Some(HandleKind::BoundaryBox),
+            ),
+            (
+                Type::Nullable(Box::new(Type::Class(ClassId(2)))),
+                Some(HandleKind::ReferenceClass),
+            ),
+            (
+                Type::Generator(Box::new(Type::I32)),
+                Some(HandleKind::Generator),
+            ),
+            (
+                Type::AsyncHandle(Box::new(Type::I32)),
+                Some(HandleKind::AsyncHandle),
+            ),
+            (Type::IterResult(Box::new(Type::I32)), None),
+            (Type::Error, None),
+        ];
+        for (ty, expected) in cases {
+            assert_eq!(ty.handle_kind(&classes), expected, "{ty:?}");
+        }
+    }
+
+    #[test]
+    fn every_handle_kind_has_the_recorded_filters() {
+        let cases = [
+            (HandleKind::Str, true, false, false, false, true),
+            (HandleKind::RegExp, true, false, false, true, true),
+            (HandleKind::Object, true, true, false, true, true),
+            (HandleKind::Array, true, false, false, true, true),
+            (HandleKind::Map, true, true, true, true, true),
+            (HandleKind::Set, true, true, true, true, true),
+            (HandleKind::Generator, true, false, false, true, true),
+            (HandleKind::AsyncHandle, true, false, false, true, true),
+            (HandleKind::Worker, false, true, false, false, false),
+            (HandleKind::Inbox, false, true, false, false, false),
+            (HandleKind::Outbox, false, true, false, false, false),
+            (HandleKind::Func, false, true, false, false, true),
+            (HandleKind::ReferenceClass, true, true, true, true, true),
+            (HandleKind::FuncBox, true, true, false, true, true),
+            (HandleKind::BoundaryBox, true, true, false, true, true),
+        ];
+        for (kind, managed, nullable, identity, lifetime, contains) in cases {
+            assert_eq!(kind.is_collector_managed(), managed, "{kind:?}");
+            assert_eq!(kind.supports_nullable(), nullable, "{kind:?}");
+            assert_eq!(kind.uses_reference_identity(), identity, "{kind:?}");
+            assert_eq!(kind.needs_lifetime_trap(), lifetime, "{kind:?}");
+            assert_eq!(kind.contains_managed(), contains, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn every_type_variant_keeps_the_recorded_acceptance_filters() {
+        let function = || {
+            Type::Func(Box::new(FuncType {
+                params: vec![Type::I32],
+                ret: Type::Bool,
+            }))
+        };
+        let classes = [
+            HandleClass::Value,
+            HandleClass::BoundaryValue,
+            HandleClass::Reference,
+        ];
+        let cases = vec![
+            (Type::I8, false, false),
+            (Type::U8, false, false),
+            (Type::I16, false, false),
+            (Type::U16, false, false),
+            (Type::I32, false, false),
+            (Type::U32, false, false),
+            (Type::I64, false, false),
+            (Type::U64, false, false),
+            (Type::F32, false, false),
+            (Type::F64, false, false),
+            (Type::F16, false, false),
+            (Type::Bool, false, false),
+            (Type::Str, false, false),
+            (Type::Date, false, false),
+            (Type::RegExp, false, false),
+            (Type::Void, false, false),
+            (Type::Null, false, false),
+            (Type::Object, true, false),
+            (Type::Class(ClassId(0)), false, false),
+            (Type::Class(ClassId(1)), true, false),
+            (Type::Class(ClassId(2)), true, true),
+            (Type::Enum(EnumId(0)), false, false),
+            (Type::StringAlias(StringAliasId(0)), false, false),
+            (Type::FixedArray(Box::new(Type::I32), 2), false, false),
+            (Type::Array(Box::new(Type::I32)), false, false),
+            (
+                Type::Map(Box::new(Type::I32), Box::new(Type::Bool)),
+                true,
+                true,
+            ),
+            (Type::Set(Box::new(Type::I32)), true, true),
+            (
+                Type::Worker(Box::new(Type::I32), Box::new(Type::Bool)),
+                true,
+                false,
+            ),
+            (Type::Inbox(Box::new(Type::I32)), true, false),
+            (Type::Outbox(Box::new(Type::I32)), true, false),
+            (function(), true, false),
+            (Type::Nullable(Box::new(function())), false, false),
+            (
+                Type::Nullable(Box::new(Type::Class(ClassId(1)))),
+                false,
+                false,
+            ),
+            (
+                Type::Nullable(Box::new(Type::Class(ClassId(2)))),
+                false,
+                false,
+            ),
+            (
+                Type::Nullable(Box::new(Type::Map(
+                    Box::new(Type::I32),
+                    Box::new(Type::Bool),
+                ))),
+                false,
+                false,
+            ),
+            (Type::Generator(Box::new(Type::I32)), false, false),
+            (Type::AsyncHandle(Box::new(Type::I32)), false, false),
+            (Type::IterResult(Box::new(Type::I32)), false, false),
+            (Type::Error, false, false),
+        ];
+        for (ty, nullable, identity) in cases {
+            assert_eq!(ty.is_reference_shape(&classes), nullable, "{ty:?}");
+            assert_eq!(ty.uses_reference_identity(&classes), identity, "{ty:?}");
+        }
     }
 
     #[test]

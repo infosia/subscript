@@ -1372,8 +1372,12 @@ impl<'p> Checker<'p> {
     }
 
     pub(crate) fn is_reference_class(&self, ty: &Type) -> bool {
-        matches!(ty, Type::Class(id) if !self.classes[id.0].is_value)
-            || matches!(ty, Type::Map(..) | Type::Set(_))
+        let classes = self
+            .classes
+            .iter()
+            .map(crate::types::HandleClass::from)
+            .collect::<Vec<_>>();
+        ty.uses_reference_identity(&classes)
     }
 
     /// The Q24 hash/equality kind of a key, or `None` outside the

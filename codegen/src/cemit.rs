@@ -13,7 +13,7 @@ use subscript_compiler::Pos;
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;
 
-use crate::layout::Layouts;
+use crate::layout::{type_contains_managed, Layouts};
 use crate::lir::verify_module;
 use crate::lir_types::{
     array_element_kind, array_format_kind, association_key_kind, boundary_class_contains_pointer,
@@ -737,71 +737,6 @@ impl<'m> Emitter<'m> {
         })
     }
 
-    fn type_contains_managed(
-        &self,
-        ty: &Type,
-        visiting: &mut HashSet<ClassId>,
-    ) -> Result<bool, String> {
-        Ok(match ty {
-            Type::Str
-            | Type::RegExp
-            | Type::Object
-            | Type::Array(_)
-            | Type::Map(_, _)
-            | Type::Set(_)
-            | Type::Generator(_)
-            | Type::AsyncHandle(_)
-            | Type::Worker(_, _)
-            | Type::Inbox(_)
-            | Type::Outbox(_)
-            | Type::Func(_) => true,
-            Type::Nullable(inner) => match inner.as_ref() {
-                Type::Class(id) if self.class(*id)?.is_value => self.class(*id)?.is_boundary,
-                other => self.type_contains_managed(other, visiting)?,
-            },
-            Type::Class(id) => {
-                let class = self.class(*id)?;
-                if !class.is_value {
-                    true
-                } else if !visiting.insert(*id) {
-                    false
-                } else {
-                    let result = class
-                        .fields
-                        .iter()
-                        .map(|field| self.type_contains_managed(&field.ty, visiting))
-                        .collect::<Result<Vec<_>, _>>()?
-                        .into_iter()
-                        .any(|contains| contains);
-                    visiting.remove(id);
-                    result
-                }
-            }
-            Type::FixedArray(element, _) | Type::IterResult(element) => {
-                self.type_contains_managed(element, visiting)?
-            }
-            _ => false,
-        })
-    }
-
-    fn value_contains_managed(&self, ty: &l::ValueType) -> Result<bool, String> {
-        match ty {
-            l::ValueType::Data(ty) => self.type_contains_managed(ty, &mut HashSet::new()),
-            l::ValueType::Iterator(iterator) => Ok(matches!(
-                iterator.kind,
-                l::ForOfKind::ArrayValues
-                    | l::ForOfKind::ArrayKeys
-                    | l::ForOfKind::ArrayValuesReverse
-                    | l::ForOfKind::ArrayKeysReverse
-                    | l::ForOfKind::MapKeys
-                    | l::ForOfKind::MapValues
-                    | l::ForOfKind::SetValues
-                    | l::ForOfKind::StringCodePoints
-            )),
-            l::ValueType::Address(_) => Ok(false),
-        }
-    }
-
     fn emit(mut self, require_main: bool) -> Result<CProgram, String> {
         if require_main && self.module.entry.is_none() {
             return Err("no exported `main(): void` entry point".into());
@@ -1360,7 +1295,7 @@ impl<'m> Emitter<'m> {
         out.push_str("void subscript_init(subscript_rt_context* ctx) {\n");
         let _ = writeln!(out, "    if ({init_call} == NULL) return;");
         for global in &self.module.globals {
-            if self.type_contains_managed(&global.ty, &mut HashSet::new())? {
+            if type_contains_managed(&self.layouts, &global.ty)? {
                 let call = self.runtime_call(
                     "void",
                     "subscript_rt_root_add",
@@ -1574,6 +1509,15 @@ impl<'m> Emitter<'m> {
             );
         }
         Ok(())
+    }
+}
+
+fn local_contains_managed(layouts: &Layouts, ty: &l::ValueType) -> Result<bool, String> {
+    match ty {
+        l::ValueType::Data(ty) => type_contains_managed(layouts, ty),
+        // Every iterator owns the shared four-word root storage plan.
+        l::ValueType::Iterator(_) => Ok(true),
+        l::ValueType::Address(_) => Ok(false),
     }
 }
 
@@ -2687,8 +2631,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .iter()
             .filter(|local| local.storage == l::LocalStorageClass::Activation)
             .map(|local| {
-                emitter
-                    .value_contains_managed(&local.ty)
+                local_contains_managed(&emitter.layouts, &local.ty)
                     .map(|managed| managed.then_some(local.id))
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -2708,8 +2651,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     && !promoted_locals.contains_key(&local.id)
             })
             .map(|local| {
-                emitter
-                    .value_contains_managed(&local.ty)
+                local_contains_managed(&emitter.layouts, &local.ty)
                     .map(|contains| contains.then_some(local.id))
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -8653,6 +8595,122 @@ mod tests {
             error.contains("LIR carries 2 site(s), transcriber consumed 1"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn rooted_local_decision_matches_the_shared_plan_for_all_handles_and_iterators() {
+        let mut module = lower_test_source(
+            "rooted-locals.ts",
+            "@CStruct class Boundary { x: i32 = 0; }\nclass Ref {}\nexport function main(): void {}\n",
+        );
+        module.classes[0].is_boundary = true;
+        let boundary = Type::Class(module.classes[0].id);
+        let reference = Type::Class(module.classes[1].id);
+        let function = || {
+            Type::Func(Box::new(subscript_compiler::FuncType {
+                params: vec![Type::I32],
+                ret: Type::Bool,
+            }))
+        };
+        let mut types = vec![
+            l::ValueType::Data(Type::Str),
+            l::ValueType::Data(Type::RegExp),
+            l::ValueType::Data(Type::Object),
+            l::ValueType::Data(Type::Array(Box::new(Type::I32))),
+            l::ValueType::Data(Type::Map(Box::new(Type::I32), Box::new(Type::Bool))),
+            l::ValueType::Data(Type::Set(Box::new(Type::I32))),
+            l::ValueType::Data(Type::Generator(Box::new(Type::I32))),
+            l::ValueType::Data(Type::AsyncHandle(Box::new(Type::I32))),
+            l::ValueType::Data(Type::Worker(Box::new(Type::I32), Box::new(Type::Bool))),
+            l::ValueType::Data(Type::Inbox(Box::new(Type::I32))),
+            l::ValueType::Data(Type::Outbox(Box::new(Type::I32))),
+            l::ValueType::Data(function()),
+            l::ValueType::Data(reference),
+            l::ValueType::Data(Type::Nullable(Box::new(function()))),
+            l::ValueType::Data(Type::Nullable(Box::new(boundary))),
+        ];
+        let iterator_kinds = [
+            l::ForOfKind::ArrayValues,
+            l::ForOfKind::ArrayKeys,
+            l::ForOfKind::ArrayValuesReverse,
+            l::ForOfKind::ArrayKeysReverse,
+            l::ForOfKind::FixedArrayValues,
+            l::ForOfKind::MapKeys,
+            l::ForOfKind::MapValues,
+            l::ForOfKind::SetValues,
+            l::ForOfKind::StringCodePoints,
+        ];
+        types.extend(iterator_kinds.map(|kind| {
+            l::ValueType::Iterator(l::IteratorType {
+                kind,
+                element: Type::I32,
+            })
+        }));
+        let pos = Pos::new("rooted-locals.ts", 3, 1);
+        let values = types
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| l::Value {
+                id: l::ValueId(index as u32),
+                ty: ty.clone(),
+                source_name: None,
+            })
+            .collect::<Vec<_>>();
+        let locals = types
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| l::Local {
+                id: l::LocalId(index as u32),
+                source_name: format!("local{index}"),
+                ty: ty.clone(),
+                mutable: false,
+                storage: l::LocalStorageClass::Activation,
+                pos: pos.clone(),
+            })
+            .collect::<Vec<_>>();
+        let function = l::Function {
+            id: l::FunctionId(0),
+            source_name: "main".into(),
+            kind: l::FunctionKind::Free,
+            exported: true,
+            is_generator: false,
+            is_async: false,
+            creation_traps: Vec::new(),
+            host_entry_traps: Some(Vec::new()),
+            parameters: Vec::new(),
+            return_type: Type::Void,
+            locals,
+            values,
+            liveness: l::Liveness {
+                live_ins: vec![Vec::new()],
+                value_origins: (0..types.len())
+                    .map(|index| l::ValueId(index as u32))
+                    .collect(),
+            },
+            blocks: vec![l::BasicBlock {
+                id: l::BlockId(0),
+                source_name: None,
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: l::Terminator::Return {
+                    value: None,
+                    pos: pos.clone(),
+                },
+            }],
+            entry: l::BlockId(0),
+            pos,
+        };
+        module.functions = vec![function];
+        module.entry = Some(l::FunctionId(0));
+        let layouts = Layouts::build_lir(&module).expect("test classes have valid layouts");
+        let plan = root_storage::plan(&module.functions[0], &layouts)
+            .expect("the shared root plan accepts every handle kind");
+        for (index, local) in module.functions[0].locals.iter().enumerate() {
+            let cemit = local_contains_managed(&layouts, &local.ty)
+                .expect("the C emitter classifies the local");
+            let shared = plan.value_slots[index].is_some();
+            assert_eq!(cemit, shared, "{}: {:?}", local.source_name, local.ty);
+        }
     }
 
     #[test]
