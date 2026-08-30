@@ -132,3 +132,16 @@ one scope-exit pass (195 lines removed, 122 added in `check/mod.rs`).
 The round stopped once: the `dispose` field needed pattern updates in
 `codegen/src/lir.rs`, outside the handoff's file list; the list was
 widened. Clippy 7/21/13. Gate on main: 1,137 passed, 0 failed.
+
+## Round 7 — two runtime facts (landed `479676b`)
+
+`TrapKind::message` owns every trap message; two kinds had two
+spellings. `runtime/src/valeq.rs` owns `value_eq` and `read_uint`;
+`F16` is array-only (§10.2 rejects it as a key; the `KeyKind` ABI has
+no `F16` tag). Clippy 7/21/13. Gate on main: 1,140 passed, 0 failed.
+
+## MAJOR pass: state
+
+All 16 MAJOR findings landed in seven rounds (`5487643`..`479676b`).
+The MINORs (66) are not started. A Phase Review of the cumulative diff
+follows.
