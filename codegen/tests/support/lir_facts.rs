@@ -624,23 +624,12 @@ fn lir_boundary_box(
             && definition.is_boundary
             && definition.fields.first().is_some_and(|field| {
                 field.ty == subscript_compiler::Type::Class(*target)
-                    && lir_embedded_boundary_header(lir, *target)
+                    && lir
+                        .classes
+                        .get(target.0)
+                        .is_some_and(|class| class.is_embedded_header)
             })
     })
-}
-
-fn lir_embedded_boundary_header(lir: &l::Module, header: subscript_compiler::ClassId) -> bool {
-    let nullable =
-        subscript_compiler::Type::Nullable(Box::new(subscript_compiler::Type::Class(header)));
-    lir.classes
-        .iter()
-        .any(|class| class.is_boundary && class.fields.iter().any(|field| field.ty == nullable))
-        || lir.foreign_functions.iter().any(|function| {
-            function
-                .parameters
-                .iter()
-                .any(|parameter| parameter.ty == nullable)
-        })
 }
 
 fn compare_terminator_positions(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>) {

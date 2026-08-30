@@ -65,6 +65,8 @@ pub struct Class {
     pub is_descriptor: bool,
     /// Whether the declaration came from a boundary mirror.
     pub is_boundary: bool,
+    /// Whether this boundary value class is an intrusive embedded header.
+    pub is_embedded_header: bool,
     /// Explicit alignment, when declared.
     pub alignment: Option<u32>,
     /// Fields in declaration order.
@@ -371,6 +373,8 @@ pub struct Value {
     pub id: ValueId,
     /// Exact value type.
     pub ty: ValueType,
+    /// Whether this value is a fresh async handle or handle-array owner.
+    pub fresh_owner: bool,
     /// Optional diagnostic source name; temporaries carry `None`.
     pub source_name: Option<String>,
 }
@@ -535,6 +539,20 @@ pub enum InstructionKind {
     IteratorAdvance,
     /// Checker-internal typed zero.
     Zero,
+}
+
+impl InstructionKind {
+    /// Reports whether this instruction kind can produce a fresh async owner.
+    pub fn produces_fresh_async_owner(&self) -> bool {
+        matches!(
+            self,
+            Self::ArrayLiteral
+                | Self::ArrayWithCapacity
+                | Self::ArraySpreadLiteral(_)
+                | Self::Call(_)
+                | Self::AsyncHandleCreate(_)
+        )
+    }
 }
 
 /// A class field or a built-in aggregate field.
@@ -1184,6 +1202,16 @@ mod tests {
             parameter_types: Vec::new(),
             return_type: None,
         }
+    }
+
+    #[test]
+    fn fresh_async_owner_instruction_table_names_allocations_and_calls() {
+        assert!(InstructionKind::ArrayLiteral.produces_fresh_async_owner());
+        assert!(InstructionKind::ArrayWithCapacity.produces_fresh_async_owner());
+        assert!(InstructionKind::ArraySpreadLiteral(Vec::new()).produces_fresh_async_owner());
+        assert!(InstructionKind::Call(async_target()).produces_fresh_async_owner());
+        assert!(InstructionKind::AsyncHandleCreate(async_target()).produces_fresh_async_owner());
+        assert!(!InstructionKind::Copy.produces_fresh_async_owner());
     }
 
     #[test]

@@ -16,8 +16,8 @@ use subscript_runtime::TrapKind;
 use crate::layout::{type_contains_managed, Layouts};
 use crate::lir::verify_module;
 use crate::lir_types::{
-    array_element_kind, array_format_kind, association_key_kind, boundary_class_contains_pointer,
-    boundary_class_is_embedded_header, boundary_class_needs_scratch, boundary_class_requires_build,
+    array_element_kind, array_format_kind, association_key_kind, boundary_box_class,
+    boundary_class_contains_pointer, boundary_class_needs_scratch, boundary_class_requires_build,
     boundary_type_requires_build, is_userdata_slot,
 };
 use crate::root_storage::{self, RootStoragePlan};
@@ -405,17 +405,10 @@ fn foreign_parameter_type_matches(
     if actual == &l::ValueType::Data(declared.clone()) {
         return true;
     }
-    let (l::ValueType::Address(address), Type::Nullable(nullable)) = (actual, declared) else {
+    let l::ValueType::Address(address) = actual else {
         return false;
     };
-    let Type::Class(class) = nullable.as_ref() else {
-        return false;
-    };
-    address.pointee == Type::Class(*class)
-        && module
-            .classes
-            .get(class.0)
-            .is_some_and(|definition| definition.is_value && definition.is_boundary)
+    boundary_box_class(module, declared).is_some_and(|class| address.pointee == Type::Class(class))
 }
 
 fn explicit_parameters(function: &l::Function) -> impl Iterator<Item = &l::Parameter> {
@@ -6091,8 +6084,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     let Type::Class(nested) = inner.as_ref() else {
                         unreachable!()
                     };
-                    let force_rebuild =
-                        !boundary_class_is_embedded_header(self.emitter.module, *nested);
+                    let force_rebuild = !self.emitter.class(*nested)?.is_embedded_header;
                     parts.push(
                         self.marshal_boundary_pointer(
                             out,
@@ -6126,7 +6118,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         position: u32,
         force_rebuild: bool,
     ) -> Result<(String, Option<BoundaryPtrWriteback>), String> {
-        if boundary_class_is_embedded_header(self.emitter.module, class)
+        if self.emitter.class(class)?.is_embedded_header
             || (!boundary_class_needs_scratch(self.emitter.module, class)?
                 && !(force_rebuild && boundary_class_requires_build(self.emitter.module, class)?))
         {
@@ -8447,6 +8439,7 @@ mod tests {
             .map(|(index, ty)| l::Value {
                 id: l::ValueId(index as u32),
                 ty: ty.clone(),
+                fresh_owner: false,
                 source_name: None,
             })
             .collect::<Vec<_>>();

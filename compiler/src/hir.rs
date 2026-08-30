@@ -3195,6 +3195,23 @@ pub enum ExprKind {
     },
 }
 
+impl ExprKind {
+    /// Reports whether this expression kind can produce a fresh async owner.
+    pub fn produces_fresh_async_owner(&self) -> bool {
+        match self {
+            Self::AsyncHandleCreate { .. }
+            | Self::AsyncHandleTransfer { .. }
+            | Self::Call { .. }
+            | Self::ArrayLit(_)
+            | Self::ArraySpreadLit(_) => true,
+            Self::Cond { then, els, .. } => {
+                then.kind.produces_fresh_async_owner() && els.kind.produces_fresh_async_owner()
+            }
+            _ => false,
+        }
+    }
+}
+
 /// Target of a direct async call in await position (Q34/R13).
 ///
 /// Keeping the method receiver inside the target makes its source-order
@@ -4027,6 +4044,23 @@ mod tests {
             ty: Type::I32,
             pos: Pos::new("children.ts", 1, 1),
         }
+    }
+
+    #[test]
+    fn fresh_async_owner_expression_table_keeps_fresh_conditionals() {
+        assert!(ExprKind::ArrayLit(Vec::new()).produces_fresh_async_owner());
+        assert!(ExprKind::Cond {
+            cond: Box::new(child_expr(0)),
+            then: Box::new(test_expr(ExprKind::ArrayLit(Vec::new()))),
+            els: Box::new(test_expr(ExprKind::ArraySpreadLit(Vec::new()))),
+        }
+        .produces_fresh_async_owner());
+        assert!(!ExprKind::Cond {
+            cond: Box::new(child_expr(0)),
+            then: Box::new(test_expr(ExprKind::ArrayLit(Vec::new()))),
+            els: Box::new(child_expr(1)),
+        }
+        .produces_fresh_async_owner());
     }
 
     #[test]

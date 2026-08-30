@@ -232,6 +232,7 @@ struct Frame {
 struct InterpreterLocal {
     storage: l::LocalStorageClass,
     slot: Slot,
+    poisoned_at: Option<(l::BlockId, Pos)>,
 }
 
 impl InterpreterLocal {
@@ -401,6 +402,7 @@ impl<'m> Interpreter<'m> {
                     l::ValueType::Data(ty) => self.zero(ty),
                     l::ValueType::Address(_) | l::ValueType::Iterator(_) => Value::Void,
                 })),
+                poisoned_at: None,
             })
             .collect();
         for (parameter, argument) in function.parameters.iter().zip(arguments) {
@@ -716,6 +718,11 @@ impl<'m> Interpreter<'m> {
                                 .map(|value| (*parameter, value))
                         })
                         .collect::<Result<Vec<_>, _>>()?;
+                    for local in &mut frame.locals {
+                        if local.storage == l::LocalStorageClass::Activation {
+                            local.poisoned_at = Some((block.id, pos.clone()));
+                        }
+                    }
                     // The successor parameters are the entire live-in set. Nothing
                     // else is retained in the suspended frame.
                     frame.values.fill(None);
@@ -838,35 +845,40 @@ impl<'m> Interpreter<'m> {
                     );
                 }
             }),
-            l::InstructionKind::LoadLocal(local) => Some(
-                frame
-                    .locals
-                    .get(local.0 as usize)
-                    .ok_or_else(|| {
-                        self.invalid(
-                            Some(instruction.pos.clone()),
-                            format!("local {} is missing", local.0),
-                        )
-                    })?
-                    .slot()
-                    .borrow()
-                    .clone(),
-            ),
+            l::InstructionKind::LoadLocal(local) => {
+                let stored = frame.locals.get(local.0 as usize).ok_or_else(|| {
+                    self.invalid(
+                        Some(instruction.pos.clone()),
+                        format!("local {} is missing", local.0),
+                    )
+                })?;
+                if let Some((suspend, suspend_pos)) = &stored.poisoned_at {
+                    let name = function
+                        .locals
+                        .get(local.0 as usize)
+                        .map_or("<missing>", |local| local.source_name.as_str());
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        format!(
+                            "activation local {} (`{name}`) was loaded after suspend in block {} at {suspend_pos}",
+                            local.0, suspend.0
+                        ),
+                    ));
+                }
+                Some(stored.slot().borrow().clone())
+            }
             l::InstructionKind::StoreLocal(local) => {
                 let value = operands
                     .first()
                     .ok_or_else(|| self.missing_operand(instruction, 0))?;
-                *frame
-                    .locals
-                    .get(local.0 as usize)
-                    .ok_or_else(|| {
-                        self.invalid(
-                            Some(instruction.pos.clone()),
-                            format!("local {} is missing", local.0),
-                        )
-                    })?
-                    .slot()
-                    .borrow_mut() = value.clone();
+                let stored = frame.locals.get_mut(local.0 as usize).ok_or_else(|| {
+                    self.invalid(
+                        Some(instruction.pos.clone()),
+                        format!("local {} is missing", local.0),
+                    )
+                })?;
+                *stored.slot().borrow_mut() = value.clone();
+                stored.poisoned_at = None;
                 None
             }
             l::InstructionKind::AddressOfLocal(local) => Some(Value::Address(Address {
@@ -5830,21 +5842,25 @@ mod tests {
                 l::Value {
                     id: l::ValueId(0),
                     ty: l::ValueType::Data(Type::I32),
+                    fresh_owner: false,
                     source_name: Some("resume".to_string()),
                 },
                 l::Value {
                     id: l::ValueId(1),
                     ty: l::ValueType::Data(Type::I32),
+                    fresh_owner: false,
                     source_name: Some("live".to_string()),
                 },
                 l::Value {
                     id: l::ValueId(2),
                     ty: l::ValueType::Data(Type::I32),
+                    fresh_owner: false,
                     source_name: Some("live.resume".to_string()),
                 },
                 l::Value {
                     id: l::ValueId(3),
                     ty: l::ValueType::Data(Type::I32),
+                    fresh_owner: false,
                     source_name: None,
                 },
             ],

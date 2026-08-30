@@ -8,6 +8,8 @@ use subscript_compiler::hir;
 use subscript_compiler::lir as l;
 use subscript_compiler::{ClassId, Pos, Type};
 
+use crate::lir_types::boundary_box_class;
+
 mod unroll;
 
 /// A construct or inconsistent checked fact that cannot be represented in
@@ -42,6 +44,34 @@ impl fmt::Display for VerifyError {
 }
 
 impl Error for VerifyError {}
+
+fn boundary_class_is_embedded_header(module: &hir::Module, header: ClassId) -> bool {
+    if !module
+        .classes
+        .get(header.0)
+        .is_some_and(|class| class.is_value && class.is_boundary)
+    {
+        return false;
+    }
+    let nullable_header = Type::Nullable(Box::new(Type::Class(header)));
+    let used_as_link = module.classes.iter().any(|class| {
+        class.is_boundary && class.fields.iter().any(|field| field.ty == nullable_header)
+    }) || module.foreign_fns.iter().any(|function| {
+        function
+            .params
+            .iter()
+            .any(|parameter| parameter.ty == nullable_header)
+    });
+    used_as_link
+        && module.classes.iter().any(|class| {
+            class.is_value
+                && class.is_boundary
+                && class
+                    .fields
+                    .first()
+                    .is_some_and(|field| field.ty == Type::Class(header))
+        })
+}
 
 /// Lowers one complete typed HIR module to ordered LIR.
 ///
@@ -657,6 +687,10 @@ impl<'a> Lowering<'a> {
                     is_value: class.is_value,
                     is_descriptor: class.is_descriptor,
                     is_boundary: class.is_boundary,
+                    is_embedded_header: boundary_class_is_embedded_header(
+                        self.hir,
+                        ClassId(class_index),
+                    ),
                     alignment: class.alignment_override.as_ref().map(|value| value.value),
                     fields,
                     constructor,
@@ -1070,17 +1104,20 @@ struct Control {
 
 struct AddressTaken<'a> {
     module: &'a hir::Module,
+    classes: &'a [l::Class],
     scopes: Vec<HashMap<String, BindingSite>>,
     taken: HashSet<BindingSite>,
 }
 
 fn address_taken_bindings(
     module: &hir::Module,
+    classes: &[l::Class],
     function: &FunctionInput,
     captures: &[hir::Capture],
 ) -> HashSet<BindingSite> {
     let mut analysis = AddressTaken {
         module,
+        classes,
         scopes: vec![HashMap::new()],
         taken: HashSet::new(),
     };
@@ -1390,18 +1427,11 @@ impl AddressTaken<'_> {
     }
 
     fn is_boundary_struct_pointer(&self, ty: &Type) -> bool {
-        matches!(ty, Type::Nullable(inner)
-        if matches!(&**inner, Type::Class(class)
-            if self.module.classes.get(class.0).is_some_and(|definition| {
-                definition.is_value && definition.is_boundary
-            })))
+        boundary_box_class(self.module, ty).is_some()
     }
 
     fn is_embedded_header_store(&self, expected: &Type, expr: &hir::Expr) -> bool {
-        let Type::Nullable(inner) = expected else {
-            return false;
-        };
-        let Type::Class(header) = inner.as_ref() else {
+        let Some(header) = boundary_box_class(self.module, expected) else {
             return false;
         };
         let hir::ExprKind::Field { obj, name } = &expr.kind else {
@@ -1410,21 +1440,18 @@ impl AddressTaken<'_> {
         let Type::Class(extension) = obj.ty else {
             return false;
         };
-        let nullable = Type::Nullable(Box::new(Type::Class(*header)));
-        let linked = self.module.classes.iter().any(|class| {
-            class.is_boundary && class.fields.iter().any(|field| field.ty == nullable)
-        }) || self.module.foreign_fns.iter().any(|function| {
-            function
-                .params
-                .iter()
-                .any(|parameter| parameter.ty == nullable)
-        });
-        self.module
-            .classes
+        self.classes
             .get(extension.0)
             .filter(|class| class.is_value && class.is_boundary)
             .and_then(|class| class.fields.first())
-            .is_some_and(|field| field.name == *name && field.ty == Type::Class(*header) && linked)
+            .is_some_and(|field| {
+                field.source_name == *name
+                    && field.ty == Type::Class(header)
+                    && self
+                        .classes
+                        .get(header.0)
+                        .is_some_and(|header| header.is_embedded_header)
+            })
     }
 }
 
@@ -1436,23 +1463,6 @@ fn is_place_expr(expr: &hir::Expr) -> bool {
             | hir::ExprKind::Field { .. }
             | hir::ExprKind::Index { .. }
     )
-}
-
-fn expr_produces_fresh_async_owner(expr: &hir::Expr) -> bool {
-    if !is_async_owner_type(&l::ValueType::Data(expr.ty.clone())) {
-        return false;
-    }
-    match &expr.kind {
-        hir::ExprKind::AsyncHandleCreate { .. }
-        | hir::ExprKind::AsyncHandleTransfer { .. }
-        | hir::ExprKind::Call { .. }
-        | hir::ExprKind::ArrayLit(_)
-        | hir::ExprKind::ArraySpreadLit(_) => true,
-        hir::ExprKind::Cond { then, els, .. } => {
-            expr_produces_fresh_async_owner(then) && expr_produces_fresh_async_owner(els)
-        }
-        _ => false,
-    }
 }
 
 #[derive(Clone)]
@@ -1582,7 +1592,6 @@ struct FunctionBuilder<'a, 'm> {
     this_value: Option<l::Operand>,
     controls: Vec<Control>,
     array_values: Vec<l::ValueId>,
-    fresh_async_owners: HashSet<l::ValueId>,
     moved_async_owners: HashSet<l::ValueId>,
 }
 
@@ -1595,7 +1604,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         receiver: Option<ClassId>,
         captures: Vec<hir::Capture>,
     ) -> Result<Self, LowerError> {
-        let address_taken = address_taken_bindings(lowering.hir, &function, &captures);
+        let address_taken =
+            address_taken_bindings(lowering.hir, &lowering.classes, &function, &captures);
         let mut builder = Self {
             lowering,
             function,
@@ -1614,7 +1624,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             this_value: None,
             controls: Vec::new(),
             array_values: Vec::new(),
-            fresh_async_owners: HashSet::new(),
             moved_async_owners: HashSet::new(),
         };
         let entry = builder.new_block(Vec::new(), Some("entry".to_string()));
@@ -1781,6 +1790,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.values.push(l::Value {
             id,
             ty,
+            fresh_owner: false,
             source_name,
         });
         id
@@ -1916,6 +1926,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let result = result_type
             .as_ref()
             .map(|ty| self.new_value(ty.clone(), None));
+        if kind.produces_fresh_async_owner()
+            && result_type.as_ref().is_some_and(is_async_owner_type)
+        {
+            if let Some(value) = result {
+                self.values[value.0 as usize].fresh_owner = true;
+            }
+        }
         let invalidates = if invalidates_arrays {
             self.array_values.clone()
         } else {
@@ -2012,36 +2029,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
     }
 
-    fn operand_is_fresh_owner(&self, operand: &l::Operand, ty: &l::ValueType) -> bool {
-        let l::Operand::Value(value) = operand else {
-            return false;
-        };
-        if self.fresh_async_owners.contains(value) {
-            return true;
-        }
-        self.blocks.iter().any(|block| {
-            block.instructions.iter().any(|instruction| {
-                instruction.result == Some(*value)
-                    && match (&instruction.kind, ty) {
-                        (
-                            l::InstructionKind::AsyncHandleCreate(_),
-                            l::ValueType::Data(Type::AsyncHandle(_)),
-                        ) => true,
-                        (l::InstructionKind::Call(_), l::ValueType::Data(Type::AsyncHandle(_))) => {
-                            true
-                        }
-                        (
-                            l::InstructionKind::ArrayLiteral
-                            | l::InstructionKind::ArraySpreadLiteral(_)
-                            | l::InstructionKind::Call(_),
-                            l::ValueType::Data(Type::Array(element)),
-                        ) => matches!(&**element, Type::AsyncHandle(_)),
-                        _ => false,
-                    }
-            })
-        })
-    }
-
     fn acquire_owner(
         &mut self,
         site: hir::AsyncCopySite,
@@ -2061,7 +2048,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 return Err(self.error(pos, "the copy site does not acquire an owner"));
             }
         }
-        if self.operand_is_fresh_owner(value, ty) {
+        if matches!(value, l::Operand::Value(value)
+            if self.values.get(value.0 as usize).is_some_and(|value| value.fresh_owner))
+        {
             if let l::Operand::Value(value) = value {
                 if self.moved_async_owners.insert(*value) {
                     return Ok(());
@@ -2352,7 +2341,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
             hir::Stmt::Expr(expr) => {
                 let result = self.lower_expr(expr)?;
-                if expr_produces_fresh_async_owner(expr) {
+                if expr.kind.produces_fresh_async_owner()
+                    && is_async_owner_type(&l::ValueType::Data(expr.ty.clone()))
+                {
                     if let Some(value) = result {
                         self.discard_owner(
                             hir::AsyncCopySite::DiscardedResult,
@@ -4079,13 +4070,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.current = Some(then_block);
         let then_value = self.lower_stored_expr(&expr.ty, then)?;
         let result_type = l::ValueType::Data(expr.ty.clone());
-        let then_is_fresh = self.operand_is_fresh_owner(&then_value, &result_type);
+        let then_is_fresh = matches!(&then_value, l::Operand::Value(value)
+            if self.values.get(value.0 as usize).is_some_and(|value| value.fresh_owner));
         let edge = self.block_target(merge, vec![then_value])?;
         self.terminate(l::Terminator::Branch(edge), &then.pos)?;
         self.restore_bindings(&branch_state);
         self.current = Some(else_block);
         let else_value = self.lower_stored_expr(&expr.ty, els)?;
-        let else_is_fresh = self.operand_is_fresh_owner(&else_value, &result_type);
+        let else_is_fresh = matches!(&else_value, l::Operand::Value(value)
+            if self.values.get(value.0 as usize).is_some_and(|value| value.fresh_owner));
         let edge = self.block_target(merge, vec![else_value])?;
         self.terminate(l::Terminator::Branch(edge), &els.pos)?;
         self.enter_block(merge)?;
@@ -4103,7 +4096,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 | hir::AsyncCopySite::DiscardedResult => false,
             };
             if transfers_fresh_owner {
-                self.fresh_async_owners.insert(result);
+                self.values[result.0 as usize].fresh_owner = true;
             }
         }
         Ok(l::Operand::Value(result))
@@ -5973,42 +5966,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
     }
 
-    fn boundary_box_class(&self, ty: &Type) -> Option<ClassId> {
-        let Type::Nullable(inner) = ty else {
-            return None;
-        };
-        let Type::Class(class) = inner.as_ref() else {
-            return None;
-        };
-        self.lowering
-            .hir
-            .classes
-            .get(class.0)
-            .is_some_and(|definition| definition.is_value && definition.is_boundary)
-            .then_some(*class)
-    }
-
-    fn is_embedded_boundary_header(&self, header: ClassId) -> bool {
-        let nullable = Type::Nullable(Box::new(Type::Class(header)));
-        self.lowering
-            .hir
-            .classes
-            .iter()
-            .any(|class| class.is_boundary && class.fields.iter().any(|field| field.ty == nullable))
-            || self.lowering.hir.foreign_fns.iter().any(|function| {
-                function
-                    .params
-                    .iter()
-                    .any(|parameter| parameter.ty == nullable)
-            })
-    }
-
     fn embedded_header_extension(
         &self,
         expected: &Type,
         expr: &hir::Expr,
     ) -> Option<(ClassId, ClassId)> {
-        let header = self.boundary_box_class(expected)?;
+        let header = boundary_box_class(self.lowering.hir, expected)?;
         let hir::ExprKind::Field { obj, name } = &expr.kind else {
             return None;
         };
@@ -6021,7 +5984,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             && definition.is_boundary
             && first.name == *name
             && first.ty == Type::Class(header)
-            && self.is_embedded_boundary_header(header))
+            && self
+                .lowering
+                .classes
+                .get(header.0)
+                .is_some_and(|header| header.is_embedded_header))
         .then_some((extension, header))
     }
 
@@ -6075,7 +6042,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     }
 
     fn is_boundary_box_narrowing(&self, stored: &Type, narrowed: &Type) -> bool {
-        self.boundary_box_class(stored)
+        boundary_box_class(self.lowering.hir, stored)
             .is_some_and(|class| narrowed == &Type::Class(class))
     }
 
@@ -6084,7 +6051,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         declared: &Type,
         actual: &l::ValueType,
     ) -> bool {
-        let Some(class) = self.boundary_box_class(declared) else {
+        let Some(class) = boundary_box_class(self.lowering.hir, declared) else {
             return false;
         };
         matches!(actual, l::ValueType::Address(address) if address.pointee == Type::Class(class))
@@ -6521,6 +6488,7 @@ fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(), LowerErr
             function.values.push(l::Value {
                 id: parameter,
                 ty: definition.ty,
+                fresh_owner: definition.fresh_owner,
                 source_name: definition.source_name,
             });
             value_origins.push(original);
@@ -6608,6 +6576,7 @@ fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(), LowerErr
                             function.values.push(l::Value {
                                 id: parameter,
                                 ty: definition.ty,
+                                fresh_owner: definition.fresh_owner,
                                 source_name: definition.source_name,
                             });
                             value_origins.push(origin);
@@ -7000,99 +6969,15 @@ fn verify_function(module: &l::Module, function: &l::Function, errors: &mut Vec<
     verify_structure_and_types(module, function, errors);
     verify_counted_stores(function, errors);
     verify_dominance(function, errors);
-    verify_local_storage_classes(function, errors);
     verify_address_invalidation(function, errors);
-}
-
-fn verify_local_storage_classes(function: &l::Function, errors: &mut Vec<VerifyError>) {
-    let predecessors = predecessors(function);
-    let dominators = dominators(function, &predecessors);
-    for local in &function.locals {
-        if local.storage != l::LocalStorageClass::Activation {
-            continue;
-        }
-        for suspend in &function.blocks {
-            let l::Terminator::Suspend { successor, .. } = suspend.terminator else {
-                continue;
-            };
-            let definition_dominates = function.blocks.iter().any(|definition| {
-                let stores_local = definition.instructions.iter().any(|instruction| {
-                    matches!(instruction.kind, l::InstructionKind::StoreLocal(id) if id == local.id)
-                });
-                stores_local
-                    && (definition.id == suspend.id
-                        || dominators
-                            .get(suspend.id.0 as usize)
-                            .is_some_and(|blocks| blocks.contains(&definition.id)))
-            });
-            if !definition_dominates {
-                continue;
-            }
-
-            let mut pending = VecDeque::from([successor]);
-            let mut visited = HashSet::new();
-            let mut violating_read = None;
-            while let Some(block_id) = pending.pop_front() {
-                if !visited.insert(block_id) {
-                    continue;
-                }
-                let Some(block) = function.blocks.get(block_id.0 as usize) else {
-                    continue;
-                };
-                let mut redefined = false;
-                for instruction in &block.instructions {
-                    match instruction.kind {
-                        l::InstructionKind::LoadLocal(id)
-                        | l::InstructionKind::AddressOfLocal(id)
-                            if id == local.id =>
-                        {
-                            violating_read = Some(block.id);
-                            break;
-                        }
-                        l::InstructionKind::StoreLocal(id) if id == local.id => {
-                            redefined = true;
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-                if violating_read.is_some() {
-                    break;
-                }
-                if !redefined {
-                    pending.extend(successors(&block.terminator));
-                }
-            }
-            if let Some(read_block) = violating_read {
-                errors.push(finding(
-                    function,
-                    format!(
-                        "activation local {} is read in block {} after suspend in block {} dominated by its definition",
-                        local.id.0, read_block.0, suspend.id.0
-                    ),
-                ));
-            }
-        }
-    }
 }
 
 fn verify_counted_stores(function: &l::Function, errors: &mut Vec<VerifyError>) {
     let use_counts = value_use_counts(function);
-    let (fresh_seeds, incoming) = fresh_owner_index(function);
-    let mut fresh_cache = vec![None; function.values.len()];
-    let mut visiting = HashSet::new();
-    let fresh = (0..function.values.len())
-        .map(|index| {
-            value_is_fresh_owner(
-                function,
-                l::ValueId(index as u32),
-                &use_counts,
-                &fresh_seeds,
-                &incoming,
-                &mut fresh_cache,
-                &mut visiting,
-            )
-        })
+    let fresh = function
+        .values
+        .iter()
+        .map(|value| value.fresh_owner)
         .collect::<Vec<_>>();
 
     for block in &function.blocks {
@@ -7283,90 +7168,6 @@ fn value_use_counts(function: &l::Function) -> Vec<usize> {
     counts
 }
 
-fn fresh_owner_index(function: &l::Function) -> (Vec<bool>, Vec<Vec<l::Operand>>) {
-    let mut seeds = vec![false; function.values.len()];
-    for parameter in &function.parameters {
-        if let Some(seed) = seeds.get_mut(parameter.value.0 as usize) {
-            *seed = true;
-        }
-    }
-    for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
-        if matches!(
-            instruction.kind,
-            l::InstructionKind::AsyncHandleCreate(_)
-                | l::InstructionKind::Call(_)
-                | l::InstructionKind::ArrayLiteral
-                | l::InstructionKind::ArrayWithCapacity
-                | l::InstructionKind::ArraySpreadLiteral(_)
-        ) {
-            if let Some(result) = instruction.result {
-                if let Some(seed) = seeds.get_mut(result.0 as usize) {
-                    *seed = true;
-                }
-            }
-        }
-    }
-
-    let mut incoming = vec![Vec::new(); function.values.len()];
-    let mut add_edge = |destination: l::BlockId, arguments: &[l::Operand]| {
-        let Some(block) = function.blocks.get(destination.0 as usize) else {
-            return;
-        };
-        for (parameter, argument) in block.parameters.iter().zip(arguments) {
-            if let Some(values) = incoming.get_mut(parameter.0 as usize) {
-                values.push(argument.clone());
-            }
-        }
-    };
-    for block in &function.blocks {
-        for target in block.terminator.targets() {
-            add_edge(target.block, &target.arguments);
-        }
-    }
-    (seeds, incoming)
-}
-
-fn value_is_fresh_owner(
-    function: &l::Function,
-    value: l::ValueId,
-    use_counts: &[usize],
-    seeds: &[bool],
-    incoming_index: &[Vec<l::Operand>],
-    cache: &mut [Option<bool>],
-    visiting: &mut HashSet<l::ValueId>,
-) -> bool {
-    if let Some(cached) = cache.get(value.0 as usize).and_then(|cached| *cached) {
-        return cached;
-    }
-    if !value_type(function, value).is_some_and(is_async_owner_type) || !visiting.insert(value) {
-        return false;
-    }
-    let joined = incoming_index.get(value.0 as usize).is_some_and(|inputs| {
-        !inputs.is_empty()
-            && inputs.iter().all(|operand| {
-                let l::Operand::Value(incoming) = operand else {
-                    return false;
-                };
-                use_counts.get(incoming.0 as usize).copied() == Some(1)
-                    && value_is_fresh_owner(
-                        function,
-                        *incoming,
-                        use_counts,
-                        seeds,
-                        incoming_index,
-                        cache,
-                        visiting,
-                    )
-            })
-    });
-    let fresh = seeds.get(value.0 as usize).copied().unwrap_or(false) || joined;
-    visiting.remove(&value);
-    if let Some(slot) = cache.get_mut(value.0 as usize) {
-        *slot = Some(fresh);
-    }
-    fresh
-}
-
 fn finding(function: &l::Function, message: impl Into<String>) -> VerifyError {
     VerifyError {
         message: format!(
@@ -7412,6 +7213,19 @@ fn verify_structure_and_types(
     }
     for parameter in &function.parameters {
         count_definition(function, parameter.value, &mut definitions, errors);
+        if function
+            .values
+            .get(parameter.value.0 as usize)
+            .is_some_and(|value| value.fresh_owner)
+        {
+            errors.push(finding(
+                function,
+                format!(
+                    "parameter value {} is marked as a fresh async owner",
+                    parameter.value.0
+                ),
+            ));
+        }
         if let Some(storage) = parameter.storage {
             let parameter_type = value_type(function, parameter.value);
             if function
@@ -7633,6 +7447,20 @@ fn verify_instruction_contract(
             ),
         ));
     };
+    if let Some(result) = instruction.result {
+        let expected_fresh = instruction.kind.produces_fresh_async_owner()
+            && result_type.as_ref().is_some_and(is_async_owner_type);
+        if function
+            .values
+            .get(result.0 as usize)
+            .is_some_and(|value| value.fresh_owner != expected_fresh)
+        {
+            bad(
+                "fresh-owner bit disagrees with the instruction kind",
+                errors,
+            );
+        }
+    }
     for trap in &instruction.traps {
         let l::TrapKind::JsonResultValue(ok_field) = trap.kind else {
             continue;
@@ -8280,7 +8108,11 @@ fn boundary_box_signature(
         return true;
     }
     source_class.fields.first().is_some_and(|field| {
-        field.ty == Type::Class(*target) && embedded_boundary_header(module, *target)
+        field.ty == Type::Class(*target)
+            && module
+                .classes
+                .get(target.0)
+                .is_some_and(|class| class.is_embedded_header)
     })
 }
 
@@ -8293,18 +8125,6 @@ fn boundary_box_coercion_signature(
         return false;
     };
     boundary_box_signature(module, *payload, operands, result)
-}
-
-fn embedded_boundary_header(module: &l::Module, header: ClassId) -> bool {
-    let nullable_header = Type::Nullable(Box::new(Type::Class(header)));
-    module.classes.iter().any(|class| {
-        class.is_boundary && class.fields.iter().any(|field| field.ty == nullable_header)
-    }) || module.foreign_functions.iter().any(|function| {
-        function
-            .parameters
-            .iter()
-            .any(|parameter| parameter.ty == nullable_header)
-    })
 }
 
 fn field_base_accepts(module: &l::Module, field: l::FieldRef, base: &l::ValueType) -> bool {
@@ -8514,19 +8334,10 @@ fn foreign_boundary_pointer_type_matches(
     actual: &l::ValueType,
     declared: &l::ValueType,
 ) -> bool {
-    let (l::ValueType::Address(address), l::ValueType::Data(Type::Nullable(nullable))) =
-        (actual, declared)
-    else {
+    let (l::ValueType::Address(address), l::ValueType::Data(declared)) = (actual, declared) else {
         return false;
     };
-    let Type::Class(class) = nullable.as_ref() else {
-        return false;
-    };
-    address.pointee == Type::Class(*class)
-        && module
-            .classes
-            .get(class.0)
-            .is_some_and(|definition| definition.is_value && definition.is_boundary)
+    boundary_box_class(module, declared).is_some_and(|class| address.pointee == Type::Class(class))
 }
 
 fn is_operation_table_target(kind: &l::CallTargetKind) -> bool {
@@ -9353,16 +9164,19 @@ mod verifier_tests {
                 l::Value {
                     id: l::ValueId(0),
                     ty: l::ValueType::Data(array_type.clone()),
+                    fresh_owner: false,
                     source_name: Some("array".to_string()),
                 },
                 l::Value {
                     id: l::ValueId(1),
                     ty: address_type.clone(),
+                    fresh_owner: false,
                     source_name: None,
                 },
                 l::Value {
                     id: l::ValueId(2),
                     ty: l::ValueType::Data(Type::I32),
+                    fresh_owner: false,
                     source_name: None,
                 },
             ],
@@ -9443,6 +9257,7 @@ mod verifier_tests {
             values: vec![l::Value {
                 id: l::ValueId(0),
                 ty: l::ValueType::Data(Type::I32),
+                fresh_owner: false,
                 source_name: Some("value".to_string()),
             }],
             liveness: l::Liveness::default(),
@@ -9475,11 +9290,13 @@ mod verifier_tests {
                 l::Value {
                     id: l::ValueId(0),
                     ty: l::ValueType::Data(Type::Str),
+                    fresh_owner: false,
                     source_name: None,
                 },
                 l::Value {
                     id: l::ValueId(1),
                     ty: l::ValueType::Data(Type::Bool),
+                    fresh_owner: false,
                     source_name: None,
                 },
             ],
@@ -9589,6 +9406,7 @@ mod verifier_tests {
             .map(|(index, ty)| l::Value {
                 id: l::ValueId(index as u32),
                 ty,
+                fresh_owner: false,
                 source_name: Some(format!("arg{index}")),
             })
             .collect::<Vec<_>>();
@@ -9597,6 +9415,7 @@ mod verifier_tests {
             values.push(l::Value {
                 id,
                 ty,
+                fresh_owner: false,
                 source_name: None,
             });
             id
@@ -9715,6 +9534,7 @@ mod verifier_tests {
         function.values.push(l::Value {
             id: l::ValueId(3),
             ty: l::ValueType::Data(Type::Array(Box::new(Type::I32))),
+            fresh_owner: false,
             source_name: None,
         });
         function.blocks[0].instructions.insert(
@@ -9779,11 +9599,13 @@ mod verifier_tests {
             l::Value {
                 id: l::ValueId(0),
                 ty: l::ValueType::Data(Type::I32),
+                fresh_owner: false,
                 source_name: Some("before".to_string()),
             },
             l::Value {
                 id: l::ValueId(1),
                 ty: l::ValueType::Data(Type::I32),
+                fresh_owner: false,
                 source_name: Some("after".to_string()),
             },
         ];

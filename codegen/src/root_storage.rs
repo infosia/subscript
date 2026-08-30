@@ -434,6 +434,7 @@ mod tests {
         l::Value {
             id: l::ValueId(id),
             ty,
+            fresh_owner: false,
             source_name: None,
         }
     }

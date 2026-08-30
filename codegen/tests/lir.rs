@@ -164,11 +164,13 @@ fn suspend_successor_rejects_a_pre_suspend_value_without_a_parameter() {
             lir::Value {
                 id: lir::ValueId(0),
                 ty: ValueType::Data(Type::I32),
+                fresh_owner: false,
                 source_name: Some("before".to_string()),
             },
             lir::Value {
                 id: lir::ValueId(1),
                 ty: ValueType::Data(Type::I32),
+                fresh_owner: false,
                 source_name: Some("after".to_string()),
             },
         ],
@@ -225,9 +227,9 @@ fn suspend_successor_rejects_a_pre_suspend_value_without_a_parameter() {
 }
 
 #[test]
-fn activation_local_rejects_a_read_after_a_dominated_suspend() {
+fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
     let pos = subscript_compiler::Pos::new("local-storage-class.ts", 1, 1);
-    let module = verifier_module(lir::Function {
+    let mut module = verifier_module(lir::Function {
         id: lir::FunctionId(0),
         source_name: "bad_activation_local".to_string(),
         kind: lir::FunctionKind::Free,
@@ -250,11 +252,13 @@ fn activation_local_rejects_a_read_after_a_dominated_suspend() {
             lir::Value {
                 id: lir::ValueId(0),
                 ty: ValueType::Data(Type::I32),
+                fresh_owner: false,
                 source_name: None,
             },
             lir::Value {
                 id: lir::ValueId(1),
                 ty: ValueType::Data(Type::I32),
+                fresh_owner: false,
                 source_name: Some("saved".to_string()),
             },
         ],
@@ -313,13 +317,13 @@ fn activation_local_rejects_a_read_after_a_dominated_suspend() {
         entry: BlockId(0),
         pos,
     });
-    let errors = verify_module(&module).expect_err("activation local must fail");
+    module.entry = Some(lir::FunctionId(0));
+    let error = interpret(&module).expect_err("the poisoned activation local must fail");
     assert!(
-        errors.iter().any(|error| {
-            error.message
-                == "function 0 (`bad_activation_local`): activation local 0 is read in block 1 after suspend in block 0 dominated by its definition"
-        }),
-        "{errors:?}"
+        error.to_string().contains(
+            "activation local 0 (`saved`) was loaded after suspend in block 0 at local-storage-class.ts:1:1"
+        ),
+        "{error:?}"
     );
 }
 
@@ -350,6 +354,7 @@ fn address_type_rejects_an_undeclared_array_base() {
                 pointee: Type::I32,
                 array_base: Some(lir::ValueId(99)),
             }),
+            fresh_owner: false,
             source_name: Some("address".to_string()),
         }],
         liveness: lir::Liveness::default(),
@@ -407,21 +412,25 @@ fn intrinsic_call_is_checked_against_the_module_signature_table() {
             lir::Value {
                 id: lir::ValueId(0),
                 ty: ValueType::Data(Type::Str),
+                fresh_owner: false,
                 source_name: Some("arg0".to_string()),
             },
             lir::Value {
                 id: lir::ValueId(1),
                 ty: ValueType::Data(Type::Str),
+                fresh_owner: false,
                 source_name: Some("arg1".to_string()),
             },
             lir::Value {
                 id: lir::ValueId(2),
                 ty: ValueType::Data(Type::Str),
+                fresh_owner: false,
                 source_name: Some("arg2".to_string()),
             },
             lir::Value {
                 id: lir::ValueId(3),
                 ty: ValueType::Data(Type::Bool),
+                fresh_owner: false,
                 source_name: None,
             },
         ],
@@ -650,11 +659,13 @@ fn counted_store_verifier_reports_a_missing_retain() {
                 lir::Value {
                     id: lir::ValueId(0),
                     ty: owner_type.clone(),
+                    fresh_owner: false,
                     source_name: Some("source".to_string()),
                 },
                 lir::Value {
                     id: lir::ValueId(1),
                     ty: owner_type,
+                    fresh_owner: false,
                     source_name: None,
                 },
             ],
@@ -664,14 +675,6 @@ fn counted_store_verifier_reports_a_missing_retain() {
                 source_name: Some("entry".to_string()),
                 parameters: Vec::new(),
                 instructions: vec![
-                    lir::Instruction {
-                        result: None,
-                        kind: lir::InstructionKind::StoreLocal(lir::LocalId(0)),
-                        operands: vec![lir::Operand::Value(lir::ValueId(0))],
-                        invalidates: Vec::new(),
-                        traps: Vec::new(),
-                        pos: pos.clone(),
-                    },
                     lir::Instruction {
                         result: Some(lir::ValueId(1)),
                         kind: lir::InstructionKind::LoadLocal(lir::LocalId(0)),
@@ -706,7 +709,7 @@ fn counted_store_verifier_reports_a_missing_retain() {
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!(
         errors[0].message,
-        "function 0 (`violating_store`): block 0 instruction 2 stores counted operand 0 (value 1) without a fresh single-use owner or a preceding retain"
+        "function 0 (`violating_store`): block 0 instruction 1 stores counted operand 0 (value 1) without a fresh single-use owner or a preceding retain"
     );
 }
 

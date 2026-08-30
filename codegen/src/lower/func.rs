@@ -21,8 +21,8 @@ use subscript_runtime::TrapKind;
 
 use crate::layout::{closure_environment_layout, is_unsigned, managed_words, Layouts, Repr};
 use crate::lir_types::{
-    array_element_kind, array_format_kind, association_key_kind, boundary_class_contains_pointer,
-    boundary_class_is_embedded_header, boundary_class_needs_scratch, boundary_class_requires_build,
+    array_element_kind, array_format_kind, association_key_kind, boundary_box_class,
+    boundary_class_contains_pointer, boundary_class_needs_scratch, boundary_class_requires_build,
     is_userdata_slot,
 };
 use crate::lower::{
@@ -742,17 +742,10 @@ fn foreign_parameter_type_matches(
     if actual == &l::ValueType::Data(declared.clone()) {
         return true;
     }
-    let (l::ValueType::Address(address), Type::Nullable(nullable)) = (actual, declared) else {
+    let l::ValueType::Address(address) = actual else {
         return false;
     };
-    let Type::Class(class) = nullable.as_ref() else {
-        return false;
-    };
-    address.pointee == Type::Class(*class)
-        && module
-            .classes
-            .get(class.0)
-            .is_some_and(|definition| definition.is_value && definition.is_boundary)
+    boundary_box_class(module, declared).is_some_and(|class| address.pointee == Type::Class(class))
 }
 
 fn value_repr(layouts: &Layouts, value: &l::ValueType) -> Result<Repr, String> {
@@ -1693,19 +1686,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     }
 
     fn is_boundary_struct_pointer(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Nullable(inner) => matches!(
-                &**inner,
-                Type::Class(class)
-                    if self
-                        .ml
-                        .lir
-                        .classes
-                        .get(class.0)
-                        .is_some_and(|definition| definition.is_boundary)
-            ),
-            _ => false,
-        }
+        boundary_box_class(self.ml.lir, ty).is_some()
     }
 }
 
@@ -5027,13 +5008,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     }
 
     fn boundary_pointer_class(&self, ty: &Type) -> Option<usize> {
-        let Type::Nullable(inner) = ty else {
-            return None;
-        };
-        let Type::Class(id) = &**inner else {
-            return None;
-        };
-        self.is_value_class(inner).then_some(id.0)
+        boundary_box_class(self.ml.lir, ty).map(|class| class.0)
     }
 
     fn boundary_pointer_value(&self, value: RV) -> Result<Value, String> {
@@ -5419,7 +5394,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let class = self
                     .boundary_pointer_class(ty)
                     .ok_or_else(|| internal("boundary pointer class is missing"))?;
-                if !boundary_class_is_embedded_header(self.ml.lir, ClassId(class))
+                if !self
+                    .ml
+                    .lir
+                    .classes
+                    .get(class)
+                    .is_some_and(|class| class.is_embedded_header)
                     && boundary_class_needs_scratch(self.ml.lir, ClassId(class))?
                 {
                     let (pointer, writeback) =
@@ -5713,7 +5693,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.builder
                             .ins()
                             .load(types::I64, flags(), source, language_offset);
-                    if boundary_class_is_embedded_header(self.ml.lir, ClassId(child_class)) {
+                    if self
+                        .ml
+                        .lir
+                        .classes
+                        .get(child_class)
+                        .is_some_and(|class| class.is_embedded_header)
+                    {
                         self.builder
                             .ins()
                             .store(flags(), source_pointer, destination, c_offset);

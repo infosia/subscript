@@ -436,8 +436,12 @@ fn transform_inner(function: &mut l::Function, shape: &LoopShape) -> bool {
         }
         let mut parameters = Vec::with_capacity(header_types.len());
         for value in &header_types {
-            let Some(id) = allocate_value(function, value.ty.clone(), value.source_name.clone())
-            else {
+            let Some(id) = allocate_value(
+                function,
+                value.ty.clone(),
+                value.fresh_owner,
+                value.source_name.clone(),
+            ) else {
                 return false;
             };
             parameters.push(id);
@@ -573,8 +577,12 @@ fn append_instructions(
                 original
             } else {
                 value.ty = ty;
-                let Some(result) = allocate_value(function, value.ty, value.source_name.take())
-                else {
+                let Some(result) = allocate_value(
+                    function,
+                    value.ty,
+                    value.fresh_owner,
+                    value.source_name.take(),
+                ) else {
                     return false;
                 };
                 result
@@ -599,12 +607,14 @@ fn append_instructions(
 fn allocate_value(
     function: &mut l::Function,
     ty: l::ValueType,
+    fresh_owner: bool,
     source_name: Option<String>,
 ) -> Option<l::ValueId> {
     let id = l::ValueId(u32::try_from(function.values.len()).ok()?);
     function.values.push(l::Value {
         id,
         ty,
+        fresh_owner,
         source_name,
     });
     Some(id)

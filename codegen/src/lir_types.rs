@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use subscript_compiler::lir as l;
+use subscript_compiler::{hir, lir as l};
 use subscript_compiler::{ClassId, Type};
 
 pub(crate) fn lir_class_is_value(module: &l::Module, class: ClassId) -> bool {
@@ -10,6 +10,36 @@ pub(crate) fn lir_class_is_value(module: &l::Module, class: ClassId) -> bool {
         .classes
         .get(class.0)
         .is_some_and(|definition| definition.id == class && definition.is_value)
+}
+
+pub(crate) trait BoundaryBoxModule {
+    fn is_boundary_value_class(&self, class: ClassId) -> bool;
+}
+
+impl BoundaryBoxModule for l::Module {
+    fn is_boundary_value_class(&self, class: ClassId) -> bool {
+        self.classes.get(class.0).is_some_and(|definition| {
+            definition.id == class && definition.is_value && definition.is_boundary
+        })
+    }
+}
+
+impl BoundaryBoxModule for hir::Module {
+    fn is_boundary_value_class(&self, class: ClassId) -> bool {
+        self.classes
+            .get(class.0)
+            .is_some_and(|definition| definition.is_value && definition.is_boundary)
+    }
+}
+
+pub(crate) fn boundary_box_class(module: &impl BoundaryBoxModule, ty: &Type) -> Option<ClassId> {
+    let Type::Nullable(inner) = ty else {
+        return None;
+    };
+    let Type::Class(class) = inner.as_ref() else {
+        return None;
+    };
+    module.is_boundary_value_class(*class).then_some(*class)
 }
 
 pub(crate) fn array_element_kind(module: &l::Module, ty: &Type) -> Result<u32, String> {
@@ -173,34 +203,6 @@ pub(crate) fn boundary_class_contains_pointer(
     class: ClassId,
 ) -> Result<bool, String> {
     boundary_class_contains_pointer_inner(module, class, &mut HashSet::new())
-}
-
-pub(crate) fn boundary_class_is_embedded_header(module: &l::Module, header: ClassId) -> bool {
-    if !module
-        .classes
-        .get(header.0)
-        .is_some_and(|class| class.id == header && class.is_value && class.is_boundary)
-    {
-        return false;
-    }
-    let nullable_header = Type::Nullable(Box::new(Type::Class(header)));
-    let used_as_link = module.classes.iter().any(|class| {
-        class.is_boundary && class.fields.iter().any(|field| field.ty == nullable_header)
-    }) || module.foreign_functions.iter().any(|function| {
-        function
-            .parameters
-            .iter()
-            .any(|parameter| parameter.ty == nullable_header)
-    });
-    used_as_link
-        && module.classes.iter().any(|class| {
-            class.is_value
-                && class.is_boundary
-                && class
-                    .fields
-                    .first()
-                    .is_some_and(|field| field.ty == Type::Class(header))
-        })
 }
 
 pub(crate) fn boundary_class_requires_build(
