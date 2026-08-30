@@ -346,9 +346,9 @@ fn entries(root: &Path) -> Result<Vec<Entry>, String> {
         .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "ts"))
         .collect();
     paths.sort();
-    if paths.len() != 170 {
+    if paths.len() != 172 {
         return Err(format!(
-            "expected 170 top-level accept entries, found {}",
+            "expected 172 top-level accept entries, found {}",
             paths.len()
         ));
     }
