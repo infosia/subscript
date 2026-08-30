@@ -11,6 +11,7 @@ use std::collections::HashSet;
 use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
+use crate::divergence::Divergence;
 use crate::hir::{self, BinOp, Callee, ExprKind, JsonFn, UnOp};
 use crate::types::{ClassId, Type};
 
@@ -129,10 +130,11 @@ impl Checker<'_> {
         }
         if !self.json_serializable(&value.ty) {
             if let Some(rejection) = crate::ambient::json_rejection(&value.ty) {
-                self.error(
+                self.error_diverging(
                     rejection.code,
                     crate::ambient::rejection_message(rejection, "JSON.stringify"),
                     member_pos,
+                    Divergence::JsonSubset,
                 );
                 return self.err_expr(pos);
             }
@@ -217,11 +219,12 @@ impl Checker<'_> {
         } else if let Some(target) = ctx.and_then(|ty| self.json_result_value_type(ty)) {
             target
         } else {
-            self.error(
+            self.error_diverging(
                 RuleCode::S014,
                 "`JSON.parse` requires a target type; use `JSON.parse<T>(text)` \
                  or a contextual `JsonResult<T>` type (Q28)",
                 member_pos,
+                Divergence::JsonSubset,
             );
             return self.err_expr(pos);
         };
@@ -235,10 +238,11 @@ impl Checker<'_> {
             } else {
                 "JSON.parse target containing Date"
             };
-            self.error(
+            self.error_diverging(
                 rejection.code,
                 crate::ambient::rejection_message(rejection, actual),
                 member_pos,
+                Divergence::JsonSubset,
             );
             return self.err_expr(pos);
         }

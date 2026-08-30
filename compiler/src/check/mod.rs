@@ -23,6 +23,7 @@ use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::diag::{Diagnostic, Pos, RuleCode};
+use crate::divergence::Divergence;
 use crate::hir;
 use crate::parse::ParsedProgram;
 use crate::provenance;
@@ -394,6 +395,7 @@ pub(crate) struct Frame {
     pub is_lambda: bool,
     pub captures: Vec<hir::Capture>,
     pub this_ty: Option<Type>,
+    pub missing_this_divergence: Option<Divergence>,
 }
 
 /// Per-body checking state: scope stack, frames, and the C7/R16 narrowing
@@ -420,6 +422,7 @@ impl FnCtx {
                 is_lambda: false,
                 captures: Vec::new(),
                 this_ty,
+                missing_this_divergence: None,
             }],
             scopes: vec![Scope::default()],
             narrowed: HashSet::new(),
@@ -575,6 +578,8 @@ pub(crate) struct Checker<'p> {
     /// enough for P22's closed-list S014 instead of the general
     /// boundary-only-type diagnostic.
     pub in_for_of_subject: bool,
+    /// The divergence for an aggregate type in the current declaration.
+    pub aggregate_type_divergence: Option<Divergence>,
     /// Aggregate type annotations whose byte size depends on a class
     /// layout and must therefore be checked after signature resolution.
     pub pending_layouts: Vec<(Type, Pos, &'static str)>,
@@ -646,6 +651,7 @@ pub(crate) fn run(
         in_assoc_key: false,
         in_json_argument: false,
         in_for_of_subject: false,
+        aggregate_type_divergence: None,
         pending_layouts: Vec::new(),
         ambient_int_consts: HashMap::new(),
         next_for_of_id: 0,
@@ -1100,11 +1106,15 @@ fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
                 .join(" -> ");
             format!("through {path}")
         };
-        diagnostics.push(Diagnostic::new(
+        let mut diagnostic = Diagnostic::new(
             RuleCode::S100,
             format!("`{binding}` is accessed before its declaration, {route}"),
             global.init.pos.clone(),
-        ));
+        );
+        if !path.is_empty() {
+            diagnostic.divergence = Some(Divergence::ModuleInitializerOrder);
+        }
+        diagnostics.push(diagnostic);
     }
     diagnostics
 }
@@ -1155,6 +1165,18 @@ impl<'p> Checker<'p> {
 
     pub(crate) fn error(&mut self, code: RuleCode, message: impl Into<String>, pos: Pos) {
         self.diags.push(Diagnostic::new(code, message, pos));
+    }
+
+    pub(crate) fn error_diverging(
+        &mut self,
+        code: RuleCode,
+        message: impl Into<String>,
+        pos: Pos,
+        divergence: Divergence,
+    ) {
+        let mut diagnostic = Diagnostic::new(code, message, pos);
+        diagnostic.divergence = Some(divergence);
+        self.diags.push(diagnostic);
     }
 
     pub(crate) fn pos(&self, span: swc_common::Span) -> Pos {
@@ -1474,6 +1496,17 @@ impl<'p> Checker<'p> {
 
     /// Emits the rule-specific diagnostic for a failed assignment.
     pub(crate) fn require_assignable(&mut self, from: &Type, to: &Type, pos: Pos, what: &str) {
+        self.require_assignable_with(from, to, pos, what, None);
+    }
+
+    pub(crate) fn require_assignable_with(
+        &mut self,
+        from: &Type,
+        to: &Type,
+        pos: Pos,
+        what: &str,
+        divergence: Option<Divergence>,
+    ) {
         if self.assignable(from, to) {
             return;
         }
@@ -1487,22 +1520,29 @@ impl<'p> Checker<'p> {
             _ => false,
         };
         if class_like(from) && class_like(to) {
-            self.error(
-                RuleCode::S005,
-                format!(
-                    "nominal types are not interchangeable: {} expects `{}`, got `{}`",
-                    what, to_n, from_n
-                ),
-                pos,
+            let message = format!(
+                "nominal types are not interchangeable: {} expects `{}`, got `{}`",
+                what, to_n, from_n
             );
+            if matches!((from, to), (Type::Class(_), Type::Class(_))) {
+                self.error_diverging(
+                    RuleCode::S005,
+                    message,
+                    pos,
+                    Divergence::NominalClassIdentity,
+                );
+            } else {
+                self.error(RuleCode::S005, message, pos);
+            }
         } else if from.is_numeric() && to.is_numeric() {
-            self.error(
+            self.error_diverging(
                 RuleCode::S007,
                 format!(
                     "implicit numeric conversion from `{}` to `{}`; spell it `as {}`",
                     from_n, to_n, to_n
                 ),
                 pos,
+                Divergence::SizedOperandWidths,
             );
         } else if self.is_value_class(from) && matches!(to, Type::Nullable(_)) {
             self.error(
@@ -1511,14 +1551,19 @@ impl<'p> Checker<'p> {
                 pos,
             );
         } else {
-            self.error(
-                RuleCode::S100,
-                format!(
-                    "type mismatch: {} expects `{}`, got `{}`",
-                    what, to_n, from_n
-                ),
-                pos,
+            let message = format!(
+                "type mismatch: {} expects `{}`, got `{}`",
+                what, to_n, from_n
             );
+            let divergence = divergence.or_else(|| {
+                matches!((from, to), (Type::StringAlias(_), Type::StringAlias(_)))
+                    .then_some(Divergence::LiteralUnionAlias)
+            });
+            if let Some(divergence) = divergence {
+                self.error_diverging(RuleCode::S100, message, pos, divergence);
+            } else {
+                self.error(RuleCode::S100, message, pos);
+            }
         }
     }
 
@@ -1714,10 +1759,11 @@ impl<'p> Checker<'p> {
             let mut has_static_member = false;
             for span in static_members {
                 has_static_member = true;
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     "generic classes cannot declare static members",
                     self.pos(span),
+                    Divergence::StaticMemberSurface,
                 );
             }
             let type_params: Vec<String> =
@@ -1890,10 +1936,11 @@ impl<'p> Checker<'p> {
                     Some(v) => i64::from(v),
                     None => {
                         let p = self.pos(init.span());
-                        self.error(
+                        self.error_diverging(
                             RuleCode::S100,
                             "enum members must have integer literal values",
                             p,
+                            Divergence::IntegerLiteralRange,
                         );
                         next.unwrap_or(0)
                     }
@@ -2035,10 +2082,11 @@ impl<'p> Checker<'p> {
                 return;
             }
             let Some(annotation) = &property.type_ann else {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!("wire value for CEnum member `{member}` must be an integer literal"),
                     self.pos(property.span),
+                    Divergence::WireEnumValues,
                 );
                 return;
             };
@@ -2047,18 +2095,20 @@ impl<'p> Checker<'p> {
                 ..
             }) = &*annotation.type_ann
             else {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!("wire value for CEnum member `{member}` must be an integer literal"),
                     self.pos(annotation.type_ann.span()),
+                    Divergence::WireEnumValues,
                 );
                 return;
             };
             if !number.value.is_finite() || number.value.fract() != 0.0 {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!("wire value for CEnum member `{member}` must be an integer literal"),
                     self.pos(number.span),
+                    Divergence::WireEnumValues,
                 );
                 return;
             }
@@ -2067,23 +2117,25 @@ impl<'p> Checker<'p> {
                     .raw
                     .as_ref()
                     .map_or_else(|| number.value.to_string(), ToString::to_string);
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!(
                         "wire value {spelling} for CEnum member `{member}` is outside the i32 range"
                     ),
                     self.pos(number.span),
+                    Divergence::WireEnumValues,
                 );
                 return;
             }
             let wire = number.value as i32;
             if let Some(first) = seen_wires.insert(wire, member.clone()) {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!(
                         "duplicate CEnum wire value {wire} for members `{first}` and `{member}`"
                     ),
                     self.pos(number.span),
+                    Divergence::WireEnumValues,
                 );
                 return;
             }
@@ -2508,13 +2560,14 @@ impl<'p> Checker<'p> {
                                 && !self.is_wire_alias(&parameter.ty)
                         }) || Self::contains_string_alias(&sig.ret);
                         if aliases_boundary {
-                            self.error(
+                            self.error_diverging(
                                 RuleCode::S100,
                                 format!(
                                     "exported function `{name}` has a string-literal union \
                                      alias in its boundary signature"
                                 ),
                                 self.pos(f.ident.span),
+                                Divergence::EntryParameterType,
                             );
                         }
                     }
@@ -2539,10 +2592,11 @@ impl<'p> Checker<'p> {
                             }
                         };
                         if Self::is_context_affine_type(&ty) {
-                            self.error(
+                            self.error_diverging(
                                 RuleCode::S100,
                                 "Worker, Inbox, and Outbox values may not be module globals",
                                 self.pos(binding.id.span),
+                                Divergence::WorkerContextAffinity,
                             );
                         }
                         self.global_sigs.insert(
@@ -2805,7 +2859,12 @@ impl<'p> Checker<'p> {
         if let Some(sup) = &class.super_class {
             let pos = self.pos(sup.span());
             if is_value {
-                self.error(RuleCode::S006, "value classes do not inherit", pos);
+                self.error_diverging(
+                    RuleCode::S006,
+                    "value classes do not inherit",
+                    pos,
+                    Divergence::ValueClassLayout,
+                );
             } else if is_descriptor {
                 self.error(RuleCode::S100, "descriptor classes do not inherit", pos);
             } else {
@@ -2907,10 +2966,11 @@ impl<'p> Checker<'p> {
                             (true, false, false) | (false, true, true) | (false, true, false) => {}
                             (_, true, false) => {
                                 let pos = self.pos(prop.span);
-                                self.error(
+                                self.error_diverging(
                                     RuleCode::S012,
                                     "optional descriptor members require a default initializer",
                                     pos,
+                                    Divergence::OptionalDescriptorMember,
                                 );
                             }
                             (true, _, true) => {
@@ -2989,10 +3049,11 @@ impl<'p> Checker<'p> {
                         && prop.value.is_none()
                         && !matches!(ty, Type::StringAlias(_) | Type::Error)
                     {
-                        self.error(
+                        self.error_diverging(
                             RuleCode::S012,
                             "optional descriptor members require a default initializer",
                             self.pos(prop.span),
+                            Divergence::OptionalDescriptorMember,
                         );
                     }
                     let context_affine = Self::is_context_affine_type(&ty);
@@ -3136,10 +3197,11 @@ impl<'p> Checker<'p> {
                         continue;
                     }
                     if method.is_static && method.function.is_async {
-                        self.error(
+                        self.error_diverging(
                             RuleCode::S100,
                             "async static methods are not in the decided surface",
                             self.pos(method.span),
+                            Divergence::AsyncFunctionShape,
                         );
                         continue;
                     }
@@ -3209,12 +3271,13 @@ impl<'p> Checker<'p> {
                         let write_name = format!("{name}=");
                         if is_value && !method.is_static {
                             let class_name = self.classes[id.0].name.clone();
-                            self.error(
+                            self.error_diverging(
                                 RuleCode::S100,
                                 format!(
                                     "value class `{class_name}` cannot declare a write accessor"
                                 ),
                                 key_pos,
+                                Divergence::NamedAccessor,
                             );
                             continue;
                         }
@@ -3305,15 +3368,20 @@ impl<'p> Checker<'p> {
                     }
                     if method.function.is_generator && !method.is_static {
                         let pos = self.pos(method.span);
-                        self.error(
-                            RuleCode::S100,
-                            if method.function.is_async {
-                                "async generator methods are not in the decided surface"
-                            } else {
-                                "generator methods are not in the decided surface"
-                            },
-                            pos,
-                        );
+                        if method.function.is_async {
+                            self.error_diverging(
+                                RuleCode::S100,
+                                "async generator methods are not in the decided surface",
+                                pos,
+                                Divergence::AsyncFunctionShape,
+                            );
+                        } else {
+                            self.error(
+                                RuleCode::S100,
+                                "generator methods are not in the decided surface",
+                                pos,
+                            );
+                        }
                         continue;
                     }
                     if is_dispose && method.function.is_async {
@@ -3326,10 +3394,11 @@ impl<'p> Checker<'p> {
                     }
                     if method.function.is_async && is_value && !method.is_static {
                         let pos = self.pos(method.span);
-                        self.error(
+                        self.error_diverging(
                             RuleCode::S100,
                             "async methods on `@CStruct` value classes are not in the decided surface",
                             pos,
+                            Divergence::AsyncFunctionShape,
                         );
                         continue;
                     }
@@ -3441,12 +3510,13 @@ impl<'p> Checker<'p> {
         }
         for (name, pos, is_static) in read_accessors {
             if is_static && !self.class_sigs[id.0].has_static_write_accessor(&name) {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!(
                         "static read accessor `{name}` requires a write accessor with the same name"
                     ),
                     pos,
+                    Divergence::NamedAccessor,
                 );
             }
         }
@@ -3507,12 +3577,13 @@ impl<'p> Checker<'p> {
         if !get_matches {
             let index = self.type_name(&signature.index_ty);
             let element = self.type_name(&signature.element_ty);
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 format!(
                     "the index signature requires `get(index: {index}): {element}` with exactly matching types"
                 ),
                 pos.clone(),
+                Divergence::ClassIndexSignature,
             );
         }
         if signature.readonly {
@@ -3663,7 +3734,8 @@ impl<'p> Checker<'p> {
                 let Some(sig) = self.fn_sigs.get(&name).cloned() else {
                     return;
                 };
-                let function = self.check_function(&f.function, &name, exported, &sig, None, pos);
+                let function =
+                    self.check_function(&f.function, &name, exported, &sig, (None, None), pos);
                 if let Some(function) = function {
                     self.functions.push(function);
                 }
@@ -4101,10 +4173,12 @@ impl<'p> Checker<'p> {
         name: &str,
         exported: bool,
         sig: &FnSig,
-        this_ty: Option<Type>,
+        this: (Option<Type>, Option<Divergence>),
         pos: Pos,
     ) -> Option<hir::Function> {
+        let (this_ty, missing_this_divergence) = this;
         let mut fx = FnCtx::new(sig.ret.clone(), sig.is_generator, this_ty);
+        fx.frames[0].missing_this_divergence = missing_this_divergence;
         fx.frames[0].is_async = sig.is_async;
         if sig.is_generator {
             if let Type::Generator(y) = &sig.ret {
@@ -4135,10 +4209,11 @@ impl<'p> Checker<'p> {
             .map(|(pos, _)| pos.clone())
             .collect::<Vec<_>>();
         for origin in unhandled {
-            self.error(
+            self.error_diverging(
                 RuleCode::S013,
                 "an async handle is dropped without any await of its completion",
                 origin,
+                Divergence::DroppedAsyncHandle,
             );
         }
         let body = if has_dispose_binding(&body) {
@@ -4249,6 +4324,8 @@ impl<'p> Checker<'p> {
                         };
                         let pos = self.pos(key.span);
                         let mut fx = FnCtx::new(Type::Void, false, None);
+                        fx.frames[0].missing_this_divergence =
+                            Some(Divergence::StaticMemberSurface);
                         let init = match &prop.value {
                             Some(value) => {
                                 let expression =
@@ -4292,6 +4369,7 @@ impl<'p> Checker<'p> {
                         .map(|f| f.ty.clone());
                     let Some(field_ty) = field_ty else { continue };
                     let mut fx = FnCtx::new(Type::Void, false, None);
+                    fx.frames[0].missing_this_divergence = Some(Divergence::ThisInFieldInitializer);
                     let e = self.check_expr(value, Some(&field_ty), &mut fx);
                     self.require_assignable(
                         &e.ty.clone(),
@@ -4436,7 +4514,10 @@ impl<'p> Checker<'p> {
                         &function_name,
                         false,
                         &sig,
-                        (!method.is_static).then(|| this_ty.clone()),
+                        (
+                            (!method.is_static).then(|| this_ty.clone()),
+                            method.is_static.then_some(Divergence::StaticMemberSurface),
+                        ),
                         pos,
                     ) {
                         if method.is_static {
@@ -4489,7 +4570,7 @@ impl<'p> Checker<'p> {
         let sig = self.resolve_fn_sig(&template.function, pos.clone());
         self.fn_sigs.insert(name.clone(), sig.clone());
         if let Some(function) =
-            self.check_function(&template.function, &name, false, &sig, None, pos)
+            self.check_function(&template.function, &name, false, &sig, (None, None), pos)
         {
             self.functions.push(function);
         }
@@ -4608,7 +4689,16 @@ impl<'p> Checker<'p> {
                         } else {
                             format!("`{name}` is assigned in a case that does not declare it")
                         };
-                        self.error(RuleCode::S100, message, pos.clone());
+                        if for_read {
+                            self.error(RuleCode::S100, message, pos.clone());
+                        } else {
+                            self.error_diverging(
+                                RuleCode::S100,
+                                message,
+                                pos.clone(),
+                                Divergence::DeclarationScope,
+                            );
+                        }
                         return Some(Local {
                             ty: Type::Error,
                             mutable: true,
@@ -4619,11 +4709,25 @@ impl<'p> Checker<'p> {
                 }
             }
             if owns_name && for_read && scope.pending.contains(name) {
-                self.error(
-                    RuleCode::S100,
-                    format!("`{name}` is read before its declaration in {scope_name}"),
-                    pos.clone(),
+                let message = format!("`{name}` is read before its declaration in {scope_name}");
+                let shadows_program_item = matches!(
+                    self.scope_item(name),
+                    Some(ScopeItem::Class(_) | ScopeItem::GenericClass(_) | ScopeItem::Func(_))
                 );
+                let ambient_namespace = matches!(
+                    name,
+                    "Math" | "Date" | "Number" | "JSON" | "Context" | "Promise"
+                );
+                if shadows_program_item || ambient_namespace {
+                    self.error(RuleCode::S100, message, pos.clone());
+                } else {
+                    self.error_diverging(
+                        RuleCode::S100,
+                        message,
+                        pos.clone(),
+                        Divergence::DeclarationScope,
+                    );
+                }
                 return Some(Local {
                     ty: Type::Error,
                     mutable: true,

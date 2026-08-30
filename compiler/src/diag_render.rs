@@ -2,6 +2,7 @@
 
 use std::fmt::Write as _;
 
+use crate::divergence::Divergence;
 use crate::{Diagnostic, Pos, SourceFile, Warning};
 
 struct RenderItem<'a> {
@@ -9,6 +10,7 @@ struct RenderItem<'a> {
     message: &'a str,
     pos: &'a Pos,
     explanation: &'static str,
+    divergence: Option<Divergence>,
 }
 
 /// Renders diagnostics against their source files without ANSI color.
@@ -27,6 +29,7 @@ pub fn render_diagnostics(files: &[SourceFile], diagnostics: &[Diagnostic]) -> S
             message: &diagnostic.message,
             pos: &diagnostic.pos,
             explanation: diagnostic.code.explanation(),
+            divergence: diagnostic.divergence,
         })
         .collect::<Vec<_>>();
     render_items(files, &items, "error")
@@ -46,6 +49,7 @@ pub fn render_warnings(files: &[SourceFile], warnings: &[Warning]) -> String {
             message: &warning.message,
             pos: &warning.pos,
             explanation: warning.code.explanation(),
+            divergence: None,
         })
         .collect::<Vec<_>>();
     render_items(files, &items, "warning")
@@ -82,6 +86,29 @@ fn render_items(files: &[SourceFile], items: &[RenderItem<'_>], severity: &str) 
         );
         let _ = writeln!(rendered, "{gutter_padding}| {caret_padding}^");
         let _ = writeln!(rendered, "{gutter_padding}= rule: {}", item.explanation);
+        if let Some(divergence) = item.divergence {
+            let entry = divergence.entry();
+            let _ = writeln!(rendered, "{gutter_padding}= TypeScript accepts:");
+            for line in entry.ts.lines() {
+                let _ = writeln!(rendered, "{gutter_padding}|   {line}");
+            }
+            let _ = writeln!(rendered, "{gutter_padding}= subscript:");
+            for line in entry.subscript.lines() {
+                let _ = writeln!(rendered, "{gutter_padding}|   {line}");
+            }
+            let collision = if entry.collision.starts_with('C')
+                && entry.collision[1..].chars().all(|c| c.is_ascii_digit())
+            {
+                format!("collisions.md {}", entry.collision)
+            } else {
+                entry.collision.to_string()
+            };
+            let _ = writeln!(
+                rendered,
+                "{gutter_padding}= why: {} ({collision})",
+                entry.why
+            );
+        }
     }
 
     let _ = write!(rendered, "{severity}: {} {severity}(s)", items.len());
@@ -103,6 +130,32 @@ fn source_line<'a>(files: &'a [SourceFile], pos: &Pos) -> Option<&'a str> {
 mod tests {
     use super::*;
     use crate::{Pos, RuleCode, WarnCode, Warning};
+
+    #[test]
+    fn renders_the_divergence_block_exactly() {
+        let files = [SourceFile::new("main.ts", "const value: number = 1;\n")];
+        let mut diagnostic =
+            Diagnostic::new(RuleCode::S007, "bare number", Pos::new("main.ts", 1, 14));
+        diagnostic.divergence = Some(Divergence::BareNumber);
+
+        assert_eq!(
+            render_diagnostics(&files, &[diagnostic]),
+            concat!(
+                "error[S007]: bare number\n",
+                " --> main.ts:1:14\n",
+                "  |\n",
+                "1 | const value: number = 1;\n",
+                "  |              ^\n",
+                "  = rule: Bare `number` is rejected; sized numeric types are mandatory.\n",
+                "  = TypeScript accepts:\n",
+                "  |   const count: number = 3;\n",
+                "  = subscript:\n",
+                "  |   const count: i32 = 3;\n",
+                "  = why: `number` is a 64-bit float with no C width, so every declaration names one of the sized types. (collisions.md C3)\n",
+                "error: 1 error(s)",
+            )
+        );
+    }
 
     #[test]
     fn renders_one_diagnostic_with_snippet_and_caret_exactly() {

@@ -76,6 +76,12 @@ fn s007_output(path: &Path) -> Vec<u8> {
             "1 | const value: number = 1;\n",
             "  |              ^\n",
             "  = rule: Bare `number` is rejected; sized numeric types are mandatory.\n",
+            "  = TypeScript accepts:\n",
+            "  |   const count: number = 3;\n",
+            "  = subscript:\n",
+            "  |   const count: i32 = 3;\n",
+            "  = why: `number` is a 64-bit float with no C width, so every declaration names ",
+            "one of the sized types. (collisions.md C3)\n",
             "error: 1 error(s)\n",
         ),
         path.display()

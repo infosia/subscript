@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use crate::divergence::Divergence;
+
 /// Stable rule code carried by every diagnostic.
 ///
 /// Codes are the tested contract (`specs/blocks/compiler.md` §6); they are
@@ -164,6 +166,8 @@ pub struct Diagnostic {
     pub message: String,
     /// Position of the offending construct.
     pub pos: Pos,
+    /// The TypeScript divergence that this rejection reports.
+    pub divergence: Option<Divergence>,
 }
 
 impl Diagnostic {
@@ -174,6 +178,7 @@ impl Diagnostic {
             code,
             message: message.into(),
             pos,
+            divergence: None,
         }
     }
 }

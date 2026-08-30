@@ -13,6 +13,7 @@
 pub mod api_reference;
 pub mod diag;
 mod diag_render;
+pub mod divergence;
 pub mod hir;
 pub mod language_reference;
 pub mod lir;

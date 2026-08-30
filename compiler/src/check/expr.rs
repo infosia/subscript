@@ -8,6 +8,7 @@ use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
+use crate::divergence::Divergence;
 use crate::hir::{
     self, AmbientFn, ArrFn, AsyncCallee, BinOp, Callee, ContextBytesFn, DateFn, ExprKind, MapFn,
     MathFn, NumFn, RegexFn, SetFn, StrFn, TplPart, UnOp, WorkerFn,
@@ -387,12 +388,70 @@ impl<'p> Checker<'p> {
         let Some(rejection) = crate::ambient::form_rejection(group, surface) else {
             return false;
         };
-        self.error(
-            rejection.code,
-            crate::ambient::rejection_message(rejection, actual),
-            pos,
-        );
+        self.emit_api_rejection(rejection, actual, pos);
         true
+    }
+
+    fn emit_api_rejection(
+        &mut self,
+        rejection: crate::ambient::ApiRejection,
+        actual: &str,
+        pos: Pos,
+    ) {
+        let divergence = match rejection.corpus {
+            Some("r16-math-variadic-max.ts" | "r18-math-value.ts") => Some(Divergence::MathSubset),
+            Some(
+                "r19-date-local-accessor.ts"
+                | "r20-date-setter.ts"
+                | "r21-date-multiarg-ctor.ts"
+                | "r22-date-template.ts"
+                | "r23-date-zero-arg-ctor.ts"
+                | "r24-date-compare.ts",
+            ) => Some(Divergence::DateSubset),
+            Some("r26-string-localecompare.ts" | "r28-string-tolocaleupper.ts") => {
+                Some(Divergence::LocaleSensitiveString)
+            }
+            Some(
+                "r29-array-sort-noarg.ts" | "r30-array-find.ts" | "r31-array-reduce-noinit.ts",
+            ) => Some(Divergence::ArrayMethodDefaults),
+            Some("r32-array-splice.ts" | "r51-array-unshift-variadic.ts") => {
+                Some(Divergence::VariadicArguments)
+            }
+            Some("r41-map-scalar-get.ts") => Some(Divergence::MapScalarGet),
+            Some("r42-map-iterator-member.ts") => Some(Divergence::IteratorTemporary),
+            Some("r43-map-iterable-constructor.ts" | "r79-assign-entries.ts") => {
+                Some(Divergence::NoTupleType)
+            }
+            Some(
+                "r46-number-global-isnan.ts"
+                | "r47-number-coercion.ts"
+                | "r48-number-to-precision.ts"
+                | "r49-number-to-string-radix.ts"
+                | "r50-parse-int-no-radix.ts",
+            ) => Some(Divergence::NumberCoercionAndArguments),
+            Some("r55-array-callback-container.ts") => Some(Divergence::EscapingCapture),
+            Some(
+                "r56-json-stringify-map.ts"
+                | "r57-json-stringify-set.ts"
+                | "r58-json-stringify-object.ts"
+                | "r59-json-stringify-function.ts"
+                | "r60-json-parse-no-context.ts"
+                | "r61-json-parse-date.ts",
+            ) => Some(Divergence::JsonSubset),
+            Some(
+                "r80-regex-exec.ts"
+                | "r81-regex-match-all.ts"
+                | "r82-regex-last-index.ts"
+                | "r83-regex-groups.ts",
+            ) => Some(Divergence::RegExpSubset),
+            _ => None,
+        };
+        let message = crate::ambient::rejection_message(rejection, actual);
+        if let Some(divergence) = divergence {
+            self.error_diverging(rejection.code, message, pos, divergence);
+        } else {
+            self.error(rejection.code, message, pos);
+        }
     }
 
     pub(crate) fn err_expr(&self, pos: Pos) -> hir::Expr {
@@ -576,7 +635,7 @@ impl<'p> Checker<'p> {
             ),
             ast::Expr::Lit(lit) => self.check_lit(lit, ctx, pos),
             ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
-            ast::Expr::Ident(id) => self.check_ident(id, fx),
+            ast::Expr::Ident(id) => self.check_ident(id, ctx, fx),
             ast::Expr::This(_) => {
                 let this_ty = fx.frames.last().and_then(|f| f.this_ty.clone());
                 match this_ty {
@@ -586,11 +645,24 @@ impl<'p> Checker<'p> {
                         pos,
                     },
                     None => {
-                        self.error(
-                            RuleCode::S100,
-                            "`this` is only available in constructors and methods",
-                            pos.clone(),
-                        );
+                        let divergence = fx
+                            .frames
+                            .last()
+                            .and_then(|frame| frame.missing_this_divergence);
+                        if let Some(divergence) = divergence {
+                            self.error_diverging(
+                                RuleCode::S100,
+                                "`this` is only available in constructors and methods",
+                                pos.clone(),
+                                divergence,
+                            );
+                        } else {
+                            self.error(
+                                RuleCode::S100,
+                                "`this` is only available in constructors and methods",
+                                pos.clone(),
+                            );
+                        }
                         self.err_expr(pos)
                     }
                 }
@@ -610,10 +682,11 @@ impl<'p> Checker<'p> {
                     self.check_descriptor_lit(object, id, fx, pos)
                 }
                 Some(_) => {
-                    self.error(
+                    self.error_diverging(
                         RuleCode::S005,
                         "object literals do not satisfy nominal class types",
                         pos.clone(),
+                        Divergence::ObjectLiteralConstruction,
                     );
                     self.err_expr(pos)
                 }
@@ -708,7 +781,7 @@ impl<'p> Checker<'p> {
         }
         let extension_name = self.classes[extension.0].name.clone();
         let header_name = self.classes[header.0].name.clone();
-        self.error(
+        self.error_diverging(
             RuleCode::S100,
             format!(
                 "embedded header `{extension_name}.{}` cannot be copied as `{header_name}`; store it directly into `{header_name} | null` or read one of its fields",
@@ -718,6 +791,7 @@ impl<'p> Checker<'p> {
                 }
             ),
             expr.pos.clone(),
+            Divergence::EmbeddedHeaderCopy,
         );
         expr.ty = Type::Error;
     }
@@ -754,10 +828,11 @@ impl<'p> Checker<'p> {
     /// materialize a Promise-typed value in HIR.
     fn check_await(&mut self, awaited: &ast::AwaitExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         if !fx.frames.last().is_some_and(|frame| frame.is_async) {
-            self.error(
+            self.error_diverging(
                 RuleCode::S013,
                 "`await` is only legal inside an async function",
                 pos.clone(),
+                Divergence::AwaitOutsideAsync,
             );
             return self.err_expr(pos);
         }
@@ -1018,10 +1093,11 @@ impl<'p> Checker<'p> {
                 let pattern = regex.exp.to_string();
                 let flags = regex.flags.to_string();
                 if flags.contains('y') {
-                    self.error(
+                    self.error_diverging(
                         RuleCode::S014,
                         "`RegExp.lastIndex` is not in the language: sticky matching requires reading and writing that mutable state (Q31)",
                         pos.clone(),
+                        Divergence::RegExpSubset,
                     );
                     return self.err_expr(pos);
                 }
@@ -1160,10 +1236,11 @@ impl<'p> Checker<'p> {
         };
         let Some(integer) = integer else {
             let name = self.type_name(&target);
-            self.error(
+            self.error_diverging(
                 RuleCode::S008,
                 format!("integer literal {} out of range for `{}`", raw, name),
                 pos.clone(),
+                Divergence::IntegerLiteralRange,
             );
             return self.err_expr(pos);
         };
@@ -1219,14 +1296,19 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn check_ident(&mut self, id: &ast::Ident, fx: &mut FnCtx) -> hir::Expr {
+    fn check_ident(&mut self, id: &ast::Ident, ctx: Option<&Type>, fx: &mut FnCtx) -> hir::Expr {
         let name = id.sym.to_string();
         let pos = self.pos(id.span);
         if name == "undefined" {
-            self.error(
+            self.error_diverging(
                 RuleCode::S012,
                 "`undefined` is banned; the single null story is `null`",
                 pos.clone(),
+                if matches!(ctx, Some(Type::StringAlias(_))) {
+                    Divergence::OptionalDescriptorMember
+                } else {
+                    Divergence::GeneralUnionAndUndefined
+                },
             );
             return self.err_expr(pos);
         }
@@ -1345,7 +1427,12 @@ impl<'p> Checker<'p> {
                         pos,
                     }
                 } else if name == "eval" || name == "Function" {
-                    self.error(RuleCode::S002, "no dynamic code evaluation", pos.clone());
+                    self.error_diverging(
+                        RuleCode::S002,
+                        "no dynamic code evaluation",
+                        pos.clone(),
+                        Divergence::DynamicObjectModel,
+                    );
                     self.err_expr(pos)
                 } else if name == "Context" {
                     self.error(
@@ -1469,10 +1556,11 @@ impl<'p> Checker<'p> {
                 }
                 let operand = self.check_expr(&u.arg, ctx, fx);
                 if operand.ty == Type::F16 {
-                    self.error(
+                    self.error_diverging(
                         RuleCode::S014,
                         "arithmetic on `f16` is not supported; compute via `as f32`",
                         pos.clone(),
+                        Divergence::StorageOnlyFloat16,
                     );
                     return self.err_expr(pos);
                 }
@@ -1565,10 +1653,11 @@ impl<'p> Checker<'p> {
         place.record_kind();
         if matches!(&place, Place::IndexSignature { .. }) {
             let spelling = update_spelling(u, "a[i]");
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 format!("{spelling} is not supported for a class index signature"),
                 pos.clone(),
+                Divergence::ClassIndexSignature,
             );
             return self.err_expr(pos);
         }
@@ -1581,10 +1670,11 @@ impl<'p> Checker<'p> {
         {
             if receiver.is_some() {
                 let spelling = update_spelling(u, &format!("x.{name}"));
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!("{spelling} is not supported for a class accessor"),
                     pos.clone(),
+                    Divergence::NamedAccessor,
                 );
                 return self.err_expr(pos);
             } else {
@@ -1609,10 +1699,11 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if target.ty == Type::F16 {
-            self.error(
+            self.error_diverging(
                 RuleCode::S014,
                 "arithmetic on `f16` is not supported; compute via `as f32`",
                 pos.clone(),
+                Divergence::StorageOnlyFloat16,
             );
             return self.err_expr(pos);
         }
@@ -1806,10 +1897,11 @@ impl<'p> Checker<'p> {
                 BinUse::CompoundAssignment => lt == Type::F16,
             };
         if f16_arithmetic {
-            self.error(
+            self.error_diverging(
                 RuleCode::S014,
                 "arithmetic on `f16` is not supported; compute via `as f32`",
                 pos.clone(),
+                Divergence::StorageOnlyFloat16,
             );
             return BinResult {
                 expr: self.err_expr(pos),
@@ -1914,13 +2006,14 @@ impl<'p> Checker<'p> {
             let amount = literal_shift_amount.unwrap_or(0);
             let width = lt.bit_width().unwrap_or(0);
             let name = self.type_name(&lt);
-            self.error(
+            self.error_diverging(
                 RuleCode::S008,
                 format!(
                     "literal shift amount {} is out of range for `{}` width {}",
                     amount, name, width
                 ),
                 right.pos.clone(),
+                Divergence::IntegerLiteralRange,
             );
             if use_kind == BinUse::CompoundAssignment {
                 return BinResult {
@@ -1982,13 +2075,14 @@ impl<'p> Checker<'p> {
             } else {
                 "arithmetic"
             };
-            self.error(
+            self.error_diverging(
                 RuleCode::S007,
                 format!(
                     "mixed-type {} (`{}` and `{}`) requires an explicit `as` conversion",
                     family, ln, rn
                 ),
                 pos.clone(),
+                Divergence::SizedOperandWidths,
             );
         } else {
             self.error(
@@ -2043,11 +2137,12 @@ impl<'p> Checker<'p> {
             context.clone()
         } else {
             let then_ty = then.ty.clone();
-            self.require_assignable(
+            self.require_assignable_with(
                 &els.ty.clone(),
                 &then_ty,
                 els.pos.clone(),
                 "the else branch",
+                Some(Divergence::ConditionalWithoutContext),
             );
             then_ty
         };
@@ -2379,7 +2474,7 @@ impl<'p> Checker<'p> {
                 Some(DescriptorProp::Expr(value)) => {
                     Some(self.check_expr(value, Some(&field.ty), fx))
                 }
-                Some(DescriptorProp::Shorthand(ident)) => Some(self.check_ident(ident, fx)),
+                Some(DescriptorProp::Shorthand(ident)) => Some(self.check_ident(ident, None, fx)),
                 None if field.is_defaulted => None,
                 None if field.is_absence_capable => {
                     let sentinel = match &field.ty {
@@ -2658,7 +2753,12 @@ impl<'p> Checker<'p> {
             Some(ScopeItem::Poisoned) => Some(self.err_expr(prop_pos)),
             Some(ScopeItem::Class(id)) => {
                 if prop == "prototype" {
-                    self.error(RuleCode::S003, "no prototype mutation", prop_pos.clone());
+                    self.error_diverging(
+                        RuleCode::S003,
+                        "no prototype mutation",
+                        prop_pos.clone(),
+                        Divergence::DynamicObjectModel,
+                    );
                     return Some(self.err_expr(prop_pos));
                 }
                 let class_name = self.classes[id.0].name.clone();
@@ -2713,7 +2813,12 @@ impl<'p> Checker<'p> {
             }
             Some(ScopeItem::GenericClass(_)) => {
                 if prop == "prototype" {
-                    self.error(RuleCode::S003, "no prototype mutation", prop_pos.clone());
+                    self.error_diverging(
+                        RuleCode::S003,
+                        "no prototype mutation",
+                        prop_pos.clone(),
+                        Divergence::DynamicObjectModel,
+                    );
                 } else {
                     self.error(
                         RuleCode::S100,
@@ -2760,7 +2865,12 @@ impl<'p> Checker<'p> {
             None => {
                 if name == "Object" {
                     if prop == "setPrototypeOf" {
-                        self.error(RuleCode::S003, "no prototype mutation", prop_pos.clone());
+                        self.error_diverging(
+                            RuleCode::S003,
+                            "no prototype mutation",
+                            prop_pos.clone(),
+                            Divergence::DynamicObjectModel,
+                        );
                         return Some(self.err_expr(prop_pos));
                     }
                     if prop == "groupBy" {
@@ -3097,13 +3207,14 @@ impl<'p> Checker<'p> {
                 &mut std::collections::HashSet::new(),
             ) {
                 let type_name = self.type_name(&ty);
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!(
                         "message class `{}` is not transferable: innermost field `{path}` has non-transferable type `{type_name}`",
                         class.name
                     ),
                     pos,
+                    Divergence::WorkerContextAffinity,
                 );
                 return false;
             }
@@ -3133,10 +3244,11 @@ impl<'p> Checker<'p> {
             entry_expr = &paren.expr;
         }
         let ast::Expr::Ident(ident) = entry_expr else {
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 "`Worker.spawn` entry must be a directly named module-level function; lambdas and other values are not worker entries",
                 self.pos(argument.span()),
+                Divergence::WorkerEntryShape,
             );
             return self.err_expr(pos);
         };
@@ -3172,10 +3284,11 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
         if sig.is_async {
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 "`Worker.spawn` entry must be synchronous; async worker entries are rejected",
                 self.pos(ident.span),
+                Divergence::WorkerEntryShape,
             );
             return self.err_expr(pos);
         }
@@ -3308,10 +3421,11 @@ impl<'p> Checker<'p> {
             "matchStart" => (RegexFn::MatchStart, Type::I32, Type::I32),
             "matchEnd" => (RegexFn::MatchEnd, Type::I32, Type::I32),
             "exec" => {
-                self.error(
+                self.error_diverging(
                     RuleCode::S014,
                     "`RegExp.exec` is rejected: its result needs an array with extra fields and a tuple type, neither of which the language has (Q31)",
                     prop_pos,
+                    Divergence::RegExpSubset,
                 );
                 return self.err_expr(pos);
             }
@@ -3361,10 +3475,11 @@ impl<'p> Checker<'p> {
                 .args
                 .first()
                 .map_or_else(|| pos.clone(), |arg| self.pos(arg.expr.span()));
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 "`string.replaceAll` with a RegExp literal requires the `g` flag",
                 diagnostic_pos,
+                Divergence::ReplaceAllGlobalFlag,
             );
         }
         let arity = if matches!(name, "replace" | "replaceAll") {
@@ -3664,7 +3779,11 @@ impl<'p> Checker<'p> {
                 format!("`{}` is outside the accepted Date subset (Q20)", name),
             )
         };
-        self.error(code, why, pos);
+        if let Some(rejection) = crate::ambient::date_rejection(name) {
+            self.emit_api_rejection(rejection, name, pos);
+        } else {
+            self.error_diverging(code, why, pos, Divergence::DateSubset);
+        }
     }
 
     /// A Q25/Q26 numeric receiver method. The accepted formatting
@@ -3884,11 +4003,7 @@ impl<'p> Checker<'p> {
         let Some(rejection) = crate::ambient::string_rejection(name) else {
             return false;
         };
-        self.error(
-            rejection.code,
-            crate::ambient::rejection_message(rejection, name),
-            pos,
-        );
+        self.emit_api_rejection(rejection, name, pos);
         true
     }
 
@@ -4429,13 +4544,14 @@ impl<'p> Checker<'p> {
         };
         if self.assoc_key_kind(&key).is_none() {
             let key_name = self.type_name(&key);
-            self.error(
+            self.error_diverging(
                 RuleCode::S014,
                 format!(
                     "`Map.groupBy` callback returns `{key_name}`, which is not a \
                      §10.2 Map/Set key kind (Q24)"
                 ),
                 callback.pos.clone(),
+                Divergence::MapKeyKind,
             );
             return self.err_expr(pos);
         }
@@ -4457,17 +4573,22 @@ impl<'p> Checker<'p> {
         value: Type,
         name: &str,
         c: &ast::CallExpr,
+        ctx: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
         let Some(operation) = crate::ambient::map_method(name) else {
             if let Some(rejection) = crate::ambient::map_rejection(name) {
-                self.error(
-                    rejection.code,
-                    crate::ambient::rejection_message(rejection, name),
-                    prop_pos,
-                );
+                if name == "keys" && ctx.is_some() {
+                    self.error(
+                        rejection.code,
+                        crate::ambient::rejection_message(rejection, name),
+                        prop_pos,
+                    );
+                } else {
+                    self.emit_api_rejection(rejection, name, prop_pos);
+                }
             } else {
                 self.error(
                     RuleCode::S100,
@@ -4589,11 +4710,7 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let Some(operation) = crate::ambient::set_method(name) else {
             if let Some(rejection) = crate::ambient::set_rejection(name) {
-                self.error(
-                    rejection.code,
-                    crate::ambient::rejection_message(rejection, name),
-                    prop_pos,
-                );
+                self.emit_api_rejection(rejection, name, prop_pos);
             } else {
                 self.error(
                     RuleCode::S100,
@@ -4948,11 +5065,7 @@ impl<'p> Checker<'p> {
         let Some(rejection) = crate::ambient::array_rejection(name) else {
             return false;
         };
-        self.error(
-            rejection.code,
-            crate::ambient::rejection_message(rejection, name),
-            pos,
-        );
+        self.emit_api_rejection(rejection, name, pos);
         true
     }
 
@@ -5008,10 +5121,11 @@ impl<'p> Checker<'p> {
                 self.apply_narrowing(&mut expr, fx);
                 let narrowed = path_key(&expr).is_some_and(|key| fx.narrowed.contains(&key));
                 if self.is_absence_capable_member_expr(&expr) && !allow_absence_test && !narrowed {
-                    self.error(
+                    self.error_diverging(
                         RuleCode::S100,
                         "an absence-capable descriptor member may be read only after an `!== undefined` presence test",
                         expr.pos.clone(),
+                        Divergence::OptionalDescriptorMember,
                     );
                     expr.ty = Type::Error;
                 }
@@ -5127,7 +5241,12 @@ impl<'p> Checker<'p> {
         for_write: bool,
     ) -> hir::Expr {
         if name == "prototype" {
-            self.error(RuleCode::S003, "no prototype mutation", prop_pos.clone());
+            self.error_diverging(
+                RuleCode::S003,
+                "no prototype mutation",
+                prop_pos.clone(),
+                Divergence::DynamicObjectModel,
+            );
             return self.err_expr(prop_pos);
         }
         match obj.ty.clone() {
@@ -5294,11 +5413,7 @@ impl<'p> Checker<'p> {
                         prop_pos.clone(),
                     );
                 } else if let Some(rejection) = crate::ambient::map_rejection(name) {
-                    self.error(
-                        rejection.code,
-                        crate::ambient::rejection_message(rejection, name),
-                        prop_pos.clone(),
-                    );
+                    self.emit_api_rejection(rejection, name, prop_pos.clone());
                 } else {
                     self.error(
                         RuleCode::S100,
@@ -5326,11 +5441,7 @@ impl<'p> Checker<'p> {
                         prop_pos.clone(),
                     );
                 } else if let Some(rejection) = crate::ambient::set_rejection(name) {
-                    self.error(
-                        rejection.code,
-                        crate::ambient::rejection_message(rejection, name),
-                        prop_pos.clone(),
-                    );
+                    self.emit_api_rejection(rejection, name, prop_pos.clone());
                 } else {
                     self.error(
                         RuleCode::S100,
@@ -5387,15 +5498,16 @@ impl<'p> Checker<'p> {
                 } else {
                     format!("`RegExp` has no accepted member `{name}`")
                 };
-                self.error(
-                    if matches!(name, "lastIndex" | "exec") {
-                        RuleCode::S014
-                    } else {
-                        RuleCode::S100
-                    },
-                    message,
-                    prop_pos.clone(),
-                );
+                if matches!(name, "lastIndex" | "exec") {
+                    self.error_diverging(
+                        RuleCode::S014,
+                        message,
+                        prop_pos.clone(),
+                        Divergence::RegExpSubset,
+                    );
+                } else {
+                    self.error(RuleCode::S100, message, prop_pos.clone());
+                }
                 self.err_expr(prop_pos)
             }
             Type::IterResult(v) => {
@@ -5557,10 +5669,11 @@ impl<'p> Checker<'p> {
         };
         if let Some((recv, index, signature)) = signature_write {
             if let Some((_, operator)) = operation {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!("`a[i] {operator} v` is not supported for a class index signature"),
                     pos.clone(),
+                    Divergence::ClassIndexSignature,
                 );
                 return self.err_expr(pos);
             }
@@ -5633,10 +5746,11 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             };
             if !statement_position {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!("`{class_name}.{name} = v` cannot be used as a value"),
                     pos.clone(),
+                    Divergence::NamedAccessor,
                 );
                 return self.err_expr(pos);
             }
@@ -5676,10 +5790,11 @@ impl<'p> Checker<'p> {
         };
         if let Some((id, recv, name)) = accessor_write {
             if let Some((_, operator)) = operation {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!("`x.{name} {operator} v` is not supported for a class accessor"),
                     pos.clone(),
+                    Divergence::NamedAccessor,
                 );
                 return self.err_expr(pos);
             }
@@ -5693,10 +5808,11 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             };
             if !statement_position {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!("`x.{name} = v` cannot be used as a value"),
                     pos.clone(),
+                    Divergence::NamedAccessor,
                 );
                 return self.err_expr(pos);
             }
@@ -6136,7 +6252,12 @@ impl<'p> Checker<'p> {
             }
             None => {
                 if name == "eval" {
-                    self.error(RuleCode::S002, "no dynamic code evaluation", pos.clone());
+                    self.error_diverging(
+                        RuleCode::S002,
+                        "no dynamic code evaluation",
+                        pos.clone(),
+                        Divergence::DynamicObjectModel,
+                    );
                     return self.err_expr(pos);
                 }
                 if let Some(f) = crate::ambient::number_global(&name) {
@@ -6157,10 +6278,11 @@ impl<'p> Checker<'p> {
                 }
                 if let Some(ambient) = crate::ambient::ambient_fn(&name) {
                     if ambient == AmbientFn::Unreachable && !unreachable_statement {
-                        self.error(
+                        self.error_diverging(
                             RuleCode::S100,
                             "`unreachable()` is only legal as a call statement",
                             pos.clone(),
+                            Divergence::UnreachableInValuePosition,
                         );
                         let _ = self.check_ambient_call(ambient, c, fx, pos.clone());
                         return self.err_expr(pos);
@@ -6366,12 +6488,13 @@ impl<'p> Checker<'p> {
         };
         if !top_level_ok {
             let target_name = self.type_name(&target);
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 format!(
                     "`Context.{name}<T>` cannot use `{target_name}`; it is not a @CStruct value class or FixedArray"
                 ),
                 member_pos,
+                Divergence::ByteAccessTarget,
             );
             return self.err_expr(pos);
         }
@@ -6396,10 +6519,11 @@ impl<'p> Checker<'p> {
                     )
                 },
             );
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 format!("`Context.{name}<T>` cannot use `{target_name}`; {detail}"),
                 member_pos,
+                Divergence::ByteAccessTarget,
             );
             return self.err_expr(pos);
         }
@@ -6556,18 +6680,20 @@ impl<'p> Checker<'p> {
         let name = prop.sym.to_string();
         let prop_pos = self.pos(prop.span);
         if matches!(name.as_str(), "then" | "catch" | "finally") {
-            self.error(
+            self.error_diverging(
                 RuleCode::S013,
                 format!("Promise combinator `.{name}(...)` is not in the language"),
                 prop_pos.clone(),
+                Divergence::PromiseObject,
             );
             return self.err_expr(pos);
         }
         if self.ambient_namespace(&m.obj, fx) == Some("Promise") {
-            self.error(
+            self.error_diverging(
                 RuleCode::S013,
                 format!("Promise static `Promise.{name}(...)` is not in the language"),
                 prop_pos.clone(),
+                Divergence::PromiseObject,
             );
             return self.err_expr(pos);
         }
@@ -6664,7 +6790,7 @@ impl<'p> Checker<'p> {
             ty if ty.is_numeric() => self.check_number_method(recv, &name, c, fx, pos, prop_pos),
             Type::Date => self.check_date_method(recv, &name, c, fx, pos, prop_pos),
             Type::Map(key, value) => {
-                self.check_map_method(recv, *key, *value, &name, c, fx, pos, prop_pos)
+                self.check_map_method(recv, *key, *value, &name, c, ctx, fx, pos, prop_pos)
             }
             Type::Set(key) => self.check_set_method(recv, *key, &name, c, fx, pos, prop_pos),
             Type::Worker(input, output) => {
@@ -6833,7 +6959,7 @@ impl<'p> Checker<'p> {
                     match super::layout::class_independent_layout(&step) {
                         super::layout::IndependentLayout::Fits => mk(recv, args, step, pos),
                         super::layout::IndependentLayout::TooLarge => {
-                            self.error(
+                            self.error_diverging(
                                 RuleCode::S100,
                                 format!(
                                     "coroutine step-result layout exceeds the supported \
@@ -6841,6 +6967,7 @@ impl<'p> Checker<'p> {
                                     crate::types::MAX_AGGREGATE_BYTES
                                 ),
                                 prop_pos,
+                                Divergence::AggregateLayoutLimit,
                             );
                             self.err_expr(pos)
                         }
@@ -7005,18 +7132,20 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if name == "Function" {
-            self.error(
+            self.error_diverging(
                 RuleCode::S002,
                 "no dynamic code evaluation (`new Function`)",
                 pos.clone(),
+                Divergence::DynamicObjectModel,
             );
             return self.err_expr(pos);
         }
         if name == "Promise" {
-            self.error(
+            self.error_diverging(
                 RuleCode::S013,
                 "Promise objects cannot be constructed; async functions expose no Promise object surface",
                 pos.clone(),
+                Divergence::PromiseObject,
             );
             return self.err_expr(pos);
         }
@@ -7169,12 +7298,13 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if self.classes[class_id.0].is_descriptor {
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 format!(
                     "descriptor class `{name}` is constructed with an object literal, not `new`"
                 ),
                 pos.clone(),
+                Divergence::DescriptorConstruction,
             );
             return self.err_expr(pos);
         }
@@ -7235,10 +7365,11 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         if a.is_async {
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 "async arrow functions are not in the decided surface; use an async function declaration",
                 pos.clone(),
+                Divergence::AsyncFunctionShape,
             );
             return self.err_expr(pos);
         }
@@ -7298,6 +7429,7 @@ impl<'p> Checker<'p> {
             is_lambda: true,
             captures: Vec::new(),
             this_ty: None,
+            missing_this_divergence: None,
         });
         fx.scopes.push(Scope {
             fn_boundary: true,

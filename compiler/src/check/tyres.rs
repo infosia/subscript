@@ -6,6 +6,7 @@ use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::diag::RuleCode;
+use crate::divergence::Divergence;
 use crate::types::{FuncType, Type};
 
 use super::{Checker, ScopeItem};
@@ -103,24 +104,31 @@ impl<'p> Checker<'p> {
         let pos = self.pos(kw.span);
         match kw.kind {
             TsNumberKeyword => {
-                self.error(
+                self.error_diverging(
                     RuleCode::S007,
                     "bare `number` is rejected; there is no default numeric type — \
                      use a sized type (i8, u8, i16, u16, i32, u32, i64, u64, \
                      f16, f32, f64)",
                     pos,
+                    Divergence::BareNumber,
                 );
                 Type::Error
             }
             TsAnyKeyword => {
-                self.error(RuleCode::S001, "`any` is not part of the language", pos);
+                self.error_diverging(
+                    RuleCode::S001,
+                    "`any` is not part of the language",
+                    pos,
+                    Divergence::AnyType,
+                );
                 Type::Error
             }
             TsUndefinedKeyword => {
-                self.error(
+                self.error_diverging(
                     RuleCode::S012,
                     "`undefined` is banned; the single null story is `null`",
                     pos,
+                    Divergence::GeneralUnionAndUndefined,
                 );
                 Type::Error
             }
@@ -142,11 +150,12 @@ impl<'p> Checker<'p> {
                 {
                     Type::Object
                 } else {
-                    self.error(
+                    self.error_diverging(
                         RuleCode::S011,
                         "`object` is a boundary-only type; it is not available to \
                          general declarations",
                         pos,
+                        Divergence::BoundaryOnlyObject,
                     );
                     Type::Error
                 }
@@ -248,7 +257,7 @@ impl<'p> Checker<'p> {
             }
             "RegExpMatchArray" if self.scope_item(name).is_none() => {
                 let message = "`RegExpMatchArray` is rejected: `groups` requires an object with dynamic keys, which the language does not have (Q31)";
-                self.error(RuleCode::S014, message, pos);
+                self.error_diverging(RuleCode::S014, message, pos, Divergence::RegExpSubset);
                 return Type::Error;
             }
             "Promise" => {
@@ -331,15 +340,16 @@ impl<'p> Checker<'p> {
                 match super::layout::class_independent_layout(&fixed) {
                     super::layout::IndependentLayout::Fits => return fixed,
                     super::layout::IndependentLayout::TooLarge => {
-                        self.error(
-                            RuleCode::S100,
-                            format!(
-                                "`FixedArray` byte size exceeds the supported aggregate limit \
-                                 of {} bytes",
-                                crate::types::MAX_AGGREGATE_BYTES
-                            ),
-                            pos,
+                        let message = format!(
+                            "`FixedArray` byte size exceeds the supported aggregate limit \
+                             of {} bytes",
+                            crate::types::MAX_AGGREGATE_BYTES
                         );
+                        if let Some(divergence) = self.aggregate_type_divergence {
+                            self.error_diverging(RuleCode::S100, message, pos, divergence);
+                        } else {
+                            self.error(RuleCode::S100, message, pos);
+                        }
                         return Type::Error;
                     }
                     super::layout::IndependentLayout::DependsOnClass => {
@@ -434,10 +444,11 @@ impl<'p> Checker<'p> {
             self.in_assoc_key = true;
             let mut key = self.resolve_type(&args.params[0]);
             if Self::is_context_affine_type(&key) {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     "Worker, Inbox, and Outbox values may not be container type arguments",
                     self.pos(args.params[0].span()),
+                    Divergence::WorkerContextAffinity,
                 );
                 key = Type::Error;
             }
@@ -449,7 +460,7 @@ impl<'p> Checker<'p> {
             if !matches!(key, Type::Error) && self.assoc_key_kind(&key).is_none() {
                 let key_pos = self.pos(args.params[0].span());
                 let key_name = self.type_name(&key);
-                self.error(
+                self.error_diverging(
                     RuleCode::S014,
                     format!(
                         "`{key_name}` is not a Map/Set key kind; Q24 permits sized \
@@ -457,15 +468,17 @@ impl<'p> Checker<'p> {
                          reference classes"
                     ),
                     key_pos,
+                    Divergence::MapKeyKind,
                 );
             }
             if name == "Map" {
                 let mut value = self.resolve_type(&args.params[1]);
                 if Self::is_context_affine_type(&value) {
-                    self.error(
+                    self.error_diverging(
                         RuleCode::S100,
                         "Worker, Inbox, and Outbox values may not be container type arguments",
                         self.pos(args.params[1].span()),
+                        Divergence::WorkerContextAffinity,
                     );
                     value = Type::Error;
                 }
@@ -572,10 +585,11 @@ impl<'p> Checker<'p> {
             if let ast::TsType::TsKeywordType(kw) = &**member {
                 if kw.kind == ast::TsKeywordTypeKind::TsUndefinedKeyword {
                     let pos = self.pos(kw.span);
-                    self.error(
+                    self.error_diverging(
                         RuleCode::S012,
                         "`undefined` is banned; the single null story is `null`",
                         pos,
+                        Divergence::GeneralUnionAndUndefined,
                     );
                     return Type::Error;
                 }
@@ -625,7 +639,25 @@ impl<'p> Checker<'p> {
             }
         }
         let pos = self.pos(union.span);
-        self.error(RuleCode::S011, "unions are limited to `Ref | null`", pos);
+        let divergence = if union.types.iter().all(|member| {
+            matches!(
+                &**member,
+                ast::TsType::TsLitType(ast::TsLitType {
+                    lit: ast::TsLit::Str(_),
+                    ..
+                })
+            )
+        }) {
+            Divergence::LiteralUnionAlias
+        } else {
+            Divergence::GeneralUnionAndUndefined
+        };
+        self.error_diverging(
+            RuleCode::S011,
+            "unions are limited to `Ref | null`",
+            pos,
+            divergence,
+        );
         Type::Error
     }
 

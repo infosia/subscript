@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use subscript_compiler::{check_program, RuleCode, SourceFile};
+use subscript_compiler::{check_program, render_diagnostics, RuleCode, SourceFile};
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus")
@@ -274,6 +274,44 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
             file, line, first.pos.line, first.pos.col, first.message
         );
     }
+}
+
+#[test]
+fn divergence_blocks_match_every_reject_entry_tsc_header() {
+    let dir = corpus_dir().join("reject");
+    let mut violations = Vec::new();
+    for (file, _, _) in expected_entries() {
+        let source = fs::read_to_string(dir.join(file))
+            .unwrap_or_else(|error| panic!("read {file}: {error}"));
+        let tsc_accepts = source.lines().any(|line| line == "// tsc: accepts");
+        let tsc_rejects = source
+            .lines()
+            .any(|line| line.starts_with("// tsc: rejects"));
+        if tsc_accepts == tsc_rejects {
+            violations.push(format!("{file}: header must state one tsc result"));
+            continue;
+        }
+
+        let mut files = Vec::new();
+        if file == "r169-embedded-header-copy.ts" {
+            let mirror =
+                fs::read_to_string(corpus_dir().join("interop").join("interop.generated.d.ts"))
+                    .expect("read the interop mirror for r169");
+            files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
+        }
+        files.push(SourceFile::new(file, source));
+        let diagnostics = check_program(&files).expect_err("reject entry must fail");
+        let rendered = render_diagnostics(&files, &diagnostics[..1]);
+        let has_block = rendered.contains("= TypeScript accepts:");
+        if has_block != tsc_accepts {
+            violations.push(format!(
+                "{file}: tsc {} but the divergence block is {}",
+                if tsc_accepts { "accepts" } else { "rejects" },
+                if has_block { "present" } else { "absent" }
+            ));
+        }
+    }
+    assert!(violations.is_empty(), "{}", violations.join("\n"));
 }
 
 #[test]

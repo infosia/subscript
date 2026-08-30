@@ -7,6 +7,7 @@ use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::diag::RuleCode;
+use crate::divergence::Divergence;
 use crate::hir::{self, BinOp, ExprKind};
 use crate::types::Type;
 
@@ -398,10 +399,11 @@ impl<'p> Checker<'p> {
             }
             ast::Stmt::Decl(ast::Decl::Using(using)) => {
                 if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
-                    self.error(
+                    self.error_diverging(
                         RuleCode::S100,
                         "nested declarations are not in the decided surface",
                         self.pos(using.span),
+                        Divergence::UsingDeclaration,
                     );
                 } else {
                     self.check_using(using, fx, out);
@@ -483,19 +485,21 @@ impl<'p> Checker<'p> {
             }
             ast::Stmt::Throw(t) => {
                 let pos = self.pos(t.span);
-                self.error(
+                self.error_diverging(
                     RuleCode::S010,
                     "exceptions are not in the language; return a result value",
                     pos,
+                    Divergence::Exceptions,
                 );
                 true
             }
             ast::Stmt::Try(t) => {
                 let pos = self.pos(t.span);
-                self.error(
+                self.error_diverging(
                     RuleCode::S010,
                     "exceptions are not in the language; return a result value",
                     pos,
+                    Divergence::Exceptions,
                 );
                 false
             }
@@ -532,10 +536,11 @@ impl<'p> Checker<'p> {
 
     fn check_using(&mut self, using: &ast::UsingDecl, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         if using.is_await {
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 "`await using` is not in the decided surface",
                 self.pos(using.span),
+                Divergence::UsingDeclaration,
             );
         }
         self.check_bindings(&using.decls, false, !using.is_await, fx, out);
@@ -561,10 +566,14 @@ impl<'p> Checker<'p> {
             };
             let name = binding.id.sym.to_string();
             let pos = self.pos(binding.id.span);
+            let saved_divergence = self
+                .aggregate_type_divergence
+                .replace(Divergence::AggregateLayoutLimit);
             let ann = binding
                 .type_ann
                 .as_ref()
                 .map(|ann| self.resolve_type(&ann.type_ann));
+            self.aggregate_type_divergence = saved_divergence;
             let Some(init_ast) = &d.init else {
                 self.error(
                     RuleCode::S100,
@@ -613,11 +622,17 @@ impl<'p> Checker<'p> {
                     _ => false,
                 };
                 if !valid {
-                    self.error(
-                        RuleCode::S100,
-                        "a `using` initializer must be a non-null reference class that declares `[Symbol.dispose](): void`; narrow nullable values first",
-                        pos.clone(),
-                    );
+                    let message = "a `using` initializer must be a non-null reference class that declares `[Symbol.dispose](): void`; narrow nullable values first";
+                    if matches!(init.ty, Type::Nullable(_)) {
+                        self.error_diverging(
+                            RuleCode::S100,
+                            message,
+                            pos.clone(),
+                            Divergence::UsingDeclaration,
+                        );
+                    } else {
+                        self.error(RuleCode::S100, message, pos.clone());
+                    }
                 }
             }
             let holds_capturing = self.is_capturing_value(&init, fx);
@@ -681,10 +696,11 @@ impl<'p> Checker<'p> {
                         "the return value",
                     );
                     if self.is_capturing_value(&checked, fx) {
-                        self.error(
+                        self.error_diverging(
                             RuleCode::S009,
                             "capturing lambdas may not escape their defining function",
                             pos.clone(),
+                            Divergence::EscapingCapture,
                         );
                     }
                     if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
@@ -1121,10 +1137,11 @@ impl<'p> Checker<'p> {
                             let recv = self.check_expr(&member.obj, None, fx);
                             let prop_pos = self.pos(prop.span);
                             if name == "entries" {
-                                self.error(
+                                self.error_diverging(
                                     RuleCode::S014,
                                     "`entries()` yields a pair, but the language has no tuple type",
                                     prop_pos,
+                                    Divergence::NoTupleType,
                                 );
                                 return (recv, None, Type::Error, false);
                             }
@@ -1300,12 +1317,13 @@ impl<'p> Checker<'p> {
                                 );
                                 if !alias_members_seen.insert(index) {
                                     alias_labels_valid = false;
-                                    self.error(
+                                    self.error_diverging(
                                         RuleCode::S100,
                                         format!(
                                             "duplicate case label {label:?} for string-literal union alias `{alias_name}`"
                                         ),
                                         checked.pos.clone(),
+                                        Divergence::SwitchOverAlias,
                                     );
                                 }
                             } else {
@@ -1364,12 +1382,13 @@ impl<'p> Checker<'p> {
                     .map(|(_, member)| format!("{member:?}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     format!(
                         "non-exhaustive switch over string-literal union alias `{alias_name}`; missing case labels: {missing}"
                     ),
                     pos.clone(),
+                    Divergence::SwitchOverAlias,
                 );
             }
         }
