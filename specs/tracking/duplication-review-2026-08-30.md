@@ -262,17 +262,17 @@ Clippy 7/18/13. Gate on main: 1,142 passed, 0 failed.
 
 ## MINOR pass — compiler (landed `07448d8`)
 
-Cm7–Cm27 all done (Cm27 was already covered by `children()`). 1,098
+Cm7–Cm27 all done. `children()` covers Cm27. 1,098
 lines removed, 1,261 added; five unit tests. No diagnostic text moved.
 Clippy 7/18/13. Gate on main: 1,147 passed, 0 failed.
 
 ## MINOR pass — codegen (landed `d955917`)
 
-Gm7–Gm23 all done (Gm20 was already satisfied). `Template` operands
+Gm7–Gm23 all done. Gm20 needed no change. `Template` operands
 carry `FormatKind`; the LIR golden text moved on 181 `Template` lines
 and on no other line (§78 rule 3, measured). The trap-kind map lives in
-`codegen/src/lir_types.rs` (§78 rule 4 corrected: `compiler/` does not
-depend on `runtime/`). 2,046 lines removed, 1,403 added, before Gm7.
+`codegen/src/lir_types.rs`. §78 rule 4 now states this, because
+`compiler/` does not depend on `runtime/`. 2,046 lines removed, 1,403 added, before Gm7.
 Clippy 7/18/13. Gate on main: 1,152 passed, 0 failed.
 
 **The MINOR pass is COMPLETE.** Three rounds, 66 items, all done. A
