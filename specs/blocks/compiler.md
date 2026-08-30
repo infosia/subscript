@@ -10443,3 +10443,72 @@ error that names the local and the suspend. A hand-built LIR test
 constructs the violating form (an `Activation` local read after a
 suspend with no intervening store) and checks the interpreter reports
 it.
+
+## 76. Three checker facts the HIR carries once
+
+*(Owner decision, 2026-08-30; review findings.)*
+
+### 76.1 The assignment target is classified before lowering
+
+**Rule 1.** `check_assign_target` classifies the AST target into one
+`Place` enum — `Local`, `Global`, `Field`, `Index`, `IndexSignature`,
+`Accessor`, `StaticField` — before any member lowering. `check_assign`
+and `check_update` consume the enum. Neither reads a lowered
+`Call { Method { "get" }, args }` to recover the target kind.
+
+Measured before the rule: `member_on` lowered an accessor read or an
+index-signature read to a `get` call, and `check_update` and
+`check_assign` matched `name == "get" && args.len() == 1` at three
+sites to reclassify it (core principle 9).
+
+### 76.2 A presence test is a HIR expression
+
+**Rule 2.** The checker emits `ExprKind::AbsenceTest { value, negated }`
+for a comparison of a string-alias value against its absence marker.
+The LIR lowering reads the alias's absence discriminant from the alias
+table once when it lowers the node. `narrow_paths` reads the node and
+needs no alias-table closure.
+
+Measured before the rule: the producer emitted
+`Binary { Eq | Ne, Int(discriminant), StringAlias }`, and `narrow_paths`
+recovered the meaning by comparing the integer against the alias table
+through a threaded closure (core principle 8).
+
+### 76.3 `using` is one flag on the binding
+
+**Rule 3.** `check_stmt` checks `Decl::Using` directly and emits
+`hir::Stmt::Let { dispose: true, .. }`. Scope exit — normal fall-through,
+`return`, `break`, `continue`, and a thrown trap's unwinding where the
+language defines one — inserts the dispose calls in reverse binding
+order from that flag, in one function. No AST rewrite to `const`, and
+no binding list keyed by `Pos`.
+
+Measured before the rule: pass 1 rewrote `using` to `const` and
+recorded binding positions; pass 2 re-identified the bindings over the
+checked HIR by `Pos` equality (475 lines).
+
+**Check.** No corpus golden moves. The existing `using`, accessor,
+index-signature, and absence entries are the pins. A unit test builds
+each `Place` variant from source and checks the classification.
+
+## 77. Two runtime facts written once
+
+*(Owner decision, 2026-08-30; review findings.)*
+
+**Rule 1.** `TrapKind` has one `message(&self, ...)` per kind in
+`runtime/`. Every runtime site that raises the trap and the emitted-check
+entry `subscript_rt_trap` produce the message through it. The golden
+corpus pins the text.
+
+Measured before the rule: `ffi.rs` `subscript_rt_trap` held literal
+copies of messages that `context.rs` also spelled (`index {i} out of
+bounds for array length {n}`, `use of a deleted allocation`).
+
+**Rule 2.** Element equality (stdlib §9 `===`, §10 SameValueZero) and
+the integer-width read are one module, used by `arrops` and `assocops`:
+`value_eq(kind, width, p, q, same_value_zero)` and one `read_uint`. A
+unit test enumerates every kind and width and checks both callers
+agree.
+
+Measured before the rule: `arrops.rs` `elem_eq`/`elem_same_value_zero`
+and `assocops.rs` `keys_equal` were two tables; `F16` existed in one.
