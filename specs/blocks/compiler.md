@@ -10791,6 +10791,18 @@ the write — so the entry pins copy-on-pass in both directions and the
 golden does not move. No accept entry is exempted from the
 zero-warning sweep.
 
+### 81.2b Review round 1, 2026-09-01
+
+The fresh review of the first implementation found: bindings keyed by
+name conflate shadowed locals (MAJOR); no lambda test (MAJOR); a
+`for...of` binding of value type was not a copy binding; an
+index-rooted field chain was not a place; a compound assignment in
+value position (`p.x++`) read nothing; a `this`-write test could not
+fail; "may" in the explanation. W004 in `warnings.md` now states the
+shadowing exclusion, the `for...of` binding, the index root, the
+value-position read, and the capture miss. The `this` test gains a
+value-typed parameter beside the `this` write.
+
 ### 81.3 Sites
 
 - `compiler/src/warn.rs`: `WarnCode::W004`, `ALL`, `as_str`,

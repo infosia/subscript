@@ -93,9 +93,10 @@ one of:
 - a value-typed parameter of a function, method, constructor, or
   lambda (copy-on-pass, C2);
 - a `let`/`const` local of value type whose initializer is a place
-  — a local, a global, a field chain (from a local, a global, or
-  `this`), or an index expression (copy-on-assign and copy-on-index,
-  C2).
+  — a local, a global, an index expression, or a field chain rooted in
+  one of those or in `this` (copy-on-assign and copy-on-index, C2);
+- a `for...of` loop binding of value type (a copy per visit, C13); its
+  origin is the subject rendered as source text.
 
 `this` inside a value-class method is an address (compiler.md §68 LIR
 `Method` row), not a copy, and never fires. A local whose initializer
@@ -104,15 +105,27 @@ is `new` or a call holds a fresh value, not a copy, and never fires.
 *Read* (any one mutes every W004 on the binding): a field or index
 read, a method call on the binding, passing it as an argument,
 returning it, using it as an assignment value, or capturing it. The
-root of an assignment target is not a read. The rule is order-free on
-purpose: a binding with one read anywhere in the function stays
-silent, so a loop that reads before it writes stays silent.
+root of an assignment target in statement position is not a read. An
+assignment in value position (`const v = p.x++`) reads the binding.
+The rule is order-free on purpose: a binding with one read anywhere in
+the function stays silent, so a loop that reads before it writes stays
+silent.
+
+*Shadowing.* HIR `Local` carries a name, not a binding id, so the pass
+cannot tell two same-name bindings apart. A name bound more than once
+in one function body (a parameter shadowed by a `let`, or two `let`s
+in sibling blocks) is never a W004 candidate. Recorded miss, and a
+form fact (compiler.md §68 does not give locals an identity).
+
+*Rendering.* An index expression that is not itself a place renders as
+`…` inside the copied place (`arr[…]`).
 
 Why: `tsc` sees a shared object and cannot report this; C2 makes the
 write land in a copy and the effect vanishes. Downstream request R38
 shipped a drag interaction with this shape (compiler.md §81). Recorded
-miss, deliberate: a second write after a read (`b.x = 1; print(b.x);
-b.y = 2;`) stays silent.
+misses, deliberate: a second write after a read (`b.x = 1; print(b.x);
+b.y = 2;`) stays silent; a write to a captured copy inside a lambda
+stays silent, because the capture is the read.
 
 Position: the assignment. Message names the binding and its origin —
 the parameter, or the copied place.
