@@ -112,8 +112,16 @@ This is the one thing examples must do that the corpus does not.
    the diagnostic the compiler would produce and the reject-corpus entry
    that pins it. Examples must compile; the things that must not compile
    live in `corpus/reject/`.
-4. **Density is set by divergence, not by line count.** Code that behaves
-   exactly as TypeScript would carries no comment at all.
+4. **Density is set by the reader, not by line count.** *(Owner,
+   2026-09-02; this rule first said that TypeScript-identical code
+   carries no comment.)* The examples are the tutorial. Each section
+   of an example carries a comment that states what the section does
+   and why the program needs it — intent and consequence, not syntax.
+   Rule 2 still holds: a comment that restates the code line
+   (`// assign b to a`) is noise and is removed. A divergence comment
+   (rule 1) still names its rule id.
+5. **A capstone script (`host/game.ts`, `context-per-scene/scene.ts`)
+   follows the same comment contract.** `gate/` stays out (§2a).
 
 ## 4. The host facade — `examples/engine/`
 
