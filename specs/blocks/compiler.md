@@ -10651,6 +10651,15 @@ word past `len` marks a string that reused the address.
    dev tier, a grid check in the ship tier. So a data allocation is
    reached through the `ArrayHeader.data` word, or through a stale word
    that equals its base.
+ 4. `ForeignArrayData` (`codegen/src/interpreter.rs`) and the §14.3 / §27
+   out-array forms hand the host a raw pointer into array storage. A
+   host that writes past `len` breaks rule 1; rule 3 then reports it
+   at the next debug `collect` as a trap. That is the early error the
+   §27.1 rule ("never grows the array") asks for.
+5. An array header is 32 bytes, so it never reaches `arena_alloc_large`.
+   Rule 3 walks the large records anyway, so the walk stays total if
+   the header grows. The debug walk is O(blocks below bump), which is
+   the cost of a total check and is debug-only.
 
 The tracking note proposed a scan bounded by `len`. Rejected: the stale
 words stay in storage, and the result depends on which word reaches the
@@ -10664,7 +10673,8 @@ This is §68.2 rule 8 applied to array storage: a slot past `len` is
 outside the live range of the value that wrote it.
 
 **Rule 2 — the sites.** `array_pop` zeroes the vacated slot after it
-copies the element out. `array_truncate` zeroes the bytes from
+copies the element out. Its `# Safety` clause forbids a `dst` that
+overlaps the array's storage, because the zeroing follows the copy. `array_truncate` zeroes the bytes from
 `new_len * elem_size` to `old_len * elem_size`. No other site changes:
 facts 1 and 2 make these the only two that can break rule 1.
 
@@ -10672,10 +10682,17 @@ facts 1 and 2 make these the only two that can break rule 1.
 -> Vec<ArrayTailViolation>` walks every live `CLASS_ARRAY` allocation in
 either tier and reports every array whose tail holds a nonzero byte:
 the array handle address, `len`, and the first nonzero byte offset in
-the data allocation. `Context::collect` calls it under
-`cfg(debug_assertions)` and panics with the full list when it is not
-empty. Tests call it directly. It reports every violating array at
-once (CLAUDE.md workflow: a total check, not named sites).
+the data allocation. The tail runs from `len * elem_size` to the end
+of the data allocation's **payload** — the region the marker reads —
+not to `cap * elem_size`: the ship arena rounds a block up to a power
+of two and `arena_mark` scans the whole block payload. `Context::collect`
+calls it under `cfg(debug_assertions)`; when the list is not empty it
+records an `Internal` trap whose message lists every violation, and
+returns without collecting. It does not panic: `subscript_rt_collect`
+is an `extern "C"` entry, and a panic there aborts the host process.
+Tests call the check directly and read the trap record. It reports
+every violating array at once (CLAUDE.md workflow: a total check, not
+named sites).
 
 **Rule 4 — the tests build the violating form** (CLAUDE.md core
 principle 9).
@@ -10689,8 +10706,14 @@ principle 9).
 3. `array_tail_violations_reports_a_stale_word`: write a nonzero word
    past `len` into a live array's data through the raw pointer, then
    assert the check reports that array with the offset, and only that
-   array. Then `array_truncate` to the same `len` and assert the check
-   reports nothing.
+   array. A second, clean array is live in the same Context, so a check
+   that reports every array fails. Then push one element (the slot
+   becomes live) and pop it (rule 2 zeroes it), and assert the check
+   reports nothing. A
+   truncate to the same `len` zeroes nothing: rule 2 bounds the zeroed
+   range by the old length, because the bytes past it are zero by rule
+   1, and a range bounded by `cap` makes `shift()` cost `cap` bytes
+   per call.
 4. Both tiers: the tests above run under the dev allocator and under
    the ship arena (`Context` with the arena enabled), because rule 3
    walks two different live sets.
