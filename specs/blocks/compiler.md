@@ -10736,8 +10736,12 @@ witness. The three tiers share the runtime sites, so no golden moves.
    gate.
 4. No existing golden or `.expected` moves. Full gate, `tsc` gate,
    `cargo fmt --check`, and `tools/hygiene.sh` green. Clippy at the
-   baseline 7 / 22 / 13.
+   baseline 7 / 18 / 13.
 5. `a22` holds its performance-gate value.
+
+Both sections first stated the runtime baseline as `22`. Both hosts
+measure `18`, and the `2f9ed28` Windows row measured `18` before either
+section landed. `windows-portability.md` holds the measurement.
 
 ## 81. R38 — a write through a `@CStruct` copy that nothing reads
 
@@ -10840,4 +10844,4 @@ had no two-write test.
    a call initializer, and `this` in a value-class method.
 4. `tsc` gate green with `w04` and `w05` included.
 5. Full gate, `cargo fmt --check`, `tools/hygiene.sh` green. Clippy at
-   the baseline 7 / 22 / 13.
+   the baseline 7 / 18 / 13.

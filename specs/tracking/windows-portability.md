@@ -1,12 +1,11 @@
 # Windows portability — evidence
 
-Status: **green for portability**, measured 2026-09-01 (the sections at
-the end of this file). Both profiles build and run on
-`x86_64-pc-windows-msvc`: 1136 passed in debug and 1136 in release, with
+Status: **green**, measured 2026-09-01 at `22619be` (the last section of
+this file). Both profiles build and run on `x86_64-pc-windows-msvc`:
+1175 passed in debug and 1173 in release, with 0 failed in each,
 `cargo fmt --check` at exit 0 and `perf_gate_meets_every_threshold`
-passing. Two test defects are open, and both are target-neutral: the
-last section of this file names one, and `s70-held-async-handle.md`
-holds the other. Contract:
+passing. The two test defects of the `2f9ed28` record are closed.
+Contract:
 `specs/blocks/compiler.md` §11a; architecture §1 (dev tier:
 cranelift-jit, Windows/Mac). This file keeps the record from
 2026-07-23 forward, so the older sections state older states.
@@ -1213,3 +1212,51 @@ debug attempts and 2 of 60 release attempts at `2f9ed28`. `a2beca7` gives
 
 A single suite run is not evidence against a 15 per cent rate. The
 `a2beca7` and `0541c96` rows above each state one run.
+
+## Gate state at `22619be`, 2026-09-01
+
+| Gate | Result |
+|---|---|
+| `cargo build --workspace --all-targets` | exit 0 |
+| `cargo test --workspace --no-fail-fast` | 1175 passed, 0 failed, 1 ignored |
+| `cargo test --workspace --release --no-fail-fast` | 1173 passed, 0 failed, 1 ignored |
+| `cargo fmt --check` | exit 0 |
+| clippy compiler / runtime / codegen | 7 / 18 / 13 |
+| `perf_gate_meets_every_threshold` | passed |
+| `tsc` | exit 0 |
+| `tools/hygiene.sh` | exit 0 |
+
+Host: rustc 1.95.0, node v24.16.0.
+
+The two open test defects of the `2f9ed28` record are closed.
+
+### The debug trap table is closed
+
+`lir_interpreter_debug_subset_traps_at_declared_sites` passes. `e11aa88`
+put the rule names in the three `DEBUG_INTERPRETER_TRAPS` rows. The debug
+suite reports 0 failed.
+
+### `a162` measures 256 bytes in 1000 runs, both profiles
+
+§80 exit criterion 3 is the row this host owns. The measurement runs the
+gate row `counted_store_corpus_matches_the_interpreter` as a filtered
+single test, once per process, and reads the `live_bytes` line for
+`a162`.
+
+| Profile | Runs | `live_bytes` distribution |
+|---|---:|---|
+| debug | 1000 | 256 × 1000 |
+| release | 1000 | 256 × 1000 |
+
+The `2f9ed28` row measured 6 failures in 30 debug attempts and 2 in 60
+release attempts on this host. `f4f489e` closes it. The defect does not
+reproduce in 2000 attempts.
+
+### Clippy: the contract states a stale runtime baseline
+
+compiler.md §80.3 and §81.4 each state the clippy baseline as
+`7 / 22 / 13`. The runtime crate measures 18 on this host and 18 on the
+arm64 host (`r38-write-only-copy.md`, `s70-held-async-handle.md`). The
+`2f9ed28` row above measured 18 before either section landed, so the
+`22` is stale in both sections. The contract is corrected to
+`7 / 18 / 13`.

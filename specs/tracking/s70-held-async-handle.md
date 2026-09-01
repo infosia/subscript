@@ -379,3 +379,22 @@ Found during the gate: an empty `corpus/accept/.claude/` directory made
 `lir` tests fail with `no source files given`. The harness treats a
 directory as an entry. The directories are removed; the harness
 fragility is recorded here and not fixed in this round.
+
+## §80 exit criterion 3 is closed on x86-64 — 2026-09-01
+
+The owner's Windows host (`x86_64-pc-windows-msvc`) measured `a162` at
+`22619be`. The gate row `counted_store_corpus_matches_the_interpreter`
+ran as a filtered single test, once per process.
+
+| Profile | Runs | `live_bytes` distribution |
+|---|---:|---|
+| debug | 1000 | 256 × 1000 |
+| release | 1000 | 256 × 1000 |
+
+This is the host that reproduced the retention: 6 failures in 30 debug
+attempts and 2 in 60 release attempts at `2f9ed28`. The defect does not
+reproduce in 2000 attempts after `f4f489e`. The full Windows gate row is
+in `windows-portability.md`.
+
+The a162 retention is closed. §80's rules removed the stale words; no
+site fix was needed.
