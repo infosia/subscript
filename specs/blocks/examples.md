@@ -263,6 +263,7 @@ implementer's choice; the committed `.expected` freezes it.
 | `e08-coroutines` | `function*` stepped once per frame | C8 — coroutines, not `async` |
 | `e09-c-structs-and-slices` | binding `engine.h`: struct by value, slice, string view, enum, flags | zero-copy — the language struct **is** the C struct (invariant 1) |
 | `e10-c-callbacks-and-handles` | opaque handle lifecycle; callback with userdata; a deferred fire the host pumps | Q13 userdata lifetime; §14.6 — callbacks arrive on the calling thread |
+| `e11-parallel-workers` | four workers computing one result set; `post`, `wait`, close, join | Q35 — one Context per worker, copy-only messages, nothing shared |
 
 `examples/README.md` carries an index, the build and run instructions,
 and one table row per example naming the divergence — the reader's
