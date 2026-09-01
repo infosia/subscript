@@ -1911,6 +1911,52 @@ mod tests {
         h
     }
 
+    fn assert_shifted_element_is_unreachable(mut ctx: Box<Context>, tier: &str) {
+        let x = ctx.alloc(16, 1, 0);
+        let h = ctx.array_new(std::mem::size_of::<usize>(), 0);
+        let mut root = h as usize;
+        ctx.root_add((&mut root as *mut usize) as usize, 1);
+        let value = x as usize;
+        // SAFETY: `h` is a live word array, and `value` is readable.
+        unsafe { ctx.array_push(h, (&raw const value).cast(), 0) };
+        let mut out = 0usize;
+        // SAFETY: `h` is a nonempty live word array, and `out` is writable.
+        unsafe { shift(&mut *ctx, h, (&raw mut out).cast(), 0) };
+
+        ctx.collect();
+
+        assert!(!ctx.is_live(x as usize), "{tier}: shifted element");
+    }
+
+    fn assert_spliced_element_is_unreachable(mut ctx: Box<Context>, tier: &str) {
+        let x = ctx.alloc(16, 1, 0);
+        let h = ctx.array_new(std::mem::size_of::<usize>(), 0);
+        let mut root = h as usize;
+        ctx.root_add((&mut root as *mut usize) as usize, 1);
+        let value = x as usize;
+        // SAFETY: `h` is a live word array, and `value` is readable.
+        unsafe { ctx.array_push(h, (&raw const value).cast(), 0) };
+        // SAFETY: `h` is a live one-element array owned by `ctx`.
+        let removed = unsafe { splice(&mut *ctx, h, 0, 1, 0) };
+        assert!(!removed.is_null(), "{tier}: splice result");
+
+        ctx.collect();
+
+        assert!(!ctx.is_live(x as usize), "{tier}: spliced element");
+    }
+
+    #[test]
+    fn shifted_element_is_unreachable_after_shift() {
+        assert_shifted_element_is_unreachable(Context::new(), "dev");
+        assert_shifted_element_is_unreachable(Context::new_releasing(), "ship");
+    }
+
+    #[test]
+    fn spliced_element_is_unreachable_after_splice() {
+        assert_spliced_element_is_unreachable(Context::new(), "dev");
+        assert_spliced_element_is_unreachable(Context::new_releasing(), "ship");
+    }
+
     fn i32_items(ctx: &Context, h: *const u8) -> Vec<i32> {
         // SAFETY: `h` is a live 4-byte-element array of `ctx`.
         unsafe {

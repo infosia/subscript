@@ -305,6 +305,18 @@ pub const CLASS_MAP_INDEX: u32 = 0xFFFF_FF08;
 /// Class id used for RegExp handles.
 pub const CLASS_REGEX: u32 = 0xFFFF_FF09;
 
+/// One live array whose unused data tail contains a nonzero byte.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ArrayTailViolation {
+    /// Address of the live array header allocation.
+    pub handle: usize,
+    /// Current number of live elements in the array.
+    pub len: u64,
+    /// Offset of the first nonzero byte in the data allocation.
+    pub offset: usize,
+}
+
 #[inline]
 fn class_holds_no_handle(class_id: u32) -> bool {
     matches!(class_id, CLASS_STRING)
@@ -2366,7 +2378,181 @@ impl Context {
     /// Explicitly invoked collection (Q7): frees every allocation not
     /// reachable from the registered roots. Never runs unbidden.
     pub fn collect(&mut self) {
+        #[cfg(debug_assertions)]
+        {
+            let violations = self.array_tail_violations();
+            if !violations.is_empty() {
+                let details = violations
+                    .iter()
+                    .map(|violation| {
+                        format!(
+                            "handle={}, len={}, offset={}",
+                            violation.handle, violation.len, violation.offset
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                self.trap(
+                    TrapKind::Internal,
+                    format!("array tail violations: [{details}]"),
+                    0,
+                );
+                return;
+            }
+        }
         self.collect_with_trace(mark_trace_target());
+    }
+
+    /// Reports every live dynamic array whose unused data tail contains a
+    /// nonzero byte.
+    #[must_use]
+    pub fn array_tail_violations(&self) -> Vec<ArrayTailViolation> {
+        let mut violations = Vec::new();
+        if !self.uses_ship_arena() {
+            for (&handle, allocation) in &self.allocations {
+                if allocation.class_id == CLASS_ARRAY {
+                    // SAFETY: exact live-map membership and the class id
+                    // prove that `handle` is a live array header.
+                    unsafe { self.record_array_tail_violation(handle, &mut violations) };
+                }
+            }
+            violations.sort_unstable_by_key(|violation| violation.handle);
+            return violations;
+        }
+
+        for chunk in &self.chunks {
+            for block_index in 0..chunk.bump {
+                // SAFETY: the index is below the chunk's bump watermark, so
+                // the state and class-id reads stay inside the owned block.
+                let (state, class_id, handle) = unsafe {
+                    let block = chunk.base.add(block_index * chunk.block_size);
+                    (
+                        block.cast::<u64>().read(),
+                        header_class_id(block),
+                        block.add(HEADER_SIZE) as usize,
+                    )
+                };
+                if state == LIVE_STATE && class_id == CLASS_ARRAY {
+                    // SAFETY: the live grid state and class id prove that
+                    // `handle` is a live array header.
+                    unsafe { self.record_array_tail_violation(handle, &mut violations) };
+                }
+            }
+        }
+        for (&handle, allocation) in &self.large {
+            // SAFETY: each large record owns a complete initialized header.
+            let class_id = unsafe { header_class_id(allocation.base) };
+            if class_id == CLASS_ARRAY {
+                // SAFETY: exact large-map membership and the class id prove
+                // that `handle` is a live array header.
+                unsafe { self.record_array_tail_violation(handle, &mut violations) };
+            }
+        }
+        violations.sort_unstable_by_key(|violation| violation.handle);
+        violations
+    }
+
+    /// Adds one violation for a live array header when its tail is nonzero.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must identify a live `CLASS_ARRAY` payload owned by this
+    /// context.
+    unsafe fn record_array_tail_violation(
+        &self,
+        handle: usize,
+        violations: &mut Vec<ArrayTailViolation>,
+    ) {
+        // SAFETY: the caller proves that the payload is a live array header.
+        let header = unsafe { &*(handle as *const ArrayHeader) };
+        if header.data.is_null() {
+            return;
+        }
+        let len = match usize::try_from(header.len) {
+            Ok(len) => len,
+            Err(_) => {
+                debug_assert!(false, "array len does not fit usize: {}", header.len);
+                return;
+            }
+        };
+        let cap = match usize::try_from(header.cap) {
+            Ok(cap) => cap,
+            Err(_) => {
+                debug_assert!(false, "array cap does not fit usize: {}", header.cap);
+                return;
+            }
+        };
+        let elem_size = match usize::try_from(header.elem_size) {
+            Ok(elem_size) => elem_size,
+            Err(_) => {
+                debug_assert!(
+                    false,
+                    "array elem_size does not fit usize: {}",
+                    header.elem_size
+                );
+                return;
+            }
+        };
+        debug_assert!(len <= cap, "array len exceeds cap: len {len}, cap {cap}");
+        if len > cap {
+            return;
+        }
+        let Some(tail_start) = len.checked_mul(elem_size) else {
+            debug_assert!(false, "array len * elem_size does not fit usize");
+            return;
+        };
+        let data = header.data as usize;
+        let Some(payload_size) = self.live_payload_size(data) else {
+            violations.push(ArrayTailViolation {
+                handle,
+                len: header.len,
+                offset: 0,
+            });
+            return;
+        };
+        if tail_start > payload_size {
+            violations.push(ArrayTailViolation {
+                handle,
+                len: header.len,
+                offset: 0,
+            });
+            return;
+        }
+        if tail_start == payload_size {
+            return;
+        }
+        // SAFETY: the tier-specific live lookup proves that `data` owns
+        // `payload_size` readable bytes. `tail_start` is within that payload.
+        let tail = unsafe {
+            std::slice::from_raw_parts(header.data.add(tail_start), payload_size - tail_start)
+        };
+        if let Some(relative_offset) = tail.iter().position(|byte| *byte != 0) {
+            violations.push(ArrayTailViolation {
+                handle,
+                len: header.len,
+                offset: tail_start + relative_offset,
+            });
+        }
+    }
+
+    /// Returns the complete payload size for one live allocation in the
+    /// active allocator tier.
+    fn live_payload_size(&self, payload: usize) -> Option<usize> {
+        if !self.uses_ship_arena() {
+            return self
+                .allocations
+                .get(&payload)
+                .map(|allocation| allocation.payload_size);
+        }
+        if let Some((block, class)) = self.arena_lookup_block(payload) {
+            // SAFETY: arena membership proves that the state word is inside
+            // an owned block.
+            let live = unsafe { block.cast::<u64>().read() == LIVE_STATE };
+            return live.then_some((SMALLEST_BLOCK << class) - HEADER_SIZE);
+        }
+        self.large
+            .get(&payload)
+            .map(|allocation| allocation.payload_size)
     }
 
     fn push_mark_word(
@@ -3214,7 +3400,8 @@ impl Context {
     /// # Safety
     ///
     /// `handle` must be an array payload owned by this context; `dst`
-    /// must be writable for the array's element size.
+    /// must be writable for the array's element size and must not overlap
+    /// the array's data storage. The vacated slot is zeroed after the copy.
     pub unsafe fn array_pop(&mut self, handle: *mut u8, dst: *mut u8, pos_id: u32) {
         if handle.is_null() || !self.require_live_handle(handle as usize, pos_id) {
             return;
@@ -3228,9 +3415,12 @@ impl Context {
         h.len -= 1;
         let elem = h.elem_size as usize;
         // SAFETY: the removed slot holds an initialized element; `dst`
-        // is writable per the caller contract.
+        // is writable per the caller contract. The slot remains inside the
+        // data allocation after the copy.
         unsafe {
-            std::ptr::copy_nonoverlapping(h.data.add(h.len as usize * elem), dst, elem);
+            let removed = h.data.add(h.len as usize * elem);
+            std::ptr::copy_nonoverlapping(removed, dst, elem);
+            std::ptr::write_bytes(removed, 0, elem);
         }
     }
 
@@ -3309,7 +3499,18 @@ impl Context {
         // SAFETY: liveness and the caller contract establish the header.
         let header = unsafe { &mut *handle.cast::<ArrayHeader>() };
         debug_assert!(new_len <= header.len as usize);
-        header.len = new_len.min(header.len as usize) as u64;
+        let old_len = header.len as usize;
+        let new_len = new_len.min(old_len);
+        let elem_size = header.elem_size as usize;
+        let cleared_range = new_len
+            .checked_mul(elem_size)
+            .zip((old_len - new_len).checked_mul(elem_size));
+        // SAFETY: `data` contains `old_len * elem_size` initialized bytes.
+        // The range starts at the new length and ends at the old length.
+        if let Some((start, bytes)) = cleared_range.filter(|(_, bytes)| *bytes != 0) {
+            unsafe { std::ptr::write_bytes(header.data.add(start), 0, bytes) };
+        }
+        header.len = new_len as u64;
     }
 }
 
@@ -5087,6 +5288,152 @@ mod tests {
         let r = ctx.trap_record().expect("oob trap");
         assert_eq!(r.kind, TrapKind::IndexOutOfBounds);
         assert_eq!(r.pos_id, 9);
+    }
+
+    fn assert_popped_element_is_unreachable(mut ctx: Box<Context>, tier: &str) {
+        let x = ctx.alloc(16, 1, 0);
+        let h = ctx.array_new(std::mem::size_of::<usize>(), 0);
+        let mut root = h as usize;
+        ctx.root_add((&mut root as *mut usize) as usize, 1);
+        let value = x as usize;
+        // SAFETY: `h` is a live word array, and `value` is readable.
+        unsafe { ctx.array_push(h, (&raw const value).cast(), 0) };
+        let mut out = 0usize;
+        // SAFETY: `h` is a nonempty live word array, and `out` is writable.
+        unsafe { ctx.array_pop(h, (&raw mut out).cast(), 0) };
+
+        ctx.collect();
+
+        assert!(!ctx.is_live(x as usize), "{tier}: popped element");
+    }
+
+    #[test]
+    fn popped_element_is_unreachable_after_pop() {
+        assert_popped_element_is_unreachable(Context::new(), "dev");
+        assert_popped_element_is_unreachable(Context::new_releasing(), "ship");
+    }
+
+    fn assert_array_tail_violation_is_reported(mut ctx: Box<Context>, tier: &str) {
+        let h = ctx.array_with_capacity(4, std::mem::size_of::<usize>(), 0);
+        let clean = ctx.array_with_capacity(4, std::mem::size_of::<usize>(), 0);
+        let clean_value = 5usize;
+        // SAFETY: `clean` is a live word array, and `clean_value` is readable.
+        unsafe { ctx.array_push(clean, (&raw const clean_value).cast(), 0) };
+        let mut roots = [h as usize, clean as usize];
+        ctx.root_add(roots.as_mut_ptr() as usize, roots.len());
+        let value = 7usize;
+        // SAFETY: `h` is a live word array, and `value` is readable.
+        unsafe { ctx.array_push(h, (&raw const value).cast(), 0) };
+        let len = 1usize;
+        let offset = len * std::mem::size_of::<usize>();
+        // SAFETY: capacity four provides a writable word at `offset`.
+        unsafe {
+            ctx.array_data(h)
+                .cast_mut()
+                .add(offset)
+                .cast::<usize>()
+                .write(11);
+        }
+
+        assert_eq!(
+            ctx.array_tail_violations(),
+            vec![ArrayTailViolation {
+                handle: h as usize,
+                len: len as u64,
+                offset,
+            }],
+            "{tier}"
+        );
+
+        let stale = 11usize;
+        let mut popped = 0usize;
+        // SAFETY: `h` is a live word array. The push makes the stale slot
+        // live, and the pop copies it into writable storage before clearing it.
+        unsafe {
+            ctx.array_push(h, (&raw const stale).cast(), 0);
+            ctx.array_pop(h, (&raw mut popped).cast(), 0);
+        }
+        assert_eq!(popped, stale, "{tier}");
+        assert!(ctx.array_tail_violations().is_empty(), "{tier}");
+
+        for value in [22usize, 33] {
+            // SAFETY: `h` is live, and each `value` is readable.
+            unsafe { ctx.array_push(h, (&raw const value).cast(), 0) };
+        }
+        // SAFETY: `h` has length three, so truncation to one is valid.
+        unsafe { ctx.array_truncate(h, 1, 0) };
+        // SAFETY: capacity four provides readable word slots one and two.
+        unsafe {
+            let data = ctx.array_data(h).cast::<usize>();
+            assert_eq!(data.add(1).read(), 0, "{tier}: slot 1");
+            assert_eq!(data.add(2).read(), 0, "{tier}: slot 2");
+        }
+        assert!(ctx.array_tail_violations().is_empty(), "{tier}");
+    }
+
+    #[test]
+    fn array_tail_violations_reports_a_stale_word() {
+        assert_array_tail_violation_is_reported(Context::new(), "dev");
+        assert_array_tail_violation_is_reported(Context::new_releasing(), "ship");
+    }
+
+    fn assert_missing_array_data_is_reported(mut ctx: Box<Context>, tier: &str) {
+        let h = ctx.array_with_capacity(4, std::mem::size_of::<usize>(), 0);
+        // SAFETY: `h` is a live array header with allocated data.
+        let data = unsafe { ctx.array_data(h) } as usize;
+        ctx.delete(data, 0);
+
+        assert_eq!(
+            ctx.array_tail_violations(),
+            vec![ArrayTailViolation {
+                handle: h as usize,
+                len: 0,
+                offset: 0,
+            }],
+            "{tier}"
+        );
+    }
+
+    #[test]
+    fn array_tail_violations_reports_missing_data_allocation() {
+        assert_missing_array_data_is_reported(Context::new(), "dev");
+        assert_missing_array_data_is_reported(Context::new_releasing(), "ship");
+    }
+
+    #[cfg(debug_assertions)]
+    fn assert_collect_traps_on_array_tail_violation(mut ctx: Box<Context>, tier: &str) {
+        let h = ctx.array_with_capacity(4, std::mem::size_of::<usize>(), 0);
+        let value = 7usize;
+        // SAFETY: `h` is a live word array, and `value` is readable.
+        unsafe { ctx.array_push(h, (&raw const value).cast(), 0) };
+        let offset = std::mem::size_of::<usize>();
+        // SAFETY: capacity four provides a writable word at `offset`.
+        unsafe {
+            ctx.array_data(h)
+                .cast_mut()
+                .add(offset)
+                .cast::<usize>()
+                .write(13);
+        }
+
+        ctx.collect();
+
+        let trap = ctx.trap_record().expect("array-tail trap");
+        assert_eq!(trap.kind, TrapKind::Internal, "{tier}");
+        assert_eq!(trap.pos_id, 0, "{tier}");
+        assert!(
+            trap.message.contains(&format!("offset={offset}")),
+            "{tier}: {}",
+            trap.message
+        );
+        assert!(ctx.is_live(h as usize), "{tier}: collection must not run");
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn collect_traps_and_returns_on_array_tail_violation() {
+        assert_collect_traps_on_array_tail_violation(Context::new(), "dev");
+        assert_collect_traps_on_array_tail_violation(Context::new_releasing(), "ship");
     }
 
     #[test]
