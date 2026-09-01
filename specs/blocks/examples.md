@@ -112,7 +112,7 @@ This is the one thing examples must do that the corpus does not.
    the diagnostic the compiler would produce and the reject-corpus entry
    that pins it. Examples must compile; the things that must not compile
    live in `corpus/reject/`.
-4. **Density is set by the reader, not by line count.** *(Owner,
+4. **Density is set by the lesson, not by line count.** *(Owner,
    2026-09-02; this rule first said that TypeScript-identical code
    carries no comment.)* The examples are the tutorial. Each section
    of an example carries a comment that states what the section does
