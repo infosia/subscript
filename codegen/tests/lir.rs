@@ -1886,14 +1886,14 @@ const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
     (
         "t01-json-result-value",
         "checked JsonResult.value reads the sibling ok field before loading",
-        "JsonResultValue",
+        "json-result-value",
         9,
         19,
     ),
     (
         "t08-div-zero-expression",
         "integer division-by-zero check in expression position",
-        "DivisionByZero",
+        "division-by-zero",
         10,
         25,
     ),
@@ -1928,7 +1928,7 @@ const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
     (
         "t47-unreachable-reached",
         "explicit unreachable terminator and trap-stop behavior",
-        "Unreachable",
+        "unreachable-reached",
         10,
         3,
     ),
