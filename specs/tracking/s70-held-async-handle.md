@@ -213,3 +213,43 @@ test turns it on for a hand-built module and reads the records.
 The release-mode assertion also measured 0 excesses in 300 further
 consecutive runs on the arm64 host. No corpus or golden file moved.
 Clippy 7/22/13. Release suite 1,120 passed.
+
+## `ebc46fd` did not clear the retention on x86-64 — 2026-09-01
+
+Status: **open.** Measured on `x86_64-pc-windows-msvc`. One attempt runs
+`counted_store_corpus_matches_the_interpreter` one time.
+
+| Commit | Profile | Attempts | 267 bytes |
+|---|---|---:|---:|
+| `a2beca7` | debug | 60 | 9 |
+| `2f9ed28` | debug | 30 | 6 |
+| `2f9ed28` | release | 60 | 2 |
+
+Every failure measures 267. No other excess appeared. This is the shape
+the section above names.
+
+### The range holds no cause
+
+`git bisect run` over `a2beca7..2f9ed28` returned `f850e3d` as the first
+bad commit. `f850e3d` adds 24 lines to one tracking file and changes no
+code. A documentation commit cannot introduce the defect, so the `good`
+endpoint was wrong. The table above confirms it: `a2beca7` reproduces the
+defect in 9 of 60 debug attempts.
+
+### Why the fix measured clean
+
+The "1,000 consecutive" row measured the arm64 host. That host produced 0
+reproductions in 10,000 attempts before the fix. A host that cannot
+reproduce a defect cannot measure its fix. The x86-64 Windows gate at
+`a2beca7` ran the suite one time against a 15 per cent rate.
+
+Rule: measure a fix on the host that reproduced the defect.
+
+### What the pins do not cover
+
+`cranelift_clears_completed_async_child_slots` and
+`emitted_coroutine_clears_completed_child_slots` both pass at `2f9ed28`,
+and the defect reproduces at the same commit. So the retained word is not
+the word those hand-built modules clear, or the clear does not reach
+`a162`'s shape. The next step must name the word again with
+`SUBSCRIPT_MARK_TRACE` on an x86-64 host.

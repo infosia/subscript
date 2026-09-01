@@ -1,11 +1,12 @@
 # Windows portability — evidence
 
-Status: **green for portability**, measured 2026-08-30 (the sections at
+Status: **green for portability**, measured 2026-09-01 (the sections at
 the end of this file). Both profiles build and run on
-`x86_64-pc-windows-msvc`: 1093 in debug and 1091 in release, with
+`x86_64-pc-windows-msvc`: 1136 passed in debug and 1136 in release, with
 `cargo fmt --check` at exit 0 and `perf_gate_meets_every_threshold`
-passing. One release failure is open, and it is target-neutral:
-`s70-held-async-handle.md` holds it. Contract:
+passing. Two test defects are open, and both are target-neutral: the
+last section of this file names one, and `s70-held-async-handle.md`
+holds the other. Contract:
 `specs/blocks/compiler.md` §11a; architecture §1 (dev tier:
 cranelift-jit, Windows/Mac). This file keeps the record from
 2026-07-23 forward, so the older sections state older states.
@@ -1162,3 +1163,53 @@ two commits on a local branch, `backup/pre-trailer-fix`, that a history
 rewrite left behind. `main` carried no trailer, and `git diff ade4d89
 507eaa6` was empty, so the branch held no content. The branch is deleted.
 The scan reads local refs, so a local branch alone can fail this gate.
+
+## Gate state at `2f9ed28`, 2026-09-01
+
+| Gate | Result |
+|---|---|
+| `cargo check --workspace --all-targets` | exit 0 |
+| `cargo build --workspace --all-targets` | exit 0 |
+| `cargo build --workspace --all-targets --release` | exit 0 |
+| `cargo test --workspace --no-fail-fast` | 1136 passed, 1 failed, 1 ignored |
+| `cargo test --workspace --release --no-fail-fast` | 1136 passed, 0 failed, 1 ignored |
+| `cargo fmt --check` | exit 0 |
+| clippy compiler / runtime / codegen | 7 / 18 / 13 |
+| `perf_gate_meets_every_threshold` | passed |
+| `tsc` | exit 0 |
+| `tools/hygiene.sh` | exit 0 |
+
+The workspace compiles on `x86_64-pc-windows-msvc` in both profiles. Two
+test defects are open. Neither is a Windows defect.
+
+Host: rustc 1.95.0, node v24.16.0, clang at
+`%ProgramFiles%\LLVM\bin\clang.exe` (§11b resolves it there; `PATH` holds
+no clang).
+
+### The debug trap table holds three variant names
+
+`lir_interpreter_debug_subset_traps_at_declared_sites` fails in every
+debug run. `d955917` replaced the interpreter's trap-kind text with
+`runtime_trap_kind(...).rule()` at `codegen/src/interpreter.rs:1685`.
+Three rows of `DEBUG_INTERPRETER_TRAPS` in `codegen/tests/lir.rs` still
+hold the variant name.
+
+| Row | Entry | Row holds | The interpreter reports |
+|---:|---|---|---|
+| 1889 | `t01-json-result-value` | `JsonResultValue` | `json-result-value` |
+| 1896 | `t08-div-zero-expression` | `DivisionByZero` | `division-by-zero` |
+| 1931 | `t47-unreachable-reached` | `Unreachable` | `unreachable-reached` |
+
+The rows that already hold `index-out-of-bounds` pass. The test carries
+`#[cfg(debug_assertions)]`, and the record at `9124208` measured the
+release suite only. So the debug profile did not run after `d955917`.
+
+### `a162` retention reproduces on this host
+
+`counted_store_corpus_matches_the_interpreter` fails at random: 6 of 30
+debug attempts and 2 of 60 release attempts at `2f9ed28`. `a2beca7` gives
+9 of 60 in debug, so `ebc46fd` did not close the defect on x86-64.
+`s70-held-async-handle.md` holds the measurement and the bisect record.
+
+A single suite run is not evidence against a 15 per cent rate. The
+`a2beca7` and `0541c96` rows above each state one run.
