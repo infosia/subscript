@@ -105,8 +105,10 @@ is `new` or a call holds a fresh value, not a copy, and never fires.
 *Read* (any one mutes every W004 on the binding): a field or index
 read, a method call on the binding, passing it as an argument,
 returning it, using it as an assignment value, or capturing it. The
-root of an assignment target in statement position is not a read. An
-assignment in value position (`const v = p.x++`) reads the binding.
+root of an assignment target in statement position is not a read.
+Statement position is an expression statement or a `for` step, where
+the value is discarded. An assignment in value position (`const v =
+p.x++`) reads the binding.
 The rule is order-free on purpose: a binding with one read anywhere in
 the function stays silent, so a loop that reads before it writes stays
 silent.
@@ -118,7 +120,11 @@ in sibling blocks) is never a W004 candidate. Recorded miss, and a
 form fact (compiler.md §68 does not give locals an identity).
 
 *Rendering.* An index expression that is not itself a place renders as
-`…` inside the copied place (`arr[…]`).
+`…` inside the copied place (`arr[…]`). A `for...of` subject that is a
+call renders as its callee with `(…)` for the arguments
+(`scores.values(…)`); any other non-place subject renders as `…`.
+A checker-synthesized local (a name that starts with `[[`) is never a
+copy binding and never a shadowing site.
 
 Why: `tsc` sees a shared object and cannot report this; C2 makes the
 write land in a copy and the effect vanishes. Downstream request R38

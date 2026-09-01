@@ -10803,6 +10803,18 @@ shadowing exclusion, the `for...of` binding, the index root, the
 value-position read, and the capture miss. The `this` test gains a
 value-typed parameter beside the `this` write.
 
+### 81.2c Review round 2, 2026-09-01
+
+MAJOR: no test fires W004 inside a method or constructor body, so the
+`class.methods` / `ctor` loop is unpinned; the `this`-write test now
+keeps its value-typed parameter write-only and asserts one W004 that
+names it. MINOR: a `for` step assignment read as value position
+(contract now: statement position); a non-place `for...of` subject
+rendered as `…` (contract now: callee with `(…)`); the synthetic
+`[[for.of#N.subject]]` local could become a candidate (contract now:
+excluded); an unreachable `HirChild::Stmt` arm; "fires at every write"
+had no two-write test.
+
 ### 81.3 Sites
 
 - `compiler/src/warn.rs`: `WarnCode::W004`, `ALL`, `as_str`,
