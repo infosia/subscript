@@ -1,6 +1,8 @@
 // corpus: accept/a56-map-aggregate-foreach
 // purpose: Pins C2 copy-on-pass for aggregate Map.forEach values when
 //          callbacks mutate their parameter or overwrite the visited entry.
+//          Each mutating callback reads its own copy after the write, so
+//          the copy holds the write and the map does not (W004 stays silent).
 // exercises: map-foreach, value-class-copy, fixed-array-copy, callback-abi
 // questions: Q24, C2, C5
 // tsc: accepts; js-comparable: no C2 Q24: The CStruct decorator has no JavaScript shim.
@@ -21,10 +23,16 @@ let arrayVisit: string = "";
 
 function mutateStruct(value: V3, _key: i32): void {
   value.x = 777;
+  if (value.x !== 777) {
+    print("copy lost the write");
+  }
 }
 
 function mutateArray(value: FixedArray<i32, 3>, _key: i32): void {
   value[0] = 777;
+  if (value[0] !== 777) {
+    print("copy lost the write");
+  }
 }
 
 export function main(): void {
