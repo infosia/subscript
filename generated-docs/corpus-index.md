@@ -362,6 +362,8 @@ This index is derived from the structured header comments on every TypeScript co
 | [`warn/w01-loop-allocation-unreleased`](../corpus/warn/w01-loop-allocation-unreleased.ts) | Identifies a reference-class allocation retained once per loop iteration. | reference-class, loop-allocation, unreleased-allocation | Q6, Q7 |
 | [`warn/w02-use-after-free`](../corpus/warn/w02-use-after-free.ts) | Identifies a straight-line local use after explicit release. | Context.free, use-after-free, local-dataflow | Q6 |
 | [`warn/w03-fresh-callback-userdata-loop`](../corpus/warn/w03-fresh-callback-userdata-loop.ts) | Identifies fresh callback userdata registered once per loop iteration. | callback-userdata, loop-registration, rooted-binding-record | Q6, Q13, Q16 |
+| [`warn/w04-copy-parameter-write-unread`](../corpus/warn/w04-copy-parameter-write-unread.ts) | Identifies a field write through a by-value @CStruct parameter that nothing reads. | value-struct, copy-on-pass, write-only-copy | Q2, Q17 |
+| [`warn/w05-copy-local-write-unread`](../corpus/warn/w05-copy-local-write-unread.ts) | Identifies a field write through a local copied from a field that nothing reads. | value-struct, copy-on-assign, write-only-copy | Q2, Q17 |
 
 ## Trap
 

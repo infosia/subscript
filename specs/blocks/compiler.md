@@ -10790,7 +10790,7 @@ positive. Warnings surface at every `check`, `emit`, `build`, and
 
 ### 81.4 Exit criteria (pre-registered)
 
-1. `w04` and `w05` are Red at `79da3ac` (zero warnings on a binary
+1. `w04` and `w05` are Red at `29dc118` (zero warnings on a binary
    built from that pin) and fire W004 at the pinned lines after.
 2. `accept_corpus_and_examples_have_zero_warnings` stays green:
    `a04`, `a21`, `e02`, and every other accept entry and example are
