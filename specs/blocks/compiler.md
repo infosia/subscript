@@ -10776,6 +10776,21 @@ and a heuristic that rejects moves the accepted set on a false
 positive. Warnings surface at every `check`, `emit`, `build`, and
 `run` (warnings.md §1).
 
+### 81.2a `FixedArray`, and the `a56` pin
+
+*(2026-09-01, found by the first implementation round.)* `a56` writes
+a write-only `@CStruct` parameter and a write-only `FixedArray`
+parameter on purpose, to pin copy-on-pass in `Map.forEach` callbacks.
+That is R38's shape, so W004 fires on it, and no rule keeps `a56` silent
+without keeping R38 silent.
+
+Two decisions. **`FixedArray` is a value type and its copy bindings
+are in W004**: the same write vanishes the same way. **`a56` gains a
+read of each copy** — a self-check that prints only when the copy lost
+the write — so the entry pins copy-on-pass in both directions and the
+golden does not move. No accept entry is exempted from the
+zero-warning sweep.
+
 ### 81.3 Sites
 
 - `compiler/src/warn.rs`: `WarnCode::W004`, `ALL`, `as_str`,

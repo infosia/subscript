@@ -84,14 +84,15 @@ static analysis can see — is compiler.md §14.4b (B2).
 ### W004 — write to a value copy that nothing reads — 2026-09-01
 
 Fires on an assignment (plain or compound) whose target chain roots in
-a **copy binding** of a `@CStruct` type, when the binding is
+a **copy binding** of a value type — a `@CStruct` class or a
+`FixedArray` — when the binding is
 **write-only** in its function: every occurrence of the binding after
 its declaration is the root of an assignment target. A copy binding is
 one of:
 
-- a `@CStruct`-typed parameter of a function, method, constructor, or
+- a value-typed parameter of a function, method, constructor, or
   lambda (copy-on-pass, C2);
-- a `let`/`const` local of `@CStruct` type whose initializer is a place
+- a `let`/`const` local of value type whose initializer is a place
   — a local, a global, a field chain (from a local, a global, or
   `this`), or an index expression (copy-on-assign and copy-on-index,
   C2).
