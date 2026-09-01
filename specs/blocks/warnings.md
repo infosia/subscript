@@ -81,6 +81,41 @@ field per iteration is a **known miss** (v1 anchors on
 construction). The dynamic half — the host-driven per-frame shape no
 static analysis can see — is compiler.md §14.4b (B2).
 
+### W004 — write to a value copy that nothing reads — 2026-09-01
+
+Fires on an assignment (plain or compound) whose target chain roots in
+a **copy binding** of a `@CStruct` type, when the binding is
+**write-only** in its function: every occurrence of the binding after
+its declaration is the root of an assignment target. A copy binding is
+one of:
+
+- a `@CStruct`-typed parameter of a function, method, constructor, or
+  lambda (copy-on-pass, C2);
+- a `let`/`const` local of `@CStruct` type whose initializer is a place
+  — a local, a global, a field chain (from a local, a global, or
+  `this`), or an index expression (copy-on-assign and copy-on-index,
+  C2).
+
+`this` inside a value-class method is an address (compiler.md §68 LIR
+`Method` row), not a copy, and never fires. A local whose initializer
+is `new` or a call holds a fresh value, not a copy, and never fires.
+
+*Read* (any one mutes every W004 on the binding): a field or index
+read, a method call on the binding, passing it as an argument,
+returning it, using it as an assignment value, or capturing it. The
+root of an assignment target is not a read. The rule is order-free on
+purpose: a binding with one read anywhere in the function stays
+silent, so a loop that reads before it writes stays silent.
+
+Why: `tsc` sees a shared object and cannot report this; C2 makes the
+write land in a copy and the effect vanishes. Downstream request R38
+shipped a drag interaction with this shape (compiler.md §81). Recorded
+miss, deliberate: a second write after a read (`b.x = 1; print(b.x);
+b.y = 2;`) stays silent.
+
+Position: the assignment. Message names the binding and its origin —
+the parameter, or the copied place.
+
 ## 3. Surfacing (CLI)
 
 - Rendered by the §8 (cli.md) renderer shape with `warning[W001]:`

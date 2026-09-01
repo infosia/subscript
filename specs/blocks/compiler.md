@@ -10715,3 +10715,67 @@ witness. The three tiers share the runtime sites, so no golden moves.
    `cargo fmt --check`, and `tools/hygiene.sh` green. Clippy at the
    baseline 7 / 22 / 13.
 5. `a22` holds its performance-gate value.
+
+## 81. R38 — a write through a `@CStruct` copy that nothing reads
+
+*(Owner decision, 2026-09-01.)* Origin: downstream request R38 at
+`2f9ed28`. A `@CStruct` parameter, and a local bound by copy from
+another place, each hold a copy (C2). A field write through the copy
+succeeds and the source never changes. No diagnostic reports it. The
+downstream shipped a drag interaction with this shape.
+
+### 81.1 What the request proposed, and what the contract holds
+
+R38 proposed a reject at every assignment rooted in a copy binding.
+Rejected: C2 (Q17) states that field writes through a copy are legal,
+`a04` pins a write to a copy-bound local, and `examples/e02` writes to
+a parameter copy and returns from it. The reject would move both
+pins and forbid the C idiom "change the copy, then return or store
+it".
+
+R38's alternative, reference semantics for `@CStruct` parameters, is
+rejected: a by-value struct parameter crosses the C ABI by value
+(invariant 1), and C2's model does not change.
+
+The defect is narrower: in both R38 sites the copy is **write-only**.
+`a04` and `e02` read the copy after the write. That is the rule.
+
+### 81.2 The rule
+
+**W004** (`warnings.md` §2): an assignment whose target roots in a
+copy binding of `@CStruct` type fires when the binding is write-only in
+its function. The definition of a copy binding, of a read, and the
+recorded miss live in `warnings.md`; this section does not repeat
+them.
+
+Severity is a warning, not an S-code: the condition is a heuristic,
+and a heuristic that rejects moves the accepted set on a false
+positive. Warnings surface at every `check`, `emit`, `build`, and
+`run` (warnings.md §1).
+
+### 81.3 Sites
+
+- `compiler/src/warn.rs`: `WarnCode::W004`, `ALL`, `as_str`,
+  `explanation`; one pass per function body (including methods,
+  constructors, and lambda bodies) that collects copy bindings, then
+  scans the body once for reads and write roots.
+- `compiler/tests/corpus_warn.rs`: two `EXPECTED` rows.
+- `corpus/warn/w04-copy-parameter-write-unread.ts` (the parameter
+  form) and `corpus/warn/w05-copy-local-write-unread.ts` (the local
+  form, copied from a reference-class field). Both are R38's evidence
+  shapes.
+
+### 81.4 Exit criteria (pre-registered)
+
+1. `w04` and `w05` are Red at `79da3ac` (zero warnings on a binary
+   built from that pin) and fire W004 at the pinned lines after.
+2. `accept_corpus_and_examples_have_zero_warnings` stays green:
+   `a04`, `a21`, `e02`, and every other accept entry and example are
+   silent.
+3. Unit tests in `warn.rs` pin each mute: a field read after the
+   write, a method call, an argument pass, a return, an assignment
+   value, a read before the write in a loop body, a `new` initializer,
+   a call initializer, and `this` in a value-class method.
+4. `tsc` gate green with `w04` and `w05` included.
+5. Full gate, `cargo fmt --check`, `tools/hygiene.sh` green. Clippy at
+   the baseline 7 / 22 / 13.
