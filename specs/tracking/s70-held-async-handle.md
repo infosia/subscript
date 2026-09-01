@@ -253,3 +253,67 @@ and the defect reproduces at the same commit. So the retained word is not
 the word those hand-built modules clear, or the clear does not reach
 `a162`'s shape. The next step must name the word again with
 `SUBSCRIPT_MARK_TRACE` on an x86-64 host.
+
+## The word is named: an array data slot past `len` — 2026-09-01
+
+`SUBSCRIPT_MARK_TRACE=strings` on `x86_64-pc-windows-msvc`, 40 attempts of
+`counted_store_corpus_matches_the_interpreter`. Attempt 15 measured 267.
+Its trace holds one record that no clean run holds:
+
+```
+SUBSCRIPT_MARK_TRACE payload=0x1f2536eeaa0 class_id=4294967041
+  source=payload class_id=4294967043 address=0x1f2538d3c20 word=0
+```
+
+`0xFFFF_FF01` is `CLASS_STRING`; `0xFFFF_FF03` is `CLASS_ARRAY_DATA`
+(`runtime/src/context.rs:230`, `:294`). A clean run holds 14 records and
+no `source=payload` record. The failing run holds 15. The one extra
+record is the whole difference.
+
+This is not the word `ebc46fd` cleared. That word was the coroutine
+frame member `b21_child`, at payload word 52.
+
+### The mechanism
+
+`Context::array_pop` (`runtime/src/context.rs:3218`) decrements `h.len`
+and copies the element out. It leaves the bytes of the vacated slot in
+the `CLASS_ARRAY_DATA` allocation.
+
+`Context::scan_payload` (`runtime/src/context.rs:2417`) reads `size / 8`
+words, so it reads the whole allocation. It reads the slots past `len`.
+
+`a162` runs the two in order:
+
+```ts
+popped.pop();      // data word 0 keeps the released frame's address
+printNumber(256);  // an 11-byte string payload sometimes reuses it
+```
+
+`Context.collect()` then reaches the string from that word and keeps it.
+267 - 256 = 11, the payload of the string `"256"`.
+
+### The class, not the site
+
+This is the second word of one class: a stale word inside a payload,
+outside the live range of the value that wrote it. `ebc46fd` cleared one
+site. `array_pop` is another. `shift`, `splice`, and a truncation each
+leave the same shape, and a capacity that exceeds `len` leaves it after
+every removal.
+
+CLAUDE.md: a fix that closes named sites does not converge. So this file
+states the class and one proposal. The proposal is the owner's to accept.
+
+**Proposal.** The marker bounds an array data scan by the live range.
+`CLASS_ARRAY` carries `data`, `len`, and `elem_size` in its header, so
+the marker can push the data allocation with `len * elem_size` bytes
+instead of its allocation size. The stale slots then leave the reachable
+set for every removal operation at once, and no operation needs a clear.
+
+Conservative marking stays conservative inside the live range
+(`context.rs:39`). The change removes bytes that hold no live value from
+the scan; it does not make the scan precise.
+
+**Cost.** The marker must reach the data allocation through its
+`CLASS_ARRAY` header, so a data allocation that a scan reaches by an
+interior address needs the same bound. Measure that before the change
+lands.
