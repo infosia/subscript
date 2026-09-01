@@ -368,6 +368,20 @@ Pinned corpus: [`corpus/warn/w03-fresh-callback-userdata-loop.ts`](../corpus/war
         if (userdata1 !== null) {
 ```
 
+### W004
+
+A value-type copy that is written through and never read leaves its source unchanged.
+
+Pinned corpus: [`corpus/warn/w04-copy-parameter-write-unread.ts`](../corpus/warn/w04-copy-parameter-write-unread.ts), line 36.
+
+```ts
+
+function mutate(bag: Bag, x: f32): void {
+  bag.pos = new Vec2f(x, x);
+}
+
+```
+
 ## Feature guide
 
 ### Sized numerics
