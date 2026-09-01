@@ -3,6 +3,8 @@
 // differs-from-typescript: C5 permits const capture only while the callback remains non-escaping.
 // see: corpus/accept/a06-fixed-array.ts, corpus/accept/a07-slice-pair.ts, corpus/accept/a13-closures-noncapture.ts, corpus/accept/a14-closures-capture.ts, corpus/accept/a44-array.ts, corpus/accept/a45-array-fn.ts, corpus/trap/t02-statements-after-fault.ts, corpus/reject/r10-escaping-capture.ts, collisions.md C5, collisions.md Q3-Q4, compiler.md §7
 
+// Two array kinds and three transforms. The lesson is where the length lives,
+// and what a callback is allowed to capture.
 // Q12: this zero-argument void export is a host-callable script entry.
 export function main(): void {
   // Q3: FixedArray stores exactly four i32 elements in place.
@@ -14,8 +16,12 @@ export function main(): void {
   // Q3/Q4 and compiler.md §7: indexing either array is bounds checked.
   // An out-of-range access traps with index-out-of-bounds and stops the
   // Context; corpus/trap/t02-statements-after-fault.ts pins that rule.
+  // arrays=4,6,5,5 reads the fixed length, one element, the grown length, and
+  // the pushed element.
   print(`arrays=${fixed.length},${fixed[2]},${growable.length},${growable[4]}`);
 
+  // Two const locals for the callbacks below to capture. Capture is the rule
+  // this section shows.
   const scale: i32 = 3;
   const minimum: i32 = 8;
   // C5: map and filter finish before returning, so their callbacks may
@@ -32,6 +38,9 @@ export function main(): void {
   // Rejected alternative: returning a callback that captures scale is S009,
   // "capturing lambdas may not escape their defining function";
   // corpus/reject/r10-escaping-capture.ts pins it.
+
+  // The three lines print the chain: every element times three, then the
+  // members at or above eight, then their sum.
   print(`mapped=${mapped.join(",")}`);
   print(`filtered=${filtered.join(",")}`);
   print(`reduced=${total}`);

@@ -3,6 +3,8 @@
 // differs-from-typescript: C6 rejects throw and try; fallible operations return data, while a trap stops the Context for the host.
 // see: corpus/accept/a18-error-handling.ts, corpus/accept/a70-json-roundtrip.ts, corpus/accept/a71-json-parse.ts, corpus/accept/a72-json-parse-limits.ts, corpus/trap/t01-json-result-value.ts, corpus/trap/t02-statements-after-fault.ts, corpus/trap/t03-loop-stops-at-fault.ts, corpus/trap/t04-call-after-fault.ts, corpus/trap/t05-foreach-callback-fault.ts, corpus/reject/r11-throw.ts, collisions.md C6, collisions.md Q28, compiler.md §18.2c, compiler.md §19.3
 
+// Failure has two forms here. A result value the caller inspects, and a trap
+// the host observes. This program shows the first and points at the second.
 // C2: @CStruct makes this a C-layout value rather than a Context-allocated
 // reference class.
 @CStruct
@@ -16,6 +18,8 @@ class DivisionResult {
   }
 }
 
+// One function, two outcomes, one return type. The flag states which outcome
+// the value carries.
 function divide(numerator: f64, denominator: f64): DivisionResult {
   // C6: an avoidable failure is ordinary data that the caller can inspect.
   // Rejected alternative: throw is S010, "exceptions are not in the
@@ -28,11 +32,15 @@ function divide(numerator: f64, denominator: f64): DivisionResult {
 
 // Q12: this zero-argument void export is a host-callable script entry.
 export function main(): void {
+  // Section one: the caller reads both outcomes in order. division=true,7 and
+  // division-error=false show that no control flow leaves the caller.
   const quotient: DivisionResult = divide(21.0, 3.0);
   const divisionFailure: DivisionResult = divide(1.0, 0.0);
   print(`division=${quotient.ok},${quotient.value}`);
   print(`division-error=${divisionFailure.ok}`);
 
+  // Section two: the standard library returns the same shape. json=42 prints
+  // inside the ok branch, and json-error=false reports failure without a stop.
   // Q28: JSON syntax and type failures are JsonResult data, and value is
   // readable only after ok proves that parsing succeeded.
   const parsed: JsonResult<i32> = JSON.parse<i32>("42");

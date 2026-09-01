@@ -3,6 +3,8 @@
 // differs-from-typescript: invariant 1 makes each mirrored value class the C struct itself, with no marshaling copy.
 // see: corpus/accept/a25-a33, corpus/accept/a89, compiler.md §23.7, examples.md §4
 
+// The two classes below are the callback's userdata. A stored C callback
+// captures nothing (C5), so the script hands its state across explicitly.
 // C3: these counters have fixed-width i32 fields even though tsc sees
 // number. Rejected alternative: a number field is S007; diagnostic excerpt:
 // "bare `number` is rejected; there is no default numeric type — use a sized type";
@@ -25,12 +27,16 @@ class EventCounter {
   }
 }
 
+// A zero transform for the out-array elements below. The C side overwrites
+// every element it writes, so these initial values never reach the output.
 function placeholderTransform(): EngineTransform {
   return new EngineTransform(false, 0.0, 0.0, 0.0, 0);
 }
 
 // Q12: a zero-argument void export is a host-callable script entry.
 export function main(): void {
+  // Setup: the world's option chain. Each option embeds the same header
+  // struct, so the C side walks one pointer through both options.
   const limit: EngineEntityLimitOption = new EngineEntityLimitOption(
     new EngineWorldOption(EngineWorldOptionKind.ENGINE_WORLD_OPTION_ENTITY_LIMIT, null),
     3,
@@ -54,6 +60,8 @@ export function main(): void {
   // Q13: a string crosses as an explicit byte-length view; no NUL is added.
   engineWorldSetName(world, "world");
 
+  // The callback phase. The state a callback writes must exist before
+  // registration and stay alive through every later pump.
   const log: EventLog = new EventLog();
   const counter: EventCounter = new EventCounter();
   // C5/Q13: a stored C callback cannot capture; both mutable objects cross
@@ -78,12 +86,17 @@ export function main(): void {
     counter,
   );
   engineWorldSetEventSink(world, sink);
+  // deferred=0,0 shows that registration alone calls nothing. ready=1,5,1,0
+  // is the state after one pump: one call, the five bytes of the world name,
+  // one count, and event kind 0.
   print(`deferred=${log.hits},${counter.hits}`);
   engineWorldPump(world);
   print(
     `ready=${log.hits},${log.bytes},${counter.hits},${engineWorldLastEvent(world)}`,
   );
 
+  // The slice phase. input is a const borrow the callee reads; output below is
+  // a mutable out-array the callee writes. Both are script-owned storage.
   const input: EngineEntityState[] = [
     new EngineEntityState(
       1,
@@ -114,6 +127,8 @@ export function main(): void {
   // Q13 and invariant 1: the mutable EngineEntityStateOut writes this array's
   // own C-layout storage rather than a marshaled copy.
   const written: u64 = engineWorldReadEntities(world, output);
+  // read=2 is the element count the callee wrote. The two entity lines that
+  // follow print the C values it wrote back, field by field.
   print(`read=${written}`);
   // Q14: f32 interpolation uses deterministic shortest-round-trip spelling,
   // so the C values print identically on both execution tiers.
@@ -124,6 +139,8 @@ export function main(): void {
     `entity=${output[1].engineId},${output[1].engineTransform.engineX},${output[1].engineTransform.engineY},${output[1].engineTransform.engineRotation},${output[1].engineTransform.engineLayer},${output[1].engineFlags}`,
   );
 
+  // The flag phase. flags=2,3,3 shows two matched entities and the combined
+  // bits on both; id 99 matches no entity, so it changes nothing.
   // Q18: folded u64 flag members combine without an implicit narrowing.
   const combined: EngineEntityFlags =
     ENGINE_ENTITY_FLAG_ACTIVE | ENGINE_ENTITY_FLAG_VISIBLE;
@@ -140,11 +157,15 @@ export function main(): void {
   engineWorldReadEntities(world, flagged);
   print(`flags=${matched},${flagged[0].engineFlags},${flagged[1].engineFlags}`);
 
+  // A second pump. changed= adds one call to each counter and moves the event
+  // kind to 1, because the entity writes above queued that event.
   engineWorldPump(world);
   print(
     `changed=${log.hits},${log.bytes},${counter.hits},${engineWorldLastEvent(world)}`,
   );
 
+  // The frame phase. This is the shape a host-owned loop uses; here the
+  // example plays the host's part once, and stepped= reports event kind 2.
   // Q12: exported entries receive no arguments, so the host-owned loop records
   // frame state before the call and the script reads it through the facade.
   engineFrameBegin(world, 0.125);
@@ -157,6 +178,8 @@ export function main(): void {
     `stepped=${log.hits},${log.bytes},${counter.hits},${engineWorldLastEvent(current)}`,
   );
 
+  // Teardown. The script owns no part of the handle's memory. It owns only
+  // the two references it took.
   // Q13: the two explicit releases balance the host handle's initial
   // reference and the retained reference.
   engineWorldRelease(world);

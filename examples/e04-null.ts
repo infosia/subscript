@@ -3,6 +3,8 @@
 // differs-from-typescript: C7 permits only Ref | null, with no undefined and no general unions.
 // see: corpus/accept/a17-null-story.ts, corpus/reject/r12-general-union.ts, corpus/reject/r13-undefined.ts, collisions.md C7
 
+// The language has one absent value. This program builds a two-node list and
+// reads it through both narrowing shapes: a parameter and a field.
 class Node {
   active: boolean;
   // C7: Ref | null is the sole in-language union, so null is the only
@@ -19,6 +21,8 @@ class Node {
   }
 }
 
+// Narrowing a parameter. The member access sits inside the branch, because
+// node holds null on the other path.
 function activeOrFalse(node: Node | null): boolean {
   if (node !== null) {
     return node.active;
@@ -26,6 +30,7 @@ function activeOrFalse(node: Node | null): boolean {
   return false;
 }
 
+// The same rule on a field, because a list carries absence in a field.
 function nextActiveOrFalse(node: Node): boolean {
   if (node.next !== null) {
     return node.next.active;
@@ -37,6 +42,8 @@ function nextActiveOrFalse(node: Node): boolean {
 export function main(): void {
   const tail: Node = new Node(false, null);
   const head: Node = new Node(true, tail);
+  // values=true,false,false,false: the head is active; the null argument takes
+  // the default; the head's next is inactive; the tail has no next.
   print(
     `values=${activeOrFalse(head)},${activeOrFalse(null)},${nextActiveOrFalse(head)},${nextActiveOrFalse(tail)}`,
   );
