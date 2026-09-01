@@ -317,3 +317,65 @@ the scan; it does not make the scan precise.
 `CLASS_ARRAY` header, so a data allocation that a scan reaches by an
 interior address needs the same bound. Measure that before the change
 lands.
+
+## §80 landed: array data past `len` is zero — 2026-09-01
+
+Contract `d21e38f`, corrected at `7b52729` after review. Landed
+`f4f489e`. The bounded-scan proposal above is rejected; §80.1 states
+why.
+
+### What moved
+
+`array_pop` zeroes the vacated slot. `array_truncate` zeroes
+`new_len * elem_size .. old_len * elem_size` (`shift` and `splice` go
+through it). `Context::array_tail_violations` walks every live array in
+both tiers and reports every nonzero byte past `len`, up to the end of
+the data allocation's payload. A debug `collect` records an `Internal`
+trap that lists every violation, and returns without collecting.
+
+### Red at the pin
+
+`popped_element_is_unreachable_after_pop` against the unmodified
+`array_pop`, reported by the coding agent:
+
+    thread 'context::tests::popped_element_is_unreachable_after_pop' panicked at runtime/src/context.rs:5106:9:
+    dev: popped element
+    test result: FAILED. 0 passed; 1 failed
+
+The stale word is the popped element's own address, so the test needs
+no allocator reuse.
+
+### Review
+
+One fresh review. MAJOR: the check stopped at `cap * elem_size` while
+`arena_mark` reads the whole block payload; closed by the payload
+bound. MINOR: a debug `panic!` in `collect` reaches the `extern "C"`
+entry and aborts the host; closed by the trap. MINOR: a one-array test
+could not fail on "only that array"; a second clean array added. MINOR:
+silent returns on a malformed header; `debug_assert!` added. MINOR:
+`array_pop`'s `# Safety` did not forbid a `dst` inside the storage;
+added. Recorded, no change: the large-record walk is dead for a
+32-byte header and stays for totality; the debug walk is O(blocks).
+
+The first round zeroed `new_len .. cap` in `array_truncate` because the
+contract's test 3 asked a same-length truncate to clear a stale word.
+The test was wrong, not rule 2: a `cap` bound makes `shift()` cost
+`cap` bytes per call. Contract test 3 rewritten; code reverted to rule
+2.
+
+### Gates at `f4f489e`, arm64
+
+Debug 1166 passed, 0 failed, 1 ignored. Release 1164 passed, 0 failed,
+1 ignored; `perf_gate_meets_every_threshold` ok. `cargo fmt --check`
+exit 0. Clippy 7 / 18 / 13. `tools/hygiene.sh` exit 0 after two commit
+messages were rewritten to drop a session trailer. No golden or
+`.expected` moved.
+
+Exit criterion 3 (1000 consecutive `a162` runs at 256 bytes) is the
+x86-64 host's row and is open until the owner's Windows gate runs. This
+host never reproduced the defect.
+
+Found during the gate: an empty `corpus/accept/.claude/` directory made
+`lir` tests fail with `no source files given`. The harness treats a
+directory as an entry. The directories are removed; the harness
+fragility is recorded here and not fixed in this round.
