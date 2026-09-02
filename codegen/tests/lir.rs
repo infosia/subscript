@@ -1394,8 +1394,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 119;
-const DEBUG_RUNNABLE_COUNT: usize = 118;
+const RELEASE_RUNNABLE_COUNT: usize = 120;
+const DEBUG_RUNNABLE_COUNT: usize = 119;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1635,6 +1635,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a175-closure-environment-collect",
         "a capturing lambda's environment across collection",
+    ),
+    (
+        "a176-compound-through-accessor",
+        "compound accessor and index writes with single operand evaluation",
     ),
     (
         "a15-manual-lifetime",

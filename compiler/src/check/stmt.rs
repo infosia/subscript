@@ -420,7 +420,8 @@ impl<'p> Checker<'p> {
                 false
             }
             ast::Stmt::Expr(e) => {
-                let checked = self.check_expr_stmt(&e.expr, fx);
+                let (prefix, checked) = self.check_expr_stmt(&e.expr, fx);
+                out.extend(prefix);
                 out.push(hir::Stmt::Expr(checked));
                 false
             }

@@ -18,7 +18,7 @@ const SIZED_NUMERICS: &str = "Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`,
 
 const VALUE_REFERENCE_CLASSES: &str = "`@CStruct class` declares a nominal C-layout value class, copied on assignment and argument passing. The `@CStruct({ align: N })` form raises alignment to 2, 4, 8, or 16 bytes and rounds size without changing field offsets. A plain `class` declares a nominal heap reference class: `new` allocates it in the active `Context`, and assignments copy the reference. Value classes do not inherit, and same-shaped nominal types do not substitute for one another.";
 
-const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for ordinary methods. `get name(): T` becomes the method `name`. `set name(value: T)` becomes the method `name=`. A read `x.name` calls `name` without arguments. A statement write `x.name = value` calls `name=` with the value. Reference classes and `@CStruct` value classes can declare read accessors. Only reference classes can declare write accessors. Compound assignments, updates, value-position writes, static accessors, and mirror accessors are outside the surface.";
+const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for ordinary methods. `get name(): T` becomes the method `name`. `set name(value: T)` becomes the method `name=`. A read `x.name` calls `name` without arguments. A statement write `x.name = value` calls `name=` with the value. Compound assignments and updates in statement position use a read-then-write rewrite. Reference classes and `@CStruct` value classes can declare read accessors. Only reference classes can declare write accessors. Value-position writes, static read accessors without a setter, and mirror accessors are outside the surface.";
 
 const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. When `A` is a Q32 string-literal union alias, `name?: A` without an initializer is absence-capable: omission is a distinct state, explicit `undefined` is rejected, and reads are legal only in the present arm established by `member !== undefined` or the inverse arm of `member === undefined`. No other member type admits that spelling. Literals may be nested, may omit defaulted and absence-capable members, and remain constructible through a `Descriptor | null` contextual type. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, literals against plain nominal classes (including through `| null`), methods, missing required members, and excess members are rejected.";
 
@@ -76,13 +76,13 @@ const FEATURES: &[Feature] = &[
         prose: NAMED_ACCESSORS,
         corpus: &[
             "corpus/accept/a144-accessor.ts",
+            "corpus/accept/a176-compound-through-accessor.ts",
             "corpus/reject/r141-value-class-write-accessor.ts",
             "corpus/reject/r142-readonly-accessor-write.ts",
-            "corpus/reject/r143-accessor-compound-assign.ts",
-            "corpus/reject/r144-accessor-increment.ts",
             "corpus/reject/r145-accessor-write-as-value.ts",
             "corpus/reject/r146-accessor-field-name-clash.ts",
             "corpus/reject/r147-static-accessor.ts",
+            "corpus/reject/r173-compound-write-as-value.ts",
         ],
     },
     Feature {

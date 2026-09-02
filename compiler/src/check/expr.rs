@@ -155,6 +155,15 @@ pub(crate) fn path_key(e: &hir::Expr) -> Option<String> {
     }
 }
 
+fn is_place_expr(expr: &hir::Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Local(_) | ExprKind::Global(_) | ExprKind::This => true,
+        ExprKind::Field { obj, .. } => is_place_expr(obj),
+        ExprKind::Index { obj, index, .. } => is_place_expr(obj) && is_place_expr(index),
+        _ => false,
+    }
+}
+
 /// True for literals that can adopt a contextual type: numeric literals
 /// (C4) and string literals in a Q32 alias context.
 fn literalish(e: &ast::Expr) -> bool {
@@ -668,9 +677,9 @@ impl<'p> Checker<'p> {
                 }
             }
             ast::Expr::Unary(u) => self.check_unary(u, ctx, fx, pos),
-            ast::Expr::Update(u) => self.check_update(u, fx, pos),
+            ast::Expr::Update(u) => self.check_update(u, fx, pos, false, None),
             ast::Expr::Bin(b) => self.check_bin(b, ctx, fx, pos),
-            ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false),
+            ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false, None),
             ast::Expr::Member(m) => self.check_member_read(m, fx),
             ast::Expr::Cond(c) => self.check_cond(c, ctx, fx, pos),
             ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
@@ -798,7 +807,11 @@ impl<'p> Checker<'p> {
 
     /// Checks an expression statement, admitting the ambient
     /// `unreachable()` only when it is the statement's direct call.
-    pub(crate) fn check_expr_stmt(&mut self, e: &ast::Expr, fx: &mut FnCtx) -> hir::Expr {
+    pub(crate) fn check_expr_stmt(
+        &mut self,
+        e: &ast::Expr,
+        fx: &mut FnCtx,
+    ) -> (Vec<hir::Stmt>, hir::Expr) {
         let mut root = e;
         while let ast::Expr::Paren(paren) = root {
             root = &paren.expr;
@@ -812,15 +825,26 @@ impl<'p> Checker<'p> {
                 if let ast::Expr::Ident(ident) = callee {
                     if ident.sym.as_ref() == "unreachable" {
                         let pos = self.pos(call.span);
-                        return self.check_named_call(ident, call, fx, pos, true);
+                        return (
+                            Vec::new(),
+                            self.check_named_call(ident, call, fx, pos, true),
+                        );
                     }
                 }
             }
         }
+        let mut prefix = Vec::new();
         if let ast::Expr::Assign(assign) = root {
-            return self.check_assign(assign, fx, self.pos(root.span()), true);
+            let checked =
+                self.check_assign(assign, fx, self.pos(root.span()), true, Some(&mut prefix));
+            return (prefix, checked);
         }
-        self.check_expr(e, None, fx)
+        if let ast::Expr::Update(update) = root {
+            let checked =
+                self.check_update(update, fx, self.pos(root.span()), true, Some(&mut prefix));
+            return (prefix, checked);
+        }
+        (prefix, self.check_expr(e, None, fx))
     }
 
     /// Checks Q34/R13's three awaitable forms. The AST call is handled here
@@ -1642,7 +1666,43 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn check_update(&mut self, u: &ast::UpdateExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+    fn stabilize_compound_operand(
+        &mut self,
+        expr: hir::Expr,
+        label: &str,
+        prefix: &mut Vec<hir::Stmt>,
+    ) -> hir::Expr {
+        if is_place_expr(&expr) {
+            return expr;
+        }
+        let id = self.next_compound_local_id;
+        self.next_compound_local_id += 1;
+        let name = format!("[[compound#{id}.{label}]]");
+        let ty = expr.ty.clone();
+        let pos = expr.pos.clone();
+        prefix.push(hir::Stmt::Let {
+            name: name.clone(),
+            ty: ty.clone(),
+            mutable: false,
+            dispose: false,
+            init: expr,
+            pos: pos.clone(),
+        });
+        hir::Expr {
+            kind: ExprKind::Local(name),
+            ty,
+            pos,
+        }
+    }
+
+    fn check_update(
+        &mut self,
+        u: &ast::UpdateExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        statement_position: bool,
+        mut prefix: Option<&mut Vec<hir::Stmt>>,
+    ) -> hir::Expr {
         let source = match unparen_expr(&u.arg) {
             ast::Expr::Ident(ident) => PlaceSource::Ident(ident),
             ast::Expr::Member(member) => PlaceSource::Member(member),
@@ -1651,46 +1711,43 @@ impl<'p> Checker<'p> {
         let place = self.check_assign_target(source, fx, &pos);
         #[cfg(test)]
         place.record_kind();
-        if matches!(&place, Place::IndexSignature { .. }) {
-            let spelling = update_spelling(u, "a[i]");
-            self.error_diverging(
-                RuleCode::S100,
-                format!("{spelling} is not supported for a class index signature"),
-                pos.clone(),
-                Divergence::ClassIndexSignature,
-            );
-            return self.err_expr(pos);
-        }
-        if let Place::Accessor {
-            class,
-            receiver,
-            name,
-            ..
-        } = &place
-        {
-            if receiver.is_some() {
-                let spelling = update_spelling(u, &format!("x.{name}"));
-                self.error_diverging(
-                    RuleCode::S100,
-                    format!("{spelling} is not supported for a class accessor"),
-                    pos.clone(),
-                    Divergence::NamedAccessor,
-                );
-                return self.err_expr(pos);
-            } else {
-                let class_name = self.classes[class.0].name.clone();
-                let spelling = update_spelling(u, &format!("{class_name}.{name}"));
-                self.error(
-                    RuleCode::S100,
-                    format!("{spelling} is not supported for a static accessor"),
-                    pos.clone(),
-                );
-                return self.err_expr(pos);
+        if !statement_position {
+            match &place {
+                Place::IndexSignature { .. } => {
+                    let spelling = update_spelling(u, "a[i]");
+                    self.error_diverging(
+                        RuleCode::S100,
+                        format!("{spelling} cannot be used as a value"),
+                        pos.clone(),
+                        Divergence::ClassIndexSignature,
+                    );
+                    return self.err_expr(pos);
+                }
+                Place::Accessor {
+                    class,
+                    receiver,
+                    name,
+                    ..
+                } => {
+                    let target = receiver.as_ref().map_or_else(
+                        || format!("{}.{name}", self.classes[class.0].name),
+                        |_| format!("x.{name}"),
+                    );
+                    let spelling = update_spelling(u, &target);
+                    self.error_diverging(
+                        RuleCode::S100,
+                        format!("{spelling} cannot be used as a value"),
+                        pos.clone(),
+                        Divergence::NamedAccessor,
+                    );
+                    return self.err_expr(pos);
+                }
+                _ => {}
             }
         }
-        let target = place.into_read(self);
-        if !target.ty.is_numeric() && !matches!(target.ty, Type::Error) {
-            let name = self.type_name(&target.ty);
+        let target_ty = place.ty().clone();
+        if !target_ty.is_numeric() && !matches!(target_ty, Type::Error) {
+            let name = self.type_name(&target_ty);
             self.error(
                 RuleCode::S100,
                 format!("`++`/`--` require a numeric target, got `{}`", name),
@@ -1698,7 +1755,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        if target.ty == Type::F16 {
+        if target_ty == Type::F16 {
             self.error_diverging(
                 RuleCode::S014,
                 "arithmetic on `f16` is not supported; compute via `as f32`",
@@ -1712,24 +1769,169 @@ impl<'p> Checker<'p> {
         } else {
             BinOp::Sub
         };
-        let ty = target.ty.clone();
         let one = hir::Expr {
-            kind: if ty.is_float() {
+            kind: if target_ty.is_float() {
                 ExprKind::Float(1.0)
             } else {
                 ExprKind::Int(1)
             },
-            ty: ty.clone(),
+            ty: target_ty.clone(),
             pos: pos.clone(),
         };
-        hir::Expr {
-            kind: ExprKind::Assign {
-                op: Some(op),
-                target: Box::new(target),
-                value: Box::new(one),
-            },
-            ty,
-            pos,
+        match place {
+            Place::IndexSignature {
+                receiver,
+                index,
+                signature,
+                pos: target_pos,
+            } => {
+                if signature.readonly {
+                    self.error(
+                        RuleCode::S100,
+                        "`a[i] = v` cannot write through a readonly index signature",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+                let prefix = prefix
+                    .as_deref_mut()
+                    .expect("a statement update must provide compound-write storage");
+                let receiver = self.stabilize_compound_operand(receiver, "receiver", prefix);
+                let index = self.stabilize_compound_operand(index, "index", prefix);
+                let read = Place::IndexSignature {
+                    receiver: receiver.clone(),
+                    index: index.clone(),
+                    signature: signature.clone(),
+                    pos: target_pos,
+                }
+                .into_read(self);
+                let binary_op = assign_binary_op(op).expect("an update operator is binary");
+                let result = self.bin_result(
+                    binary_op,
+                    read,
+                    one,
+                    pos.clone(),
+                    BinUse::CompoundAssignment,
+                );
+                if result.terminal {
+                    return result.expr;
+                }
+                self.require_assignable(
+                    &result.expr.ty.clone(),
+                    &signature.element_ty,
+                    result.expr.pos.clone(),
+                    "the assignment",
+                );
+                hir::Expr {
+                    kind: ExprKind::Call {
+                        callee: Callee::Method {
+                            recv: Box::new(receiver),
+                            name: "set".to_string(),
+                        },
+                        args: vec![index, result.expr],
+                    },
+                    ty: Type::Void,
+                    pos,
+                }
+            }
+            Place::Accessor {
+                class,
+                receiver,
+                name,
+                ty,
+                pos: target_pos,
+            } => {
+                let write_name = format!("{name}=");
+                let signature = if receiver.is_some() {
+                    self.class_sigs[class.0].methods.get(&write_name).cloned()
+                } else {
+                    self.class_sigs[class.0]
+                        .static_methods
+                        .get(&write_name)
+                        .cloned()
+                };
+                let Some(signature) = signature else {
+                    let target = receiver.as_ref().map_or_else(
+                        || format!("{}.{name}", self.classes[class.0].name),
+                        |_| format!("x.{name}"),
+                    );
+                    self.error(
+                        RuleCode::S100,
+                        format!("`{target} = v` cannot write through a read-only accessor"),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                };
+                let receiver = receiver.map(|receiver| {
+                    let prefix =
+                        prefix.expect("a statement update must provide compound-write storage");
+                    self.stabilize_compound_operand(receiver, "receiver", prefix)
+                });
+                let read = Place::Accessor {
+                    class,
+                    receiver: receiver.clone(),
+                    name: name.clone(),
+                    ty,
+                    pos: target_pos,
+                }
+                .into_read(self);
+                let binary_op = assign_binary_op(op).expect("an update operator is binary");
+                let result = self.bin_result(
+                    binary_op,
+                    read,
+                    one,
+                    pos.clone(),
+                    BinUse::CompoundAssignment,
+                );
+                if result.terminal {
+                    return result.expr;
+                }
+                let Some(parameter) = signature.params.first() else {
+                    self.error(
+                        RuleCode::S100,
+                        format!("write accessor `{name}` has no parameter signature"),
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                };
+                self.require_assignable(
+                    &result.expr.ty.clone(),
+                    &parameter.ty,
+                    result.expr.pos.clone(),
+                    "the assignment",
+                );
+                let callee = if let Some(receiver) = receiver {
+                    Callee::Method {
+                        recv: Box::new(receiver),
+                        name: write_name,
+                    }
+                } else {
+                    Callee::Func(static_member_symbol(
+                        &self.classes[class.0].name,
+                        &write_name,
+                    ))
+                };
+                hir::Expr {
+                    kind: ExprKind::Call {
+                        callee,
+                        args: vec![result.expr],
+                    },
+                    ty: Type::Void,
+                    pos,
+                }
+            }
+            place => {
+                let target = place.into_read(self);
+                hir::Expr {
+                    kind: ExprKind::Assign {
+                        op: Some(op),
+                        target: Box::new(target),
+                        value: Box::new(one),
+                    },
+                    ty: target_ty,
+                    pos,
+                }
+            }
         }
     }
 
@@ -5624,6 +5826,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
         statement_position: bool,
+        mut prefix: Option<&mut Vec<hir::Stmt>>,
     ) -> hir::Expr {
         use ast::AssignOp as A;
         let operation = assign_op(a.op);
@@ -5663,15 +5866,23 @@ impl<'p> Checker<'p> {
                 receiver,
                 index,
                 signature,
-                ..
-            } => Some((receiver.clone(), index.clone(), signature.clone())),
+                pos: target_pos,
+            } => Some((
+                receiver.clone(),
+                index.clone(),
+                signature.clone(),
+                target_pos.clone(),
+            )),
             _ => None,
         };
-        if let Some((recv, index, signature)) = signature_write {
-            if let Some((_, operator)) = operation {
+        if let Some((receiver, index, signature, target_pos)) = signature_write {
+            if !statement_position {
+                let spelling = operation.map_or("`a[i] = v`".to_string(), |(_, operator)| {
+                    format!("`a[i] {operator} v`")
+                });
                 self.error_diverging(
                     RuleCode::S100,
-                    format!("`a[i] {operator} v` is not supported for a class index signature"),
+                    format!("{spelling} cannot be used as a value"),
                     pos.clone(),
                     Divergence::ClassIndexSignature,
                 );
@@ -5685,14 +5896,36 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(pos);
             }
-            if !statement_position {
-                self.error(
-                    RuleCode::S100,
-                    "`a[i] = v` cannot be used as a value",
+            let (receiver, index, value) = if let Some((bin, _)) = operation {
+                let prefix = prefix
+                    .as_deref_mut()
+                    .expect("a statement assignment must provide compound-write storage");
+                let receiver = self.stabilize_compound_operand(receiver, "receiver", prefix);
+                let index = self.stabilize_compound_operand(index, "index", prefix);
+                let read = Place::IndexSignature {
+                    receiver: receiver.clone(),
+                    index: index.clone(),
+                    signature: signature.clone(),
+                    pos: target_pos,
+                }
+                .into_read(self);
+                let Some(binary_op) = assign_binary_op(bin) else {
+                    return self.err_expr(pos);
+                };
+                let result = self.bin_result(
+                    binary_op,
+                    read,
+                    value,
                     pos.clone(),
+                    BinUse::CompoundAssignment,
                 );
-                return self.err_expr(pos);
-            }
+                if result.terminal {
+                    return result.expr;
+                }
+                (receiver, index, result.expr)
+            } else {
+                (receiver, index, value)
+            };
             self.require_assignable(
                 &value.ty.clone(),
                 &signature.element_ty,
@@ -5702,7 +5935,7 @@ impl<'p> Checker<'p> {
             return hir::Expr {
                 kind: ExprKind::Call {
                     callee: Callee::Method {
-                        recv: Box::new(recv),
+                        recv: Box::new(receiver),
                         name: "set".to_string(),
                     },
                     args: vec![index, value],
@@ -5722,13 +5955,16 @@ impl<'p> Checker<'p> {
         };
         if let Some((id, name)) = static_accessor_write {
             let class_name = self.classes[id.0].name.clone();
-            if let Some((_, operator)) = operation {
-                self.error(
+            if !statement_position {
+                let spelling = operation.map_or_else(
+                    || format!("`{class_name}.{name} = v`"),
+                    |(_, operator)| format!("`{class_name}.{name} {operator} v`"),
+                );
+                self.error_diverging(
                     RuleCode::S100,
-                    format!(
-                        "`{class_name}.{name} {operator} v` is not supported for a static accessor"
-                    ),
+                    format!("{spelling} cannot be used as a value"),
                     pos.clone(),
+                    Divergence::NamedAccessor,
                 );
                 return self.err_expr(pos);
             }
@@ -5745,15 +5981,6 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(pos);
             };
-            if !statement_position {
-                self.error_diverging(
-                    RuleCode::S100,
-                    format!("`{class_name}.{name} = v` cannot be used as a value"),
-                    pos.clone(),
-                    Divergence::NamedAccessor,
-                );
-                return self.err_expr(pos);
-            }
             let Some(parameter) = signature.params.first() else {
                 self.error(
                     RuleCode::S100,
@@ -5763,6 +5990,25 @@ impl<'p> Checker<'p> {
                     pos.clone(),
                 );
                 return self.err_expr(pos);
+            };
+            let value = if let Some((bin, _)) = operation {
+                let read = place.into_read(self);
+                let Some(binary_op) = assign_binary_op(bin) else {
+                    return self.err_expr(pos);
+                };
+                let result = self.bin_result(
+                    binary_op,
+                    read,
+                    value,
+                    pos.clone(),
+                    BinUse::CompoundAssignment,
+                );
+                if result.terminal {
+                    return result.expr;
+                }
+                result.expr
+            } else {
+                value
             };
             self.require_assignable(
                 &value.ty.clone(),
@@ -5789,10 +6035,14 @@ impl<'p> Checker<'p> {
             _ => None,
         };
         if let Some((id, recv, name)) = accessor_write {
-            if let Some((_, operator)) = operation {
+            if !statement_position {
+                let spelling = operation.map_or_else(
+                    || format!("`x.{name} = v`"),
+                    |(_, operator)| format!("`x.{name} {operator} v`"),
+                );
                 self.error_diverging(
                     RuleCode::S100,
-                    format!("`x.{name} {operator} v` is not supported for a class accessor"),
+                    format!("{spelling} cannot be used as a value"),
                     pos.clone(),
                     Divergence::NamedAccessor,
                 );
@@ -5807,15 +6057,6 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(pos);
             };
-            if !statement_position {
-                self.error_diverging(
-                    RuleCode::S100,
-                    format!("`x.{name} = v` cannot be used as a value"),
-                    pos.clone(),
-                    Divergence::NamedAccessor,
-                );
-                return self.err_expr(pos);
-            }
             let Some(parameter) = signature.params.first() else {
                 self.error(
                     RuleCode::S100,
@@ -5823,6 +6064,35 @@ impl<'p> Checker<'p> {
                     pos.clone(),
                 );
                 return self.err_expr(pos);
+            };
+            let (recv, value) = if let Some((bin, _)) = operation {
+                let prefix =
+                    prefix.expect("a statement assignment must provide compound-write storage");
+                let recv = self.stabilize_compound_operand(recv, "receiver", prefix);
+                let read = Place::Accessor {
+                    class: id,
+                    receiver: Some(recv.clone()),
+                    name: name.clone(),
+                    ty: target_ty.clone(),
+                    pos: pos.clone(),
+                }
+                .into_read(self);
+                let Some(binary_op) = assign_binary_op(bin) else {
+                    return self.err_expr(pos);
+                };
+                let result = self.bin_result(
+                    binary_op,
+                    read,
+                    value,
+                    pos.clone(),
+                    BinUse::CompoundAssignment,
+                );
+                if result.terminal {
+                    return result.expr;
+                }
+                (recv, result.expr)
+            } else {
+                (recv, value)
             };
             self.require_assignable(
                 &value.ty.clone(),
@@ -7545,7 +7815,77 @@ impl<'p> Checker<'p> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{check_program, RuleCode, SourceFile};
+    use crate::{check_program, hir, RuleCode, SourceFile};
+
+    fn normalized_main_expression(source: &str) -> hir::Expr {
+        fn normalize(expr: &mut hir::Expr) {
+            expr.pos = crate::diag::Pos::new("identity.ts", 0, 0);
+            for child in expr.children_mut() {
+                match child {
+                    hir::HirChildMut::Expr(child) => normalize(child),
+                    hir::HirChildMut::Stmt(_) => {
+                        panic!("the identity expression must hold no statement")
+                    }
+                }
+            }
+        }
+
+        let module = check_program(&[SourceFile::new("identity.ts", source)])
+            .expect("the compound identity program must check");
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main function");
+        let hir::Stmt::Expr(expression) = main.body.last().expect("main expression") else {
+            panic!("main must end in an expression statement");
+        };
+        let mut expression = expression.clone();
+        normalize(&mut expression);
+        expression
+    }
+
+    #[test]
+    fn accessor_compound_assignment_matches_the_read_then_write_hir() {
+        let class = "class Counter {\n  value: i32 = 1;\n  get v(): i32 { return this.value; }\n  set v(value: i32) { this.value = value; }\n}\n";
+        let sugar = format!(
+            "{class}export function main(): void {{\n  const counter: Counter = new Counter();\n  counter.v += 2;\n}}\n"
+        );
+        let spelled = format!(
+            "{class}export function main(): void {{\n  const counter: Counter = new Counter();\n  counter.v = counter.v + 2;\n}}\n"
+        );
+        assert_eq!(
+            normalized_main_expression(&sugar),
+            normalized_main_expression(&spelled)
+        );
+    }
+
+    #[test]
+    fn static_accessor_compound_assignment_matches_the_read_then_write_hir() {
+        let class = "class Counter {\n  static value: i32 = 1;\n  static get v(): i32 { return Counter.value; }\n  static set v(value: i32) { Counter.value = value; }\n}\n";
+        let sugar = format!("{class}export function main(): void {{\n  Counter.v += 2;\n}}\n");
+        let spelled =
+            format!("{class}export function main(): void {{\n  Counter.v = Counter.v + 2;\n}}\n");
+        assert_eq!(
+            normalized_main_expression(&sugar),
+            normalized_main_expression(&spelled)
+        );
+    }
+
+    #[test]
+    fn index_compound_assignment_matches_the_read_then_write_hir() {
+        let class = "class Values {\n  [index: u32]: i32;\n  get(index: u32): i32 { return 0; }\n  set(index: u32, value: i32): void {}\n}\n";
+        let sugar = format!(
+            "{class}export function main(): void {{\n  const values: Values = new Values();\n  const index: u32 = 0;\n  values[index] += 2;\n}}\n"
+        );
+        let spelled = format!(
+            "{class}export function main(): void {{\n  const values: Values = new Values();\n  const index: u32 = 0;\n  values[index] = values[index] + 2;\n}}\n"
+        );
+        assert_eq!(
+            normalized_main_expression(&sugar),
+            normalized_main_expression(&spelled)
+        );
+    }
 
     #[test]
     fn f32_from_bits_rejects_an_f64_argument_with_s007() {

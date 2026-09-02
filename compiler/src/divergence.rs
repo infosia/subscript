@@ -398,12 +398,13 @@ impl Divergence {
             Divergence::ClassIndexSignature => DivergenceEntry {
                 ts: "class Values { [i: u32]: i32; }\n\
                      const values: Values = new Values();\n\
-                     values[0] += 2;",
+                     const changed: i32 = values[0] = 2;",
                 subscript: "class Values { [i: u32]: i32; get(i: u32): i32 { return 0; } \
                             set(i: u32, v: i32): void {} }\n\
-                            values.set(0, values.get(0) + 2);",
-                why: "An index signature is sugar for the declared `get` and `set` methods, \
-                      so a compound write spells both calls.",
+                            values[0] = 2;\n\
+                            const changed: i32 = values[0];",
+                why: "Value-position writes and signatures without declared methods or on value \
+                      classes stay out.",
                 collision: "C10",
             },
             Divergence::UsingDeclaration => DivergenceEntry {
@@ -419,13 +420,14 @@ impl Divergence {
                 ts: "class V { v: i32 = 1; get c(): i32 { return this.v; } \
                      set c(x: i32) { this.v = x; } }\n\
                      const a: V = new V();\n\
-                     a.c += 2;",
+                     const changed: i32 = a.c = 2;",
                 subscript: "class V { v: i32 = 1; get c(): i32 { return this.v; } \
                             set c(x: i32) { this.v = x; } }\n\
                             const a: V = new V();\n\
-                            a.c = a.c + 2;",
-                why: "An accessor pair is two methods, so a compound write, an increment, a \
-                      static accessor, and a value-class write stay out.",
+                            a.c = 2;\n\
+                            const changed: i32 = a.c;",
+                why: "Value-position writes, value-class write accessors, mirror accessors, and \
+                      static read-only accessors stay out.",
                 collision: "C12",
             },
             Divergence::IteratorTemporary => DivergenceEntry {

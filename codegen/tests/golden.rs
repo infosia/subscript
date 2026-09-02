@@ -918,11 +918,12 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // for conditional lambda storage. Entry a168 pins static members.
     // Entry a170 pins iteration bounds selected by source spelling. Entries
     // a171–a172 pin static Array callback loops and their fixed mutation range.
-    // a173 pins the rooted result across a callback collect; a174 pins the enum widening cast.
+    // a173 pins the rooted result across a callback collect. a174 pins the enum widening cast.
+    // a176 pins compound writes through accessors and a class index signature.
     assert_eq!(
         golden_ids.len(),
-        174,
-        "expected exactly 174 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        175,
+        "expected exactly 175 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \

@@ -602,6 +602,8 @@ pub(crate) struct Checker<'p> {
     pub next_using_return_id: usize,
     /// Monotonic suffix for switch-body disposal storage.
     pub next_using_switch_id: usize,
+    /// This suffix keeps compound-write operand locals unique.
+    pub next_compound_local_id: usize,
 }
 
 /// Runs the checker over a parsed program.
@@ -659,6 +661,7 @@ pub(crate) fn run(
         next_regex_literal_id: 0,
         next_using_return_id: 0,
         next_using_switch_id: 0,
+        next_compound_local_id: 0,
     };
 
     // Parse-time provenance has a fixed shape; this pass binds each record
