@@ -11443,24 +11443,41 @@ The table is a record written beside the form (core principles 8 and
 
 ### 83.1 Rule
 
-1. **One walk derives the table.** After the module is checked, one
-   pass over the finished HIR visits every `Call` node in every
-   function body, method body, constructor body, lambda body, field
-   initializer, static initializer, and module initializer, through
-   the HIR `children` walk (§72), and derives `operation_signatures`
-   from the nodes alone: the target from the callee and the receiver
-   type, the parameter types from the receiver and the arguments
-   after `normalize_operation_parameter_types`, the return type from
-   the node's type. Two nodes with one signature give one entry.
+1. **One owner iterator, one walk.** `hir::Module` exposes one
+   iterator over every expression owner it holds: each function,
+   method, constructor, and foreign function body and each of their
+   parameter defaults; each lambda body and its parameter defaults;
+   each field initializer, static initializer, descriptor default, and
+   module initializer. The §83 walk, `trap_sites`, and every other
+   module-level pass that reads expressions use that iterator; no pass
+   enumerates owners by hand. After the module is checked, the walk
+   visits every `Call` node under every owner through `children()`
+   (§72) and derives `operation_signatures` from the nodes alone: the
+   target from the callee and the receiver type, the parameter types
+   from the receiver and the arguments after
+   `normalize_operation_parameter_types`, the return type from the
+   node's type. Two nodes with one signature give one entry. *(Amended
+   2026-09-03 after the review: the first walk listed owners by hand
+   and skipped parameter defaults, which `trap_sites` three lines
+   later did visit; `factor: f64 = Math.max(2.0, 3.0)` lowered at the
+   pin and failed at `35fe70e`.)*
 2. **No site registers a signature as a side effect.**
    `register_operation_signature` and the checker's `RefCell` table
    are deleted, and so is every call of it. A synthesized node is
    registered because it is in the HIR, not because a site remembered
    it.
-3. **One target mapping.** The callee-to-target mapping that the walk
-   uses is the one that `hir.rs` uses to find a call's signature; the
-   two copies become one function.
-4. **The HIR JSON does not change shape.** `operation_signatures` is
+3. **One target mapping, in the compiler crate.** The callee-to-target
+   mapping is one function in `hir.rs`. The walk, the `hir.rs` lookup,
+   and the LIR lowering in `codegen/src/lir.rs` all call it; the
+   lowering maps the `hir::BuiltinMethod` it returns to the LIR
+   builtin through the existing bridge and holds no receiver-and-name
+   match of its own. *(Amended 2026-09-03: the lowering held a third
+   copy.)*
+4. **One stated exception.** The lowering of `Arr::Map` and
+   `Arr::Filter` synthesizes an `ArrayPush` that no HIR node spells,
+   and appends that signature at lowering. This is the only entry a
+   HIR walk cannot see; a second such entry needs a rule here first.
+5. **The HIR JSON does not change shape.** `operation_signatures` is
    the same field with the same entry form; the fix adds the entries
    the walk finds that the side effect missed.
 
@@ -11473,22 +11490,35 @@ The table is a record written beside the form (core principles 8 and
    whose element type is a `@CStruct` value class read through a
    field. Red at `088acac`: dev exit 2 with the text above. `tsc:
    accepts`; `js-comparable` measured.
-2. Unit test, principle 9: the table derived by the walk for a180's
-   HIR equals, entry for entry, the set of operation-table targets
-   that a second, independent walk of the same HIR collects from
-   `Call` nodes; and it holds `BuiltinMethod(GeneratorNext)` with
-   `[Generator(i32)] -> IterResult(i32)`.
-3. A total test: for every entry under `corpus/accept/`, `corpus/warn/`,
-   and `examples/`, every `Call` node whose callee is an operation-
-   table target has a matching entry in the module's table, reported
-   all at once. The golden gate already runs the LIR verifier on each
-   entry; this test names the missing entries at the HIR level.
-4. `a79` and every pre-existing golden stay byte-identical. The HIR
-   JSON of every accept entry changes only by added
-   `operation_signatures` entries, if any; a test diffs the JSON of
-   the corpus before and after on this host and the record lists the
-   entries added.
-5. Gates: both profiles, zero-warning build, fmt, `tsc`, hygiene,
+2. `corpus/accept/a181-operation-in-every-owner.ts` + `.expected`: a
+   program whose only operation-table calls sit one per owner kind of
+   rule 1 (a free-function parameter default, a method parameter
+   default, a constructor parameter default, a lambda body, a field
+   initializer, a static initializer, a descriptor default, a module
+   initializer, a generic instance body, an async body). Red at
+   `35fe70e` for the parameter-default forms (dev exit 2, `Math.Max
+   declares ,`). `tsc: accepts`; `js-comparable` measured.
+3. Unit test, principle 9: the table the walk derives for a180 and for
+   a181 equals a **hand-written** expected list in the test, entry for
+   entry. The test derives nothing with production code.
+4. A total test over every entry under `corpus/accept/`, `corpus/warn/`,
+   and the top-level `examples/e*.ts`: every `Call` node whose callee
+   is an operation-table target has a matching table entry, every
+   violation reported at once. The three examples that need a mirror
+   are gated by `examples/tests/gate.rs` at the LIR level. **Positive
+   control:** the test takes a checked module, inserts a synthesized
+   `Call` node with a new signature into an owner (a parameter default
+   and a field initializer), and asserts the check reports that node
+   and nothing else. The interop token list the test needs lives in
+   one shared test module beside `corpus_warn.rs`, not in a copy.
+5. The owner iterator has its own test: a program with one `Call` in
+   each owner kind, and a hand-counted number of calls the iterator
+   must yield.
+6. `a79` and every pre-existing golden stay byte-identical. The record
+   lists the HIR entries the walk added (measured on this host with a
+   binary from the pin): `Ambient(Unreachable)` in a116, a162, a163;
+   order only in a136, a146, a69–a72, a79.
+7. Gates: both profiles, zero-warning build, fmt, `tsc`, hygiene,
    clippy at 7 / 18 / 13.
 
 ### 83.3 Recorded, not changed
@@ -11497,3 +11527,21 @@ The dev command reports the finding under "internal lowering error:"
 and the ship command under "internal error:". After this section no
 program that checks clean reaches either text. The prefix parity is a
 CLI record (`cli.md`), not a checker rule.
+
+### 83.4 Review round 1, 2026-09-03
+
+Fresh review of `7f46a3a..35fe70e`. CRITICAL: the walk listed owners
+by hand and skipped parameter defaults (rule 1 amended: one owner
+iterator on `hir::Module`, shared with `trap_sites`); the two tests
+re-derived the table with copies of the production code and could
+not fail (§83.2 items 3–5 rewritten: hand-written expected tables, a
+positive control, an iterator test). MAJOR: no positive control
+(item 4); a third copy of the callee mapping in `codegen/src/lir.rs`
+(rule 3 amended). MINOR: the lowering appends an `ArrayPush` entry for
+`Arr::Map`/`Filter` (rule 4 states the exception); the examples list
+(item 4 states the scope); no HIR JSON diff test exists because no HIR
+serializer exists (item 6 records the measurement instead); the
+interop token list was a copy (item 4); the lookup is order-sensitive
+and the order moved for seven entries with no golden change
+(recorded); the tracking note was untracked; `subscript build` writes
+beside its source (a probe hazard, recorded in the tracking note).
