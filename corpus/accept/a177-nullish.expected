@@ -1,0 +1,13 @@
+ref:3
+nullable:7
+triple:7
+kept:3:1:0
+replaced:7:2:1
+field:7
+method:7
+nested:7
+numeric:3
+string:HEAD
+statement-null:0
+statement-value:1
+statement-call:3:2

@@ -20,6 +20,8 @@ const VALUE_REFERENCE_CLASSES: &str = "`@CStruct class` declares a nominal C-lay
 
 const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for ordinary methods. `get name(): T` becomes the method `name`. `set name(value: T)` becomes the method `name=`. A read `x.name` calls `name` without arguments. A statement write `x.name = value` calls `name=` with the value. Compound assignments and updates in statement position use a read-then-write rewrite. Reference classes and `@CStruct` value classes can declare read accessors. Only reference classes can declare write accessors. Value-position writes, static read accessors without a setter, and mirror accessors are outside the surface.";
 
+const NULLISH_OPERATORS: &str = "`a ?? b` requires `a` to have type `Ref | null`. It evaluates `a` once and evaluates `b` only when `a` is `null`. An optional chain can be the whole left operand of `??`. An optional chain can also be a statement when its last step is a call. Other optional-chain positions require `undefined` and are rejected.";
+
 const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. When `A` is a Q32 string-literal union alias, `name?: A` without an initializer is absence-capable: omission is a distinct state, explicit `undefined` is rejected, and reads are legal only in the present arm established by `member !== undefined` or the inverse arm of `member === undefined`. No other member type admits that spelling. Literals may be nested, may omit defaulted and absence-capable members, and remain constructible through a `Descriptor | null` contextual type. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, literals against plain nominal classes (including through `| null`), methods, missing required members, and excess members are rejected.";
 
 const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are string literals, such as `type Mode = \"fast\" | \"safe\"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted. A default-less exhaustive alias switch is a diverging statement when every arm diverges, so it satisfies non-void function return flow without a trailing return.";
@@ -83,6 +85,15 @@ const FEATURES: &[Feature] = &[
             "corpus/reject/r146-accessor-field-name-clash.ts",
             "corpus/reject/r147-static-accessor.ts",
             "corpus/reject/r173-compound-write-as-value.ts",
+        ],
+    },
+    Feature {
+        title: "Nullish operators",
+        prose: NULLISH_OPERATORS,
+        corpus: &[
+            "corpus/accept/a177-nullish.ts",
+            "corpus/reject/r177-nullish-non-nullable-left.ts",
+            "corpus/reject/r178-optional-chain-unbound.ts",
         ],
     },
     Feature {

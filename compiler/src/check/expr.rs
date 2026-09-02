@@ -45,6 +45,23 @@ enum Place {
     StaticField(hir::Expr),
 }
 
+enum OptionalStep<'a> {
+    Member {
+        member: &'a ast::MemberExpr,
+        tested: bool,
+    },
+    Call {
+        call: &'a ast::OptCall,
+        tested: bool,
+    },
+}
+
+struct OptionalPlan {
+    tests: Vec<hir::Expr>,
+    value: hir::Expr,
+    ends_in_call: bool,
+}
+
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlaceKind {
@@ -191,6 +208,50 @@ fn unparen_expr(mut e: &ast::Expr) -> &ast::Expr {
         e = &paren.expr;
     }
     e
+}
+
+fn flatten_optional_chain<'a>(
+    chain: &'a ast::OptChainExpr,
+    steps: &mut Vec<OptionalStep<'a>>,
+) -> &'a ast::Expr {
+    match chain.base.as_ref() {
+        ast::OptChainBase::Member(member) => {
+            let root = flatten_optional_operand(&member.obj, steps);
+            steps.push(OptionalStep::Member {
+                member,
+                tested: chain.optional,
+            });
+            root
+        }
+        ast::OptChainBase::Call(call) => {
+            let root = flatten_optional_operand(&call.callee, steps);
+            steps.push(OptionalStep::Call {
+                call,
+                tested: chain.optional,
+            });
+            root
+        }
+    }
+}
+
+fn flatten_optional_operand<'a>(
+    expression: &'a ast::Expr,
+    steps: &mut Vec<OptionalStep<'a>>,
+) -> &'a ast::Expr {
+    match unparen_expr(expression) {
+        ast::Expr::OptChain(chain) => flatten_optional_chain(chain, steps),
+        other => other,
+    }
+}
+
+fn opt_call_as_call(call: &ast::OptCall) -> ast::CallExpr {
+    ast::CallExpr {
+        span: call.span,
+        ctxt: call.ctxt,
+        callee: ast::Callee::Expr(call.callee.clone()),
+        args: call.args.clone(),
+        type_args: call.type_args.clone(),
+    }
 }
 
 fn assign_op(op: ast::AssignOp) -> Option<(BinOp, &'static str)> {
@@ -681,6 +742,7 @@ impl<'p> Checker<'p> {
             ast::Expr::Bin(b) => self.check_bin(b, ctx, fx, pos),
             ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false, None),
             ast::Expr::Member(m) => self.check_member_read(m, fx),
+            ast::Expr::OptChain(chain) => self.reject_unbound_optional_chain(chain, fx, pos),
             ast::Expr::Cond(c) => self.check_cond(c, ctx, fx, pos),
             ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
             ast::Expr::New(n) => self.check_new(n, fx, pos),
@@ -807,11 +869,7 @@ impl<'p> Checker<'p> {
 
     /// Checks an expression statement, admitting the ambient
     /// `unreachable()` only when it is the statement's direct call.
-    pub(crate) fn check_expr_stmt(
-        &mut self,
-        e: &ast::Expr,
-        fx: &mut FnCtx,
-    ) -> (Vec<hir::Stmt>, hir::Expr) {
+    pub(crate) fn check_expr_stmt(&mut self, e: &ast::Expr, fx: &mut FnCtx) -> Vec<hir::Stmt> {
         let mut root = e;
         while let ast::Expr::Paren(paren) = root {
             root = &paren.expr;
@@ -825,26 +883,38 @@ impl<'p> Checker<'p> {
                 if let ast::Expr::Ident(ident) = callee {
                     if ident.sym.as_ref() == "unreachable" {
                         let pos = self.pos(call.span);
-                        return (
-                            Vec::new(),
-                            self.check_named_call(ident, call, fx, pos, true),
-                        );
+                        let checked = self.check_named_call(ident, call, fx, pos, true);
+                        let mut out = fx.take_synthetic_prefix();
+                        out.push(hir::Stmt::Expr(checked));
+                        return out;
                     }
                 }
             }
+        }
+        if let ast::Expr::OptChain(chain) = root {
+            return self.check_optional_chain_statement(chain, fx);
         }
         let mut prefix = Vec::new();
         if let ast::Expr::Assign(assign) = root {
             let checked =
                 self.check_assign(assign, fx, self.pos(root.span()), true, Some(&mut prefix));
-            return (prefix, checked);
+            let mut out = fx.take_synthetic_prefix();
+            out.extend(prefix);
+            out.push(hir::Stmt::Expr(checked));
+            return out;
         }
         if let ast::Expr::Update(update) = root {
             let checked =
                 self.check_update(update, fx, self.pos(root.span()), true, Some(&mut prefix));
-            return (prefix, checked);
+            let mut out = fx.take_synthetic_prefix();
+            out.extend(prefix);
+            out.push(hir::Stmt::Expr(checked));
+            return out;
         }
-        (prefix, self.check_expr(e, None, fx))
+        let checked = self.check_expr(e, None, fx);
+        prefix.extend(fx.take_synthetic_prefix());
+        prefix.push(hir::Stmt::Expr(checked));
+        prefix
     }
 
     /// Checks Q34/R13's three awaitable forms. The AST call is handled here
@@ -1985,7 +2055,8 @@ impl<'p> Checker<'p> {
                 );
                 self.err_expr(pos)
             }
-            B::In | B::InstanceOf | B::Exp | B::NullishCoalescing => {
+            B::NullishCoalescing => self.check_nullish(b, fx, pos),
+            B::In | B::InstanceOf | B::Exp => {
                 self.error(
                     RuleCode::S100,
                     "operator outside the decided surface",
@@ -2017,6 +2088,489 @@ impl<'p> Checker<'p> {
                 self.bin_result(b.op, left, right, pos, BinUse::Expression)
                     .expr
             }
+        }
+    }
+
+    fn reject_unbound_optional_chain(
+        &mut self,
+        chain: &ast::OptChainExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        let plan = self.check_optional_plan(chain, fx);
+        if plan.value.ty == Type::Error {
+            return self.err_expr(pos);
+        }
+        let name = self.type_name(&plan.value.ty);
+        self.error_diverging(
+            RuleCode::S012,
+            format!(
+                "an optional chain has type `{name} | undefined` in TypeScript; give it a fallback with `??` or use it as a statement"
+            ),
+            pos.clone(),
+            Divergence::OptionalChainUnbound,
+        );
+        self.err_expr(pos)
+    }
+
+    fn check_optional_chain_statement(
+        &mut self,
+        chain: &ast::OptChainExpr,
+        fx: &mut FnCtx,
+    ) -> Vec<hir::Stmt> {
+        let pos = self.pos(chain.span);
+        let plan = self.check_optional_plan(chain, fx);
+        let mut out = fx.take_synthetic_prefix();
+        if plan.value.ty == Type::Error {
+            out.push(hir::Stmt::Expr(self.err_expr(pos)));
+            return out;
+        }
+        if !plan.ends_in_call {
+            let name = self.type_name(&plan.value.ty);
+            self.error_diverging(
+                RuleCode::S012,
+                format!(
+                    "an optional chain has type `{name} | undefined` in TypeScript; give it a fallback with `??` or use it as a statement"
+                ),
+                pos.clone(),
+                Divergence::OptionalChainUnbound,
+            );
+            out.push(hir::Stmt::Expr(self.err_expr(pos)));
+            return out;
+        }
+
+        let mut body = vec![hir::Stmt::Expr(plan.value)];
+        for test in plan.tests.into_iter().rev() {
+            body = vec![hir::Stmt::If {
+                cond: test,
+                then: body,
+                els: None,
+                pos: pos.clone(),
+            }];
+        }
+        out.extend(body);
+        out
+    }
+
+    fn check_optional_plan(&mut self, chain: &ast::OptChainExpr, fx: &mut FnCtx) -> OptionalPlan {
+        let mut steps = Vec::new();
+        let root = flatten_optional_chain(chain, &mut steps);
+        let mut current = self.check_expr(root, None, fx);
+        let mut tests = Vec::new();
+        let mut ends_in_call = false;
+        let mut index = 0;
+
+        while index < steps.len() {
+            match &steps[index] {
+                OptionalStep::Member { member, tested } => {
+                    if *tested && matches!(member.prop, ast::MemberProp::Computed(_)) {
+                        self.error_diverging(
+                            RuleCode::S100,
+                            "an optional chain cannot use `?.[i]`; narrow the receiver and use `[i]`",
+                            self.pos(member.span),
+                            Divergence::OptionalChainIndex,
+                        );
+                        return OptionalPlan {
+                            tests,
+                            value: self.err_expr(self.pos(member.span)),
+                            ends_in_call: false,
+                        };
+                    }
+                    if *tested {
+                        let Some(inner) =
+                            self.require_nullable_operand(&current, "the tested receiver")
+                        else {
+                            return OptionalPlan {
+                                tests,
+                                value: self.err_expr(current.pos.clone()),
+                                ends_in_call: false,
+                            };
+                        };
+                        let (test, value) = self.stabilize_nullable_operand(current, inner, fx);
+                        tests.push(test);
+                        current = value;
+                    }
+
+                    if let Some(OptionalStep::Call {
+                        call,
+                        tested: call_tested,
+                    }) = steps.get(index + 1)
+                    {
+                        if *call_tested {
+                            self.error(
+                                RuleCode::S100,
+                                "an optional call through `?.()` is not in the decided surface",
+                                self.pos(call.span),
+                            );
+                            return OptionalPlan {
+                                tests,
+                                value: self.err_expr(self.pos(call.span)),
+                                ends_in_call: false,
+                            };
+                        }
+                        let ast::MemberProp::Ident(property) = &member.prop else {
+                            current = self.check_optional_member(current, member, fx);
+                            self.register_operation_signature(&current);
+                            index += 1;
+                            ends_in_call = false;
+                            continue;
+                        };
+                        let call = opt_call_as_call(call);
+                        current = self.check_method_call_on(
+                            current,
+                            property,
+                            &call,
+                            None,
+                            fx,
+                            self.pos(call.span),
+                        );
+                        self.register_operation_signature(&current);
+                        index += 2;
+                        ends_in_call = true;
+                        continue;
+                    }
+
+                    current = self.check_optional_member(current, member, fx);
+                    self.register_operation_signature(&current);
+                    index += 1;
+                    ends_in_call = false;
+                }
+                OptionalStep::Call { call, tested } => {
+                    if *tested {
+                        self.error(
+                            RuleCode::S100,
+                            "an optional call through `?.()` is not in the decided surface",
+                            self.pos(call.span),
+                        );
+                        return OptionalPlan {
+                            tests,
+                            value: self.err_expr(self.pos(call.span)),
+                            ends_in_call: false,
+                        };
+                    }
+                    let call = opt_call_as_call(call);
+                    current = self.check_indirect_call(current, &call, fx, self.pos(call.span));
+                    self.register_operation_signature(&current);
+                    index += 1;
+                    ends_in_call = true;
+                }
+            }
+        }
+
+        OptionalPlan {
+            tests,
+            value: current,
+            ends_in_call,
+        }
+    }
+
+    fn check_optional_member(
+        &mut self,
+        receiver: hir::Expr,
+        member: &ast::MemberExpr,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
+        match &member.prop {
+            ast::MemberProp::Ident(property) => self.member_on(
+                receiver,
+                property.sym.as_ref(),
+                self.pos(property.span),
+                false,
+            ),
+            ast::MemberProp::Computed(property) => {
+                let index_context = match &receiver.ty {
+                    Type::Class(id) => self.classes[id.0]
+                        .index_signature
+                        .as_ref()
+                        .map(|signature| signature.index_ty.clone())
+                        .unwrap_or(Type::I32),
+                    _ => Type::I32,
+                };
+                let index = self.check_expr(&property.expr, Some(&index_context), fx);
+                self.check_index(receiver, index, self.pos(member.span))
+            }
+            ast::MemberProp::PrivateName(_) => {
+                let pos = self.pos(member.span);
+                self.error(
+                    RuleCode::S100,
+                    "private names are not in the decided surface",
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+        }
+    }
+
+    fn check_nullish(&mut self, binary: &ast::BinExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+        let left_ast = unparen_expr(&binary.left);
+        if let ast::Expr::OptChain(chain) = left_ast {
+            let plan = self.check_optional_plan(chain, fx);
+            return self.finish_nullish_plan(plan, &binary.right, fx, pos);
+        }
+
+        let left = self.check_expr(&binary.left, None, fx);
+        if left.ty == Type::Error {
+            return self.err_expr(pos);
+        }
+        let Some(inner) = self.require_nullable_operand(&left, "the left operand of `??`") else {
+            return self.err_expr(pos);
+        };
+        let (test, value) = self.stabilize_nullable_operand(left, inner.clone(), fx);
+        let right = self.check_expr(&binary.right, Some(&inner), fx);
+        let result_ty = self.nullish_result_type(&inner, &right, "the right operand");
+        self.render_nullish_cond(vec![test], value, right, result_ty, pos)
+    }
+
+    fn finish_nullish_plan(
+        &mut self,
+        mut plan: OptionalPlan,
+        right_ast: &ast::Expr,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        if plan.value.ty == Type::Error {
+            return self.err_expr(pos);
+        }
+        let value_ty = plan.value.ty.clone();
+        match value_ty {
+            Type::Nullable(inner) => {
+                let (test, value) =
+                    self.stabilize_nullable_operand(plan.value, (*inner).clone(), fx);
+                plan.tests.push(test);
+                let right = self.check_expr(right_ast, Some(&inner), fx);
+                let result_ty = self.nullish_result_type(&inner, &right, "the right operand");
+                self.render_nullish_cond(plan.tests, value, right, result_ty, pos)
+            }
+            value_ty => {
+                let right = self.check_expr(right_ast, Some(&value_ty), fx);
+                self.require_assignable(
+                    &right.ty.clone(),
+                    &value_ty,
+                    right.pos.clone(),
+                    "the right operand",
+                );
+                self.render_nullish_cond(plan.tests, plan.value, right, value_ty, pos)
+            }
+        }
+    }
+
+    fn nullish_result_type(&mut self, inner: &Type, right: &hir::Expr, what: &str) -> Type {
+        if right.ty == *inner {
+            return inner.clone();
+        }
+        let nullable = Type::Nullable(Box::new(inner.clone()));
+        if right.ty == nullable {
+            return nullable;
+        }
+        if right.ty != Type::Error {
+            self.require_assignable(&right.ty.clone(), inner, right.pos.clone(), what);
+        }
+        Type::Error
+    }
+
+    fn require_nullable_operand(&mut self, operand: &hir::Expr, what: &str) -> Option<Type> {
+        if let Type::Nullable(inner) = &operand.ty {
+            return Some((**inner).clone());
+        }
+        let name = self.type_name(&operand.ty);
+        self.error_diverging(
+            RuleCode::S100,
+            format!("{what} has type `{name}`, which is not nullable"),
+            operand.pos.clone(),
+            Divergence::NullishNonNullable,
+        );
+        None
+    }
+
+    fn stabilize_nullable_operand(
+        &mut self,
+        operand: hir::Expr,
+        inner: Type,
+        fx: &mut FnCtx,
+    ) -> (hir::Expr, hir::Expr) {
+        let pos = operand.pos.clone();
+        if is_place_expr(&operand) {
+            let mut value = operand.clone();
+            value.ty = inner;
+            return (self.null_test(operand, pos), value);
+        }
+
+        let id = self.next_compound_local_id;
+        self.next_compound_local_id += 1;
+        let name = format!("[[compound#{id}.nullish]]");
+        let nullable = operand.ty.clone();
+        fx.declare(
+            &name,
+            Local {
+                ty: nullable.clone(),
+                mutable: true,
+                holds_capturing: false,
+                async_origins: HashSet::new(),
+            },
+        );
+        fx.synthetic_prefix.push(hir::Stmt::Let {
+            name: name.clone(),
+            ty: nullable.clone(),
+            mutable: true,
+            dispose: false,
+            init: hir::Expr {
+                kind: ExprKind::Null,
+                ty: Type::Null,
+                pos: pos.clone(),
+            },
+            pos: pos.clone(),
+        });
+        let target = hir::Expr {
+            kind: ExprKind::Local(name.clone()),
+            ty: nullable.clone(),
+            pos: pos.clone(),
+        };
+        let assigned = hir::Expr {
+            kind: ExprKind::Assign {
+                op: None,
+                target: Box::new(target),
+                value: Box::new(operand),
+            },
+            ty: nullable,
+            pos: pos.clone(),
+        };
+        let value = hir::Expr {
+            kind: ExprKind::Local(name),
+            ty: inner,
+            pos: pos.clone(),
+        };
+        (self.null_test(assigned, pos), value)
+    }
+
+    fn null_test(&self, value: hir::Expr, pos: Pos) -> hir::Expr {
+        hir::Expr {
+            kind: ExprKind::Binary {
+                op: BinOp::Ne,
+                left: Box::new(value),
+                right: Box::new(hir::Expr {
+                    kind: ExprKind::Null,
+                    ty: Type::Null,
+                    pos: pos.clone(),
+                }),
+            },
+            ty: Type::Bool,
+            pos,
+        }
+    }
+
+    fn render_nullish_cond(
+        &self,
+        tests: Vec<hir::Expr>,
+        value: hir::Expr,
+        fallback: hir::Expr,
+        ty: Type,
+        pos: Pos,
+    ) -> hir::Expr {
+        tests.into_iter().rev().fold(value, |then, cond| hir::Expr {
+            kind: ExprKind::Cond {
+                cond: Box::new(cond),
+                then: Box::new(then),
+                els: Box::new(fallback.clone()),
+            },
+            ty: ty.clone(),
+            pos: pos.clone(),
+        })
+    }
+
+    pub(crate) fn close_synthetic_expression(
+        &mut self,
+        expression: hir::Expr,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
+        fn collect_free_locals(
+            expression: &hir::Expr,
+            excluded: &HashSet<String>,
+            seen: &mut HashSet<String>,
+            locals: &mut Vec<(String, Type, Pos)>,
+        ) {
+            match &expression.kind {
+                ExprKind::Local(name) if !excluded.contains(name) && seen.insert(name.clone()) => {
+                    locals.push((name.clone(), expression.ty.clone(), expression.pos.clone()));
+                }
+                ExprKind::Lambda { captures, .. } => {
+                    for capture in captures {
+                        if !excluded.contains(&capture.name) && seen.insert(capture.name.clone()) {
+                            locals.push((
+                                capture.name.clone(),
+                                capture.ty.clone(),
+                                expression.pos.clone(),
+                            ));
+                        }
+                    }
+                    return;
+                }
+                _ => {}
+            }
+            for child in expression.children() {
+                if let hir::HirChild::Expr(expression) = child {
+                    collect_free_locals(expression, excluded, seen, locals);
+                }
+            }
+        }
+
+        let mut prefix = fx.take_synthetic_prefix();
+        if prefix.is_empty() {
+            return expression;
+        }
+        let pos = expression.pos.clone();
+        let ret = expression.ty.clone();
+        let excluded = prefix
+            .iter()
+            .filter_map(|statement| match statement {
+                hir::Stmt::Let { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        let mut locals = Vec::new();
+        collect_free_locals(&expression, &excluded, &mut HashSet::new(), &mut locals);
+        prefix.push(hir::Stmt::Return {
+            value: Some(expression),
+            pos: pos.clone(),
+        });
+        let params = locals
+            .iter()
+            .map(|(name, ty, pos)| hir::Param {
+                name: name.clone(),
+                ty: ty.clone(),
+                default: None,
+                foreign_provenance: None,
+                pos: pos.clone(),
+            })
+            .collect::<Vec<_>>();
+        let args = locals
+            .iter()
+            .map(|(name, ty, pos)| hir::Expr {
+                kind: ExprKind::Local(name.clone()),
+                ty: ty.clone(),
+                pos: pos.clone(),
+            })
+            .collect::<Vec<_>>();
+        let function_ty = Type::Func(Box::new(FuncType {
+            params: locals.iter().map(|(_, ty, _)| ty.clone()).collect(),
+            ret: ret.clone(),
+        }));
+        let lambda = hir::Expr {
+            kind: ExprKind::Lambda {
+                params,
+                ret: ret.clone(),
+                body: prefix,
+                captures: Vec::new(),
+            },
+            ty: function_ty,
+            pos: pos.clone(),
+        };
+        hir::Expr {
+            kind: ExprKind::Call {
+                callee: Callee::Value(Box::new(lambda)),
+                args,
+            },
+            ty: ret,
+            pos,
         }
     }
 
@@ -7044,6 +7598,20 @@ impl<'p> Checker<'p> {
             return self.check_indirect_call(handled, c, fx, pos);
         }
         let recv = self.check_receiver(&m.obj, fx);
+        self.check_method_call_on(recv, prop, c, ctx, fx, pos)
+    }
+
+    fn check_method_call_on(
+        &mut self,
+        recv: hir::Expr,
+        property: &ast::IdentName,
+        c: &ast::CallExpr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
+        let name = property.sym.to_string();
+        let prop_pos = self.pos(property.span);
         let mk = |recv: hir::Expr, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Method {
@@ -7748,10 +8316,12 @@ impl<'p> Checker<'p> {
                     fx.handle_async_origins(&origins);
                 }
                 let value_pos = checked.pos.clone();
-                vec![hir::Stmt::Return {
+                let mut body = fx.take_synthetic_prefix();
+                body.push(hir::Stmt::Return {
                     value: Some(checked),
                     pos: value_pos,
-                }]
+                });
+                body
             }
             ast::BlockStmtOrExpr::BlockStmt(block) => {
                 self.reserve_block_declarations(&block.stmts, fx);

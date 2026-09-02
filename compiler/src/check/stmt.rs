@@ -420,9 +420,7 @@ impl<'p> Checker<'p> {
                 false
             }
             ast::Stmt::Expr(e) => {
-                let (prefix, checked) = self.check_expr_stmt(&e.expr, fx);
-                out.extend(prefix);
-                out.push(hir::Stmt::Expr(checked));
+                out.extend(self.check_expr_stmt(&e.expr, fx));
                 false
             }
             ast::Stmt::Return(r) => {
@@ -585,6 +583,7 @@ impl<'p> Checker<'p> {
                 continue;
             };
             let init = self.check_expr(init_ast, ann.as_ref(), fx);
+            out.extend(fx.take_synthetic_prefix());
             let ty = match ann {
                 Some(ann) => {
                     self.require_assignable(
@@ -723,6 +722,7 @@ impl<'p> Checker<'p> {
                 None
             }
         };
+        out.extend(fx.take_synthetic_prefix());
         out.push(hir::Stmt::Return { value, pos });
     }
 
@@ -760,6 +760,7 @@ impl<'p> Checker<'p> {
     fn check_if(&mut self, i: &ast::IfStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) -> bool {
         let pos = self.pos(i.span);
         let cond = self.check_expr(&i.test, None, fx);
+        out.extend(fx.take_synthetic_prefix());
         self.require_bool(&cond);
         let (then_extra, else_extra) = narrow_paths(&cond);
 
@@ -817,6 +818,7 @@ impl<'p> Checker<'p> {
         fx.narrowed.retain(|k| !roots.contains(root_of(k)));
 
         let cond = self.check_expr(&w.test, None, fx);
+        out.extend(fx.take_synthetic_prefix());
         self.require_bool(&cond);
         let (then_extra, _) = narrow_paths(&cond);
 
@@ -838,7 +840,9 @@ impl<'p> Checker<'p> {
             Some(ast::VarDeclOrExpr::VarDecl(v)) => {
                 let mut init_out = Vec::new();
                 self.check_let(v, fx, &mut init_out);
-                init_out.into_iter().next().map(Box::new)
+                let init = init_out.pop().map(Box::new);
+                out.extend(init_out);
+                init
             }
             Some(ast::VarDeclOrExpr::Expr(e)) => {
                 let checked = self.check_expr(e, None, fx);
@@ -874,6 +878,8 @@ impl<'p> Checker<'p> {
         fx.narrowed = base;
         fx.scopes.pop();
 
+        out.extend(fx.take_synthetic_prefix());
+
         out.push(hir::Stmt::For {
             init,
             cond,
@@ -902,6 +908,7 @@ impl<'p> Checker<'p> {
             return;
         };
         let (subject, kind, elem_ty, generator) = self.check_for_of_subject(&f.right, fx);
+        out.extend(fx.take_synthetic_prefix());
         if matches!(subject.ty, Type::Error) || matches!(elem_ty, Type::Error) {
             return;
         }
@@ -1237,6 +1244,7 @@ impl<'p> Checker<'p> {
     fn check_switch(&mut self, sw: &ast::SwitchStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(sw.span);
         let disc = self.check_expr(&sw.discriminant, None, fx);
+        out.extend(fx.take_synthetic_prefix());
         if !disc.ty.is_integer()
             && !matches!(
                 disc.ty,

@@ -409,6 +409,8 @@ pub(crate) struct FnCtx {
     pub switch_depth: u32,
     /// Each async handle creation or async-handle parameter in this body.
     pub async_origins: Vec<(Pos, bool)>,
+    /// Local declarations required by rewritten expressions.
+    pub synthetic_prefix: Vec<hir::Stmt>,
 }
 
 impl FnCtx {
@@ -429,7 +431,12 @@ impl FnCtx {
             loop_depth: 0,
             switch_depth: 0,
             async_origins: Vec::new(),
+            synthetic_prefix: Vec::new(),
         }
+    }
+
+    pub(crate) fn take_synthetic_prefix(&mut self) -> Vec<hir::Stmt> {
+        std::mem::take(&mut self.synthetic_prefix)
     }
 
     /// Registers one handle whose underlying computation needs one await.
@@ -884,7 +891,13 @@ impl<'a> ModuleEffectScanner<'a> {
                     hir::Callee::Func(name) => {
                         self.record_call(ModuleFunction::Free(name.clone()), name.clone());
                     }
-                    hir::Callee::Value(_) => self.record_indirect_call(),
+                    hir::Callee::Value(value) => {
+                        if let hir::ExprKind::Lambda { body, .. } = &value.kind {
+                            self.stmts(body);
+                        } else {
+                            self.record_indirect_call();
+                        }
+                    }
                     hir::Callee::Method { recv, name } => self.method_call(recv, name),
                     _ => {}
                 }
@@ -3719,6 +3732,7 @@ impl<'p> Checker<'p> {
                 checked.pos.clone(),
                 "the descriptor member default",
             );
+            let checked = self.close_synthetic_expression(checked, &mut fx);
             if let Some(field) = self.classes[id.0]
                 .fields
                 .iter_mut()
@@ -3778,7 +3792,7 @@ impl<'p> Checker<'p> {
                                 e.pos.clone(),
                                 "the initializer",
                             );
-                            e
+                            self.close_synthetic_expression(e, &mut fx)
                         }
                         None => {
                             self.error(
@@ -4274,7 +4288,7 @@ impl<'p> Checker<'p> {
                         e.pos.clone(),
                         "the default value",
                     );
-                    Some(e)
+                    Some(self.close_synthetic_expression(e, fx))
                 }
                 _ => None,
             };
@@ -4339,7 +4353,7 @@ impl<'p> Checker<'p> {
                                     expression.pos.clone(),
                                     "the static field initializer",
                                 );
-                                expression
+                                self.close_synthetic_expression(expression, &mut fx)
                             }
                             None => {
                                 self.error(
@@ -4380,6 +4394,7 @@ impl<'p> Checker<'p> {
                         e.pos.clone(),
                         "the field initializer",
                     );
+                    let e = self.close_synthetic_expression(e, &mut fx);
                     if let Some(field) = self.classes[id.0]
                         .fields
                         .iter_mut()
@@ -4410,7 +4425,7 @@ impl<'p> Checker<'p> {
                         let default = match &param.pat {
                             ast::Pat::Assign(a) => {
                                 let e = self.check_expr(&a.right, Some(&ps.ty), &mut fx);
-                                Some(e)
+                                Some(self.close_synthetic_expression(e, &mut fx))
                             }
                             _ => None,
                         };

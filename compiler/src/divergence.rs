@@ -47,6 +47,12 @@ pub enum Divergence {
     Exceptions,
     /// A general union type, and the `undefined` token.
     GeneralUnionAndUndefined,
+    /// A nullish test on a non-nullable value.
+    NullishNonNullable,
+    /// An optional chain that will bind `undefined` in TypeScript.
+    OptionalChainUnbound,
+    /// A computed optional-chain step.
+    OptionalChainIndex,
     /// An inline literal union, and assignment across two aliases.
     LiteralUnionAlias,
     /// An optional descriptor member, its default, and its presence read.
@@ -154,6 +160,9 @@ impl Divergence {
         Divergence::EscapingCapture,
         Divergence::Exceptions,
         Divergence::GeneralUnionAndUndefined,
+        Divergence::NullishNonNullable,
+        Divergence::OptionalChainUnbound,
+        Divergence::OptionalChainIndex,
         Divergence::LiteralUnionAlias,
         Divergence::OptionalDescriptorMember,
         Divergence::BoundaryOnlyObject,
@@ -317,6 +326,24 @@ impl Divergence {
                             let maybe: Cell | null = null;",
                 why: "A general union has no single C layout, so the one union form is a \
                       nullable reference and `undefined` stays out.",
+                collision: "C7",
+            },
+            Divergence::NullishNonNullable => DivergenceEntry {
+                ts: "class Box {}\nconst a: Box = new Box();\nconst b: Box = a ?? new Box();",
+                subscript: "class Box {}\nconst a: Box | null = new Box();\nconst b: Box = a ?? new Box();",
+                why: "The nullish test must inspect a nullable pointer, so a non-nullable value has no null branch.",
+                collision: "C7",
+            },
+            Divergence::OptionalChainUnbound => DivergenceEntry {
+                ts: "class Box { value: i32 = 1; }\nconst x: Box | null = new Box();\nprint(`${x?.value}`);",
+                subscript: "class Box { value: i32 = 1; }\nconst x: Box | null = new Box();\nprint(`${x?.value ?? 0}`);",
+                why: "An unbound optional-chain result needs `undefined`, and this language has only `null`.",
+                collision: "C7",
+            },
+            Divergence::OptionalChainIndex => DivergenceEntry {
+                ts: "const values: i32[] | null = [];\nconst value = values?.[0];",
+                subscript: "class Values { [i: u32]: i32; data: i32[] = [1];\n  get(i: u32): i32 { return this.data[i as i32]; }\n  set(i: u32, value: i32): void { this.data[i as i32] = value; } }\nconst values: Values | null = new Values();\nconst value: i32 = values !== null ? values[0] : 0;",
+                why: "Computed optional access is outside the two chain forms that avoid binding `undefined`.",
                 collision: "C7",
             },
             Divergence::LiteralUnionAlias => DivergenceEntry {

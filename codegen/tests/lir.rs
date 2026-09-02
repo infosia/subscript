@@ -1394,8 +1394,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 120;
-const DEBUG_RUNNABLE_COUNT: usize = 119;
+const RELEASE_RUNNABLE_COUNT: usize = 121;
+const DEBUG_RUNNABLE_COUNT: usize = 120;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1639,6 +1639,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a176-compound-through-accessor",
         "compound accessor and index writes with single operand evaluation",
+    ),
+    (
+        "a177-nullish",
+        "nullish and optional-chain conditional rewrites with single evaluation",
     ),
     (
         "a15-manual-lifetime",

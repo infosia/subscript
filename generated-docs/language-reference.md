@@ -462,6 +462,12 @@ R37 defines named accessors as checker sugar for ordinary methods. `get name(): 
 
 Corpus: [`corpus/accept/a144-accessor.ts`](../corpus/accept/a144-accessor.ts), [`corpus/accept/a176-compound-through-accessor.ts`](../corpus/accept/a176-compound-through-accessor.ts), [`corpus/reject/r141-value-class-write-accessor.ts`](../corpus/reject/r141-value-class-write-accessor.ts), [`corpus/reject/r142-readonly-accessor-write.ts`](../corpus/reject/r142-readonly-accessor-write.ts), [`corpus/reject/r145-accessor-write-as-value.ts`](../corpus/reject/r145-accessor-write-as-value.ts), [`corpus/reject/r146-accessor-field-name-clash.ts`](../corpus/reject/r146-accessor-field-name-clash.ts), [`corpus/reject/r147-static-accessor.ts`](../corpus/reject/r147-static-accessor.ts), [`corpus/reject/r173-compound-write-as-value.ts`](../corpus/reject/r173-compound-write-as-value.ts).
 
+### Nullish operators
+
+`a ?? b` requires `a` to have type `Ref | null`. It evaluates `a` once and evaluates `b` only when `a` is `null`. An optional chain can be the whole left operand of `??`. An optional chain can also be a statement when its last step is a call. Other optional-chain positions require `undefined` and are rejected.
+
+Corpus: [`corpus/accept/a177-nullish.ts`](../corpus/accept/a177-nullish.ts), [`corpus/reject/r177-nullish-non-nullable-left.ts`](../corpus/reject/r177-nullish-non-nullable-left.ts), [`corpus/reject/r178-optional-chain-unbound.ts`](../corpus/reject/r178-optional-chain-unbound.ts).
+
 ### Q33 descriptors
 
 `@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. When `A` is a Q32 string-literal union alias, `name?: A` without an initializer is absence-capable: omission is a distinct state, explicit `undefined` is rejected, and reads are legal only in the present arm established by `member !== undefined` or the inverse arm of `member === undefined`. No other member type admits that spelling. Literals may be nested, may omit defaulted and absence-capable members, and remain constructible through a `Descriptor | null` contextual type. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, literals against plain nominal classes (including through `| null`), methods, missing required members, and excess members are rejected.
