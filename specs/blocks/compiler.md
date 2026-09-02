@@ -11206,7 +11206,9 @@ downstream gate prints.
 
 ### 82.7 Not decided here: R39.1 and R39.9
 
-Recorded for the owner. Neither has a corpus entry.
+Recorded for the owner. Neither has a corpus entry. *(Owner decision
+2026-09-02: both deferred. The narrowed overload shape is recorded in
+`specs/tracking/r39-overloads-deferred.md`.)*
 
 **R39.1, `Ref<T>` parameters (option A).** Zero downstream sites
 today. Option B is closed by §81.1 (a by-value parameter crosses the
