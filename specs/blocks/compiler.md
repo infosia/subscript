@@ -10931,11 +10931,13 @@ options):
    warnings.md §2 already excludes such a name from W004) and the
    rewritten statement reads the local. The local is declared in
    the statement list that holds the statement. An initializer that
-   has no statement list (a field initializer, a static field
-   initializer, a parameter default, a descriptor default) cannot
-   hold the local: there a non-place receiver or index fails with
-   S100 and a divergence block (`tsc` accepts; C7 for §82.3, C12 for
-   this rule). The checker wraps nothing in a lambda, and
+   has no statement list (a module-level binding initializer, a
+   field initializer, a static field initializer, a parameter
+   default, a descriptor default) cannot hold the local: there a
+   non-place receiver of `??` or `?.` fails with S100 and a
+   divergence block (`tsc` accepts; C7). A compound write in such an
+   initializer is value position and fails under rule 5 first. The
+   checker wraps nothing in a lambda, and
    `ModuleEffectScanner` (§67) does not change. *(Added 2026-09-02
    after the review: the first implementation wrapped such an
    initializer in an immediately-invoked lambda and taught the
@@ -11070,7 +11072,10 @@ Corpus:
    reused the `??` variant and reported a second diagnostic on an
    error receiver.)*
 8. A chain is legal in two positions: as the whole left operand of
-   `??`, and as an expression statement whose last step is a call.
+   `??`, and in statement position (§82.1 rule 2: an expression
+   statement, or the update clause of a `for`) when its last step is
+   a call. *(Amended 2026-09-02 after review round 2: the update
+   clause follows the one definition of statement position.)*
    In every other position the chain fails with S012 "an optional
    chain has type `T | undefined` in TypeScript; give it a fallback
    with `??` or use it as a statement", with a divergence block
@@ -11128,8 +11133,14 @@ fails; `?.[i]` fails; the right operand of `??` runs only on `null`
 1a. A template carries a body. A bodiless template, method or free
    function, fails with S100 "function bodies are required" at
    collection (`tsc` TS2391). Two type parameters of one name fail
-   with S017 at collection (`tsc` TS2300). A template that no call
-   instantiates is otherwise not checked, as §64 has it. *(Added
+   with S017 at collection (`tsc` TS2300). A bodiless generic method
+   in a `declare class` written in a `.ts` source is the same S100
+   with a divergence block, because `tsc` accepts that form; the
+   site separates the `declare` case from the plain-class case. A
+   template rejected at collection reports nothing more at a call
+   that instantiates it, and a duplicate type parameter name counts
+   once. A template that no call instantiates is otherwise not
+   checked, as §64 has it. *(Added
    2026-09-02 after the review, CRITICAL: `class C { m<T>(v: T): T; }`
    checked clean and ran; the free-function form had the same hole
    at the pin.)*
@@ -11324,3 +11335,42 @@ wrap and the scanner change; `compiler/tests/js_corpus.rs` reads the
 messages name a176; the C14 shape above is a unit test that fails at
 the pin's message; a bodiless generic free function and a bodiless
 generic method are unit tests; `for (…; …; c.v++)` is in a176.
+
+### 82.10 The synthetic prefix is scoped, and a boundary check is total
+
+*(Owner decision 2026-09-02, after review round 2. Two rounds raised
+one class: where the statements that bind a synthetic local go. Round
+1 found them wrapped in a lambda; round 2 found a per-function stash
+that a `for` initializer, a `for` condition, and an arrow body drain
+into the wrong list, so `for (…; i < 3 && (maybe() ?? fb).v > 0; …)`
+and `(maybe() ?? fb).v + ((): i32 => 2)()` check clean and fail at
+lowering with "unknown local [[compound#0.nullish]]". The class is a
+defect of the form, so this section states the form.)*
+
+1. **A prefix belongs to one owner.** The statements that bind the
+   synthetic locals of an expression (§82.1 rule 3, §82.3 rule 11)
+   are collected by the innermost owner under check. The owners are:
+   a statement in a statement list; a `for` initializer; a `for`
+   condition; a `for` update; an arrow body; an initializer that has
+   no statement list. Entering an owner starts an empty collection;
+   leaving it drains the collection. An outer owner's collection is
+   saved on entry and restored on exit, as `subst` is around an
+   instantiation.
+2. **Each owner drains into a list it owns.** A statement drains
+   before itself in its list. A `for` initializer drains before the
+   loop. A `for` condition drains at the head of the loop body in the
+   `while` form the update rewrite already uses, so it runs on every
+   iteration before the test. A `for` update drains into the step. An
+   arrow body drains at the head of the body. An initializer that has
+   no statement list rejects (§82.1 rule 3).
+3. **The boundary check is total.** On leaving every owner the
+   collection is empty, or the checker reports S100 "internal:
+   synthetic prefix escaped its owner" at the expression's position.
+   The check compares the collection against the owner boundary, not
+   against the site that filled it. A unit test builds the violating
+   form through the checker's test hook and asserts the diagnostic;
+   a second test asserts that the a176 and a177 shapes report nothing.
+4. **No lowering failure is the report.** A program that checks
+   clean lowers on both tiers. The four probes above are unit tests
+   that run on both tiers, and the empty-body `for` with a prefix in
+   its condition (green at `ec41d65`, red at `61c31e9`) is in a176.
