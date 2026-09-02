@@ -16,6 +16,13 @@ mod tyres;
 #[cfg(test)]
 pub(crate) use expr::{take_classified_places, PlaceKind};
 
+#[cfg(test)]
+std::thread_local! {
+    static SYNTHETIC_PREFIX_ESCAPE_HOOK: std::cell::Cell<bool> = const {
+        std::cell::Cell::new(false)
+    };
+}
+
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -271,6 +278,15 @@ impl ClassSig {
             self.generic_methods.contains_key(name)
         }
     }
+
+    pub(crate) fn generic_method_is_rejected(&self, name: &str, is_static: bool) -> bool {
+        let template = if is_static {
+            self.static_generic_methods.get(name)
+        } else {
+            self.generic_methods.get(name)
+        };
+        template.is_some_and(|template| template.rejected)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -305,6 +321,7 @@ pub(crate) struct GenericFn {
     pub file: usize,
     pub type_params: Vec<String>,
     pub function: ast::Function,
+    pub rejected: bool,
 }
 
 /// A generic method template awaiting monomorphization (§82.4).
@@ -313,6 +330,7 @@ pub(crate) struct GenericMethod {
     pub file: usize,
     pub type_params: Vec<String>,
     pub function: ast::Function,
+    pub rejected: bool,
 }
 
 /// A generic class template awaiting monomorphization.
@@ -426,8 +444,13 @@ pub(crate) struct FnCtx {
     pub switch_depth: u32,
     /// Each async handle creation or async-handle parameter in this body.
     pub async_origins: Vec<(Pos, bool)>,
-    /// Local declarations required by rewritten expressions.
-    pub synthetic_prefix: Vec<hir::Stmt>,
+    /// Owner-scoped local declarations required by rewritten expressions.
+    synthetic_owners: Vec<Vec<hir::Stmt>>,
+}
+
+#[derive(Debug)]
+pub(crate) struct SyntheticOwner {
+    depth: usize,
 }
 
 impl FnCtx {
@@ -448,12 +471,66 @@ impl FnCtx {
             loop_depth: 0,
             switch_depth: 0,
             async_origins: Vec::new(),
-            synthetic_prefix: Vec::new(),
+            synthetic_owners: Vec::new(),
         }
     }
 
-    pub(crate) fn take_synthetic_prefix(&mut self) -> Vec<hir::Stmt> {
-        std::mem::take(&mut self.synthetic_prefix)
+    pub(crate) fn enter_synthetic_owner(&mut self) -> SyntheticOwner {
+        let owner = SyntheticOwner {
+            depth: self.synthetic_owners.len(),
+        };
+        self.synthetic_owners.push(Vec::new());
+        owner
+    }
+
+    pub(crate) fn push_synthetic_prefix(&mut self, statement: hir::Stmt) {
+        self.synthetic_owners
+            .last_mut()
+            .expect("a synthetic prefix must have an owner")
+            .push(statement);
+    }
+
+    pub(crate) fn drain_synthetic_prefix(&mut self) -> Vec<hir::Stmt> {
+        self.synthetic_owners
+            .last_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
+    }
+
+    fn leave_synthetic_owner(&mut self, owner: SyntheticOwner, pos: Pos) -> Option<Pos> {
+        if self.synthetic_owners.len() != owner.depth + 1 {
+            self.synthetic_owners.truncate(owner.depth);
+            return Some(pos);
+        }
+        #[cfg(test)]
+        SYNTHETIC_PREFIX_ESCAPE_HOOK.with(|hook| {
+            if hook.replace(false) {
+                self.push_synthetic_prefix(hir::Stmt::Expr(hir::Expr {
+                    kind: hir::ExprKind::Null,
+                    ty: Type::Null,
+                    pos: pos.clone(),
+                }));
+            }
+        });
+        let escaped = self
+            .synthetic_owners
+            .last()
+            .and_then(|statements| statements.first())
+            .map(|statement| match statement {
+                hir::Stmt::Let { pos, .. }
+                | hir::Stmt::Return { pos, .. }
+                | hir::Stmt::If { pos, .. }
+                | hir::Stmt::While { pos, .. }
+                | hir::Stmt::For { pos, .. }
+                | hir::Stmt::ForOf { pos, .. }
+                | hir::Stmt::Switch { pos, .. }
+                | hir::Stmt::Break(pos)
+                | hir::Stmt::Continue(pos) => pos.clone(),
+                hir::Stmt::Expr(expression) => expression.pos.clone(),
+                hir::Stmt::Block(_) => pos.clone(),
+            });
+        self.synthetic_owners.pop();
+        escaped
     }
 
     /// Registers one handle whose underlying computation needs one await.
@@ -1147,6 +1224,21 @@ fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
 }
 
 impl<'p> Checker<'p> {
+    pub(crate) fn finish_synthetic_owner(
+        &mut self,
+        fx: &mut FnCtx,
+        owner: SyntheticOwner,
+        pos: Pos,
+    ) {
+        if let Some(pos) = fx.leave_synthetic_owner(owner, pos) {
+            self.error(
+                RuleCode::S100,
+                "internal: synthetic prefix escaped its owner",
+                pos,
+            );
+        }
+    }
+
     /// Reserves the names that declarations own in one statement list.
     pub(crate) fn reserve_block_declarations(&self, statements: &[ast::Stmt], fx: &mut FnCtx) {
         let Some(scope) = fx.scopes.last_mut() else {
@@ -1888,16 +1980,18 @@ impl<'p> Checker<'p> {
         let name = f.ident.sym.to_string();
         let pos = self.pos(f.ident.span);
         if let Some(tp) = &f.function.type_params {
-            if f.function.body.is_none() {
+            let bodiless = f.function.body.is_none();
+            if bodiless {
                 self.error(RuleCode::S100, "function bodies are required", pos.clone());
             }
-            let type_params = self.collect_type_parameter_names(tp);
+            let (type_params, duplicate_type_parameter) = self.collect_type_parameter_names(tp);
             self.generic_fns.insert(
                 name.clone(),
                 GenericFn {
                     file,
                     type_params,
                     function: (*f.function).clone(),
+                    rejected: bodiless || duplicate_type_parameter,
                 },
             );
             self.register_scope_item(file, &name, ScopeItem::GenericFunc(name.clone()), pos);
@@ -1927,14 +2021,19 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn collect_type_parameter_names(&mut self, params: &ast::TsTypeParamDecl) -> Vec<String> {
+    fn collect_type_parameter_names(
+        &mut self,
+        params: &ast::TsTypeParamDecl,
+    ) -> (Vec<String>, bool) {
         let mut names = HashSet::new();
-        params
+        let mut duplicate = false;
+        let names = params
             .params
             .iter()
             .map(|parameter| {
                 let name = parameter.name.sym.to_string();
                 if !names.insert(name.clone()) {
+                    duplicate = true;
                     self.error(
                         RuleCode::S017,
                         format!("duplicate type parameter `{name}`"),
@@ -1943,7 +2042,8 @@ impl<'p> Checker<'p> {
                 }
                 name
             })
-            .collect()
+            .collect();
+        (names, duplicate)
     }
 
     fn collect_globals(&mut self, file: usize, v: &ast::VarDecl, exported: bool) {
@@ -2360,7 +2460,7 @@ impl<'p> Checker<'p> {
                 ast::Decl::Class(c) if c.class.type_params.is_none() => {
                     let name = c.ident.sym.to_string();
                     if let Some(&id) = self.class_ids.get(&name) {
-                        self.resolve_class_shape(id, &c.class);
+                        self.resolve_class_shape(id, &c.class, c.declare);
                     }
                 }
                 ast::Decl::Fn(f) => {
@@ -2573,7 +2673,7 @@ impl<'p> Checker<'p> {
                     let pos = self.pos(named.local.span);
                     if !self.exports[target].contains(&local) {
                         self.error(
-                            RuleCode::S100,
+                            RuleCode::S016,
                             format!("`{}` is not exported by `{}`", local, raw),
                             pos,
                         );
@@ -2609,7 +2709,7 @@ impl<'p> Checker<'p> {
                 ast::Decl::Class(c) if c.class.type_params.is_none() => {
                     let name = c.ident.sym.to_string();
                     if let Some(&id) = self.class_ids.get(&name) {
-                        self.resolve_class_shape(id, &c.class);
+                        self.resolve_class_shape(id, &c.class, c.declare);
                     }
                 }
                 ast::Decl::Fn(f) if f.function.type_params.is_none() => {
@@ -2920,7 +3020,7 @@ impl<'p> Checker<'p> {
 
     /// Resolves a class's fields and callable signatures (pass B), and
     /// enforces C2 (no inheritance for value classes; field whitelist).
-    pub(crate) fn resolve_class_shape(&mut self, id: ClassId, class: &ast::Class) {
+    pub(crate) fn resolve_class_shape(&mut self, id: ClassId, class: &ast::Class, declared: bool) {
         let is_value = self.classes[id.0].is_value;
         let is_descriptor = self.classes[id.0].is_descriptor;
         let mut index_signature_pos = None;
@@ -3466,14 +3566,22 @@ impl<'p> Checker<'p> {
                             );
                             continue;
                         }
-                        if method.function.body.is_none() {
+                        let bodiless = method.function.body.is_none();
+                        if bodiless && declared {
+                            self.error_diverging(
+                                RuleCode::S100,
+                                "function bodies are required",
+                                key_pos.clone(),
+                                Divergence::BodilessDeclareGenericMethod,
+                            );
+                        } else if bodiless {
                             self.error(
                                 RuleCode::S100,
                                 "function bodies are required",
                                 key_pos.clone(),
                             );
                         }
-                        let type_params = method
+                        let (type_params, duplicate_type_parameter) = method
                             .function
                             .type_params
                             .as_deref()
@@ -3483,6 +3591,7 @@ impl<'p> Checker<'p> {
                             file: self.cur_file,
                             type_params,
                             function: (*method.function).clone(),
+                            rejected: bodiless || duplicate_type_parameter,
                         };
                         if method.is_static {
                             self.class_sigs[id.0]
@@ -3806,6 +3915,7 @@ impl<'p> Checker<'p> {
                 continue;
             };
             let mut fx = FnCtx::new(Type::Void, false, Some(this_ty.clone()));
+            let owner = fx.enter_synthetic_owner();
             let checked = self.check_expr(value, Some(&field_ty), &mut fx);
             self.require_assignable(
                 &checked.ty.clone(),
@@ -3813,7 +3923,7 @@ impl<'p> Checker<'p> {
                 checked.pos.clone(),
                 "the descriptor member default",
             );
-            let checked = self.close_synthetic_expression(checked, &mut fx);
+            let checked = self.close_synthetic_expression(checked, &mut fx, owner);
             if let Some(field) = self.classes[id.0]
                 .fields
                 .iter_mut()
@@ -3866,6 +3976,7 @@ impl<'p> Checker<'p> {
                     let mut fx = FnCtx::new(Type::Void, false, None);
                     let init = match &d.init {
                         Some(init) => {
+                            let owner = fx.enter_synthetic_owner();
                             let e = self.check_expr(init, Some(&sig.ty), &mut fx);
                             self.require_assignable(
                                 &e.ty.clone(),
@@ -3873,7 +3984,7 @@ impl<'p> Checker<'p> {
                                 e.pos.clone(),
                                 "the initializer",
                             );
-                            self.close_synthetic_expression(e, &mut fx)
+                            self.close_synthetic_expression(e, &mut fx, owner)
                         }
                         None => {
                             self.error(
@@ -4362,6 +4473,7 @@ impl<'p> Checker<'p> {
             let pos = self.pos(p.span);
             let default = match &p.pat {
                 ast::Pat::Assign(a) => {
+                    let owner = fx.enter_synthetic_owner();
                     let e = self.check_expr(&a.right, Some(&ps.ty), fx);
                     self.require_assignable(
                         &e.ty.clone(),
@@ -4369,7 +4481,7 @@ impl<'p> Checker<'p> {
                         e.pos.clone(),
                         "the default value",
                     );
-                    Some(self.close_synthetic_expression(e, fx))
+                    Some(self.close_synthetic_expression(e, fx, owner))
                 }
                 _ => None,
             };
@@ -4426,6 +4538,7 @@ impl<'p> Checker<'p> {
                             Some(Divergence::StaticMemberSurface);
                         let init = match &prop.value {
                             Some(value) => {
+                                let owner = fx.enter_synthetic_owner();
                                 let expression =
                                     self.check_expr(value, Some(&signature.ty), &mut fx);
                                 self.require_assignable(
@@ -4434,7 +4547,7 @@ impl<'p> Checker<'p> {
                                     expression.pos.clone(),
                                     "the static field initializer",
                                 );
-                                self.close_synthetic_expression(expression, &mut fx)
+                                self.close_synthetic_expression(expression, &mut fx, owner)
                             }
                             None => {
                                 self.error(
@@ -4468,6 +4581,7 @@ impl<'p> Checker<'p> {
                     let Some(field_ty) = field_ty else { continue };
                     let mut fx = FnCtx::new(Type::Void, false, None);
                     fx.frames[0].missing_this_divergence = Some(Divergence::ThisInFieldInitializer);
+                    let owner = fx.enter_synthetic_owner();
                     let e = self.check_expr(value, Some(&field_ty), &mut fx);
                     self.require_assignable(
                         &e.ty.clone(),
@@ -4475,7 +4589,7 @@ impl<'p> Checker<'p> {
                         e.pos.clone(),
                         "the field initializer",
                     );
-                    let e = self.close_synthetic_expression(e, &mut fx);
+                    let e = self.close_synthetic_expression(e, &mut fx, owner);
                     if let Some(field) = self.classes[id.0]
                         .fields
                         .iter_mut()
@@ -4505,8 +4619,9 @@ impl<'p> Checker<'p> {
                         let Some(ps) = sig.params.get(i) else { break };
                         let default = match &param.pat {
                             ast::Pat::Assign(a) => {
+                                let owner = fx.enter_synthetic_owner();
                                 let e = self.check_expr(&a.right, Some(&ps.ty), &mut fx);
-                                Some(self.close_synthetic_expression(e, &mut fx))
+                                Some(self.close_synthetic_expression(e, &mut fx, owner))
                             }
                             _ => None,
                         };
@@ -4649,6 +4764,9 @@ impl<'p> Checker<'p> {
     /// checks its body immediately. Returns the instance name.
     pub(crate) fn instantiate_fn(&mut self, key: &str, args: &[Type], pos: Pos) -> Option<String> {
         let template = self.generic_fns.get(key)?.clone();
+        if template.rejected {
+            return None;
+        }
         if template.type_params.len() != args.len() {
             self.error(
                 RuleCode::S100,
@@ -4707,6 +4825,9 @@ impl<'p> Checker<'p> {
         } else {
             self.class_sigs[id.0].generic_methods.get(name)?.clone()
         };
+        if template.rejected {
+            return None;
+        }
         if template.type_params.len() != args.len() {
             self.error(
                 RuleCode::S100,
@@ -4815,7 +4936,7 @@ impl<'p> Checker<'p> {
             template.alignment_override,
             template.pos.clone(),
         );
-        self.resolve_class_shape(id, &template.class);
+        self.resolve_class_shape(id, &template.class, false);
         if template.is_descriptor {
             self.check_descriptor_defaults(id, &template.class);
         } else {
@@ -5012,5 +5133,47 @@ impl<'p> Checker<'p> {
             }),
             _ => false,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{check_program, RuleCode, SourceFile};
+
+    #[test]
+    fn synthetic_prefix_owner_boundary_reports_an_escape() {
+        super::SYNTHETIC_PREFIX_ESCAPE_HOOK.with(|hook| hook.set(true));
+        let diagnostics = check_program(&[SourceFile::new(
+            "test.ts",
+            "export function main(): void { 1; }\n",
+        )])
+        .expect_err("the synthetic prefix hook must fail");
+
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!(
+            diagnostics[0].message,
+            "internal: synthetic prefix escaped its owner"
+        );
+        assert_eq!(diagnostics[0].pos.file, "test.ts");
+        assert_eq!(diagnostics[0].pos.line, 1);
+    }
+
+    #[test]
+    fn reachable_import_of_an_absent_export_uses_s016() {
+        let diagnostics = check_program(&[
+            SourceFile::new("m.ts", "export const present: i32 = 1;\n"),
+            SourceFile::new(
+                "main.ts",
+                "import { missing } from \"./m\";\nexport function main(): void {}\n",
+            ),
+        ])
+        .expect_err("the absent export must fail");
+
+        assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
+        assert_eq!(diagnostics[0].code, RuleCode::S016);
+        assert_eq!(diagnostics[0].message, "`missing` is not exported by `./m`");
+        assert_eq!(diagnostics[0].pos.file, "main.ts");
+        assert_eq!(diagnostics[0].pos.line, 1);
     }
 }

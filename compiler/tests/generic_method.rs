@@ -3,7 +3,9 @@
 //! Each distinct type-argument list yields one method instance named
 //! `m<A>`. The template never reaches the HIR.
 
-use subscript_compiler::{check_program, hir, Diagnostic, RuleCode, SourceFile};
+use subscript_compiler::{
+    check_program, hir, render_diagnostics, Diagnostic, RuleCode, SourceFile,
+};
 
 fn module(source: &str) -> hir::Module {
     check_program(&[SourceFile::new("test.ts", source)]).expect("the program must check")
@@ -130,11 +132,21 @@ fn a_wrong_type_argument_count_fails() {
 
 #[test]
 fn a_bodiless_generic_method_fails_during_collection() {
-    let diagnostics = diagnostics("class C { m<T>(value: T): T; }\n");
+    let source = "class C { m<T>(value: T): T; }\n\
+                  export function main(): void {\n\
+                  \x20 const c: C = new C();\n\
+                  \x20 c.m<i32>(1);\n\
+                  }\n";
+    let files = [SourceFile::new("test.ts", source)];
+    let diagnostics = check_program(&files).expect_err("the bodiless template must fail");
     assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
     assert_eq!(diagnostics[0].code, RuleCode::S100);
     assert_eq!(diagnostics[0].message, "function bodies are required");
     assert_eq!(diagnostics[0].pos.line, 1);
+    assert!(
+        !render_diagnostics(&files, &diagnostics).contains("= TypeScript accepts:"),
+        "a plain class has no divergence block"
+    );
 }
 
 #[test]
@@ -148,7 +160,13 @@ fn a_bodiless_generic_free_function_fails_during_collection() {
 
 #[test]
 fn duplicate_method_type_parameters_fail_during_collection() {
-    let diagnostics = diagnostics("class C { m<T, T>(value: T): T { return value; } }\n");
+    let diagnostics = diagnostics(
+        "class C { m<T, T>(value: T): T { return value; } }\n\
+         export function main(): void {\n\
+         \x20 const c: C = new C();\n\
+         \x20 c.m<i32>(1);\n\
+         }\n",
+    );
     assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
     assert_eq!(diagnostics[0].code, RuleCode::S017);
     assert_eq!(diagnostics[0].message, "duplicate type parameter `T`");
@@ -157,10 +175,16 @@ fn duplicate_method_type_parameters_fail_during_collection() {
 
 #[test]
 fn declare_class_generic_method_keeps_the_body_rejection() {
-    let diagnostics = diagnostics("declare class C { m<T>(value: T): T; }\n");
+    let source = "declare class C { m<T>(value: T): T; }\n";
+    let files = [SourceFile::new("test.ts", source)];
+    let diagnostics = check_program(&files).expect_err("the declared template must fail");
     assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
     assert_eq!(diagnostics[0].code, RuleCode::S100);
     assert_eq!(diagnostics[0].message, "function bodies are required");
+    assert!(
+        render_diagnostics(&files, &diagnostics).contains("= TypeScript accepts:"),
+        "the declared method must render its divergence block"
+    );
 }
 
 #[test]

@@ -174,6 +174,15 @@ fn accessor_update_used_as_a_value_fails() {
 }
 
 #[test]
+fn accessor_compound_assignment_used_as_a_value_keeps_the_written_value() {
+    let diagnostic = one_accessor_diagnostic(
+        "class Counter {\n  value: i32 = 0;\n  get v(): i32 { return this.value; }\n  set v(value: i32) { this.value = value; }\n}\nexport function main(): void {\n  const counter: Counter = new Counter();\n  const changed: i32 = (counter.v += 1);\n}\n",
+    );
+    assert_eq!(diagnostic.code, RuleCode::S100);
+    assert_eq!(diagnostic.message, "`x.v += 1` cannot be used as a value");
+}
+
+#[test]
 fn readonly_index_signature_rejects_compound_assignment() {
     let diagnostic = one_accessor_diagnostic(
         "class Values {\n  readonly [index: u32]: i32;\n  get(index: u32): i32 { return 0; }\n}\nexport function main(): void {\n  const values: Values = new Values();\n  values[0 as u32] += 1;\n}\n",

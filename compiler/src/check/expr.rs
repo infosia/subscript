@@ -301,16 +301,36 @@ struct BinResult {
     terminal: bool,
 }
 
-fn update_spelling(update: &ast::UpdateExpr, target: &str) -> String {
-    let operator = if update.op == ast::UpdateOp::PlusPlus {
-        "++"
-    } else {
-        "--"
-    };
-    if update.prefix {
-        format!("`{operator}{target}`")
-    } else {
-        format!("`{target}{operator}`")
+enum WriteExpression<'a> {
+    Assign(&'a ast::AssignExpr),
+    Update(&'a ast::UpdateExpr),
+}
+
+fn write_spelling(write: WriteExpression<'_>, target: &str) -> String {
+    match write {
+        WriteExpression::Update(update) => {
+            let operator = if update.op == ast::UpdateOp::PlusPlus {
+                "++"
+            } else {
+                "--"
+            };
+            if update.prefix {
+                format!("`{operator}{target}`")
+            } else {
+                format!("`{target}{operator}`")
+            }
+        }
+        WriteExpression::Assign(assign) => {
+            let (operator, value) = if assign.op == ast::AssignOp::Assign {
+                ("=", "v".to_string())
+            } else {
+                (
+                    assign_op(assign.op).map_or("=", |(_, operator)| operator),
+                    diagnostic_expr_spelling(&assign.right),
+                )
+            };
+            format!("`{target} {operator} {value}`")
+        }
     }
 }
 
@@ -897,7 +917,7 @@ impl<'p> Checker<'p> {
                     if ident.sym.as_ref() == "unreachable" {
                         let pos = self.pos(call.span);
                         let checked = self.check_named_call(ident, call, fx, pos, true);
-                        let mut out = fx.take_synthetic_prefix();
+                        let mut out = fx.drain_synthetic_prefix();
                         out.push(hir::Stmt::Expr(checked));
                         return out;
                     }
@@ -911,7 +931,7 @@ impl<'p> Checker<'p> {
         if let ast::Expr::Assign(assign) = root {
             let checked =
                 self.check_assign(assign, fx, self.pos(root.span()), true, Some(&mut prefix));
-            let mut out = fx.take_synthetic_prefix();
+            let mut out = fx.drain_synthetic_prefix();
             out.extend(prefix);
             out.push(hir::Stmt::Expr(checked));
             return out;
@@ -919,13 +939,13 @@ impl<'p> Checker<'p> {
         if let ast::Expr::Update(update) = root {
             let checked =
                 self.check_update(update, fx, self.pos(root.span()), true, Some(&mut prefix));
-            let mut out = fx.take_synthetic_prefix();
+            let mut out = fx.drain_synthetic_prefix();
             out.extend(prefix);
             out.push(hir::Stmt::Expr(checked));
             return out;
         }
         let checked = self.check_expr(e, None, fx);
-        prefix.extend(fx.take_synthetic_prefix());
+        prefix.extend(fx.drain_synthetic_prefix());
         prefix.push(hir::Stmt::Expr(checked));
         prefix
     }
@@ -1797,7 +1817,7 @@ impl<'p> Checker<'p> {
         if !statement_position {
             match &place {
                 Place::IndexSignature { .. } => {
-                    let spelling = update_spelling(u, "a[i]");
+                    let spelling = write_spelling(WriteExpression::Update(u), "a[i]");
                     self.error_diverging(
                         RuleCode::S100,
                         format!("{spelling} cannot be used as a value"),
@@ -1816,7 +1836,7 @@ impl<'p> Checker<'p> {
                         || format!("{}.{name}", self.classes[class.0].name),
                         |_| format!("x.{name}"),
                     );
-                    let spelling = update_spelling(u, &target);
+                    let spelling = write_spelling(WriteExpression::Update(u), &target);
                     self.error_diverging(
                         RuleCode::S100,
                         format!("{spelling} cannot be used as a value"),
@@ -1938,7 +1958,7 @@ impl<'p> Checker<'p> {
                         || format!("{}.{name}", self.classes[class.0].name),
                         |_| format!("x.{name}"),
                     );
-                    let spelling = update_spelling(u, &target);
+                    let spelling = write_spelling(WriteExpression::Update(u), &target);
                     self.error(
                         RuleCode::S100,
                         format!("{spelling} cannot write through a read-only accessor"),
@@ -2134,7 +2154,7 @@ impl<'p> Checker<'p> {
     ) -> Vec<hir::Stmt> {
         let pos = self.pos(chain.span);
         let plan = self.check_optional_plan(chain, fx);
-        let mut out = fx.take_synthetic_prefix();
+        let mut out = fx.drain_synthetic_prefix();
         if plan.value.ty == Type::Error {
             out.push(hir::Stmt::Expr(self.err_expr(pos)));
             return out;
@@ -2441,7 +2461,7 @@ impl<'p> Checker<'p> {
                 async_origins: HashSet::new(),
             },
         );
-        fx.synthetic_prefix.push(hir::Stmt::Let {
+        fx.push_synthetic_prefix(hir::Stmt::Let {
             name: name.clone(),
             ty: nullable.clone(),
             mutable: true,
@@ -2514,18 +2534,22 @@ impl<'p> Checker<'p> {
         &mut self,
         expression: hir::Expr,
         fx: &mut FnCtx,
+        owner: super::SyntheticOwner,
     ) -> hir::Expr {
-        if fx.take_synthetic_prefix().is_empty() {
-            return expression;
-        }
         let pos = expression.pos.clone();
-        self.error_diverging(
-            RuleCode::S100,
-            "a non-place receiver of `??` or `?.` cannot be used in an initializer",
-            pos.clone(),
-            Divergence::NonPlaceNullishInitializer,
-        );
-        self.err_expr(pos)
+        let expression = if fx.drain_synthetic_prefix().is_empty() {
+            expression
+        } else {
+            self.error_diverging(
+                RuleCode::S100,
+                "a non-place receiver of `??` or `?.` cannot be used in an initializer",
+                pos.clone(),
+                Divergence::NonPlaceNullishInitializer,
+            );
+            self.err_expr(pos.clone())
+        };
+        self.finish_synthetic_owner(fx, owner, pos);
+        expression
     }
 
     /// Checks R16's sole legal `undefined` appearance.
@@ -6402,9 +6426,7 @@ impl<'p> Checker<'p> {
         };
         if let Some((receiver, index, signature, target_pos)) = signature_write {
             if !statement_position {
-                let spelling = operation.map_or("`a[i] = v`".to_string(), |(_, operator)| {
-                    format!("`a[i] {operator} v`")
-                });
+                let spelling = write_spelling(WriteExpression::Assign(a), "a[i]");
                 self.error_diverging(
                     RuleCode::S100,
                     format!("{spelling} cannot be used as a value"),
@@ -6481,10 +6503,8 @@ impl<'p> Checker<'p> {
         if let Some((id, name)) = static_accessor_write {
             let class_name = self.classes[id.0].name.clone();
             if !statement_position {
-                let spelling = operation.map_or_else(
-                    || format!("`{class_name}.{name} = v`"),
-                    |(_, operator)| format!("`{class_name}.{name} {operator} v`"),
-                );
+                let target = format!("{class_name}.{name}");
+                let spelling = write_spelling(WriteExpression::Assign(a), &target);
                 self.error_diverging(
                     RuleCode::S100,
                     format!("{spelling} cannot be used as a value"),
@@ -6499,11 +6519,8 @@ impl<'p> Checker<'p> {
                 .get(&write_name)
                 .cloned()
             else {
-                let value_spelling = diagnostic_expr_spelling(&a.right);
-                let spelling = operation.map_or_else(
-                    || format!("`{class_name}.{name} = v`"),
-                    |(_, operator)| format!("`{class_name}.{name} {operator} {value_spelling}`"),
-                );
+                let target = format!("{class_name}.{name}");
+                let spelling = write_spelling(WriteExpression::Assign(a), &target);
                 self.error(
                     RuleCode::S100,
                     format!("{spelling} cannot write through a read-only accessor"),
@@ -6566,10 +6583,8 @@ impl<'p> Checker<'p> {
         };
         if let Some((id, recv, name)) = accessor_write {
             if !statement_position {
-                let spelling = operation.map_or_else(
-                    || format!("`x.{name} = v`"),
-                    |(_, operator)| format!("`x.{name} {operator} v`"),
-                );
+                let target = format!("x.{name}");
+                let spelling = write_spelling(WriteExpression::Assign(a), &target);
                 self.error_diverging(
                     RuleCode::S100,
                     format!("{spelling} cannot be used as a value"),
@@ -6580,11 +6595,8 @@ impl<'p> Checker<'p> {
             }
             let write_name = format!("{name}=");
             let Some(signature) = self.class_sigs[id.0].methods.get(&write_name).cloned() else {
-                let value_spelling = diagnostic_expr_spelling(&a.right);
-                let spelling = operation.map_or_else(
-                    || format!("`x.{name} = v`"),
-                    |(_, operator)| format!("`x.{name} {operator} {value_spelling}`"),
-                );
+                let target = format!("x.{name}");
+                let spelling = write_spelling(WriteExpression::Assign(a), &target);
                 self.error(
                     RuleCode::S100,
                     format!("{spelling} cannot write through a read-only accessor"),
@@ -7603,6 +7615,9 @@ impl<'p> Checker<'p> {
         is_static: bool,
         pos: Pos,
     ) -> Option<String> {
+        if self.class_sigs[class.0].generic_method_is_rejected(name, is_static) {
+            return None;
+        }
         let Some(type_args) = &call.type_args else {
             self.error_diverging(
                 RuleCode::S100,
@@ -8331,6 +8346,8 @@ impl<'p> Checker<'p> {
                 pos: pos.clone(),
             });
         }
+        let body_owner = fx.enter_synthetic_owner();
+        let body_pos = self.pos(a.body.span());
         let body = match &*a.body {
             ast::BlockStmtOrExpr::Expr(e) => {
                 let checked = self.check_expr(e, ret.as_ref(), fx);
@@ -8349,7 +8366,7 @@ impl<'p> Checker<'p> {
                     fx.handle_async_origins(&origins);
                 }
                 let value_pos = checked.pos.clone();
-                let mut body = fx.take_synthetic_prefix();
+                let mut body = fx.drain_synthetic_prefix();
                 body.push(hir::Stmt::Return {
                     value: Some(checked),
                     pos: value_pos,
@@ -8383,6 +8400,7 @@ impl<'p> Checker<'p> {
                 out
             }
         };
+        self.finish_synthetic_owner(fx, body_owner, body_pos);
         let body = if super::has_dispose_binding(&body) {
             self.insert_scope_exit_disposals(
                 body,

@@ -135,6 +135,8 @@ pub enum Divergence {
     EmbeddedHeaderCopy,
     /// A generic method call that supplies no type arguments.
     GenericMethodTypeArguments,
+    /// A bodiless generic method in a `declare class` from a `.ts` source.
+    BodilessDeclareGenericMethod,
     /// A generic method declared on a generic class.
     GenericMethodOnGenericClass,
     /// An `async` method that declares type parameters.
@@ -216,6 +218,7 @@ impl Divergence {
         Divergence::EntryParameterType,
         Divergence::EmbeddedHeaderCopy,
         Divergence::GenericMethodTypeArguments,
+        Divergence::BodilessDeclareGenericMethod,
         Divergence::GenericMethodOnGenericClass,
         Divergence::AsyncGenericMethod,
     ];
@@ -729,6 +732,12 @@ impl Divergence {
                             print(`${box.identity<i32>(1)}`);",
                 why: "Each type-argument list names one instance ahead of time, so the \
                       compiler infers no type argument from an argument.",
+                collision: "compiler.md §64",
+            },
+            Divergence::BodilessDeclareGenericMethod => DivergenceEntry {
+                ts: "declare class Box { identity<T>(value: T): T; }",
+                subscript: "class Box { identity<T>(value: T): T { return value; } }",
+                why: "A template must carry the body that each explicit type-argument list instantiates.",
                 collision: "compiler.md §64",
             },
             Divergence::GenericMethodOnGenericClass => DivergenceEntry {

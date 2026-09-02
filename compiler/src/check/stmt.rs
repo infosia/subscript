@@ -145,7 +145,10 @@ fn insert_for_step_before_continues(statements: &mut [hir::Stmt], step: &[hir::S
             }
             hir::Stmt::Block(body) => insert_for_step_before_continues(body, step),
             hir::Stmt::While { .. } | hir::Stmt::For { .. } | hir::Stmt::ForOf { .. } => {}
-            _ => {}
+            hir::Stmt::Let { .. }
+            | hir::Stmt::Expr(_)
+            | hir::Stmt::Return { .. }
+            | hir::Stmt::Break(_) => {}
         }
     }
 }
@@ -418,7 +421,8 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
-        match s {
+        let owner = fx.enter_synthetic_owner();
+        let terminates = match s {
             ast::Stmt::Decl(ast::Decl::Var(v)) => {
                 self.check_let(v, fx, out);
                 false
@@ -542,7 +546,9 @@ impl<'p> Checker<'p> {
                 );
                 false
             }
-        }
+        };
+        self.finish_synthetic_owner(fx, owner, self.pos(s.span()));
+        terminates
     }
 
     fn check_let(&mut self, v: &ast::VarDecl, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
@@ -609,7 +615,7 @@ impl<'p> Checker<'p> {
                 continue;
             };
             let init = self.check_expr(init_ast, ann.as_ref(), fx);
-            out.extend(fx.take_synthetic_prefix());
+            out.extend(fx.drain_synthetic_prefix());
             let ty = match ann {
                 Some(ann) => {
                     self.require_assignable(
@@ -748,7 +754,7 @@ impl<'p> Checker<'p> {
                 None
             }
         };
-        out.extend(fx.take_synthetic_prefix());
+        out.extend(fx.drain_synthetic_prefix());
         out.push(hir::Stmt::Return { value, pos });
     }
 
@@ -786,7 +792,7 @@ impl<'p> Checker<'p> {
     fn check_if(&mut self, i: &ast::IfStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) -> bool {
         let pos = self.pos(i.span);
         let cond = self.check_expr(&i.test, None, fx);
-        out.extend(fx.take_synthetic_prefix());
+        out.extend(fx.drain_synthetic_prefix());
         self.require_bool(&cond);
         let (then_extra, else_extra) = narrow_paths(&cond);
 
@@ -844,7 +850,7 @@ impl<'p> Checker<'p> {
         fx.narrowed.retain(|k| !roots.contains(root_of(k)));
 
         let cond = self.check_expr(&w.test, None, fx);
-        out.extend(fx.take_synthetic_prefix());
+        out.extend(fx.drain_synthetic_prefix());
         self.require_bool(&cond);
         let (then_extra, _) = narrow_paths(&cond);
 
@@ -864,14 +870,20 @@ impl<'p> Checker<'p> {
         fx.scopes.push(Default::default());
         let init = match &f.init {
             Some(ast::VarDeclOrExpr::VarDecl(v)) => {
+                let owner = fx.enter_synthetic_owner();
                 let mut init_out = Vec::new();
                 self.check_let(v, fx, &mut init_out);
+                init_out.extend(fx.drain_synthetic_prefix());
+                self.finish_synthetic_owner(fx, owner, self.pos(v.span));
                 let init = init_out.pop().map(Box::new);
                 out.extend(init_out);
                 init
             }
             Some(ast::VarDeclOrExpr::Expr(e)) => {
+                let owner = fx.enter_synthetic_owner();
                 let checked = self.check_expr(e, None, fx);
+                out.extend(fx.drain_synthetic_prefix());
+                self.finish_synthetic_owner(fx, owner, self.pos(e.span()));
                 Some(Box::new(hir::Stmt::Expr(checked)))
             }
             None => None,
@@ -887,27 +899,33 @@ impl<'p> Checker<'p> {
         assigned_roots_stmt(&f.body, &mut roots);
         fx.narrowed.retain(|k| !roots.contains(root_of(k)));
 
-        let cond = f.test.as_ref().map(|t| {
-            let checked = self.check_expr(t, None, fx);
-            self.require_bool(&checked);
-            checked
-        });
+        let (cond, cond_prefix) = match &f.test {
+            Some(test) => {
+                let owner = fx.enter_synthetic_owner();
+                let checked = self.check_expr(test, None, fx);
+                self.require_bool(&checked);
+                let prefix = fx.drain_synthetic_prefix();
+                self.finish_synthetic_owner(fx, owner, self.pos(test.span()));
+                (Some(checked), prefix)
+            }
+            None => (None, Vec::new()),
+        };
         let then_extra = cond.as_ref().map(|c| narrow_paths(c).0).unwrap_or_default();
 
         let mut base = fx.narrowed.clone();
         fx.narrowed.extend(then_extra.clone());
         fx.loop_depth += 1;
         let (mut body, _) = self.check_branch(&f.body, fx);
-        let step_statements = f
-            .update
-            .as_ref()
-            .map(|update| self.check_expr_stmt(update, fx));
+        let step_statements = f.update.as_ref().map(|update| {
+            let owner = fx.enter_synthetic_owner();
+            let statements = self.check_expr_stmt(update, fx);
+            self.finish_synthetic_owner(fx, owner, self.pos(update.span()));
+            statements
+        });
         fx.loop_depth -= 1;
         base.retain(|k| fx.narrowed.contains(k) || then_extra.contains(k));
         fx.narrowed = base;
         fx.scopes.pop();
-
-        out.extend(fx.take_synthetic_prefix());
 
         let step = step_statements.as_deref().and_then(|statements| {
             let [hir::Stmt::Expr(expression)] = statements else {
@@ -915,7 +933,7 @@ impl<'p> Checker<'p> {
             };
             Some(expression.clone())
         });
-        if f.update.is_none() || step.is_some() {
+        if cond_prefix.is_empty() && (f.update.is_none() || step.is_some()) {
             out.push(hir::Stmt::For {
                 init,
                 cond,
@@ -934,6 +952,25 @@ impl<'p> Checker<'p> {
             ty: Type::Bool,
             pos: pos.clone(),
         });
+        let (cond, body) = if cond_prefix.is_empty() {
+            (cond, body)
+        } else {
+            let mut guarded = cond_prefix;
+            guarded.push(hir::Stmt::If {
+                cond,
+                then: body,
+                els: Some(vec![hir::Stmt::Break(pos.clone())]),
+                pos: pos.clone(),
+            });
+            (
+                hir::Expr {
+                    kind: hir::ExprKind::Bool(true),
+                    ty: Type::Bool,
+                    pos: pos.clone(),
+                },
+                guarded,
+            )
+        };
         let mut block = Vec::new();
         if let Some(init) = init {
             block.push(*init);
@@ -961,7 +998,7 @@ impl<'p> Checker<'p> {
             return;
         };
         let (subject, kind, elem_ty, generator) = self.check_for_of_subject(&f.right, fx);
-        out.extend(fx.take_synthetic_prefix());
+        out.extend(fx.drain_synthetic_prefix());
         if matches!(subject.ty, Type::Error) || matches!(elem_ty, Type::Error) {
             return;
         }
@@ -1297,7 +1334,7 @@ impl<'p> Checker<'p> {
     fn check_switch(&mut self, sw: &ast::SwitchStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(sw.span);
         let disc = self.check_expr(&sw.discriminant, None, fx);
-        out.extend(fx.take_synthetic_prefix());
+        out.extend(fx.drain_synthetic_prefix());
         if !disc.ty.is_integer()
             && !matches!(
                 disc.ty,

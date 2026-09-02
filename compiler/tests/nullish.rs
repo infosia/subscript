@@ -97,6 +97,16 @@ fn optional_call_place_has_the_if_hir() {
 }
 
 #[test]
+fn optional_call_is_legal_in_a_for_update_clause() {
+    let source = "class Box { m(): void {} }\n\
+                  function run(x: Box | null): void {\n\
+                  \x20 for (let i: i32 = 0; i < 2; x?.m()) { i++; }\n\
+                  }\n";
+    check_program(&[SourceFile::new("test.ts", source)])
+        .expect("the optional call update must check");
+}
+
+#[test]
 fn nullish_assignment_stays_rejected() {
     let source = "class Box {}\nfunction run(x: Box | null): void { x ??= new Box(); }\n";
     let files = [SourceFile::new("test.ts", source)];

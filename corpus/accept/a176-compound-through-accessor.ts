@@ -74,6 +74,10 @@ class IndexSource {
   }
 }
 
+function maybe(keep: boolean): Counter | null {
+  return keep ? new Counter(1) : null;
+}
+
 export function main(): void {
   const counter: Counter = new Counter(3);
   counter.v += 2;
@@ -105,4 +109,9 @@ export function main(): void {
 
   values[IndexSource.next()] += 3;
   print(`index-call:${IndexSource.calls}:${values[zero]}`);
+
+  const fb: Counter = new Counter(1);
+  let j: i32 = 0;
+  for (j = 0; j < 3 && (maybe(false) ?? fb).v > 0; j++) { }
+  print(`empty:${j}`);
 }

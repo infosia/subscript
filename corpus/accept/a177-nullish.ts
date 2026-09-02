@@ -93,4 +93,9 @@ export function main(): void {
 
   Source.get(present)?.touch();
   print(`statement-call:${Source.calls}:${Box.touches}`);
+
+  for (let i: i32 = 0; i < 2; present?.touch()) {
+    i++;
+  }
+  print(`update:${Box.touches}`);
 }
