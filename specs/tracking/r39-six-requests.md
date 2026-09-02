@@ -87,9 +87,14 @@ amended `dad652a`, `e1b0b90`, and `f0e9a5d` after the reviews.
 - `cargo build --all-targets`: 0 warnings. `cargo fmt --check`,
   `tsc`, `tools/hygiene.sh`: exit 0. Clippy 7 / 18 / 13.
 - No pre-existing golden or `.expected` moved.
-- Debug wall time across the six agent runs today: 1,190–3,216 s,
-  against 476 s recorded for r37 on this host. Release: 358 s against
-  245 s. Cause not measured in this round.
+- Debug wall time across the agent runs today: 1,190–3,216 s, against
+  476 s recorded for r37 on this host. Measured alone at `d45c0c1`:
+  1,341 s wall, 926 s of suite time, of which
+  `codegen/tests/boundary_scratch_breadth.rs` (one test, §44.8) is
+  668 s, `codegen/tests/golden.rs` 129 s, `codegen/tests/cemit.rs`
+  74 s, every other suite under 10 s. The same test alone: 659 s at
+  `e1c2be1`, 654 s at `d45c0c1`. R39 did not change it. Release:
+  331 s against 245 s.
 
 ## Downstream gate (§82.6 item 6)
 
