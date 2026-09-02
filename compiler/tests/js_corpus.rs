@@ -21,8 +21,8 @@ const NODE_RECORDED: &str = "v24.18.0";
 /// is exact, because the repository controls it: a mismatch is a stale
 /// `node_modules` (§69.3 rule 4).
 const TYPESCRIPT_VERSION: &str = "5.9.2";
-// These entries retire in §82.1. The pinned table records them in prose.
-const SECTION_82_1_RETIRED: &[&str] = &["r130", "r143", "r144"];
+// These entries retire in §82.1 and §82.5. The pinned table records them in prose.
+const SECTION_82_RETIRED: &[&str] = &["r130", "r143", "r144", "r147"];
 
 /// The major line of a `node` version string, `v24.18.0` to `v24`.
 fn node_major(version: &str) -> &str {
@@ -348,9 +348,9 @@ fn entries(root: &Path) -> Result<Vec<Entry>, String> {
         .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "ts"))
         .collect();
     paths.sort();
-    if paths.len() != 176 {
+    if paths.len() != 177 {
         return Err(format!(
-            "expected 176 top-level accept entries, found {}",
+            "expected 177 top-level accept entries, found {}",
             paths.len()
         ));
     }
@@ -425,7 +425,7 @@ fn collision_index(root: &Path) -> Result<CollisionIndex, String> {
         .map_err(|error| format!("parse {}: {error}", path.display()))?;
     index
         .retired
-        .extend(SECTION_82_1_RETIRED.iter().map(|name| (*name).to_string()));
+        .extend(SECTION_82_RETIRED.iter().map(|name| (*name).to_string()));
     Ok(index)
 }
 

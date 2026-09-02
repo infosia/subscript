@@ -196,3 +196,16 @@ fn read_only_accessor_rejects_compound_assignment() {
         "`x.v = v` cannot write through a read-only accessor"
     );
 }
+
+#[test]
+fn static_read_only_accessor_rejects_assignment() {
+    let diagnostic = one_accessor_diagnostic(
+        "class C {\n  static get name(): i32 { return 0; }\n}\nexport function main(): void {\n  C.name = 1;\n}\n",
+    );
+    assert_eq!(diagnostic.code, RuleCode::S100);
+    assert_eq!(diagnostic.pos.line, 5);
+    assert_eq!(
+        diagnostic.message,
+        "`C.name = v` cannot write through a read-only accessor"
+    );
+}

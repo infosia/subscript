@@ -1394,8 +1394,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 122;
-const DEBUG_RUNNABLE_COUNT: usize = 121;
+const RELEASE_RUNNABLE_COUNT: usize = 123;
+const DEBUG_RUNNABLE_COUNT: usize = 122;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1647,6 +1647,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a178-generic-method",
         "generic instance and static method instances at explicit type arguments",
+    ),
+    (
+        "a179-static-read-accessor",
+        "static read accessor calls before and after a static field write",
     ),
     (
         "a15-manual-lifetime",

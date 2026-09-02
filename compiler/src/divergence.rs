@@ -75,7 +75,7 @@ pub enum Divergence {
     ClassIndexSignature,
     /// A `using` declaration that is nullable, `await`ed, or inside a lambda.
     UsingDeclaration,
-    /// A compound write, an increment, or a static form of a named accessor.
+    /// A value-position write, a value-class write accessor, or a mirror accessor.
     NamedAccessor,
     /// A container view held as a value instead of iterated.
     IteratorTemporary,
@@ -462,8 +462,8 @@ impl Divergence {
                             const a: V = new V();\n\
                             a.c = 2;\n\
                             const changed: i32 = a.c;",
-                why: "Value-position writes, value-class write accessors, mirror accessors, and \
-                      static read-only accessors stay out.",
+                why: "Value-position writes, value-class write accessors, and mirror accessors \
+                      stay out.",
                 collision: "C12",
             },
             Divergence::IteratorTemporary => DivergenceEntry {

@@ -258,13 +258,6 @@ impl ClassSig {
         )
     }
 
-    fn has_static_write_accessor(&self, name: &str) -> bool {
-        matches!(
-            self.static_member_namespace.get(name),
-            Some(ClassMemberNamespaceEntry::Accessor { write: true, .. })
-        )
-    }
-
     fn has_static_member(&self, name: &str) -> bool {
         self.static_member_namespace.contains_key(name)
     }
@@ -2916,7 +2909,6 @@ impl<'p> Checker<'p> {
         let is_value = self.classes[id.0].is_value;
         let is_descriptor = self.classes[id.0].is_descriptor;
         let mut index_signature_pos = None;
-        let mut read_accessors = Vec::new();
         let mut write_accessors = Vec::new();
         if let Some(sup) = &class.super_class {
             let pos = self.pos(sup.span());
@@ -3317,7 +3309,6 @@ impl<'p> Checker<'p> {
                             is_async: false,
                             yield_known: true,
                         };
-                        read_accessors.push((name.clone(), key_pos.clone(), method.is_static));
                         if method.is_static {
                             let symbol = static_member_symbol(&self.classes[id.0].name, &name);
                             self.class_sigs[id.0]
@@ -3604,18 +3595,6 @@ impl<'p> Checker<'p> {
         }
         if let Some(pos) = index_signature_pos {
             self.validate_class_index_accessors(id, pos);
-        }
-        for (name, pos, is_static) in read_accessors {
-            if is_static && !self.class_sigs[id.0].has_static_write_accessor(&name) {
-                self.error_diverging(
-                    RuleCode::S100,
-                    format!(
-                        "static read accessor `{name}` requires a write accessor with the same name"
-                    ),
-                    pos,
-                    Divergence::NamedAccessor,
-                );
-            }
         }
         for (name, pos, is_static) in write_accessors {
             let has_read = if is_static {

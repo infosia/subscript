@@ -149,7 +149,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r142-readonly-accessor-write.ts", RuleCode::S100, 15),
     ("r145-accessor-write-as-value.ts", RuleCode::S100, 22),
     ("r146-accessor-field-name-clash.ts", RuleCode::S017, 10),
-    ("r147-static-accessor.ts", RuleCode::S100, 9),
     ("r148-switch-cross-case-read.ts", RuleCode::S100, 14),
     ("r149-switch-duplicate-declaration.ts", RuleCode::S017, 14),
     ("r150-parameter-and-local.ts", RuleCode::S017, 8),
@@ -370,8 +369,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        172,
-        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, two R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, five R37 entries, fourteen §67 entries, one §70 entry, five §71 entries, one §33.5 rule-10 entry, two §72 enum-literal entries, one §76.3 using-in-lambda entry, one §82.1 entry, three §82.2 entries, two §82.3 entries, and three §82.4 entries"
+        171,
+        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, two R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, four R37 entries, fourteen §67 entries, one §70 entry, five §71 entries, one §33.5 rule-10 entry, two §72 enum-literal entries, one §76.3 using-in-lambda entry, one §82.1 entry, three §82.2 entries, two §82.3 entries, and three §82.4 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
