@@ -165,6 +165,16 @@ omission, read only through `!== undefined` presence narrowing;
 that comparison is the single legal appearance of the `undefined`
 token (C7 stands everywhere else). `compiler.md` §43; accept adds
 `a118`, reject adds `r117`–`r118`.
+*Revised 2026-09-02 (R39.5, `compiler.md` §82.3):* `a ?? b` is legal
+when `a` has type `Ref | null`; the result is `Ref` or `Ref | null`
+by the right operand's type. An optional chain `a?.f`, `a?.m()` is
+legal in two positions only: as the left operand of `??`, and as an
+expression statement whose last step is a call. Everywhere else the
+chain has type `T | undefined` in TypeScript, and this language has
+no `undefined`, so the chain fails with S012. A non-nullable left
+operand of `??`, or a non-nullable tested receiver, fails with S100
+(`tsc` accepts; narrowing). Accept: `a177`. Reject: `r177`, `r178`.
+
 Accept: `a17`, `a91` (Q32 aliases). Reject: `r12-general-union`
 (`i32 | string` field; `tsc`-clean), `r13-undefined` (`undefined` in
 an annotation/expression; `tsc`-clean), `r87`–`r89` (Q32 boundaries).
@@ -232,12 +242,13 @@ property access, and JS reads the property. subscript has no
 dynamic properties, so the same spelling calls the declared
 accessor. Stock `tsc` accepts every accepted program through the
 declared signature. Narrowings on top of `tsc`: a write through a
-`readonly` signature, compound assignment, increment, decrement,
-the write used as a value, and an index signature on a value
-class all fail at check time.
+`readonly` signature, the write used as a value, and an index
+signature on a value class all fail at check time. *(Revised
+2026-09-02, R39.3, `compiler.md` §82.1: `a[i] op= v`, `a[i]++`, and
+`a[i]--` rewrite to `a[i] = a[i] op v`; `r130` retired.)*
 
-Accept: `a136`. Reject: `r128-readonly-index-write`,
-`r129-index-signature-no-get`, `r130-index-compound-assign`.
+Accept: `a136`, `a176`. Reject: `r128-readonly-index-write`,
+`r129-index-signature-no-get`, `r173-compound-write-as-value`.
 
 ### C11. `using` declarations — no null binding, no dispose on trap
 
@@ -283,14 +294,16 @@ The divergence from JS: JS runs an accessor function on property
 access, and the property is dynamic. subscript has no dynamic
 properties, so the same spelling calls the declared method. Stock
 `tsc` accepts every accepted program. Narrowings on top of `tsc`:
-a write through a read-only accessor, compound assignment,
-increment, decrement, the write used as a value, a write accessor
-on a value class, and a static accessor all fail at check time.
+a write through a read-only accessor, the write used as a value,
+and a write accessor on a value class fail at check time. *(Revised
+2026-09-02, R39.3 and R39.8, `compiler.md` §82.1 and §82.5:
+`x.name op= v`, `x.name++`, and `x.name--` rewrite to `x.name =
+x.name op v`; a static accessor, read-only included, is legal;
+`r143`, `r144`, `r147` retired.)*
 
-Accept: `a144`. Reject: `r141-value-class-write-accessor`,
-`r142-readonly-accessor-write`, `r143-accessor-compound-assign`,
-`r144-accessor-increment`, `r145-accessor-write-as-value`,
-`r146-accessor-field-name-clash`, `r147-static-accessor`.
+Accept: `a144`, `a176`, `a179`. Reject: `r141-value-class-write-accessor`,
+`r142-readonly-accessor-write`, `r145-accessor-write-as-value`,
+`r146-accessor-field-name-clash`, `r173-compound-write-as-value`.
 
 ### C13. Iteration over a container that changes — a fixed entry bound
 
