@@ -248,7 +248,8 @@ signature on a value class all fail at check time. *(Revised
 `a[i]--` rewrite to `a[i] = a[i] op v`; `r130` retired.)*
 
 Accept: `a136`, `a176`. Reject: `r128-readonly-index-write`,
-`r129-index-signature-no-get`, `r173-compound-write-as-value`.
+`r129-index-signature-no-get`, `r173-compound-write-as-value`,
+retired:r130.
 
 ### C11. `using` declarations — no null binding, no dispose on trap
 
@@ -303,7 +304,8 @@ x.name op v`; a static accessor, read-only included, is legal;
 
 Accept: `a144`, `a176`, `a179`. Reject: `r141-value-class-write-accessor`,
 `r142-readonly-accessor-write`, `r145-accessor-write-as-value`,
-`r146-accessor-field-name-clash`, `r173-compound-write-as-value`.
+`r146-accessor-field-name-clash`, `r173-compound-write-as-value`,
+retired:r143, retired:r144, retired:r147.
 
 ### C13. Iteration over a container that changes — a fixed entry bound
 

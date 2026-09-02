@@ -10919,18 +10919,34 @@ options):
    `assign_op` accepts today.
 2. `x.name++`, `x.name--`, `++x.name`, `--x.name`, and the four
    index forms, in statement position, check to the HIR of the rule
-   1 form with `+` or `-` and the literal `1`.
+   1 form with `+` or `-` and the literal `1`. Statement position is
+   an expression statement, or the update clause of a `for`
+   statement. *(Defined 2026-09-02 after the review: the update
+   clause reported the value-position rejection, while a plain
+   field in the same clause ran.)*
 3. The receiver `x` and the index `i` evaluate once. When the
    receiver or the index is a place, the HIR is exactly the HIR of
    the rule 1 spelling; a test asserts the identity. When it is not
    a place, the checker binds it to a synthetic local (a `[[` name;
    warnings.md §2 already excludes such a name from W004) and the
-   rewritten statement reads the local.
+   rewritten statement reads the local. The local is declared in
+   the statement list that holds the statement. An initializer that
+   has no statement list (a field initializer, a static field
+   initializer, a parameter default, a descriptor default) cannot
+   hold the local: there a non-place receiver or index fails with
+   S100 and a divergence block (`tsc` accepts; C7 for §82.3, C12 for
+   this rule). The checker wraps nothing in a lambda, and
+   `ModuleEffectScanner` (§67) does not change. *(Added 2026-09-02
+   after the review: the first implementation wrapped such an
+   initializer in an immediately-invoked lambda and taught the
+   scanner to walk a called lambda literal, which accepted a C14
+   shape the pin rejected.)*
 4. The rewritten form obeys the rules of the spelling it rewrites
    to: the write accessor must exist (§65 rule 6, S100 otherwise), a
    `readonly` index signature fails as today (§58 rule 6), and the
    operator checks through `bin_result` under
-   `BinUse::CompoundAssignment`.
+   `BinUse::CompoundAssignment`. A rejection names the spelling the
+   program wrote (`x.v += 1`, `C.x++`), not the rewritten form.
 5. The write used as a value stays rejected: `y = (x.name op= v)`,
    `y = x.name++`, and the index forms fail with S100 and a
    divergence block (`tsc` accepts).
@@ -10974,16 +10990,23 @@ message; a call receiver runs once (the a176 pin on both tiers).
 ### 82.2 R39.4 — three stable codes
 
 1. **S016, unknown name.** A name that no declaration binds: a type
-   name, a value name, or an import that names an export the module
-   does not declare.
+   name, a value name, a callee name, a class name after `new`, or
+   an import that names an export the module does not declare. The
+   code follows the fact, not the syntactic position. *(Clarified
+   2026-09-02 after the review: `zz()` and `new Nope()` kept S100.)*
 2. **S017, duplicate declaration.** A second declaration of one name
    in one namespace: a block scope, a `switch` body, a module's top
    level, the program's function set, a class's instance member
    namespace, or a class's static member namespace (§67.1 rule 3a,
    §71 rule 1, §65 rule 3).
 3. **S018, unknown member.** A field, method, accessor, static
-   member, or enum member that the receiver type does not declare.
-   A mirror type is a receiver type.
+   member, or enum member that the receiver type does not declare,
+   where the receiver type is a class, a value class, a mirror type,
+   or an enum. A standard-library receiver (`string`, an array,
+   `Map`, `Set`, `Math`, and the other stdlib.md types) keeps its
+   subset code: its message states the accepted subset (Q24), and
+   the checker cannot tell an absent member from one outside the
+   subset. *(Clarified 2026-09-02 after the review.)*
 4. Messages and positions do not change. Every other S100 message
    stays S100. S015 stays retired. `RuleCode::ALL` lists 18 codes,
    and each new code has an `explanation`.
@@ -11009,8 +11032,10 @@ Corpus:
   S();` S016; `tsc: rejects TS2304`.
 - `corpus/reject/r176-unknown-member.ts`: `s.store(1)` on a class
   with no such method; S018; `tsc: rejects TS2339`.
-- r146, r149, r150, r151, r164, and r169 move to the new code where
-  the pinned diagnostic is one of the families (measure each).
+- r146, r149, r150, r151, r161–r164 move to S017. r169 stays S100:
+  the harness supplies its mirror, and its pinned diagnostic is the
+  embedded-header copy. *(Corrected 2026-09-02: measurement 2 above
+  ran `check` without the mirror.)*
 
 ### 82.3 R39.5 — `??`, and `?.` where `undefined` never binds
 
@@ -11026,7 +11051,8 @@ Corpus:
    spelled assignment fails.
 3. The left operand evaluates once. The right operand evaluates
    only when the left is `null`.
-4. `??=` keeps its S100.
+4. `??=` keeps its S100, with a divergence block (`tsc` accepts;
+   C7). *(Block added 2026-09-02 after the review.)*
 5. `??` establishes no narrowing outside itself.
 
 `?.`:
@@ -11035,10 +11061,14 @@ Corpus:
    or `?.name(args)`, tests its receiver. A plain step, `.name` or
    `.name(args)`, does not. An index step `?.[i]` fails with S100
    and a divergence block (`tsc` accepts; C7).
-7. A tested receiver has a C7 nullable type; any other type fails as
-   rule 1. After the test the receiver has the non-null type, and
-   the step checks as the spelled member access or call on that
-   type.
+7. A tested receiver has a C7 nullable type; any other type fails
+   with S100 and a divergence block whose fragments show `?.`, not
+   `??`. A receiver whose type is already an error reports nothing
+   more. After the test the receiver has the non-null type, and the
+   step checks as the spelled member access or call on that type.
+   *(Amended 2026-09-02 after the review: the first implementation
+   reused the `??` variant and reported a second diagnostic on an
+   error receiver.)*
 8. A chain is legal in two positions: as the whole left operand of
    `??`, and as an expression statement whose last step is a call.
    In every other position the chain fails with S012 "an optional
@@ -11058,7 +11088,8 @@ Corpus:
     asserts each identity. A receiver that is not a place binds to a
     synthetic local (rule 3 of §82.1) whose declaration carries no
     side effect; the evaluation order of the statement does not
-    change.
+    change. In an initializer that has no statement list, a
+    non-place receiver fails as §82.1 rule 3 states.
 
 `collisions.md` C7 gains the two operators.
 
@@ -11094,6 +11125,14 @@ fails; `?.[i]` fails; the right operand of `??` runs only on `null`
    `@CStruct` value class, instance or static, declares type
    parameters as a free function does (§64). The parameters are in
    scope in the signature and the body.
+1a. A template carries a body. A bodiless template, method or free
+   function, fails with S100 "function bodies are required" at
+   collection (`tsc` TS2391). Two type parameters of one name fail
+   with S017 at collection (`tsc` TS2300). A template that no call
+   instantiates is otherwise not checked, as §64 has it. *(Added
+   2026-09-02 after the review, CRITICAL: `class C { m<T>(v: T): T; }`
+   checked clean and ran; the free-function form had the same hole
+   at the pin.)*
 2. A call supplies explicit type arguments: `recv.m<A>(args)` and
    `C.m<A>(args)`. A call without them fails with S100 "generic
    method `m` requires explicit type arguments", with a divergence
@@ -11103,9 +11142,12 @@ fails; `?.[i]` fails; the right operand of `??` runs only on `null`
    `m<A>` in the class's instance or static method table, checked
    once at its first call as a method of that class (§64 rule 4).
    The HIR holds the instance as an ordinary method; no template
-   reaches the HIR. Every consumer of a method name sees `m<A>`; the
-   ship tier sanitizes it as it does `first<u32>`, under §65 rule
-   10's table.
+   reaches the HIR. Every consumer of a method name sees `m<A>`. The
+   ship tier names a method by its LIR function id (`sub_f<id>`), so
+   two instances are distinct by construction; the test asserts two
+   HIR names and two LIR ids. *(Corrected 2026-09-02 after the
+   review: the first text cited §65 rule 10, which applies to no
+   method name.)*
 4. The declared name `m` owns the member name in its namespace
    (§67.1 rule 3a). An instance name holds `<`, so it collides with
    no declared member.
@@ -11257,3 +11299,28 @@ in a signature position.
 7. `tools/downstream.sh` runs green against the working tree, or
    its red run yields a corpus entry (§82.6 item 6).
 8. `generated-docs/` regenerates.
+
+### 82.9 Review round 1, 2026-09-02
+
+Fresh no-context review of `25c9437..ec41d65`, execution-verified.
+CRITICAL: a bodiless generic method template checked clean and ran
+(rule 1a). MAJOR: S016 and S018 followed the syntactic position
+(rules 1 and 3 of §82.2 clarified); an initializer with no statement
+list was wrapped in an immediately-invoked lambda and
+`ModuleEffectScanner` walked a called lambda literal, which accepted
+`const n: i32 = ((): i32 => 3)()` where the pin rejected it under C14
+(§82.1 rule 3); a `?.` on an error-typed receiver reported a second
+diagnostic with a block (§82.3 rule 7); no tracking note existed at
+review time. MINOR: r169 mis-measured (§82.2 corrected); the `for`
+update clause (§82.1 rule 2); `??=` without a block (§82.3 rule 4);
+the emitted-C test could not fail (§82.4 rule 3); two assertion
+messages omit a176; a Rust constant duplicated the `retired:` marker
+of `collisions.md`; the `??` variant rendered for `?.`; rejection
+messages lost the written spelling (§82.1 rule 4).
+
+Fix round obligations, beyond the rules above: revert the lambda
+wrap and the scanner change; `compiler/tests/js_corpus.rs` reads the
+`retired:` markers and holds no retired list; the two assertion
+messages name a176; the C14 shape above is a unit test that fails at
+the pin's message; a bodiless generic free function and a bodiless
+generic method are unit tests; `for (…; …; c.v++)` is in a176.
