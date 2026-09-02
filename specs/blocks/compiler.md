@@ -10948,7 +10948,9 @@ options):
    `readonly` index signature fails as today (§58 rule 6), and the
    operator checks through `bin_result` under
    `BinUse::CompoundAssignment`. A rejection names the spelling the
-   program wrote (`x.v += 1`, `C.x++`), not the rewritten form.
+   program wrote (`x.v += 1`, `C.x++`), not the rewritten form; a
+   plain assignment renders its value as `v` (`x.v = v`), as the
+   pre-existing messages do.
 5. The write used as a value stays rejected: `y = (x.name op= v)`,
    `y = x.name++`, and the index forms fail with S100 and a
    divergence block (`tsc` accepts).
@@ -11352,7 +11354,8 @@ defect of the form, so this section states the form.)*
    are collected by the innermost owner under check. The owners are:
    a statement in a statement list; a `for` initializer; a `for`
    condition; a `for` update; an arrow body; an initializer that has
-   no statement list. Entering an owner starts an empty collection;
+   no statement list; a `switch` case test. Entering an owner starts
+   an empty collection;
    leaving it drains the collection. An outer owner's collection is
    saved on entry and restored on exit, as `subst` is around an
    instantiation.
@@ -11362,15 +11365,44 @@ defect of the form, so this section states the form.)*
    `while` form the update rewrite already uses, so it runs on every
    iteration before the test. A `for` update drains into the step. An
    arrow body drains at the head of the body. An initializer that has
-   no statement list rejects (§82.1 rule 3).
+   no statement list rejects (§82.1 rule 3). A `switch` case test
+   rejects the same way, with the same block: the tests run in order
+   until one matches, so no list before the `switch` can hold the
+   local without a change of evaluation order. *(Added 2026-09-02
+   after review round 3: the boundary check reported the shape.)*
 3. **The boundary check is total.** On leaving every owner the
    collection is empty, or the checker reports S100 "internal:
    synthetic prefix escaped its owner" at the expression's position.
    The check compares the collection against the owner boundary, not
-   against the site that filled it. A unit test builds the violating
-   form through the checker's test hook and asserts the diagnostic;
-   a second test asserts that the a176 and a177 shapes report nothing.
+   against the site that filled it. No test writes into the
+   collection: the check is an internal invariant, and its witness is
+   the `switch` case shape of review round 3, which it reported
+   before rule 1 named that owner. *(Amended 2026-09-02: the first
+   text asked for a test hook, which changed the record the check
+   reads, against core principle 9.)*
 4. **No lowering failure is the report.** A program that checks
-   clean lowers on both tiers. The four probes above are unit tests
-   that run on both tiers, and the empty-body `for` with a prefix in
-   its condition (green at `ec41d65`, red at `61c31e9`) is in a176.
+   clean lowers on both tiers. The four probes above are in a177, and
+   the empty-body `for` with a prefix in its condition (green at
+   `ec41d65`, red at `61c31e9`) is in a176; the golden gate runs both
+   on the dev JIT, the ship tier, and the interpreter, in both
+   profiles. No test under `compiler/tests/` runs a `target/<profile>`
+   binary by path. *(Amended 2026-09-02 after review round 3: the
+   first probes hard-coded `target/debug/subscript`.)*
+
+### 82.11 Review round 3, 2026-09-02
+
+Focused review of `e1b0b90..8c93b7d`. MAJOR: a `switch` case test was
+not an owner, and the rule 3 check reported the shape (rule 1 and
+rule 2 amended: the test rejects); the rule 4 probes ran
+`target/debug/subscript` by path in both profiles (rule 4 amended:
+the probes are corpus content). MINOR: the boundary test wrote into
+the collection it checked (rule 3 amended: no hook); no owner-exit
+enforcement exists, and no exit path skips the check today (recorded,
+not changed); a plain `=` renders `v` (§82.1 rule 4 states it); an
+unexported import reported twice (the imported name is poisoned after
+the first report); the a176 header omits the nullish shape (fixed).
+Outside this diff: a generator used only through `for…of` does not
+lower on either tier, and the two tiers report the failure with
+different text and exit codes; `a79` passes because it also calls
+`next()` by hand. That defect needs its own request and its own
+corpus entry.
