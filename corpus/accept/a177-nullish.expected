@@ -12,3 +12,7 @@ statement-null:0
 statement-value:1
 statement-call:3:2
 update:4
+for-nullish:3
+for-optional:3:1
+for-initializer:2
+arrow-owner:3

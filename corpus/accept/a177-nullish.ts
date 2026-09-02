@@ -1,8 +1,8 @@
 // corpus: accept/a177-nullish
 // purpose: Runs nullish coalescing and optional chains without binding undefined.
 // observable: Values and call counts pin short-circuit evaluation and single evaluation.
-// exercises: nullish-coalescing, optional-chain, conditional-rewrite, synthetic-local
-// questions: R39.5, §82.3, C7
+// exercises: nullish-coalescing, optional-chain, conditional-rewrite, synthetic-local, for-condition, for-initializer, arrow-body
+// questions: R39.5, §82.3, §82.10, C7
 // tsc: accepts; js-comparable: yes
 
 class Box {
@@ -46,6 +46,10 @@ class Fallback {
 
 function noBox(): Box | null {
   return null;
+}
+
+function maybe(keep: boolean): Box | null {
+  return keep ? new Box(1, "maybe", null) : null;
 }
 
 export function main(): void {
@@ -98,4 +102,27 @@ export function main(): void {
     i++;
   }
   print(`update:${Box.touches}`);
+
+  const fb: Box = new Box(1, "fallback", null);
+  let nullishCount: i32 = 0;
+  for (let i: i32 = 0; i < 3 && (maybe(true) ?? fb).v > 0; i++) {
+    nullishCount++;
+  }
+  print(`for-nullish:${nullishCount}`);
+
+  let optionalCount: i32 = 0;
+  for (let i: i32 = 0; i < 3 && (maybe(true)?.v ?? 0) > 0; i++) {
+    optionalCount++;
+  }
+  print(`for-optional:${optionalCount}:${fb.v}`);
+
+  let i: i32 = 0;
+  let initializerCount: i32 = 0;
+  for (i = (maybe(true) ?? fb).v; i < 3; i++) {
+    initializerCount++;
+  }
+  print(`for-initializer:${initializerCount}`);
+
+  const n: i32 = (maybe(true) ?? fb).v + ((): i32 => 2)();
+  print(`arrow-owner:${n}`);
 }

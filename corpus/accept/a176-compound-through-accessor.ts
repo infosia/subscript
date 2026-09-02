@@ -1,8 +1,8 @@
 // corpus: accept/a176-compound-through-accessor
 // purpose: Runs compound assignments and updates through accessors and a class index signature.
 // observable: Read-then-write results and single-evaluation counters print after each form.
-// exercises: instance-accessor, static-accessor, class-index-signature, compound-assignment, increment, decrement, synthetic-local
-// questions: R39.3, §82.1, C10, C12
+// exercises: instance-accessor, static-accessor, class-index-signature, compound-assignment, increment, decrement, synthetic-local, nullish-coalescing, for-condition
+// questions: R39.3, §82.1, §82.10, C7, C10, C12
 // tsc: accepts; js-comparable: no C10: JavaScript reads numeric properties instead of the declared index accessors.
 
 class Counter {

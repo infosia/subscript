@@ -1401,6 +1401,7 @@ impl<'p> Checker<'p> {
             }
             let case_pos = self.pos(case.span);
             let test = if let Some(t) = &case.test {
+                let owner = fx.enter_synthetic_owner();
                 let checked = self.check_expr(t, Some(&disc_ty), fx);
                 if let Some((alias_name, members)) = &alias_switch {
                     match &**t {
@@ -1455,7 +1456,7 @@ impl<'p> Checker<'p> {
                         "the case label",
                     );
                 }
-                Some(checked)
+                Some(self.close_synthetic_expression(checked, fx, owner))
             } else {
                 has_default = true;
                 None

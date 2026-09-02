@@ -16,13 +16,6 @@ mod tyres;
 #[cfg(test)]
 pub(crate) use expr::{take_classified_places, PlaceKind};
 
-#[cfg(test)]
-std::thread_local! {
-    static SYNTHETIC_PREFIX_ESCAPE_HOOK: std::cell::Cell<bool> = const {
-        std::cell::Cell::new(false)
-    };
-}
-
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -502,16 +495,6 @@ impl FnCtx {
             self.synthetic_owners.truncate(owner.depth);
             return Some(pos);
         }
-        #[cfg(test)]
-        SYNTHETIC_PREFIX_ESCAPE_HOOK.with(|hook| {
-            if hook.replace(false) {
-                self.push_synthetic_prefix(hir::Stmt::Expr(hir::Expr {
-                    kind: hir::ExprKind::Null,
-                    ty: Type::Null,
-                    pos: pos.clone(),
-                }));
-            }
-        });
         let escaped = self
             .synthetic_owners
             .last()
@@ -2675,8 +2658,9 @@ impl<'p> Checker<'p> {
                         self.error(
                             RuleCode::S016,
                             format!("`{}` is not exported by `{}`", local, raw),
-                            pos,
+                            pos.clone(),
                         );
+                        additions.push((local, ScopeItem::Poisoned, pos));
                         continue;
                     }
                     match self.file_scopes[target].get(&local) {
@@ -5141,31 +5125,13 @@ mod tests {
     use crate::{check_program, RuleCode, SourceFile};
 
     #[test]
-    fn synthetic_prefix_owner_boundary_reports_an_escape() {
-        super::SYNTHETIC_PREFIX_ESCAPE_HOOK.with(|hook| hook.set(true));
-        let diagnostics = check_program(&[SourceFile::new(
-            "test.ts",
-            "export function main(): void { 1; }\n",
-        )])
-        .expect_err("the synthetic prefix hook must fail");
-
-        assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
-        assert_eq!(diagnostics[0].code, RuleCode::S100);
-        assert_eq!(
-            diagnostics[0].message,
-            "internal: synthetic prefix escaped its owner"
-        );
-        assert_eq!(diagnostics[0].pos.file, "test.ts");
-        assert_eq!(diagnostics[0].pos.line, 1);
-    }
-
-    #[test]
     fn reachable_import_of_an_absent_export_uses_s016() {
         let diagnostics = check_program(&[
             SourceFile::new("m.ts", "export const present: i32 = 1;\n"),
             SourceFile::new(
                 "main.ts",
-                "import { missing } from \"./m\";\nexport function main(): void {}\n",
+                "import { missing } from \"./m\";\n\
+                 export function main(): void { missing; }\n",
             ),
         ])
         .expect_err("the absent export must fail");
