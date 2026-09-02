@@ -877,7 +877,9 @@ fn iteration_fact_check_rejects_a_fixed_for_of_cursor() {
     *bound = IteratorBoundKind::Fixed;
     assert_eq!(
         lir_facts::dropped_facts(&hir, &lir),
-        vec!["fixed-for-of.ts:3:3: iterator bound Fixed disagrees with for-of spelling, which requires Live"]
+        vec![
+            "fixed-for-of.ts:3:3: iterator bound Fixed disagrees with for-of spelling, which requires Live"
+        ]
     );
 }
 
@@ -971,9 +973,11 @@ fn verifier_rejects_a_static_closure_target_with_another_environment() {
         .expect("find lambda direct target");
     target.kind = lir::CallTargetKind::StaticClosure(replacement);
     let errors = verify_module(&lir).expect_err("mismatched static closure must reject");
-    assert!(errors.iter().any(|error| error
-        .message
-        .contains("call target identity/signature is invalid")));
+    assert!(errors.iter().any(|error| {
+        error
+            .message
+            .contains("call target identity/signature is invalid")
+    }));
 }
 
 #[test]
@@ -991,8 +995,9 @@ fn item_12_reports_a_missing_foreign_array_snapshot_pair() {
         .expect("a26 has a foreign array snapshot");
     snapshot.kind = InstructionKind::Copy;
     let findings = lir_facts::dropped_facts(&hir, &lir);
-    assert!(findings.iter().any(|finding| finding
-        .contains("foreign array argument carries no call-time data/count snapshot")));
+    assert!(findings.iter().any(|finding| {
+        finding.contains("foreign array argument carries no call-time data/count snapshot")
+    }));
 }
 
 #[test]
@@ -1394,8 +1399,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 123;
-const DEBUG_RUNNABLE_COUNT: usize = 122;
+const RELEASE_RUNNABLE_COUNT: usize = 124;
+const DEBUG_RUNNABLE_COUNT: usize = 123;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1651,6 +1656,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a179-static-read-accessor",
         "static read accessor calls before and after a static field write",
+    ),
+    (
+        "a180-for-of-generator-only",
+        "generator calls synthesized by for-of for scalar and value-class elements",
     ),
     (
         "a15-manual-lifetime",
@@ -2825,6 +2834,7 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
             "a161-counted-handle-stores"
                 | "a162-async-copy-sites"
                 | "a166-resume-parameter-interference"
+                | "a180-for-of-generator-only"
         ) {
             // This round must not extend or move the pre-existing behavior
             // record. The new entries have dedicated ownership, verifier,

@@ -514,7 +514,7 @@ Corpus: [`corpus/accept/a19-modules/main.ts`](../corpus/accept/a19-modules/main.
 
 A `function*` coroutine yields typed values and is driven explicitly through `Generator<T>.next()` or the accepted `for...of` generator path. Suspension is caller- or host-driven; the language does not schedule coroutine steps implicitly.
 
-Corpus: [`corpus/accept/a20-coroutine-generator.ts`](../corpus/accept/a20-coroutine-generator.ts), [`corpus/accept/a79-for-of-generator.ts`](../corpus/accept/a79-for-of-generator.ts).
+Corpus: [`corpus/accept/a20-coroutine-generator.ts`](../corpus/accept/a20-coroutine-generator.ts), [`corpus/accept/a79-for-of-generator.ts`](../corpus/accept/a79-for-of-generator.ts), [`corpus/accept/a180-for-of-generator-only.ts`](../corpus/accept/a180-for-of-generator-only.ts).
 
 ### Memory model
 

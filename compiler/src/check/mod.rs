@@ -16,7 +16,6 @@ mod tyres;
 #[cfg(test)]
 pub(crate) use expr::{take_classified_places, PlaceKind};
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use swc_common::Spanned;
@@ -605,7 +604,6 @@ pub(crate) struct Checker<'p> {
     pub fn_sigs: HashMap<String, FnSig>,
     pub functions: Vec<hir::Function>,
     pub worker_entries: Vec<hir::WorkerEntry>,
-    pub operation_signatures: RefCell<Vec<hir::OperationSignature>>,
     pub global_sigs: HashMap<String, GlobalSig>,
     pub globals: Vec<hir::Global>,
     pub generic_fns: HashMap<String, GenericFn>,
@@ -690,6 +688,166 @@ pub(crate) struct Checker<'p> {
     pub next_compound_local_id: usize,
 }
 
+fn normalize_operation_parameter_types(
+    target: &hir::OperationSignatureTarget,
+    parameters: &mut [Type],
+) {
+    let array_element = parameters.first().and_then(|receiver| match receiver {
+        Type::Array(element) => Some((**element).clone()),
+        _ => None,
+    });
+    match target {
+        hir::OperationSignatureTarget::BuiltinMethod(hir::BuiltinMethod::ArrayPush) => {
+            if let (Some(element), Some(value)) = (array_element, parameters.get_mut(1)) {
+                *value = element;
+            }
+        }
+        hir::OperationSignatureTarget::Arr(function) => match function {
+            hir::ArrFn::IndexOf
+            | hir::ArrFn::LastIndexOf
+            | hir::ArrFn::Includes
+            | hir::ArrFn::Fill
+            | hir::ArrFn::Unshift => {
+                if let (Some(element), Some(value)) = (array_element, parameters.get_mut(1)) {
+                    *value = element;
+                }
+            }
+            hir::ArrFn::Reduce | hir::ArrFn::ReduceRight => {
+                let accumulator = parameters.get(1).and_then(|callback| match callback {
+                    Type::Func(signature) => signature.params.first().cloned(),
+                    _ => None,
+                });
+                if let (Some(accumulator), Some(initial)) = (accumulator, parameters.get_mut(2)) {
+                    *initial = accumulator;
+                }
+            }
+            _ => {}
+        },
+        hir::OperationSignatureTarget::Map(function) => {
+            let pair = parameters.first().and_then(|receiver| match receiver {
+                Type::Map(key, value) => Some(((**key).clone(), (**value).clone())),
+                _ => None,
+            });
+            if let Some((key, value)) = pair {
+                if matches!(
+                    function,
+                    hir::MapFn::Get
+                        | hir::MapFn::GetOr
+                        | hir::MapFn::Set
+                        | hir::MapFn::Has
+                        | hir::MapFn::Delete
+                ) {
+                    if let Some(parameter) = parameters.get_mut(1) {
+                        *parameter = key;
+                    }
+                }
+                if matches!(function, hir::MapFn::GetOr | hir::MapFn::Set) {
+                    if let Some(parameter) = parameters.get_mut(2) {
+                        *parameter = value;
+                    }
+                }
+            }
+        }
+        hir::OperationSignatureTarget::Set(function) => {
+            let key = parameters.first().and_then(|receiver| match receiver {
+                Type::Set(key) => Some((**key).clone()),
+                _ => None,
+            });
+            if matches!(
+                function,
+                hir::SetFn::Add | hir::SetFn::Has | hir::SetFn::Delete
+            ) {
+                if let (Some(key), Some(parameter)) = (key, parameters.get_mut(1)) {
+                    *parameter = key;
+                }
+            }
+        }
+        hir::OperationSignatureTarget::Worker(function) => {
+            let message = parameters
+                .first()
+                .and_then(|receiver| match (function, receiver) {
+                    (hir::WorkerFn::Post, Type::Worker(input, _)) => Some((**input).clone()),
+                    (hir::WorkerFn::OutboxPost, Type::Outbox(message)) => Some((**message).clone()),
+                    _ => None,
+                });
+            if let (Some(message), Some(parameter)) = (message, parameters.get_mut(1)) {
+                *parameter = message;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn operation_signatures(module: &hir::Module) -> Vec<hir::OperationSignature> {
+    fn visit_child(child: hir::HirChild<'_>, signatures: &mut Vec<hir::OperationSignature>) {
+        match child {
+            hir::HirChild::Expr(expression) => visit_expr(expression, signatures),
+            hir::HirChild::Stmt(statement) => visit_stmt(statement, signatures),
+        }
+    }
+
+    fn visit_stmt(statement: &hir::Stmt, signatures: &mut Vec<hir::OperationSignature>) {
+        for child in statement.children() {
+            visit_child(child, signatures);
+        }
+    }
+
+    fn visit_expr(expression: &hir::Expr, signatures: &mut Vec<hir::OperationSignature>) {
+        for child in expression.children() {
+            visit_child(child, signatures);
+        }
+        let hir::ExprKind::Call { callee, args } = &expression.kind else {
+            return;
+        };
+        let Some((target, receiver)) = hir::operation_signature_target(callee) else {
+            return;
+        };
+        let mut parameter_types = receiver
+            .into_iter()
+            .cloned()
+            .chain(args.iter().map(|argument| argument.ty.clone()))
+            .collect::<Vec<_>>();
+        normalize_operation_parameter_types(&target, &mut parameter_types);
+        let signature = hir::OperationSignature {
+            target,
+            parameter_types,
+            return_type: (expression.ty != Type::Void).then(|| expression.ty.clone()),
+        };
+        if !signatures.contains(&signature) {
+            signatures.push(signature);
+        }
+    }
+
+    fn visit_body(body: &[hir::Stmt], signatures: &mut Vec<hir::OperationSignature>) {
+        for statement in body {
+            visit_stmt(statement, signatures);
+        }
+    }
+
+    let mut signatures = Vec::new();
+    for class in &module.classes {
+        for field in &class.fields {
+            if let Some(initializer) = &field.init {
+                visit_expr(initializer, &mut signatures);
+            }
+        }
+        if let Some(constructor) = &class.ctor {
+            visit_body(&constructor.body, &mut signatures);
+        }
+        for method in &class.methods {
+            visit_body(&method.body, &mut signatures);
+        }
+    }
+    for global in &module.globals {
+        visit_expr(&global.init, &mut signatures);
+    }
+    for function in &module.functions {
+        visit_body(&function.body, &mut signatures);
+    }
+    visit_body(&module.top_level, &mut signatures);
+    signatures
+}
+
 /// Runs the checker over a parsed program.
 pub(crate) fn run(
     prog: &ParsedProgram,
@@ -707,7 +865,6 @@ pub(crate) fn run(
         fn_sigs: HashMap::new(),
         functions: Vec::new(),
         worker_entries: Vec::new(),
-        operation_signatures: RefCell::new(Vec::new()),
         global_sigs: HashMap::new(),
         globals: Vec::new(),
         generic_fns: HashMap::new(),
@@ -813,11 +970,12 @@ pub(crate) fn run(
             globals: ck.globals,
             functions: ck.functions,
             worker_entries: ck.worker_entries,
-            operation_signatures: ck.operation_signatures.into_inner(),
+            operation_signatures: Vec::new(),
             foreign_fns: ck.foreign_defs,
             foreign_mirrors: ck.foreign_mirrors,
             top_level: ck.top_level,
         };
+        module.operation_signatures = operation_signatures(&module);
         crate::trap_sites::decide_index_checks(&mut module);
         Ok(module)
     } else {

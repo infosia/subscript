@@ -19,16 +19,14 @@ use super::{Checker, FnCtx};
 
 impl Checker<'_> {
     fn json_call(&self, function: JsonFn, args: Vec<hir::Expr>, ty: Type, pos: &Pos) -> hir::Expr {
-        let expr = hir::Expr {
+        hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Json(function),
                 args,
             },
             ty,
             pos: pos.clone(),
-        };
-        self.register_operation_signature(&expr);
-        expr
+        }
     }
 
     /// Monomorphizes P13's ambient `JsonResult<T>` reference class on
@@ -1284,7 +1282,7 @@ impl Checker<'_> {
             other => {
                 return Err(format!(
                     "JSON array constructor received non-array type {other:?}"
-                ))
+                ));
             }
         };
         let mut body = vec![
@@ -1354,10 +1352,9 @@ impl Checker<'_> {
             other => {
                 return Err(format!(
                     "JSON array store received non-array type {other:?}"
-                ))
+                ));
             }
         };
-        self.register_operation_signature(&store);
         body.push(hir::Stmt::While {
             cond: json_binary(BinOp::Lt, locals.index(), locals.length(), Type::Bool, pos),
             body: vec![

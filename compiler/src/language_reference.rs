@@ -201,6 +201,7 @@ const FEATURES: &[Feature] = &[
         corpus: &[
             "corpus/accept/a20-coroutine-generator.ts",
             "corpus/accept/a79-for-of-generator.ts",
+            "corpus/accept/a180-for-of-generator-only.ts",
         ],
     },
     Feature {

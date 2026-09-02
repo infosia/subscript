@@ -565,151 +565,6 @@ impl<'p> Checker<'p> {
         }
     }
 
-    pub(super) fn register_operation_signature(&self, expr: &hir::Expr) {
-        let ExprKind::Call { callee, args } = &expr.kind else {
-            return;
-        };
-        let (target, receiver) = match callee {
-            Callee::Ambient(function) => (hir::OperationSignatureTarget::Ambient(*function), None),
-            Callee::ContextBytes { function, ty } => (
-                hir::OperationSignatureTarget::ContextBytes(*function, ty.clone()),
-                None,
-            ),
-            Callee::Math(function) => (hir::OperationSignatureTarget::Math(*function), None),
-            Callee::Num(function) => (hir::OperationSignatureTarget::Num(*function), None),
-            Callee::Date(function) => (hir::OperationSignatureTarget::Date(*function), None),
-            Callee::Json(function) => (hir::OperationSignatureTarget::Json(*function), None),
-            Callee::Str(function) => (hir::OperationSignatureTarget::Str(*function), None),
-            Callee::Regex(function) => (hir::OperationSignatureTarget::Regex(*function), None),
-            Callee::Arr(function) => (hir::OperationSignatureTarget::Arr(*function), None),
-            Callee::Map(function) => (hir::OperationSignatureTarget::Map(*function), None),
-            Callee::Set(function) => (hir::OperationSignatureTarget::Set(*function), None),
-            Callee::Worker(function) => (hir::OperationSignatureTarget::Worker(*function), None),
-            Callee::Method { recv, name } => {
-                let method = match (&recv.ty, name.as_str()) {
-                    (Type::Array(_), "push") => hir::BuiltinMethod::ArrayPush,
-                    (Type::Array(_), "pop") => hir::BuiltinMethod::ArrayPop,
-                    (Type::Str, "slice") => hir::BuiltinMethod::StringSlice,
-                    (Type::Generator(_), "next") => hir::BuiltinMethod::GeneratorNext,
-                    (Type::Class(_), _) => return,
-                    _ => return,
-                };
-                (
-                    hir::OperationSignatureTarget::BuiltinMethod(method),
-                    Some(recv.ty.clone()),
-                )
-            }
-            Callee::Func(_) | Callee::Foreign(_) | Callee::Value(_) => return,
-        };
-        let mut parameter_types = receiver
-            .into_iter()
-            .chain(args.iter().map(|argument| argument.ty.clone()))
-            .collect::<Vec<_>>();
-        Self::normalize_operation_parameter_types(&target, &mut parameter_types);
-        let signature = hir::OperationSignature {
-            target,
-            parameter_types,
-            return_type: (expr.ty != Type::Void).then(|| expr.ty.clone()),
-        };
-        let mut signatures = self.operation_signatures.borrow_mut();
-        if !signatures.contains(&signature) {
-            signatures.push(signature);
-        }
-    }
-
-    fn normalize_operation_parameter_types(
-        target: &hir::OperationSignatureTarget,
-        parameters: &mut [Type],
-    ) {
-        let array_element = parameters.first().and_then(|receiver| match receiver {
-            Type::Array(element) => Some((**element).clone()),
-            _ => None,
-        });
-        match target {
-            hir::OperationSignatureTarget::BuiltinMethod(hir::BuiltinMethod::ArrayPush) => {
-                if let (Some(element), Some(value)) = (array_element, parameters.get_mut(1)) {
-                    *value = element;
-                }
-            }
-            hir::OperationSignatureTarget::Arr(function) => match function {
-                hir::ArrFn::IndexOf
-                | hir::ArrFn::LastIndexOf
-                | hir::ArrFn::Includes
-                | hir::ArrFn::Fill
-                | hir::ArrFn::Unshift => {
-                    if let (Some(element), Some(value)) = (array_element, parameters.get_mut(1)) {
-                        *value = element;
-                    }
-                }
-                hir::ArrFn::Reduce | hir::ArrFn::ReduceRight => {
-                    let accumulator = parameters.get(1).and_then(|callback| match callback {
-                        Type::Func(signature) => signature.params.first().cloned(),
-                        _ => None,
-                    });
-                    if let (Some(accumulator), Some(initial)) = (accumulator, parameters.get_mut(2))
-                    {
-                        *initial = accumulator;
-                    }
-                }
-                _ => {}
-            },
-            hir::OperationSignatureTarget::Map(function) => {
-                let pair = parameters.first().and_then(|receiver| match receiver {
-                    Type::Map(key, value) => Some(((**key).clone(), (**value).clone())),
-                    _ => None,
-                });
-                if let Some((key, value)) = pair {
-                    if matches!(
-                        function,
-                        hir::MapFn::Get
-                            | hir::MapFn::GetOr
-                            | hir::MapFn::Set
-                            | hir::MapFn::Has
-                            | hir::MapFn::Delete
-                    ) {
-                        if let Some(parameter) = parameters.get_mut(1) {
-                            *parameter = key;
-                        }
-                    }
-                    if matches!(function, hir::MapFn::GetOr | hir::MapFn::Set) {
-                        if let Some(parameter) = parameters.get_mut(2) {
-                            *parameter = value;
-                        }
-                    }
-                }
-            }
-            hir::OperationSignatureTarget::Set(function) => {
-                let key = parameters.first().and_then(|receiver| match receiver {
-                    Type::Set(key) => Some((**key).clone()),
-                    _ => None,
-                });
-                if matches!(
-                    function,
-                    hir::SetFn::Add | hir::SetFn::Has | hir::SetFn::Delete
-                ) {
-                    if let (Some(key), Some(parameter)) = (key, parameters.get_mut(1)) {
-                        *parameter = key;
-                    }
-                }
-            }
-            hir::OperationSignatureTarget::Worker(function) => {
-                let message = parameters
-                    .first()
-                    .and_then(|receiver| match (function, receiver) {
-                        (hir::WorkerFn::Post, Type::Worker(input, _)) => Some((**input).clone()),
-                        (hir::WorkerFn::OutboxPost, Type::Outbox(message)) => {
-                            Some((**message).clone())
-                        }
-                        _ => None,
-                    });
-                if let (Some(message), Some(parameter)) = (message, parameters.get_mut(1)) {
-                    *parameter = message;
-                }
-            }
-            _ => {}
-        }
-    }
-
     /// Checks one expression. `ctx` is the contextual type used to type
     /// suffix-less numeric literals (C4); it never coerces non-literals.
     pub(crate) fn check_expr(
@@ -836,7 +691,6 @@ impl<'p> Checker<'p> {
         if !allow_embedded_header_receiver {
             self.reject_embedded_header_copy(&mut checked, ctx);
         }
-        self.register_operation_signature(&checked);
         checked
     }
 
@@ -1267,7 +1121,6 @@ impl<'p> Checker<'p> {
                         ty: Type::RegExp,
                         pos: pos.clone(),
                     };
-                    self.register_operation_signature(&init);
                     self.globals.push(hir::Global {
                         name: name.clone(),
                         ty: Type::RegExp,
@@ -2254,7 +2107,6 @@ impl<'p> Checker<'p> {
                         }
                         let ast::MemberProp::Ident(property) = &member.prop else {
                             current = self.check_optional_member(current, member, fx);
-                            self.register_operation_signature(&current);
                             index += 1;
                             ends_in_call = false;
                             continue;
@@ -2268,14 +2120,12 @@ impl<'p> Checker<'p> {
                             fx,
                             self.pos(call.span),
                         );
-                        self.register_operation_signature(&current);
                         index += 2;
                         ends_in_call = true;
                         continue;
                     }
 
                     current = self.check_optional_member(current, member, fx);
-                    self.register_operation_signature(&current);
                     index += 1;
                     ends_in_call = false;
                 }
@@ -2294,7 +2144,6 @@ impl<'p> Checker<'p> {
                     }
                     let call = opt_call_as_call(call);
                     current = self.check_indirect_call(current, &call, fx, self.pos(call.span));
-                    self.register_operation_signature(&current);
                     index += 1;
                     ends_in_call = true;
                 }
@@ -4288,8 +4137,7 @@ impl<'p> Checker<'p> {
 
         if name == "search" {
             if pattern.ty != Type::Error {
-                let message =
-                    "`string.search` requires a `RegExp`; string-pattern search is not in the P23 surface (Q31)";
+                let message = "`string.search` requires a `RegExp`; string-pattern search is not in the P23 surface (Q31)";
                 self.error(RuleCode::S014, message, prop_pos);
             }
             return self.err_expr(pos);
@@ -8039,7 +7887,9 @@ impl<'p> Checker<'p> {
         {
             self.error(
                 RuleCode::S100,
-                format!("`new {name}` is rejected; Q35 worker handles and endpoints are runtime-created"),
+                format!(
+                    "`new {name}` is rejected; Q35 worker handles and endpoints are runtime-created"
+                ),
                 pos.clone(),
             );
             return self.err_expr(pos);

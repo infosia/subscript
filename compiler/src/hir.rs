@@ -2367,15 +2367,31 @@ impl ArrFn {
             ArrFn::Fill => "fill(value: T, start?: i32, end?: i32): T[]",
             ArrFn::Reverse => "reverse(): T[]",
             ArrFn::Concat => "concat(other: T[]): T[]",
-            ArrFn::ForEach => "forEach(callback: ((value: T) => void) | ((value: T, index: i32) => void)): void",
-            ArrFn::Map => "map<U>(callback: ((value: T) => U) | ((value: T, index: i32) => U)): U[]",
-            ArrFn::Filter => "filter(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): T[]",
-            ArrFn::Reduce => "reduce<U>(callback: ((acc: U, value: T) => U) | ((acc: U, value: T, index: i32) => U), init: U): U",
-            ArrFn::Some => "some(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): boolean",
-            ArrFn::Every => "every(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): boolean",
-            ArrFn::FindIndex => "findIndex(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): i32",
+            ArrFn::ForEach => {
+                "forEach(callback: ((value: T) => void) | ((value: T, index: i32) => void)): void"
+            }
+            ArrFn::Map => {
+                "map<U>(callback: ((value: T) => U) | ((value: T, index: i32) => U)): U[]"
+            }
+            ArrFn::Filter => {
+                "filter(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): T[]"
+            }
+            ArrFn::Reduce => {
+                "reduce<U>(callback: ((acc: U, value: T) => U) | ((acc: U, value: T, index: i32) => U), init: U): U"
+            }
+            ArrFn::Some => {
+                "some(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): boolean"
+            }
+            ArrFn::Every => {
+                "every(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): boolean"
+            }
+            ArrFn::FindIndex => {
+                "findIndex(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): i32"
+            }
             ArrFn::Sort => "sort(comparator: (left: T, right: T) => i32): T[]",
-            ArrFn::ReduceRight => "reduceRight<U>(callback: ((acc: U, value: T) => U) | ((acc: U, value: T, index: i32) => U), init: U): U",
+            ArrFn::ReduceRight => {
+                "reduceRight<U>(callback: ((acc: U, value: T) => U) | ((acc: U, value: T, index: i32) => U), init: U): U"
+            }
             ArrFn::Splice => "splice(start: i32, deleteCount: i32): T[]",
             ArrFn::Shift => "shift(): T",
             ArrFn::Unshift => "unshift(value: T): i32",
@@ -2994,6 +3010,47 @@ impl Callee {
             Callee::Worker(_) => true,
         }
     }
+}
+
+/// Returns the operation-table target and receiver type for a callee.
+///
+/// The receiver is present only when the operation uses method syntax and
+/// must become the first execution operand.
+#[must_use]
+pub fn operation_signature_target(
+    callee: &Callee,
+) -> Option<(OperationSignatureTarget, Option<&Type>)> {
+    let target = match callee {
+        Callee::Ambient(function) => OperationSignatureTarget::Ambient(*function),
+        Callee::ContextBytes { function, ty } => {
+            OperationSignatureTarget::ContextBytes(*function, ty.clone())
+        }
+        Callee::Math(function) => OperationSignatureTarget::Math(*function),
+        Callee::Num(function) => OperationSignatureTarget::Num(*function),
+        Callee::Date(function) => OperationSignatureTarget::Date(*function),
+        Callee::Json(function) => OperationSignatureTarget::Json(*function),
+        Callee::Str(function) => OperationSignatureTarget::Str(*function),
+        Callee::Regex(function) => OperationSignatureTarget::Regex(*function),
+        Callee::Arr(function) => OperationSignatureTarget::Arr(*function),
+        Callee::Map(function) => OperationSignatureTarget::Map(*function),
+        Callee::Set(function) => OperationSignatureTarget::Set(*function),
+        Callee::Worker(function) => OperationSignatureTarget::Worker(*function),
+        Callee::Method { recv, name } => {
+            let method = match (&recv.ty, name.as_str()) {
+                (Type::Array(_), "push") => BuiltinMethod::ArrayPush,
+                (Type::Array(_), "pop") => BuiltinMethod::ArrayPop,
+                (Type::Str, "slice") => BuiltinMethod::StringSlice,
+                (Type::Generator(_), "next") => BuiltinMethod::GeneratorNext,
+                _ => return None,
+            };
+            return Some((
+                OperationSignatureTarget::BuiltinMethod(method),
+                Some(&recv.ty),
+            ));
+        }
+        Callee::Func(_) | Callee::Foreign(_) | Callee::Value(_) => return None,
+    };
+    Some((target, None))
 }
 
 /// Q35 worker/channel operations lowered onto the runtime worker C API.
@@ -3867,43 +3924,7 @@ impl Expr {
                     _ => None,
                 }
                 .or_else(|| {
-                    let (target, prefix) = match callee {
-                        Callee::Ambient(function) => {
-                            (OperationSignatureTarget::Ambient(*function), None)
-                        }
-                        Callee::ContextBytes { function, ty } => (
-                            OperationSignatureTarget::ContextBytes(*function, ty.clone()),
-                            None,
-                        ),
-                        Callee::Math(function) => (OperationSignatureTarget::Math(*function), None),
-                        Callee::Num(function) => (OperationSignatureTarget::Num(*function), None),
-                        Callee::Date(function) => (OperationSignatureTarget::Date(*function), None),
-                        Callee::Json(function) => (OperationSignatureTarget::Json(*function), None),
-                        Callee::Str(function) => (OperationSignatureTarget::Str(*function), None),
-                        Callee::Regex(function) => {
-                            (OperationSignatureTarget::Regex(*function), None)
-                        }
-                        Callee::Arr(function) => (OperationSignatureTarget::Arr(*function), None),
-                        Callee::Map(function) => (OperationSignatureTarget::Map(*function), None),
-                        Callee::Set(function) => (OperationSignatureTarget::Set(*function), None),
-                        Callee::Worker(function) => {
-                            (OperationSignatureTarget::Worker(*function), None)
-                        }
-                        Callee::Method { recv, name } => {
-                            let method = match (&recv.ty, name.as_str()) {
-                                (Type::Array(_), "push") => BuiltinMethod::ArrayPush,
-                                (Type::Array(_), "pop") => BuiltinMethod::ArrayPop,
-                                (Type::Str, "slice") => BuiltinMethod::StringSlice,
-                                (Type::Generator(_), "next") => BuiltinMethod::GeneratorNext,
-                                _ => return None,
-                            };
-                            (
-                                OperationSignatureTarget::BuiltinMethod(method),
-                                Some(&recv.ty),
-                            )
-                        }
-                        Callee::Func(_) | Callee::Foreign(_) | Callee::Value(_) => return None,
-                    };
+                    let (target, prefix) = operation_signature_target(callee)?;
                     let prefix_count = usize::from(prefix.is_some());
                     module
                         .operation_signatures
