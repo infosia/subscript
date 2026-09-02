@@ -145,7 +145,7 @@ fn class_rejects_a_second_read_accessor() {
     let diagnostic = one_accessor_diagnostic(
         "class Value {\n  get item(): i32 { return 0; }\n  get item(): i32 { return 1; }\n}\n",
     );
-    assert_eq!(diagnostic.code, RuleCode::S100);
+    assert_eq!(diagnostic.code, RuleCode::S017);
     assert_eq!(
         diagnostic.message,
         "two accessors cannot declare the read member `item`"
@@ -157,7 +157,7 @@ fn class_rejects_a_second_write_accessor() {
     let diagnostic = one_accessor_diagnostic(
         "class Value {\n  get item(): i32 { return 0; }\n  set item(value: i32) {}\n  set item(value: i32) {}\n}\n",
     );
-    assert_eq!(diagnostic.code, RuleCode::S100);
+    assert_eq!(diagnostic.code, RuleCode::S017);
     assert_eq!(
         diagnostic.message,
         "two accessors cannot declare the write member `item`"

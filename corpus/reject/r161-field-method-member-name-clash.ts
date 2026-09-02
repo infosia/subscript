@@ -3,7 +3,7 @@
 // exercises: class-member-namespace, field-method-name-clash
 // questions: §67
 // tsc: rejects TS2300
-// expected-error: S100 at the second declaration
+// expected-error: S017 at the second declaration
 class C {
   x: i32 = 1;
   x(): i32 {

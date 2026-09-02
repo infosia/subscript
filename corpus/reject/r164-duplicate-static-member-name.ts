@@ -3,7 +3,7 @@
 // exercises: static-namespace, duplicate-static-member
 // questions: §71
 // tsc: rejects TS2300
-// expected-error: S100 at the second declaration
+// expected-error: S017 at the second declaration
 class C {
   static value: i32 = 1;
   static value(): i32 {

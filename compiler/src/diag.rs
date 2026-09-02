@@ -7,8 +7,8 @@ use crate::divergence::Divergence;
 /// Stable rule code carried by every diagnostic.
 ///
 /// Codes are the tested contract (`specs/blocks/compiler.md` §6); they are
-/// never renumbered. `S100` is the catch-all for constructs outside the
-/// decided surface.
+/// never renumbered. `S015` is retired and cannot be reused. `S100` is the
+/// catch-all for constructs outside the decided surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum RuleCode {
@@ -44,13 +44,19 @@ pub enum RuleCode {
     /// Out-of-subset standard-library use, or arithmetic on storage-only
     /// `f16` (Q23).
     S014,
+    /// Every name must bind to a declaration.
+    S016,
+    /// One namespace cannot contain two declarations of the same name.
+    S017,
+    /// A receiver type must declare each accessed member.
+    S018,
     /// Catch-all: construct outside the decided language surface.
     S100,
 }
 
 impl RuleCode {
     /// Every stable rule code, in numeric order.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 18] = [
         Self::S001,
         Self::S002,
         Self::S003,
@@ -65,6 +71,9 @@ impl RuleCode {
         Self::S012,
         Self::S013,
         Self::S014,
+        Self::S016,
+        Self::S017,
+        Self::S018,
         Self::S100,
     ];
 
@@ -86,6 +95,9 @@ impl RuleCode {
             RuleCode::S012 => "S012",
             RuleCode::S013 => "S013",
             RuleCode::S014 => "S014",
+            RuleCode::S016 => "S016",
+            RuleCode::S017 => "S017",
+            RuleCode::S018 => "S018",
             RuleCode::S100 => "S100",
         }
     }
@@ -116,6 +128,11 @@ impl RuleCode {
             RuleCode::S014 => {
                 "Out-of-subset standard-library use and arithmetic on storage-only `f16` are rejected."
             }
+            RuleCode::S016 => "Every type, value, and imported name must bind to a declaration.",
+            RuleCode::S017 => {
+                "One namespace cannot contain two declarations of the same name."
+            }
+            RuleCode::S018 => "A receiver type must declare each accessed member.",
             RuleCode::S100 => "Constructs outside the decided language surface are rejected.",
         }
     }
@@ -201,7 +218,7 @@ mod tests {
 
     #[test]
     fn every_rule_code_has_an_explanation() {
-        assert_eq!(RuleCode::ALL.len(), 15);
+        assert_eq!(RuleCode::ALL.len(), 18);
         for code in RuleCode::ALL {
             assert!(!code.explanation().is_empty(), "{code}");
             assert!(!code.explanation().contains('\n'), "{code}");

@@ -159,7 +159,7 @@ export function main(): void {
     assert_eq!(unknown_names.len(), 2, "diagnostics: {diagnostics:?}");
     assert!(unknown_names
         .iter()
-        .all(|diagnostic| diagnostic.code == RuleCode::S100));
+        .all(|diagnostic| diagnostic.code == RuleCode::S016));
 }
 
 #[test]
@@ -175,6 +175,6 @@ export function main(): void {
         .expect_err("unknown type argument must reject the program");
 
     assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == RuleCode::S100 && diagnostic.message == "unknown type name `NotAType`"
+        diagnostic.code == RuleCode::S016 && diagnostic.message == "unknown type name `NotAType`"
     }));
 }

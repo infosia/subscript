@@ -997,7 +997,7 @@ impl<'p> Checker<'p> {
                     if receiver.ty != Type::Error {
                         let receiver_ty = self.type_name(&receiver.ty);
                         self.error(
-                            RuleCode::S100,
+                            RuleCode::S018,
                             format!("type `{receiver_ty}` has no async method `{name}`"),
                             method_pos,
                         );
@@ -1007,7 +1007,7 @@ impl<'p> Checker<'p> {
                 let Some(sig) = self.class_sigs[class.0].methods.get(&name).cloned() else {
                     let class_name = self.classes[class.0].name.clone();
                     self.error(
-                        RuleCode::S100,
+                        RuleCode::S018,
                         format!("`{class_name}` has no method `{name}`"),
                         method_pos,
                     );
@@ -1514,7 +1514,7 @@ impl<'p> Checker<'p> {
                     self.err_expr(pos)
                 } else {
                     self.error(
-                        RuleCode::S100,
+                        RuleCode::S016,
                         format!("unknown name `{}`", name),
                         pos.clone(),
                     );
@@ -2781,7 +2781,7 @@ impl<'p> Checker<'p> {
                     let signature = self.class_sigs[id.0].static_methods.get(prop).cloned();
                     let Some(signature) = signature else {
                         self.error(
-                            RuleCode::S100,
+                            RuleCode::S018,
                             format!("static read accessor `{class_name}.{prop}` is missing"),
                             prop_pos.clone(),
                         );
@@ -2805,7 +2805,7 @@ impl<'p> Checker<'p> {
                     return Some(self.err_expr(prop_pos));
                 }
                 self.error(
-                    RuleCode::S100,
+                    RuleCode::S018,
                     format!("class `{class_name}` has no static member `{prop}`"),
                     prop_pos.clone(),
                 );
@@ -2821,7 +2821,7 @@ impl<'p> Checker<'p> {
                     );
                 } else {
                     self.error(
-                        RuleCode::S100,
+                        RuleCode::S018,
                         format!("generic class `{name}` has no static member `{prop}`"),
                         prop_pos.clone(),
                     );
@@ -2842,7 +2842,7 @@ impl<'p> Checker<'p> {
                     }),
                     None => {
                         self.error(
-                            RuleCode::S100,
+                            RuleCode::S018,
                             format!("enum `{}` has no member `{}`", name, prop),
                             prop_pos.clone(),
                         );
@@ -3808,7 +3808,7 @@ impl<'p> Checker<'p> {
             }
             let type_name = self.type_name(&recv.ty);
             self.error(
-                RuleCode::S100,
+                RuleCode::S018,
                 format!("`{type_name}` has no method `{name}`"),
                 prop_pos,
             );
@@ -5335,7 +5335,7 @@ impl<'p> Checker<'p> {
                     );
                 } else {
                     self.error(
-                        RuleCode::S100,
+                        RuleCode::S018,
                         format!("`{}` has no member `{}`", class_name, name),
                         prop_pos.clone(),
                     );
@@ -5589,7 +5589,7 @@ impl<'p> Checker<'p> {
                     );
                 } else {
                     self.error(
-                        RuleCode::S100,
+                        RuleCode::S018,
                         format!("`{}` has no member `{name}`", self.type_name(&ty)),
                         prop_pos.clone(),
                     );
@@ -5607,7 +5607,7 @@ impl<'p> Checker<'p> {
             other => {
                 let type_name = self.type_name(&other);
                 self.error(
-                    RuleCode::S100,
+                    RuleCode::S018,
                     format!("`{}` has no member `{}`", type_name, name),
                     prop_pos.clone(),
                 );
@@ -6101,7 +6101,7 @@ impl<'p> Checker<'p> {
         if self.class_sigs[class.0].has_static_accessor(prop) {
             let Some(signature) = self.class_sigs[class.0].static_methods.get(prop) else {
                 self.error(
-                    RuleCode::S100,
+                    RuleCode::S018,
                     format!("static read accessor `{class_name}.{prop}` is missing"),
                     prop_pos.clone(),
                 );
@@ -6704,7 +6704,7 @@ impl<'p> Checker<'p> {
                 return self.check_worker_spawn(c, fx, pos);
             }
             self.error(
-                RuleCode::S100,
+                RuleCode::S018,
                 format!("`Worker` has no static method `{name}`"),
                 prop_pos,
             );
@@ -6810,7 +6810,7 @@ impl<'p> Checker<'p> {
                     _ => {
                         let type_name = self.type_name(&Type::Worker(input, output));
                         self.error(
-                            RuleCode::S100,
+                            RuleCode::S018,
                             format!("`{type_name}` has no method `{name}`"),
                             prop_pos,
                         );
@@ -6835,7 +6835,7 @@ impl<'p> Checker<'p> {
                     _ => {
                         let type_name = self.type_name(&Type::Inbox(message));
                         self.error(
-                            RuleCode::S100,
+                            RuleCode::S018,
                             format!("`{type_name}` has no method `{name}`"),
                             prop_pos,
                         );
@@ -6857,7 +6857,7 @@ impl<'p> Checker<'p> {
                 if name != "post" {
                     let type_name = self.type_name(&Type::Outbox(message));
                     self.error(
-                        RuleCode::S100,
+                        RuleCode::S018,
                         format!("`{type_name}` has no method `{name}`"),
                         prop_pos,
                     );
@@ -6930,7 +6930,7 @@ impl<'p> Checker<'p> {
                 }
                 let type_name = self.type_name(&Type::FixedArray(elem, n));
                 self.error(
-                    RuleCode::S100,
+                    RuleCode::S018,
                     format!("`{type_name}` has no method `{name}`"),
                     prop_pos,
                 );
@@ -7028,7 +7028,7 @@ impl<'p> Checker<'p> {
                             return self.err_expr(pos);
                         }
                         self.error(
-                            RuleCode::S100,
+                            RuleCode::S018,
                             format!("`{}` has no method `{}`", class_name, name),
                             prop_pos.clone(),
                         );
@@ -7039,7 +7039,7 @@ impl<'p> Checker<'p> {
             other => {
                 let type_name = self.type_name(&other);
                 self.error(
-                    RuleCode::S100,
+                    RuleCode::S018,
                     format!("`{}` has no method `{}`", type_name, name),
                     prop_pos.clone(),
                 );

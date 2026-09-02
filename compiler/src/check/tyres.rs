@@ -562,7 +562,7 @@ impl<'p> Checker<'p> {
                 }
             }
             _ => {
-                self.error(RuleCode::S100, format!("unknown type name `{}`", name), pos);
+                self.error(RuleCode::S016, format!("unknown type name `{}`", name), pos);
                 Type::Error
             }
         }

@@ -1159,7 +1159,7 @@ impl<'p> Checker<'p> {
             } else {
                 format!("duplicate declaration of `{name}` in one scope")
             };
-            self.error(RuleCode::S100, message, pos);
+            self.error(RuleCode::S017, message, pos);
         }
     }
 
@@ -1579,7 +1579,7 @@ impl<'p> Checker<'p> {
         };
         if scope.contains_key(name) {
             self.error(
-                RuleCode::S100,
+                RuleCode::S017,
                 format!("duplicate top-level name `{}`", name),
                 pos,
             );
@@ -1853,7 +1853,7 @@ impl<'p> Checker<'p> {
         } else {
             if self.fn_sigs.contains_key(&name) {
                 self.error(
-                    RuleCode::S100,
+                    RuleCode::S017,
                     format!("duplicate function name `{}` in the program", name),
                     pos.clone(),
                 );
@@ -2513,7 +2513,7 @@ impl<'p> Checker<'p> {
                         Some(item) => additions.push((local, item.clone(), pos)),
                         None => {
                             self.error(
-                                RuleCode::S100,
+                                RuleCode::S016,
                                 format!("`{}` is not defined in `{}`", local, raw),
                                 pos,
                             );
@@ -2783,7 +2783,7 @@ impl<'p> Checker<'p> {
             },
             (Some(Accessor { read: true, .. }), ReadAccessor) => {
                 self.error(
-                    RuleCode::S100,
+                    RuleCode::S017,
                     format!(
                         "two {}accessors cannot declare the read member `{name}`",
                         if is_static { "static " } else { "" }
@@ -2794,7 +2794,7 @@ impl<'p> Checker<'p> {
             }
             (Some(Accessor { write: true, .. }), WriteAccessor) => {
                 self.error(
-                    RuleCode::S100,
+                    RuleCode::S017,
                     format!(
                         "two {}accessors cannot declare the write member `{name}`",
                         if is_static { "static " } else { "" }
@@ -2832,7 +2832,7 @@ impl<'p> Checker<'p> {
                 } else {
                     message
                 };
-                self.error(RuleCode::S100, message, pos);
+                self.error(RuleCode::S017, message, pos);
                 return false;
             }
         };

@@ -151,12 +151,12 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r143-accessor-compound-assign.ts", RuleCode::S100, 22),
     ("r144-accessor-increment.ts", RuleCode::S100, 22),
     ("r145-accessor-write-as-value.ts", RuleCode::S100, 22),
-    ("r146-accessor-field-name-clash.ts", RuleCode::S100, 10),
+    ("r146-accessor-field-name-clash.ts", RuleCode::S017, 10),
     ("r147-static-accessor.ts", RuleCode::S100, 9),
     ("r148-switch-cross-case-read.ts", RuleCode::S100, 14),
-    ("r149-switch-duplicate-declaration.ts", RuleCode::S100, 14),
-    ("r150-parameter-and-local.ts", RuleCode::S100, 8),
-    ("r151-duplicate-const.ts", RuleCode::S100, 9),
+    ("r149-switch-duplicate-declaration.ts", RuleCode::S017, 14),
+    ("r150-parameter-and-local.ts", RuleCode::S017, 8),
+    ("r151-duplicate-const.ts", RuleCode::S017, 9),
     ("r152-read-before-declaration.ts", RuleCode::S100, 11),
     ("r153-switch-cross-case-write.ts", RuleCode::S100, 15),
     (
@@ -173,10 +173,10 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         12,
     ),
-    ("r161-field-method-member-name-clash.ts", RuleCode::S100, 9),
-    ("r162-duplicate-method-member-name.ts", RuleCode::S100, 12),
-    ("r163-duplicate-field-member-name.ts", RuleCode::S100, 9),
-    ("r164-duplicate-static-member-name.ts", RuleCode::S100, 9),
+    ("r161-field-method-member-name-clash.ts", RuleCode::S017, 9),
+    ("r162-duplicate-method-member-name.ts", RuleCode::S017, 12),
+    ("r163-duplicate-field-member-name.ts", RuleCode::S017, 9),
+    ("r164-duplicate-static-member-name.ts", RuleCode::S017, 9),
     ("r165-this-in-static-method.ts", RuleCode::S100, 11),
     ("r166-static-member-through-instance.ts", RuleCode::S100, 13),
     ("r167-static-member-on-generic-class.ts", RuleCode::S100, 8),
@@ -189,6 +189,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r170-enum-member-out-of-range.ts", RuleCode::S100, 9),
     ("r171-enum-member-inexact-literal.ts", RuleCode::S100, 8),
     ("r172-using-in-lambda.ts", RuleCode::S100, 18),
+    ("r174-unknown-name.ts", RuleCode::S016, 7),
+    ("r175-unknown-type-name.ts", RuleCode::S016, 7),
+    ("r176-unknown-member.ts", RuleCode::S018, 10),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -356,8 +359,8 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
 fn reject_table_covers_every_corpus_entry() {
     assert_eq!(
         expected_entries().len(),
-        166,
-        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, seven R37 entries, fourteen §67 entries, one §70 entry, five §71 entries, one §33.5 rule-10 entry, two §72 enum-literal entries, and one §76.3 using-in-lambda entry"
+        169,
+        "expected 89 standing reject entries, the seven-entry P23 battery, four R13 entries, six Q35 entries, three R14 entries, one R15 entry, one R17 entry, two R16 entries, one R18 entry, one R19 entry, three R23 entries, two R26 entries, one R27 entry, one R28 entry, three R29 entries, three R31 entries, one R32 entry, three R33 entries, two R34 entries, one R36 entry, seven R37 entries, fourteen §67 entries, one §70 entry, five §71 entries, one §33.5 rule-10 entry, two §72 enum-literal entries, one §76.3 using-in-lambda entry, and three §82.2 entries"
     );
     let dir = corpus_dir().join("reject");
     let mut entries: Vec<String> = fs::read_dir(&dir)
@@ -921,11 +924,11 @@ fn r31_other_computed_method_name_stays_s100() {
 }
 
 #[test]
-fn r31_explicit_symbol_dispose_call_stays_s100() {
+fn r31_explicit_symbol_dispose_call_uses_s016() {
     let diagnostics = check_program(&[SourceFile::new(
         "explicit-dispose.ts",
         "class Resource {\n  [Symbol.dispose](): void {}\n}\nexport function main(): void {\n  const resource = new Resource();\n  resource[Symbol.dispose]();\n}\n",
     )])
     .expect_err("an explicit Symbol.dispose call must fail");
-    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(diagnostics[0].code, RuleCode::S016);
 }

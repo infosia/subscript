@@ -273,6 +273,9 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r170-enum-member-out-of-range`](../corpus/reject/r170-enum-member-out-of-range.ts) | Rejects an enum member value outside the i32 range. | numeric-enum, integer-literal-range | Q3 |
 | [`reject/r171-enum-member-inexact-literal`](../corpus/reject/r171-enum-member-inexact-literal.ts) | Rejects an enum member literal that is not exact in f64 and is outside i32. | numeric-enum, integer-literal-spelling | Q3 |
 | [`reject/r172-using-in-lambda`](../corpus/reject/r172-using-in-lambda.ts) | Rejects a using declaration inside a lambda body. | using-declaration, lambda-body, nested-declaration | §60, §76.3 |
+| [`reject/r174-unknown-name`](../corpus/reject/r174-unknown-name.ts) | Rejects an unknown value name. | unknown-name | §82.2 |
+| [`reject/r175-unknown-type-name`](../corpus/reject/r175-unknown-type-name.ts) | Rejects an unknown type name. | unknown-type-name | §82.2 |
+| [`reject/r176-unknown-member`](../corpus/reject/r176-unknown-member.ts) | Rejects an unknown method on a class receiver. | unknown-member | §82.2 |
 | [`reject/r18-math-value`](../corpus/reject/r18-math-value.ts) | Rejects `Math` used as a value; it is a compiler namespace, not an object. | rejected-math-subset, math-intrinsics | Q19 |
 | [`reject/r19-date-local-accessor`](../corpus/reject/r19-date-local-accessor.ts) | Rejects local-time Date accessors; the accepted subset is UTC-only (getUTC…). | rejected-date-subset, date-intrinsics | Q20 |
 | [`reject/r20-date-setter`](../corpus/reject/r20-date-setter.ts) | Rejects Date setters; a Date is an immutable value. | rejected-date-subset, date-intrinsics | Q20 |

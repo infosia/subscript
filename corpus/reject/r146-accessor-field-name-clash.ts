@@ -3,7 +3,7 @@
 // exercises: accessor-field-name-clash
 // questions: R37
 // tsc: rejects TS2300
-// expected-error: S100 at the second declaration
+// expected-error: S017 at the second declaration
 class Value {
   current: i32 = 1;
 

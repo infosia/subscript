@@ -302,6 +302,66 @@ export function main(): void {
 }
 ```
 
+### S016
+
+Every type, value, and imported name must bind to a declaration.
+
+Pinned corpus: [`corpus/reject/r174-unknown-name.ts`](../corpus/reject/r174-unknown-name.ts), line 7.
+
+Header guidance:
+
+```text
+// tsc: rejects TS2304
+// expected-error: S016 at the unknown name
+```
+
+```ts
+// tsc: rejects TS2304
+// expected-error: S016 at the unknown name
+const n: i32 = zz;
+```
+
+### S017
+
+One namespace cannot contain two declarations of the same name.
+
+Pinned corpus: [`corpus/reject/r146-accessor-field-name-clash.ts`](../corpus/reject/r146-accessor-field-name-clash.ts), line 10.
+
+Header guidance:
+
+```text
+// tsc: rejects TS2300
+// expected-error: S017 at the second declaration
+```
+
+```ts
+  current: i32 = 1;
+
+  get current(): i32 {
+    return 2;
+  }
+```
+
+### S018
+
+A receiver type must declare each accessed member.
+
+Pinned corpus: [`corpus/reject/r176-unknown-member.ts`](../corpus/reject/r176-unknown-member.ts), line 10.
+
+Header guidance:
+
+```text
+// tsc: rejects TS2339
+// expected-error: S018 at the unknown member
+```
+
+```ts
+export function main(): void {
+  const s: Store = new Store();
+  s.store(1);
+}
+```
+
 ### S100
 
 Constructs outside the decided language surface are rejected.

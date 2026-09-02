@@ -1872,8 +1872,8 @@ mod tests {
 
     #[test]
     fn array_method_on_fixed_array_is_s014() {
-        // Q27 adds only the callback family; formatting and the other
-        // checker-owned Array methods remain dynamic-array-only.
+        // Q27 adds only the callback family. Other checker-owned Array
+        // methods remain dynamic-array-only.
         let err = check_one(
             "export function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  print(xs.join(\",\"));\n}\n",
         )
@@ -1885,16 +1885,14 @@ mod tests {
 
     #[test]
     fn push_and_pop_on_a_fixed_array_are_not_blamed_on_q22() {
-        // P11 review MINOR 3: `push`/`pop` are not Q22 Array methods
-        // (they are deliberately outside `ambient::arr_method`), so the
-        // FixedArray rejection keeps the standing S100 "no method"
-        // diagnostic rather than citing Q22.
+        // `push` and `pop` are not Q22 Array methods. They are outside
+        // `ambient::arr_method`, so the FixedArray error uses S018.
         for call in ["xs.push(4)", "xs.pop()"] {
             let err = check_one(&format!(
                 "export function main(): void {{\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  {call};\n}}\n"
             ))
             .unwrap_err();
-            assert_eq!(err[0].code, RuleCode::S100, "{call}: {}", err[0].message);
+            assert_eq!(err[0].code, RuleCode::S018, "{call}: {}", err[0].message);
             assert!(
                 !err[0].message.contains("Q22"),
                 "{call}: {}",

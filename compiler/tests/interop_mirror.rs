@@ -64,7 +64,7 @@ fn missing_owner_mirror_reports_the_existing_unknown_type_error() {
     .expect_err("the external mirror alone must not synthesize its missing type");
 
     assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == RuleCode::S100 && diagnostic.message == "unknown type name `SubDevice`"
+        diagnostic.code == RuleCode::S016 && diagnostic.message == "unknown type name `SubDevice`"
     }));
 }
 
@@ -82,7 +82,7 @@ fn missing_cenum_alias_ambient_reports_the_existing_unknown_type_error() {
     .expect_err("a generated CEnum reference must not synthesize its ambient alias");
 
     assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == RuleCode::S100 && diagnostic.message == "unknown type name `EngineMode`"
+        diagnostic.code == RuleCode::S016 && diagnostic.message == "unknown type name `EngineMode`"
     }));
 }
 
