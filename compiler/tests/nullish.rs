@@ -1,4 +1,6 @@
-use subscript_compiler::{check_program, hir, Diagnostic, RuleCode, SourceFile};
+use subscript_compiler::{
+    check_program, hir, render_diagnostics, Diagnostic, RuleCode, SourceFile,
+};
 
 fn function_body(source: &str, name: &str) -> Vec<hir::Stmt> {
     let module = check_program(&[SourceFile::new("identity.ts", source)])
@@ -96,24 +98,92 @@ fn optional_call_place_has_the_if_hir() {
 
 #[test]
 fn nullish_assignment_stays_rejected() {
-    let result =
-        diagnostics("class Box {}\nfunction run(x: Box | null): void { x ??= new Box(); }\n");
+    let source = "class Box {}\nfunction run(x: Box | null): void { x ??= new Box(); }\n";
+    let files = [SourceFile::new("test.ts", source)];
+    let result = check_program(&files).expect_err("nullish assignment must fail");
     assert_eq!(result[0].code, RuleCode::S100);
     assert_eq!(
         result[0].message,
         "assignment operator outside the decided surface"
     );
+    let rendered = render_diagnostics(&files, &result);
+    assert!(rendered.contains("= TypeScript accepts:"), "{rendered}");
+    assert!(rendered.contains("a ??= new Box();"), "{rendered}");
 }
 
 #[test]
 fn optional_chain_rejects_a_value_class_receiver() {
-    let result = diagnostics(
-        "@CStruct\nclass Value { v: i32 = 1; }\nfunction run(value: Value): i32 { return value?.v ?? 0; }\n",
-    );
+    let source = "@CStruct\nclass Value { v: i32 = 1; }\nfunction run(value: Value): i32 { return value?.v ?? 0; }\n";
+    let files = [SourceFile::new("test.ts", source)];
+    let result = check_program(&files).expect_err("the optional chain must fail");
     assert_eq!(result[0].code, RuleCode::S100);
     assert_eq!(
         result[0].message,
         "the tested receiver has type `Value`, which is not nullable"
+    );
+    let rendered = render_diagnostics(&files, &result);
+    let block = rendered
+        .split("= TypeScript accepts:")
+        .nth(1)
+        .expect("the divergence block must render");
+    assert!(block.contains("?."), "{rendered}");
+}
+
+#[test]
+fn optional_chain_on_an_unknown_name_reports_one_diagnostic() {
+    let result = diagnostics("const n: i32 = zz?.v ?? 0;\n");
+    assert_eq!(result.len(), 1, "diagnostics: {result:?}");
+    assert_eq!(result[0].code, RuleCode::S016);
+    assert_eq!(result[0].message, "unknown name `zz`");
+}
+
+#[test]
+fn unknown_call_and_constructor_names_use_s016() {
+    for (source, message) in [
+        ("zz();\n", "unknown function `zz`"),
+        ("new Nope();\n", "unknown class `Nope`"),
+    ] {
+        let result = diagnostics(source);
+        assert_eq!(result.len(), 1, "diagnostics: {result:?}");
+        assert_eq!(result[0].code, RuleCode::S016);
+        assert_eq!(result[0].message, message);
+    }
+}
+
+#[test]
+fn non_place_nullish_receiver_in_a_field_initializer_fails() {
+    let source = "class Box {}\nfunction maybe(): Box | null { return null; }\nconst fallback: Box = new Box();\nclass Holder { x: Box = maybe() ?? fallback; }\n";
+    let files = [SourceFile::new("test.ts", source)];
+    let result = check_program(&files).expect_err("the field initializer must fail");
+    assert_eq!(result.len(), 1, "diagnostics: {result:?}");
+    assert_eq!(result[0].code, RuleCode::S100);
+    assert_eq!(
+        result[0].message,
+        "a non-place receiver of `??` or `?.` cannot be used in an initializer"
+    );
+    assert!(
+        render_diagnostics(&files, &result).contains("= TypeScript accepts:"),
+        "the rejection must render its divergence block"
+    );
+}
+
+#[test]
+fn place_nullish_receiver_in_a_field_initializer_checks() {
+    let source = "class Box {}\nconst candidate: Box | null = null;\nconst fallback: Box = new Box();\nclass Holder { x: Box = candidate ?? fallback; }\n";
+    check_program(&[SourceFile::new("test.ts", source)])
+        .expect("a place receiver needs no synthetic local");
+}
+
+#[test]
+fn module_initializer_lambda_call_keeps_the_indirect_call_order_error() {
+    let source =
+        "const n: i32 = ((): i32 => 3)();\nexport function main(): void { print(`${n}`); }\n";
+    let result = diagnostics(source);
+    assert_eq!(result.len(), 1, "diagnostics: {result:?}");
+    assert_eq!(result[0].code, RuleCode::S100);
+    assert_eq!(
+        result[0].message,
+        "`n` is accessed before its declaration, through an indirect call"
     );
 }
 

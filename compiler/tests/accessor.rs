@@ -193,8 +193,48 @@ fn read_only_accessor_rejects_compound_assignment() {
     assert_eq!(diagnostic.code, RuleCode::S100);
     assert_eq!(
         diagnostic.message,
-        "`x.v = v` cannot write through a read-only accessor"
+        "`x.v += 1` cannot write through a read-only accessor"
     );
+}
+
+#[test]
+fn static_read_only_accessor_update_reports_the_written_spelling() {
+    let diagnostic = one_accessor_diagnostic(
+        "class C {\n  static get x(): i32 { return 0; }\n}\nexport function main(): void {\n  C.x++;\n}\n",
+    );
+    assert_eq!(diagnostic.code, RuleCode::S100);
+    assert_eq!(
+        diagnostic.message,
+        "`C.x++` cannot write through a read-only accessor"
+    );
+}
+
+#[test]
+fn index_signature_updates_in_for_clauses_use_statement_position() {
+    let source = "class Values {\n  [index: u32]: i32;\n  get(index: u32): i32 { return 0; }\n  set(index: u32, value: i32): void {}\n}\nexport function main(): void {\n  const values: Values = new Values();\n  const index: u32 = 0;\n  for (let i: i32 = 0; i < 1; values[index]++) { i++; }\n  for (let i: i32 = 0; i < 1; values[index] += 1) { i++; }\n}\n";
+    let body = main_body(source);
+    let steps = body
+        .iter()
+        .filter_map(|statement| match statement {
+            hir::Stmt::For {
+                step: Some(step), ..
+            } => Some(step),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(steps.len(), 2);
+    for step in steps {
+        assert!(
+            matches!(
+                &step.kind,
+                hir::ExprKind::Call {
+                    callee: hir::Callee::Method { name, .. },
+                    ..
+                } if name == "set"
+            ),
+            "the index update must rewrite to the write method: {step:?}"
+        );
+    }
 }
 
 #[test]

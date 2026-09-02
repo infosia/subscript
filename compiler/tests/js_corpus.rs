@@ -21,8 +21,6 @@ const NODE_RECORDED: &str = "v24.18.0";
 /// is exact, because the repository controls it: a mismatch is a stale
 /// `node_modules` (§69.3 rule 4).
 const TYPESCRIPT_VERSION: &str = "5.9.2";
-// These entries retire in §82.1 and §82.5. The pinned table records them in prose.
-const SECTION_82_RETIRED: &[&str] = &["r130", "r143", "r144", "r147"];
 
 /// The major line of a `node` version string, `v24.18.0` to `v24`.
 fn node_major(version: &str) -> &str {
@@ -421,12 +419,7 @@ fn collision_index(root: &Path) -> Result<CollisionIndex, String> {
     let path = root.join("specs/blocks/collisions.md");
     let source =
         fs::read_to_string(&path).map_err(|error| format!("read {}: {error}", path.display()))?;
-    let mut index = CollisionIndex::parse(&source)
-        .map_err(|error| format!("parse {}: {error}", path.display()))?;
-    index
-        .retired
-        .extend(SECTION_82_RETIRED.iter().map(|name| (*name).to_string()));
-    Ok(index)
+    CollisionIndex::parse(&source).map_err(|error| format!("parse {}: {error}", path.display()))
 }
 
 fn decode_hex(text: &str) -> Result<Vec<u8>, String> {

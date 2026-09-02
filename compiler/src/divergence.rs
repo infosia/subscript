@@ -49,6 +49,12 @@ pub enum Divergence {
     GeneralUnionAndUndefined,
     /// A nullish test on a non-nullable value.
     NullishNonNullable,
+    /// An optional-chain test on a non-nullable value.
+    OptionalChainNonNullable,
+    /// A nullish assignment.
+    NullishAssignment,
+    /// A non-place nullish receiver in an initializer.
+    NonPlaceNullishInitializer,
     /// An optional chain that will bind `undefined` in TypeScript.
     OptionalChainUnbound,
     /// A computed optional-chain step.
@@ -167,6 +173,9 @@ impl Divergence {
         Divergence::Exceptions,
         Divergence::GeneralUnionAndUndefined,
         Divergence::NullishNonNullable,
+        Divergence::OptionalChainNonNullable,
+        Divergence::NullishAssignment,
+        Divergence::NonPlaceNullishInitializer,
         Divergence::OptionalChainUnbound,
         Divergence::OptionalChainIndex,
         Divergence::LiteralUnionAlias,
@@ -341,6 +350,24 @@ impl Divergence {
                 ts: "class Box {}\nconst a: Box = new Box();\nconst b: Box = a ?? new Box();",
                 subscript: "class Box {}\nconst a: Box | null = new Box();\nconst b: Box = a ?? new Box();",
                 why: "The nullish test must inspect a nullable pointer, so a non-nullable value has no null branch.",
+                collision: "C7",
+            },
+            Divergence::OptionalChainNonNullable => DivergenceEntry {
+                ts: "class Box { value: i32 = 1; }\nconst a: Box = new Box();\nconst value: i32 = a?.value ?? 0;",
+                subscript: "class Box { value: i32 = 1; }\nconst a: Box = new Box();\nconst value: i32 = a.value;",
+                why: "The optional test must inspect a nullable pointer, so a non-nullable receiver has no null branch.",
+                collision: "C7",
+            },
+            Divergence::NullishAssignment => DivergenceEntry {
+                ts: "class Box {}\nlet a: Box | null = null;\na ??= new Box();",
+                subscript: "class Box {}\nlet a: Box | null = null;\nif (a === null) { a = new Box(); }",
+                why: "`??=` has no HIR form, so the explicit null test keeps assignment and evaluation order visible.",
+                collision: "C7",
+            },
+            Divergence::NonPlaceNullishInitializer => DivergenceEntry {
+                ts: "class Box {}\nfunction maybe(): Box | null { return null; }\nclass Holder { value: Box = maybe() ?? new Box(); }",
+                subscript: "class Box {}\nconst candidate: Box | null = null;\nclass Holder { value: Box = candidate ?? new Box(); }",
+                why: "A non-place receiver needs a synthetic local, and an initializer has no statement list that can declare it.",
                 collision: "C7",
             },
             Divergence::OptionalChainUnbound => DivergenceEntry {

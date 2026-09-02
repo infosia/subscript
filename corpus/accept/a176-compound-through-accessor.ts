@@ -81,6 +81,9 @@ export function main(): void {
   counter.v *= 3;
   counter.v++;
   --counter.v;
+  for (let i: i32 = 0; i < 3; counter.v++) {
+    i++;
+  }
   print(`instance:${counter.v}`);
 
   Counter.total += 6;

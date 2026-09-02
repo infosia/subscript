@@ -129,6 +129,41 @@ fn a_wrong_type_argument_count_fails() {
 }
 
 #[test]
+fn a_bodiless_generic_method_fails_during_collection() {
+    let diagnostics = diagnostics("class C { m<T>(value: T): T; }\n");
+    assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(diagnostics[0].message, "function bodies are required");
+    assert_eq!(diagnostics[0].pos.line, 1);
+}
+
+#[test]
+fn a_bodiless_generic_free_function_fails_during_collection() {
+    let diagnostics = diagnostics("function f<T>(value: T): T;\n");
+    assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(diagnostics[0].message, "function bodies are required");
+    assert_eq!(diagnostics[0].pos.line, 1);
+}
+
+#[test]
+fn duplicate_method_type_parameters_fail_during_collection() {
+    let diagnostics = diagnostics("class C { m<T, T>(value: T): T { return value; } }\n");
+    assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
+    assert_eq!(diagnostics[0].code, RuleCode::S017);
+    assert_eq!(diagnostics[0].message, "duplicate type parameter `T`");
+    assert_eq!(diagnostics[0].pos.line, 1);
+}
+
+#[test]
+fn declare_class_generic_method_keeps_the_body_rejection() {
+    let diagnostics = diagnostics("declare class C { m<T>(value: T): T; }\n");
+    assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(diagnostics[0].message, "function bodies are required");
+}
+
+#[test]
 fn the_declared_name_owns_the_member_namespace() {
     let source = "class Box {\n\
                   \x20 identity: i32 = 1;\n\

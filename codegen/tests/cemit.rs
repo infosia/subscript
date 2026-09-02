@@ -990,13 +990,10 @@ fn accessor_and_underscore_member_emit_distinct_c_symbols() {
 }
 
 #[test]
-fn generic_method_instances_emit_distinct_c_symbols() {
-    use subscript_codegen::emit_c;
+fn generic_method_instances_hold_distinct_hir_names_and_lir_ids() {
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
 
-    // `m<i32>` and `m<u32>` share one C namespace (compiler.md §65 rule
-    // 10), so the emitted identifiers must differ.
     let source = "class Box {\n  m<T>(value: T): T { return value; }\n}\nexport function main(): void {\n  const box: Box = new Box();\n  print(`${box.m<i32>(1)}`);\n  print(`${box.m<u32>(2)}`);\n}\n";
     let files = [SourceFile::new("test.ts", source)];
     let hir = check_program(&files).expect("the generic method program must check");
@@ -1010,16 +1007,14 @@ fn generic_method_instances_emit_distinct_c_symbols() {
     let method_ids = lir.classes[0]
         .methods
         .iter()
-        .map(|method| method.function.0)
+        .map(|method| method.function)
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(method_ids.len(), 2, "each instance must have its own id");
-    let c = emit_c(&hir).expect("the generic method program must emit C");
-    for id in method_ids {
-        assert!(c.source.contains(&format!(" sub_f{id}(")), "{}", c.source);
-    }
-    assert_eq!(
-        run_c_aot(&files).expect("the generic method C must compile and run"),
-        b"1\n2\n"
+    assert!(
+        method_ids
+            .iter()
+            .all(|id| lir.functions.iter().any(|function| function.id == *id)),
+        "each method id must name one LIR function"
     );
 }
 

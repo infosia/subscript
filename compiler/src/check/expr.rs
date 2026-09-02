@@ -314,6 +314,19 @@ fn update_spelling(update: &ast::UpdateExpr, target: &str) -> String {
     }
 }
 
+fn diagnostic_expr_spelling(expression: &ast::Expr) -> String {
+    match unparen_expr(expression) {
+        ast::Expr::Ident(identifier) => identifier.sym.to_string(),
+        ast::Expr::Lit(ast::Lit::Num(number)) => number
+            .raw
+            .as_deref()
+            .map_or_else(|| number.value.to_string(), ToString::to_string),
+        ast::Expr::Lit(ast::Lit::Bool(boolean)) => boolean.value.to_string(),
+        ast::Expr::Lit(ast::Lit::Null(_)) => "null".to_string(),
+        _ => "v".to_string(),
+    }
+}
+
 /// Returns the nominal class supplied by an object literal's context.
 /// Q33/R17 permits descriptor construction through either `D` or `D | null`;
 /// retaining plain classes here also preserves their specific S005 rejection.
@@ -1925,9 +1938,10 @@ impl<'p> Checker<'p> {
                         || format!("{}.{name}", self.classes[class.0].name),
                         |_| format!("x.{name}"),
                     );
+                    let spelling = update_spelling(u, &target);
                     self.error(
                         RuleCode::S100,
-                        format!("`{target} = v` cannot write through a read-only accessor"),
+                        format!("{spelling} cannot write through a read-only accessor"),
                         pos.clone(),
                     );
                     return self.err_expr(pos);
@@ -2160,6 +2174,14 @@ impl<'p> Checker<'p> {
         let mut ends_in_call = false;
         let mut index = 0;
 
+        if current.ty == Type::Error {
+            return OptionalPlan {
+                tests,
+                value: current,
+                ends_in_call,
+            };
+        }
+
         while index < steps.len() {
             match &steps[index] {
                 OptionalStep::Member { member, tested } => {
@@ -2177,9 +2199,11 @@ impl<'p> Checker<'p> {
                         };
                     }
                     if *tested {
-                        let Some(inner) =
-                            self.require_nullable_operand(&current, "the tested receiver")
-                        else {
+                        let Some(inner) = self.require_nullable_operand(
+                            &current,
+                            "the tested receiver",
+                            Divergence::OptionalChainNonNullable,
+                        ) else {
                             return OptionalPlan {
                                 tests,
                                 value: self.err_expr(current.pos.clone()),
@@ -2312,7 +2336,11 @@ impl<'p> Checker<'p> {
         if left.ty == Type::Error {
             return self.err_expr(pos);
         }
-        let Some(inner) = self.require_nullable_operand(&left, "the left operand of `??`") else {
+        let Some(inner) = self.require_nullable_operand(
+            &left,
+            "the left operand of `??`",
+            Divergence::NullishNonNullable,
+        ) else {
             return self.err_expr(pos);
         };
         let (test, value) = self.stabilize_nullable_operand(left, inner.clone(), fx);
@@ -2368,7 +2396,12 @@ impl<'p> Checker<'p> {
         Type::Error
     }
 
-    fn require_nullable_operand(&mut self, operand: &hir::Expr, what: &str) -> Option<Type> {
+    fn require_nullable_operand(
+        &mut self,
+        operand: &hir::Expr,
+        what: &str,
+        divergence: Divergence,
+    ) -> Option<Type> {
         if let Type::Nullable(inner) = &operand.ty {
             return Some((**inner).clone());
         }
@@ -2377,7 +2410,7 @@ impl<'p> Checker<'p> {
             RuleCode::S100,
             format!("{what} has type `{name}`, which is not nullable"),
             operand.pos.clone(),
-            Divergence::NullishNonNullable,
+            divergence,
         );
         None
     }
@@ -2482,96 +2515,17 @@ impl<'p> Checker<'p> {
         expression: hir::Expr,
         fx: &mut FnCtx,
     ) -> hir::Expr {
-        fn collect_free_locals(
-            expression: &hir::Expr,
-            excluded: &HashSet<String>,
-            seen: &mut HashSet<String>,
-            locals: &mut Vec<(String, Type, Pos)>,
-        ) {
-            match &expression.kind {
-                ExprKind::Local(name) if !excluded.contains(name) && seen.insert(name.clone()) => {
-                    locals.push((name.clone(), expression.ty.clone(), expression.pos.clone()));
-                }
-                ExprKind::Lambda { captures, .. } => {
-                    for capture in captures {
-                        if !excluded.contains(&capture.name) && seen.insert(capture.name.clone()) {
-                            locals.push((
-                                capture.name.clone(),
-                                capture.ty.clone(),
-                                expression.pos.clone(),
-                            ));
-                        }
-                    }
-                    return;
-                }
-                _ => {}
-            }
-            for child in expression.children() {
-                if let hir::HirChild::Expr(expression) = child {
-                    collect_free_locals(expression, excluded, seen, locals);
-                }
-            }
-        }
-
-        let mut prefix = fx.take_synthetic_prefix();
-        if prefix.is_empty() {
+        if fx.take_synthetic_prefix().is_empty() {
             return expression;
         }
         let pos = expression.pos.clone();
-        let ret = expression.ty.clone();
-        let excluded = prefix
-            .iter()
-            .filter_map(|statement| match statement {
-                hir::Stmt::Let { name, .. } => Some(name.clone()),
-                _ => None,
-            })
-            .collect::<HashSet<_>>();
-        let mut locals = Vec::new();
-        collect_free_locals(&expression, &excluded, &mut HashSet::new(), &mut locals);
-        prefix.push(hir::Stmt::Return {
-            value: Some(expression),
-            pos: pos.clone(),
-        });
-        let params = locals
-            .iter()
-            .map(|(name, ty, pos)| hir::Param {
-                name: name.clone(),
-                ty: ty.clone(),
-                default: None,
-                foreign_provenance: None,
-                pos: pos.clone(),
-            })
-            .collect::<Vec<_>>();
-        let args = locals
-            .iter()
-            .map(|(name, ty, pos)| hir::Expr {
-                kind: ExprKind::Local(name.clone()),
-                ty: ty.clone(),
-                pos: pos.clone(),
-            })
-            .collect::<Vec<_>>();
-        let function_ty = Type::Func(Box::new(FuncType {
-            params: locals.iter().map(|(_, ty, _)| ty.clone()).collect(),
-            ret: ret.clone(),
-        }));
-        let lambda = hir::Expr {
-            kind: ExprKind::Lambda {
-                params,
-                ret: ret.clone(),
-                body: prefix,
-                captures: Vec::new(),
-            },
-            ty: function_ty,
-            pos: pos.clone(),
-        };
-        hir::Expr {
-            kind: ExprKind::Call {
-                callee: Callee::Value(Box::new(lambda)),
-                args,
-            },
-            ty: ret,
-            pos,
-        }
+        self.error_diverging(
+            RuleCode::S100,
+            "a non-place receiver of `??` or `?.` cannot be used in an initializer",
+            pos.clone(),
+            Divergence::NonPlaceNullishInitializer,
+        );
+        self.err_expr(pos)
     }
 
     /// Checks R16's sole legal `undefined` appearance.
@@ -6397,11 +6351,20 @@ impl<'p> Checker<'p> {
         } else if let Some((op, _)) = operation {
             Some(op)
         } else {
-            self.error(
-                RuleCode::S100,
-                "assignment operator outside the decided surface",
-                pos.clone(),
-            );
+            if a.op == A::NullishAssign {
+                self.error_diverging(
+                    RuleCode::S100,
+                    "assignment operator outside the decided surface",
+                    pos.clone(),
+                    Divergence::NullishAssignment,
+                );
+            } else {
+                self.error(
+                    RuleCode::S100,
+                    "assignment operator outside the decided surface",
+                    pos.clone(),
+                );
+            }
             return self.err_expr(pos);
         };
         let source = match &a.left {
@@ -6536,9 +6499,14 @@ impl<'p> Checker<'p> {
                 .get(&write_name)
                 .cloned()
             else {
+                let value_spelling = diagnostic_expr_spelling(&a.right);
+                let spelling = operation.map_or_else(
+                    || format!("`{class_name}.{name} = v`"),
+                    |(_, operator)| format!("`{class_name}.{name} {operator} {value_spelling}`"),
+                );
                 self.error(
                     RuleCode::S100,
-                    format!("`{class_name}.{name} = v` cannot write through a read-only accessor"),
+                    format!("{spelling} cannot write through a read-only accessor"),
                     pos.clone(),
                 );
                 return self.err_expr(pos);
@@ -6612,9 +6580,14 @@ impl<'p> Checker<'p> {
             }
             let write_name = format!("{name}=");
             let Some(signature) = self.class_sigs[id.0].methods.get(&write_name).cloned() else {
+                let value_spelling = diagnostic_expr_spelling(&a.right);
+                let spelling = operation.map_or_else(
+                    || format!("`x.{name} = v`"),
+                    |(_, operator)| format!("`x.{name} {operator} {value_spelling}`"),
+                );
                 self.error(
                     RuleCode::S100,
-                    format!("`x.{name} = v` cannot write through a read-only accessor"),
+                    format!("{spelling} cannot write through a read-only accessor"),
                     pos.clone(),
                 );
                 return self.err_expr(pos);
@@ -7122,7 +7095,7 @@ impl<'p> Checker<'p> {
                     return self.check_ambient_call(ambient, c, fx, pos);
                 }
                 self.error(
-                    RuleCode::S100,
+                    RuleCode::S016,
                     format!("unknown function `{}`", name),
                     ident_pos,
                 );
@@ -8172,11 +8145,12 @@ impl<'p> Checker<'p> {
                 }
             },
             _ => {
-                self.error(
-                    RuleCode::S100,
-                    format!("unknown class `{}`", name),
-                    ident_pos.clone(),
-                );
+                let code = if self.ambient_namespace(callee, fx).is_some() {
+                    RuleCode::S100
+                } else {
+                    RuleCode::S016
+                };
+                self.error(code, format!("unknown class `{}`", name), ident_pos.clone());
                 None
             }
         };

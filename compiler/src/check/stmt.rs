@@ -124,6 +124,32 @@ fn contains_break(stmts: &[hir::Stmt]) -> bool {
     })
 }
 
+fn insert_for_step_before_continues(statements: &mut [hir::Stmt], step: &[hir::Stmt]) {
+    for statement in statements {
+        match statement {
+            hir::Stmt::Continue(pos) => {
+                let mut replacement = step.to_vec();
+                replacement.push(hir::Stmt::Continue(pos.clone()));
+                *statement = hir::Stmt::Block(replacement);
+            }
+            hir::Stmt::If { then, els, .. } => {
+                insert_for_step_before_continues(then, step);
+                if let Some(els) = els {
+                    insert_for_step_before_continues(els, step);
+                }
+            }
+            hir::Stmt::Switch { cases, .. } => {
+                for case in cases {
+                    insert_for_step_before_continues(&mut case.body, step);
+                }
+            }
+            hir::Stmt::Block(body) => insert_for_step_before_continues(body, step),
+            hir::Stmt::While { .. } | hir::Stmt::For { .. } | hir::Stmt::ForOf { .. } => {}
+            _ => {}
+        }
+    }
+}
+
 /// Collects root names assigned anywhere in a statement (used to drop
 /// narrowing facts across loop iterations).
 fn assigned_roots_stmt(s: &ast::Stmt, out: &mut HashSet<String>) {
@@ -871,8 +897,11 @@ impl<'p> Checker<'p> {
         let mut base = fx.narrowed.clone();
         fx.narrowed.extend(then_extra.clone());
         fx.loop_depth += 1;
-        let (body, _) = self.check_branch(&f.body, fx);
-        let step = f.update.as_ref().map(|u| self.check_expr(u, None, fx));
+        let (mut body, _) = self.check_branch(&f.body, fx);
+        let step_statements = f
+            .update
+            .as_ref()
+            .map(|update| self.check_expr_stmt(update, fx));
         fx.loop_depth -= 1;
         base.retain(|k| fx.narrowed.contains(k) || then_extra.contains(k));
         fx.narrowed = base;
@@ -880,13 +909,37 @@ impl<'p> Checker<'p> {
 
         out.extend(fx.take_synthetic_prefix());
 
-        out.push(hir::Stmt::For {
-            init,
-            cond,
-            step,
-            body,
-            pos,
+        let step = step_statements.as_deref().and_then(|statements| {
+            let [hir::Stmt::Expr(expression)] = statements else {
+                return None;
+            };
+            Some(expression.clone())
         });
+        if f.update.is_none() || step.is_some() {
+            out.push(hir::Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+                pos,
+            });
+            return;
+        }
+
+        let step_statements = step_statements.unwrap_or_default();
+        insert_for_step_before_continues(&mut body, &step_statements);
+        body.extend(step_statements);
+        let cond = cond.unwrap_or_else(|| hir::Expr {
+            kind: hir::ExprKind::Bool(true),
+            ty: Type::Bool,
+            pos: pos.clone(),
+        });
+        let mut block = Vec::new();
+        if let Some(init) = init {
+            block.push(*init);
+        }
+        block.push(hir::Stmt::While { cond, body, pos });
+        out.push(hir::Stmt::Block(block));
     }
 
     /// Checks and binds P22's closed `for…of` surface. Container views

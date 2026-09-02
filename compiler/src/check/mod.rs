@@ -908,13 +908,7 @@ impl<'a> ModuleEffectScanner<'a> {
                     hir::Callee::Func(name) => {
                         self.record_call(ModuleFunction::Free(name.clone()), name.clone());
                     }
-                    hir::Callee::Value(value) => {
-                        if let hir::ExprKind::Lambda { body, .. } = &value.kind {
-                            self.stmts(body);
-                        } else {
-                            self.record_indirect_call();
-                        }
-                    }
+                    hir::Callee::Value(_) => self.record_indirect_call(),
                     hir::Callee::Method { recv, name } => self.method_call(recv, name),
                     _ => {}
                 }
@@ -1894,8 +1888,10 @@ impl<'p> Checker<'p> {
         let name = f.ident.sym.to_string();
         let pos = self.pos(f.ident.span);
         if let Some(tp) = &f.function.type_params {
-            let type_params: Vec<String> =
-                tp.params.iter().map(|p| p.name.sym.to_string()).collect();
+            if f.function.body.is_none() {
+                self.error(RuleCode::S100, "function bodies are required", pos.clone());
+            }
+            let type_params = self.collect_type_parameter_names(tp);
             self.generic_fns.insert(
                 name.clone(),
                 GenericFn {
@@ -1929,6 +1925,25 @@ impl<'p> Checker<'p> {
         if exported {
             self.exports[file].insert(name.clone());
         }
+    }
+
+    fn collect_type_parameter_names(&mut self, params: &ast::TsTypeParamDecl) -> Vec<String> {
+        let mut names = HashSet::new();
+        params
+            .params
+            .iter()
+            .map(|parameter| {
+                let name = parameter.name.sym.to_string();
+                if !names.insert(name.clone()) {
+                    self.error(
+                        RuleCode::S017,
+                        format!("duplicate type parameter `{name}`"),
+                        self.pos(parameter.name.span),
+                    );
+                }
+                name
+            })
+            .collect()
     }
 
     fn collect_globals(&mut self, file: usize, v: &ast::VarDecl, exported: bool) {
@@ -3451,13 +3466,19 @@ impl<'p> Checker<'p> {
                             );
                             continue;
                         }
-                        let type_params: Vec<String> = method
+                        if method.function.body.is_none() {
+                            self.error(
+                                RuleCode::S100,
+                                "function bodies are required",
+                                key_pos.clone(),
+                            );
+                        }
+                        let type_params = method
                             .function
                             .type_params
-                            .iter()
-                            .flat_map(|declaration| declaration.params.iter())
-                            .map(|parameter| parameter.name.sym.to_string())
-                            .collect();
+                            .as_deref()
+                            .map(|declaration| self.collect_type_parameter_names(declaration))
+                            .unwrap_or_default();
                         let template = GenericMethod {
                             file: self.cur_file,
                             type_params,
