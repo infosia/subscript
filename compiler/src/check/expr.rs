@@ -6089,6 +6089,14 @@ impl<'p> Checker<'p> {
                         },
                         prop_pos.clone(),
                     );
+                } else if self.class_sigs[id.0].has_generic_method(name, false) {
+                    // §82.4 rule 6: a generic method keeps the
+                    // method-as-value rule. Only a call names an instance.
+                    self.error(
+                        RuleCode::S100,
+                        format!("method `{name}` may only be called, not read as a value"),
+                        prop_pos.clone(),
+                    );
                 } else {
                     self.error(
                         RuleCode::S018,
@@ -7473,9 +7481,20 @@ impl<'p> Checker<'p> {
         let Some(ScopeItem::Class(class)) = self.scope_item(&class_name) else {
             return None;
         };
-        if self.class_sigs[class.0].has_static_accessor(name)
-            || !self.class_sigs[class.0].static_methods.contains_key(name)
-        {
+        if self.class_sigs[class.0].has_static_accessor(name) {
+            return None;
+        }
+        // §82.4 rule 2: a static generic method instantiates at the call.
+        if self.class_sigs[class.0].has_generic_method(name, true) {
+            let Some(instance) =
+                self.instantiate_generic_method_call(class, name, call, true, member_pos)
+            else {
+                return Some(self.err_expr(pos));
+            };
+            let symbol = static_member_symbol(&self.classes[class.0].name, &instance);
+            return Some(self.check_direct_call(&symbol, call, fx, pos));
+        }
+        if !self.class_sigs[class.0].static_methods.contains_key(name) {
             return None;
         }
         if call.type_args.is_some() {
@@ -7601,6 +7620,33 @@ impl<'p> Checker<'p> {
         self.check_method_call_on(recv, prop, c, ctx, fx, pos)
     }
 
+    /// Resolves the explicit type arguments of a generic method call and
+    /// instantiates the method (§82.4 rules 2 and 3).
+    fn instantiate_generic_method_call(
+        &mut self,
+        class: ClassId,
+        name: &str,
+        call: &ast::CallExpr,
+        is_static: bool,
+        pos: Pos,
+    ) -> Option<String> {
+        let Some(type_args) = &call.type_args else {
+            self.error_diverging(
+                RuleCode::S100,
+                format!("generic method `{name}` requires explicit type arguments"),
+                pos,
+                Divergence::GenericMethodTypeArguments,
+            );
+            return None;
+        };
+        let resolved: Vec<Type> = type_args
+            .params
+            .iter()
+            .map(|ty| self.resolve_type(ty))
+            .collect();
+        self.instantiate_method(class, name, &resolved, is_static, pos)
+    }
+
     fn check_method_call_on(
         &mut self,
         recv: hir::Expr,
@@ -7610,8 +7656,21 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        let name = property.sym.to_string();
+        let mut name = property.sym.to_string();
         let prop_pos = self.pos(property.span);
+        // §82.4 rule 3: the call names the instance, not the template.
+        if let Type::Class(class) = &recv.ty {
+            let class = *class;
+            if self.class_sigs[class.0].has_generic_method(&name, false) {
+                let Some(instance) =
+                    self.instantiate_generic_method_call(class, &name, c, false, prop_pos.clone())
+                else {
+                    return self.err_expr(pos);
+                };
+                name = instance;
+            }
+        }
+        let name = name;
         let mk = |recv: hir::Expr, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Method {

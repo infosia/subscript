@@ -22,6 +22,8 @@ const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for 
 
 const NULLISH_OPERATORS: &str = "`a ?? b` requires `a` to have type `Ref | null`. It evaluates `a` once and evaluates `b` only when `a` is `null`. An optional chain can be the whole left operand of `??`. An optional chain can also be a statement when its last step is a call. Other optional-chain positions require `undefined` and are rejected.";
 
+const GENERIC_METHODS: &str = "R39.6 admits type parameters on a method of a non-generic class, instance or static. A call must supply explicit type arguments, as a generic function call must. Each distinct type-argument list yields one method instance named `m<A>` in the class's instance or static namespace. The declared name owns the member namespace, and an instance name collides with no declared member. A generic method on a generic class and an `async` generic method stay outside the surface.";
+
 const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. When `A` is a Q32 string-literal union alias, `name?: A` without an initializer is absence-capable: omission is a distinct state, explicit `undefined` is rejected, and reads are legal only in the present arm established by `member !== undefined` or the inverse arm of `member === undefined`. No other member type admits that spelling. Literals may be nested, may omit defaulted and absence-capable members, and remain constructible through a `Descriptor | null` contextual type. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, literals against plain nominal classes (including through `| null`), methods, missing required members, and excess members are rejected.";
 
 const Q32_LITERAL_UNIONS: &str = "Q32 admits declared aliases whose members are string literals, such as `type Mode = \"fast\" | \"safe\"`. The member set is closed and the alias is nominal: a non-member, an inline literal union, or a value from a distinct same-shaped alias is rejected. A switch over an alias uses member string literals as case labels. Without `default` it must name every member exactly once; with `default` any subset of distinct members is accepted. A default-less exhaustive alias switch is a diverging statement when every arm diverges, so it satisfies non-void function return flow without a trailing return.";
@@ -94,6 +96,16 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a177-nullish.ts",
             "corpus/reject/r177-nullish-non-nullable-left.ts",
             "corpus/reject/r178-optional-chain-unbound.ts",
+        ],
+    },
+    Feature {
+        title: "Generic methods",
+        prose: GENERIC_METHODS,
+        corpus: &[
+            "corpus/accept/a178-generic-method.ts",
+            "corpus/reject/r179-generic-method-without-type-args.ts",
+            "corpus/reject/r180-generic-method-on-generic-class.ts",
+            "corpus/reject/r181-async-generic-method.ts",
         ],
     },
     Feature {

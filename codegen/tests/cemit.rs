@@ -990,6 +990,40 @@ fn accessor_and_underscore_member_emit_distinct_c_symbols() {
 }
 
 #[test]
+fn generic_method_instances_emit_distinct_c_symbols() {
+    use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    // `m<i32>` and `m<u32>` share one C namespace (compiler.md §65 rule
+    // 10), so the emitted identifiers must differ.
+    let source = "class Box {\n  m<T>(value: T): T { return value; }\n}\nexport function main(): void {\n  const box: Box = new Box();\n  print(`${box.m<i32>(1)}`);\n  print(`${box.m<u32>(2)}`);\n}\n";
+    let files = [SourceFile::new("test.ts", source)];
+    let hir = check_program(&files).expect("the generic method program must check");
+    let names = hir.classes[0]
+        .methods
+        .iter()
+        .map(|method| method.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["m<i32>", "m<u32>"]);
+    let lir = lower_module(&hir).expect("the generic method program must lower");
+    let method_ids = lir.classes[0]
+        .methods
+        .iter()
+        .map(|method| method.function.0)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(method_ids.len(), 2, "each instance must have its own id");
+    let c = emit_c(&hir).expect("the generic method program must emit C");
+    for id in method_ids {
+        assert!(c.source.contains(&format!(" sub_f{id}(")), "{}", c.source);
+    }
+    assert_eq!(
+        run_c_aot(&files).expect("the generic method C must compile and run"),
+        b"1\n2\n"
+    );
+}
+
+#[test]
 fn aligned_value_class_emits_alignas_on_the_first_field() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;

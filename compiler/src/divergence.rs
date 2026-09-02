@@ -127,6 +127,12 @@ pub enum Divergence {
     EntryParameterType,
     /// A chain header copied out of its enclosing extension.
     EmbeddedHeaderCopy,
+    /// A generic method call that supplies no type arguments.
+    GenericMethodTypeArguments,
+    /// A generic method declared on a generic class.
+    GenericMethodOnGenericClass,
+    /// An `async` method that declares type parameters.
+    AsyncGenericMethod,
 }
 
 /// The four facts that a divergence diagnostic shows.
@@ -200,6 +206,9 @@ impl Divergence {
         Divergence::ByteAccessTarget,
         Divergence::EntryParameterType,
         Divergence::EmbeddedHeaderCopy,
+        Divergence::GenericMethodTypeArguments,
+        Divergence::GenericMethodOnGenericClass,
+        Divergence::AsyncGenericMethod,
     ];
 
     /// The four facts for this topic.
@@ -683,6 +692,37 @@ impl Divergence {
                 why: "A copy carries the extension's tag with no extension behind it, so \
                       the host reads past the header.",
                 collision: "compiler.md §33.5",
+            },
+            Divergence::GenericMethodTypeArguments => DivergenceEntry {
+                ts: "class Box { identity<T>(value: T): T { return value; } }\n\
+                     const box: Box = new Box();\n\
+                     print(`${box.identity(1)}`);",
+                subscript: "class Box { identity<T>(value: T): T { return value; } }\n\
+                            const box: Box = new Box();\n\
+                            print(`${box.identity<i32>(1)}`);",
+                why: "Each type-argument list names one instance ahead of time, so the \
+                      compiler infers no type argument from an argument.",
+                collision: "compiler.md §64",
+            },
+            Divergence::GenericMethodOnGenericClass => DivergenceEntry {
+                ts: "class Holder<T> { value: T;\n\
+                       constructor(value: T) { this.value = value; }\n\
+                       pick<U>(other: U): U { return other; } }",
+                subscript: "class Holder<T> { value: T;\n\
+                              constructor(value: T) { this.value = value; } }\n\
+                            function pick<U>(other: U): U { return other; }",
+                why: "The checker holds one substitution, so a class parameter and a \
+                      method parameter cannot bind at the same time.",
+                collision: "compiler.md §64",
+            },
+            Divergence::AsyncGenericMethod => DivergenceEntry {
+                ts: "class Box { async load<T>(value: T): Promise<T> {\n\
+                       await Context.suspend(); return value; } }",
+                subscript: "class Box { async load(value: i32): Promise<i32> {\n\
+                              await Context.suspend(); return value; } }",
+                why: "The await grammar gains no form for a type-argument list, so an \
+                      async method declares no type parameter.",
+                collision: "compiler.md §64",
             },
         }
     }

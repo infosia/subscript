@@ -1,0 +1,10 @@
+i32:3
+i32-again:4
+string:head
+vec:1.5,2.5
+join:5/tail
+head:7
+head-string:alpha
+created:3
+pick:9
+pick-string:edge

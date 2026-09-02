@@ -216,6 +216,11 @@ pub(crate) struct ClassSig {
     pub methods: HashMap<String, FnSig>,
     pub static_methods: HashMap<String, FnSig>,
     pub static_fields: HashMap<String, GlobalSig>,
+    /// Generic instance methods, by declared name (§82.4). A template
+    /// never reaches the HIR; each call instantiates one method.
+    pub generic_methods: HashMap<String, GenericMethod>,
+    /// Generic static methods, by declared name (§82.4).
+    pub static_generic_methods: HashMap<String, GenericMethod>,
     member_namespace: HashMap<String, ClassMemberNamespaceEntry>,
     static_member_namespace: HashMap<String, ClassMemberNamespaceEntry>,
 }
@@ -263,6 +268,16 @@ impl ClassSig {
     fn has_static_member(&self, name: &str) -> bool {
         self.static_member_namespace.contains_key(name)
     }
+
+    /// True when the class declares a generic method of this name in the
+    /// namespace that `is_static` selects (§82.4).
+    pub(crate) fn has_generic_method(&self, name: &str, is_static: bool) -> bool {
+        if is_static {
+            self.static_generic_methods.contains_key(name)
+        } else {
+            self.generic_methods.contains_key(name)
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -299,6 +314,14 @@ pub(crate) struct GenericFn {
     pub function: ast::Function,
 }
 
+/// A generic method template awaiting monomorphization (§82.4).
+#[derive(Debug, Clone)]
+pub(crate) struct GenericMethod {
+    pub file: usize,
+    pub type_params: Vec<String>,
+    pub function: ast::Function,
+}
+
 /// A generic class template awaiting monomorphization.
 #[derive(Debug, Clone)]
 pub(crate) struct GenericClass {
@@ -308,6 +331,7 @@ pub(crate) struct GenericClass {
     pub alignment_override: Option<hir::AlignmentOverride>,
     pub type_params: Vec<String>,
     pub has_static_member: bool,
+    pub has_generic_method: bool,
     pub class: ast::Class,
     pub pos: Pos,
 }
@@ -1782,6 +1806,27 @@ impl<'p> Checker<'p> {
                     Divergence::StaticMemberSurface,
                 );
             }
+            // §82.4 rule 5: the checker holds one substitution, so a
+            // generic method on a generic class is out of the surface.
+            let generic_methods = c.class.body.iter().filter_map(|member| match member {
+                ast::ClassMember::Method(method)
+                    if method.kind == ast::MethodKind::Method
+                        && method.function.type_params.is_some() =>
+                {
+                    Some(method.span)
+                }
+                _ => None,
+            });
+            let mut has_generic_method = false;
+            for span in generic_methods {
+                has_generic_method = true;
+                self.error_diverging(
+                    RuleCode::S100,
+                    "generic classes cannot declare generic methods",
+                    self.pos(span),
+                    Divergence::GenericMethodOnGenericClass,
+                );
+            }
             let type_params: Vec<String> =
                 tp.params.iter().map(|p| p.name.sym.to_string()).collect();
             self.generic_classes.insert(
@@ -1793,6 +1838,7 @@ impl<'p> Checker<'p> {
                     alignment_override,
                     type_params,
                     has_static_member,
+                    has_generic_method,
                     class: (*c.class).clone(),
                     pos: pos.clone(),
                 },
@@ -3400,6 +3446,41 @@ impl<'p> Checker<'p> {
                         }
                         continue;
                     }
+                    // §82.4 rules 1 and 5: a method with type parameters
+                    // collects as a template. Each call instantiates it.
+                    if !(is_dispose || self.in_boundary || self.classes[id.0].is_boundary)
+                        && method.function.type_params.is_some()
+                    {
+                        if method.function.is_async {
+                            self.error_diverging(
+                                RuleCode::S100,
+                                "async generic methods are not in the decided surface",
+                                self.pos(method.span),
+                                Divergence::AsyncGenericMethod,
+                            );
+                            continue;
+                        }
+                        let type_params: Vec<String> = method
+                            .function
+                            .type_params
+                            .iter()
+                            .flat_map(|declaration| declaration.params.iter())
+                            .map(|parameter| parameter.name.sym.to_string())
+                            .collect();
+                        let template = GenericMethod {
+                            file: self.cur_file,
+                            type_params,
+                            function: (*method.function).clone(),
+                        };
+                        if method.is_static {
+                            self.class_sigs[id.0]
+                                .static_generic_methods
+                                .insert(name, template);
+                        } else {
+                            self.class_sigs[id.0].generic_methods.insert(name, template);
+                        }
+                        continue;
+                    }
                     if is_dispose && method.function.is_async {
                         self.error(
                             RuleCode::S100,
@@ -4512,6 +4593,12 @@ impl<'p> Checker<'p> {
                             if has_accessor {
                                 continue;
                             }
+                            // §82.4 rule 3: a template has no body of its
+                            // own. `instantiate_method` checks each
+                            // instance at its first call.
+                            if self.class_sigs[id.0].has_generic_method(&name, method.is_static) {
+                                continue;
+                            }
                         }
                     }
                     let sig = if method.is_static {
@@ -4597,6 +4684,95 @@ impl<'p> Checker<'p> {
         Some(name)
     }
 
+    /// Instantiates a generic method at explicit type arguments and
+    /// checks its body immediately (§82.4 rule 3). Returns the instance
+    /// name, which is the monomorphized name `m<A>`.
+    ///
+    /// The instance is an ordinary method of the class in the namespace
+    /// that `is_static` selects. Every consumer of a method name sees the
+    /// instance name; no template reaches the HIR.
+    pub(crate) fn instantiate_method(
+        &mut self,
+        id: ClassId,
+        name: &str,
+        args: &[Type],
+        is_static: bool,
+        pos: Pos,
+    ) -> Option<String> {
+        let template = if is_static {
+            self.class_sigs[id.0]
+                .static_generic_methods
+                .get(name)?
+                .clone()
+        } else {
+            self.class_sigs[id.0].generic_methods.get(name)?.clone()
+        };
+        if template.type_params.len() != args.len() {
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "`{}` expects {} type argument(s), got {}",
+                    name,
+                    template.type_params.len(),
+                    args.len()
+                ),
+                pos,
+            );
+            return None;
+        }
+        let instance = self.mono_name(name, args);
+        let known = if is_static {
+            self.class_sigs[id.0].static_methods.contains_key(&instance)
+        } else {
+            self.class_sigs[id.0].methods.contains_key(&instance)
+        };
+        if known {
+            return Some(instance);
+        }
+        let saved_file = self.cur_file;
+        let saved_subst = std::mem::take(&mut self.subst);
+        self.cur_file = template.file;
+        for (param, arg) in template.type_params.iter().zip(args) {
+            self.subst.insert(param.clone(), arg.clone());
+        }
+        let sig = self.resolve_fn_sig(&template.function, pos.clone());
+        // The signature lands before the body check, so a recursive call
+        // inside the body resolves against this instance.
+        let function_name = if is_static {
+            let symbol = static_member_symbol(&self.classes[id.0].name, &instance);
+            self.class_sigs[id.0]
+                .static_methods
+                .insert(instance.clone(), sig.clone());
+            self.fn_sigs.insert(symbol.clone(), sig.clone());
+            symbol
+        } else {
+            self.class_sigs[id.0]
+                .methods
+                .insert(instance.clone(), sig.clone());
+            instance.clone()
+        };
+        if let Some(function) = self.check_function(
+            &template.function,
+            &function_name,
+            false,
+            &sig,
+            (
+                (!is_static).then_some(Type::Class(id)),
+                is_static.then_some(Divergence::StaticMemberSurface),
+            ),
+            pos,
+        ) {
+            if is_static {
+                self.functions.push(function);
+            } else {
+                self.classes[id.0].methods.push(function);
+            }
+        }
+        self.cur_file = saved_file;
+        self.subst = saved_subst;
+        Some(instance)
+    }
+
     /// Instantiates a generic class at explicit type arguments, checking
     /// its shape and bodies immediately. Returns the instance id.
     pub(crate) fn instantiate_class(
@@ -4619,7 +4795,7 @@ impl<'p> Checker<'p> {
             );
             return None;
         }
-        if template.has_static_member {
+        if template.has_static_member || template.has_generic_method {
             return None;
         }
         let name = self.mono_name(key, args);

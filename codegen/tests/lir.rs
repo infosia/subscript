@@ -1394,8 +1394,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 121;
-const DEBUG_RUNNABLE_COUNT: usize = 120;
+const RELEASE_RUNNABLE_COUNT: usize = 122;
+const DEBUG_RUNNABLE_COUNT: usize = 121;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1643,6 +1643,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a177-nullish",
         "nullish and optional-chain conditional rewrites with single evaluation",
+    ),
+    (
+        "a178-generic-method",
+        "generic instance and static method instances at explicit type arguments",
     ),
     (
         "a15-manual-lifetime",
