@@ -11406,3 +11406,94 @@ lower on either tier, and the two tiers report the failure with
 different text and exit codes; `a79` passes because it also calls
 `next()` by hand. That defect needs its own request and its own
 corpus entry.
+
+## 83. The operation-signature table is a total function of the HIR
+
+*(Owner decision 2026-09-03. Origin: review round 3 of §82 found the
+defect outside that diff.)*
+
+Measured at `088acac`, this host. A generator consumed only through
+`for…of`:
+
+```ts
+function* values(): Generator<i32> { yield 3; yield 5; yield 8; }
+export function main(): void {
+  for (const v of values()) { print(`${v}`); }
+}
+```
+
+`subscript check`: no errors. `subscript run`: exit 2, "internal
+lowering error: LIR construction failed: … call disagrees with the
+signature table: BuiltinMethod.GeneratorNext declares , got
+[Data(Generator(I32))] -> Some(Data(IterResult(I32)))". `subscript
+build --source … --run`: the same finding under the prefix "internal
+error:". `a79` passes because it also spells `generator.next()`.
+
+Cause. `hir::Module.operation_signatures` is filled by
+`register_operation_signature`, which `check_expr` calls on every
+expression it checks. A HIR call that the checker synthesizes does not
+pass through `check_expr`. `check_for_of` builds the `next` call by
+hand and registers nothing; eight other sites (`check/json.rs`, the
+§82.3 chain code, an initializer path) remember to call the
+registration by hand. The LIR verifier is total and reports the
+missing entry, which is the wanted behaviour of a verifier and the
+wrong behaviour of a checker: a program that checks clean must lower.
+The table is a record written beside the form (core principles 8 and
+9), and every synthesized node is a site that can forget it.
+
+### 83.1 Rule
+
+1. **One walk derives the table.** After the module is checked, one
+   pass over the finished HIR visits every `Call` node in every
+   function body, method body, constructor body, lambda body, field
+   initializer, static initializer, and module initializer, through
+   the HIR `children` walk (§72), and derives `operation_signatures`
+   from the nodes alone: the target from the callee and the receiver
+   type, the parameter types from the receiver and the arguments
+   after `normalize_operation_parameter_types`, the return type from
+   the node's type. Two nodes with one signature give one entry.
+2. **No site registers a signature as a side effect.**
+   `register_operation_signature` and the checker's `RefCell` table
+   are deleted, and so is every call of it. A synthesized node is
+   registered because it is in the HIR, not because a site remembered
+   it.
+3. **One target mapping.** The callee-to-target mapping that the walk
+   uses is the one that `hir.rs` uses to find a call's signature; the
+   two copies become one function.
+4. **The HIR JSON does not change shape.** `operation_signatures` is
+   the same field with the same entry form; the fix adds the entries
+   the walk finds that the side effect missed.
+
+### 83.2 Corpus and gate (pre-registered exit criteria)
+
+1. `corpus/accept/a180-for-of-generator-only.ts` + `.expected`: a
+   generator consumed only through `for…of`, with no `.next()` in the
+   program; one loop that runs to the end, one that `break`s at the
+   second value, one that `continue`s past a value, and one generator
+   whose element type is a `@CStruct` value class read through a
+   field. Red at `088acac`: dev exit 2 with the text above. `tsc:
+   accepts`; `js-comparable` measured.
+2. Unit test, principle 9: the table derived by the walk for a180's
+   HIR equals, entry for entry, the set of operation-table targets
+   that a second, independent walk of the same HIR collects from
+   `Call` nodes; and it holds `BuiltinMethod(GeneratorNext)` with
+   `[Generator(i32)] -> IterResult(i32)`.
+3. A total test: for every entry under `corpus/accept/`, `corpus/warn/`,
+   and `examples/`, every `Call` node whose callee is an operation-
+   table target has a matching entry in the module's table, reported
+   all at once. The golden gate already runs the LIR verifier on each
+   entry; this test names the missing entries at the HIR level.
+4. `a79` and every pre-existing golden stay byte-identical. The HIR
+   JSON of every accept entry changes only by added
+   `operation_signatures` entries, if any; a test diffs the JSON of
+   the corpus before and after on this host and the record lists the
+   entries added.
+5. Gates: both profiles, zero-warning build, fmt, `tsc`, hygiene,
+   clippy at 7 / 18 / 13.
+
+### 83.3 Recorded, not changed
+
+The dev command reports the finding under "internal lowering error:"
+and the ship command under "internal error:". After this section no
+program that checks clean reaches either text. The prefix parity is a
+CLI record (`cli.md`), not a checker rule.
