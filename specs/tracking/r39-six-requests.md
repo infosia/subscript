@@ -5,7 +5,8 @@ and `specs/blocks/collisions.md` C7, C10, C12. Origin: downstream
 request R39 at pin `e1c2be1`. Contract `25c9437`, amended `dad652a`
 after the review. Implementation `0549a46` (§82.2), `47c71cf`
 (§82.1), `a24865f` (§82.3), `505c7f5` (§82.4), `a0edb7e` (§82.6),
-`ec41d65` (§82.5), fixes `61c31e9`.
+`ec41d65` (§82.5), fixes `61c31e9`, `8c93b7d`, and `d45c0c1`; contract
+amended `dad652a`, `e1b0b90`, and `f0e9a5d` after the reviews.
 
 ## Decisions
 
@@ -78,11 +79,11 @@ after the review. Implementation `0549a46` (§82.2), `47c71cf`
 - Counts: accept `.ts` 173 → 177; `.expected` 174 → 178; rejects
   166 → 171.
 
-## Gates (this host, HEAD `61c31e9`)
+## Gates (this host, HEAD `d45c0c1`)
 
-- release: 64 suites, 1,229 passed, 0 failed, 1 ignored.
-- debug (the coding agent's final run): 64 suites, 1,231 passed, 0
-  failed, 1 ignored, 2,445 s.
+- release: 65 suites, 1,236 passed, 0 failed, 1 ignored, 331 s.
+- debug (the coding agent's final run): 65 suites, 1,238 passed, 0
+  failed, 1 ignored, 2,654 s.
 - `cargo build --all-targets`: 0 warnings. `cargo fmt --check`,
   `tsc`, `tools/hygiene.sh`: exit 0. Clippy 7 / 18 / 13.
 - No pre-existing golden or `.expected` moved.
@@ -110,9 +111,42 @@ pin), 4 MAJOR, 8 MINOR. Every finding was fixed in `61c31e9` against
 the amended contract `dad652a`; the C14 shape the first implementation
 accepted is a unit test that fails with the pin's message.
 
-## Review round 2
+## Review round 2 (fresh no-context subagent)
 
-TODO
+CRITICAL: the per-function synthetic-prefix stash escaped its
+statement list from a `for` initializer, a `for` condition, and an
+arrow body; five `tsc`-clean programs checked clean and failed at
+lowering with "unknown local [[compound#0.nullish]]". Second round on
+the class, so §82.10 states the form: one owner per collection, six
+owners, a total boundary check. MAJOR: `x?.m()` in a `for` update was
+accepted with no rule (§82.3 rule 8 amended to the one definition of
+statement position); the reachable import message kept S100 (moved);
+the tracking note was untracked (committed at `e1b0b90`). MINOR: a
+bodiless generic method in a `declare class` needs a block (`tsc`
+accepts); the spelling renderer served two of five sites; two
+contract clauses (an unreachable C12 case, the module-level binding
+missing from the initializer list) corrected; a catch-all in
+`insert_for_step_before_continues`; cascading duplicates after a
+collection-time rejection. All fixed in `8c93b7d`.
+
+## Review round 3 (fresh no-context subagent, focused on §82.10)
+
+§82.11 holds the record. MAJOR: a `switch` case test was not an
+owner, and the boundary check reported the shape at check time (the
+form worked; rule 1 gained the owner, and the test rejects with the
+initializer block); the rule 4 probes ran `target/debug/subscript` by
+path under both profiles (the probes moved into a177). MINOR: the
+hook test wrote into the collection it checked (removed); no
+owner-exit enforcement (recorded); `x.v = v` rendering (stated in
+§82.1 rule 4); an unexported import reported twice (poisoned after
+the first report); a176's header. Adjacent defect outside this diff:
+a generator used only through `for…of` does not lower on either tier,
+and the tiers report it with different text and exit codes; `a79`
+passes because it also calls `next()`. Needs its own request.
+Fixed in `d45c0c1`. Verified on the release binary: `case (maybe(false)
+?? fb).v:` reports the S100 with the C7 block (the message names an
+initializer; the wording is shared with that owner), and `case fb.v:`
+beside `case five():` runs.
 
 ## Coding agent
 
