@@ -2,8 +2,8 @@
 
 Status: **landed 2026-09-03** against `specs/blocks/compiler.md` §84,
 `specs/blocks/stdlib.md` §16.2, and `specs/blocks/collisions.md` Q35.
-Origin: owner request 2026-09-03. Contract `e645b67`, implementation
-`a3b5bc2`.
+Origin: owner request 2026-09-03. Contract `e645b67`, amended `87927e2` after the review;
+implementation `a3b5bc2`, fixes `587d6da`.
 
 ## The request and the v1 rule
 
@@ -39,14 +39,32 @@ string slot would have carried a pointer into the sender's Context.
 - Counts: accept `.ts` 179 → 180; rejects 171 → 172 (one retired, two
   added).
 
-## Gates (this host, `a3b5bc2`)
+## Gates (this host, `587d6da`)
 
-- debug (the coding agent's final run): 66 suites, 1,249 passed, 0
-  failed, 1 ignored, 1,682 s.
-- release: 66 suites, 1,247 passed, 0 failed, 1 ignored, 341 s.
+- debug (the coding agent's final run): 66 suites, 1,254 passed, 0
+  failed, 1 ignored, 2,229 s.
+- release: 66 suites, 1,252 passed, 0 failed, 1 ignored, 343 s.
 - Zero-warning build; fmt, `tsc`, hygiene exit 0; clippy 7 / 18 / 13.
 - No pre-existing golden or `.expected` moved; a112 byte-identical.
 
-## Review
+## Review round 1 (fresh no-context subagent)
 
-REVIEW_TODO
+§84.4 holds the record. Execution-verified on both tiers with no
+finding: strings across Contexts under `collect`, rebinds, and
+`join`; a 1 MiB string; one handle in four slots; close/join
+ordering; a trapping worker. MAJOR: the runtime tests compared the
+serializer with itself and reached no rejection arm; the dev-tier
+descriptor test read a side channel of its own inputs. MINOR: the
+header's struct body as a second copy; the hard-coded 24-byte image;
+no pin for two message classes on one worker; the Red text in this
+note named r108's class; "specially" in the divergence reason.
+Adjacent defect outside this diff, both tiers: a `string` field with
+no initializer holds a null handle, and `print` of it emits nothing;
+needs its own request and corpus entry. Fixed in `587d6da`: the
+record facts are hand-written; every descriptor rejection arm and
+every malformed-record arm of `materialize` has a control;
+an allocation failure in `materialize` through the P21 fault
+injection (the queue record's `try_reserve_exact` failure has no
+injection path; recorded in §84.3 item 5); the side channel
+is gone; a header `offset_of!` test; a182 holds a second worker with
+two distinct message classes (`u8`-led layout, offsets 8, 24, 32, 40).

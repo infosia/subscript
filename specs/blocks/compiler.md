@@ -11698,8 +11698,12 @@ raw pointer into the sender's Context, which §38 forbids.
    count above 0, a slot outside the payload, offsets not ascending)
    and every malformed-record arm of `materialize` (a short length
    word, a length past the record, trailing bytes) is reached by a
-   hand-built input and reports; an allocation failure through the
-   P21 fault injection reports `AllocationFailed`. *(Amended
+   hand-built input and reports; an allocation failure in
+   `materialize` through the P21 fault injection reports
+   `AllocationFailure`. The queue record's own `try_reserve_exact`
+   failure (`PostResult::AllocationFailed`) has no injection path,
+   because P21 controls `Context::alloc` only; recorded, not tested.
+   *(Amended
    2026-09-03 after the review: the first tests posted through
    `post_fixed` and read back through `materialize`, so a matched
    change to both sides stayed green, and no rejection arm ran.)*
