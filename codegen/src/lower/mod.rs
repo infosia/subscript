@@ -281,9 +281,6 @@ pub(crate) struct Lowered {
     /// `Linkage::Import` path for `Callee::Foreign` records here when it
     /// declares the import.
     pub foreign_symbols: Vec<String>,
-    /// Exact descriptor values encoded into dev-tier program-image data.
-    #[cfg(test)]
-    pub worker_message_descriptor_values: Vec<(ClassId, u64, Vec<u64>)>,
 }
 
 const NO_MAIN_DIAGNOSTIC: &str = "no exported `main(): void` entry point";
@@ -320,8 +317,6 @@ pub(crate) struct ModLower<'a, M: Module> {
     pub string_alias_tables: HashMap<StringAliasId, DataId>,
     /// Per-message-class runtime descriptors in program-image data.
     pub worker_message_descriptors: HashMap<ClassId, DataId>,
-    #[cfg(test)]
-    pub worker_message_descriptor_values: HashMap<ClassId, (u64, Vec<u64>)>,
     pub globals: HashMap<String, (GlobalSlot, Type)>,
     /// Imported foreign C symbols, declared on first use (P5.2b).
     pub foreign_ids: HashMap<String, FuncId>,
@@ -531,7 +526,11 @@ impl<'a, M: Module> ModLower<'a, M> {
             Some(id)
         };
 
-        let mut contents = vec![0u8; 24];
+        // The runtime test `generated_worker_message_descriptor_matches_the_rust_c_layout`
+        // pins these descriptor ABI constants.
+        const DESCRIPTOR_SIZE: usize = 24;
+        const STRING_OFFSETS_POINTER_OFFSET: u32 = 16;
+        let mut contents = vec![0u8; DESCRIPTOR_SIZE];
         contents[0..8].copy_from_slice(&encode(payload_size));
         contents[8..16].copy_from_slice(&encode(offsets.len() as u64));
         let name = format!("subscript_worker_message_descriptor{}", class.0);
@@ -546,15 +545,12 @@ impl<'a, M: Module> ModLower<'a, M> {
             let offsets_ref = self
                 .module
                 .declare_data_in_data(offsets_id, &mut description);
-            description.write_data_addr(16, offsets_ref, 0);
+            description.write_data_addr(STRING_OFFSETS_POINTER_OFFSET, offsets_ref, 0);
         }
         self.module
             .define_data(id, &description)
             .map_err(|error| internal(format!("define worker message descriptor: {error}")))?;
         self.worker_message_descriptors.insert(class, id);
-        #[cfg(test)]
-        self.worker_message_descriptor_values
-            .insert(class, (payload_size, offsets));
         Ok(id)
     }
 
@@ -1322,8 +1318,6 @@ fn lower_lir_module_with<M: Module>(
         str_data: HashMap::new(),
         string_alias_tables: HashMap::new(),
         worker_message_descriptors: HashMap::new(),
-        #[cfg(test)]
-        worker_message_descriptor_values: HashMap::new(),
         globals: HashMap::new(),
         foreign_ids: HashMap::new(),
         foreign_symbols: Vec::new(),
@@ -1708,14 +1702,6 @@ fn lower_lir_module_with<M: Module>(
     let positions = std::mem::take(&mut ml.positions);
     let slots = std::mem::take(&mut ml.slots);
     let foreign_symbols = std::mem::take(&mut ml.foreign_symbols);
-    #[cfg(test)]
-    let mut worker_message_descriptor_values =
-        std::mem::take(&mut ml.worker_message_descriptor_values)
-            .into_iter()
-            .map(|(class, (payload_size, offsets))| (class, payload_size, offsets))
-            .collect::<Vec<_>>();
-    #[cfg(test)]
-    worker_message_descriptor_values.sort_by_key(|(class, _, _)| class.0);
     Ok(Lowered {
         main,
         init,
@@ -1725,8 +1711,6 @@ fn lower_lir_module_with<M: Module>(
         globals_size,
         globals_align,
         foreign_symbols,
-        #[cfg(test)]
-        worker_message_descriptor_values,
     })
 }
 
@@ -1756,7 +1740,7 @@ mod tests {
     }
 
     #[test]
-    fn worker_string_descriptor_offsets_match_in_both_tiers_and_the_class_layout() {
+    fn worker_string_descriptor_offsets_match_the_c_tier_and_class_layout() {
         let source = include_str!("../../../corpus/accept/a182-worker-string-message.ts");
         let hir = check_program(&[SourceFile::new("a182-worker-string-message.ts", source)])
             .expect("a182 checks");
@@ -1779,21 +1763,29 @@ mod tests {
             expected_offsets
         );
 
-        let isa = cranelift_native::builder()
-            .expect("host ISA")
-            .finish(dev_flags().expect("dev flags"))
-            .expect("ISA flags");
-        let builder = JITBuilder::with_isa(isa, default_libcall_names());
-        let mut module = JITModule::new(builder);
-        let lowered = lower_lir_module_with(&mut module, &lir, LowerOptions::default())
-            .expect("a182 dev lowering");
+        let mixed_class = lir
+            .classes
+            .iter()
+            .find(|class| class.source_name == "MixedStringInput")
+            .expect("MixedStringInput class");
+        let mixed_layout = layouts
+            .class(mixed_class.id.0)
+            .expect("MixedStringInput layout");
+        assert_eq!(mixed_layout.field_offsets, vec![0, 8, 16, 24]);
+        assert_eq!(mixed_class.fields[0].ty, Type::U8);
+        assert_eq!(mixed_class.fields[1].ty, Type::Str);
+        assert_eq!(mixed_class.fields[2].ty, Type::I64);
         assert_eq!(
-            lowered.worker_message_descriptor_values,
-            vec![(class.id, 32, expected_offsets.clone())]
+            mixed_class.fields[3].ty,
+            Type::FixedArray(Box::new(Type::Str), 3)
         );
-        // SAFETY: no definition was finalized or executed and no module
-        // pointer escaped this test.
-        unsafe { module.free_memory() };
+        let mixed_expected_offsets = vec![8, 24, 32, 40];
+        assert_eq!(
+            layouts
+                .worker_message_string_slot_offsets(mixed_class.id.0)
+                .expect("MixedStringInput string offsets"),
+            mixed_expected_offsets
+        );
 
         let c = crate::cemit::emit_lir_c(&lir, true)
             .expect("a182 C lowering")
@@ -1807,6 +1799,18 @@ mod tests {
             class.id.0, class.id.0, class.id.0
         )));
         assert!(c.contains(&format!("&sub_worker_message_descriptor_{}", class.id.0)));
+        assert!(c.contains(&format!(
+            "static const uint64_t sub_worker_string_offsets_{}[] = {{ 8ull, 24ull, 32ull, 40ull }};",
+            mixed_class.id.0
+        )));
+        assert!(c.contains(&format!(
+            "static const subscript_rt_worker_message_descriptor sub_worker_message_descriptor_{} = {{ (uint64_t)sizeof(SubC{}), 4ull, sub_worker_string_offsets_{} }};",
+            mixed_class.id.0, mixed_class.id.0, mixed_class.id.0
+        )));
+        assert!(c.contains(&format!(
+            "&sub_worker_message_descriptor_{}",
+            mixed_class.id.0
+        )));
     }
 
     #[test]

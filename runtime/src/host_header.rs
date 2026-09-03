@@ -436,6 +436,7 @@ fn c_fn_pointer(name: &str, function: &Function) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::worker::WorkerMessageDescriptor;
 
     #[test]
     fn generated_host_header_is_byte_identical() {
@@ -475,6 +476,32 @@ mod tests {
         assert!(header.contains("subscript_rt_worker_inbox_wait"));
         assert!(header.contains("condition variable and never spins"));
         assert!(header.contains("trap kind 22 (`worker-trapped`)"));
+    }
+
+    #[test]
+    fn generated_worker_message_descriptor_matches_the_rust_c_layout() {
+        let header = render().expect("render host header");
+        let descriptor = concat!(
+            "typedef struct subscript_rt_worker_message_descriptor {\n",
+            "    uint64_t payload_size;\n",
+            "    uint64_t string_slot_count;\n",
+            "    const uint64_t* string_slot_offsets;\n",
+            "} subscript_rt_worker_message_descriptor;"
+        );
+        assert!(header.contains(descriptor));
+        assert_eq!(
+            std::mem::offset_of!(WorkerMessageDescriptor, payload_size),
+            0
+        );
+        assert_eq!(
+            std::mem::offset_of!(WorkerMessageDescriptor, string_slot_count),
+            8
+        );
+        assert_eq!(
+            std::mem::offset_of!(WorkerMessageDescriptor, string_slot_offsets),
+            16
+        );
+        assert_eq!(std::mem::size_of::<WorkerMessageDescriptor>(), 24);
     }
 
     #[test]

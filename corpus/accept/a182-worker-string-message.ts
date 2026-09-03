@@ -1,6 +1,6 @@
 // corpus: accept/a182-worker-string-message
-// purpose: Pins copied string fields across two worker message round trips.
-// exercises: Worker messages, string byte copies, FixedArray string slots, Context isolation
+// purpose: Pins copied strings and distinct input/output descriptors across worker round trips.
+// exercises: Worker messages, string byte copies, FixedArray string slots, Context isolation, u8-led padding
 // questions: Q35
 // tsc: accepts; js-comparable: no Q35: The Worker API has no JavaScript shim.
 class StringMessage {
@@ -12,6 +12,35 @@ class StringMessage {
     this.text = text;
     this.count = count;
     this.tags = tags;
+  }
+}
+
+class MixedStringInput {
+  kind: u8;
+  text: string;
+  total: i64;
+  labels: FixedArray<string, 3>;
+
+  constructor(
+    kind: u8,
+    text: string,
+    total: i64,
+    labels: FixedArray<string, 3>,
+  ) {
+    this.kind = kind;
+    this.text = text;
+    this.total = total;
+    this.labels = labels;
+  }
+}
+
+class PlainOutput {
+  kind: u8;
+  total: i64;
+
+  constructor(kind: u8, total: i64) {
+    this.kind = kind;
+    this.total = total;
   }
 }
 
@@ -31,6 +60,23 @@ function replyToStrings(
     );
     outbox.post(reply);
   }
+}
+
+function summarizeStrings(
+  inbox: Inbox<MixedStringInput>,
+  outbox: Outbox<PlainOutput>,
+): void {
+  const message: MixedStringInput | null = inbox.wait();
+  if (message === null) {
+    return;
+  }
+  const copiedBytes: i64 = (
+    message.text.length +
+    message.labels[0].length +
+    message.labels[1].length +
+    message.labels[2].length
+  ) as i64;
+  outbox.post(new PlainOutput(message.kind, message.total + copiedBytes));
 }
 
 export function main(): void {
@@ -67,4 +113,16 @@ export function main(): void {
     );
   }
   print(`parent=${first.text} count=${first.count} tags=[${first.tags[0]},${first.tags[1]}]`);
+
+  const mixedWorker: Worker<MixedStringInput, PlainOutput> =
+    Worker.spawn(summarizeStrings);
+  mixedWorker.post(
+    new MixedStringInput(9, "é", 100, ["a", "東京", ""]),
+  );
+  mixedWorker.close();
+  mixedWorker.join();
+  const mixedReply: PlainOutput | null = mixedWorker.poll();
+  if (mixedReply !== null) {
+    print(`mixed=${mixedReply.kind}:${mixedReply.total}`);
+  }
 }

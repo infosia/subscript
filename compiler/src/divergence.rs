@@ -670,8 +670,8 @@ impl Divergence {
                 subscript: "class CountMessage { count: i32 = 0; }\n\
                             function run(): void { \
                             const w: Worker<CountMessage, CountMessage> = Worker.spawn(echo); }",
-                why: "Worker messages copy strings specially; other reference handles and \
-                      worker handles remain owned by one Context.",
+                why: "A `string` field is copied by bytes; every other handle stays owned by \
+                      one Context.",
                 collision: "compiler.md §40",
             },
             Divergence::SwitchOverAlias => DivergenceEntry {

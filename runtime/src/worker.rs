@@ -56,10 +56,15 @@ impl QueueDescriptor {
         }
         // SAFETY: the caller supplies one readable descriptor.
         let descriptor = unsafe { &*descriptor };
-        let payload_size = usize::try_from(descriptor.payload_size)
-            .map_err(|_| "worker message payload size is not representable".to_string())?;
-        let count = usize::try_from(descriptor.string_slot_count)
-            .map_err(|_| "worker message string slot count is not representable".to_string())?;
+        if descriptor.payload_size > isize::MAX as u64 {
+            return Err("worker message payload size is not representable".into());
+        }
+        let payload_size = descriptor.payload_size as usize;
+        let max_offset_count = (isize::MAX as usize) / std::mem::size_of::<u64>();
+        if descriptor.string_slot_count > max_offset_count as u64 {
+            return Err("worker message string slot count is not representable".into());
+        }
+        let count = descriptor.string_slot_count as usize;
         if count != 0 && descriptor.string_slot_offsets.is_null() {
             return Err("worker message string slot offsets are null".into());
         }
@@ -75,15 +80,13 @@ impl QueueDescriptor {
             .map_err(|_| "worker message string slot table allocation failed".to_string())?;
         let mut previous = None;
         for &raw_offset in raw_offsets {
-            let offset = usize::try_from(raw_offset).map_err(|_| {
-                "worker message string slot offset is not representable".to_string()
-            })?;
-            let end = offset
-                .checked_add(std::mem::size_of::<*const u8>())
-                .ok_or_else(|| "worker message string slot offset overflows".to_string())?;
-            if end > payload_size {
+            let Some(end) = raw_offset.checked_add(std::mem::size_of::<*const u8>() as u64) else {
+                return Err("worker message string slot is outside the payload".into());
+            };
+            if end > descriptor.payload_size {
                 return Err("worker message string slot is outside the payload".into());
             }
+            let offset = raw_offset as usize;
             if previous.is_some_and(|prior| prior >= offset) {
                 return Err("worker message string slot offsets are not ascending".into());
             }
@@ -229,7 +232,7 @@ impl Queue {
             if record.try_reserve_exact(additional).is_err() {
                 return PostResult::AllocationFailed;
             }
-            record.extend_from_slice(&(string.len() as u64).to_ne_bytes());
+            record.extend_from_slice(&(string.len() as u64).to_le_bytes());
             record.extend_from_slice(string);
         }
         if self.post(record.into_boxed_slice()) {
@@ -514,7 +517,7 @@ pub(crate) fn materialize(ctx: &mut Context, receive: Receive) -> *mut u8 {
             );
             return std::ptr::null_mut();
         };
-        let length = u64::from_ne_bytes(length_bytes.try_into().expect("eight-byte string length"));
+        let length = u64::from_le_bytes(length_bytes.try_into().expect("eight-byte string length"));
         let Ok(length) = usize::try_from(length) else {
             ctx.trap(
                 TrapKind::Internal,
@@ -595,11 +598,12 @@ mod tests {
 
     use super::*;
     use crate::ffi::{
-        subscript_rt_ctx_clear_trap, subscript_rt_ctx_live_allocations, subscript_rt_ctx_new,
-        subscript_rt_ctx_release, subscript_rt_ctx_trap_kind, subscript_rt_trap,
-        subscript_rt_worker_close, subscript_rt_worker_inbox_poll, subscript_rt_worker_inbox_wait,
-        subscript_rt_worker_join, subscript_rt_worker_outbox_post, subscript_rt_worker_poll,
-        subscript_rt_worker_post, subscript_rt_worker_spawn,
+        subscript_rt_ctx_clear_trap, subscript_rt_ctx_fail_alloc_after,
+        subscript_rt_ctx_live_allocations, subscript_rt_ctx_new, subscript_rt_ctx_release,
+        subscript_rt_ctx_trap_kind, subscript_rt_trap, subscript_rt_worker_close,
+        subscript_rt_worker_inbox_poll, subscript_rt_worker_inbox_wait, subscript_rt_worker_join,
+        subscript_rt_worker_outbox_post, subscript_rt_worker_poll, subscript_rt_worker_post,
+        subscript_rt_worker_spawn,
     };
     use crate::trap::TrapKind;
 
@@ -753,10 +757,16 @@ mod tests {
         }
     }
 
+    fn hand_built_receive(payload_size: usize, offsets: &[usize], record: Vec<u8>) -> Receive {
+        Receive::Message {
+            record: record.into_boxed_slice(),
+            descriptor: Arc::new(string_descriptor(payload_size, offsets)),
+        }
+    }
+
     #[test]
-    fn two_contexts_copy_two_strings_and_one_fixed_field() {
+    fn post_two_string_slots_matches_a_hand_written_record() {
         let mut sender = Context::new();
-        let mut receiver = Context::new();
         let first = sender.alloc_str("héllo".as_bytes(), 0);
         let second = sender.alloc_str(b"world", 0);
         let message = TwoStringMessage {
@@ -774,13 +784,49 @@ mod tests {
             unsafe { queue.post_fixed(&sender, std::ptr::from_ref(&message).cast()) },
             PostResult::Posted
         ));
-        let copy = materialize(&mut receiver, queue.poll()).cast::<TwoStringMessage>();
+        let Receive::Message { record, .. } = queue.poll() else {
+            panic!("posted record is missing");
+        };
+        let mut expected = Vec::new();
+        expected.extend_from_slice(&(first as usize).to_ne_bytes());
+        expected.extend_from_slice(&41i32.to_ne_bytes());
+        expected.extend_from_slice(&[0, 0, 0, 0]);
+        expected.extend_from_slice(&(second as usize).to_ne_bytes());
+        expected.extend_from_slice(&6u64.to_le_bytes());
+        expected.extend_from_slice("héllo".as_bytes());
+        expected.extend_from_slice(&5u64.to_le_bytes());
+        expected.extend_from_slice(b"world");
+        assert_eq!(&*record, expected);
+    }
+
+    #[test]
+    fn materialize_two_string_slots_from_a_hand_written_record() {
+        let mut sender = Context::new();
+        let mut receiver = Context::new();
+        let first = sender.alloc_str("héllo".as_bytes(), 0);
+        let second = sender.alloc_str(b"world", 0);
+        let mut record = Vec::new();
+        record.extend_from_slice(&(first as usize).to_ne_bytes());
+        record.extend_from_slice(&41i32.to_ne_bytes());
+        record.extend_from_slice(&[0, 0, 0, 0]);
+        record.extend_from_slice(&(second as usize).to_ne_bytes());
+        record.extend_from_slice(&6u64.to_le_bytes());
+        record.extend_from_slice("héllo".as_bytes());
+        record.extend_from_slice(&5u64.to_le_bytes());
+        record.extend_from_slice(b"world");
+        let copy = materialize(
+            &mut receiver,
+            hand_built_receive(std::mem::size_of::<TwoStringMessage>(), &[0, 16], record),
+        )
+        .cast::<TwoStringMessage>();
         assert!(!copy.is_null());
         // SAFETY: `copy` is a materialized `TwoStringMessage` allocation.
         let copy = unsafe { &*copy };
         assert_eq!(copy.count, 41);
-        assert_ne!(copy.first, first);
-        assert_ne!(copy.second, second);
+        for copied in [copy.first, copy.second] {
+            assert_ne!(copied, first);
+            assert_ne!(copied, second);
+        }
         // SAFETY: both copied handles belong to `receiver`.
         assert_eq!(
             unsafe { receiver.str_bytes(copy.first) },
@@ -790,24 +836,16 @@ mod tests {
     }
 
     #[test]
-    fn null_string_slot_arrives_as_a_fresh_empty_string() {
-        let sender = Context::new();
+    fn null_string_slot_materializes_as_a_fresh_empty_string() {
         let mut receiver = Context::new();
-        let message = TwoStringMessage {
-            first: std::ptr::null_mut(),
-            count: 7,
-            second: std::ptr::null_mut(),
-        };
-        let queue = Queue::new(string_descriptor(
-            std::mem::size_of::<TwoStringMessage>(),
-            &[0],
-        ));
-        // SAFETY: `message` has the descriptor's fixed layout.
-        assert!(matches!(
-            unsafe { queue.post_fixed(&sender, std::ptr::from_ref(&message).cast()) },
-            PostResult::Posted
-        ));
-        let copy = materialize(&mut receiver, queue.poll()).cast::<TwoStringMessage>();
+        let mut record = vec![0; std::mem::size_of::<TwoStringMessage>()];
+        record.extend_from_slice(&0u64.to_le_bytes());
+        let copy = materialize(
+            &mut receiver,
+            hand_built_receive(std::mem::size_of::<TwoStringMessage>(), &[0], record),
+        )
+        .cast::<TwoStringMessage>();
+        assert!(!copy.is_null());
         // SAFETY: `copy` is a materialized `TwoStringMessage` allocation.
         let copied = unsafe { (*copy).first };
         assert!(!copied.is_null());
@@ -816,26 +854,20 @@ mod tests {
     }
 
     #[test]
-    fn allocated_empty_string_round_trips_by_copy() {
+    fn allocated_empty_string_materializes_from_a_hand_written_record() {
         let mut sender = Context::new();
         let mut receiver = Context::new();
         let empty = sender.alloc_str(b"", 0);
-        let message = TwoStringMessage {
-            first: empty,
-            count: 0,
-            second: std::ptr::null_mut(),
-        };
-        let queue = Queue::new(string_descriptor(
-            std::mem::size_of::<TwoStringMessage>(),
-            &[0],
-        ));
-        // SAFETY: `message` has the descriptor's fixed layout and its string
-        // handle belongs to `sender`.
-        assert!(matches!(
-            unsafe { queue.post_fixed(&sender, std::ptr::from_ref(&message).cast()) },
-            PostResult::Posted
-        ));
-        let copy = materialize(&mut receiver, queue.poll()).cast::<TwoStringMessage>();
+        let mut record = Vec::new();
+        record.extend_from_slice(&(empty as usize).to_ne_bytes());
+        record.extend_from_slice(&[0; 16]);
+        record.extend_from_slice(&0u64.to_le_bytes());
+        let copy = materialize(
+            &mut receiver,
+            hand_built_receive(std::mem::size_of::<TwoStringMessage>(), &[0], record),
+        )
+        .cast::<TwoStringMessage>();
+        assert!(!copy.is_null());
         // SAFETY: `copy` is a materialized `TwoStringMessage` allocation.
         let copied = unsafe { (*copy).first };
         assert_ne!(copied, empty);
@@ -844,9 +876,10 @@ mod tests {
     }
 
     #[test]
-    fn count_zero_record_is_exactly_the_fixed_payload() {
+    fn count_zero_post_matches_a_hand_written_fixed_record() {
         let sender = Context::new();
-        let value = 0x0102_0304_0506_0708u64;
+        let expected = [0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01];
+        let value = u64::from_ne_bytes(expected);
         let queue = Queue::new(QueueDescriptor::fixed(std::mem::size_of::<u64>()));
         // SAFETY: `value` is one readable fixed payload.
         assert!(matches!(
@@ -856,7 +889,7 @@ mod tests {
         let Receive::Message { record, descriptor } = queue.poll() else {
             panic!("fixed message is missing");
         };
-        assert_eq!(&*record, &value.to_ne_bytes());
+        assert_eq!(&*record, &expected);
         assert_eq!(descriptor.payload_size, std::mem::size_of::<u64>());
         assert!(descriptor.string_slot_offsets.is_empty());
     }
@@ -868,34 +901,163 @@ mod tests {
     }
 
     #[test]
-    fn fixed_array_string_slots_are_materialized() {
+    fn fixed_array_string_slots_materialize_from_a_hand_written_record() {
         let mut sender = Context::new();
         let mut receiver = Context::new();
         let left = sender.alloc_str(b"left", 0);
         let right = sender.alloc_str(b"right", 0);
-        let message = FixedStringMessage {
-            tags: [left, right],
-            count: 2,
-        };
-        let queue = Queue::new(string_descriptor(
-            std::mem::size_of::<FixedStringMessage>(),
-            &[0, 8],
-        ));
-        // SAFETY: `message` has the descriptor's fixed layout and both
-        // string handles belong to `sender`.
-        assert!(matches!(
-            unsafe { queue.post_fixed(&sender, std::ptr::from_ref(&message).cast()) },
-            PostResult::Posted
-        ));
-        let copy = materialize(&mut receiver, queue.poll()).cast::<FixedStringMessage>();
+        let mut record = Vec::new();
+        record.extend_from_slice(&(left as usize).to_ne_bytes());
+        record.extend_from_slice(&(right as usize).to_ne_bytes());
+        record.extend_from_slice(&2i32.to_ne_bytes());
+        record.extend_from_slice(&[0, 0, 0, 0]);
+        record.extend_from_slice(&4u64.to_le_bytes());
+        record.extend_from_slice(b"left");
+        record.extend_from_slice(&5u64.to_le_bytes());
+        record.extend_from_slice(b"right");
+        let copy = materialize(
+            &mut receiver,
+            hand_built_receive(std::mem::size_of::<FixedStringMessage>(), &[0, 8], record),
+        )
+        .cast::<FixedStringMessage>();
+        assert!(!copy.is_null());
         // SAFETY: `copy` is a materialized `FixedStringMessage` allocation.
         let copy = unsafe { &*copy };
         assert_eq!(copy.count, 2);
-        assert_ne!(copy.tags[0], left);
-        assert_ne!(copy.tags[1], right);
+        for copied in copy.tags {
+            assert_ne!(copied, left);
+            assert_ne!(copied, right);
+        }
         // SAFETY: both copied handles belong to `receiver`.
         assert_eq!(unsafe { receiver.str_bytes(copy.tags[0]) }, b"left");
         assert_eq!(unsafe { receiver.str_bytes(copy.tags[1]) }, b"right");
+    }
+
+    fn assert_spawn_descriptor_rejection(
+        descriptor: *const WorkerMessageDescriptor,
+        expected_message: &str,
+    ) {
+        let parent = subscript_rt_ctx_new();
+        // SAFETY: the invalid input descriptor is deliberate and the output
+        // descriptor is readable for this validation call.
+        let worker = unsafe {
+            subscript_rt_worker_spawn(
+                parent,
+                Some(no_op_init),
+                Some(clean_entry),
+                descriptor,
+                &EMPTY_DESCRIPTOR,
+            )
+        };
+        assert!(worker.is_null());
+        // SAFETY: `parent` remains live until the release below.
+        let trap = unsafe { &*parent }.trap_record().expect("descriptor trap");
+        assert_eq!(trap.kind, TrapKind::Internal);
+        assert_eq!(trap.message, expected_message);
+        // SAFETY: parent is released exactly once.
+        unsafe { subscript_rt_ctx_release(parent) };
+    }
+
+    #[test]
+    fn spawn_rejects_every_invalid_worker_message_descriptor() {
+        assert_spawn_descriptor_rejection(std::ptr::null(), "worker message descriptor is null");
+
+        let unrepresentable_size = WorkerMessageDescriptor {
+            payload_size: u64::MAX,
+            string_slot_count: 0,
+            string_slot_offsets: std::ptr::null(),
+        };
+        assert_spawn_descriptor_rejection(
+            &unrepresentable_size,
+            "worker message payload size is not representable",
+        );
+
+        let one_offset = [0u64];
+        let unrepresentable_count = WorkerMessageDescriptor {
+            payload_size: 8,
+            string_slot_count: u64::MAX,
+            string_slot_offsets: one_offset.as_ptr(),
+        };
+        assert_spawn_descriptor_rejection(
+            &unrepresentable_count,
+            "worker message string slot count is not representable",
+        );
+
+        let null_offsets = WorkerMessageDescriptor {
+            payload_size: 8,
+            string_slot_count: 1,
+            string_slot_offsets: std::ptr::null(),
+        };
+        assert_spawn_descriptor_rejection(
+            &null_offsets,
+            "worker message string slot offsets are null",
+        );
+
+        let outside_offsets = [8u64];
+        let outside_payload = WorkerMessageDescriptor {
+            payload_size: 8,
+            string_slot_count: 1,
+            string_slot_offsets: outside_offsets.as_ptr(),
+        };
+        assert_spawn_descriptor_rejection(
+            &outside_payload,
+            "worker message string slot is outside the payload",
+        );
+
+        let descending_offsets = [8u64, 0];
+        let not_ascending = WorkerMessageDescriptor {
+            payload_size: 16,
+            string_slot_count: 2,
+            string_slot_offsets: descending_offsets.as_ptr(),
+        };
+        assert_spawn_descriptor_rejection(
+            &not_ascending,
+            "worker message string slot offsets are not ascending",
+        );
+    }
+
+    fn assert_materialize_rejection(record: Vec<u8>, expected_message: &str) {
+        let mut receiver = Context::new();
+        let copy = materialize(&mut receiver, hand_built_receive(8, &[0], record));
+        assert!(copy.is_null());
+        let trap = receiver.trap_record().expect("malformed record trap");
+        assert_eq!(trap.kind, TrapKind::Internal);
+        assert_eq!(trap.message, expected_message);
+    }
+
+    #[test]
+    fn materialize_rejects_every_hand_built_malformed_string_record() {
+        let mut short_length = vec![0; 8];
+        short_length.extend_from_slice(&[1, 2, 3]);
+        assert_materialize_rejection(short_length, "worker message record has no string length");
+
+        let mut length_past_record = vec![0; 8];
+        length_past_record.extend_from_slice(&4u64.to_le_bytes());
+        length_past_record.extend_from_slice(b"abc");
+        assert_materialize_rejection(
+            length_past_record,
+            "worker message record has incomplete string bytes",
+        );
+
+        let mut trailing_bytes = vec![0; 8];
+        trailing_bytes.extend_from_slice(&0u64.to_le_bytes());
+        trailing_bytes.push(0xFF);
+        assert_materialize_rejection(trailing_bytes, "worker message record has trailing bytes");
+    }
+
+    #[test]
+    fn materialize_reports_the_p21_injected_allocation_failure() {
+        let mut receiver = Context::new();
+        let receiver_ptr = std::ptr::from_mut(receiver.as_mut());
+        // SAFETY: `receiver_ptr` is the live exclusive Context pointer.
+        unsafe { subscript_rt_ctx_fail_alloc_after(receiver_ptr, 1) };
+        let mut record = vec![0; 8];
+        record.extend_from_slice(&0u64.to_le_bytes());
+        let copy = materialize(&mut receiver, hand_built_receive(8, &[0], record));
+        assert!(copy.is_null());
+        let trap = receiver.trap_record().expect("injected allocation trap");
+        assert_eq!(trap.kind, TrapKind::AllocationFailure);
+        assert_eq!(trap.message, "injected allocation failure");
     }
 
     #[test]
