@@ -11444,23 +11444,38 @@ The table is a record written beside the form (core principles 8 and
 ### 83.1 Rule
 
 1. **One owner iterator, one walk.** `hir::Module` exposes one
-   iterator over every expression owner it holds: each function,
-   method, constructor, and foreign function body and each of their
-   parameter defaults; each lambda body and its parameter defaults;
-   each field initializer, static initializer, descriptor default, and
-   module initializer. The §83 walk, `trap_sites`, and every other
-   module-level pass that reads expressions use that iterator; no pass
-   enumerates owners by hand. After the module is checked, the walk
-   visits every `Call` node under every owner through `children()`
-   (§72) and derives `operation_signatures` from the nodes alone: the
-   target from the callee and the receiver type, the parameter types
-   from the receiver and the arguments after
+   iterator over every module-level expression owner it holds, in a
+   shared form (`&self`) and a mutable form (`&mut self`): each
+   function, method, and constructor body and each of their parameter
+   defaults; each field initializer, static initializer, descriptor
+   default, and module initializer; the top-level statements. A
+   lambda body and its parameter defaults are not module-level
+   owners: `children()` reaches them under the owner that holds the
+   lambda, and a consumer recurses through `children()`. Every
+   module-level pass that reads expressions uses the iterator: the
+   §83 walk, `trap_sites`, `warn`, and the LIR fact check in
+   `codegen/tests/support`. Two passes are exempt because they need
+   the owner's identity (its function name or class index), which the
+   iterator erases: `check/layout.rs`, which runs on the checker's
+   pre-module state, and the lowering in `codegen/src/lir.rs`. No
+   other pass enumerates owners by hand. After the module is checked,
+   the walk visits every `Call` node under every owner through
+   `children()` (§72) and derives `operation_signatures` from the
+   nodes alone: the target from the callee and the receiver type, the
+   parameter types from the receiver and the arguments after
    `normalize_operation_parameter_types`, the return type from the
-   node's type. Two nodes with one signature give one entry. *(Amended
-   2026-09-03 after the review: the first walk listed owners by hand
-   and skipped parameter defaults, which `trap_sites` three lines
-   later did visit; `factor: f64 = Math.max(2.0, 3.0)` lowered at the
-   pin and failed at `35fe70e`.)*
+   node's type. Two nodes with one signature give one entry. The walk
+   is total over the form, not over the programs the language accepts
+   today: a lambda parameter default is in the form and is visited,
+   although no accepted program evaluates one (a call through a
+   function value supplies every argument). *(Amended 2026-09-03
+   after review round 1: the first walk listed owners by hand and
+   skipped parameter defaults, which `trap_sites` three lines later
+   did visit; `factor: f64 = Math.max(2.0, 3.0)` lowered at the pin
+   and failed at `35fe70e`. Amended again after review round 2: the
+   iterator was `&mut self` only, so `warn` and the LIR fact check
+   kept their hand lists; the foreign-function arm was unreachable,
+   because a `declare function` has no body and no default.)*
 2. **No site registers a signature as a side effect.**
    `register_operation_signature` and the checker's `RefCell` table
    are deleted, and so is every call of it. A synthesized node is
@@ -11513,12 +11528,23 @@ The table is a record written beside the form (core principles 8 and
    one shared test module beside `corpus_warn.rs`, not in a copy.
 5. The owner iterator has its own test: a program with one `Call` in
    each owner kind, and a hand-counted number of calls the iterator
-   must yield.
-6. `a79` and every pre-existing golden stay byte-identical. The record
+   must yield. a181 holds a top-level statement with an operation
+   call, so the hand-written table of item 3 covers the top-level
+   owner. The total test of item 4 shares the iterator with the walk
+   and cannot see an owner the iterator skips; the hand-written tables
+   and this test are the controls for that.
+6. **A totality gate gains no per-entry exception.** The LIR
+   execution-fact helper resolves a method call's operand count from
+   the method's declared parameters, as it does for a free function
+   and a constructor, so a method call that omits a defaulted argument
+   is one more shape, not a named entry. *(Added after review round
+   2: the first fix round special-cased a181 in
+   `codegen/tests/lir.rs`.)*
+7. `a79` and every pre-existing golden stay byte-identical. The record
    lists the HIR entries the walk added (measured on this host with a
    binary from the pin): `Ambient(Unreachable)` in a116, a162, a163;
    order only in a136, a146, a69–a72, a79.
-7. Gates: both profiles, zero-warning build, fmt, `tsc`, hygiene,
+8. Gates: both profiles, zero-warning build, fmt, `tsc`, hygiene,
    clippy at 7 / 18 / 13.
 
 ### 83.3 Recorded, not changed
@@ -11545,3 +11571,22 @@ interop token list was a copy (item 4); the lookup is order-sensitive
 and the order moved for seven entries with no golden change
 (recorded); the tracking note was untracked; `subscript build` writes
 beside its source (a probe hazard, recorded in the tracking note).
+
+### 83.5 Review round 2, 2026-09-03
+
+Focused review of `90be0c2..efdc31d`. MAJOR: the LIR execution-fact
+helper gained an `if id == "a181…"` exception instead of resolving a
+method's parameter count (item 6); the iterator was `&mut self` only,
+so `warn.rs` and `codegen/tests/support/lir_facts.rs` kept hand lists
+(rule 1, second round on the class: both borrow forms, exempt passes
+named). MINOR: rule 1 said the iterator yields lambdas while the code
+reaches them through `children()` (rule 1 states it); an unreachable
+`foreign_fns` arm (removed); the lambda-default arm in `children()`
+changes no accepted program (rule 1 states the form-totality); the
+total test shares the iterator (item 5 states the controls); the
+iterator test counts calls, not arms (its comment says so); the
+compiler-side interop token list lacks three tokens of the
+codegen-side list (synchronized); a `next` receiver match at the
+reload trap site is outside rule 3 (recorded); the tracking note's
+"independent walk" wording (corrected); a stale `top_level` comment
+and a missing `#[non_exhaustive]` reason (fixed).

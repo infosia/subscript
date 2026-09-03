@@ -2,7 +2,8 @@
 
 Status: **landed 2026-09-03** against `specs/blocks/compiler.md` §83.
 Origin: review round 3 of §82 (R39) found it outside that diff.
-Contract `7f46a3a`, implementation `35fe70e`.
+Contract `7f46a3a`, amended `90be0c2` after the review; implementation
+`35fe70e`, fixes `efdc31d`.
 
 ## The defect
 
@@ -33,26 +34,46 @@ Eight other sites registered synthesized nodes by hand.
 - Corpus: `a180-for-of-generator-only` (full run, `break`,
   `continue`, a `@CStruct` element; `js-comparable: no C2`). Red at
   `7f46a3a`, exit 2, quoted above. Tests:
-  `compiler/tests/operation_signatures.rs` (an independent second
-  walk equals the table; a total check over accept, warn, and
-  examples).
-- Counts: accept `.ts` 177 → 178; `.expected` 178 → 179.
+  `compiler/tests/operation_signatures.rs` (hand-written expected
+  tables for a180 and a181; a total check over accept, warn, and
+  examples with a positive control that inserts a synthesized call;
+  an iterator test with a hand count).
+- Counts: accept `.ts` 177 → 179; `.expected` 178 → 180 (a180, a181).
 
-## Gates (this host, `35fe70e`)
+## Gates (this host, `efdc31d`)
 
-- debug: 66 suites, 1,240 passed, 0 failed, 1 ignored, 1,625 s.
-- release: 66 suites, 1,238 passed, 0 failed, 1 ignored, 334 s. One
-  run showed 3 failures in `codegen/tests/lir.rs` ("no source files
-  given" for an entry `subscript-build`): a reviewer's `subscript
-  build --source corpus/accept/a180…` had written its output directory
-  beside the source, and the harness enumerated it. Removed; the suite
-  passes 35/35.
+- debug (the coding agent's final run): 66 suites, 1,243 passed, 0
+  failed, 1 ignored, 1,753 s.
+- release: 66 suites, 1,241 passed, 0 failed, 1 ignored, 352 s.
+- At `35fe70e` the release run showed 3 failures in `codegen/tests/lir.rs`
+  ("no source files given" for an entry `subscript-build`): a
+  reviewer's `subscript build --source corpus/accept/a180…` had written
+  its output directory beside the source, and the harness enumerated
+  it. Removed; 35/35.
 - Zero-warning build; fmt, `tsc`, hygiene exit 0; clippy 7 / 18 / 13.
 - No pre-existing golden or `.expected` moved.
 
-## Review
+## Review round 1 (fresh no-context subagent)
 
-REVIEW_TODO
+§83.4 holds the record. CRITICAL: the walk listed owners by hand and
+skipped parameter defaults — `factor: f64 = Math.max(2.0, 3.0)`
+lowered at `7f46a3a` and failed at `35fe70e` (rule 1: one owner
+iterator on `hir::Module`, shared with `trap_sites`); the two tests
+re-derived the table with copies of the production code and could
+not fail (items 3–5: hand-written expected tables, a positive
+control that inserts a synthesized call, an iterator test with a
+hand count). MAJOR: no positive control; a third copy of the callee
+mapping in `codegen/src/lir.rs` (rule 3). MINOR: the `Arr::Map` /
+`Filter` `ArrayPush` append (rule 4 states it); the examples scope;
+no HIR serializer, so item 6 records the measured JSON differences;
+a copied interop token list; order-sensitive lookup; the untracked
+note; `subscript build` writes beside its source. Fixed in
+`efdc31d`: a181 pins one operation call per owner kind (Red at
+`35fe70e` for the parameter-default forms: "Math.Max declares ,").
+
+## Review round 2
+
+REVIEW2_TODO
 
 ## Recorded, not changed
 
