@@ -2,6 +2,9 @@
 //! zero diagnostics and produces a well-formed typed HIR; a19-modules
 //! is one two-file program. Spot assertions verify resolved types.
 
+#[path = "corpus/mod.rs"]
+mod corpus;
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -58,36 +61,6 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
     // shapes); prepend the mirror ambient surface so those names resolve. A
     // false negative is not silent — the entry then fails to check with an
     // unresolved identifier.
-    const INTEROP_TOKENS: &[&str] = &[
-        "subDevice",
-        "subChainPayloadValue",
-        "subSlice",
-        "SubDrawList",
-        "subDrawListTotal",
-        "SUB_ACCESS",
-        "subAccessMatches",
-        "subBulk",
-        "subBoundaryString",
-        "subProbeTexture",
-        "subProbeComputePipeline",
-        "subProbeRenderPipeline",
-        "subProbeProgrammableStage",
-        "subProbeFullRenderPipeline",
-        "subProbeBreadthRenderPipeline",
-        "subProbeWideRenderPipeline",
-        "subProbeQueueSubmit",
-        "subProbeSetBindGroup",
-        // P7.1 async/Future shapes (compiler.md §14).
-        "SUB_STAGE",
-        "subStageMatches",
-        "subFutureMake",
-        "subStatsMake",
-        "SubQueryStatus",
-        "subByValue",
-        "subHostOwnedState",
-        "subWireMode",
-        "subBindTone",
-    ];
     let uses_external = sources
         .iter()
         .any(|source| source.source.contains("subExternalDevice"));
@@ -100,7 +73,7 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
     let uses_interop = uses_external
         || sources
             .iter()
-            .any(|s| INTEROP_TOKENS.iter().any(|t| s.source.contains(t)));
+            .any(|source| corpus::references_interop(&source.source));
     if uses_external {
         sources.insert(0, external_device_mirror());
     }
@@ -159,7 +132,7 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     assert_eq!(regex_entries, 2, "expected two regex entries");
     assert_eq!(
         single_files.len(),
-        178,
+        179,
         "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \

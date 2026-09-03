@@ -161,6 +161,7 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a110-async-method-receiver.ts",
             "corpus/accept/a111-interop-async-method-poll.ts",
             "corpus/accept/a143-async-generic.ts",
+            "corpus/accept/a181-operation-in-every-owner.ts",
             "corpus/reject/r96-new-promise.ts",
             "corpus/reject/r97-promise-combinator.ts",
             "corpus/reject/r98-promise-static.ts",

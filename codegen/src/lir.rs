@@ -1107,13 +1107,7 @@ fn lower_operation_signature(signature: &hir::OperationSignature) -> l::CallSign
             },
         ),
         hir::OperationSignatureTarget::BuiltinMethod(method) => {
-            let method = match method {
-                hir::BuiltinMethod::ArrayPush => l::BuiltinMethod::ArrayPush,
-                hir::BuiltinMethod::ArrayPop => l::BuiltinMethod::ArrayPop,
-                hir::BuiltinMethod::StringSlice => l::BuiltinMethod::StringSlice,
-                hir::BuiltinMethod::GeneratorNext => l::BuiltinMethod::GeneratorNext,
-            };
-            l::CallSignatureTarget::BuiltinMethod(method)
+            l::CallSignatureTarget::BuiltinMethod(lower_builtin_method(*method))
         }
     };
     l::CallSignature {
@@ -1125,6 +1119,15 @@ fn lower_operation_signature(signature: &hir::OperationSignature) -> l::CallSign
             .map(l::ValueType::Data)
             .collect(),
         return_type: signature.return_type.clone().map(l::ValueType::Data),
+    }
+}
+
+fn lower_builtin_method(method: hir::BuiltinMethod) -> l::BuiltinMethod {
+    match method {
+        hir::BuiltinMethod::ArrayPush => l::BuiltinMethod::ArrayPush,
+        hir::BuiltinMethod::ArrayPop => l::BuiltinMethod::ArrayPop,
+        hir::BuiltinMethod::StringSlice => l::BuiltinMethod::StringSlice,
+        hir::BuiltinMethod::GeneratorNext => l::BuiltinMethod::GeneratorNext,
     }
 }
 
@@ -4758,7 +4761,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     None,
                 ))
             }
-            hir::Callee::Method { recv, name } => self.resolve_method_call(recv, name, expr),
+            hir::Callee::Method { recv, name } => {
+                self.resolve_method_call(callee, recv, name, expr)
+            }
             hir::Callee::Ambient(value) => Ok(intrinsic_resolution(
                 l::IntrinsicFamily::Ambient,
                 intrinsic_index(&hir::AmbientFn::ALL, value),
@@ -4839,6 +4844,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
 
     fn resolve_method_call(
         &mut self,
+        callee: &hir::Callee,
         recv: &hir::Expr,
         name: &str,
         expr: &hir::Expr,
@@ -4909,20 +4915,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 prepared,
             ));
         }
-        let builtin = match (&recv.ty, name) {
-            (Type::Array(_), "push") => l::BuiltinMethod::ArrayPush,
-            (Type::Array(_), "pop") => l::BuiltinMethod::ArrayPop,
-            (Type::Str, "slice") => l::BuiltinMethod::StringSlice,
-            (Type::Generator(_), "next") => l::BuiltinMethod::GeneratorNext,
-            _ => {
-                return Err(self.error(
-                    &expr.pos,
-                    format!("unrepresented built-in method `{name}` on `{}`", recv.ty),
-                ));
-            }
+        let Some((hir::OperationSignatureTarget::BuiltinMethod(method), _)) =
+            hir::operation_signature_target(callee)
+        else {
+            return Err(self.error(
+                &expr.pos,
+                format!("unrepresented built-in method `{name}` on `{}`", recv.ty),
+            ));
         };
         Ok((
-            l::CallTargetKind::BuiltinMethod(builtin),
+            l::CallTargetKind::BuiltinMethod(lower_builtin_method(method)),
             vec![self.require_expr(recv)?],
             Vec::new(),
             None,

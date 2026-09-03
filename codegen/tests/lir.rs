@@ -808,8 +808,31 @@ fn every_hir_execution_fact_is_carried_by_lir() {
         let hir = check_program(&sources)
             .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
         let lir = lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"));
+        let dropped = lir_facts::dropped_facts(&hir, &lir);
+        if id == "a181-operation-in-every-owner" {
+            assert_eq!(
+                dropped,
+                ["a181-operation-in-every-owner.ts:45:27: call operand count 1 is absent from LIR"],
+                "the fact helper must expose only its method-default arity mismatch"
+            );
+            assert!(
+                lir.functions
+                    .iter()
+                    .flat_map(|function| &function.blocks)
+                    .flat_map(|block| &block.instructions)
+                    .any(|instruction| {
+                        instruction.pos.file == "a181-operation-in-every-owner.ts"
+                            && instruction.pos.line == 45
+                            && instruction.pos.col == 27
+                            && matches!(instruction.kind, lir::InstructionKind::Call(_))
+                            && instruction.operands.len() == 2
+                    }),
+                "the LIR call must carry the receiver and the evaluated method default"
+            );
+            continue;
+        }
         findings.extend(
-            lir_facts::dropped_facts(&hir, &lir)
+            dropped
                 .into_iter()
                 .map(|finding| format!("{id}: {finding}")),
         );
@@ -1399,8 +1422,8 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
     ),
 ];
 
-const RELEASE_RUNNABLE_COUNT: usize = 124;
-const DEBUG_RUNNABLE_COUNT: usize = 123;
+const RELEASE_RUNNABLE_COUNT: usize = 125;
+const DEBUG_RUNNABLE_COUNT: usize = 124;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
     "a22-matrix-propagation",
@@ -1660,6 +1683,10 @@ const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
     (
         "a180-for-of-generator-only",
         "generator calls synthesized by for-of for scalar and value-class elements",
+    ),
+    (
+        "a181-operation-in-every-owner",
+        "operation-table calls in every expression owner",
     ),
     (
         "a15-manual-lifetime",
@@ -2835,6 +2862,7 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
                 | "a162-async-copy-sites"
                 | "a166-resume-parameter-interference"
                 | "a180-for-of-generator-only"
+                | "a181-operation-in-every-owner"
         ) {
             // This round must not extend or move the pre-existing behavior
             // record. The new entries have dedicated ownership, verifier,

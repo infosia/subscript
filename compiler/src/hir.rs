@@ -47,6 +47,68 @@ pub struct Module {
     pub top_level: Vec<Stmt>,
 }
 
+/// One root that owns expressions in a checked module.
+pub enum ExpressionOwner<'a> {
+    /// One initializer or parameter default.
+    Expr(&'a mut Expr),
+    /// One function, method, constructor, or module body.
+    Body(&'a mut [Stmt]),
+}
+
+impl Module {
+    /// Returns every expression owner in the module.
+    ///
+    /// The mutable references let module passes record facts on expression
+    /// nodes. A pass must traverse nested expressions through
+    /// [`Expr::children`] and [`Stmt::children`].
+    pub fn expression_owners(&mut self) -> impl Iterator<Item = ExpressionOwner<'_>> {
+        fn add_function<'a>(function: &'a mut Function, owners: &mut Vec<ExpressionOwner<'a>>) {
+            owners.extend(
+                function
+                    .params
+                    .iter_mut()
+                    .filter_map(|parameter| parameter.default.as_mut())
+                    .map(ExpressionOwner::Expr),
+            );
+            owners.push(ExpressionOwner::Body(&mut function.body));
+        }
+
+        let mut owners = Vec::new();
+        for class in &mut self.classes {
+            owners.extend(
+                class
+                    .fields
+                    .iter_mut()
+                    .filter_map(|field| field.init.as_mut())
+                    .map(ExpressionOwner::Expr),
+            );
+            if let Some(constructor) = &mut class.ctor {
+                add_function(constructor, &mut owners);
+            }
+            for method in &mut class.methods {
+                add_function(method, &mut owners);
+            }
+        }
+        owners.extend(
+            self.globals
+                .iter_mut()
+                .map(|global| ExpressionOwner::Expr(&mut global.init)),
+        );
+        for function in &mut self.functions {
+            add_function(function, &mut owners);
+        }
+        owners.extend(
+            self.foreign_fns
+                .iter_mut()
+                .flat_map(|function| &mut function.params)
+                .filter_map(|parameter| parameter.default.as_mut())
+                .map(ExpressionOwner::Expr),
+        );
+        owners.push(ExpressionOwner::Body(&mut self.top_level));
+        owners.into_iter()
+    }
+}
+
 /// One checker-derived intrinsic or built-in call signature.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OperationSignature {
@@ -3480,7 +3542,17 @@ impl Expr {
                     TplPart::Text(_) => None,
                 })
                 .collect(),
-            K::Lambda { body, .. } => body.iter().map(HirChild::Stmt).collect(),
+            K::Lambda { params, body, .. } => {
+                let mut children = Vec::new();
+                children.extend(
+                    params
+                        .iter()
+                        .filter_map(|parameter| parameter.default.as_ref())
+                        .map(HirChild::Expr),
+                );
+                children.extend(body.iter().map(HirChild::Stmt));
+                children
+            }
             K::Yield(Some(value)) => vec![HirChild::Expr(value)],
             K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
                 let mut children = Vec::with_capacity(args.len() + 1);
@@ -3562,7 +3634,17 @@ impl Expr {
                     TplPart::Text(_) => None,
                 })
                 .collect(),
-            K::Lambda { body, .. } => body.iter_mut().map(HirChildMut::Stmt).collect(),
+            K::Lambda { params, body, .. } => {
+                let mut children = Vec::new();
+                children.extend(
+                    params
+                        .iter_mut()
+                        .filter_map(|parameter| parameter.default.as_mut())
+                        .map(HirChildMut::Expr),
+                );
+                children.extend(body.iter_mut().map(HirChildMut::Stmt));
+                children
+            }
             K::Yield(Some(value)) => vec![HirChildMut::Expr(value)],
             K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
                 let mut children = Vec::with_capacity(args.len() + 1);

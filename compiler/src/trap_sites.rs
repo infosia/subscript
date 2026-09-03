@@ -72,26 +72,13 @@ fn int_type_range(ty: &Type) -> Option<Interval> {
 }
 
 pub(crate) fn decide_index_checks(module: &mut hir::Module) {
-    for class in &mut module.classes {
-        for field in &mut class.fields {
-            if let Some(init) = &mut field.init {
-                Analyzer::default().expr(init);
-            }
-        }
-        if let Some(ctor) = &mut class.ctor {
-            Analyzer::default().function(ctor);
-        }
-        for method in &mut class.methods {
-            Analyzer::default().function(method);
+    for owner in module.expression_owners() {
+        let mut analyzer = Analyzer::default();
+        match owner {
+            hir::ExpressionOwner::Expr(expression) => analyzer.expr(expression),
+            hir::ExpressionOwner::Body(body) => analyzer.stmts(body),
         }
     }
-    for global in &mut module.globals {
-        Analyzer::default().expr(&mut global.init);
-    }
-    for function in &mut module.functions {
-        Analyzer::default().function(function);
-    }
-    Analyzer::default().stmts(&mut module.top_level);
 }
 
 #[derive(Default)]
@@ -100,15 +87,6 @@ struct Analyzer {
 }
 
 impl Analyzer {
-    fn function(&mut self, function: &mut hir::Function) {
-        for param in &mut function.params {
-            if let Some(default) = &mut param.default {
-                self.expr(default);
-            }
-        }
-        self.stmts(&mut function.body);
-    }
-
     fn stmts(&mut self, stmts: &mut [hir::Stmt]) {
         for stmt in stmts {
             self.stmt(stmt);
@@ -192,8 +170,14 @@ impl Analyzer {
     }
 
     fn expr(&mut self, expr: &mut hir::Expr) {
-        if let K::Lambda { body, .. } = &mut expr.kind {
-            Analyzer::default().stmts(body);
+        if matches!(expr.kind, K::Lambda { .. }) {
+            let mut analyzer = Analyzer::default();
+            for child in expr.children_mut() {
+                match child {
+                    hir::HirChildMut::Expr(child) => analyzer.expr(child),
+                    hir::HirChildMut::Stmt(statement) => analyzer.stmt(statement),
+                }
+            }
             return;
         }
         for child in expr.children_mut() {

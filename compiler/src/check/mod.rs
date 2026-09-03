@@ -778,7 +778,7 @@ fn normalize_operation_parameter_types(
     }
 }
 
-fn operation_signatures(module: &hir::Module) -> Vec<hir::OperationSignature> {
+fn operation_signatures(module: &mut hir::Module) -> Vec<hir::OperationSignature> {
     fn visit_child(child: hir::HirChild<'_>, signatures: &mut Vec<hir::OperationSignature>) {
         match child {
             hir::HirChild::Expr(expression) => visit_expr(expression, signatures),
@@ -825,26 +825,12 @@ fn operation_signatures(module: &hir::Module) -> Vec<hir::OperationSignature> {
     }
 
     let mut signatures = Vec::new();
-    for class in &module.classes {
-        for field in &class.fields {
-            if let Some(initializer) = &field.init {
-                visit_expr(initializer, &mut signatures);
-            }
-        }
-        if let Some(constructor) = &class.ctor {
-            visit_body(&constructor.body, &mut signatures);
-        }
-        for method in &class.methods {
-            visit_body(&method.body, &mut signatures);
+    for owner in module.expression_owners() {
+        match owner {
+            hir::ExpressionOwner::Expr(expression) => visit_expr(expression, &mut signatures),
+            hir::ExpressionOwner::Body(body) => visit_body(body, &mut signatures),
         }
     }
-    for global in &module.globals {
-        visit_expr(&global.init, &mut signatures);
-    }
-    for function in &module.functions {
-        visit_body(&function.body, &mut signatures);
-    }
-    visit_body(&module.top_level, &mut signatures);
     signatures
 }
 
@@ -975,7 +961,7 @@ pub(crate) fn run(
             foreign_mirrors: ck.foreign_mirrors,
             top_level: ck.top_level,
         };
-        module.operation_signatures = operation_signatures(&module);
+        module.operation_signatures = operation_signatures(&mut module);
         crate::trap_sites::decide_index_checks(&mut module);
         Ok(module)
     } else {
