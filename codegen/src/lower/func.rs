@@ -3965,8 +3965,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .worker_entries
                 .get(index)
                 .ok_or_else(|| internal(format!("worker entry {index} is missing")))?;
-            let input_size = self.ml.layouts.class(entry.input.0)?.size;
-            let output_size = self.ml.layouts.class(entry.output.0)?.size;
+            let input_class = entry.input;
+            let output_class = entry.output;
             let initialize = self.ml.func_id(&FnKey::WorkerInit)?;
             let initialize = self
                 .ml
@@ -3979,12 +3979,34 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .module
                 .declare_func_in_func(worker, self.builder.func);
             let worker = self.builder.ins().func_addr(types::I64, worker);
-            let input_size = self.iconst(types::I64, i64::from(input_size));
-            let output_size = self.iconst(types::I64, i64::from(output_size));
+            let input_descriptor = self.ml.worker_message_descriptor_data(input_class)?;
+            let input_descriptor = self
+                .ml
+                .module
+                .declare_data_in_func(input_descriptor, self.builder.func);
+            let input_descriptor = self
+                .builder
+                .ins()
+                .symbol_value(types::I64, input_descriptor);
+            let output_descriptor = self.ml.worker_message_descriptor_data(output_class)?;
+            let output_descriptor = self
+                .ml
+                .module
+                .declare_data_in_func(output_descriptor, self.builder.func);
+            let output_descriptor = self
+                .builder
+                .ins()
+                .symbol_value(types::I64, output_descriptor);
             return self
                 .call_runtime(
                     self.ml.rt.worker_spawn,
-                    &[self.ctx, initialize, worker, input_size, output_size],
+                    &[
+                        self.ctx,
+                        initialize,
+                        worker,
+                        input_descriptor,
+                        output_descriptor,
+                    ],
                     checked,
                 )?
                 .map(RV::Scalar)

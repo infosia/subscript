@@ -32,7 +32,7 @@ const DIVERGENCE_FLOW: &str = "`unreachable()` is legal only as a call statement
 
 const Q34_ASYNC: &str = "Q34/R13/R36/§70 admits `await Context.suspend()`, direct awaits of named async functions and async instance methods, and a held async handle awaited later. The named async function and reference class can be generic. `Promise<T>` is the TypeScript-compatible annotation and storage view of that handle, not a Promise object: constructors, `then`, statics, and combinators do not exist. Handles may be stored in locals and arrays or passed to another function, but every created handle must have at least one awaited completion. Copies retain the Context-owned frame, lexical exits release it, and `await` does not change ownership. Suspension remains host-polled; there is no event loop or microtask queue.";
 
-const Q35_WORKERS: &str = "`Worker<In, Out>` runs one directly named, module-level synchronous function on an OS thread with a fresh `Context`. Its exact entry shape is `(inbox: Inbox<In>, outbox: Outbox<Out>): void`; entries cannot capture state. Message classes are monomorphized by the `In`/`Out` pair and may contain sized numerics, booleans, enums, string-literal union aliases, value classes, and `FixedArray` values composed recursively from those types. Worker handles and endpoints are context-affine: they cannot be module globals, class fields, array elements, any `Map`/`Set` type argument, or lambda captures, and they can only be created by `Worker.spawn`. Post all independent work before joining when parallel execution matters; `wait` and `poll` return `null` when their channel is empty or closed, and `close` plus `join` provide explicit shutdown.";
+const Q35_WORKERS: &str = "`Worker<In, Out>` runs one directly named, module-level synchronous function on an OS thread with a fresh `Context`. Its exact entry shape is `(inbox: Inbox<In>, outbox: Outbox<Out>): void`; entries cannot capture state. Message classes are monomorphized by the `In`/`Out` pair and may contain sized numerics, booleans, enums, string-literal union aliases, value classes, top-level `string` fields, and top-level `FixedArray<string, N>` fields. Delivery copies every string's bytes into a fresh string owned by the receiving `Context`; other reference, growable-array, function, and nullable fields remain non-transferable. Worker handles and endpoints are context-affine: they cannot be module globals, class fields, array elements, any `Map`/`Set` type argument, or lambda captures, and they can only be created by `Worker.spawn`. Post all independent work before joining when parallel execution matters; `wait` and `poll` return `null` when their channel is empty or closed, and `close` plus `join` provide explicit shutdown.";
 
 const MODULES: &str = "A program may import named exports from sibling source files with a relative `./name` specifier. The entry file and its imported siblings are checked as one program; exports are the host-visible entry surface.";
 
@@ -180,12 +180,14 @@ const FEATURES: &[Feature] = &[
         corpus: &[
             "corpus/accept/a112-worker-echo.ts",
             "corpus/accept/a113-worker-parallel.ts",
+            "corpus/accept/a182-worker-string-message.ts",
             "corpus/reject/r106-capturing-lambda-worker-entry.ts",
             "corpus/reject/r107-async-worker-entry.ts",
-            "corpus/reject/r108-string-field-worker-message.ts",
             "corpus/reject/r109-worker-module-global.ts",
             "corpus/reject/r110-new-worker.ts",
             "corpus/reject/r111-worker-in-map-value.ts",
+            "corpus/reject/r182-worker-reference-field.ts",
+            "corpus/reject/r183-worker-growable-array-field.ts",
         ],
     },
     Feature {

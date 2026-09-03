@@ -925,10 +925,11 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     // a179 pins a static read accessor without a write accessor.
     // a180 pins generator consumption through for-of alone.
     // a181 pins operation-table calls in every expression owner.
+    // a182 pins copied string slots in worker messages.
     assert_eq!(
         golden_ids.len(),
-        180,
-        "expected exactly 180 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
+        181,
+        "expected exactly 181 committed goldens: the 81 standing goldens (a01–a24 run set + a25–a39 interop \
          + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
          + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
          + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
@@ -969,7 +970,7 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
          R36 async-generic golden, the a144 R37 named-accessor golden, the a145 §66 \
          emitted-identifier golden, the a146 §66 scoped-local golden, the a147–a148 §67 \
          switch-body-scope goldens, the a149 §67 suspension-state golden, the a150–a153 §68 \
-         goldens, the a154–a155 §70 held-async-handle goldens, the a156 value-class receiver-by-value golden, the a157 suspension-loop-liveness golden, the a159 address-base-liveness golden, the a160 §67 module-initializer-order golden, the a161–a162 §70 counted-store/copy-site goldens, the a163 address-taken activation-liveness golden, the a164–a165 and a167 §68 consumer goldens, the a166 resume-parameter-interference golden, the a168 §71 static-member golden, the a169 §33.5 managed-boundary-box golden, the a170 iteration-bound-spelling golden, the a171–a172 static Array callback-loop goldens, the a173 §8.1e callback-collect-rooted golden, the a174 §72 enum-widening-cast golden, the a175 closure-environment-collect golden, the a176 compound-through-accessor golden, the a177 nullish golden, the a178 generic-method golden, the a179 static-read-accessor golden, and the a180 for-of-only generator golden, found {}",
+         goldens, the a154–a155 §70 held-async-handle goldens, the a156 value-class receiver-by-value golden, the a157 suspension-loop-liveness golden, the a159 address-base-liveness golden, the a160 §67 module-initializer-order golden, the a161–a162 §70 counted-store/copy-site goldens, the a163 address-taken activation-liveness golden, the a164–a165 and a167 §68 consumer goldens, the a166 resume-parameter-interference golden, the a168 §71 static-member golden, the a169 §33.5 managed-boundary-box golden, the a170 iteration-bound-spelling golden, the a171–a172 static Array callback-loop goldens, the a173 §8.1e callback-collect-rooted golden, the a174 §72 enum-widening-cast golden, the a175 closure-environment-collect golden, the a176 compound-through-accessor golden, the a177 nullish golden, the a178 generic-method golden, the a179 static-read-accessor golden, the a180 for-of-only generator golden, the a181 operation-table golden, and the a182 worker-string golden, found {}",
         golden_ids.len()
     );
 

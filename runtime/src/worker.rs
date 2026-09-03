@@ -1,4 +1,4 @@
-//! Runtime-owned worker threads and their two fixed-payload byte queues.
+//! Runtime-owned worker threads and their two message byte queues.
 //!
 //! This module is the runtime's only shared-mutable-state implementation.
 //! Queue state is protected by a mutex, blocking receives sleep on a
@@ -9,7 +9,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 
 use crate::context::Context;
-use crate::trap::TrapRecord;
+use crate::trap::{TrapKind, TrapRecord};
 
 const CLASS_WORKER_MESSAGE: u32 = 0xFFFF_FF0A;
 
@@ -19,6 +19,91 @@ pub type WorkerInit = unsafe extern "C" fn(ctx: *mut Context);
 /// Entry called on a worker thread with its dedicated Context and endpoints.
 pub type WorkerEntry =
     unsafe extern "C" fn(ctx: *mut Context, inbox: *mut WorkerInbox, outbox: *mut WorkerOutbox);
+
+/// Program-image description of one worker message class.
+///
+/// `string_slot_offsets` points to `string_slot_count` ascending byte offsets
+/// in the fixed payload. A null offsets pointer is valid only when the count
+/// is zero.
+#[repr(C)]
+pub struct WorkerMessageDescriptor {
+    /// Fixed C-layout payload size in bytes.
+    pub payload_size: u64,
+    /// Number of string handle slots in the fixed payload.
+    pub string_slot_count: u64,
+    /// Program-image array of string handle byte offsets.
+    pub string_slot_offsets: *const u64,
+}
+
+#[derive(Debug)]
+pub(crate) struct QueueDescriptor {
+    payload_size: usize,
+    string_slot_offsets: Box<[usize]>,
+}
+
+impl QueueDescriptor {
+    /// Copies and validates one generated program-image descriptor.
+    ///
+    /// # Safety
+    ///
+    /// `descriptor` must point to a live descriptor and its offset array must
+    /// remain readable for this call.
+    pub(crate) unsafe fn copy_from(
+        descriptor: *const WorkerMessageDescriptor,
+    ) -> Result<Self, String> {
+        if descriptor.is_null() {
+            return Err("worker message descriptor is null".into());
+        }
+        // SAFETY: the caller supplies one readable descriptor.
+        let descriptor = unsafe { &*descriptor };
+        let payload_size = usize::try_from(descriptor.payload_size)
+            .map_err(|_| "worker message payload size is not representable".to_string())?;
+        let count = usize::try_from(descriptor.string_slot_count)
+            .map_err(|_| "worker message string slot count is not representable".to_string())?;
+        if count != 0 && descriptor.string_slot_offsets.is_null() {
+            return Err("worker message string slot offsets are null".into());
+        }
+        let raw_offsets = if count == 0 {
+            &[][..]
+        } else {
+            // SAFETY: the descriptor promises `count` readable offsets.
+            unsafe { std::slice::from_raw_parts(descriptor.string_slot_offsets, count) }
+        };
+        let mut offsets = Vec::new();
+        offsets
+            .try_reserve_exact(count)
+            .map_err(|_| "worker message string slot table allocation failed".to_string())?;
+        let mut previous = None;
+        for &raw_offset in raw_offsets {
+            let offset = usize::try_from(raw_offset).map_err(|_| {
+                "worker message string slot offset is not representable".to_string()
+            })?;
+            let end = offset
+                .checked_add(std::mem::size_of::<*const u8>())
+                .ok_or_else(|| "worker message string slot offset overflows".to_string())?;
+            if end > payload_size {
+                return Err("worker message string slot is outside the payload".into());
+            }
+            if previous.is_some_and(|prior| prior >= offset) {
+                return Err("worker message string slot offsets are not ascending".into());
+            }
+            offsets.push(offset);
+            previous = Some(offset);
+        }
+        Ok(Self {
+            payload_size,
+            string_slot_offsets: offsets.into_boxed_slice(),
+        })
+    }
+
+    #[cfg(test)]
+    fn fixed(payload_size: usize) -> Self {
+        Self {
+            payload_size,
+            string_slot_offsets: Box::new([]),
+        }
+    }
+}
 
 /// Parent-owned opaque handle for one runtime worker.
 ///
@@ -49,7 +134,7 @@ pub struct WorkerOutbox {
 }
 
 struct Queue {
-    payload_size: usize,
+    descriptor: Arc<QueueDescriptor>,
     state: Mutex<QueueState>,
     ready: Condvar,
 }
@@ -61,7 +146,10 @@ struct QueueState {
 }
 
 pub(crate) enum Receive {
-    Message(Box<[u8]>),
+    Message {
+        record: Box<[u8]>,
+        descriptor: Arc<QueueDescriptor>,
+    },
     Empty,
     Closed,
 }
@@ -82,12 +170,13 @@ pub(crate) enum PostResult {
     Posted,
     Closed,
     NullPayload,
+    AllocationFailed,
 }
 
 impl Queue {
-    fn new(payload_size: usize) -> Queue {
+    fn new(descriptor: QueueDescriptor) -> Queue {
         Queue {
-            payload_size,
+            descriptor: Arc::new(descriptor),
             state: Mutex::new(QueueState::default()),
             ready: Condvar::new(),
         }
@@ -100,8 +189,7 @@ impl Queue {
         }
     }
 
-    fn post(&self, payload: &[u8]) -> bool {
-        let copied = payload.to_vec().into_boxed_slice();
+    fn post(&self, copied: Box<[u8]>) -> bool {
         let mut state = self.lock();
         if state.closed {
             return false;
@@ -111,17 +199,40 @@ impl Queue {
         true
     }
 
-    unsafe fn post_fixed(&self, payload: *const u8) -> PostResult {
-        let bytes = if self.payload_size == 0 {
+    unsafe fn post_fixed(&self, ctx: &Context, payload: *const u8) -> PostResult {
+        let bytes = if self.descriptor.payload_size == 0 {
             &[]
         } else {
             if payload.is_null() {
                 return PostResult::NullPayload;
             }
             // SAFETY: the caller supplies one readable fixed-size payload.
-            unsafe { std::slice::from_raw_parts(payload, self.payload_size) }
+            unsafe { std::slice::from_raw_parts(payload, self.descriptor.payload_size) }
         };
-        if self.post(bytes) {
+        let mut record = Vec::new();
+        if record.try_reserve_exact(bytes.len()).is_err() {
+            return PostResult::AllocationFailed;
+        }
+        record.extend_from_slice(bytes);
+        for &offset in self.descriptor.string_slot_offsets.iter() {
+            // SAFETY: descriptor validation proved that one pointer-sized
+            // slot begins at `offset` inside the readable fixed payload.
+            let handle = unsafe { payload.add(offset).cast::<*const u8>().read_unaligned() };
+            let string = if handle.is_null() {
+                &[][..]
+            } else {
+                // SAFETY: generated message fields contain live strings from
+                // the sender Context.
+                unsafe { ctx.str_bytes(handle) }
+            };
+            let additional = std::mem::size_of::<u64>().saturating_add(string.len());
+            if record.try_reserve_exact(additional).is_err() {
+                return PostResult::AllocationFailed;
+            }
+            record.extend_from_slice(&(string.len() as u64).to_ne_bytes());
+            record.extend_from_slice(string);
+        }
+        if self.post(record.into_boxed_slice()) {
             PostResult::Posted
         } else {
             PostResult::Closed
@@ -131,7 +242,10 @@ impl Queue {
     fn poll(&self) -> Receive {
         let mut state = self.lock();
         if let Some(message) = state.messages.pop_front() {
-            return Receive::Message(message);
+            return Receive::Message {
+                record: message,
+                descriptor: Arc::clone(&self.descriptor),
+            };
         }
         if state.closed {
             Receive::Closed
@@ -144,7 +258,10 @@ impl Queue {
         let mut state = self.lock();
         loop {
             if let Some(message) = state.messages.pop_front() {
-                return Receive::Message(message);
+                return Receive::Message {
+                    record: message,
+                    descriptor: Arc::clone(&self.descriptor),
+                };
             }
             if state.closed {
                 return Receive::Closed;
@@ -181,13 +298,13 @@ impl Worker {
     fn start(
         init: WorkerInit,
         entry: WorkerEntry,
-        input_payload_size: usize,
-        output_payload_size: usize,
+        input_descriptor: QueueDescriptor,
+        output_descriptor: QueueDescriptor,
         releasing_context: bool,
         fn_table: usize,
     ) -> std::io::Result<Box<Worker>> {
-        let input = Arc::new(Queue::new(input_payload_size));
-        let output = Arc::new(Queue::new(output_payload_size));
+        let input = Arc::new(Queue::new(input_descriptor));
+        let output = Arc::new(Queue::new(output_descriptor));
         let thread_input = Arc::clone(&input);
         let thread_output = Arc::clone(&output);
         let thread = std::thread::Builder::new().spawn(move || {
@@ -227,8 +344,8 @@ impl Worker {
         outcome
     }
 
-    unsafe fn post(&self, payload: *const u8) -> PostResult {
-        unsafe { self.input.post_fixed(payload) }
+    unsafe fn post(&self, ctx: &Context, payload: *const u8) -> PostResult {
+        unsafe { self.input.post_fixed(ctx, payload) }
     }
 
     fn poll(&self) -> Receive {
@@ -241,16 +358,16 @@ impl WorkerSet {
         &mut self,
         init: WorkerInit,
         entry: WorkerEntry,
-        input_payload_size: usize,
-        output_payload_size: usize,
+        input_descriptor: QueueDescriptor,
+        output_descriptor: QueueDescriptor,
         releasing_context: bool,
         fn_table: usize,
     ) -> std::io::Result<*mut Worker> {
         let mut worker = Worker::start(
             init,
             entry,
-            input_payload_size,
-            output_payload_size,
+            input_descriptor,
+            output_descriptor,
             releasing_context,
             fn_table,
         )?;
@@ -261,12 +378,13 @@ impl WorkerSet {
 
     pub(crate) unsafe fn post(
         &self,
+        ctx: &Context,
         handle: *mut Worker,
         payload: *const u8,
     ) -> Option<PostResult> {
         let worker = self.find(handle)?;
         // SAFETY: forwarded fixed-payload pointer contract.
-        Some(unsafe { worker.post(payload) })
+        Some(unsafe { worker.post(ctx, payload) })
     }
 
     pub(crate) fn poll(&self, handle: *mut Worker) -> Option<Receive> {
@@ -363,19 +481,79 @@ fn run_worker(
 }
 
 pub(crate) fn materialize(ctx: &mut Context, receive: Receive) -> *mut u8 {
-    let Receive::Message(message) = receive else {
+    let Receive::Message { record, descriptor } = receive else {
         return std::ptr::null_mut();
     };
     if ctx.trapped() {
         return std::ptr::null_mut();
     }
-    let payload = ctx.alloc(message.len(), CLASS_WORKER_MESSAGE, 0);
-    if payload.is_null() || message.is_empty() {
+    let payload = ctx.alloc(descriptor.payload_size, CLASS_WORKER_MESSAGE, 0);
+    if payload.is_null() {
         return payload;
     }
-    // SAFETY: `payload` is a fresh allocation of `message.len()` bytes and
-    // `message` owns that many readable bytes.
-    unsafe { std::ptr::copy_nonoverlapping(message.as_ptr(), payload, message.len()) };
+    let Some(fixed) = record.get(..descriptor.payload_size) else {
+        ctx.trap(
+            TrapKind::Internal,
+            "worker message record has no fixed payload",
+            0,
+        );
+        return std::ptr::null_mut();
+    };
+    if !fixed.is_empty() {
+        // SAFETY: `payload` is a fresh allocation of `payload_size` bytes and
+        // `fixed` owns exactly that many readable bytes.
+        unsafe { std::ptr::copy_nonoverlapping(fixed.as_ptr(), payload, fixed.len()) };
+    }
+    let mut cursor = descriptor.payload_size;
+    for &offset in descriptor.string_slot_offsets.iter() {
+        let Some(length_bytes) = record.get(cursor..cursor.saturating_add(8)) else {
+            ctx.trap(
+                TrapKind::Internal,
+                "worker message record has no string length",
+                0,
+            );
+            return std::ptr::null_mut();
+        };
+        let length = u64::from_ne_bytes(length_bytes.try_into().expect("eight-byte string length"));
+        let Ok(length) = usize::try_from(length) else {
+            ctx.trap(
+                TrapKind::Internal,
+                "worker message string length is not representable",
+                0,
+            );
+            return std::ptr::null_mut();
+        };
+        cursor += 8;
+        let Some(bytes) = record.get(cursor..cursor.saturating_add(length)) else {
+            ctx.trap(
+                TrapKind::Internal,
+                "worker message record has incomplete string bytes",
+                0,
+            );
+            return std::ptr::null_mut();
+        };
+        let string = ctx.alloc_str(bytes, 0);
+        if string.is_null() {
+            return std::ptr::null_mut();
+        }
+        // SAFETY: descriptor validation proved that one pointer-sized slot
+        // begins at `offset` inside the new fixed payload.
+        unsafe {
+            payload
+                .add(offset)
+                .cast::<*mut u8>()
+                .write_unaligned(string)
+        };
+        cursor += length;
+    }
+    if cursor != record.len() {
+        ctx.trap(
+            TrapKind::Internal,
+            "worker message record has trailing bytes",
+            0,
+        );
+        return std::ptr::null_mut();
+    }
     payload
 }
 
@@ -406,7 +584,7 @@ pub(crate) unsafe fn outbox_post(
     // SAFETY: the worker entry receives its live stack-owned endpoint.
     let queue = &unsafe { &*outbox }.queue;
     // SAFETY: forwarded fixed-payload contract.
-    unsafe { queue.post_fixed(payload) }
+    unsafe { queue.post_fixed(ctx, payload) }
 }
 
 #[cfg(test)]
@@ -424,6 +602,20 @@ mod tests {
         subscript_rt_worker_post, subscript_rt_worker_spawn,
     };
     use crate::trap::TrapKind;
+
+    const EMPTY_DESCRIPTOR: WorkerMessageDescriptor = WorkerMessageDescriptor {
+        payload_size: 0,
+        string_slot_count: 0,
+        string_slot_offsets: std::ptr::null(),
+    };
+
+    fn fixed_descriptor(payload_size: usize) -> WorkerMessageDescriptor {
+        WorkerMessageDescriptor {
+            payload_size: payload_size as u64,
+            string_slot_count: 0,
+            string_slot_offsets: std::ptr::null(),
+        }
+    }
 
     unsafe extern "C" fn no_op_init(_ctx: *mut Context) {}
 
@@ -468,8 +660,15 @@ mod tests {
     ) {
         // SAFETY: the current worker Context is itself a valid spawn parent;
         // both callbacks stay linked through the nested join.
-        let child =
-            unsafe { subscript_rt_worker_spawn(ctx, Some(no_op_init), Some(clean_entry), 0, 0) };
+        let child = unsafe {
+            subscript_rt_worker_spawn(
+                ctx,
+                Some(no_op_init),
+                Some(clean_entry),
+                &EMPTY_DESCRIPTOR,
+                &EMPTY_DESCRIPTOR,
+            )
+        };
         if child.is_null() {
             return;
         }
@@ -540,19 +739,179 @@ mod tests {
         }
     }
 
+    #[repr(C)]
+    struct TwoStringMessage {
+        first: *mut u8,
+        count: i32,
+        second: *mut u8,
+    }
+
+    fn string_descriptor(payload_size: usize, offsets: &[usize]) -> QueueDescriptor {
+        QueueDescriptor {
+            payload_size,
+            string_slot_offsets: offsets.to_vec().into_boxed_slice(),
+        }
+    }
+
+    #[test]
+    fn two_contexts_copy_two_strings_and_one_fixed_field() {
+        let mut sender = Context::new();
+        let mut receiver = Context::new();
+        let first = sender.alloc_str("héllo".as_bytes(), 0);
+        let second = sender.alloc_str(b"world", 0);
+        let message = TwoStringMessage {
+            first,
+            count: 41,
+            second,
+        };
+        let queue = Queue::new(string_descriptor(
+            std::mem::size_of::<TwoStringMessage>(),
+            &[0, 16],
+        ));
+        // SAFETY: `message` has the descriptor's fixed layout and both
+        // string handles belong to `sender`.
+        assert!(matches!(
+            unsafe { queue.post_fixed(&sender, std::ptr::from_ref(&message).cast()) },
+            PostResult::Posted
+        ));
+        let copy = materialize(&mut receiver, queue.poll()).cast::<TwoStringMessage>();
+        assert!(!copy.is_null());
+        // SAFETY: `copy` is a materialized `TwoStringMessage` allocation.
+        let copy = unsafe { &*copy };
+        assert_eq!(copy.count, 41);
+        assert_ne!(copy.first, first);
+        assert_ne!(copy.second, second);
+        // SAFETY: both copied handles belong to `receiver`.
+        assert_eq!(
+            unsafe { receiver.str_bytes(copy.first) },
+            "héllo".as_bytes()
+        );
+        assert_eq!(unsafe { receiver.str_bytes(copy.second) }, b"world");
+    }
+
+    #[test]
+    fn null_string_slot_arrives_as_a_fresh_empty_string() {
+        let sender = Context::new();
+        let mut receiver = Context::new();
+        let message = TwoStringMessage {
+            first: std::ptr::null_mut(),
+            count: 7,
+            second: std::ptr::null_mut(),
+        };
+        let queue = Queue::new(string_descriptor(
+            std::mem::size_of::<TwoStringMessage>(),
+            &[0],
+        ));
+        // SAFETY: `message` has the descriptor's fixed layout.
+        assert!(matches!(
+            unsafe { queue.post_fixed(&sender, std::ptr::from_ref(&message).cast()) },
+            PostResult::Posted
+        ));
+        let copy = materialize(&mut receiver, queue.poll()).cast::<TwoStringMessage>();
+        // SAFETY: `copy` is a materialized `TwoStringMessage` allocation.
+        let copied = unsafe { (*copy).first };
+        assert!(!copied.is_null());
+        // SAFETY: the copied handle belongs to `receiver`.
+        assert!(unsafe { receiver.str_bytes(copied) }.is_empty());
+    }
+
+    #[test]
+    fn allocated_empty_string_round_trips_by_copy() {
+        let mut sender = Context::new();
+        let mut receiver = Context::new();
+        let empty = sender.alloc_str(b"", 0);
+        let message = TwoStringMessage {
+            first: empty,
+            count: 0,
+            second: std::ptr::null_mut(),
+        };
+        let queue = Queue::new(string_descriptor(
+            std::mem::size_of::<TwoStringMessage>(),
+            &[0],
+        ));
+        // SAFETY: `message` has the descriptor's fixed layout and its string
+        // handle belongs to `sender`.
+        assert!(matches!(
+            unsafe { queue.post_fixed(&sender, std::ptr::from_ref(&message).cast()) },
+            PostResult::Posted
+        ));
+        let copy = materialize(&mut receiver, queue.poll()).cast::<TwoStringMessage>();
+        // SAFETY: `copy` is a materialized `TwoStringMessage` allocation.
+        let copied = unsafe { (*copy).first };
+        assert_ne!(copied, empty);
+        // SAFETY: the copied handle belongs to `receiver`.
+        assert!(unsafe { receiver.str_bytes(copied) }.is_empty());
+    }
+
+    #[test]
+    fn count_zero_record_is_exactly_the_fixed_payload() {
+        let sender = Context::new();
+        let value = 0x0102_0304_0506_0708u64;
+        let queue = Queue::new(QueueDescriptor::fixed(std::mem::size_of::<u64>()));
+        // SAFETY: `value` is one readable fixed payload.
+        assert!(matches!(
+            unsafe { queue.post_fixed(&sender, std::ptr::from_ref(&value).cast()) },
+            PostResult::Posted
+        ));
+        let Receive::Message { record, descriptor } = queue.poll() else {
+            panic!("fixed message is missing");
+        };
+        assert_eq!(&*record, &value.to_ne_bytes());
+        assert_eq!(descriptor.payload_size, std::mem::size_of::<u64>());
+        assert!(descriptor.string_slot_offsets.is_empty());
+    }
+
+    #[repr(C)]
+    struct FixedStringMessage {
+        tags: [*mut u8; 2],
+        count: i32,
+    }
+
+    #[test]
+    fn fixed_array_string_slots_are_materialized() {
+        let mut sender = Context::new();
+        let mut receiver = Context::new();
+        let left = sender.alloc_str(b"left", 0);
+        let right = sender.alloc_str(b"right", 0);
+        let message = FixedStringMessage {
+            tags: [left, right],
+            count: 2,
+        };
+        let queue = Queue::new(string_descriptor(
+            std::mem::size_of::<FixedStringMessage>(),
+            &[0, 8],
+        ));
+        // SAFETY: `message` has the descriptor's fixed layout and both
+        // string handles belong to `sender`.
+        assert!(matches!(
+            unsafe { queue.post_fixed(&sender, std::ptr::from_ref(&message).cast()) },
+            PostResult::Posted
+        ));
+        let copy = materialize(&mut receiver, queue.poll()).cast::<FixedStringMessage>();
+        // SAFETY: `copy` is a materialized `FixedStringMessage` allocation.
+        let copy = unsafe { &*copy };
+        assert_eq!(copy.count, 2);
+        assert_ne!(copy.tags[0], left);
+        assert_ne!(copy.tags[1], right);
+        // SAFETY: both copied handles belong to `receiver`.
+        assert_eq!(unsafe { receiver.str_bytes(copy.tags[0]) }, b"left");
+        assert_eq!(unsafe { receiver.str_bytes(copy.tags[1]) }, b"right");
+    }
+
     #[test]
     fn c_abi_echo_worker_round_trips_fixed_payload_copies() {
         const N: u64 = 32;
 
         let parent = subscript_rt_ctx_new();
+        let descriptor = fixed_descriptor(std::mem::size_of::<u64>());
         // SAFETY: fresh parent Context and linked callbacks.
         let worker = unsafe {
             subscript_rt_worker_spawn(
                 parent,
                 Some(no_op_init),
                 Some(echo_entry),
-                std::mem::size_of::<u64>() as u64,
-                std::mem::size_of::<u64>() as u64,
+                &descriptor,
+                &descriptor,
             )
         };
         assert!(!worker.is_null());
@@ -596,7 +955,13 @@ mod tests {
         let parent = subscript_rt_ctx_new();
         // SAFETY: fresh parent Context and linked callbacks.
         let worker = unsafe {
-            subscript_rt_worker_spawn(parent, Some(no_op_init), Some(nested_worker_entry), 0, 0)
+            subscript_rt_worker_spawn(
+                parent,
+                Some(no_op_init),
+                Some(nested_worker_entry),
+                &EMPTY_DESCRIPTOR,
+                &EMPTY_DESCRIPTOR,
+            )
         };
         assert!(!worker.is_null());
         // SAFETY: both outer and nested workers terminate cleanly.
@@ -610,8 +975,15 @@ mod tests {
     fn trapped_worker_traps_joining_context_with_kind_22() {
         let parent = subscript_rt_ctx_new();
         // SAFETY: fresh parent Context and linked callbacks.
-        let worker =
-            unsafe { subscript_rt_worker_spawn(parent, Some(no_op_init), Some(trap_entry), 0, 0) };
+        let worker = unsafe {
+            subscript_rt_worker_spawn(
+                parent,
+                Some(no_op_init),
+                Some(trap_entry),
+                &EMPTY_DESCRIPTOR,
+                &EMPTY_DESCRIPTOR,
+            )
+        };
         assert!(!worker.is_null());
         // SAFETY: the worker terminates after recording its trap.
         assert_eq!(unsafe { subscript_rt_worker_join(parent, worker) }, 0);
@@ -640,14 +1012,15 @@ mod tests {
         let barrier = Barrier::new(2);
         let barrier_address = std::ptr::from_ref(&barrier) as usize;
         let value = 0xC0DEusize;
+        let descriptor = fixed_descriptor(std::mem::size_of::<usize>());
         // SAFETY: fresh parent Context and linked callbacks.
         let worker = unsafe {
             subscript_rt_worker_spawn(
                 parent,
                 Some(no_op_init),
                 Some(poll_entry),
-                std::mem::size_of::<usize>() as u64,
-                std::mem::size_of::<usize>() as u64,
+                &descriptor,
+                &descriptor,
             )
         };
         assert!(!worker.is_null());
@@ -684,14 +1057,15 @@ mod tests {
         const COUNT: u64 = 24;
 
         let parent = subscript_rt_ctx_new();
+        let descriptor = fixed_descriptor(std::mem::size_of::<u64>());
         // SAFETY: fresh parent Context and linked callbacks.
         let first = unsafe {
             subscript_rt_worker_spawn(
                 parent,
                 Some(no_op_init),
                 Some(echo_entry),
-                std::mem::size_of::<u64>() as u64,
-                std::mem::size_of::<u64>() as u64,
+                &descriptor,
+                &descriptor,
             )
         };
         let second = unsafe {
@@ -699,8 +1073,8 @@ mod tests {
                 parent,
                 Some(no_op_init),
                 Some(echo_entry),
-                std::mem::size_of::<u64>() as u64,
-                std::mem::size_of::<u64>() as u64,
+                &descriptor,
+                &descriptor,
             )
         };
         assert!(!first.is_null() && !second.is_null());
@@ -756,6 +1130,7 @@ mod tests {
         let released = AtomicBool::new(false);
         let released_address = std::ptr::from_ref(&released) as usize;
         let parent = subscript_rt_ctx_new();
+        let descriptor = fixed_descriptor(std::mem::size_of::<usize>());
         // SAFETY: `parent` remains live while its test stats handle is cloned.
         let stats = unsafe { &*parent }.test_arena_stats();
         // SAFETY: fresh parent Context and linked callbacks.
@@ -764,8 +1139,8 @@ mod tests {
                 parent,
                 Some(no_op_init),
                 Some(release_probe_entry),
-                std::mem::size_of::<usize>() as u64,
-                std::mem::size_of::<usize>() as u64,
+                &descriptor,
+                &descriptor,
             )
         };
         assert!(!worker.is_null());

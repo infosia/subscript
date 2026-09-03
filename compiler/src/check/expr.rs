@@ -3754,14 +3754,17 @@ impl<'p> Checker<'p> {
         ty: &Type,
         path: &str,
         pos: &Pos,
+        string_slot_allowed: bool,
         visiting: &mut std::collections::HashSet<ClassId>,
     ) -> Option<(Pos, String, Type)> {
         if self.plain_value_leaf(ty) {
             return None;
         }
         match ty {
+            Type::Str if string_slot_allowed => None,
+            Type::FixedArray(element, _) if string_slot_allowed && **element == Type::Str => None,
             Type::FixedArray(element, _) => {
-                self.non_transferable_message_field(element, path, pos, visiting)
+                self.non_transferable_message_field(element, path, pos, false, visiting)
             }
             Type::Class(id) if self.classes.get(id.0).is_some_and(|class| class.is_value) => {
                 if !visiting.insert(*id) {
@@ -3770,7 +3773,9 @@ impl<'p> Checker<'p> {
                 let class = &self.classes[id.0];
                 let result = class.fields.iter().find_map(|field| {
                     let nested = format!("{path}.{}", field.name);
-                    self.non_transferable_message_field(&field.ty, &nested, &field.pos, visiting)
+                    self.non_transferable_message_field(
+                        &field.ty, &nested, &field.pos, false, visiting,
+                    )
                 });
                 visiting.remove(id);
                 result
@@ -3787,6 +3792,7 @@ impl<'p> Checker<'p> {
                 &field.ty,
                 &path,
                 &field.pos,
+                true,
                 &mut std::collections::HashSet::new(),
             ) {
                 let type_name = self.type_name(&ty);

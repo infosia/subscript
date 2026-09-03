@@ -1,0 +1,4 @@
+sent=東京🙂 bytes=10
+reply1=worker:東京🙂 bytes=17 count=8 tags=[親,]
+reply2=worker:café bytes=12 count=21 tags=[deux,]
+parent=parent-only count=7 tags=[親,first]

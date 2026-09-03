@@ -665,13 +665,13 @@ impl Divergence {
                 collision: "compiler.md §40",
             },
             Divergence::WorkerContextAffinity => DivergenceEntry {
-                ts: "class TextMessage { text: string = \"\"; }\n\
-                     const w: Worker<TextMessage, TextMessage> = Worker.spawn(echo);",
+                ts: "class RefMessage { value: object = {}; }\n\
+                     const w: Worker<RefMessage, RefMessage> = Worker.spawn(echo);",
                 subscript: "class CountMessage { count: i32 = 0; }\n\
                             function run(): void { \
                             const w: Worker<CountMessage, CountMessage> = Worker.spawn(echo); }",
-                why: "A message copies between two Contexts and a handle belongs to one, so \
-                      a string field and a module global stay out.",
+                why: "Worker messages copy strings specially; other reference handles and \
+                      worker handles remain owned by one Context.",
                 collision: "compiler.md §40",
             },
             Divergence::SwitchOverAlias => DivergenceEntry {

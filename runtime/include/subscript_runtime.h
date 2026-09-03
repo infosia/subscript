@@ -24,6 +24,12 @@ typedef struct subscript_rt_worker subscript_rt_worker;
 typedef struct subscript_rt_worker_inbox subscript_rt_worker_inbox;
 typedef struct subscript_rt_worker_outbox subscript_rt_worker_outbox;
 
+typedef struct subscript_rt_worker_message_descriptor {
+    uint64_t payload_size;
+    uint64_t string_slot_count;
+    const uint64_t* string_slot_offsets;
+} subscript_rt_worker_message_descriptor;
+
 /**
  * Host callback invoked when a subscript_rt_context records its first trap.
  *
@@ -332,22 +338,23 @@ int32_t subscript_rt_worker_post(subscript_rt_context* parent, subscript_rt_work
  * Spawns a runtime-owned OS thread with a fresh dedicated subscript_rt_context.
  *
  * The worker thread calls `init`, then calls `entry` with its subscript_rt_context and
- * worker-side endpoints unless initialization trapped. `input_payload_size`
- * is the byte size accepted by [`subscript_rt_worker_post`];
- * `output_payload_size` is the byte size accepted by
+ * worker-side endpoints unless initialization trapped. `input_descriptor`
+ * describes messages accepted by [`subscript_rt_worker_post`], and
+ * `output_descriptor` describes messages accepted by
  * [`subscript_rt_worker_outbox_post`]. Both queues are unbounded byte-copy
- * queues. The returned handle is owned by `parent` and remains valid until
- * that subscript_rt_context is released. Null is returned after a parent trap when a
- * callback is missing, a size is not representable, or thread creation
- * fails.
+ * queues. The runtime copies both descriptors during this call. The returned
+ * handle is owned by `parent` and remains valid until that subscript_rt_context is
+ * released. Null is returned after a parent trap when a callback or
+ * descriptor is invalid, or thread creation fails.
  *
  * # Safety
  *
  * `parent` follows the exclusive subscript_rt_context contract. `init` and `entry` must
  * be linked C-callable functions that obey the runtime trap discipline and
- * remain callable until the worker is joined.
+ * remain callable until the worker is joined. Both descriptors and their
+ * offset arrays must be readable for this call.
  */
-subscript_rt_worker* subscript_rt_worker_spawn(subscript_rt_context* parent, subscript_rt_worker_init init, subscript_rt_worker_entry entry, uint64_t input_payload_size, uint64_t output_payload_size);
+subscript_rt_worker* subscript_rt_worker_spawn(subscript_rt_context* parent, subscript_rt_worker_init init, subscript_rt_worker_entry entry, const subscript_rt_worker_message_descriptor* input_descriptor, const subscript_rt_worker_message_descriptor* output_descriptor);
 
 #ifdef __cplusplus
 } /* extern "C" */

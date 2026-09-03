@@ -1335,6 +1335,10 @@ const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
         "requires runtime worker adapters and child interpreter Contexts",
     ),
     (
+        "a182-worker-string-message",
+        "requires a runtime worker adapter and Context-owned string copies",
+    ),
+    (
         "a119-interop-handle-beside-arrays",
         "calls the synthetic native interop library",
     ),
@@ -1985,7 +1989,7 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
     let entries = corpus::golden_ids(&accept);
     assert_eq!(
         INTERPRETER_EXCLUSIONS.len(),
-        55,
+        56,
         "the declared host-dependent exclusion count changed"
     );
     for (id, reason) in INTERPRETER_EXCLUSIONS {

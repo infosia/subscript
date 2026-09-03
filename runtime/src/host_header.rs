@@ -101,6 +101,11 @@ pub fn render() -> Result<String, String> {
     out.push_str("typedef struct subscript_rt_worker subscript_rt_worker;\n");
     out.push_str("typedef struct subscript_rt_worker_inbox subscript_rt_worker_inbox;\n");
     out.push_str("typedef struct subscript_rt_worker_outbox subscript_rt_worker_outbox;\n\n");
+    out.push_str("typedef struct subscript_rt_worker_message_descriptor {\n");
+    out.push_str("    uint64_t payload_size;\n");
+    out.push_str("    uint64_t string_slot_count;\n");
+    out.push_str("    const uint64_t* string_slot_offsets;\n");
+    out.push_str("} subscript_rt_worker_message_descriptor;\n\n");
     push_comment(&mut out, &observer_docs);
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("subscript_rt_trap_observer", &observer)?);
@@ -381,6 +386,9 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "*mut Worker" => Ok("subscript_rt_worker*"),
         "*mut WorkerInbox" => Ok("subscript_rt_worker_inbox*"),
         "*mut WorkerOutbox" => Ok("subscript_rt_worker_outbox*"),
+        "*const crate::worker::WorkerMessageDescriptor" => {
+            Ok("const subscript_rt_worker_message_descriptor*")
+        }
         "*mut u8" => Ok("uint8_t*"),
         "*mut u64" => Ok("uint64_t*"),
         "*const u8" => Ok("const uint8_t*"),

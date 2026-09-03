@@ -2892,12 +2892,12 @@ mod tests {
 
     #[test]
     fn q35_transferability_diagnostic_names_the_innermost_field() {
-        let source = "class BadMessage { text: string = \"bad\"; }\nfunction entry(inbox: Inbox<BadMessage>, outbox: Outbox<BadMessage>): void {}\nexport function main(): void { const worker = Worker.spawn(entry); }\n";
-        let diagnostics = check_one(source).expect_err("string message field");
+        let source = "enum Kind { First }\n@CStruct class Stamp { kind: Kind; }\nclass BoxedCount { value: i32 = 0; }\nclass BadMessage { stamps: FixedArray<Stamp, 2>; boxed: BoxedCount; }\nfunction entry(inbox: Inbox<BadMessage>, outbox: Outbox<BadMessage>): void {}\nexport function main(): void { const worker = Worker.spawn(entry); }\n";
+        let diagnostics = check_one(source).expect_err("reference message field");
         assert_eq!(diagnostics[0].code, RuleCode::S100);
-        assert_eq!(diagnostics[0].pos.line, 1);
-        assert!(diagnostics[0].message.contains("BadMessage.text"));
-        assert!(diagnostics[0].message.contains("string"));
+        assert_eq!(diagnostics[0].pos.line, 4);
+        assert!(diagnostics[0].message.contains("BadMessage.boxed"));
+        assert!(diagnostics[0].message.contains("BoxedCount"));
     }
 
     #[test]

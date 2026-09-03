@@ -50,7 +50,9 @@ use std::ffi::c_void;
 use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::trap::{TrapKind, TrapRecord};
-use crate::worker::{PostResult, Worker, WorkerEntry, WorkerInit, WorkerOutcome, WorkerSet};
+use crate::worker::{
+    PostResult, QueueDescriptor, Worker, WorkerEntry, WorkerInit, WorkerOutcome, WorkerSet,
+};
 
 /// Host callback invoked when a Context records its first trap.
 ///
@@ -811,8 +813,8 @@ impl Context {
         &mut self,
         init: WorkerInit,
         entry: WorkerEntry,
-        input_payload_size: usize,
-        output_payload_size: usize,
+        input_descriptor: QueueDescriptor,
+        output_descriptor: QueueDescriptor,
     ) -> *mut Worker {
         if self.trapped() {
             return std::ptr::null_mut();
@@ -826,8 +828,8 @@ impl Context {
         match self.workers.spawn(
             init,
             entry,
-            input_payload_size,
-            output_payload_size,
+            input_descriptor,
+            output_descriptor,
             self.ship_arena,
             fn_table,
         ) {
@@ -848,13 +850,21 @@ impl Context {
             return false;
         }
         // SAFETY: the FFI caller supplies one readable fixed-size payload.
-        match unsafe { self.workers.post(worker, payload) } {
+        match unsafe { self.workers.post(self, worker, payload) } {
             Some(PostResult::Posted) => true,
             Some(PostResult::Closed) => false,
             Some(PostResult::NullPayload) => {
                 self.trap(
                     TrapKind::Internal,
                     "worker post received a null non-empty payload",
+                    0,
+                );
+                false
+            }
+            Some(PostResult::AllocationFailed) => {
+                self.trap(
+                    TrapKind::AllocationFailure,
+                    "worker message record allocation failed",
                     0,
                 );
                 false

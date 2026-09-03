@@ -4552,28 +4552,29 @@ pub unsafe extern "C" fn subscript_rt_cb_trampoline(
 /// Spawns a runtime-owned OS thread with a fresh dedicated Context.
 ///
 /// The worker thread calls `init`, then calls `entry` with its Context and
-/// worker-side endpoints unless initialization trapped. `input_payload_size`
-/// is the byte size accepted by [`subscript_rt_worker_post`];
-/// `output_payload_size` is the byte size accepted by
+/// worker-side endpoints unless initialization trapped. `input_descriptor`
+/// describes messages accepted by [`subscript_rt_worker_post`], and
+/// `output_descriptor` describes messages accepted by
 /// [`subscript_rt_worker_outbox_post`]. Both queues are unbounded byte-copy
-/// queues. The returned handle is owned by `parent` and remains valid until
-/// that Context is released. Null is returned after a parent trap when a
-/// callback is missing, a size is not representable, or thread creation
-/// fails.
+/// queues. The runtime copies both descriptors during this call. The returned
+/// handle is owned by `parent` and remains valid until that Context is
+/// released. Null is returned after a parent trap when a callback or
+/// descriptor is invalid, or thread creation fails.
 ///
 /// # Safety
 ///
 /// `parent` follows the exclusive Context contract. `init` and `entry` must
 /// be linked C-callable functions that obey the runtime trap discipline and
-/// remain callable until the worker is joined.
+/// remain callable until the worker is joined. Both descriptors and their
+/// offset arrays must be readable for this call.
 #[must_use]
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_worker_spawn(
     parent: *mut Context,
     init: Option<WorkerInit>,
     entry: Option<WorkerEntry>,
-    input_payload_size: u64,
-    output_payload_size: u64,
+    input_descriptor: *const crate::worker::WorkerMessageDescriptor,
+    output_descriptor: *const crate::worker::WorkerMessageDescriptor,
 ) -> *mut Worker {
     // SAFETY: shared exclusive Context contract.
     let parent = unsafe { &mut *parent };
@@ -4589,23 +4590,25 @@ pub unsafe extern "C" fn subscript_rt_worker_spawn(
         parent.trap(TrapKind::Internal, "worker spawn requires an entry", 0);
         return std::ptr::null_mut();
     };
-    let Ok(input_payload_size) = usize::try_from(input_payload_size) else {
-        parent.trap(
-            TrapKind::AllocationFailure,
-            "worker input payload size is not representable",
-            0,
-        );
-        return std::ptr::null_mut();
-    };
-    let Ok(output_payload_size) = usize::try_from(output_payload_size) else {
-        parent.trap(
-            TrapKind::AllocationFailure,
-            "worker output payload size is not representable",
-            0,
-        );
-        return std::ptr::null_mut();
-    };
-    parent.worker_spawn(init, entry, input_payload_size, output_payload_size)
+    // SAFETY: generated code supplies readable program-image descriptors.
+    let input_descriptor =
+        match unsafe { crate::worker::QueueDescriptor::copy_from(input_descriptor) } {
+            Ok(descriptor) => descriptor,
+            Err(message) => {
+                parent.trap(TrapKind::Internal, message, 0);
+                return std::ptr::null_mut();
+            }
+        };
+    // SAFETY: generated code supplies readable program-image descriptors.
+    let output_descriptor =
+        match unsafe { crate::worker::QueueDescriptor::copy_from(output_descriptor) } {
+            Ok(descriptor) => descriptor,
+            Err(message) => {
+                parent.trap(TrapKind::Internal, message, 0);
+                return std::ptr::null_mut();
+            }
+        };
+    parent.worker_spawn(init, entry, input_descriptor, output_descriptor)
 }
 
 /// Copies one fixed-size payload into a worker's parent-to-worker queue.
@@ -4747,6 +4750,14 @@ pub unsafe extern "C" fn subscript_rt_worker_outbox_post(
             ctx.trap(
                 TrapKind::Internal,
                 "worker outbox post received a null non-empty payload",
+                0,
+            );
+            0
+        }
+        crate::worker::PostResult::AllocationFailed => {
+            ctx.trap(
+                TrapKind::AllocationFailure,
+                "worker message record allocation failed",
                 0,
             );
             0

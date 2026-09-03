@@ -396,6 +396,35 @@ impl Layouts {
             .ok_or_else(|| internal(format!("class id {id} out of range")))
     }
 
+    /// Lists the byte offsets of every string slot in one worker message.
+    ///
+    /// The checker permits strings only as top-level fields or as the direct
+    /// element of a top-level `FixedArray`. Declaration-order C layout makes
+    /// the returned offsets ascending.
+    pub(crate) fn worker_message_string_slot_offsets(&self, id: usize) -> Result<Vec<u64>, String> {
+        let layout = self.class(id)?;
+        let mut offsets = Vec::new();
+        for (field_ty, &field_offset) in layout.field_types.iter().zip(&layout.field_offsets) {
+            match field_ty {
+                Type::Str => offsets.push(u64::from(field_offset)),
+                Type::FixedArray(element, count) if **element == Type::Str => {
+                    let stride = self.stride(element)?;
+                    for index in 0..*count {
+                        let element_offset =
+                            checked_mul_size(index, stride, "worker message string slot offset")?;
+                        offsets.push(u64::from(checked_add_size(
+                            field_offset,
+                            element_offset,
+                            "worker message string slot offset",
+                        )?));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(offsets)
+    }
+
     fn class_has_managed_interior(&self, id: usize) -> Result<bool, String> {
         self.managed_interior
             .get(id)

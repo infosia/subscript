@@ -1053,6 +1053,42 @@ impl<'m> Emitter<'m> {
             }
             out.push_str("};\n");
         }
+        let mut message_classes = Vec::new();
+        for entry in &self.module.worker_entries {
+            for class in [entry.input, entry.output] {
+                if !message_classes.contains(&class) {
+                    message_classes.push(class);
+                }
+            }
+        }
+        for class in message_classes {
+            let offsets = self.layouts.worker_message_string_slot_offsets(class.0)?;
+            if !offsets.is_empty() {
+                let _ = writeln!(
+                    out,
+                    "static const uint64_t sub_worker_string_offsets_{}[] = {{ {} }};",
+                    class.0,
+                    offsets
+                        .iter()
+                        .map(|offset| format!("{offset}ull"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+            let offset_pointer = if offsets.is_empty() {
+                "NULL".to_string()
+            } else {
+                format!("sub_worker_string_offsets_{}", class.0)
+            };
+            let _ = writeln!(
+                out,
+                "static const subscript_rt_worker_message_descriptor sub_worker_message_descriptor_{} = {{ (uint64_t)sizeof({}), {}ull, {} }};",
+                class.0,
+                self.class_name(class),
+                offsets.len(),
+                offset_pointer
+            );
+        }
         out.push('\n');
         Ok(())
     }
@@ -7560,18 +7596,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     "subscript_rt_context*".into(),
                     "subscript_rt_worker_init".into(),
                     "subscript_rt_worker_entry".into(),
-                    "uint64_t".into(),
-                    "uint64_t".into(),
+                    "const subscript_rt_worker_message_descriptor*".into(),
+                    "const subscript_rt_worker_message_descriptor*".into(),
                 ],
                 &[
                     "ctx".into(),
                     "subscript_init".into(),
                     format!("subscript_worker_entry{index}"),
-                    format!("(uint64_t)sizeof({})", self.emitter.class_name(entry.input)),
-                    format!(
-                        "(uint64_t)sizeof({})",
-                        self.emitter.class_name(entry.output)
-                    ),
+                    format!("&sub_worker_message_descriptor_{}", entry.input.0),
+                    format!("&sub_worker_message_descriptor_{}", entry.output.0),
                 ],
             );
             self.assign(out, result, &call)?;
