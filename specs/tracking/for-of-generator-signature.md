@@ -3,7 +3,8 @@
 Status: **landed 2026-09-03** against `specs/blocks/compiler.md` §83.
 Origin: review round 3 of §82 (R39) found it outside that diff.
 Contract `7f46a3a`, amended `90be0c2` after the review; implementation
-`35fe70e`, fixes `efdc31d`.
+`35fe70e`, fixes `efdc31d` and `db3449d`; contract amended `90be0c2`
+and `9801490`.
 
 ## The defect
 
@@ -40,11 +41,11 @@ Eight other sites registered synthesized nodes by hand.
   an iterator test with a hand count).
 - Counts: accept `.ts` 177 → 179; `.expected` 178 → 180 (a180, a181).
 
-## Gates (this host, `efdc31d`)
+## Gates (this host, `db3449d`)
 
 - debug (the coding agent's final run): 66 suites, 1,243 passed, 0
-  failed, 1 ignored, 1,753 s.
-- release: 66 suites, 1,241 passed, 0 failed, 1 ignored, 352 s.
+  failed, 1 ignored, 1,962 s.
+- release: 66 suites, 1,241 passed, 0 failed, 1 ignored, 340 s.
 - At `35fe70e` the release run showed 3 failures in `codegen/tests/lir.rs`
   ("no source files given" for an entry `subscript-build`): a
   reviewer's `subscript build --source corpus/accept/a180…` had written
@@ -73,7 +74,19 @@ note; `subscript build` writes beside its source. Fixed in
 
 ## Review round 2
 
-REVIEW2_TODO
+§83.5 holds the record. MAJOR: the LIR execution-fact helper had
+gained an `if id == "a181…"` exception (item 6: it resolves a method's
+parameter count as it does for a function and a constructor); the
+iterator was `&mut self` only, so `warn.rs` and the test support kept
+hand lists (rule 1: both borrow forms; `check/layout.rs` and the
+lowering are the two exempt, identity-carrying passes). MINOR: rule 1
+wording on lambdas; an unreachable `foreign_fns` arm; the
+lambda-default arm changes no accepted program (form-total, stated);
+the total test shares the iterator (controls stated); the iterator
+test counts calls; three interop tokens; a `next` match at the reload
+trap site (outside rule 3); the note's "independent walk" wording; a
+stale comment. Fixed in `db3449d`: debug 66 suites, 1,243 passed, 0
+failed, 1 ignored, 1,962 s; clippy 7 / 18 / 13.
 
 ## Recorded, not changed
 
