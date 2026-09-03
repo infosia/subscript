@@ -11685,16 +11685,55 @@ raw pointer into the sender's Context, which §38 forbids.
    class with a `T[]` field; the same S100; `tsc: accepts`.
 4. r108 retires (`retired:r108` in `collisions.md` Q35 and
    `stdlib.md` §16.2, the harness row, the reference row).
-5. Runtime unit tests in `runtime/src/worker.rs`: a round trip
-   between two Contexts with two string slots and one fixed field,
-   the receiver's strings compared by content and their handles
-   distinct from the sender's; a null slot arrives as the empty
+5. Runtime unit tests in `runtime/src/worker.rs`, each comparing two
+   separately derived facts: the record `post` writes for a two-slot
+   message equals a **hand-written** byte vector (fixed bytes, then
+   each slot's `u64` length and bytes); `materialize` fed a
+   hand-written record yields strings equal by content with handles
+   distinct from any sender handle; a null slot arrives as the empty
    string; an empty string round-trips; a descriptor with count 0
-   produces a record equal to the fixed bytes (the pre-§84 form); a
-   `FixedArray<string, N>` slot set.
-6. Codegen test: the descriptor both tiers emit for a182's message
-   classes holds the same offsets, and the offsets equal the field
-   offsets the layout reports.
+   produces the fixed bytes; a `FixedArray<string, N>` slot set.
+   Positive controls: every descriptor rejection arm (null
+   descriptor, unrepresentable size or count, null offsets with a
+   count above 0, a slot outside the payload, offsets not ascending)
+   and every malformed-record arm of `materialize` (a short length
+   word, a length past the record, trailing bytes) is reached by a
+   hand-built input and reports; an allocation failure through the
+   P21 fault injection reports `AllocationFailed`. *(Amended
+   2026-09-03 after the review: the first tests posted through
+   `post_fixed` and read back through `materialize`, so a matched
+   change to both sides stayed green, and no rejection arm ran.)*
+6. Codegen test: the C tier's descriptor for a182's message class
+   equals hand-derived offsets and equals the field offsets the
+   layout reports; the dev tier's descriptor is witnessed by a182
+   running on the dev tier, and holds no test-only side channel that
+   records its own inputs. A runtime test asserts the generated
+   header's descriptor struct text against `offset_of!` and
+   `size_of` of the Rust `#[repr(C)]` definition (0, 8, 16; 24).
+   *(Amended 2026-09-03 after the review.)*
+6a. a182 also holds a second worker whose `In` and `Out` are two
+   different message classes, one with strings in a `u8`-led layout
+   (a handle after a `u8`, an `i64`, a `FixedArray<string, 3>`) and
+   one with no strings, so an input/output descriptor swap fails
+   the golden.
 7. Gates: both profiles, zero-warning build, fmt, `tsc`, hygiene,
    clippy at 7 / 18 / 13, and `tools/hygiene.sh`. No pre-existing
    golden moves.
+
+### 84.4 Review round 1, 2026-09-03
+
+Fresh review of `e645b67..a3b5bc2`, execution-verified on both tiers:
+strings across Contexts under `collect`, rebinds, `join`, a 1 MiB
+string, the same handle in four slots, close/join ordering, a
+trapping worker — no finding. MAJOR: the runtime tests compared the
+serializer with itself and reached no rejection arm (item 5
+amended); the dev-tier descriptor test read a `#[cfg(test)]` record
+of its own inputs (item 6 amended: side channel removed). MINOR: the
+header's struct body is a second copy (item 6: an `offset_of!` test);
+the dev tier hard-codes the 24-byte image (the same test names the
+constants); no pin for two message classes on one worker (item 6a);
+the tracking note's Red text named r108's class; the divergence
+reason said "specially" (rewritten); and, outside this diff, a null
+`string` handle in a field with no initializer makes `print` emit
+nothing on both tiers (a shared defect under principle 12; it needs
+its own request and its own corpus entry).
