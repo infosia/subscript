@@ -72,11 +72,11 @@ fn int_type_range(ty: &Type) -> Option<Interval> {
 }
 
 pub(crate) fn decide_index_checks(module: &mut hir::Module) {
-    for owner in module.expression_owners() {
+    for owner in module.expression_owners_mut() {
         let mut analyzer = Analyzer::default();
         match owner {
-            hir::ExpressionOwner::Expr(expression) => analyzer.expr(expression),
-            hir::ExpressionOwner::Body(body) => analyzer.stmts(body),
+            hir::ExpressionOwnerMut::Expr(expression) => analyzer.expr(expression),
+            hir::ExpressionOwnerMut::Body(body) => analyzer.stmts(body),
         }
     }
 }

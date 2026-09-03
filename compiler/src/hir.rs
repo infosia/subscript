@@ -42,13 +42,27 @@ pub struct Module {
     /// Ambient mirrors that contribute foreign functions, with the exact
     /// C header include spelling recovered from generated provenance.
     pub foreign_mirrors: Vec<ForeignMirror>,
-    /// Checked top-level non-declaration statements, in source order
-    /// (the accept corpus has none; kept for completeness).
+    /// Checked top-level non-declaration statements, in source order.
+    /// The accept corpus uses these statements in entries such as `a168`.
     pub top_level: Vec<Stmt>,
 }
 
 /// One root that owns expressions in a checked module.
+/// This enum must stay exhaustive so cross-crate matches stay total.
 pub enum ExpressionOwner<'a> {
+    /// One initializer or parameter default.
+    Expr(&'a Expr),
+    /// One function, method, constructor, or module body.
+    Body {
+        /// Statements in the body.
+        statements: &'a [Stmt],
+        /// Function metadata, or `None` for the module body.
+        function: Option<&'a Function>,
+    },
+}
+
+/// One mutable root that owns expressions in a checked module.
+pub enum ExpressionOwnerMut<'a> {
     /// One initializer or parameter default.
     Expr(&'a mut Expr),
     /// One function, method, constructor, or module body.
@@ -58,19 +72,69 @@ pub enum ExpressionOwner<'a> {
 impl Module {
     /// Returns every expression owner in the module.
     ///
+    /// A pass must traverse nested expressions through [`Expr::children`]
+    /// and [`Stmt::children`].
+    pub fn expression_owners(&self) -> impl Iterator<Item = ExpressionOwner<'_>> {
+        fn add_function<'a>(function: &'a Function, owners: &mut Vec<ExpressionOwner<'a>>) {
+            owners.extend(
+                function
+                    .params
+                    .iter()
+                    .filter_map(|parameter| parameter.default.as_ref())
+                    .map(ExpressionOwner::Expr),
+            );
+            owners.push(ExpressionOwner::Body {
+                statements: &function.body,
+                function: Some(function),
+            });
+        }
+
+        let mut owners = Vec::new();
+        for class in &self.classes {
+            owners.extend(
+                class
+                    .fields
+                    .iter()
+                    .filter_map(|field| field.init.as_ref())
+                    .map(ExpressionOwner::Expr),
+            );
+            if let Some(constructor) = &class.ctor {
+                add_function(constructor, &mut owners);
+            }
+            for method in &class.methods {
+                add_function(method, &mut owners);
+            }
+        }
+        owners.extend(
+            self.globals
+                .iter()
+                .map(|global| ExpressionOwner::Expr(&global.init)),
+        );
+        for function in &self.functions {
+            add_function(function, &mut owners);
+        }
+        owners.push(ExpressionOwner::Body {
+            statements: &self.top_level,
+            function: None,
+        });
+        owners.into_iter()
+    }
+
+    /// Returns every expression owner in the module with mutable access.
+    ///
     /// The mutable references let module passes record facts on expression
     /// nodes. A pass must traverse nested expressions through
     /// [`Expr::children`] and [`Stmt::children`].
-    pub fn expression_owners(&mut self) -> impl Iterator<Item = ExpressionOwner<'_>> {
-        fn add_function<'a>(function: &'a mut Function, owners: &mut Vec<ExpressionOwner<'a>>) {
+    pub fn expression_owners_mut(&mut self) -> impl Iterator<Item = ExpressionOwnerMut<'_>> {
+        fn add_function<'a>(function: &'a mut Function, owners: &mut Vec<ExpressionOwnerMut<'a>>) {
             owners.extend(
                 function
                     .params
                     .iter_mut()
                     .filter_map(|parameter| parameter.default.as_mut())
-                    .map(ExpressionOwner::Expr),
+                    .map(ExpressionOwnerMut::Expr),
             );
-            owners.push(ExpressionOwner::Body(&mut function.body));
+            owners.push(ExpressionOwnerMut::Body(&mut function.body));
         }
 
         let mut owners = Vec::new();
@@ -80,7 +144,7 @@ impl Module {
                     .fields
                     .iter_mut()
                     .filter_map(|field| field.init.as_mut())
-                    .map(ExpressionOwner::Expr),
+                    .map(ExpressionOwnerMut::Expr),
             );
             if let Some(constructor) = &mut class.ctor {
                 add_function(constructor, &mut owners);
@@ -92,19 +156,12 @@ impl Module {
         owners.extend(
             self.globals
                 .iter_mut()
-                .map(|global| ExpressionOwner::Expr(&mut global.init)),
+                .map(|global| ExpressionOwnerMut::Expr(&mut global.init)),
         );
         for function in &mut self.functions {
             add_function(function, &mut owners);
         }
-        owners.extend(
-            self.foreign_fns
-                .iter_mut()
-                .flat_map(|function| &mut function.params)
-                .filter_map(|parameter| parameter.default.as_mut())
-                .map(ExpressionOwner::Expr),
-        );
-        owners.push(ExpressionOwner::Body(&mut self.top_level));
+        owners.push(ExpressionOwnerMut::Body(&mut self.top_level));
         owners.into_iter()
     }
 }

@@ -809,28 +809,6 @@ fn every_hir_execution_fact_is_carried_by_lir() {
             .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
         let lir = lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"));
         let dropped = lir_facts::dropped_facts(&hir, &lir);
-        if id == "a181-operation-in-every-owner" {
-            assert_eq!(
-                dropped,
-                ["a181-operation-in-every-owner.ts:45:27: call operand count 1 is absent from LIR"],
-                "the fact helper must expose only its method-default arity mismatch"
-            );
-            assert!(
-                lir.functions
-                    .iter()
-                    .flat_map(|function| &function.blocks)
-                    .flat_map(|block| &block.instructions)
-                    .any(|instruction| {
-                        instruction.pos.file == "a181-operation-in-every-owner.ts"
-                            && instruction.pos.line == 45
-                            && instruction.pos.col == 27
-                            && matches!(instruction.kind, lir::InstructionKind::Call(_))
-                            && instruction.operands.len() == 2
-                    }),
-                "the LIR call must carry the receiver and the evaluated method default"
-            );
-            continue;
-        }
         findings.extend(
             dropped
                 .into_iter()

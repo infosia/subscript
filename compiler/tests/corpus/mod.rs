@@ -26,10 +26,13 @@ pub fn references_interop(source: &str) -> bool {
         "subFutureMake",
         "subStatsMake",
         "SubQueryStatus",
+        "SubWaitEntry",
         "subByValue",
         "subHostOwnedState",
         "subWireMode",
         "subBindTone",
+        "subProbePipelineLayout",
+        "subProbeBindGroupEntry",
     ];
     TOKENS.iter().any(|token| source.contains(token))
 }

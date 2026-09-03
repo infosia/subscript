@@ -1680,7 +1680,16 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
                     _ => None,
                 })
             }
-            hir::Callee::Value(_) | hir::Callee::Method { .. } => Some(args.len() + 1),
+            hir::Callee::Method { recv, name } => {
+                let Type::Class(class) = &recv.ty else {
+                    return None;
+                };
+                hir.classes
+                    .get(class.0)
+                    .and_then(|class| class.methods.iter().find(|method| method.name == *name))
+                    .map(|method| method.params.len() + 1)
+            }
+            hir::Callee::Value(_) => Some(args.len() + 1),
             hir::Callee::Ambient(_)
             | hir::Callee::ContextBytes { .. }
             | hir::Callee::Math(_)
@@ -1847,12 +1856,14 @@ fn instruction_arity(
     }
 }
 
-fn all_declared_functions(hir: &hir::Module) -> Vec<&hir::Function> {
-    hir.classes
-        .iter()
-        .flat_map(|class| class.ctor.iter().chain(class.methods.iter()))
-        .chain(hir.functions.iter())
-        .collect()
+fn all_declared_functions(hir: &hir::Module) -> impl Iterator<Item = &hir::Function> {
+    hir.expression_owners().filter_map(|owner| match owner {
+        hir::ExpressionOwner::Body {
+            function: Some(function),
+            ..
+        } => Some(function),
+        hir::ExpressionOwner::Expr(_) | hir::ExpressionOwner::Body { function: None, .. } => None,
+    })
 }
 
 fn collect_return_positions<'a>(statements: &'a [hir::Stmt], visit: &mut impl FnMut(&'a Pos)) {
@@ -1922,85 +1933,14 @@ fn pos_key(pos: &Pos) -> (String, u32, u32) {
 }
 
 fn walk_module_expressions<'a>(hir: &'a hir::Module, visit: &mut impl FnMut(&'a hir::Expr)) {
-    for class in &hir.classes {
-        for field in &class.fields {
-            if let Some(init) = &field.init {
-                walk_expr(init, visit);
+    for owner in hir.expression_owners() {
+        match owner {
+            hir::ExpressionOwner::Expr(expression) => walk_expr(expression, visit),
+            hir::ExpressionOwner::Body { statements, .. } => {
+                walk_statement_expression_roots(statements, &mut |expression| {
+                    walk_expr(expression, visit);
+                });
             }
-        }
-    }
-    for global in &hir.globals {
-        walk_expr(&global.init, visit);
-    }
-    for function in all_declared_functions(hir) {
-        for parameter in &function.params {
-            if let Some(default) = &parameter.default {
-                walk_expr(default, visit);
-            }
-        }
-        walk_statements(&function.body, visit);
-    }
-    walk_statements(&hir.top_level, visit);
-}
-
-fn walk_statements<'a>(statements: &'a [hir::Stmt], visit: &mut impl FnMut(&'a hir::Expr)) {
-    for statement in statements {
-        match statement {
-            hir::Stmt::Let { init, .. } | hir::Stmt::Expr(init) => walk_expr(init, visit),
-            hir::Stmt::Return { value, .. } => {
-                if let Some(value) = value {
-                    walk_expr(value, visit);
-                }
-            }
-            hir::Stmt::If {
-                cond, then, els, ..
-            } => {
-                walk_expr(cond, visit);
-                walk_statements(then, visit);
-                if let Some(els) = els {
-                    walk_statements(els, visit);
-                }
-            }
-            hir::Stmt::While { cond, body, .. } => {
-                walk_expr(cond, visit);
-                walk_statements(body, visit);
-            }
-            hir::Stmt::For {
-                init,
-                cond,
-                step,
-                body,
-                ..
-            } => {
-                if let Some(init) = init {
-                    walk_statements(std::slice::from_ref(init), visit);
-                }
-                if let Some(cond) = cond {
-                    walk_expr(cond, visit);
-                }
-                walk_statements(body, visit);
-                if let Some(step) = step {
-                    walk_expr(step, visit);
-                }
-            }
-            hir::Stmt::ForOf { subject, body, .. } => {
-                walk_expr(subject, visit);
-                walk_statements(body, visit);
-            }
-            hir::Stmt::Switch { disc, cases, .. } => {
-                walk_expr(disc, visit);
-                for case in cases {
-                    if let Some(test) = &case.test {
-                        walk_expr(test, visit);
-                    }
-                    walk_statements(&case.body, visit);
-                }
-            }
-            hir::Stmt::Block(body) => walk_statements(body, visit),
-            hir::Stmt::Break(_) | hir::Stmt::Continue(_) => {}
-        }
-        if stops_statement_sequence(statement) {
-            break;
         }
     }
 }
@@ -2034,12 +1974,16 @@ fn walk_expr<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::Expr)) {
             walk_expr(value, visit);
             return;
         }
-        K::Lambda { params, .. } => {
-            for parameter in params {
-                if let Some(default) = &parameter.default {
-                    walk_expr(default, visit);
+        K::Lambda { body, .. } => {
+            for child in expr.children() {
+                if let hir::HirChild::Expr(expression) = child {
+                    walk_expr(expression, visit);
                 }
             }
+            walk_statement_expression_roots(body, &mut |expression| {
+                walk_expr(expression, visit);
+            });
+            return;
         }
         _ => {}
     }
@@ -2047,7 +1991,12 @@ fn walk_expr<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::Expr)) {
         match child {
             hir::HirChild::Expr(expr) => walk_expr(expr, visit),
             hir::HirChild::Stmt(statement) => {
-                walk_statements(std::slice::from_ref(statement), visit);
+                walk_statement_expression_roots(
+                    std::slice::from_ref(statement),
+                    &mut |expression| {
+                        walk_expr(expression, visit);
+                    },
+                );
             }
         }
     }

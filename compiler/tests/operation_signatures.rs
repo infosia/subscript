@@ -86,7 +86,7 @@ fn corpus_sources(name: &str, path: &Path) -> Vec<SourceFile> {
     files
 }
 
-fn operation_calls(module: &mut hir::Module) -> Vec<(Pos, hir::OperationSignature)> {
+fn operation_calls(module: &hir::Module) -> Vec<(Pos, hir::OperationSignature)> {
     fn visit_child(child: hir::HirChild<'_>, found: &mut Vec<(Pos, hir::OperationSignature)>) {
         match child {
             hir::HirChild::Expr(expression) => visit_expr(expression, found),
@@ -126,8 +126,8 @@ fn operation_calls(module: &mut hir::Module) -> Vec<(Pos, hir::OperationSignatur
     for owner in module.expression_owners() {
         match owner {
             hir::ExpressionOwner::Expr(expression) => visit_expr(expression, &mut found),
-            hir::ExpressionOwner::Body(body) => {
-                for statement in body {
+            hir::ExpressionOwner::Body { statements, .. } => {
+                for statement in statements {
                     visit_stmt(statement, &mut found);
                 }
             }
@@ -136,7 +136,7 @@ fn operation_calls(module: &mut hir::Module) -> Vec<(Pos, hir::OperationSignatur
     found
 }
 
-fn missing_operation_calls(module: &mut hir::Module) -> Vec<(Pos, hir::OperationSignature)> {
+fn missing_operation_calls(module: &hir::Module) -> Vec<(Pos, hir::OperationSignature)> {
     let table = module.operation_signatures.clone();
     operation_calls(module)
         .into_iter()
@@ -239,6 +239,11 @@ fn a181_table_equals_the_hand_written_program_table() {
         },
         hir::OperationSignature {
             target: hir::OperationSignatureTarget::Math(hir::MathFn::Round),
+            parameter_types: vec![Type::F64],
+            return_type: Some(Type::F64),
+        },
+        hir::OperationSignature {
+            target: hir::OperationSignatureTarget::Math(hir::MathFn::Cos),
             parameter_types: vec![Type::F64],
             return_type: Some(Type::F64),
         },
@@ -391,16 +396,47 @@ fn total_check_reports_synthesized_calls_in_two_owner_kinds() {
     }));
 }
 
+fn first_expression_position(statements: &[hir::Stmt]) -> Option<Pos> {
+    statements.iter().find_map(|statement| {
+        statement
+            .children()
+            .into_iter()
+            .find_map(|child| match child {
+                hir::HirChild::Expr(expression) => Some(expression.pos.clone()),
+                hir::HirChild::Stmt(statement) => {
+                    first_expression_position(std::slice::from_ref(statement))
+                }
+            })
+    })
+}
+
 #[test]
-fn expression_owner_iterator_reaches_ten_hand_counted_operation_calls() {
+fn expression_owner_iterators_match_and_reach_eleven_hand_counted_calls() {
     let path = repository_root().join("corpus/accept/a181-operation-in-every-owner.ts");
     let mut module = checked_module(
         "a181-operation-in-every-owner",
         vec![read_source(&path, "a181-operation-in-every-owner.ts")],
     );
-    let calls = operation_calls(&mut module)
+    let shared_positions = module
+        .expression_owners()
+        .map(|owner| match owner {
+            hir::ExpressionOwner::Expr(expression) => Some(expression.pos.clone()),
+            hir::ExpressionOwner::Body { statements, .. } => first_expression_position(statements),
+        })
+        .collect::<Vec<_>>();
+    let mutable_positions = module
+        .expression_owners_mut()
+        .map(|owner| match owner {
+            hir::ExpressionOwnerMut::Expr(expression) => Some(expression.pos.clone()),
+            hir::ExpressionOwnerMut::Body(statements) => first_expression_position(statements),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(shared_positions, mutable_positions);
+
+    // The walk must count Math call nodes across owners, not iterator arms.
+    let calls = operation_calls(&module)
         .into_iter()
         .filter(|(_, signature)| matches!(signature.target, hir::OperationSignatureTarget::Math(_)))
         .count();
-    assert_eq!(calls, 10, "one Math call must exist in each owner kind");
+    assert_eq!(calls, 11, "each owner kind must contain one Math call");
 }

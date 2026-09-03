@@ -6,6 +6,7 @@
 // tsc: accepts; js-comparable: no Q33: The Descriptor decorator has no JavaScript shim.
 
 const moduleValue: f64 = Math.pow(2.0, 3.0);
+print(`top-level:${Math.cos(0.0)}`);
 
 function scale(value: f64, factor: f64 = Math.max(2.0, 3.0)): f64 {
   return value * factor;

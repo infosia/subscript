@@ -99,26 +99,20 @@ pub fn check_warnings(module: &hir::Module) -> Vec<Warning> {
         warnings: Vec::new(),
     };
 
-    for global in &module.globals {
-        checker.analyze_lambdas_in_expr(&global.init);
-    }
-    for class in &module.classes {
-        for field in &class.fields {
-            if let Some(init) = &field.init {
-                checker.analyze_lambdas_in_expr(init);
+    for owner in module.expression_owners() {
+        match owner {
+            hir::ExpressionOwner::Expr(expression) => {
+                checker.analyze_lambdas_in_expr(expression);
             }
-        }
-        if let Some(ctor) = &class.ctor {
-            checker.analyze_function(ctor);
-        }
-        for method in &class.methods {
-            checker.analyze_function(method);
+            hir::ExpressionOwner::Body {
+                statements,
+                function,
+            } => checker.analyze_body(
+                statements,
+                function.map_or(&[], |function| function.params.as_slice()),
+            ),
         }
     }
-    for function in &module.functions {
-        checker.analyze_function(function);
-    }
-    checker.analyze_body(&module.top_level, &[]);
 
     checker.warnings
 }
@@ -181,15 +175,6 @@ fn walk_statements<S: Clone>(
 }
 
 impl WarningChecker<'_> {
-    fn analyze_function(&mut self, function: &hir::Function) {
-        for param in &function.params {
-            if let Some(default) = &param.default {
-                self.analyze_lambdas_in_expr(default);
-            }
-        }
-        self.analyze_body(&function.body, &function.params);
-    }
-
     fn analyze_body(&mut self, body: &[Stmt], params: &[hir::Param]) {
         let collect_mutes = contains_collect_in_stmts(body);
         self.analyze_w001_stmts(body, 0, collect_mutes);

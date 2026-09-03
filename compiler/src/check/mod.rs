@@ -825,10 +825,10 @@ fn operation_signatures(module: &mut hir::Module) -> Vec<hir::OperationSignature
     }
 
     let mut signatures = Vec::new();
-    for owner in module.expression_owners() {
+    for owner in module.expression_owners_mut() {
         match owner {
-            hir::ExpressionOwner::Expr(expression) => visit_expr(expression, &mut signatures),
-            hir::ExpressionOwner::Body(body) => visit_body(body, &mut signatures),
+            hir::ExpressionOwnerMut::Expr(expression) => visit_expr(expression, &mut signatures),
+            hir::ExpressionOwnerMut::Body(body) => visit_body(body, &mut signatures),
         }
     }
     signatures
