@@ -11590,3 +11590,111 @@ codegen-side list (synchronized); a `next` receiver match at the
 reload trap site is outside rule 3 (recorded); the tracking note's
 "independent walk" wording (corrected); a stale `top_level` comment
 and a missing `#[non_exhaustive]` reason (fixed).
+
+## 84. Worker messages carry `string` fields by copy
+
+*(Owner decision 2026-09-03.)* Origin: owner request. `stdlib.md`
+§16.2 (v1) excludes `string` fields from a message class and says
+"widen only with evidence".
+
+Measured at `ccc47f7`, this host: a message class with `text: string`
+fails at `Worker.spawn` with S100 "message class `TextMessage` is not
+transferable: innermost field `TextMessage.text` has non-transferable
+type `string`" (r108 pins it). A `FixedArray<string, 2>` field on a
+reference class checks and runs outside a message.
+
+Why the v1 exclusion exists. A `string` value is a handle to a
+Context-owned string object (`ctx.alloc_str`; Q5). A message class
+lowers to its C layout, and the runtime copies `payload_size` bytes
+into a queue record (`runtime/src/worker.rs`, `Queue::post_fixed`)
+and copies them back into a fresh `CLASS_WORKER_MESSAGE` allocation
+on the receiving side (`materialize`). A string slot would carry a
+raw pointer into the sender's Context, which §38 forbids.
+
+### 84.1 Rule
+
+1. **`string` is transferable.** A message class can hold `string`
+   fields and `FixedArray<string, N>` fields. A value class still
+   holds no string (C2), so a string slot sits at the message class's
+   top level or inside one of its fixed arrays, and nowhere deeper.
+   Reference, growable-array, function, and nullable fields stay
+   non-transferable.
+2. **Delivery copies the bytes.** `post` reads each string slot of
+   the payload on the sender's Context, and the queue record holds
+   the fixed payload bytes followed by every string's byte length
+   and bytes, in slot order. The receiving side allocates the message
+   object, then allocates one fresh Context-owned string per slot
+   from the record's bytes and writes its handle into the slot. The
+   sender's object and its strings are unaffected. A null handle in a
+   string slot is sent as the empty string.
+3. **A message layout descriptor replaces the two payload sizes.**
+   Generated code hands `subscript_rt_worker_spawn` one static
+   descriptor per message class in place of each `u64` size:
+   `{ payload_size: u64, string_slot_count: u64, string_slot_offsets:
+   *const u64 }`, where the offsets are the byte offsets of every
+   string slot in the class's C layout, including the `N` slots of
+   each `FixedArray<string, N>` field, in ascending order. The
+   descriptor is program-image data; both tiers emit it from the same
+   layout the class already has, and the two tiers' descriptors are
+   byte-identical. A class with no string slot has count 0, and its
+   record is the fixed bytes alone, as today.
+4. **Queues stay unbounded and posting never blocks.** A record's
+   length is the fixed size plus the string bytes; the Q29 limits
+   bound the fixed part, and a string's own length bound (`i32`)
+   bounds each slot.
+5. **Nothing else moves.** Entry shape, Context affinity, `wait` /
+   `poll` / `close` / `join`, and the trap model (§39) do not change.
+   The reference interpreter keeps its worker exclusion (a112's row).
+   Hot reload keeps its refusal while a worker lives.
+
+### 84.2 Sites
+
+- `compiler/src/check/expr.rs` `non_transferable_message_field`:
+  `Type::Str` is a transferable leaf.
+- The checker or `codegen/src/layout.rs`: one function that lists
+  the string slot offsets of a message class from its layout, used by
+  both tiers.
+- `codegen/src/lower/func.rs` (spawn, dev JIT) and
+  `codegen/src/cemit.rs` (spawn, C): emit the descriptor as data and
+  pass its address.
+- `runtime/src/ffi.rs` `subscript_rt_worker_spawn`: two descriptor
+  pointers. `runtime/src/worker.rs`: `Queue` holds the descriptor;
+  `post_fixed` serializes; `materialize` allocates the strings.
+  `runtime/src/host_header.rs` if the generated header documents
+  spawn.
+- `stdlib.md` §16.2, `collisions.md` Q35, `language_reference.rs`.
+
+### 84.3 Corpus and gate (pre-registered exit criteria)
+
+1. `corpus/accept/a182-worker-string-message.ts` + `.expected`: a
+   message class with `text: string`, `count: i32`, and
+   `tags: FixedArray<string, 2>`; the parent posts a message whose
+   text holds non-ASCII bytes and prints the text's byte length; the
+   worker replies with a new message whose text is a concatenation
+   made on the worker Context, an empty string in one tag, and the
+   count plus one; the parent rebinds its own message's `text` after
+   `post` and prints both the reply and its own object to show that
+   neither side sees the other's change; a second round trip on the
+   same worker. Red at `ccc47f7`: the S100 above. `tsc: accepts`;
+   `js-comparable: no Q35`. The interpreter exclusion row names it as
+   a112's does.
+2. `corpus/reject/r182-worker-reference-field.ts`: a message class
+   with a reference-class field; S100 with the
+   `WorkerContextAffinity` block; `tsc: accepts`.
+3. `corpus/reject/r183-worker-growable-array-field.ts`: a message
+   class with a `T[]` field; the same S100; `tsc: accepts`.
+4. r108 retires (`retired:r108` in `collisions.md` Q35 and
+   `stdlib.md` §16.2, the harness row, the reference row).
+5. Runtime unit tests in `runtime/src/worker.rs`: a round trip
+   between two Contexts with two string slots and one fixed field,
+   the receiver's strings compared by content and their handles
+   distinct from the sender's; a null slot arrives as the empty
+   string; an empty string round-trips; a descriptor with count 0
+   produces a record equal to the fixed bytes (the pre-§84 form); a
+   `FixedArray<string, N>` slot set.
+6. Codegen test: the descriptor both tiers emit for a182's message
+   classes holds the same offsets, and the offsets equal the field
+   offsets the layout reports.
+7. Gates: both profiles, zero-warning build, fmt, `tsc`, hygiene,
+   clippy at 7 / 18 / 13, and `tools/hygiene.sh`. No pre-existing
+   golden moves.

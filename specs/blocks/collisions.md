@@ -1291,6 +1291,9 @@ Accept: `a147`, `a148`. Reject: `r148`–`r156`.
   principle; and Workers land as standard library, not as a host
   pattern. CLAUDE.md's platform-capability list drops "threads"
   with a dated note.)*
+  *(Revised 2026-09-03, `compiler.md` §84: `string` fields are
+  transferable by copy. Accept adds `a182`; reject adds `r182`,
+  `r183`; retired:r108.)*
 
   - **Model.** A worker is a runtime-owned OS thread running a
     dedicated Context of the same program image; module state is

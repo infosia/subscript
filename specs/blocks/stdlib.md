@@ -1851,13 +1851,16 @@ joins, and frees its live workers. Workers may spawn workers.
 
 A message type is a plain reference class whose fields are all
 **transferable**: sized numerics, `boolean`, enums, string-literal
-union aliases, value classes, and `FixedArray` of transferable
-element types. No reference, string, growable-array, function, or
-nullable fields (v1 — widen only with evidence). Delivery copies
-the payload bytes (invariant 1 makes the copy tier-portable) and
-materializes a fresh Context-owned instance on the receiving side;
-the sender's object is unaffected, and mutations after `post` are
-not visible to the receiver.
+union aliases, value classes, `string`, and `FixedArray` of
+transferable element types. No reference, growable-array, function,
+or nullable fields. Delivery copies the payload bytes (invariant 1
+makes the copy tier-portable) and, for each `string` slot, the
+string's bytes; the receiving side materializes a fresh
+Context-owned instance and one fresh Context-owned string per slot.
+The sender's object and its strings are unaffected, and mutations
+after `post` are not visible to the receiver. *(Revised 2026-09-03,
+`compiler.md` §84: `string` joined the transferable set; v1 excluded
+it. Accept adds `a182`; reject adds `r182`, `r183`; retired:r108.)*
 
 ### 16.3 Entry and affinity rules
 
