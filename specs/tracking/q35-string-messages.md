@@ -44,6 +44,10 @@ string slot would have carried a pointer into the sender's Context.
 - debug (the coding agent's final run): 66 suites, 1,254 passed, 0
   failed, 1 ignored, 2,229 s.
 - release: 66 suites, 1,252 passed, 0 failed, 1 ignored, 343 s.
+  **This figure is wrong.** `587d6da` added
+  `post_two_string_slots_matches_a_hand_written_record`, and that
+  test fails in the release profile at that pin. See the correction
+  below.
 - Zero-warning build; fmt, `tsc`, hygiene exit 0; clippy 7 / 18 / 13.
 - No pre-existing golden or `.expected` moved; a112 byte-identical.
 
@@ -68,3 +72,33 @@ injection (the queue record's `try_reserve_exact` failure has no
 injection path; recorded in §84.3 item 5); the side channel
 is gone; a header `offset_of!` test; a182 holds a second worker with
 two distinct message classes (`u8`-led layout, offsets 8, 24, 32, 40).
+
+## Release-profile correction, 2026-09-05
+
+Measured at `f4c296c` on this host, after `git pull`:
+`cargo test --offline --release --workspace --no-fail-fast` reports
+66 suites, 1,228 passed, 1 failed, 1 ignored. The debug profile
+reports 66 suites, 1,231 passed, 0 failed, 1 ignored, 615 s. Fmt,
+hygiene, and the zero-warning build exit 0. Clippy is 7 / 18 / 13.
+`generated-docs/` regenerates with no diff.
+
+The one failure is
+`worker::tests::post_two_string_slots_matches_a_hand_written_record`
+at `runtime/src/worker.rs:799`. The test builds
+`#[repr(C)] TwoStringMessage { first: *mut u8, count: i32, second:
+*mut u8 }` as a Rust value. That struct holds four padding bytes at
+offset 12, and the compiler leaves them indeterminate. `post_fixed`
+copies `payload_size` bytes verbatim, so the record holds the
+padding. The debug profile found zero bytes on the stack. The
+release profile found `246, 127, 0, 0`. The failure repeats 3 of 3
+runs in release.
+
+The check therefore read a value that §84.1 rule 2 does not promise.
+§84.1 rule 2 and §84.3 item 5 are amended: the record copies the
+fixed payload bytes verbatim, and a test that asserts record bytes
+must supply the payload as a byte buffer that the test defines in
+full, with a non-zero value in every padding byte.
+
+No corpus entry, golden, or `.expected` moves. The emitted C copies
+the same indeterminate padding, and the receiver reads fields only,
+so no tier-differential output changes.

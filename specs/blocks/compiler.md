@@ -11626,7 +11626,9 @@ raw pointer into the sender's Context, which §38 forbids.
    object, then allocates one fresh Context-owned string per slot
    from the record's bytes and writes its handle into the slot. The
    sender's object and its strings are unaffected. A null handle in a
-   string slot is sent as the empty string.
+   string slot is sent as the empty string. The record copies the
+   fixed payload bytes verbatim. A padding byte of the payload is
+   indeterminate, and the record holds that byte as it is.
 3. **A message layout descriptor replaces the two payload sizes.**
    Generated code hands `subscript_rt_worker_spawn` one static
    descriptor per message class in place of each `u64` size:
@@ -11688,7 +11690,12 @@ raw pointer into the sender's Context, which §38 forbids.
 5. Runtime unit tests in `runtime/src/worker.rs`, each comparing two
    separately derived facts: the record `post` writes for a two-slot
    message equals a **hand-written** byte vector (fixed bytes, then
-   each slot's `u64` length and bytes); `materialize` fed a
+   each slot's `u64` length and bytes). A test that asserts record
+   bytes must supply the payload as a byte buffer that the test
+   defines in full. Every padding byte of that buffer must hold a
+   non-zero value, so the assertion pins the verbatim copy of rule 2.
+   A test must not post a Rust struct value, because the compiler
+   leaves the struct's padding indeterminate. `materialize` fed a
    hand-written record yields strings equal by content with handles
    distinct from any sender handle; a null slot arrives as the empty
    string; an empty string round-trips; a descriptor with count 0
@@ -11706,7 +11713,10 @@ raw pointer into the sender's Context, which §38 forbids.
    *(Amended
    2026-09-03 after the review: the first tests posted through
    `post_fixed` and read back through `materialize`, so a matched
-   change to both sides stayed green, and no rejection arm ran.)*
+   change to both sides stayed green, and no rejection arm ran.
+   Amended 2026-09-05: the two-slot test posted a Rust struct value,
+   so its assertion read the struct's indeterminate padding. The
+   debug profile passed and the release profile failed.)*
 6. Codegen test: the C tier's descriptor for a182's message class
    equals hand-derived offsets and equals the field offsets the
    layout reports; the dev tier's descriptor is witnessed by a182
