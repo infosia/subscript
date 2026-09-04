@@ -769,11 +769,13 @@ mod tests {
         let mut sender = Context::new();
         let first = sender.alloc_str("héllo".as_bytes(), 0);
         let second = sender.alloc_str(b"world", 0);
-        let message = TwoStringMessage {
-            first,
-            count: 41,
-            second,
-        };
+        // A test that asserts record bytes defines every payload byte
+        // and never posts a Rust struct value.
+        let mut message = [0u8; std::mem::size_of::<TwoStringMessage>()];
+        message[0..8].copy_from_slice(&(first as usize).to_ne_bytes());
+        message[8..12].copy_from_slice(&41i32.to_ne_bytes());
+        message[12..16].copy_from_slice(&[1, 2, 3, 4]);
+        message[16..24].copy_from_slice(&(second as usize).to_ne_bytes());
         let queue = Queue::new(string_descriptor(
             std::mem::size_of::<TwoStringMessage>(),
             &[0, 16],
@@ -781,7 +783,7 @@ mod tests {
         // SAFETY: `message` has the descriptor's fixed layout and both
         // string handles belong to `sender`.
         assert!(matches!(
-            unsafe { queue.post_fixed(&sender, std::ptr::from_ref(&message).cast()) },
+            unsafe { queue.post_fixed(&sender, message.as_ptr()) },
             PostResult::Posted
         ));
         let Receive::Message { record, .. } = queue.poll() else {
@@ -790,7 +792,7 @@ mod tests {
         let mut expected = Vec::new();
         expected.extend_from_slice(&(first as usize).to_ne_bytes());
         expected.extend_from_slice(&41i32.to_ne_bytes());
-        expected.extend_from_slice(&[0, 0, 0, 0]);
+        expected.extend_from_slice(&[1, 2, 3, 4]);
         expected.extend_from_slice(&(second as usize).to_ne_bytes());
         expected.extend_from_slice(&6u64.to_le_bytes());
         expected.extend_from_slice("héllo".as_bytes());

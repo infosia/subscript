@@ -102,3 +102,29 @@ full, with a non-zero value in every padding byte.
 No corpus entry, golden, or `.expected` moves. The emitted C copies
 the same indeterminate padding, and the receiver reads fields only,
 so no tier-differential output changes.
+
+## The fix and the gate, 2026-09-05
+
+The test now builds the fixed payload as a byte array of
+`size_of::<TwoStringMessage>()` bytes. It writes the two handles, the
+`i32`, and `[1, 2, 3, 4]` in the four padding bytes, then posts that
+buffer. The hand-written expected record holds the same four bytes, so
+the assertion pins the verbatim copy. The test fails if `post_fixed`
+zeroes the fixed bytes. Red measured again at `f4c296c` in release; the
+padding read `247, 127, 0, 0` on that run and `246, 127, 0, 0` on the
+first. The value is indeterminate, so the two runs agree.
+
+The other `post_fixed` test posts a `u64`, which has no padding. Every
+other record test builds a `Vec<u8>` by hand. The class has no third
+site.
+
+Gates on this host at the fix:
+
+- debug: 66 suites, 1,231 passed, 0 failed, 1 ignored, 674 s.
+- release: 66 suites, 1,229 passed, 0 failed, 1 ignored, 167 s.
+- Zero-warning build in both profiles; fmt and hygiene exit 0; clippy
+  7 / 18 / 13; `generated-docs/` regenerates with no diff.
+- No corpus entry, golden, or `.expected` moved.
+
+Review round 1 on the diff raised one MINOR: a 107-column comment
+against the file's 72-column wrap. Fixed.
