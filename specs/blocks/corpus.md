@@ -60,16 +60,25 @@ corpus/
   `compiler.md` §19.3 makes the reference: C6 says a fault stops the
   Context, and the dev tier is the one that does.
 
-  **The directory must be enumerated with an exact count assertion**,
-  as `corpus/accept/`'s goldens are, so an entry cannot be deleted
-  without failing a test. A category under `corpus/` that nothing
-  counts has the appearance of the executable definition's guarantee
-  without its substance.
+  **The committed corpus index is the inventory.** *(Revised
+  2026-09-05, `compiler.md` §88. The first text required an exact
+  count assertion per directory; five suites then pinned a numeric
+  total each, and one new entry edited six files.)*
+  `generated-docs/corpus-index.md` is rendered from every entry
+  header and compared byte-for-byte against a fresh render by a
+  test, so an entry cannot be added or deleted without failing that
+  test. A suite does not pin a count of entries.
 
   The 25 trap-parity tests currently written as inline strings in
   `codegen/tests/cemit.rs` are candidates to migrate here. They are
   **not** migrated yet; recorded so the split is a known state rather
   than an accident.
+- Two optional header lines carry per-entry execution facts
+  (`compiler.md` §88): `// interpreter: no — <reason>` on an accept
+  or trap entry the reference interpreter does not run;
+  `// cost: benchmark` on an entry whose purpose is cost and which
+  the debug interpreter sweep omits. A suite derives its selection
+  from these lines; no suite holds a list of entry ids.
 - Multi-file entries: each file's `// corpus:` id includes the filename,
   e.g. `accept/a19-modules/main`.
 - **Determinism rule:** every accept program terminates and writes a
