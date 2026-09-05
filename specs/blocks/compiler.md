@@ -12135,3 +12135,166 @@ Task B (`codegen/src/cemit.rs`: `Body::new` before coalescing —
    unchanged.
 6. The `collect` and `bound-call` perf-gate workloads stay within
    their §3 thresholds (the release gate runs them).
+
+## 87. A synthetic owner is one scoped operation
+
+*(Owner decision 2026-09-05.)* Origin: the development-cost review of
+2026-09-05 (`specs/tracking/development-cost-review-2026-09-05.md`,
+finding 1).
+
+Measured at `3677d1f`. §82.10 names seven owner kinds and states a
+total boundary check. The code exposes the owner as four operations:
+`FnCtx::enter_synthetic_owner`, `push_synthetic_prefix`,
+`drain_synthetic_prefix`, and `Checker::finish_synthetic_owner`
+(`compiler/src/check/mod.rs` lines 470–500, 1354). Thirteen sites
+call `enter_synthetic_owner`; each one drains and finishes by hand
+(`stmt.rs` 424, 873, 883, 904, 920, 1404; `mod.rs` 4046, 4107, 4604,
+4669, 4712, 4750; `expr.rs` 8205). Seven of them route through
+`close_synthetic_expression` (`expr.rs` 2382), which rejects a
+non-empty prefix. The return type of `check_expr` does not state that
+a prefix can exist. R39 review round 2 (three owners drained into the
+wrong list) and round 3 (the `switch` case owner missing) were two
+instances of one protocol with no type to hold it.
+
+### 87.1 Rule
+
+1. **One operation.** `FnCtx` exposes one owner operation:
+   `with_synthetic_owner(kind, |fx| body)`. It enters the owner, runs
+   the body, drains the prefix, and leaves the owner on every return
+   path of the body, including an early return. The four operations
+   of today become private to `FnCtx`, or are deleted.
+2. **The kind is a value.** `SyntheticOwnerKind` is an enum with one
+   variant per owner of §82.10 rule 1: `Statement`, `ForInit`,
+   `ForCond`, `ForUpdate`, `ArrowBody`, `Initializer`, `SwitchCase`.
+   The operation returns the body's result and the drained prefix as
+   `SyntheticPrefix`, a value that the caller places by the kind's
+   rule of §82.10 rule 2. For `Initializer` and `SwitchCase` the
+   operation itself reports S100 with the §82.3 block when the prefix
+   is not empty, and returns an empty prefix; a caller of those two
+   kinds cannot place a prefix, because the value it receives is
+   always empty.
+3. **The boundary check stays total.** The check of §82.10 rule 3 runs
+   inside the operation on leave. It compares the owner stack depth
+   and the collection against the owner boundary, as today.
+4. **The prefix has one type.** `SyntheticPrefix` wraps
+   `Vec<hir::Stmt>`. A `Vec<hir::Stmt>` that is a prefix is not passed
+   bare; the type names the fact.
+5. **No semantics move.** Every diagnostic, position, evaluation
+   order, and count of §82.1, §82.3, and §82.10 is unchanged. Every
+   pre-existing golden and `.expected` stays byte-identical.
+
+### 87.2 Sites
+
+- `compiler/src/check/mod.rs`: `FnCtx`, `SyntheticOwner` (private),
+  `SyntheticOwnerKind`, `SyntheticPrefix`, `with_synthetic_owner`;
+  the six `enter_synthetic_owner` sites and
+  `finish_synthetic_owner`.
+- `compiler/src/check/stmt.rs`: the six sites.
+- `compiler/src/check/expr.rs`: the arrow-body site and
+  `close_synthetic_expression`.
+- `compiler/tests/synthetic_prefix.rs`: the matrix of 87.3.
+
+### 87.3 Corpus and gate (pre-registered exit criteria)
+
+1. `compiler/tests/synthetic_prefix.rs` gains one table-driven test
+   over the matrix owner kind × receiver, with the seven owner kinds
+   and two receivers (`(maybe() ?? fb).v` and `maybe()?.v ?? 0`). For
+   each cell the expected value is **hand-written**: the diagnostic
+   code and position for `Initializer` and `SwitchCase`, and for the
+   other five the number of synthetic locals in the lowered HIR and
+   the statement index where the prefix lands (statement before, loop
+   head, step, arrow body head). The test reads the HIR, not the
+   checker's owner stack.
+2. The same file keeps a positive control: a program whose prefix
+   escapes cannot be written from outside, so the control is the
+   `SwitchCase` cell, which reports S100 with the §82.3 block, and a
+   unit test in `mod.rs` that calls `with_synthetic_owner` with a
+   body that pushes one statement and returns early through `?`, and
+   asserts the prefix comes back and the owner stack is at its
+   entry depth.
+3. a176, a177, and every corpus entry: goldens unchanged, both tiers
+   and the interpreter, `tools/gate.sh full` verdict `goldens-moved 0`.
+4. `grep -c enter_synthetic_owner compiler/src` outside `FnCtx` is 0.
+
+## 88. The corpus index is the inventory
+
+*(Owner decision 2026-09-05.)* Origin: the development-cost review of
+2026-09-05 (`specs/tracking/development-cost-review-2026-09-05.md`,
+finding 4).
+
+Measured at `3677d1f`. `generated-docs/corpus-index.md` is rendered
+from every entry header, committed, and compared byte-for-byte
+against a fresh render by
+`generated_ai_references_are_byte_identical`
+(`compiler/src/language_reference.rs`). A deleted or added entry
+fails that test. Beside it, five suites pin a numeric total:
+`compiler/tests/corpus_accept.rs` (180 and 182),
+`compiler/tests/corpus_warn.rs` (182), `compiler/tests/js_corpus.rs`
+(180), `codegen/tests/golden.rs` (181), `codegen/tests/lir.rs` (125
+and 124). `corpus.md` §1 requires the exact count. One new entry edits
+six files for one fact. The 2026-08-30 duplication review records a
+stop on a missed count. `codegen/tests/lir.rs` also holds two tables
+that repeat entry ids with a reason: `INTERPRETER_EXCLUSIONS` (56
+entries, lines 1180–1405) and `DEBUG_INTERPRETER_SUBSET` (124
+entries), the second being the complement of one cost exclusion.
+
+### 88.1 Rule
+
+1. **The committed index is the inventory.** The completeness check
+   is the byte-identity of `generated-docs/corpus-index.md` with a
+   fresh render. A suite does not pin a count of entries. `corpus.md`
+   §1's exact-count sentence is replaced by this rule.
+2. **A per-entry fact is a header line.** Two header keys are added
+   to `corpus.md` §1:
+   `// interpreter: no — <reason>` on an accept or trap entry the
+   reference interpreter does not run;
+   `// cost: benchmark` on an entry whose purpose is cost and which
+   the debug interpreter sweep omits.
+   The reason text of today's `INTERPRETER_EXCLUSIONS` moves to the
+   entry, one per entry, unchanged.
+3. **A suite derives its selection.** `codegen/tests/lir.rs` reads the
+   headers: the runnable set is every accept entry without
+   `interpreter: no`; the debug set is the runnable set without
+   `cost: benchmark`. The two tables and the two counts are deleted.
+   `DEBUG_INTERPRETER_TRAPS` stays: its rows carry expected trap
+   tuples, which are facts of the test, not of the inventory.
+4. **The index shows the facts.** `render_corpus_index` adds an
+   `Interpreter` column to the accept and trap tables with `yes` or
+   the `no` reason, and marks `cost: benchmark`. The generated file
+   is regenerated by the generator, never by hand.
+5. **A skip is still declared.** The release sweep without the
+   variable, and the debug omission of a `cost: benchmark` entry,
+   print the `gate-skip:` line of §85.1 rule 4 as today.
+
+### 88.2 Sites
+
+- `specs/blocks/corpus.md` §1 (this section's rules 1–2; orchestrator).
+- `compiler/src/language_reference.rs`: header parsing for the two
+  keys, the column.
+- `generated-docs/corpus-index.md`: regenerated.
+- `corpus/accept/*.ts`, `corpus/trap/*.ts`: the header line on the 56
+  excluded entries and on a22.
+- `codegen/tests/lir.rs`: derive; delete the tables and counts.
+- `compiler/tests/corpus_accept.rs`, `corpus_warn.rs`,
+  `js_corpus.rs`, `codegen/tests/golden.rs`: delete the count
+  assertions; keep every other assertion.
+- `compiler/src/lib.rs` or a shared test-support module if the header
+  reader is shared between the generator and the suites: one reader.
+
+### 88.3 Corpus and gate (pre-registered exit criteria)
+
+1. Red: with one accept entry copied to a new id and no other edit,
+   `generated_ai_references_are_byte_identical` fails and no other
+   suite fails. Recorded with the diff line.
+2. The header reader has a direct unit test: a hand-written header
+   with `interpreter: no — reason` and `cost: benchmark` parses to the
+   two facts; a header with a malformed key is an error naming the
+   line.
+3. `lir.rs` asserts that the derived runnable set equals a
+   hand-written list of the 125 ids at this pin, once, as the
+   migration control (core principle 11); the assertion is deleted in
+   the landing commit's tracking note or kept as a hand-written
+   fact, by the reviewer's call.
+4. `tools/gate.sh full`: verdict `goldens-moved 0`, `skips 0`; the
+   debug run's `gate-skip:` count is the same as at the previous
+   landing.
