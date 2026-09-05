@@ -384,8 +384,8 @@ Accept: `a147`, `a148`. Reject: `r148`–`r156`.
 
 ### C15. String literal length — a ship-tier limit
 
-A string literal, or the static text of one template literal, whose
-UTF-8 length exceeds 65,000 bytes is rejected with S019. TypeScript
+A string literal, or one static part of a template literal, whose
+decoded UTF-8 length exceeds 65,000 bytes is rejected with S019. TypeScript
 has no limit. The C compilers the ship tier targets do: MSVC accepts
 at most 65,535 bytes in one concatenated literal *(docs)*, and the
 downstream measured `error C2026` on a 32,768-character literal
