@@ -2049,15 +2049,17 @@ fn removable_block_parameter_copies(
 
 struct Coalescing {
     parents: Vec<usize>,
-    members: Vec<Vec<l::ValueId>>,
+    groups: Vec<root_storage::InterferenceGroup>,
 }
 
 impl Coalescing {
-    fn new(value_count: usize) -> Self {
+    fn new(origins: &[l::ValueId]) -> Self {
         Self {
-            parents: (0..value_count).collect(),
-            members: (0..value_count)
-                .map(|index| vec![l::ValueId(index as u32)])
+            parents: (0..origins.len()).collect(),
+            groups: origins
+                .iter()
+                .copied()
+                .map(root_storage::InterferenceGroup::Origin)
                 .collect(),
         }
     }
@@ -2074,17 +2076,14 @@ impl Coalescing {
         &mut self,
         left: l::ValueId,
         right: l::ValueId,
-        interference: &[HashSet<l::ValueId>],
+        interference: &root_storage::Interference,
     ) {
         let left = self.root(left);
         let right = self.root(right);
-        if left == right
-            || self.members[left].iter().any(|left| {
-                self.members[right]
-                    .iter()
-                    .any(|right| interference[left.0 as usize].contains(right))
-            })
-        {
+        if left == right {
+            return;
+        }
+        if self.groups[left].interferes(&self.groups[right], interference) {
             return;
         }
         let (representative, merged) = if left < right {
@@ -2093,8 +2092,8 @@ impl Coalescing {
             (right, left)
         };
         self.parents[merged] = representative;
-        let merged_members = std::mem::take(&mut self.members[merged]);
-        self.members[representative].extend(merged_members);
+        let merged_group = std::mem::take(&mut self.groups[merged]);
+        self.groups[representative].merge(merged_group, interference);
     }
 
     fn representatives(&self) -> Vec<l::ValueId> {
@@ -2107,19 +2106,19 @@ impl Coalescing {
 fn coalesced_value_storage(
     function: &l::Function,
     root_storage: &RootStoragePlan,
+    interference: &root_storage::Interference,
     folded_addresses: &HashSet<l::ValueId>,
     removable_edge_copies: &HashSet<(l::BlockId, l::BlockId, usize)>,
     elided_values: &HashSet<l::ValueId>,
     promoted_local_values: &HashSet<l::ValueId>,
 ) -> Result<Vec<l::ValueId>, String> {
-    let interference = root_storage::value_interference(function)?;
-    let mut coalescing = Coalescing::new(function.values.len());
+    let mut coalescing = Coalescing::new(&function.liveness.value_origins);
     for (index, slot) in root_storage.value_slots.iter().copied().enumerate() {
         if let Some(slot) = slot {
             coalescing.try_merge(
                 l::ValueId(index as u32),
                 root_storage.slots[slot].representative,
-                &interference,
+                interference,
             );
         }
     }
@@ -2157,7 +2156,7 @@ fn coalesced_value_storage(
                 {
                     continue;
                 }
-                coalescing.try_merge(*argument, *parameter, &interference);
+                coalescing.try_merge(*argument, *parameter, interference);
             }
         }
     }
@@ -2376,7 +2375,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         function: &'f l::Function,
         coroutine: bool,
     ) -> Result<Self, String> {
-        let root_storage = root_storage::plan(function, &emitter.layouts)?;
+        let (root_storage, interference) =
+            root_storage::plan_with_interference(function, &emitter.layouts)?;
         let dead_forward_iterator_results = function
             .blocks
             .iter()
@@ -2450,6 +2450,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let value_storage = coalesced_value_storage(
             function,
             &root_storage,
+            &interference,
             &folded_addresses,
             &removable_edge_copies,
             &elided_values,
