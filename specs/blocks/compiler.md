@@ -11899,6 +11899,18 @@ and names no command either.
    command reports 0 failed, and rule 4 holds. A moved golden does
    not change the exit status; the reviewer reads `goldens-moved`
    against the golden-change procedure (§2).
+7a. **The dev profile keeps no loose object files.** *(Owner decision
+   2026-09-06.)* The workspace `Cargo.toml` sets
+   `[profile.dev] split-debuginfo = "off"` (the test profile
+   inherits it). Measured 2026-09-06 (`specs/tracking/s85-gate-command.md`):
+   with the macOS default `"unpacked"`, every link left its codegen
+   unit objects in `target/debug/deps`, 707,606 of them after seven
+   weeks, and a relinked test binary took 26–36 s to reach `main`;
+   with the files gone, 0.64 s, and the debug gate step 543 s
+   against 1,443–1,728 s. With `"off"` a fresh build leaves no
+   `.rcgu.o`, the binary size is unchanged, and backtraces resolve
+   through the rlibs' debug info. The change is not a move of the
+   executables; the location was measured as irrelevant.
 7. **The script owns no test.** It runs the commands above and reads
    their stdout. It sets no `CARGO_TARGET_DIR`, so a run measures the
    checkout it is in. `CARGO`, `NODE`, `TSC`, `CC`, and `GIT` are
