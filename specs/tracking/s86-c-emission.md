@@ -818,3 +818,32 @@ gate full e7b870f7a2fd160cde1bd724d774e0cb181d7538 dirty:2 debug 1277/0/1 releas
 
 Step wall seconds: build 46, debug 1,443, release 629, clippy 44,
 hygiene 24 (a review subagent ran beside the debug step).
+
+## Task C round 1 (at `3a4bdff`)
+
+A reverse-reachability row per value replaces the per-edge CFG walk;
+suspend-state numbers are one table built in `Body::new`;
+`EmissionIndex::build` validates value and block ids and returns
+`Result`. A temporary control compared the old walk and the new
+lookup on 283,428 value/block pairs over 234 entries (accept and
+trap) and the emitted C of every module: equal; deleted. Chain
+fixture (N blocks, one unused parameter per edge, one suspend per
+block), release, `emit_lir_c` median of seven: N = 64 → 256 (4×):
+before 8.9×, after 7.8× (limit 8×; one earlier run of the same
+binary measured 3.7×).
+
+**The `live_ins` derivation the contract offered is not the same
+predicate** (reviewer, three shapes): `use_blocks` ignores position
+while `lir_live_ins` kills at a result (a copy in the parameter's
+own block); `use_blocks` counts `invalidates` mentions while
+`live_ins` does not (every array value in scope, rule 2a); in a
+coroutine `liveness.live_ins` is the pre-repair fixed point and never
+holds a version value. The table stays. Recorded once here.
+
+Fresh review: CRITICAL 0, MAJOR 0, MINOR 5 — the table allocates
+V × B and one row per value though only edge-argument sources are
+queried; `LocalId` is outside the validation (the verifier guards
+it today); the twice-passed-argument test cannot detect removal of
+the position rule; the chain generator was deleted, so the 7.8×
+figure has no standing fixture; the `live_ins` fact above. Round 2
+takes the first four.
