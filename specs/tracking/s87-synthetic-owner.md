@@ -45,3 +45,16 @@ Fresh review (read-only): CRITICAL 0, MAJOR 2, MINOR 8.
 
 The first full gate on the round-1 tree was stopped at the review's
 MAJOR; no partial record remains.
+
+## Round 2, first stop (at `6a89c9a`)
+
+The coding agent measured the a183 shape on the round-1 tree before
+any fix: `new Box 1`, `new Box 2`, `pick 2`, `1` on the dev JIT, and
+the same bytes under `node`. The review's runtime claim was wrong:
+the synthetic `Let` of §82.3 carries a `Null` initializer and the
+receiver call stays inside the expression, so the misplaced `Let`
+changes the HIR and not the order of effects. Core principle 10: an
+entry that never failed proves nothing, so a183 is dropped and the
+`Declarator` rule stands as a placement rule whose Red is the matrix
+cell (`ad5b438`). Found by the coding agent's Red measurement, as
+the handoff required.
