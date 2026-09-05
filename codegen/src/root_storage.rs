@@ -1031,6 +1031,10 @@ mod tests {
         assert!(!left.interferes(&right, &interference));
         left.merge(right, &interference);
         assert!(left.interferes(
+            &InterferenceGroup::Merged(facts(3, &[(0, 4, 5)])),
+            &interference
+        ));
+        assert!(left.interferes(
             &InterferenceGroup::Merged(facts(3, &[(1, 2, 3)])),
             &interference
         ));

@@ -38,6 +38,16 @@ pub struct CProgram {
     pub(crate) foreign_symbols: Vec<String>,
 }
 
+impl CProgram {
+    /// Transcribes a verified LIR module to ship-tier C.
+    ///
+    /// If `require_main` is true, the module must export `main(): void`.
+    /// Returns an error for invalid LIR or unsupported C transcription.
+    pub fn from_lir(module: &l::Module, require_main: bool) -> Result<Self, String> {
+        emit_lir_c(module, require_main)
+    }
+}
+
 /// Transcribes one verified LIR module to ship-tier C.
 pub(crate) fn emit_lir_c(module: &l::Module, require_main: bool) -> Result<CProgram, String> {
     verify_module(module).map_err(|errors| {
@@ -1519,6 +1529,7 @@ struct Body<'e, 'm, 'f> {
     emitter: &'e mut Emitter<'m>,
     function: &'f l::Function,
     coroutine: bool,
+    suspend_states: Vec<Option<u32>>,
     rooted_values: HashSet<l::ValueId>,
     rooted_locals: HashSet<l::LocalId>,
     promoted_locals: HashMap<l::LocalId, l::ValueId>,
@@ -1564,6 +1575,8 @@ struct EmissionIndex<'f> {
     definitions: HashMap<l::ValueId, &'f l::Instruction>,
     definition_blocks: Vec<Option<l::BlockId>>,
     use_blocks: Vec<HashSet<l::BlockId>>,
+    reachable_use_rows: Vec<Option<usize>>,
+    reachable_uses: Vec<bool>,
     parameter_blocks: Vec<Option<l::BlockId>>,
     incoming_targets: Vec<Vec<l::BlockTarget>>,
     local_seeds: Vec<LocalSeed>,
@@ -1573,7 +1586,7 @@ struct EmissionIndex<'f> {
     propagated_values: Vec<(l::ValueId, l::ValueId)>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LocalSeed {
     Unused,
     Local(l::LocalId),
@@ -1581,11 +1594,14 @@ enum LocalSeed {
 }
 
 impl<'f> EmissionIndex<'f> {
-    fn build(function: &'f l::Function) -> Self {
+    fn build(function: &'f l::Function) -> Result<Self, String> {
+        Self::validate_ids(function)?;
         let mut index = Self {
             definitions: HashMap::new(),
             definition_blocks: vec![None; function.values.len()],
             use_blocks: vec![HashSet::new(); function.values.len()],
+            reachable_use_rows: vec![None; function.values.len()],
+            reachable_uses: Vec::new(),
             parameter_blocks: vec![None; function.values.len()],
             incoming_targets: vec![Vec::new(); function.blocks.len()],
             local_seeds: vec![LocalSeed::Unused; function.values.len()],
@@ -1663,7 +1679,175 @@ impl<'f> EmissionIndex<'f> {
                 }
             }
         }
-        index
+        // Only unused edge parameters ask whether their source has a later use.
+        let mut queried_pairs = Vec::new();
+        for (block, targets) in index.incoming_targets.iter().enumerate() {
+            for target in targets {
+                for (argument, parameter) in target
+                    .arguments
+                    .iter()
+                    .zip(&function.blocks[block].parameters)
+                {
+                    if index.use_blocks[parameter.0 as usize].is_empty() {
+                        if let l::Operand::Value(source) = argument {
+                            queried_pairs.push((*source, target.block));
+                        }
+                    }
+                }
+            }
+        }
+        queried_pairs.sort_unstable();
+        queried_pairs.dedup();
+        let mut queried_sources = Vec::new();
+        for (source, _) in queried_pairs {
+            let row = &mut index.reachable_use_rows[source.0 as usize];
+            if row.is_none() {
+                *row = Some(queried_sources.len());
+                queried_sources.push(source);
+            }
+        }
+        let block_count = function.blocks.len();
+        index.reachable_uses = vec![false; queried_sources.len() * block_count];
+        if queried_sources.is_empty() {
+            return Ok(index);
+        }
+        let mut predecessors = vec![Vec::new(); block_count];
+        for block in &function.blocks {
+            for successor in terminator_successors(&block.terminator) {
+                predecessors[successor.0 as usize].push(block.id);
+            }
+        }
+        // Reverse reachability stops at the parameter that replaces this value.
+        // Each queried source has one flat row, shared by all its target queries.
+        let mut pending = Vec::new();
+        for (row, source) in queried_sources.into_iter().enumerate() {
+            let value = source.0 as usize;
+            let offset = row * block_count;
+            pending.extend(index.use_blocks[value].iter().copied());
+            while let Some(block) = pending.pop() {
+                if index.parameter_blocks[value] == Some(block)
+                    || index.reachable_uses[offset + block.0 as usize]
+                {
+                    continue;
+                }
+                index.reachable_uses[offset + block.0 as usize] = true;
+                pending.extend(predecessors[block.0 as usize].iter().copied());
+            }
+        }
+        Ok(index)
+    }
+
+    /// Reject invalid ids before any dense table access.
+    fn validate_ids(function: &l::Function) -> Result<(), String> {
+        let value_id = |value: l::ValueId| {
+            if value.0 as usize >= function.values.len() {
+                Err(internal(format!("invalid emission value id {}", value.0)))
+            } else {
+                Ok(())
+            }
+        };
+        let block_id = |block: l::BlockId| {
+            if block.0 as usize >= function.blocks.len() {
+                Err(internal(format!("invalid emission block id {}", block.0)))
+            } else {
+                Ok(())
+            }
+        };
+        let local_id = |local: l::LocalId| {
+            if local.0 as usize >= function.locals.len() {
+                Err(internal(format!("invalid emission local id {}", local.0)))
+            } else {
+                Ok(())
+            }
+        };
+        let value_type = |ty: &l::ValueType| {
+            if let l::ValueType::Address(l::AddressType {
+                array_base: Some(base),
+                ..
+            }) = ty
+            {
+                value_id(*base)?;
+            }
+            Ok::<_, String>(())
+        };
+        let call_target = |target: &l::CallTarget| {
+            for ty in target.parameter_types.iter().chain(&target.return_type) {
+                value_type(ty)?;
+            }
+            Ok::<_, String>(())
+        };
+        block_id(function.entry)?;
+        for value in &function.values {
+            value_id(value.id)?;
+            value_type(&value.ty)?;
+        }
+        for local in &function.locals {
+            local_id(local.id)?;
+            value_type(&local.ty)?;
+        }
+        for parameter in &function.parameters {
+            value_id(parameter.value)?;
+            if let Some(storage) = parameter.storage {
+                local_id(storage)?;
+            }
+        }
+        for value in function
+            .liveness
+            .live_ins
+            .iter()
+            .flatten()
+            .chain(&function.liveness.value_origins)
+        {
+            value_id(*value)?;
+        }
+        for block in &function.blocks {
+            block_id(block.id)?;
+            for parameter in &block.parameters {
+                value_id(*parameter)?;
+            }
+            for instruction in &block.instructions {
+                if let l::InstructionKind::StoreLocal(local)
+                | l::InstructionKind::LoadLocal(local)
+                | l::InstructionKind::AddressOfLocal(local) = instruction.kind
+                {
+                    local_id(local)?;
+                }
+                for value in instruction.result.iter().chain(&instruction.invalidates) {
+                    value_id(*value)?;
+                }
+                for operand in &instruction.operands {
+                    if let l::Operand::Value(value) = operand {
+                        value_id(*value)?;
+                    }
+                }
+                if let l::InstructionKind::Call(target)
+                | l::InstructionKind::AsyncHandleCreate(target) = &instruction.kind
+                {
+                    call_target(target)?;
+                }
+            }
+            for value in block.terminator.value_uses() {
+                value_id(value)?;
+            }
+            for successor in terminator_successors(&block.terminator) {
+                block_id(successor)?;
+            }
+            if let l::Terminator::Suspend {
+                kind,
+                resume_value,
+                invalidates,
+                ..
+            } = &block.terminator
+            {
+                for value in resume_value.iter().chain(invalidates) {
+                    value_id(*value)?;
+                }
+                if let l::SuspendKind::AsyncCall { target, .. } = kind {
+                    call_target(target)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1963,30 +2147,6 @@ fn fixed_iterator_values(function: &l::Function, index: &EmissionIndex<'_>) -> H
         .collect()
 }
 
-fn value_used_from(
-    function: &l::Function,
-    index: &EmissionIndex<'_>,
-    value: l::ValueId,
-    start: l::BlockId,
-) -> bool {
-    let mut seen = HashSet::new();
-    let mut pending = vec![start];
-    while let Some(block) = pending.pop() {
-        if !seen.insert(block) {
-            continue;
-        }
-        let definition = &function.blocks[block.0 as usize];
-        if index.parameter_blocks[value.0 as usize] == Some(block) {
-            continue;
-        }
-        if index.use_blocks[value.0 as usize].contains(&block) {
-            return true;
-        }
-        pending.extend(terminator_successors(&definition.terminator));
-    }
-    false
-}
-
 fn removable_block_parameter_copies(
     function: &l::Function,
     index: &EmissionIndex<'_>,
@@ -2028,8 +2188,12 @@ fn removable_block_parameter_copies(
                 let source_dead = match argument {
                     l::Operand::Constant(_) => true,
                     l::Operand::Value(source) => {
-                        !value_used_from(function, index, *source, target.block)
-                            && last_arguments.get(source) == Some(&position)
+                        let used_from_target = index.reachable_use_rows[source.0 as usize]
+                            .is_some_and(|row| {
+                                index.reachable_uses
+                                    [row * function.blocks.len() + target.block.0 as usize]
+                            });
+                        !used_from_target && last_arguments.get(source) == Some(&position)
                     }
                 };
                 if source_dead {
@@ -2376,9 +2540,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         function: &'f l::Function,
         coroutine: bool,
     ) -> Result<Self, String> {
+        let index = EmissionIndex::build(function)?;
         let (root_storage, interference) =
             root_storage::plan_with_interference(function, &emitter.layouts)?;
-        let index = EmissionIndex::build(function);
+        let mut suspend_states = vec![None; function.blocks.len()];
+        let mut state = 0;
+        for block in &function.blocks {
+            if matches!(block.terminator, l::Terminator::Suspend { .. }) {
+                state += 1;
+                suspend_states[block.id.0 as usize] = Some(state);
+            }
+        }
         let dead_forward_iterator_results = function
             .blocks
             .iter()
@@ -2482,6 +2654,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             emitter,
             function,
             coroutine,
+            suspend_states,
             rooted_values,
             rooted_locals,
             promoted_locals,
@@ -3695,12 +3868,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     }
 
     fn suspend_state(&self, id: l::BlockId) -> Result<u32, String> {
-        self.function
-            .blocks
-            .iter()
-            .filter(|block| matches!(block.terminator, l::Terminator::Suspend { .. }))
-            .position(|block| block.id == id)
-            .map(|index| index as u32 + 1)
+        self.suspend_states
+            .get(id.0 as usize)
+            .copied()
+            .flatten()
             .ok_or_else(|| internal(format!("suspend block {} is missing", id.0)))
     }
 
@@ -8117,6 +8288,223 @@ mod tests {
         crate::lir::lower_module(&hir).expect("test source lowers")
     }
 
+    fn emission_index_fixture() -> l::Function {
+        let pos = Pos::new("emission-index.ts", 1, 1);
+        let operand = |value| l::Operand::Value(l::ValueId(value));
+        let instruction = |result: Option<u32>, kind, operands| l::Instruction {
+            result: result.map(l::ValueId),
+            kind,
+            operands,
+            invalidates: Vec::new(),
+            traps: Vec::new(),
+            pos: pos.clone(),
+        };
+        let constant = || {
+            l::Operand::Constant(l::Constant {
+                ty: Type::I32,
+                kind: l::ConstantKind::Integer(7),
+            })
+        };
+        l::Function {
+            id: l::FunctionId(0),
+            source_name: "index".into(),
+            kind: l::FunctionKind::Free,
+            exported: false,
+            is_generator: false,
+            is_async: false,
+            creation_traps: Vec::new(),
+            host_entry_traps: None,
+            parameters: Vec::new(),
+            return_type: Type::I32,
+            locals: (0..3)
+                .map(|id| l::Local {
+                    id: l::LocalId(id),
+                    source_name: format!("local{id}"),
+                    ty: l::ValueType::Data(Type::I32),
+                    mutable: true,
+                    storage: l::LocalStorageClass::Activation,
+                    pos: pos.clone(),
+                })
+                .collect(),
+            values: (0..6)
+                .map(|id| l::Value {
+                    id: l::ValueId(id),
+                    ty: l::ValueType::Data(Type::I32),
+                    fresh_owner: false,
+                    source_name: None,
+                })
+                .collect(),
+            liveness: l::Liveness {
+                live_ins: vec![Vec::new(), Vec::new()],
+                value_origins: (0..6).map(l::ValueId).collect(),
+            },
+            blocks: vec![
+                l::BasicBlock {
+                    id: l::BlockId(0),
+                    source_name: None,
+                    parameters: Vec::new(),
+                    instructions: vec![
+                        instruction(Some(0), l::InstructionKind::Copy, vec![constant()]),
+                        instruction(
+                            None,
+                            l::InstructionKind::StoreLocal(l::LocalId(0)),
+                            vec![operand(0)],
+                        ),
+                        instruction(
+                            None,
+                            l::InstructionKind::StoreLocal(l::LocalId(1)),
+                            vec![operand(0)],
+                        ),
+                        instruction(Some(1), l::InstructionKind::Copy, vec![constant()]),
+                        instruction(Some(4), l::InstructionKind::Copy, vec![constant()]),
+                        instruction(
+                            None,
+                            l::InstructionKind::StoreLocal(l::LocalId(2)),
+                            vec![operand(4)],
+                        ),
+                        instruction(
+                            None,
+                            l::InstructionKind::StoreLocal(l::LocalId(2)),
+                            vec![operand(4)],
+                        ),
+                        instruction(Some(5), l::InstructionKind::Copy, vec![constant()]),
+                        instruction(
+                            None,
+                            l::InstructionKind::StoreLocal(l::LocalId(0)),
+                            vec![operand(5)],
+                        ),
+                    ],
+                    terminator: l::Terminator::Branch(l::BlockTarget {
+                        block: l::BlockId(1),
+                        arguments: vec![operand(1), operand(1)],
+                    }),
+                },
+                l::BasicBlock {
+                    id: l::BlockId(1),
+                    source_name: None,
+                    parameters: vec![l::ValueId(2), l::ValueId(3)],
+                    instructions: Vec::new(),
+                    terminator: l::Terminator::Return {
+                        value: Some(constant()),
+                        pos: pos.clone(),
+                    },
+                },
+            ],
+            entry: l::BlockId(0),
+            pos,
+        }
+    }
+
+    #[test]
+    fn emission_index_rows_match_definitions_and_mentions() {
+        let mut function = emission_index_fixture();
+        let index = EmissionIndex::build(&function).unwrap();
+        let b0 = l::BlockId(0);
+        let b1 = l::BlockId(1);
+        assert_eq!(
+            index.use_blocks,
+            vec![
+                HashSet::from([b0]),
+                HashSet::from([b0]),
+                HashSet::new(),
+                HashSet::new(),
+                HashSet::from([b0]),
+                HashSet::from([b0]),
+            ]
+        );
+        assert_eq!(
+            index.local_seeds,
+            vec![
+                LocalSeed::Other,
+                LocalSeed::Other,
+                LocalSeed::Unused,
+                LocalSeed::Unused,
+                LocalSeed::Local(l::LocalId(2)),
+                LocalSeed::Local(l::LocalId(0)),
+            ]
+        );
+        assert_eq!(
+            index.first_stores,
+            HashMap::from([
+                (l::LocalId(0), l::ValueId(0)),
+                (l::LocalId(1), l::ValueId(0)),
+                (l::LocalId(2), l::ValueId(4)),
+            ])
+        );
+        assert_eq!(
+            index.parameter_blocks,
+            vec![None, None, Some(b1), Some(b1), None, None]
+        );
+        assert_eq!(
+            index.definition_blocks,
+            vec![Some(b0), Some(b0), None, None, Some(b0), Some(b0)]
+        );
+        assert_eq!(
+            index.reachable_use_rows,
+            vec![None, Some(0), None, None, None, None]
+        );
+        assert_eq!(index.reachable_uses, vec![true, false]);
+        assert_eq!(
+            removable_block_parameter_copies(&function, &index),
+            (HashSet::from([(b0, b1, 1)]), HashSet::from([l::ValueId(3)]),)
+        );
+        // A terminator-only use must also populate the mention and seed tables.
+        function.blocks[1].terminator = l::Terminator::Return {
+            value: Some(l::Operand::Value(l::ValueId(2))),
+            pos: function.pos.clone(),
+        };
+        let index = EmissionIndex::build(&function).unwrap();
+        assert_eq!(index.use_blocks[2], HashSet::from([b1]));
+        assert_eq!(index.local_seeds[2], LocalSeed::Other);
+    }
+
+    #[test]
+    fn emission_index_rejects_out_of_range_ids() {
+        let mut function = emission_index_fixture();
+        function.blocks[0].instructions[0].result = Some(l::ValueId(6));
+        let error = EmissionIndex::build(&function)
+            .err()
+            .expect("invalid result must return an error");
+        assert!(error.contains("invalid emission value id 6"), "{error}");
+        let mut function = emission_index_fixture();
+        function.blocks[0].terminator = l::Terminator::Branch(l::BlockTarget {
+            block: l::BlockId(2),
+            arguments: Vec::new(),
+        });
+        let error = EmissionIndex::build(&function)
+            .err()
+            .expect("invalid target must return an error");
+        assert!(error.contains("invalid emission block id 2"), "{error}");
+    }
+
+    #[test]
+    fn emission_index_rejects_out_of_range_local_ids() {
+        for kind in [
+            l::InstructionKind::StoreLocal(l::LocalId(3)),
+            l::InstructionKind::LoadLocal(l::LocalId(3)),
+            l::InstructionKind::AddressOfLocal(l::LocalId(3)),
+        ] {
+            let mut function = emission_index_fixture();
+            function.blocks[0].instructions[1].kind = kind;
+            let error = EmissionIndex::build(&function)
+                .err()
+                .expect("invalid local must return an error");
+            assert!(error.contains("invalid emission local id 3"), "{error}");
+        }
+        let mut function = emission_index_fixture();
+        function.parameters.push(l::Parameter {
+            storage: Some(l::LocalId(3)),
+            value: l::ValueId(0),
+            source_name: "parameter".into(),
+            kind: l::ParameterKind::Explicit,
+            pos: function.pos.clone(),
+        });
+        let error = EmissionIndex::build(&function)
+            .err()
+            .expect("invalid parameter storage must return an error");
+        assert!(error.contains("invalid emission local id 3"), "{error}");
+    }
+
     #[test]
     fn iterator_bounds_cross_back_edges_and_combine_fixed_and_live_paths() {
         let mut module = lower_test_source("iterator-index.ts", "export function main(): void {}");
@@ -8194,14 +8582,14 @@ mod tests {
                 terminator: l::Terminator::Branch(target(1, &[4, 6])),
             },
         ];
-        let index = EmissionIndex::build(function);
+        let index = EmissionIndex::build(function).unwrap();
         assert_eq!(
             fixed_iterator_values(function, &index),
             HashSet::from([l::ValueId(0), l::ValueId(3), l::ValueId(5), l::ValueId(6)])
         );
         // The live bit reaches the second parameter only through the back edge.
         function.blocks[1].terminator = l::Terminator::Branch(target(1, &[6, 4]));
-        let index = EmissionIndex::build(function);
+        let index = EmissionIndex::build(function).unwrap();
         assert_eq!(
             fixed_iterator_values(function, &index),
             HashSet::from([l::ValueId(0)])
@@ -8358,7 +8746,7 @@ mod tests {
         let root = *module.async_roots.first().expect("async root");
         module.functions[root.0 as usize].source_name = "main".to_string();
 
-        let program = emit_lir_c(&module, true).expect("C emits renamed LIR functions");
+        let program = CProgram::from_lir(&module, true).expect("C emits renamed LIR functions");
         let runner = program
             .source
             .split_once("void subscript_kick_async_exports(subscript_rt_context* ctx) {")
