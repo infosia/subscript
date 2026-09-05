@@ -11397,8 +11397,9 @@ defect of the form, so this section states the form.)*
    are collected by the innermost owner under check. The owners are:
    a statement in a statement list; a `for` initializer; a `for`
    condition; a `for` update; an arrow body; an initializer that has
-   no statement list; a `switch` case test. Entering an owner starts
-   an empty collection;
+   no statement list; a `switch` case test; a declarator of a
+   declaration with two or more declarators *(added 2026-09-05,
+   §87.1 rule 2)*. Entering an owner starts an empty collection;
    leaving it drains the collection. An outer owner's collection is
    saved on entry and restored on exit, as `subst` is around an
    instantiation.
@@ -11413,9 +11414,12 @@ defect of the form, so this section states the form.)*
    until one matches, so no list before the `switch` can hold the
    local without a change of evaluation order. *(Added 2026-09-02
    after review round 3: the boundary check reported the shape.)*
-3. **The boundary check is total.** On leaving every owner the
-   collection is empty, or the checker reports S100 "internal:
-   synthetic prefix escaped its owner" at the expression's position.
+3. **The boundary check is total.** *(Superseded 2026-09-05 by §87.1
+   rule 3: in the scoped form the drain is the boundary, and the
+   S100 report below has no input that can fire it.)* On leaving
+   every owner the collection is empty, or the checker reports S100
+   "internal: synthetic prefix escaped its owner" at the expression's
+   position.
    The check compares the collection against the owner boundary, not
    against the site that filled it. No test writes into the
    collection: the check is an internal invariant, and its witness is
@@ -11423,6 +11427,12 @@ defect of the form, so this section states the form.)*
    before rule 1 named that owner. *(Amended 2026-09-02: the first
    text asked for a test hook, which changed the record the check
    reads, against core principle 9.)*
+3a. **Open, recorded 2026-09-05 (the §87 review).** A `while`
+   condition is not an owner: its prefix drains before the loop, so
+   `while ((maybe() ?? fb).v > 0) { … }` calls `maybe()` once, not
+   per iteration. The `for` condition has the per-iteration form
+   (rule 2). This is the same class and needs its own request and
+   corpus entry; nothing in §87 changes it.
 4. **No lowering failure is the report.** A program that checks
    clean lowers on both tiers. The four probes above are in a177, and
    the empty-body `for` with a prefix in its condition (green at
@@ -12180,8 +12190,18 @@ instances of one protocol with no type to hold it.
    path of the body, including an early return. The four operations
    of today become private to `FnCtx`, or are deleted.
 2. **The kind is a value.** `SyntheticOwnerKind` is an enum with one
-   variant per owner of §82.10 rule 1: `Statement`, `ForInit`,
-   `ForCond`, `ForUpdate`, `ArrowBody`, `Initializer`, `SwitchCase`.
+   variant per owner of §82.10 rule 1: `Statement`, `Declarator`,
+   `ForInit`, `ForCond`, `ForUpdate`, `ArrowBody`, `Initializer`,
+   `SwitchCase`. *(`Declarator` added 2026-09-05, forced, after the
+   §87 review: a `let`/`const`/`using` with two or more declarators
+   had the statement as its owner, so the first round placed every
+   declarator's prefix before the first binding —
+   `let a: Box = new Box(2), b: i32 = (pick(a) ?? fb).v;` ran
+   `pick(a)` before `new Box(2)` and read `a` before its binding.
+   The committed checker drained per declarator; the owner list did
+   not say so. A declarator of a declaration with two or more
+   declarators is its own owner, and its prefix goes before that
+   declarator's `Let`.)*
    The operation returns the body's result and the drained prefix as
    `SyntheticPrefix`, a value that the caller places by the kind's
    rule of §82.10 rule 2. For `Initializer` and `SwitchCase` the
@@ -12189,9 +12209,17 @@ instances of one protocol with no type to hold it.
    is not empty, and returns an empty prefix; a caller of those two
    kinds cannot place a prefix, because the value it receives is
    always empty.
-3. **The boundary check stays total.** The check of §82.10 rule 3 runs
-   inside the operation on leave. It compares the owner stack depth
-   and the collection against the owner boundary, as today.
+3. **The drain is the boundary.** *(Revised 2026-09-05, forced, after
+   the §87 review: in the scoped form the operation drains the
+   collection and pops the stack on every return path, so the check
+   of §82.10 rule 3 read a collection the same operation had just
+   emptied and had no input that could fire it — core principle 9.)*
+   The operation is the only code that pushes or pops the owner
+   stack and the only code that drains a collection; nothing outside
+   it can leave a prefix behind. The S100 "internal: synthetic
+   prefix escaped its owner" report and its comparison are deleted.
+   The witness of §82.10 rule 3 (the `switch` case shape) is a
+   matrix cell of 87.3 item 1.
 4. **The prefix has one type.** `SyntheticPrefix` wraps
    `Vec<hir::Stmt>`. A `Vec<hir::Stmt>` that is a prefix is not passed
    bare; the type names the fact.
@@ -12213,8 +12241,17 @@ instances of one protocol with no type to hold it.
 ### 87.3 Corpus and gate (pre-registered exit criteria)
 
 1. `compiler/tests/synthetic_prefix.rs` gains one table-driven test
-   over the matrix owner kind × receiver, with the seven owner kinds
-   and two receivers (`(maybe() ?? fb).v` and `maybe()?.v ?? 0`). For
+   over the matrix owner kind × receiver, with the eight owner kinds
+   and two receivers (`(maybe() ?? fb).v` and `maybe()?.v ?? 0`).
+   The `Declarator` cells use a declaration with two declarators
+   where the second's initializer reads the first (`let a = …,
+   b = (pick(a) ?? fb).v;`): the expected HIR has the first `Let`,
+   then the synthetic `Let`, then the second `Let`.
+   `corpus/accept/a183-declarator-prefix-order.ts` + `.expected`
+   pins the same shape with output that shows the order
+   (`new Box` prints before `pick`): green at `3967e9c`, red on the
+   first §87 tree (the review's shape), `tsc: accepts`,
+   `js-comparable: yes`. For
    each cell the expected value is **hand-written**: the diagnostic
    code and position for `Initializer` and `SwitchCase`, and for the
    other five the number of synthetic locals in the lowered HIR and
