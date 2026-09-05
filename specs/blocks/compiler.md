@@ -11876,9 +11876,10 @@ and names no command either.
    against the golden-change procedure (§2).
 7. **The script owns no test.** It runs the commands above and reads
    their stdout. It sets no `CARGO_TARGET_DIR`, so a run measures the
-   checkout it is in. `CARGO`, `NODE`, and `CC` are read from the
-   environment with the defaults `cargo`, `node`, and `cc`, so a
-   test can substitute a stub.
+   checkout it is in. `CARGO`, `NODE`, `TSC`, and `CC` are read from
+   the environment with the defaults `cargo`, `node`,
+   `node_modules/.bin/tsc`, and `cc`, so a test can substitute a
+   stub.
 
 ### 85.2 Sites
 
@@ -11913,9 +11914,8 @@ and names no command either.
    Positive control for the record: case (a) also asserts the record
    file exists at the printed path and that the verdict line is its
    last line.
-   The stub for `node_modules/.bin/tsc` and `cc` is a directory the
-   test prepends to `PATH`; `hygiene.sh` runs for real, on the
-   checkout, because it reads the tree.
+   `TSC` and `CC` point at stubs the test writes; `hygiene.sh` runs
+   for real, on the checkout, because it reads the tree.
 2. `cargo test -p subscript-codegen --test lir` in the release
    profile without the sweep variable prints exactly one `gate-skip:`
    line; `cargo test -p subscript-benchmarks --test perf_gate` in the
