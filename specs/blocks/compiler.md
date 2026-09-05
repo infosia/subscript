@@ -12043,6 +12043,19 @@ touches the live set or scans the block.
    cleared at the array's last read, which is earlier than before;
    an entry whose golden moves under this rule is named in the
    tracking note with its output (rule 6).
+2b. **An address operand mentions its base.** *(Added 2026-09-05,
+   forced, after the control's second stop.)* The mention set of an
+   instruction is what `record_operand` records: each value operand,
+   and for an address operand its `array_base`, because the address
+   keeps the base rooted while the instruction runs (a159). A result
+   interferes with every value in that set, not only with the direct
+   value operands. Measured at `75e96a6`, `a03-integer-literals`
+   `main`: `%9 = LoadAddress(%8)` where `%8` has base `%0`; the
+   walk inserted `%0` into the live set at that instruction, and the
+   edge loop added `(%9, %8)` and not `(%9, %0)`; the interval query
+   answered `true`. The edge graph's operand loop is corrected to the
+   mention set for the control round; the interval query is the
+   definition.
 3. **Per-point facts come from interval ends.** `clear_after_instruction`
    lists, at instruction `i`, the slots of origins whose last
    interval in the block ends at `i`; `clear_at_block_entry` comes
