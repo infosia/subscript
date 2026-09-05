@@ -1,7 +1,7 @@
 # §87 — a synthetic owner is one scoped operation
 
-Status: **in progress.** Contract: `specs/blocks/compiler.md` §87
-(`74bc806`; amended `6a89c9a`). Origin:
+Status: **landed** at `eba4537`. Contract: `specs/blocks/compiler.md` §87
+(`74bc806`; amended `6a89c9a`, `ad5b438`). Origin:
 `specs/tracking/development-cost-review-2026-09-05.md` finding 1.
 
 ## Round 1 (at `3967e9c`)
@@ -80,3 +80,25 @@ permits — a second operation typed for the two rejecting kinds is a
 contract option for the owner. Both recorded, not fixed in this
 round. The reviewer confirmed the single-declarator path
 byte-identical to HEAD and the diagnostic order unchanged.
+
+
+## Gate
+
+```text
+gate full e48d41459fc3ba4378dfb09ffacade8553ed6c2c dirty:5 debug 1282/0/2 release 1280/0/2 skips 1/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+A first run of the same tree failed one `cli/tests/gate.rs` case
+because a tracking commit landed during the debug step (the stub
+run's `HEAD` and the test's `HEAD` differed); the rerun above is the
+result. Rule for this session: no commit while a gate runs.
+
+## §87 result
+
+`enter_synthetic_owner` sites: 13 → 0; one operation, eight kinds,
+one prefix type; the escape check that could not fire is gone; the
+R39 round-2 and round-3 shapes are matrix cells. Two rounds, two
+fresh reviews, two contract corrections forced by measurement (the
+`Declarator` owner; the drain as the boundary), one review claim
+refuted by measurement (a183). Open: the `while`-condition owner
+(§82.10 rule 3a); the doc lines and the result-trait note above.
