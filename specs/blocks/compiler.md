@@ -12085,7 +12085,15 @@ touches the live set or scans the block.
 ### 86.2 Sites
 
 Task A (`codegen/src/root_storage.rs`, and the two call sites in
-`codegen/src/cemit.rs`): rules 1–3, 6.
+`codegen/src/cemit.rs`): rules 1–3, 6; and, under rule 5,
+`Coalescing::try_merge` (`cemit.rs` 2073: a group holds one merged
+interval list and its parameter-rule memberships, and a merge test
+is one sweep of two lists) and the parameter rules of
+`Interference::interferes` (`root_storage.rs` 276: a query visits
+only the blocks where one of the two origins is a parameter, through
+an index built once). *(Added 2026-09-05 after the Task A review:
+both were superlinear, one measured at 12.6× for 5.4×, one invisible
+to the one-block fixture.)*
 Task B (`codegen/src/cemit.rs`: `Body::new` before coalescing —
 `fixed_iterator_values`, `address_definitions`,
 `foldable_local_addresses`, `promoted_local_values`,
