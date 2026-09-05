@@ -771,9 +771,7 @@ impl<'p> Checker<'p> {
                     if ident.sym.as_ref() == "unreachable" {
                         let pos = self.pos(call.span);
                         let checked = self.check_named_call(ident, call, fx, pos, true);
-                        let mut out = fx.drain_synthetic_prefix();
-                        out.push(hir::Stmt::Expr(checked));
-                        return out;
+                        return vec![hir::Stmt::Expr(checked)];
                     }
                 }
             }
@@ -781,11 +779,11 @@ impl<'p> Checker<'p> {
         if let ast::Expr::OptChain(chain) = root {
             return self.check_optional_chain_statement(chain, fx);
         }
-        let mut prefix = Vec::new();
+        let mut prefix = super::SyntheticPrefix::default();
         if let ast::Expr::Assign(assign) = root {
             let checked =
                 self.check_assign(assign, fx, self.pos(root.span()), true, Some(&mut prefix));
-            let mut out = fx.drain_synthetic_prefix();
+            let mut out = Vec::new();
             out.extend(prefix);
             out.push(hir::Stmt::Expr(checked));
             return out;
@@ -793,15 +791,15 @@ impl<'p> Checker<'p> {
         if let ast::Expr::Update(update) = root {
             let checked =
                 self.check_update(update, fx, self.pos(root.span()), true, Some(&mut prefix));
-            let mut out = fx.drain_synthetic_prefix();
+            let mut out = Vec::new();
             out.extend(prefix);
             out.push(hir::Stmt::Expr(checked));
             return out;
         }
         let checked = self.check_expr(e, None, fx);
-        prefix.extend(fx.drain_synthetic_prefix());
-        prefix.push(hir::Stmt::Expr(checked));
-        prefix
+        let mut statements = prefix.into_statements();
+        statements.push(hir::Stmt::Expr(checked));
+        statements
     }
 
     /// Checks Q34/R13's three awaitable forms. The AST call is handled here
@@ -1626,7 +1624,7 @@ impl<'p> Checker<'p> {
         &mut self,
         expr: hir::Expr,
         label: &str,
-        prefix: &mut Vec<hir::Stmt>,
+        prefix: &mut super::SyntheticPrefix,
     ) -> hir::Expr {
         if is_place_expr(&expr) {
             return expr;
@@ -1657,7 +1655,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
         statement_position: bool,
-        mut prefix: Option<&mut Vec<hir::Stmt>>,
+        mut prefix: Option<&mut super::SyntheticPrefix>,
     ) -> hir::Expr {
         let source = match unparen_expr(&u.arg) {
             ast::Expr::Ident(ident) => PlaceSource::Ident(ident),
@@ -2007,7 +2005,7 @@ impl<'p> Checker<'p> {
     ) -> Vec<hir::Stmt> {
         let pos = self.pos(chain.span);
         let plan = self.check_optional_plan(chain, fx);
-        let mut out = fx.drain_synthetic_prefix();
+        let mut out = Vec::new();
         if plan.value.ty == Type::Error {
             out.push(hir::Stmt::Expr(self.err_expr(pos)));
             return out;
@@ -2377,28 +2375,6 @@ impl<'p> Checker<'p> {
             ty: ty.clone(),
             pos: pos.clone(),
         })
-    }
-
-    pub(crate) fn close_synthetic_expression(
-        &mut self,
-        expression: hir::Expr,
-        fx: &mut FnCtx,
-        owner: super::SyntheticOwner,
-    ) -> hir::Expr {
-        let pos = expression.pos.clone();
-        let expression = if fx.drain_synthetic_prefix().is_empty() {
-            expression
-        } else {
-            self.error_diverging(
-                RuleCode::S100,
-                "a non-place receiver of `??` or `?.` cannot be used in an initializer",
-                pos.clone(),
-                Divergence::NonPlaceNullishInitializer,
-            );
-            self.err_expr(pos.clone())
-        };
-        self.finish_synthetic_owner(fx, owner, pos);
-        expression
     }
 
     /// Checks R16's sole legal `undefined` appearance.
@@ -6220,7 +6196,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
         statement_position: bool,
-        mut prefix: Option<&mut Vec<hir::Stmt>>,
+        mut prefix: Option<&mut super::SyntheticPrefix>,
     ) -> hir::Expr {
         use ast::AssignOp as A;
         let operation = assign_op(a.op);
@@ -8202,61 +8178,63 @@ impl<'p> Checker<'p> {
                 pos: pos.clone(),
             });
         }
-        let body_owner = fx.enter_synthetic_owner();
         let body_pos = self.pos(a.body.span());
-        let body = match &*a.body {
-            ast::BlockStmtOrExpr::Expr(e) => {
-                let checked = self.check_expr(e, ret.as_ref(), fx);
-                if let Some(ret) = &ret {
-                    self.require_assignable(
-                        &checked.ty.clone(),
-                        &ret.clone(),
-                        checked.pos.clone(),
-                        "the lambda body",
-                    );
-                } else {
-                    ret = Some(checked.ty.clone());
-                }
-                if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
-                    let origins = self.expr_async_origins(&checked, fx);
-                    fx.handle_async_origins(&origins);
-                }
-                let value_pos = checked.pos.clone();
-                let mut body = fx.drain_synthetic_prefix();
-                body.push(hir::Stmt::Return {
-                    value: Some(checked),
-                    pos: value_pos,
-                });
-                body
-            }
-            ast::BlockStmtOrExpr::BlockStmt(block) => {
-                self.reserve_block_declarations(&block.stmts, fx);
-                if ret.is_none() {
-                    self.error(
-                        RuleCode::S100,
-                        "a lambda with a block body requires a return type annotation",
-                        pos.clone(),
-                    );
-                    ret = Some(Type::Error);
-                }
-                if let Some(frame) = fx.frames.last_mut() {
-                    frame.ret = ret.clone().unwrap_or(Type::Error);
-                }
-                let mut out = Vec::new();
-                for s in &block.stmts {
-                    self.check_stmt(s, fx, &mut out);
-                }
-                if let Some(ret) = &ret {
-                    if !matches!(ret, Type::Void | Type::Error)
-                        && !super::stmt::always_returns(&out)
-                    {
-                        self.error(RuleCode::S100, "not all paths return a value", pos.clone());
+        let (body, prefix) = fx.with_synthetic_owner(
+            super::SyntheticOwnerKind::ArrowBody(body_pos),
+            |fx| match &*a.body {
+                ast::BlockStmtOrExpr::Expr(e) => {
+                    let checked = self.check_expr(e, ret.as_ref(), fx);
+                    if let Some(ret) = &ret {
+                        self.require_assignable(
+                            &checked.ty.clone(),
+                            &ret.clone(),
+                            checked.pos.clone(),
+                            "the lambda body",
+                        );
+                    } else {
+                        ret = Some(checked.ty.clone());
                     }
+                    if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
+                        let origins = self.expr_async_origins(&checked, fx);
+                        fx.handle_async_origins(&origins);
+                    }
+                    let value_pos = checked.pos.clone();
+                    vec![hir::Stmt::Return {
+                        value: Some(checked),
+                        pos: value_pos,
+                    }]
                 }
-                out
-            }
-        };
-        self.finish_synthetic_owner(fx, body_owner, body_pos);
+                ast::BlockStmtOrExpr::BlockStmt(block) => {
+                    self.reserve_block_declarations(&block.stmts, fx);
+                    if ret.is_none() {
+                        self.error(
+                            RuleCode::S100,
+                            "a lambda with a block body requires a return type annotation",
+                            pos.clone(),
+                        );
+                        ret = Some(Type::Error);
+                    }
+                    if let Some(frame) = fx.frames.last_mut() {
+                        frame.ret = ret.clone().unwrap_or(Type::Error);
+                    }
+                    let mut out = Vec::new();
+                    for s in &block.stmts {
+                        self.check_stmt(s, fx, &mut out);
+                    }
+                    if let Some(ret) = &ret {
+                        if !matches!(ret, Type::Void | Type::Error)
+                            && !super::stmt::always_returns(&out)
+                        {
+                            self.error(RuleCode::S100, "not all paths return a value", pos.clone());
+                        }
+                    }
+                    out
+                }
+            },
+        );
+        let mut statements = prefix.into_statements();
+        statements.extend(body);
+        let body = statements;
         let body = if super::has_dispose_binding(&body) {
             self.insert_scope_exit_disposals(
                 body,

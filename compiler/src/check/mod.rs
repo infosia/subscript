@@ -16,7 +16,9 @@ mod tyres;
 #[cfg(test)]
 pub(crate) use expr::{take_classified_places, PlaceKind};
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::rc::Rc;
 
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
@@ -437,16 +439,125 @@ pub(crate) struct FnCtx {
     /// Each async handle creation or async-handle parameter in this body.
     pub async_origins: Vec<(Pos, bool)>,
     /// Owner-scoped local declarations required by rewritten expressions.
-    synthetic_owners: Vec<Vec<hir::Stmt>>,
+    synthetic_owners: Vec<SyntheticPrefix>,
+    diagnostics: DiagnosticSink,
 }
 
+/// Shared order-preserving diagnostic destination for the checker and its body contexts.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DiagnosticSink(Rc<RefCell<Vec<Diagnostic>>>);
+
+impl DiagnosticSink {
+    fn push(&self, diagnostic: Diagnostic) {
+        self.0.borrow_mut().push(diagnostic);
+    }
+
+    fn extend(&self, diagnostics: impl IntoIterator<Item = Diagnostic>) {
+        self.0.borrow_mut().extend(diagnostics);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.borrow().is_empty()
+    }
+
+    fn take(&self) -> Vec<Diagnostic> {
+        std::mem::take(&mut *self.0.borrow_mut())
+    }
+}
+
+/// The source construct that owns a synthetic prefix and its diagnostic position.
 #[derive(Debug)]
-pub(crate) struct SyntheticOwner {
-    depth: usize,
+enum SyntheticOwnerKind {
+    Statement(Pos),
+    Declarator(Pos),
+    ForInit(Pos),
+    ForCond(Pos),
+    ForUpdate(Pos),
+    ArrowBody(Pos),
+    Initializer(Pos),
+    SwitchCase(Pos),
+}
+
+impl SyntheticOwnerKind {
+    fn pos(&self) -> &Pos {
+        match self {
+            Self::Statement(pos)
+            | Self::Declarator(pos)
+            | Self::ForInit(pos)
+            | Self::ForCond(pos)
+            | Self::ForUpdate(pos)
+            | Self::ArrowBody(pos)
+            | Self::Initializer(pos)
+            | Self::SwitchCase(pos) => pos,
+        }
+    }
+}
+
+/// Synthetic declarations awaiting placement in their owner's statement list.
+#[derive(Debug, Default)]
+#[must_use]
+struct SyntheticPrefix(Vec<hir::Stmt>);
+
+impl SyntheticPrefix {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn push(&mut self, statement: hir::Stmt) {
+        self.0.push(statement);
+    }
+
+    fn into_statements(self) -> Vec<hir::Stmt> {
+        self.0
+    }
+}
+
+impl IntoIterator for SyntheticPrefix {
+    type Item = hir::Stmt;
+    type IntoIter = std::vec::IntoIter<hir::Stmt>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+/// Explicit access to a body's expression for prefix rejection and its original diagnostic position.
+trait SyntheticOwnerResult {
+    fn expression_mut(&mut self) -> Option<&mut hir::Expr>;
+}
+
+impl SyntheticOwnerResult for hir::Expr {
+    fn expression_mut(&mut self) -> Option<&mut hir::Expr> {
+        Some(self)
+    }
+}
+
+impl SyntheticOwnerResult for bool {
+    fn expression_mut(&mut self) -> Option<&mut hir::Expr> {
+        None
+    }
+}
+
+impl SyntheticOwnerResult for Vec<hir::Stmt> {
+    fn expression_mut(&mut self) -> Option<&mut hir::Expr> {
+        None
+    }
+}
+
+#[cfg(test)]
+impl<T, E> SyntheticOwnerResult for Result<T, E> {
+    fn expression_mut(&mut self) -> Option<&mut hir::Expr> {
+        None
+    }
 }
 
 impl FnCtx {
-    pub(crate) fn new(ret: Type, is_generator: bool, this_ty: Option<Type>) -> Self {
+    pub(crate) fn new(
+        ret: Type,
+        is_generator: bool,
+        this_ty: Option<Type>,
+        diagnostics: DiagnosticSink,
+    ) -> Self {
         FnCtx {
             frames: vec![Frame {
                 ret,
@@ -464,55 +575,54 @@ impl FnCtx {
             switch_depth: 0,
             async_origins: Vec::new(),
             synthetic_owners: Vec::new(),
+            diagnostics,
         }
     }
 
-    pub(crate) fn enter_synthetic_owner(&mut self) -> SyntheticOwner {
-        let owner = SyntheticOwner {
-            depth: self.synthetic_owners.len(),
-        };
-        self.synthetic_owners.push(Vec::new());
-        owner
+    /// Runs one owner and returns its body result and prefix, including after an early return.
+    ///
+    /// Place `Statement` before its statement and `Declarator` before its own `Let`.
+    /// Place `ForInit` before the loop, `ForCond` at the loop-body head, and `ForUpdate` in the step.
+    /// Place `ArrowBody` at the body head. `Initializer` and `SwitchCase` reject prefixes and return an empty prefix.
+    #[must_use = "use the body result and place the returned prefix in its owner's statement list"]
+    fn with_synthetic_owner<R: SyntheticOwnerResult>(
+        &mut self,
+        kind: SyntheticOwnerKind,
+        body: impl FnOnce(&mut Self) -> R,
+    ) -> (R, SyntheticPrefix) {
+        self.synthetic_owners.push(SyntheticPrefix::default());
+        let mut result = body(self);
+        let pos = result
+            .expression_mut()
+            .map(|expression| expression.pos.clone())
+            .unwrap_or_else(|| kind.pos().clone());
+        let rejects_prefix = matches!(
+            kind,
+            SyntheticOwnerKind::Initializer(_) | SyntheticOwnerKind::SwitchCase(_)
+        );
+        let mut prefix = self.synthetic_owners.pop().unwrap_or_default();
+        if rejects_prefix && !prefix.is_empty() {
+            let mut diagnostic = Diagnostic::new(
+                RuleCode::S100,
+                "a non-place receiver of `??` or `?.` cannot be used in an initializer",
+                pos.clone(),
+            );
+            diagnostic.divergence = Some(Divergence::NonPlaceNullishInitializer);
+            self.diagnostics.push(diagnostic);
+            prefix = SyntheticPrefix::default();
+            if let Some(expression) = result.expression_mut() {
+                expression.kind = hir::ExprKind::Null;
+                expression.ty = Type::Error;
+            }
+        }
+        (result, prefix)
     }
 
-    pub(crate) fn push_synthetic_prefix(&mut self, statement: hir::Stmt) {
+    fn push_synthetic_prefix(&mut self, statement: hir::Stmt) {
         self.synthetic_owners
             .last_mut()
             .expect("a synthetic prefix must have an owner")
             .push(statement);
-    }
-
-    pub(crate) fn drain_synthetic_prefix(&mut self) -> Vec<hir::Stmt> {
-        self.synthetic_owners
-            .last_mut()
-            .map(std::mem::take)
-            .unwrap_or_default()
-    }
-
-    fn leave_synthetic_owner(&mut self, owner: SyntheticOwner, pos: Pos) -> Option<Pos> {
-        if self.synthetic_owners.len() != owner.depth + 1 {
-            self.synthetic_owners.truncate(owner.depth);
-            return Some(pos);
-        }
-        let escaped = self
-            .synthetic_owners
-            .last()
-            .and_then(|statements| statements.first())
-            .map(|statement| match statement {
-                hir::Stmt::Let { pos, .. }
-                | hir::Stmt::Return { pos, .. }
-                | hir::Stmt::If { pos, .. }
-                | hir::Stmt::While { pos, .. }
-                | hir::Stmt::For { pos, .. }
-                | hir::Stmt::ForOf { pos, .. }
-                | hir::Stmt::Switch { pos, .. }
-                | hir::Stmt::Break(pos)
-                | hir::Stmt::Continue(pos) => pos.clone(),
-                hir::Stmt::Expr(expression) => expression.pos.clone(),
-                hir::Stmt::Block(_) => pos.clone(),
-            });
-        self.synthetic_owners.pop();
-        escaped
     }
 
     /// Registers one handle whose underlying computation needs one await.
@@ -594,7 +704,7 @@ impl FnCtx {
 /// The checker.
 pub(crate) struct Checker<'p> {
     pub prog: &'p ParsedProgram,
-    pub diags: Vec<Diagnostic>,
+    pub diags: DiagnosticSink,
     pub classes: Vec<hir::ClassDef>,
     pub class_sigs: Vec<ClassSig>,
     pub class_ids: HashMap<String, ClassId>,
@@ -841,7 +951,7 @@ pub(crate) fn run(
 ) -> Result<hir::Module, Vec<Diagnostic>> {
     let mut ck = Checker {
         prog,
-        diags: Vec::new(),
+        diags: DiagnosticSink::default(),
         classes: Vec::new(),
         class_sigs: Vec::new(),
         class_ids: HashMap::new(),
@@ -965,7 +1075,7 @@ pub(crate) fn run(
         crate::trap_sites::decide_index_checks(&mut module);
         Ok(module)
     } else {
-        Err(ck.diags)
+        Err(ck.diags.take())
     }
 }
 
@@ -1351,21 +1461,6 @@ fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
 }
 
 impl<'p> Checker<'p> {
-    pub(crate) fn finish_synthetic_owner(
-        &mut self,
-        fx: &mut FnCtx,
-        owner: SyntheticOwner,
-        pos: Pos,
-    ) {
-        if let Some(pos) = fx.leave_synthetic_owner(owner, pos) {
-            self.error(
-                RuleCode::S100,
-                "internal: synthetic prefix escaped its owner",
-                pos,
-            );
-        }
-    }
-
     /// Reserves the names that declarations own in one statement list.
     pub(crate) fn reserve_block_declarations(&self, statements: &[ast::Stmt], fx: &mut FnCtx) {
         let Some(scope) = fx.scopes.last_mut() else {
@@ -3991,7 +4086,7 @@ impl<'p> Checker<'p> {
                 }
                 ast::ModuleItem::Stmt(ast::Stmt::Decl(d)) => self.check_body_decl(d, false),
                 ast::ModuleItem::Stmt(s) => {
-                    let mut fx = FnCtx::new(Type::Void, false, None);
+                    let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
                     let mut out = Vec::new();
                     self.check_stmt(s, &mut fx, &mut out);
                     self.top_level.extend(out);
@@ -4042,16 +4137,22 @@ impl<'p> Checker<'p> {
             let Some(field_ty) = field_ty else {
                 continue;
             };
-            let mut fx = FnCtx::new(Type::Void, false, Some(this_ty.clone()));
-            let owner = fx.enter_synthetic_owner();
-            let checked = self.check_expr(value, Some(&field_ty), &mut fx);
-            self.require_assignable(
-                &checked.ty.clone(),
-                &field_ty,
-                checked.pos.clone(),
-                "the descriptor member default",
-            );
-            let checked = self.close_synthetic_expression(checked, &mut fx, owner);
+            let mut fx = FnCtx::new(Type::Void, false, Some(this_ty.clone()), self.diags.clone());
+            let checked = fx
+                .with_synthetic_owner(
+                    SyntheticOwnerKind::Initializer(self.pos(value.span())),
+                    |fx| {
+                        let checked = self.check_expr(value, Some(&field_ty), fx);
+                        self.require_assignable(
+                            &checked.ty.clone(),
+                            &field_ty,
+                            checked.pos.clone(),
+                            "the descriptor member default",
+                        );
+                        checked
+                    },
+                )
+                .0;
             if let Some(field) = self.classes[id.0]
                 .fields
                 .iter_mut()
@@ -4101,18 +4202,23 @@ impl<'p> Checker<'p> {
                         continue;
                     };
                     let pos = self.pos(binding.id.span);
-                    let mut fx = FnCtx::new(Type::Void, false, None);
+                    let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
                     let init = match &d.init {
                         Some(init) => {
-                            let owner = fx.enter_synthetic_owner();
-                            let e = self.check_expr(init, Some(&sig.ty), &mut fx);
-                            self.require_assignable(
-                                &e.ty.clone(),
-                                &sig.ty,
-                                e.pos.clone(),
-                                "the initializer",
-                            );
-                            self.close_synthetic_expression(e, &mut fx, owner)
+                            fx.with_synthetic_owner(
+                                SyntheticOwnerKind::Initializer(self.pos(init.span())),
+                                |fx| {
+                                    let e = self.check_expr(init, Some(&sig.ty), fx);
+                                    self.require_assignable(
+                                        &e.ty.clone(),
+                                        &sig.ty,
+                                        e.pos.clone(),
+                                        "the initializer",
+                                    );
+                                    e
+                                },
+                            )
+                            .0
                         }
                         None => {
                             self.error(
@@ -4514,7 +4620,12 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> Option<hir::Function> {
         let (this_ty, missing_this_divergence) = this;
-        let mut fx = FnCtx::new(sig.ret.clone(), sig.is_generator, this_ty);
+        let mut fx = FnCtx::new(
+            sig.ret.clone(),
+            sig.is_generator,
+            this_ty,
+            self.diags.clone(),
+        );
         fx.frames[0].missing_this_divergence = missing_this_divergence;
         fx.frames[0].is_async = sig.is_async;
         if sig.is_generator {
@@ -4600,17 +4711,22 @@ impl<'p> Checker<'p> {
             let Some(ps) = sig.params.get(i) else { break };
             let pos = self.pos(p.span);
             let default = match &p.pat {
-                ast::Pat::Assign(a) => {
-                    let owner = fx.enter_synthetic_owner();
-                    let e = self.check_expr(&a.right, Some(&ps.ty), fx);
-                    self.require_assignable(
-                        &e.ty.clone(),
-                        &ps.ty,
-                        e.pos.clone(),
-                        "the default value",
-                    );
-                    Some(self.close_synthetic_expression(e, fx, owner))
-                }
+                ast::Pat::Assign(a) => Some(
+                    fx.with_synthetic_owner(
+                        SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
+                        |fx| {
+                            let e = self.check_expr(&a.right, Some(&ps.ty), fx);
+                            self.require_assignable(
+                                &e.ty.clone(),
+                                &ps.ty,
+                                e.pos.clone(),
+                                "the default value",
+                            );
+                            e
+                        },
+                    )
+                    .0,
+                ),
                 _ => None,
             };
             self.declare_local(
@@ -4661,21 +4777,26 @@ impl<'p> Checker<'p> {
                             continue;
                         };
                         let pos = self.pos(key.span);
-                        let mut fx = FnCtx::new(Type::Void, false, None);
+                        let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
                         fx.frames[0].missing_this_divergence =
                             Some(Divergence::StaticMemberSurface);
                         let init = match &prop.value {
                             Some(value) => {
-                                let owner = fx.enter_synthetic_owner();
-                                let expression =
-                                    self.check_expr(value, Some(&signature.ty), &mut fx);
-                                self.require_assignable(
-                                    &expression.ty.clone(),
-                                    &signature.ty,
-                                    expression.pos.clone(),
-                                    "the static field initializer",
-                                );
-                                self.close_synthetic_expression(expression, &mut fx, owner)
+                                fx.with_synthetic_owner(
+                                    SyntheticOwnerKind::Initializer(self.pos(value.span())),
+                                    |fx| {
+                                        let expression =
+                                            self.check_expr(value, Some(&signature.ty), fx);
+                                        self.require_assignable(
+                                            &expression.ty.clone(),
+                                            &signature.ty,
+                                            expression.pos.clone(),
+                                            "the static field initializer",
+                                        );
+                                        expression
+                                    },
+                                )
+                                .0
                             }
                             None => {
                                 self.error(
@@ -4707,17 +4828,23 @@ impl<'p> Checker<'p> {
                         .find(|f| f.name == key.sym.as_ref())
                         .map(|f| f.ty.clone());
                     let Some(field_ty) = field_ty else { continue };
-                    let mut fx = FnCtx::new(Type::Void, false, None);
+                    let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
                     fx.frames[0].missing_this_divergence = Some(Divergence::ThisInFieldInitializer);
-                    let owner = fx.enter_synthetic_owner();
-                    let e = self.check_expr(value, Some(&field_ty), &mut fx);
-                    self.require_assignable(
-                        &e.ty.clone(),
-                        &field_ty,
-                        e.pos.clone(),
-                        "the field initializer",
-                    );
-                    let e = self.close_synthetic_expression(e, &mut fx, owner);
+                    let e = fx
+                        .with_synthetic_owner(
+                            SyntheticOwnerKind::Initializer(self.pos(value.span())),
+                            |fx| {
+                                let e = self.check_expr(value, Some(&field_ty), fx);
+                                self.require_assignable(
+                                    &e.ty.clone(),
+                                    &field_ty,
+                                    e.pos.clone(),
+                                    "the field initializer",
+                                );
+                                e
+                            },
+                        )
+                        .0;
                     if let Some(field) = self.classes[id.0]
                         .fields
                         .iter_mut()
@@ -4738,7 +4865,8 @@ impl<'p> Checker<'p> {
                         is_async: false,
                         yield_known: true,
                     };
-                    let mut fx = FnCtx::new(Type::Void, false, Some(this_ty.clone()));
+                    let mut fx =
+                        FnCtx::new(Type::Void, false, Some(this_ty.clone()), self.diags.clone());
                     let mut hir_params = Vec::new();
                     for (i, p) in ctor.params.iter().enumerate() {
                         let ast::ParamOrTsParamProp::Param(param) = p else {
@@ -4746,11 +4874,13 @@ impl<'p> Checker<'p> {
                         };
                         let Some(ps) = sig.params.get(i) else { break };
                         let default = match &param.pat {
-                            ast::Pat::Assign(a) => {
-                                let owner = fx.enter_synthetic_owner();
-                                let e = self.check_expr(&a.right, Some(&ps.ty), &mut fx);
-                                Some(self.close_synthetic_expression(e, &mut fx, owner))
-                            }
+                            ast::Pat::Assign(a) => Some(
+                                fx.with_synthetic_owner(
+                                    SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
+                                    |fx| self.check_expr(&a.right, Some(&ps.ty), fx),
+                                )
+                                .0,
+                            ),
                             _ => None,
                         };
                         let param_pos = self.pos(param.span);
@@ -5267,6 +5397,53 @@ impl<'p> Checker<'p> {
 #[cfg(test)]
 mod tests {
     use crate::{check_program, RuleCode, SourceFile};
+
+    #[test]
+    fn synthetic_owner_returns_its_prefix_after_question_mark() {
+        use super::{DiagnosticSink, FnCtx, SyntheticOwnerKind};
+        use crate::{hir, types::Type, Pos};
+
+        let diagnostics = DiagnosticSink::default();
+        let mut fx = FnCtx::new(Type::Void, false, None, diagnostics.clone());
+        let pos = Pos::new("test.ts", 1, 1);
+        let statement = hir::Stmt::Let {
+            name: "[[early]]".into(),
+            ty: Type::Bool,
+            mutable: false,
+            dispose: false,
+            init: hir::Expr {
+                kind: hir::ExprKind::Bool(true),
+                ty: Type::Bool,
+                pos: pos.clone(),
+            },
+            pos: pos.clone(),
+        };
+        let entry_depth = fx.synthetic_owners.len();
+        let (outer_result, outer_prefix) = fx.with_synthetic_owner(
+            SyntheticOwnerKind::Statement(pos.clone()),
+            |fx| -> Result<(), ()> {
+                fx.push_synthetic_prefix(statement.clone());
+                let inner_depth = fx.synthetic_owners.len();
+                let (result, prefix) = fx.with_synthetic_owner(
+                    SyntheticOwnerKind::Statement(pos.clone()),
+                    |fx| -> Result<(), ()> {
+                        fx.push_synthetic_prefix(statement.clone());
+                        Err(())?;
+                        Ok(())
+                    },
+                );
+                assert_eq!(result, Err(()));
+                assert_eq!(prefix.0, vec![statement.clone()]);
+                assert_eq!(fx.synthetic_owners.len(), inner_depth);
+                result?;
+                Ok(())
+            },
+        );
+        assert_eq!(outer_result, Err(()));
+        assert_eq!(outer_prefix.0, vec![statement]);
+        assert_eq!(fx.synthetic_owners.len(), entry_depth);
+        assert!(diagnostics.is_empty());
+    }
 
     #[test]
     fn reachable_import_of_an_absent_export_uses_s016() {

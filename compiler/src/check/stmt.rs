@@ -421,133 +421,136 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
-        let owner = fx.enter_synthetic_owner();
-        let terminates = match s {
-            ast::Stmt::Decl(ast::Decl::Var(v)) => {
-                self.check_let(v, fx, out);
-                false
-            }
-            ast::Stmt::Decl(ast::Decl::Using(using)) => {
-                if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
-                    self.error_diverging(
+        let start = out.len();
+        let (terminates, prefix) = fx.with_synthetic_owner(
+            super::SyntheticOwnerKind::Statement(self.pos(s.span())),
+            |fx| match s {
+                ast::Stmt::Decl(ast::Decl::Var(v)) => {
+                    self.check_let(v, fx, out);
+                    false
+                }
+                ast::Stmt::Decl(ast::Decl::Using(using)) => {
+                    if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
+                        self.error_diverging(
+                            RuleCode::S100,
+                            "nested declarations are not in the decided surface",
+                            self.pos(using.span),
+                            Divergence::UsingDeclaration,
+                        );
+                    } else {
+                        self.check_using(using, fx, out);
+                    }
+                    false
+                }
+                ast::Stmt::Decl(other) => {
+                    let pos = self.pos(other.span());
+                    self.error(
                         RuleCode::S100,
                         "nested declarations are not in the decided surface",
-                        self.pos(using.span),
-                        Divergence::UsingDeclaration,
+                        pos,
                     );
-                } else {
-                    self.check_using(using, fx, out);
+                    false
                 }
-                false
-            }
-            ast::Stmt::Decl(other) => {
-                let pos = self.pos(other.span());
-                self.error(
-                    RuleCode::S100,
-                    "nested declarations are not in the decided surface",
-                    pos,
-                );
-                false
-            }
-            ast::Stmt::Expr(e) => {
-                out.extend(self.check_expr_stmt(&e.expr, fx));
-                false
-            }
-            ast::Stmt::Return(r) => {
-                self.check_return(r, fx, out);
-                true
-            }
-            ast::Stmt::If(i) => self.check_if(i, fx, out),
-            ast::Stmt::While(w) => {
-                self.check_while(w, fx, out);
-                false
-            }
-            ast::Stmt::For(f) => {
-                self.check_for(f, fx, out);
-                false
-            }
-            ast::Stmt::Switch(sw) => {
-                self.check_switch(sw, fx, out);
-                false
-            }
-            ast::Stmt::Break(b) => {
-                let pos = self.pos(b.span);
-                if b.label.is_some() {
-                    self.error(RuleCode::S100, "labeled break is not decided", pos.clone());
+                ast::Stmt::Expr(e) => {
+                    out.extend(self.check_expr_stmt(&e.expr, fx));
+                    false
                 }
-                if fx.loop_depth == 0 && fx.switch_depth == 0 {
+                ast::Stmt::Return(r) => {
+                    self.check_return(r, fx, out);
+                    true
+                }
+                ast::Stmt::If(i) => self.check_if(i, fx, out),
+                ast::Stmt::While(w) => {
+                    self.check_while(w, fx, out);
+                    false
+                }
+                ast::Stmt::For(f) => {
+                    self.check_for(f, fx, out);
+                    false
+                }
+                ast::Stmt::Switch(sw) => {
+                    self.check_switch(sw, fx, out);
+                    false
+                }
+                ast::Stmt::Break(b) => {
+                    let pos = self.pos(b.span);
+                    if b.label.is_some() {
+                        self.error(RuleCode::S100, "labeled break is not decided", pos.clone());
+                    }
+                    if fx.loop_depth == 0 && fx.switch_depth == 0 {
+                        self.error(
+                            RuleCode::S100,
+                            "`break` outside a loop or switch",
+                            pos.clone(),
+                        );
+                    }
+                    out.push(hir::Stmt::Break(pos));
+                    true
+                }
+                ast::Stmt::Continue(c) => {
+                    let pos = self.pos(c.span);
+                    if c.label.is_some() {
+                        self.error(
+                            RuleCode::S100,
+                            "labeled continue is not decided",
+                            pos.clone(),
+                        );
+                    }
+                    if fx.loop_depth == 0 {
+                        self.error(RuleCode::S100, "`continue` outside a loop", pos.clone());
+                    }
+                    out.push(hir::Stmt::Continue(pos));
+                    true
+                }
+                ast::Stmt::Block(b) => {
+                    fx.scopes.push(Default::default());
+                    self.reserve_block_declarations(&b.stmts, fx);
+                    let mut inner = Vec::new();
+                    let mut terminates = false;
+                    for s in &b.stmts {
+                        terminates |= self.check_stmt(s, fx, &mut inner);
+                    }
+                    fx.scopes.pop();
+                    out.push(hir::Stmt::Block(inner));
+                    terminates
+                }
+                ast::Stmt::Throw(t) => {
+                    let pos = self.pos(t.span);
+                    self.error_diverging(
+                        RuleCode::S010,
+                        "exceptions are not in the language; return a result value",
+                        pos,
+                        Divergence::Exceptions,
+                    );
+                    true
+                }
+                ast::Stmt::Try(t) => {
+                    let pos = self.pos(t.span);
+                    self.error_diverging(
+                        RuleCode::S010,
+                        "exceptions are not in the language; return a result value",
+                        pos,
+                        Divergence::Exceptions,
+                    );
+                    false
+                }
+                ast::Stmt::ForOf(for_of) => {
+                    self.check_for_of(for_of, fx, out);
+                    false
+                }
+                ast::Stmt::Empty(_) => false,
+                other => {
+                    let pos = self.pos(other.span());
                     self.error(
                         RuleCode::S100,
-                        "`break` outside a loop or switch",
-                        pos.clone(),
+                        "statement form outside the decided surface",
+                        pos,
                     );
+                    false
                 }
-                out.push(hir::Stmt::Break(pos));
-                true
-            }
-            ast::Stmt::Continue(c) => {
-                let pos = self.pos(c.span);
-                if c.label.is_some() {
-                    self.error(
-                        RuleCode::S100,
-                        "labeled continue is not decided",
-                        pos.clone(),
-                    );
-                }
-                if fx.loop_depth == 0 {
-                    self.error(RuleCode::S100, "`continue` outside a loop", pos.clone());
-                }
-                out.push(hir::Stmt::Continue(pos));
-                true
-            }
-            ast::Stmt::Block(b) => {
-                fx.scopes.push(Default::default());
-                self.reserve_block_declarations(&b.stmts, fx);
-                let mut inner = Vec::new();
-                let mut terminates = false;
-                for s in &b.stmts {
-                    terminates |= self.check_stmt(s, fx, &mut inner);
-                }
-                fx.scopes.pop();
-                out.push(hir::Stmt::Block(inner));
-                terminates
-            }
-            ast::Stmt::Throw(t) => {
-                let pos = self.pos(t.span);
-                self.error_diverging(
-                    RuleCode::S010,
-                    "exceptions are not in the language; return a result value",
-                    pos,
-                    Divergence::Exceptions,
-                );
-                true
-            }
-            ast::Stmt::Try(t) => {
-                let pos = self.pos(t.span);
-                self.error_diverging(
-                    RuleCode::S010,
-                    "exceptions are not in the language; return a result value",
-                    pos,
-                    Divergence::Exceptions,
-                );
-                false
-            }
-            ast::Stmt::ForOf(for_of) => {
-                self.check_for_of(for_of, fx, out);
-                false
-            }
-            ast::Stmt::Empty(_) => false,
-            other => {
-                let pos = self.pos(other.span());
-                self.error(
-                    RuleCode::S100,
-                    "statement form outside the decided surface",
-                    pos,
-                );
-                false
-            }
-        };
-        self.finish_synthetic_owner(fx, owner, self.pos(s.span()));
+            },
+        );
+        out.splice(start..start, prefix);
         terminates
     }
 
@@ -614,8 +617,16 @@ impl<'p> Checker<'p> {
                 fx.discard_pending(&name);
                 continue;
             };
-            let init = self.check_expr(init_ast, ann.as_ref(), fx);
-            out.extend(fx.drain_synthetic_prefix());
+            let init = if declarations.len() > 1 {
+                let (init, prefix) = fx.with_synthetic_owner(
+                    super::SyntheticOwnerKind::Declarator(self.pos(d.span)),
+                    |fx| self.check_expr(init_ast, ann.as_ref(), fx),
+                );
+                out.extend(prefix);
+                init
+            } else {
+                self.check_expr(init_ast, ann.as_ref(), fx)
+            };
             let ty = match ann {
                 Some(ann) => {
                     self.require_assignable(
@@ -754,7 +765,6 @@ impl<'p> Checker<'p> {
                 None
             }
         };
-        out.extend(fx.drain_synthetic_prefix());
         out.push(hir::Stmt::Return { value, pos });
     }
 
@@ -792,7 +802,6 @@ impl<'p> Checker<'p> {
     fn check_if(&mut self, i: &ast::IfStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) -> bool {
         let pos = self.pos(i.span);
         let cond = self.check_expr(&i.test, None, fx);
-        out.extend(fx.drain_synthetic_prefix());
         self.require_bool(&cond);
         let (then_extra, else_extra) = narrow_paths(&cond);
 
@@ -850,7 +859,6 @@ impl<'p> Checker<'p> {
         fx.narrowed.retain(|k| !roots.contains(root_of(k)));
 
         let cond = self.check_expr(&w.test, None, fx);
-        out.extend(fx.drain_synthetic_prefix());
         self.require_bool(&cond);
         let (then_extra, _) = narrow_paths(&cond);
 
@@ -870,20 +878,27 @@ impl<'p> Checker<'p> {
         fx.scopes.push(Default::default());
         let init = match &f.init {
             Some(ast::VarDeclOrExpr::VarDecl(v)) => {
-                let owner = fx.enter_synthetic_owner();
-                let mut init_out = Vec::new();
-                self.check_let(v, fx, &mut init_out);
-                init_out.extend(fx.drain_synthetic_prefix());
-                self.finish_synthetic_owner(fx, owner, self.pos(v.span));
+                let (init_out, prefix) = fx.with_synthetic_owner(
+                    super::SyntheticOwnerKind::ForInit(self.pos(v.span)),
+                    |fx| {
+                        let mut init_out = Vec::new();
+                        self.check_let(v, fx, &mut init_out);
+                        init_out
+                    },
+                );
+                let mut statements = prefix.into_statements();
+                statements.extend(init_out);
+                let mut init_out = statements;
                 let init = init_out.pop().map(Box::new);
                 out.extend(init_out);
                 init
             }
             Some(ast::VarDeclOrExpr::Expr(e)) => {
-                let owner = fx.enter_synthetic_owner();
-                let checked = self.check_expr(e, None, fx);
-                out.extend(fx.drain_synthetic_prefix());
-                self.finish_synthetic_owner(fx, owner, self.pos(e.span()));
+                let (checked, prefix) = fx.with_synthetic_owner(
+                    super::SyntheticOwnerKind::ForInit(self.pos(e.span())),
+                    |fx| self.check_expr(e, None, fx),
+                );
+                out.extend(prefix);
                 Some(Box::new(hir::Stmt::Expr(checked)))
             }
             None => None,
@@ -901,14 +916,17 @@ impl<'p> Checker<'p> {
 
         let (cond, cond_prefix) = match &f.test {
             Some(test) => {
-                let owner = fx.enter_synthetic_owner();
-                let checked = self.check_expr(test, None, fx);
-                self.require_bool(&checked);
-                let prefix = fx.drain_synthetic_prefix();
-                self.finish_synthetic_owner(fx, owner, self.pos(test.span()));
+                let (checked, prefix) = fx.with_synthetic_owner(
+                    super::SyntheticOwnerKind::ForCond(self.pos(test.span())),
+                    |fx| {
+                        let checked = self.check_expr(test, None, fx);
+                        self.require_bool(&checked);
+                        checked
+                    },
+                );
                 (Some(checked), prefix)
             }
-            None => (None, Vec::new()),
+            None => (None, super::SyntheticPrefix::default()),
         };
         let then_extra = cond.as_ref().map(|c| narrow_paths(c).0).unwrap_or_default();
 
@@ -917,10 +935,13 @@ impl<'p> Checker<'p> {
         fx.loop_depth += 1;
         let (mut body, _) = self.check_branch(&f.body, fx);
         let step_statements = f.update.as_ref().map(|update| {
-            let owner = fx.enter_synthetic_owner();
-            let statements = self.check_expr_stmt(update, fx);
-            self.finish_synthetic_owner(fx, owner, self.pos(update.span()));
-            statements
+            let (statements, prefix) = fx.with_synthetic_owner(
+                super::SyntheticOwnerKind::ForUpdate(self.pos(update.span())),
+                |fx| self.check_expr_stmt(update, fx),
+            );
+            let mut step = prefix.into_statements();
+            step.extend(statements);
+            step
         });
         fx.loop_depth -= 1;
         base.retain(|k| fx.narrowed.contains(k) || then_extra.contains(k));
@@ -955,7 +976,7 @@ impl<'p> Checker<'p> {
         let (cond, body) = if cond_prefix.is_empty() {
             (cond, body)
         } else {
-            let mut guarded = cond_prefix;
+            let mut guarded = cond_prefix.into_statements();
             guarded.push(hir::Stmt::If {
                 cond,
                 then: body,
@@ -998,7 +1019,6 @@ impl<'p> Checker<'p> {
             return;
         };
         let (subject, kind, elem_ty, generator) = self.check_for_of_subject(&f.right, fx);
-        out.extend(fx.drain_synthetic_prefix());
         if matches!(subject.ty, Type::Error) || matches!(elem_ty, Type::Error) {
             return;
         }
@@ -1331,10 +1351,74 @@ impl<'p> Checker<'p> {
         (subject, None, Type::Error, false)
     }
 
+    fn check_switch_case_test(
+        &mut self,
+        t: &ast::Expr,
+        disc_ty: &Type,
+        alias_switch: Option<&(String, Vec<String>)>,
+        alias_members_seen: &mut HashSet<usize>,
+        alias_labels_valid: &mut bool,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
+        let checked = self.check_expr(t, Some(disc_ty), fx);
+        if let Some((alias_name, members)) = alias_switch {
+            match t {
+                ast::Expr::Lit(ast::Lit::Str(label)) => {
+                    let label = label.value.to_string();
+                    if let Some(index) = members.iter().position(|member| member == &label) {
+                        self.require_assignable(
+                            &checked.ty.clone(),
+                            disc_ty,
+                            checked.pos.clone(),
+                            "the case label",
+                        );
+                        if !alias_members_seen.insert(index) {
+                            *alias_labels_valid = false;
+                            self.error_diverging(
+                                RuleCode::S100,
+                                format!(
+                                    "duplicate case label {label:?} for string-literal union alias `{alias_name}`"
+                                ),
+                                checked.pos.clone(),
+                                Divergence::SwitchOverAlias,
+                            );
+                        }
+                    } else {
+                        *alias_labels_valid = false;
+                        self.error(
+                            RuleCode::S100,
+                            format!(
+                                "case label {label:?} is not a member of string-literal union alias `{alias_name}`"
+                            ),
+                            checked.pos.clone(),
+                        );
+                    }
+                }
+                _ => {
+                    *alias_labels_valid = false;
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "case labels for string-literal union alias `{alias_name}` must be string literals naming a member"
+                        ),
+                        checked.pos.clone(),
+                    );
+                }
+            }
+        } else {
+            self.require_assignable(
+                &checked.ty.clone(),
+                disc_ty,
+                checked.pos.clone(),
+                "the case label",
+            );
+        }
+        checked
+    }
+
     fn check_switch(&mut self, sw: &ast::SwitchStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(sw.span);
         let disc = self.check_expr(&sw.discriminant, None, fx);
-        out.extend(fx.drain_synthetic_prefix());
         if !disc.ty.is_integer()
             && !matches!(
                 disc.ty,
@@ -1401,62 +1485,20 @@ impl<'p> Checker<'p> {
             }
             let case_pos = self.pos(case.span);
             let test = if let Some(t) = &case.test {
-                let owner = fx.enter_synthetic_owner();
-                let checked = self.check_expr(t, Some(&disc_ty), fx);
-                if let Some((alias_name, members)) = &alias_switch {
-                    match &**t {
-                        ast::Expr::Lit(ast::Lit::Str(label)) => {
-                            let label = label.value.to_string();
-                            if let Some(index) = members.iter().position(|member| member == &label)
-                            {
-                                self.require_assignable(
-                                    &checked.ty.clone(),
-                                    &disc_ty,
-                                    checked.pos.clone(),
-                                    "the case label",
-                                );
-                                if !alias_members_seen.insert(index) {
-                                    alias_labels_valid = false;
-                                    self.error_diverging(
-                                        RuleCode::S100,
-                                        format!(
-                                            "duplicate case label {label:?} for string-literal union alias `{alias_name}`"
-                                        ),
-                                        checked.pos.clone(),
-                                        Divergence::SwitchOverAlias,
-                                    );
-                                }
-                            } else {
-                                alias_labels_valid = false;
-                                self.error(
-                                    RuleCode::S100,
-                                    format!(
-                                        "case label {label:?} is not a member of string-literal union alias `{alias_name}`"
-                                    ),
-                                    checked.pos.clone(),
-                                );
-                            }
-                        }
-                        _ => {
-                            alias_labels_valid = false;
-                            self.error(
-                                RuleCode::S100,
-                                format!(
-                                    "case labels for string-literal union alias `{alias_name}` must be string literals naming a member"
-                                ),
-                                checked.pos.clone(),
-                            );
-                        }
-                    }
-                } else {
-                    self.require_assignable(
-                        &checked.ty.clone(),
-                        &disc_ty,
-                        checked.pos.clone(),
-                        "the case label",
-                    );
-                }
-                Some(self.close_synthetic_expression(checked, fx, owner))
+                let (checked, _) = fx.with_synthetic_owner(
+                    super::SyntheticOwnerKind::SwitchCase(self.pos(t.span())),
+                    |fx| {
+                        self.check_switch_case_test(
+                            t,
+                            &disc_ty,
+                            alias_switch.as_ref(),
+                            &mut alias_members_seen,
+                            &mut alias_labels_valid,
+                            fx,
+                        )
+                    },
+                );
+                Some(checked)
             } else {
                 has_default = true;
                 None
