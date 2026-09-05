@@ -12196,10 +12196,11 @@ instances of one protocol with no type to hold it.
    §87 review: a `let`/`const`/`using` with two or more declarators
    had the statement as its owner, so the first round placed every
    declarator's prefix before the first binding —
-   `let a: Box = new Box(2), b: i32 = (pick(a) ?? fb).v;` ran
-   `pick(a)` before `new Box(2)` and read `a` before its binding.
-   The committed checker drained per declarator; the owner list did
-   not say so. A declarator of a declaration with two or more
+   `let a: Box = new Box(2), b: i32 = (pick(a) ?? fb).v;` put the
+   synthetic `Let` before `a`'s `Let`. The committed checker drained
+   per declarator; the owner list did not say so. Measured after
+   the review: the runtime order is unchanged (87.3 item 1), so
+   this is a placement rule, not a semantics defect. A declarator of a declaration with two or more
    declarators is its own owner, and its prefix goes before that
    declarator's `Let`.)*
    The operation returns the body's result and the drained prefix as
@@ -12246,12 +12247,16 @@ instances of one protocol with no type to hold it.
    The `Declarator` cells use a declaration with two declarators
    where the second's initializer reads the first (`let a = …,
    b = (pick(a) ?? fb).v;`): the expected HIR has the first `Let`,
-   then the synthetic `Let`, then the second `Let`.
-   `corpus/accept/a183-declarator-prefix-order.ts` + `.expected`
-   pins the same shape with output that shows the order
-   (`new Box` prints before `pick`): green at `3967e9c`, red on the
-   first §87 tree (the review's shape), `tsc: accepts`,
-   `js-comparable: yes`. For
+   then the synthetic `Let`, then the second `Let`. That cell is
+   the Red for the `Declarator` owner: on the first §87 tree the
+   synthetic `Let` precedes the first `Let`. *(Corrected 2026-09-05,
+   measured: the synthetic `Let` of §82.3 carries a `Null`
+   initializer and the receiver call stays inside the expression,
+   so the misplacement has no runtime effect — `new Box 2` prints
+   before `pick 2` on both tiers and under `node` on the first §87
+   tree as well. No corpus entry can be red for it (core principle
+   10), so none is added; the rule is a placement rule, and the
+   HIR is its witness.)* For
    each cell the expected value is **hand-written**: the diagnostic
    code and position for `Initializer` and `SwitchCase`, and for the
    other five the number of synthetic locals in the lowered HIR and
