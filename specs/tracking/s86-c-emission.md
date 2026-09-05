@@ -673,3 +673,51 @@ origins `%0` and `%9`: interval `true`, graph `false`. Cause:
 adds edges to direct value operands only. Contract: §86.1 rule 2b at
 `311e6f6` (forced). The interval query is the definition; the old
 graph is corrected for the control.
+
+## Task A round 3 — the control agreed; the review (at `311e6f6`)
+
+Control under rules 2a and 2b: 181 corpus entries, 1,051 functions,
+and the fixture at widths 8 and 16 — the interval relation equals
+the corrected edge graph on every ordered origin pair; `value_slots`,
+every slot field, both clear sets, coalesced storage, and the emitted
+C are identical between the graph-driven and the interval-driven
+derivations. No golden moved.
+
+Stage table after Task A, release, Apple M2 (seconds):
+
+| Stage | Width 16 | Width 32 |
+|---|---:|---:|
+| `Interference` build | 0.0013 | 0.0050 |
+| slot loop | 0.0010 | 0.0098 |
+| plan tail | 0.0001 | 0.0004 |
+| `coalesced_value_storage` | 0.0008 | 0.0095 |
+| `emit_c` total | 0.42 | 9.58 |
+| maximum RSS | 30 MiB | 126 MiB |
+
+Storage planning went from 11.1 s and 17.3 s (plan, coalescing) to
+under 0.03 s together; `emit_c` from 27.2 s to 9.58 s; RSS from
+1.59 GiB to 126 MiB. The remaining 9.5 s is Task B's region.
+
+Fresh review (read-only): CRITICAL 0, MAJOR 2, MINOR 6.
+
+- MAJOR: `Coalescing::try_merge` is O(members × members) per merge
+  (12.6× measured for 5.4×); the parameter rules of `interferes`
+  scan every block on a miss, invisible to the one-block fixture.
+  Both assigned to Task A at `0f33896`.
+- MINOR: test (d) did not isolate the function-parameter rule; the
+  control's two derivations share the mention-set helpers
+  (`record_operand`, `record_terminator`), so a defect there is
+  invisible to the control (core principle 12; recorded, not
+  changed); the `cfg(test)` record-only hook and the
+  `REFERENCE_MODE` branch are control apparatus and leave in the
+  landing commit; missing `///` on five crate-visible items; one
+  dead guard.
+- Fact for the record: after `thread_suspension_live_ins`
+  (`codegen/src/lir.rs`), `Suspend.invalidates` is a subset of the
+  successor's live-in, so the terminator mention in
+  `record_terminator` is redundant under the form (reviewer). No
+  divergence; the control cannot show it.
+
+The first full gate on the round-3 tree stopped at `build`: four
+dead-code warnings from the `lib test` control helpers. Round 4
+lands the control.
