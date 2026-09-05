@@ -102,8 +102,8 @@ enum AggregateArgPlan {
     Images(Vec<EightbyteImage>),
     /// The address of a caller copy is the argument.
     Indirect,
-    /// SysV MEMORY class: the caller copies the bytes onto the call stack.
-    Memory,
+    /// SysV MEMORY class: the caller copy occupies `stack_size` bytes, rounded to whole eightbytes.
+    Memory { stack_size: u32 },
 }
 
 /// Whether the leaves form a Homogeneous Floating-point Aggregate (AAPCS
@@ -143,7 +143,7 @@ fn plan_aggregate_arg(
     abi: AggregateAbi,
     leaves: &[(u32, types::Type)],
     total: u32,
-) -> AggregateArgPlan {
+) -> Result<AggregateArgPlan, String> {
     let integer_images = |total: u32| {
         (0..total.div_ceil(8))
             .map(|index| EightbyteImage {
@@ -153,7 +153,7 @@ fn plan_aggregate_arg(
             })
             .collect::<Vec<_>>()
     };
-    match abi {
+    Ok(match abi {
         AggregateAbi::Aapcs64 => {
             if is_pure_hfa_leaves(leaves) {
                 AggregateArgPlan::Hfa(leaves.to_vec())
@@ -185,7 +185,9 @@ fn plan_aggregate_arg(
                     .iter()
                     .any(|(offset, ty)| sysv_leaf_is_unaligned(*offset, *ty))
             {
-                return AggregateArgPlan::Memory;
+                return Ok(AggregateArgPlan::Memory {
+                    stack_size: round_up_layout(total.max(1), 8, "boundary aggregate stack copy")?,
+                });
             }
             let images = (0..total.div_ceil(8))
                 .map(|index| {
@@ -216,7 +218,7 @@ fn plan_aggregate_arg(
                 .collect();
             AggregateArgPlan::Images(images)
         }
-    }
+    })
 }
 
 /// Whether any `f16` leaf falls inside a register-class image. `f16` is
@@ -283,7 +285,7 @@ fn plan_sysv_struct_return(
     size: u32,
     f16_offsets: &[u32],
 ) -> Result<Option<Vec<EightbyteImage>>, String> {
-    match plan_aggregate_arg(AggregateAbi::SysV, leaves, size) {
+    match plan_aggregate_arg(AggregateAbi::SysV, leaves, size)? {
         AggregateArgPlan::Images(images) => {
             if sysv_images_contain_f16(&images, f16_offsets) {
                 return Err(internal(
@@ -301,7 +303,7 @@ fn plan_sysv_struct_return(
             }
             Ok(Some(images))
         }
-        AggregateArgPlan::Memory => Ok(None),
+        AggregateArgPlan::Memory { .. } => Ok(None),
         other => Err(internal(format!(
             "SysV struct-return planner produced {other:?}"
         ))),
@@ -512,7 +514,8 @@ mod aggregate_abi_tests {
     fn aapcs64_passes_a_small_composite_as_eightbyte_images() {
         let leaves = [(0, types::I32), (4, types::I32), (8, types::I64)];
         assert_eq!(
-            plan_aggregate_arg(AggregateAbi::Aapcs64, &leaves, 16),
+            plan_aggregate_arg(AggregateAbi::Aapcs64, &leaves, 16)
+                .expect("aggregate argument plan"),
             AggregateArgPlan::Images(vec![
                 image(0, RegisterClass::Integer, types::I64),
                 image(8, RegisterClass::Integer, types::I64),
@@ -524,12 +527,12 @@ mod aggregate_abi_tests {
     fn aapcs64_passes_an_hfa_component_wise_and_a_large_struct_by_reference() {
         let hfa = [(0, types::F32), (4, types::F32)];
         assert_eq!(
-            plan_aggregate_arg(AggregateAbi::Aapcs64, &hfa, 8),
+            plan_aggregate_arg(AggregateAbi::Aapcs64, &hfa, 8).expect("aggregate argument plan"),
             AggregateArgPlan::Hfa(hfa.to_vec())
         );
         let wide = [(0, types::I64), (8, types::I64), (16, types::I64)];
         assert_eq!(
-            plan_aggregate_arg(AggregateAbi::Aapcs64, &wide, 24),
+            plan_aggregate_arg(AggregateAbi::Aapcs64, &wide, 24).expect("aggregate argument plan"),
             AggregateArgPlan::Indirect
         );
     }
@@ -542,17 +545,18 @@ mod aggregate_abi_tests {
     fn win64_packs_one_two_four_and_eight_byte_aggregates_only() {
         let byte = [(0, types::I8)];
         assert_eq!(
-            plan_aggregate_arg(AggregateAbi::Win64, &byte, 1),
+            plan_aggregate_arg(AggregateAbi::Win64, &byte, 1).expect("aggregate argument plan"),
             AggregateArgPlan::Images(vec![image(0, RegisterClass::Integer, types::I8)])
         );
         let pair = [(0, types::F32), (4, types::F32)];
         assert_eq!(
-            plan_aggregate_arg(AggregateAbi::Win64, &pair, 8),
+            plan_aggregate_arg(AggregateAbi::Win64, &pair, 8).expect("aggregate argument plan"),
             AggregateArgPlan::Images(vec![image(0, RegisterClass::Integer, types::I64)])
         );
         for size in [3u32, 5, 6, 7, 12, 16, 24] {
             assert_eq!(
-                plan_aggregate_arg(AggregateAbi::Win64, &pair, size),
+                plan_aggregate_arg(AggregateAbi::Win64, &pair, size)
+                    .expect("aggregate argument plan"),
                 AggregateArgPlan::Indirect,
                 "size {size} must pass by reference on Win64"
             );
@@ -563,7 +567,7 @@ mod aggregate_abi_tests {
     fn sysv_classifies_each_eightbyte_and_reverts_a_wide_one_to_memory() {
         let mixed = [(0, types::I32), (4, types::I32), (8, types::F64)];
         assert_eq!(
-            plan_aggregate_arg(AggregateAbi::SysV, &mixed, 16),
+            plan_aggregate_arg(AggregateAbi::SysV, &mixed, 16).expect("aggregate argument plan"),
             AggregateArgPlan::Images(vec![
                 image(0, RegisterClass::Integer, types::I64),
                 image(8, RegisterClass::Sse, types::F64),
@@ -571,16 +575,36 @@ mod aggregate_abi_tests {
         );
         let wide = [(0, types::I64), (8, types::I64), (16, types::I64)];
         assert_eq!(
-            plan_aggregate_arg(AggregateAbi::SysV, &wide, 24),
-            AggregateArgPlan::Memory
+            plan_aggregate_arg(AggregateAbi::SysV, &wide, 24).expect("aggregate argument plan"),
+            AggregateArgPlan::Memory { stack_size: 24 }
         );
+    }
+
+    #[test]
+    fn sysv_memory_arguments_occupy_whole_eightbytes() {
+        let twenty = [
+            (0, types::I8),
+            (4, types::F32),
+            (8, types::F32),
+            (12, types::F32),
+            (16, types::I16),
+        ];
+        let twenty_four = [(0, types::I64), (8, types::I64), (16, types::I64)];
+        // The psABI assigns three whole eightbytes to each caller copy.
+        for (leaves, size) in [(&twenty[..], 20), (&twenty_four[..], 24)] {
+            assert_eq!(
+                plan_aggregate_arg(AggregateAbi::SysV, leaves, size).expect("MEMORY argument plan"),
+                AggregateArgPlan::Memory { stack_size: 24 },
+                "aggregate size {size}"
+            );
+        }
     }
 
     #[test]
     fn sysv_gives_a_lone_trailing_f32_an_f32_image() {
         let leaves = [(0, types::I64), (8, types::F32)];
         assert_eq!(
-            plan_aggregate_arg(AggregateAbi::SysV, &leaves, 12),
+            plan_aggregate_arg(AggregateAbi::SysV, &leaves, 12).expect("aggregate argument plan"),
             AggregateArgPlan::Images(vec![
                 image(0, RegisterClass::Integer, types::I64),
                 image(8, RegisterClass::Sse, types::F32),
@@ -592,8 +616,9 @@ mod aggregate_abi_tests {
     fn sysv_reverts_an_unaligned_leaf_to_memory() {
         let straddling = [(0, types::I32), (5, types::I64)];
         assert_eq!(
-            plan_aggregate_arg(AggregateAbi::SysV, &straddling, 16),
-            AggregateArgPlan::Memory
+            plan_aggregate_arg(AggregateAbi::SysV, &straddling, 16)
+                .expect("aggregate argument plan"),
+            AggregateArgPlan::Memory { stack_size: 16 }
         );
     }
 
@@ -5083,7 +5108,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                  §12.3a); target {triple} is unsupported"
             ))
         })?;
-        match plan_aggregate_arg(abi, &components.leaves, size) {
+        match plan_aggregate_arg(abi, &components.leaves, size)? {
             AggregateArgPlan::Hfa(hfa) => {
                 for (offset, ty) in hfa {
                     let value = self.builder.ins().load(ty, flags(), address, offset as i32);
@@ -5117,12 +5142,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.copy_bytes(copy, address, size, align);
                 self.push_foreign_argument(signature, arguments, types::I64, copy);
             }
-            AggregateArgPlan::Memory => {
-                let copy = self.stack_slot(size, align);
-                self.copy_bytes(copy, address, size, align);
+            AggregateArgPlan::Memory { stack_size } => {
+                let copy = self.stack_slot(stack_size, align.max(8));
+                self.zero_bytes(copy, stack_size, align.max(8));
+                self.copy_bytes(copy, address, size, align.max(1));
                 signature.params.push(AbiParam::special(
                     types::I64,
-                    ArgumentPurpose::StructArgument(size),
+                    ArgumentPurpose::StructArgument(stack_size),
                 ));
                 arguments.push(copy);
             }

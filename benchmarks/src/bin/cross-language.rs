@@ -35,7 +35,8 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 use subscript_codegen::{
-    emit_c, jit_bench, jit_bench_with_warmup_floor, runtime_staticlib_path, tool_output_report,
+    emit_c, jit_bench, jit_bench_with_warmup_floor, runtime_staticlib_path,
+    runtime_system_libraries, tool_output_report, CCompilerStyle,
 };
 use subscript_compiler::{check_program, SourceFile};
 
@@ -661,12 +662,16 @@ fn measure_ship(
     }
     let build = Command::new(cc)
         .arg("-std=c11")
+        // Strict C11 hides the POSIX clock declarations in glibc.
+        // AOT_BENCH_ENTRY_C concatenates the runtime header before aot-entry.c.
+        // That header selects glibc features, so a macro inside aot-entry.c is too late.
+        .args(cfg!(target_os = "linux").then_some("-D_POSIX_C_SOURCE=199309L"))
         .args(BASELINE_CFLAGS)
         .arg("-fwrapv")
         .arg(&src)
         .arg(&entry)
         .arg(staticlib)
-        .args(runtime_system_libs())
+        .args(runtime_system_libraries(CCompilerStyle::Unix))
         .arg("-o")
         .arg(&exe)
         .output();
@@ -1175,22 +1180,6 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
         }
     }
     None
-}
-
-/// System import libraries a manual clang link of the runtime static library
-/// needs on windows-msvc (mirrors the codegen ship support). Empty elsewhere.
-fn runtime_system_libs() -> &'static [&'static str] {
-    if cfg!(all(windows, target_env = "msvc")) {
-        &[
-            "-lkernel32",
-            "-lntdll",
-            "-luserenv",
-            "-lws2_32",
-            "-ldbghelp",
-        ]
-    } else {
-        &[]
-    }
 }
 
 /// The `benchmarks/` root (`$SUBSCRIPT_BENCHMARKS_DIR`, else this crate's own

@@ -57,7 +57,7 @@ use std::time::{Duration, Instant};
 
 use subscript_codegen::{
     emit_c, jit_bench_with_warmup_floor, jit_compile_time, runtime_staticlib_path,
-    tool_output_report, ReloadSession,
+    runtime_system_libraries, tool_output_report, CCompilerStyle, ReloadSession,
 };
 use subscript_compiler::{check_program, SourceFile};
 
@@ -1199,26 +1199,6 @@ fn host_cc() -> std::ffi::OsString {
     "clang".into()
 }
 
-/// System import libraries the linked program needs on windows-msvc that
-/// clang's own defaults do not supply. The runtime static library embeds
-/// Rust `std`, which references these; `rustc` passes them automatically
-/// when it links, so a manual clang link of the staticlib must add them
-/// (mirrors `subscript_codegen::runtime_system_libraries`). Empty on every other
-/// target.
-fn runtime_system_libs() -> &'static [&'static str] {
-    if cfg!(all(windows, target_env = "msvc")) {
-        &[
-            "-lkernel32",
-            "-lntdll",
-            "-luserenv",
-            "-lws2_32",
-            "-ldbghelp",
-        ]
-    } else {
-        &[]
-    }
-}
-
 /// A temporary directory outside the repository, removed on drop.
 struct WorkDir {
     /// Directory path.
@@ -1497,6 +1477,10 @@ fn measure_ship(
         // flags; this subject stands in for the ship tier, so it tracks
         // the ship tier's `-std`.
         .arg("-std=c11")
+        // Strict C11 hides the POSIX clock declarations in glibc.
+        // SHIP_BENCH_ENTRY_C concatenates the runtime header before aot-entry.c.
+        // That header selects glibc features, so a macro inside aot-entry.c is too late.
+        .args(cfg!(target_os = "linux").then_some("-D_POSIX_C_SOURCE=199309L"))
         .args(BASELINE_CFLAGS)
         // The emitted ship-tier C requires two's-complement signed
         // wrap; `-fwrapv` makes signed overflow defined (matching the
@@ -1505,7 +1489,7 @@ fn measure_ship(
         .arg(&source)
         .arg(&entry)
         .arg(&staticlib)
-        .args(runtime_system_libs())
+        .args(runtime_system_libraries(CCompilerStyle::Unix))
         .arg("-o")
         .arg(&exe)
         .output()
