@@ -78,7 +78,9 @@ corpus/
   or trap entry the reference interpreter does not run;
   `// cost: benchmark` on an entry whose purpose is cost and which
   the debug interpreter sweep omits. A suite derives its selection
-  from these lines; no suite holds a list of entry ids.
+  from these lines; no suite holds a list of entry ids as its
+  selection (a table of expected facts per entry, such as trap
+  tuples, is a test's own record).
 - Multi-file entries: each file's `// corpus:` id includes the filename,
   e.g. `accept/a19-modules/main`.
 - **Determinism rule:** every accept program terminates and writes a
