@@ -12356,3 +12356,84 @@ entries), the second being the complement of one cost exclusion.
 4. `tools/gate.sh full`: verdict `goldens-moved 0`, `skips 0`; the
    debug run's `gate-skip:` count is the same as at the previous
    landing.
+
+## 89. R40 — a long string constant is adjacent C literals
+
+*(Orchestrator decision 2026-09-06 on the owner's behalf for item 1;
+item 2 is open.)* Origin: `HANDOFF-R40.md` from subscript-typegpu
+(branch `main` at `05a9cca`, workspace pin `3677d1f`), 2026-09-05.
+
+Measured downstream on windows-msvc (their `windows.md` W8): a
+generated module held one string literal of 32,768 characters and
+`cl` failed with `error C2026`. clang accepted it, so the branch
+closed green on macOS. In this tree, `c_string_literal`
+(`codegen/src/cemit.rs` line 8016 at `7742ab9`) escapes byte by byte
+into one `"…"` and never splits; nine call sites use it (string
+literals, source names, class names, positions).
+
+Limits *(docs)*: MSVC accepts at most 16,380 single-byte characters
+in one literal as written, and at most 65,535 bytes after
+concatenation; C99 names 4,095 characters after concatenation as the
+translation minimum, which clang and gcc do not enforce.
+
+### 89.1 Rule
+
+1. **A piece holds at most 4,000 source bytes.** `c_string_literal`
+   writes a constant of more than 4,000 bytes as adjacent literals,
+   one per line, each holding at most 4,000 bytes of the source
+   string. A split lands between bytes: an escape sequence
+   (`\"`, `\\`, `\ooo`) is whole in one piece. *(Item 1 of the
+   request: 4,000, not 16,000. A byte can escape to four characters,
+   so a 4,000-byte piece is at most 16,000 characters as written and
+   under MSVC's per-literal limit in every case; a 16,000-byte piece
+   of non-ASCII bytes would be 64,000 characters and fail. One sound
+   answer.)*
+2. **Every call site.** The rule is inside `c_string_literal`, so a
+   source name, a class name, a position file, and a string literal
+   all split the same way; no caller decides.
+3. **Above 65,000 result bytes: open.** *(Owner decision, item 2 of
+   the request.)* Two options: a `static const unsigned char` array
+   with an initializer list in the constants section, named at the
+   use site; or a checker diagnostic that names the limit. Until the
+   owner decides, the emitter writes adjacent literals past 65,000
+   bytes and MSVC reports the concatenation limit; the tracking note
+   records this as a known limit. No corpus entry for the 70,000-byte
+   program until then.
+4. **The dev tier and the interpreter do not change.** Both read the
+   bytes from the program image; the C text is the only output that
+   moves.
+
+### 89.2 Sites
+
+- `codegen/src/cemit.rs` `c_string_literal`, and one unit test
+  beside it.
+- `corpus/accept/a183-long-string-literal.ts` + `.expected`.
+- `codegen/tests/cemit.rs`: one test that reads the emitted C of a183.
+- `generated-docs/corpus-index.md`: regenerated.
+
+### 89.3 Corpus and gate (pre-registered exit criteria)
+
+1. **Red at the emitter, not at run time** (this host's clang accepts
+   the long literal, so no run can be red here — core principle 10
+   is met by the text). A unit test in `cemit.rs` calls
+   `c_string_literal` on hand-built inputs and compares against
+   hand-written expectations: (a) 4,000 ASCII bytes → one piece;
+   (b) 4,001 ASCII bytes → two pieces, the first 4,000 bytes and the
+   second 1 byte, joined by a newline; (c) an input whose byte 4,000
+   (1-based) is `0xff` and byte 4,001 is `0x01` → the first piece
+   ends with `\377` and the second starts with `\001`; (d) a 20,000
+   byte input → five pieces; (e) an input with `"` at a piece
+   boundary → the escape `\"` whole. Each expectation is a literal
+   string or a literal count. Red at `7742ab9`: (b), (c), (d), (e).
+2. `corpus/accept/a183-long-string-literal.ts` + `.expected`: a
+   20,000-byte literal built in the source text (`"abab…"`), printed
+   by its length and its first and last eight bytes; `tsc: accepts`;
+   `js-comparable: yes`. Golden on the dev JIT, the ship tier, and
+   the interpreter, both profiles.
+3. `codegen/tests/cemit.rs`: the emitted C of a183 contains no line
+   longer than 16,380 characters, and the literal appears as five
+   adjacent pieces (a hand-written count).
+4. `tools/gate.sh full`: `goldens-moved 0`; every pre-existing C-text
+   assertion unchanged; the windows-msvc host result is recorded in
+   the tracking note when that host next runs (the downstream's W8
+   program is the witness there).
