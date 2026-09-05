@@ -11946,6 +11946,15 @@ and names no command either.
    file exists at the printed path and that the verdict line is its
    last line. Every case deletes the record it made before it
    returns, so `target/gate/` holds only real runs.
+   **Every case runs with a `GIT` stub** whose `rev-parse HEAD`
+   answers a fixed hash and whose `status --porcelain` answers the
+   case's lines: empty for every case but (h). The expected verdict
+   is then a literal string with no value read from the checkout.
+   *(Added 2026-09-06, measured: the first §88 tree moved one golden,
+   and nine cases that read the real `git status` reported
+   `goldens-moved 1` against a hand-written `0`; a commit during a
+   gate had failed one case the same way the day before. A test that
+   reads the checkout's state is a test that the checkout can fail.)*
    `TSC` and `CC` point at stubs the test writes; `hygiene.sh` runs
    for real, on the checkout, because it reads the tree.
 2. `cargo test -p subscript-codegen --test lir` in the release
