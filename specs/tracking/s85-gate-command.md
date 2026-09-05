@@ -113,3 +113,28 @@ checkout can fail. Contract `d47eabc`: every case runs with a `GIT`
 stub; the expected verdict is a literal.
 
 Landed at `a4f6001`; the §88 gate above ran the twelve cases green with the stub.
+
+## The first-launch cost, root cause (2026-09-06)
+
+The 30–65 s first launch was not the host's check of a new binary
+and not the binary's location: a fresh target directory inside the
+project launched the same 10 MiB binary in 0.46 s, and a copy of the
+slow binary launched from `/tmp` in 0.54 s. `target/debug/deps` held
+710,711 entries, of which 707,606 were `.rcgu.o` object files
+(26 GB, the oldest from 2026-07-22). With those files moved aside
+(`target/_rcgu-aside`, reversible), a relinked binary launched in
+0.64 s and a relinked 35 MiB `cemit` test in 0.68 s; `sample` showed
+the slow launch entirely inside `_dyld_start`. The mechanism inside
+dyld is not identified; the directory size is the measured cause.
+
+Why the files accumulate: on macOS the dev and test profiles default
+to `split-debuginfo = "unpacked"`, so every link leaves its codegen
+unit objects in `deps/` for the binary's OSO references, and cargo
+never removes them; a fresh target directory held 1,048 after two
+builds. Measured alternative: `split-debuginfo = "off"` leaves none,
+same binary size (10 MiB), OSO references into the rlibs remain.
+
+Gate on the cleaned directory: debug step 543 s (against 1,443–1,728
+s before), release 646 s. The earlier record above that attributed
+the cost to the host's first-launch check is superseded by this
+entry.

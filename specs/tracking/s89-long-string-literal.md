@@ -80,3 +80,20 @@ literal, so the limit is per part; decided at `fabb363` (forced by
 the emitter's form). MINOR: the Red pin; a decoded-vs-source test
 case; two `///`; the thousands formatting holds below 1,000,000; the
 excerpt line. Round 3 takes the code items.
+
+### Round 3 — landed at `05195b4`
+
+Per static part; six hand-written cases (65,000 accepted, 65,001
+rejected with the message naming 65001, one part of 65,001 rejected,
+two parts of 40,000 accepted, short parts with a long run-time
+result accepted, 20,000 × `\u00e9` accepted); `///` on the constant
+and the helper. compiler 426; clippy 7; workspace build 0 warnings.
+
+Gate (the first after the `target/` cleanup below):
+
+```text
+gate full 0f31668a9777baff581908ceb33ad79c66e12b4e dirty:8 debug 1286/0/2 release 1284/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+R40 is closed: rule 1 at `97e1110`, rule 3 at `05195b4`. The
+windows-msvc result stays pending that host.
