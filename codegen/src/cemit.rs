@@ -8015,7 +8015,10 @@ fn float_literal(value: f64, ty: &Type) -> String {
 
 fn c_string_literal(bytes: &[u8]) -> String {
     let mut result = String::from("\"");
-    for byte in bytes {
+    for (index, byte) in bytes.iter().enumerate() {
+        if index != 0 && index % 4000 == 0 {
+            result.push_str("\"\n\"");
+        }
         match byte {
             b'"' => result.push_str("\\\""),
             b'\\' => result.push_str("\\\\"),
@@ -8027,6 +8030,61 @@ fn c_string_literal(bytes: &[u8]) -> String {
     }
     result.push('"');
     result
+}
+
+#[test]
+fn c_string_literal_splits_at_source_byte_boundaries() {
+    let mut octal = vec![b'a'; 3999];
+    octal.extend_from_slice(&[0xff, 0x01]);
+    let mut quote = vec![b'a'; 3999];
+    quote.extend_from_slice(b"\"b");
+    let cases = [
+        ("a", vec![b'a'; 4000], 1),
+        ("b", vec![b'a'; 4001], 2),
+        ("c", octal, 2),
+        ("d", vec![b'a'; 20000], 5),
+        ("e", quote, 2),
+    ];
+    let mut failures = Vec::new();
+    for (name, input, expected_count) in cases {
+        let result = std::panic::catch_unwind(|| {
+            let literal = c_string_literal(&input);
+            let pieces: Vec<_> = literal.split('\n').collect();
+            assert_eq!(pieces.len(), expected_count, "case {name}: piece count");
+            match name {
+                "a" | "b" | "d" => {
+                    assert_eq!(pieces[0].len(), 4002);
+                    assert!(pieces[0].starts_with('"') && pieces[0].ends_with('"'));
+                    assert_eq!(pieces[0].bytes().filter(|byte| *byte == b'a').count(), 4000);
+                    if name == "b" {
+                        assert_eq!(pieces[1], "\"a\"");
+                    }
+                    if name == "d" {
+                        assert!(pieces.iter().all(|piece| *piece == pieces[0]));
+                    }
+                }
+                "c" => {
+                    assert_eq!(pieces[0].len(), 4005);
+                    assert!(pieces[0].starts_with('"'));
+                    assert_eq!(pieces[0].bytes().filter(|byte| *byte == b'a').count(), 3999);
+                    assert!(pieces[0].ends_with("\\377\""));
+                    assert_eq!(pieces[1], "\"\\001\"");
+                }
+                "e" => {
+                    assert_eq!(pieces[0].len(), 4003);
+                    assert!(pieces[0].starts_with('"'));
+                    assert_eq!(pieces[0].bytes().filter(|byte| *byte == b'a').count(), 3999);
+                    assert!(pieces[0].ends_with("\\\"\""));
+                    assert_eq!(pieces[1], "\"b\"");
+                }
+                _ => unreachable!(),
+            }
+        });
+        if result.is_err() {
+            failures.push(name);
+        }
+    }
+    assert!(failures.is_empty(), "failed cases: {failures:?}");
 }
 
 fn render_allocation_metadata_header() -> String {

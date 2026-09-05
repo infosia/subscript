@@ -2700,3 +2700,29 @@ fn many_completed_async_calls_leave_no_frames_without_collect() {
         "each completed child and the async root must be released without Context.collect()"
     );
 }
+
+#[test]
+fn a183_long_string_emits_five_adjacent_c_literals() {
+    let source = include_str!("../../corpus/accept/a183-long-string-literal.ts");
+    let hir = check_program(&[SourceFile::new("a183-long-string-literal.ts", source)])
+        .expect("a183 checks cleanly");
+    let c = subscript_codegen::emit_c(&hir)
+        .expect("a183 emits C")
+        .source;
+    let longest_line = c.lines().map(|line| line.chars().count()).max().unwrap();
+    assert!(longest_line <= 16380, "longest C line: {longest_line}");
+
+    let start = c.find("\"abababab").expect("long string literal");
+    let end = start + c[start..].find(", 20000ull").expect("literal byte length");
+    let pieces: Vec<_> = c[start..end].split('\n').collect();
+    assert_eq!(pieces.len(), 5);
+    for piece in &pieces {
+        assert_eq!(piece.len(), 4002);
+        assert!(piece.starts_with('"') && piece.ends_with('"'));
+        assert_eq!(piece.matches("ab").count(), 2000);
+    }
+    eprintln!(
+        "a183 C: longest line={longest_line}; adjacent pieces={}; source bytes per piece=4000",
+        pieces.len()
+    );
+}
