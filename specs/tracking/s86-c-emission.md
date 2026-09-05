@@ -1,7 +1,8 @@
 # §86 — C emission is linear in the function it emits
 
-Status: **in progress.** Contract: `specs/blocks/compiler.md` §86
-(Rev 1 at `f683a72`). Origin:
+Status: **landed** — Task A `3695860`, Task B `3a4bdff`, Task C `5ac6b01`.
+Contract: `specs/blocks/compiler.md` §86 (Rev 1 at `f683a72`; rules 2a,
+2b, Task C added during the rounds). Origin:
 `specs/tracking/development-cost-review-2026-09-05.md` finding 2.
 
 ## Round 1 and 1b — the profile (no code change), at `97c9991`
@@ -847,3 +848,43 @@ it today); the twice-passed-argument test cannot detect removal of
 the position rule; the chain generator was deleted, so the 7.8×
 figure has no standing fixture; the `live_ins` fact above. Round 2
 takes the first four.
+
+
+## Task C round 2 — landed at `5ac6b01`
+
+Reachable-use rows only for the queried edge sources, in one flat
+vector; `LocalId` validation; the twice-passed-argument test now
+fails when the position conjunct is removed (verified by mutation);
+`codegen/tests/emission_chain.rs` is the standing multi-block
+fixture (ignored; `-- --ignored` in release prints the two medians
+and asserts the ratio ≤ 8): N = 64 → 256 measured 7.47×. C-identity
+control over 234 entries: equal; deleted. `CProgram::from_lir` is
+the public entry the fixture uses, with a direct unit test.
+
+Gate on the Task C tree:
+
+```text
+gate full 32a32df2f31a040203610c253cf40525c28ad73e dirty:3 debug 1280/0/2 release 1278/0/2 skips 1/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+(`ignored` is 2: the chain fixture and the pre-existing one.) Step
+wall seconds: debug 1,461, release 701 — the debug figure is the
+host's first-launch check of relinked binaries
+(`s85-gate-command.md`), not the tests.
+
+## §86 result
+
+| Measure | Before (`97c9991`) | After (`5ac6b01`) |
+|---|---:|---:|
+| `emit_c`, width 32, release | 27.2 s | 0.19 s |
+| maximum RSS, width 32 | 1.59 GiB | 134 MiB |
+| `boundary_scratch_breadth`, debug, alone | 668 s | 34.5 s |
+| root slots, width 32 | 1,777 | 196 (rule 2a) |
+
+Three tasks, nine coding-agent rounds, five fresh reviews, four full
+gates. Two contract corrections were forced by the migration
+control (rules 2a and 2b), both defects of the old walk that the
+differential gate could not see. Open, recorded: `declaration_scopes`
+clones the reachable-block set per block; the chain ratio 7.47× is
+under the limit and above the block ratio, so a pass with an
+O(blocks²) term remains in the chain shape.
