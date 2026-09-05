@@ -8,7 +8,7 @@ use subscript_compiler::Type;
 
 use crate::layout::{managed_words, Layouts};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct RootSlot {
     pub(crate) representative: l::ValueId,
     pub(crate) words: u32,
@@ -16,7 +16,7 @@ pub(crate) struct RootSlot {
     ty: l::ValueType,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct RootStoragePlan {
     pub(crate) slots: Vec<RootSlot>,
     pub(crate) value_slots: Vec<Option<usize>>,
@@ -30,12 +30,19 @@ fn internal(message: impl AsRef<str>) -> String {
 }
 
 fn origin(function: &l::Function, value: l::ValueId) -> Result<l::ValueId, String> {
-    function
+    let origin = function
         .liveness
         .value_origins
         .get(value.0 as usize)
         .copied()
-        .ok_or_else(|| internal(format!("value {} has no liveness origin", value.0)))
+        .ok_or_else(|| internal(format!("value {} has no liveness origin", value.0)))?;
+    if origin.0 as usize >= function.values.len() {
+        return Err(internal(format!(
+            "value {} has invalid liveness origin {}",
+            value.0, origin.0
+        )));
+    }
+    Ok(origin)
 }
 
 fn value_operand(operand: Option<&l::Operand>) -> Option<l::ValueId> {
@@ -239,6 +246,7 @@ impl Interference {
             .iter()
             .enumerate()
             .map(|(origin, intervals)| GroupFacts {
+                origins: vec![l::ValueId(origin as u32)],
                 intervals: merge_intervals(
                     &[],
                     &intervals
@@ -327,11 +335,12 @@ struct OriginInterval {
     origin: l::ValueId,
 }
 
-// A membership retains identity to exempt aliases of the same origin.
+/// A membership retains identity to exempt aliases of the same origin.
 #[derive(Debug, Clone, Copy)]
 struct Membership {
     rule: usize,
     first: l::ValueId,
+    // Guard: distinct origins at one entry overlap and cannot form a compatible group.
     multiple: bool,
 }
 
@@ -352,6 +361,7 @@ impl Membership {
 /// Sorted interval and parameter-membership unions for a compatible group.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct GroupFacts {
+    origins: Vec<l::ValueId>,
     intervals: Vec<OriginInterval>,
     parameters: Vec<Membership>,
     mentions: Vec<Membership>,
@@ -385,6 +395,9 @@ impl InterferenceGroup {
         else {
             return false;
         };
+        if left.contains_single_origin(right) || right.contains_single_origin(left) {
+            return false;
+        }
         let separated = left
             .intervals
             .last()
@@ -440,6 +453,11 @@ impl InterferenceGroup {
                 return;
             }
         }
+        if let (Some(left), Some(right)) = (self.facts(interference), other.facts(interference)) {
+            if left.contains_single_origin(right) {
+                return;
+            }
+        }
         if matches!(self, Self::Empty) {
             *self = other;
             return;
@@ -468,7 +486,37 @@ impl InterferenceGroup {
 }
 
 impl GroupFacts {
+    fn contains_single_origin(&self, other: &Self) -> bool {
+        other.origins.len() == 1 && self.origins.binary_search(&other.origins[0]).is_ok()
+    }
+
     fn merge(&mut self, other: &Self) {
+        if self.contains_single_origin(other) {
+            return;
+        }
+        if other.origins.len() == 1 {
+            if let Err(index) = self.origins.binary_search(&other.origins[0]) {
+                self.origins.insert(index, other.origins[0]);
+            }
+        } else {
+            let mut origins = Vec::with_capacity(self.origins.len() + other.origins.len());
+            let (mut i, mut j) = (0, 0);
+            while i < self.origins.len() || j < other.origins.len() {
+                if j == other.origins.len()
+                    || (i < self.origins.len() && self.origins[i] < other.origins[j])
+                {
+                    origins.push(self.origins[i]);
+                    i += 1;
+                } else {
+                    if i < self.origins.len() && self.origins[i] == other.origins[j] {
+                        i += 1;
+                    }
+                    origins.push(other.origins[j]);
+                    j += 1;
+                }
+            }
+            self.origins = origins;
+        }
         if !other.intervals.is_empty() {
             let append = self
                 .intervals
@@ -945,6 +993,51 @@ mod tests {
         right.merge(unused_parameter, &interference);
         assert!(left.interferes(&right, &interference));
         assert!(right.interferes(&left, &interference));
+    }
+
+    #[test]
+    fn invalid_origin_returns_an_internal_error() {
+        let mut function = interval_fixture();
+        function.liveness.value_origins[0] = l::ValueId(function.values.len() as u32);
+        assert!(Interference::build(&function)
+            .unwrap_err()
+            .contains("invalid liveness origin"));
+        assert!(plan(&function, &layouts())
+            .unwrap_err()
+            .contains("invalid liveness origin"));
+    }
+
+    #[test]
+    fn interleaved_group_union_skips_expired_block_prefixes() {
+        let facts = |origin, ranges: &[(u32, usize, usize)]| GroupFacts {
+            origins: vec![l::ValueId(origin)],
+            intervals: ranges
+                .iter()
+                .map(|&(block, start, end)| OriginInterval {
+                    origin: l::ValueId(origin),
+                    interval: LiveInterval {
+                        block: l::BlockId(block),
+                        start,
+                        end,
+                    },
+                })
+                .collect(),
+            ..GroupFacts::default()
+        };
+        let interference =
+            Interference::build(&function(Vec::new(), vec![return_block(0, Vec::new())])).unwrap();
+        let mut left = InterferenceGroup::Merged(facts(1, &[(0, 1, 2), (1, 3, 4)]));
+        let right = InterferenceGroup::Merged(facts(2, &[(0, 3, 4), (1, 1, 2)]));
+        assert!(!left.interferes(&right, &interference));
+        left.merge(right, &interference);
+        assert!(left.interferes(
+            &InterferenceGroup::Merged(facts(3, &[(1, 2, 3)])),
+            &interference
+        ));
+        assert!(!left.interferes(
+            &InterferenceGroup::Merged(facts(3, &[(0, 5, 5)])),
+            &interference
+        ));
     }
 
     #[test]

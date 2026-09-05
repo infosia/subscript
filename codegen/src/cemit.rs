@@ -1533,7 +1533,7 @@ struct Body<'e, 'm, 'f> {
     root_storage: RootStoragePlan,
     dead_forward_iterator_results: HashSet<l::ValueId>,
     fixed_iterators: HashSet<l::ValueId>,
-    delayed_declarations: HashSet<l::ValueId>,
+    delayed_declarations: HashMap<String, l::ValueId>,
     consumed_traps: Vec<l::Trap>,
     temporary: u32,
     /// Whether `emit_storage` declared a shadow-root frame. `emit_pop`
@@ -1559,13 +1559,112 @@ enum AddressUse {
     Escape,
 }
 
-fn address_definitions(function: &l::Function) -> HashMap<l::ValueId, &l::Instruction> {
-    function
-        .blocks
-        .iter()
-        .flat_map(|block| &block.instructions)
-        .filter_map(|instruction| instruction.result.map(|result| (result, instruction)))
-        .collect()
+/// Emission lookups derived once from the function's definitions and mentions.
+struct EmissionIndex<'f> {
+    definitions: HashMap<l::ValueId, &'f l::Instruction>,
+    definition_blocks: Vec<Option<l::BlockId>>,
+    use_blocks: Vec<HashSet<l::BlockId>>,
+    parameter_blocks: Vec<Option<l::BlockId>>,
+    incoming_targets: Vec<Vec<l::BlockTarget>>,
+    local_seeds: Vec<LocalSeed>,
+    local_addresses: Vec<(l::LocalId, Option<l::ValueId>)>,
+    first_stores: HashMap<l::LocalId, l::ValueId>,
+    iterator_seeds: Vec<(l::ValueId, l::IteratorBoundKind)>,
+    propagated_values: Vec<(l::ValueId, l::ValueId)>,
+}
+
+#[derive(Clone, Copy)]
+enum LocalSeed {
+    Unused,
+    Local(l::LocalId),
+    Other,
+}
+
+impl<'f> EmissionIndex<'f> {
+    fn build(function: &'f l::Function) -> Self {
+        let mut index = Self {
+            definitions: HashMap::new(),
+            definition_blocks: vec![None; function.values.len()],
+            use_blocks: vec![HashSet::new(); function.values.len()],
+            parameter_blocks: vec![None; function.values.len()],
+            incoming_targets: vec![Vec::new(); function.blocks.len()],
+            local_seeds: vec![LocalSeed::Unused; function.values.len()],
+            local_addresses: Vec::new(),
+            first_stores: HashMap::new(),
+            iterator_seeds: Vec::new(),
+            propagated_values: Vec::new(),
+        };
+        for block in &function.blocks {
+            for parameter in &block.parameters {
+                index.parameter_blocks[parameter.0 as usize] = Some(block.id);
+            }
+            for instruction in &block.instructions {
+                if let Some(result) = instruction.result {
+                    index.definitions.insert(result, instruction);
+                    index.definition_blocks[result.0 as usize] = Some(block.id);
+                }
+                match instruction.kind {
+                    l::InstructionKind::AddressOfLocal(local) => {
+                        index.local_addresses.push((local, instruction.result));
+                    }
+                    l::InstructionKind::StoreLocal(local) => {
+                        if let Some(l::Operand::Value(value)) = instruction.operands.first() {
+                            index.first_stores.entry(local).or_insert(*value);
+                        }
+                    }
+                    l::InstructionKind::IteratorCreate { bound, .. } => {
+                        if let Some(result) = instruction.result {
+                            index.iterator_seeds.push((result, bound));
+                        }
+                    }
+                    l::InstructionKind::Copy | l::InstructionKind::IteratorAdvance => {
+                        if let (Some(result), Some(l::Operand::Value(source))) =
+                            (instruction.result, instruction.operands.first())
+                        {
+                            index.propagated_values.push((*source, result));
+                        }
+                    }
+                    _ => {}
+                }
+                for (position, operand) in instruction.operands.iter().enumerate() {
+                    if let l::Operand::Value(value) = operand {
+                        index.use_blocks[value.0 as usize].insert(block.id);
+                        let seed = &mut index.local_seeds[value.0 as usize];
+                        *seed = match (&instruction.kind, position, *seed) {
+                            (l::InstructionKind::StoreLocal(local), 0, LocalSeed::Unused) => {
+                                LocalSeed::Local(*local)
+                            }
+                            (
+                                l::InstructionKind::StoreLocal(local),
+                                0,
+                                LocalSeed::Local(previous),
+                            ) if *local == previous => *seed,
+                            _ => LocalSeed::Other,
+                        };
+                    }
+                }
+                for value in &instruction.invalidates {
+                    index.use_blocks[value.0 as usize].insert(block.id);
+                    index.local_seeds[value.0 as usize] = LocalSeed::Other;
+                }
+            }
+            for value in block.terminator.value_uses() {
+                index.use_blocks[value.0 as usize].insert(block.id);
+                index.local_seeds[value.0 as usize] = LocalSeed::Other;
+            }
+            if let l::Terminator::Suspend { invalidates, .. } = &block.terminator {
+                for value in invalidates {
+                    index.use_blocks[value.0 as usize].insert(block.id);
+                    index.local_seeds[value.0 as usize] = LocalSeed::Other;
+                }
+            } else {
+                for target in block.terminator.targets() {
+                    index.incoming_targets[target.block.0 as usize].push(target);
+                }
+            }
+        }
+        index
+    }
 }
 
 fn has_local_address_origin(
@@ -1700,46 +1799,16 @@ fn foldable_local_addresses(
         .collect()
 }
 
-fn value_only_seeds_local(function: &l::Function, value: l::ValueId, local: l::LocalId) -> bool {
-    for block in &function.blocks {
-        for instruction in &block.instructions {
-            for (index, operand) in instruction.operands.iter().enumerate() {
-                if !matches!(operand, l::Operand::Value(candidate) if *candidate == value) {
-                    continue;
-                }
-                if !matches!(instruction.kind, l::InstructionKind::StoreLocal(candidate) if candidate == local)
-                    || index != 0
-                {
-                    return false;
-                }
-            }
-            if instruction.invalidates.contains(&value) {
-                return false;
-            }
-        }
-        if terminator_uses_value(&block.terminator, value) {
-            return false;
-        }
-    }
-    true
-}
-
 fn promoted_local_values(
     function: &l::Function,
+    index: &EmissionIndex<'_>,
     folded_addresses: &HashSet<l::ValueId>,
 ) -> HashMap<l::LocalId, l::ValueId> {
-    let materialized_locals = function
-        .blocks
+    let materialized_locals = index
+        .local_addresses
         .iter()
-        .flat_map(|block| &block.instructions)
-        .filter_map(|instruction| {
-            let l::InstructionKind::AddressOfLocal(local) = &instruction.kind else {
-                return None;
-            };
-            (!instruction
-                .result
-                .is_some_and(|result| folded_addresses.contains(&result)))
-            .then_some(*local)
+        .filter_map(|(local, result)| {
+            (!result.is_some_and(|result| folded_addresses.contains(&result))).then_some(*local)
         })
         .collect::<HashSet<_>>();
     let parameter_values = function
@@ -1747,18 +1816,6 @@ fn promoted_local_values(
         .iter()
         .filter_map(|parameter| parameter.storage.map(|local| (local, parameter.value)))
         .collect::<HashMap<_, _>>();
-    let mut store_values = HashMap::new();
-    for block in &function.blocks {
-        for instruction in &block.instructions {
-            let l::InstructionKind::StoreLocal(local) = &instruction.kind else {
-                continue;
-            };
-            if let Some(l::Operand::Value(value)) = instruction.operands.first() {
-                store_values.entry(*local).or_insert(*value);
-            }
-        }
-    }
-
     let mut used_values = HashSet::new();
     function
         .locals
@@ -1768,9 +1825,14 @@ fn promoted_local_values(
             let value = parameter_values
                 .get(&local.id)
                 .copied()
-                .or_else(|| store_values.get(&local.id).copied())?;
-            (used_values.insert(value) && value_only_seeds_local(function, value, local.id))
-                .then_some((local.id, value))
+                .or_else(|| index.first_stores.get(&local.id).copied())?;
+            (used_values.insert(value)
+                && match index.local_seeds[value.0 as usize] {
+                    LocalSeed::Unused => true,
+                    LocalSeed::Local(candidate) => candidate == local.id,
+                    LocalSeed::Other => false,
+                })
+            .then_some((local.id, value))
         })
         .collect()
 }
@@ -1854,120 +1916,59 @@ fn terminator_successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
     terminator.successors()
 }
 
-fn instruction_uses_value(instruction: &l::Instruction, value: l::ValueId) -> bool {
-    instruction
-        .operands
-        .iter()
-        .any(|operand| matches!(operand, l::Operand::Value(candidate) if *candidate == value))
-        || instruction.invalidates.contains(&value)
-}
-
-fn terminator_uses_value(terminator: &l::Terminator, value: l::ValueId) -> bool {
-    if terminator.value_uses().contains(&value) {
-        return true;
-    }
-    // Copy elimination needs invalidation mentions because they require storage.
-    matches!(terminator, l::Terminator::Suspend { invalidates, .. } if invalidates.contains(&value))
-}
-
-fn block_uses_value(block: &l::BasicBlock, value: l::ValueId) -> bool {
-    block
-        .instructions
-        .iter()
-        .any(|instruction| instruction_uses_value(instruction, value))
-        || terminator_uses_value(&block.terminator, value)
-}
-
-fn fixed_iterator_values(function: &l::Function) -> HashSet<l::ValueId> {
-    // Fixed and live facts can meet through cyclic block parameters. Propagate
-    // both bits to retain a fixed fact only when no live path reaches a value.
+fn fixed_iterator_values(function: &l::Function, index: &EmissionIndex<'_>) -> HashSet<l::ValueId> {
+    // Each bit crosses each propagation edge at most once, including cycles.
     const FIXED: u8 = 1;
     const LIVE: u8 = 2;
+    if index.iterator_seeds.is_empty() {
+        return HashSet::new();
+    }
     let mut bounds = vec![0u8; function.values.len()];
-    for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
-        let Some(result) = instruction.result else {
-            continue;
+    let mut dependents = vec![Vec::new(); function.values.len()];
+    let mut pending = std::collections::VecDeque::new();
+    for &(result, bound) in &index.iterator_seeds {
+        let bit = match bound {
+            l::IteratorBoundKind::Fixed => FIXED,
+            l::IteratorBoundKind::Live => LIVE,
         };
-        match instruction.kind {
-            l::InstructionKind::IteratorCreate {
-                bound: l::IteratorBoundKind::Fixed,
-                ..
-            } => bounds[result.0 as usize] = FIXED,
-            l::InstructionKind::IteratorCreate {
-                bound: l::IteratorBoundKind::Live,
-                ..
-            } => bounds[result.0 as usize] = LIVE,
-            _ => {}
-        }
+        bounds[result.0 as usize] = bit;
+        pending.push_back((result, bit));
     }
-    loop {
-        let mut changed = false;
-        for block in &function.blocks {
-            for instruction in &block.instructions {
-                let propagates = matches!(
-                    instruction.kind,
-                    l::InstructionKind::Copy | l::InstructionKind::IteratorAdvance
-                );
-                if propagates {
-                    let Some(result) = instruction.result else {
-                        continue;
-                    };
-                    let incoming = instruction
-                        .operands
-                        .first()
-                        .and_then(|operand| match operand {
-                            l::Operand::Value(value) => Some(bounds[value.0 as usize]),
-                            l::Operand::Constant(_) => None,
-                        });
-                    if let Some(incoming) = incoming {
-                        let value = &mut bounds[result.0 as usize];
-                        let combined = *value | incoming;
-                        if combined != *value {
-                            *value = combined;
-                            changed = true;
-                        }
-                    }
+    for &(source, result) in &index.propagated_values {
+        dependents[source.0 as usize].push(result);
+    }
+    for block in &function.blocks {
+        for target in &index.incoming_targets[block.id.0 as usize] {
+            for (argument, parameter) in target.arguments.iter().zip(&block.parameters) {
+                if let l::Operand::Value(source) = argument {
+                    dependents[source.0 as usize].push(*parameter);
                 }
             }
         }
-        for destination in &function.blocks {
-            for (index, parameter) in destination.parameters.iter().copied().enumerate() {
-                let incoming = function.blocks.iter().flat_map(|source| {
-                    if matches!(source.terminator, l::Terminator::Suspend { .. }) {
-                        return Vec::new().into_iter();
-                    }
-                    source
-                        .terminator
-                        .targets()
-                        .into_iter()
-                        .filter(|target| target.block == destination.id)
-                        .filter_map(|target| target.arguments.get(index).cloned())
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                });
-                let combined = incoming.fold(0u8, |combined, operand| match operand {
-                    l::Operand::Value(value) => combined | bounds[value.0 as usize],
-                    l::Operand::Constant(_) => combined,
-                });
-                let value = &mut bounds[parameter.0 as usize];
-                let combined = *value | combined;
-                if combined != *value {
-                    *value = combined;
-                    changed = true;
-                }
+    }
+    while let Some((source, incoming)) = pending.pop_front() {
+        for destination in &dependents[source.0 as usize] {
+            let bound = &mut bounds[destination.0 as usize];
+            let added = incoming & !*bound;
+            if added != 0 {
+                *bound |= added;
+                pending.push_back((*destination, added));
             }
         }
-        if !changed {
-            return bounds
-                .into_iter()
-                .enumerate()
-                .filter_map(|(index, bound)| (bound == FIXED).then_some(l::ValueId(index as u32)))
-                .collect();
-        }
     }
+    bounds
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, bound)| (bound == FIXED).then_some(l::ValueId(index as u32)))
+        .collect()
 }
 
-fn value_used_from(function: &l::Function, value: l::ValueId, start: l::BlockId) -> bool {
+fn value_used_from(
+    function: &l::Function,
+    index: &EmissionIndex<'_>,
+    value: l::ValueId,
+    start: l::BlockId,
+) -> bool {
     let mut seen = HashSet::new();
     let mut pending = vec![start];
     while let Some(block) = pending.pop() {
@@ -1975,10 +1976,10 @@ fn value_used_from(function: &l::Function, value: l::ValueId, start: l::BlockId)
             continue;
         }
         let definition = &function.blocks[block.0 as usize];
-        if definition.parameters.contains(&value) {
+        if index.parameter_blocks[value.0 as usize] == Some(block) {
             continue;
         }
-        if block_uses_value(definition, value) {
+        if index.use_blocks[value.0 as usize].contains(&block) {
             return true;
         }
         pending.extend(terminator_successors(&definition.terminator));
@@ -1988,21 +1989,11 @@ fn value_used_from(function: &l::Function, value: l::ValueId, start: l::BlockId)
 
 fn removable_block_parameter_copies(
     function: &l::Function,
+    index: &EmissionIndex<'_>,
 ) -> (
     HashSet<(l::BlockId, l::BlockId, usize)>,
     HashSet<l::ValueId>,
 ) {
-    let used_values = function
-        .values
-        .iter()
-        .filter(|value| {
-            function
-                .blocks
-                .iter()
-                .any(|block| block_uses_value(block, value.id))
-        })
-        .map(|value| value.id)
-        .collect::<HashSet<_>>();
     let mut removable = HashSet::new();
     let mut incoming = HashMap::<l::ValueId, usize>::new();
     let mut removable_incoming = HashMap::<l::ValueId, usize>::new();
@@ -2012,27 +2003,37 @@ fn removable_block_parameter_copies(
         }
         for target in block.terminator.targets() {
             let destination = &function.blocks[target.block.0 as usize];
-            for (index, (argument, parameter)) in target
+            let last_arguments = target
+                .arguments
+                .iter()
+                .enumerate()
+                .filter_map(|(position, operand)| {
+                    if let l::Operand::Value(value) = operand {
+                        Some((*value, position))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<HashMap<_, _>>();
+            for (position, (argument, parameter)) in target
                 .arguments
                 .iter()
                 .zip(&destination.parameters)
                 .enumerate()
             {
                 *incoming.entry(*parameter).or_default() += 1;
-                if used_values.contains(parameter) {
+                if !index.use_blocks[parameter.0 as usize].is_empty() {
                     continue;
                 }
                 let source_dead = match argument {
                     l::Operand::Constant(_) => true,
                     l::Operand::Value(source) => {
-                        !value_used_from(function, *source, target.block)
-                            && !target.arguments[index + 1..].iter().any(|argument| {
-                                matches!(argument, l::Operand::Value(candidate) if candidate == source)
-                            })
+                        !value_used_from(function, index, *source, target.block)
+                            && last_arguments.get(source) == Some(&position)
                     }
                 };
                 if source_dead {
-                    removable.insert((block.id, target.block, index));
+                    removable.insert((block.id, target.block, position));
                     *removable_incoming.entry(*parameter).or_default() += 1;
                 }
             }
@@ -2377,6 +2378,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     ) -> Result<Self, String> {
         let (root_storage, interference) =
             root_storage::plan_with_interference(function, &emitter.layouts)?;
+        let index = EmissionIndex::build(function);
         let dead_forward_iterator_results = function
             .blocks
             .iter()
@@ -2384,10 +2386,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .filter_map(|instruction| {
                 let result = instruction.result?;
                 if !matches!(instruction.kind, l::InstructionKind::IteratorAdvance)
-                    || function
-                        .blocks
-                        .iter()
-                        .any(|block| block_uses_value(block, result))
+                    || !index.use_blocks[result.0 as usize].is_empty()
                 {
                     return None;
                 }
@@ -2405,15 +2404,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .then_some(result)
             })
             .collect::<HashSet<_>>();
-        let fixed_iterators = fixed_iterator_values(function);
+        let fixed_iterators = fixed_iterator_values(function, &index);
         let rooted_values = root_storage
             .value_slots
             .iter()
             .enumerate()
             .filter_map(|(index, slot)| slot.map(|_| l::ValueId(index as u32)))
             .collect::<HashSet<_>>();
-        let address_definitions = address_definitions(function);
-        let folded_addresses = foldable_local_addresses(function, &address_definitions);
+        let address_definitions = &index.definitions;
+        let folded_addresses = foldable_local_addresses(function, address_definitions);
         let managed_locals = function
             .locals
             .iter()
@@ -2426,7 +2425,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .into_iter()
             .flatten()
             .collect::<HashSet<_>>();
-        let promoted_locals = promoted_local_values(function, &folded_addresses)
+        let promoted_locals = promoted_local_values(function, &index, &folded_addresses)
             .into_iter()
             .filter(|(local, _)| !managed_locals.contains(local))
             .collect::<HashMap<_, _>>();
@@ -2446,7 +2445,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .into_iter()
             .flatten()
             .collect::<HashSet<_>>();
-        let (removable_edge_copies, elided_values) = removable_block_parameter_copies(function);
+        let (removable_edge_copies, elided_values) =
+            removable_block_parameter_copies(function, &index);
         let value_storage = coalesced_value_storage(
             function,
             &root_storage,
@@ -2465,19 +2465,16 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             &value_storage,
             &promoted_locals,
         );
-        let mut delayed_declarations = HashSet::new();
+        let mut delayed_declarations = HashMap::new();
         for (block, values) in declaration_scopes.block_values.iter().enumerate() {
             for value in values {
                 if value_storage[value.0 as usize] == *value
-                    && function.blocks[block]
-                        .instructions
-                        .iter()
-                        .any(|instruction| {
-                            instruction.result == Some(*value)
-                                && declaration_can_use_instruction_assignment(&instruction.kind)
-                        })
+                    && index.definition_blocks[value.0 as usize] == Some(l::BlockId(block as u32))
+                    && index.definitions.get(value).is_some_and(|instruction| {
+                        declaration_can_use_instruction_assignment(&instruction.kind)
+                    })
                 {
-                    delayed_declarations.insert(*value);
+                    delayed_declarations.insert(format!("v{}", value.0), *value);
                 }
             }
         }
@@ -2488,7 +2485,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             rooted_values,
             rooted_locals,
             promoted_locals,
-            address_definitions,
+            address_definitions: index.definitions,
             folded_addresses,
             function_scoped_values: declaration_scopes.function_values,
             block_value_declarations: declaration_scopes.block_values,
@@ -2942,7 +2939,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let entry_clears = self.root_storage.clear_at_block_entry[block.id.0 as usize].clone();
         self.emit_root_clears(out, &entry_clears)?;
         for value in self.block_value_declarations[block.id.0 as usize].clone() {
-            if self.delayed_declarations.contains(&value) {
+            if self.delayed_declarations.contains_key(&self.value(value)) {
                 continue;
             }
             let _ = writeln!(
@@ -3286,13 +3283,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let Some(destination) = destination else {
             return Ok(());
         };
-        let delayed = self
-            .delayed_declarations
-            .iter()
-            .find(|candidate| self.value(**candidate) == destination)
-            .copied();
-        if let Some(delayed) = delayed {
-            self.delayed_declarations.remove(&delayed);
+        if let Some(delayed) = self.delayed_declarations.remove(&destination) {
             let ctype = self.emitter.value_ctype(self.value_type(delayed)?)?;
             let _ = writeln!(out, "    {ctype} {destination} = {value};");
             return Ok(());
@@ -8124,6 +8115,97 @@ mod tests {
             subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(name, source)])
                 .expect("test source checks");
         crate::lir::lower_module(&hir).expect("test source lowers")
+    }
+
+    #[test]
+    fn iterator_bounds_cross_back_edges_and_combine_fixed_and_live_paths() {
+        let mut module = lower_test_source("iterator-index.ts", "export function main(): void {}");
+        let function = module
+            .functions
+            .iter_mut()
+            .find(|function| function.source_name == "main")
+            .unwrap();
+        let pos = function.pos.clone();
+        function.values = (0..7)
+            .map(|id| l::Value {
+                id: l::ValueId(id),
+                ty: l::ValueType::Iterator(l::IteratorType {
+                    kind: l::ForOfKind::ArrayValues,
+                    element: Type::I32,
+                }),
+                fresh_owner: false,
+                source_name: None,
+            })
+            .collect();
+        let instruction = |result, kind, operands| l::Instruction {
+            result: Some(l::ValueId(result)),
+            kind,
+            operands,
+            invalidates: Vec::new(),
+            traps: Vec::new(),
+            pos: pos.clone(),
+        };
+        let argument = |value| l::Operand::Value(l::ValueId(value));
+        let target = |block, values: &[u32]| l::BlockTarget {
+            block: l::BlockId(block),
+            arguments: values.iter().copied().map(argument).collect(),
+        };
+        function.blocks = vec![
+            l::BasicBlock {
+                id: l::BlockId(0),
+                source_name: None,
+                parameters: Vec::new(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        l::InstructionKind::IteratorCreate {
+                            kind: l::ForOfKind::ArrayValues,
+                            bound: l::IteratorBoundKind::Fixed,
+                        },
+                        Vec::new(),
+                    ),
+                    instruction(
+                        1,
+                        l::InstructionKind::IteratorCreate {
+                            kind: l::ForOfKind::ArrayValues,
+                            bound: l::IteratorBoundKind::Live,
+                        },
+                        Vec::new(),
+                    ),
+                ],
+                terminator: l::Terminator::ConditionalBranch {
+                    condition: l::Operand::Constant(l::Constant {
+                        ty: Type::Bool,
+                        kind: l::ConstantKind::Boolean(true),
+                    }),
+                    then_target: target(1, &[0, 0]),
+                    else_target: target(1, &[1, 0]),
+                },
+            },
+            l::BasicBlock {
+                id: l::BlockId(1),
+                source_name: None,
+                parameters: vec![l::ValueId(2), l::ValueId(3)],
+                instructions: vec![
+                    instruction(4, l::InstructionKind::IteratorAdvance, vec![argument(2)]),
+                    instruction(5, l::InstructionKind::Copy, vec![argument(3)]),
+                    instruction(6, l::InstructionKind::IteratorAdvance, vec![argument(5)]),
+                ],
+                terminator: l::Terminator::Branch(target(1, &[4, 6])),
+            },
+        ];
+        let index = EmissionIndex::build(function);
+        assert_eq!(
+            fixed_iterator_values(function, &index),
+            HashSet::from([l::ValueId(0), l::ValueId(3), l::ValueId(5), l::ValueId(6)])
+        );
+        // The live bit reaches the second parameter only through the back edge.
+        function.blocks[1].terminator = l::Terminator::Branch(target(1, &[6, 4]));
+        let index = EmissionIndex::build(function);
+        assert_eq!(
+            fixed_iterator_values(function, &index),
+            HashSet::from([l::ValueId(0)])
+        );
     }
 
     #[test]
