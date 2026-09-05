@@ -76,3 +76,27 @@ twelve gate cases, six of which run `tools/hygiene.sh` for real.
 §86 (C emission), §87 (synthetic owner), §88 (corpus inventory), in
 that order. Every landing cites the verdict line of this script.
 
+
+## Where the debug step's wall time goes (measured 2026-09-05)
+
+The gate on the §86 Task B tree: debug step 1,443 s wall, and the
+sum of every `test result: ... finished in` timer 489 s; release
+629 s wall against 593 s. The workspace has no doctest; the doctest
+phase is 68 s of the debug gap. Every debug test binary, run alone
+after `cargo test --no-run`, showed a fixed 30–65 s before its first
+test (58 binaries, 1,412 s wall against 499 s of timers); a
+17 MiB binary with two tests took 64.9 s the first time and 0.00 s
+the second. Reproduced by relinking one binary: first run 29.0 s
+inside the tool sandbox and 35.9 s outside it, second run 0.00 s.
+
+**Cause: the host's first-launch check of a newly linked
+executable** (macOS 26.6, arm64), paid once per binary per relink,
+not by the tests. A change in `compiler/` relinks every dependent
+test binary, so a debug gate after such a change pays about 58 ×
+30 s. The release step shows a small gap; its binaries are smaller.
+
+Not a defect of the tests or the script. Two candidates, the
+owner's decision: fewer test binaries (one `tests/main.rs` per
+crate with `mod` per file; the count is what the host charges), or
+a host setting that exempts `target/` from the check. Recorded, not
+changed.
