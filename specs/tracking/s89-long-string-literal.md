@@ -61,3 +61,22 @@ gate full c6323c0ab1c434a329c7a269526e6bbf42b6fb7d dirty:6 debug 1285/0/2 releas
 Owner decision: a checker diagnostic, S019, at 65,000 bytes; not the
 array form. `collisions.md` C15. The reject entry r184 and the
 four-case unit test are §89.3 item 5.
+
+### Round 2 result (at `bd5dfec`)
+
+Red: r184 (a 65,001-byte literal) checked clean before the fix;
+measured at `bd5dfec`, not `97e1110` as the contract first said
+(corrected at `fabb363`). Green: S019 with one shared constant, the
+decoded length, the literal's position; `divergence.rs` gains the
+entry citing C15; `corpus_reject.rs` loses its count pin (the §88
+shape, the one file §88 did not list); the language reference is
+regenerated and now carries the 65,001-byte excerpt line (generator
+output).
+
+Fresh review: CRITICAL 0, MAJOR 1, MINOR 5. The MAJOR was a
+contract ambiguity: "the static text of one template literal" read
+as the sum of the parts, and the emitter writes each part as its own
+literal, so the limit is per part; decided at `fabb363` (forced by
+the emitter's form). MINOR: the Red pin; a decoded-vs-source test
+case; two `///`; the thousands formatting holds below 1,000,000; the
+excerpt line. Round 3 takes the code items.
