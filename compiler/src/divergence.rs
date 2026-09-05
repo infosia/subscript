@@ -8,7 +8,7 @@
 //!
 //! One `match` holds the content. No other place holds a fragment.
 //!
-//! The `collision` id is a `collisions.md` heading id (`C1`..`C14`)
+//! The `collision` id is a `collisions.md` heading id (`C1`..`C15`)
 //! where the record has one. Where it has none, the id names the
 //! section that decided the rule (`compiler.md §67`, `stdlib.md §10`,
 //! or `collisions.md Q29`).
@@ -113,6 +113,8 @@ pub enum Divergence {
     JsonSubset,
     /// An aggregate or a stack frame past its byte limit.
     AggregateLayoutLimit,
+    /// A string literal exceeds the ship-tier byte limit.
+    StringLiteralLength,
     /// `exec`, `matchAll`, `lastIndex`, `groups`, and sticky matching.
     RegExpSubset,
     /// `replaceAll` with a literal that has no `g` flag.
@@ -153,7 +155,7 @@ pub struct DivergenceEntry {
     pub subscript: &'static str,
     /// One sentence, 25 words or fewer, that gives the reason.
     pub why: &'static str,
-    /// The record id: a `collisions.md` heading id (`C1`..`C14`), or a
+    /// The record id: a `collisions.md` heading id (`C1`..`C15`), or a
     /// section id where the record has no heading.
     pub collision: &'static str,
 }
@@ -207,6 +209,7 @@ impl Divergence {
         Divergence::NumberCoercionAndArguments,
         Divergence::JsonSubset,
         Divergence::AggregateLayoutLimit,
+        Divergence::StringLiteralLength,
         Divergence::RegExpSubset,
         Divergence::ReplaceAllGlobalFlag,
         Divergence::WorkerEntryShape,
@@ -633,6 +636,12 @@ impl Divergence {
                 why: "A field offset is a signed 32-bit displacement, so one aggregate and \
                       the whole stack frame each have a byte limit.",
                 collision: "collisions.md Q29",
+            },
+            Divergence::StringLiteralLength => DivergenceEntry {
+                ts: "const text: string = \"...\"; // TypeScript has no literal length limit.",
+                subscript: "const text: string = \"a\".repeat(65001); // Build long strings at run time.",
+                why: "subscript rejects literals above 65,000 UTF-8 bytes because the ship tier's C compilers limit one concatenated literal.",
+                collision: "C15",
             },
             Divergence::RegExpSubset => DivergenceEntry {
                 ts: "const match = /x/.exec(\"x\");\n\

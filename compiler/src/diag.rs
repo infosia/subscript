@@ -50,13 +50,15 @@ pub enum RuleCode {
     S017,
     /// A receiver type must declare each accessed member.
     S018,
+    /// A string literal exceeds the ship-tier byte limit.
+    S019,
     /// Catch-all: construct outside the decided language surface.
     S100,
 }
 
 impl RuleCode {
     /// Every stable rule code, in numeric order.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::S001,
         Self::S002,
         Self::S003,
@@ -74,6 +76,7 @@ impl RuleCode {
         Self::S016,
         Self::S017,
         Self::S018,
+        Self::S019,
         Self::S100,
     ];
 
@@ -98,6 +101,7 @@ impl RuleCode {
             RuleCode::S016 => "S016",
             RuleCode::S017 => "S017",
             RuleCode::S018 => "S018",
+            RuleCode::S019 => "S019",
             RuleCode::S100 => "S100",
         }
     }
@@ -133,6 +137,7 @@ impl RuleCode {
                 "One namespace cannot contain two declarations of the same name."
             }
             RuleCode::S018 => "A receiver type must declare each accessed member.",
+            RuleCode::S019 => "String literals must fit the ship-tier byte limit.",
             RuleCode::S100 => "Constructs outside the decided language surface are rejected.",
         }
     }
@@ -218,7 +223,7 @@ mod tests {
 
     #[test]
     fn every_rule_code_has_an_explanation() {
-        assert_eq!(RuleCode::ALL.len(), 18);
+        assert_eq!(RuleCode::ALL.len(), 19);
         for code in RuleCode::ALL {
             assert!(!code.explanation().is_empty(), "{code}");
             assert!(!code.explanation().contains('\n'), "{code}");

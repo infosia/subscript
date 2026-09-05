@@ -18,6 +18,9 @@ use crate::types::{ClassId, FuncType, Type};
 use super::stmt::narrow_paths;
 use super::{static_member_symbol, Checker, FnCtx, Frame, Local, ParamSig, Scope, ScopeItem};
 
+/// Maximum decoded UTF-8 bytes in one string literal or static template part.
+const STRING_LITERAL_BYTE_LIMIT: usize = 65_000;
+
 enum PlaceSource<'a> {
     Ident(&'a ast::Ident),
     Member(&'a ast::MemberExpr),
@@ -1037,6 +1040,7 @@ impl<'p> Checker<'p> {
             ast::Lit::Num(n) => self.check_num_lit(n, false, ctx, pos),
             ast::Lit::Str(s) => {
                 let value = s.value.to_string();
+                self.check_string_literal_length(value.len(), &pos);
                 if let Some(Type::StringAlias(id)) = ctx {
                     if let Some(discriminant) = self.string_aliases.get(id.0).and_then(|alias| {
                         alias
@@ -1229,7 +1233,25 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// Reports S019 when a decoded literal exceeds the ship-tier byte limit.
+    fn check_string_literal_length(&mut self, bytes: usize, pos: &Pos) {
+        if bytes > STRING_LITERAL_BYTE_LIMIT {
+            // This thousands format holds for a limit below 1,000,000.
+            let thousands = STRING_LITERAL_BYTE_LIMIT / 1_000;
+            let remainder = STRING_LITERAL_BYTE_LIMIT % 1_000;
+            self.error_diverging(
+                RuleCode::S019,
+                format!(
+                    "string literal of {bytes} bytes exceeds the ship-tier limit of {thousands},{remainder:03} bytes"
+                ),
+                pos.clone(),
+                Divergence::StringLiteralLength,
+            );
+        }
+    }
+
     fn check_template(&mut self, tpl: &ast::Tpl, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+        let mut oversized_part_bytes = None;
         let mut parts = Vec::new();
         for (i, quasi) in tpl.quasis.iter().enumerate() {
             let text = quasi
@@ -1237,6 +1259,9 @@ impl<'p> Checker<'p> {
                 .as_ref()
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| quasi.raw.to_string());
+            if text.len() > STRING_LITERAL_BYTE_LIMIT && oversized_part_bytes.is_none() {
+                oversized_part_bytes = Some(text.len());
+            }
             if !text.is_empty() {
                 parts.push(TplPart::Text(text));
             }
@@ -1266,6 +1291,9 @@ impl<'p> Checker<'p> {
                 }
                 parts.push(TplPart::Expr(checked));
             }
+        }
+        if let Some(bytes) = oversized_part_bytes {
+            self.check_string_literal_length(bytes, &pos);
         }
         hir::Expr {
             kind: ExprKind::Template(parts),
