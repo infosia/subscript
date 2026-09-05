@@ -11869,7 +11869,11 @@ and names no command either.
    (`M`, `D`); then the verdict line.
 6. **The verdict line** is one line, last in the record and last on
    stdout:
-   `gate <shape> <rev> <clean|dirty:N> debug <p>/<f>/<i> [release <p>/<f>/<i>] skips <n> [clippy <c>/<r>/<g>] goldens-moved <m> exit <status>`.
+   `gate <shape> <rev> <clean|dirty:N> debug <p>/<f>/<i> [release <p>/<f>/<i>] skips <d>[/<r>] [clippy <c>/<r>/<g>] goldens-moved <m> exit <status>`.
+   `<d>` is the count of `gate-skip:` lines of the debug test
+   command and `<r>` that of the release test command. *(Amended
+   2026-09-05, forced: the debug command declares the `perf_gate`
+   skip by rule 4, so one total could not be 0 in `full`.)*
    The exit status is 0 only when every command exits 0, every test
    command reports 0 failed, and rule 4 holds. A moved golden does
    not change the exit status; the reviewer reads `goldens-moved`
@@ -11924,7 +11928,8 @@ and names no command either.
    through a function that returns the line, compared against a
    hand-written string.
 3. `tools/gate.sh full` at the landing revision, this host: the
-   verdict shows `skips 0`, `goldens-moved 0`, `exit 0`, and the
+   verdict shows `skips 1/0` (the debug `perf_gate` declaration, no
+   release skip), `goldens-moved 0`, `exit 0`, and the
    passed counts are within the tracking note. Every pre-existing
    golden and `.expected` stays byte-identical.
 4. Windows: `tools/gate.sh` runs under the `sh` that
