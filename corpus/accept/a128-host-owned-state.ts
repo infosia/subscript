@@ -1,4 +1,5 @@
 // corpus: accept/a128-host-owned-state
+// interpreter: no — requires host pre-entry and post-run hooks
 // purpose: Proves that host-owned state spans two separate script entry calls.
 // exercises: ship-host-hooks, borrowed-opaque-handle, sync-and-async-entries
 // questions: R21, Q1, C8

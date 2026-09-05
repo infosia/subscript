@@ -1,4 +1,5 @@
 // corpus: accept/a121-interop-unmarked-reach-through
+// interpreter: no — calls the synthetic native interop library
 // purpose: Pins shape-based recursive lowering through a count-less plain struct-pointer member inside an array element.
 // exercises: recursive-boundary-lowering, unmarked-struct-pointer, pointer-in-array-element, enum-pointer-u64-layout, lowered-or-loud
 // questions: Q13, C4, C7

@@ -1,4 +1,5 @@
 // corpus: accept/a34-interop-bulk-facade
+// interpreter: no — calls the synthetic native interop library
 // purpose: Passes an f32[] zero-copy through a typed facade to an untyped void*+byte-size C API.
 // exercises: interop-untyped-facade, void-pointer-byte-size, zero-copy-slice, foreign-call
 // questions: Q13, Q4

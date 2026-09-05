@@ -1,4 +1,5 @@
 // corpus: accept/a27-interop-string-view
+// interpreter: no — calls the synthetic native interop library
 // purpose: Round-trips a length-carrying string label through setLabel and the callback.
 // exercises: interop-string-view, string-boundary, callback, foreign-call
 // questions: Q13, Q16

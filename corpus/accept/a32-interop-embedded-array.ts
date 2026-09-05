@@ -1,4 +1,5 @@
 // corpus: accept/a32-interop-embedded-array
+// interpreter: no — calls the synthetic native interop library
 // purpose: Passes a descriptor-embedded (count, pointer) array field zero-copy inside a boundary struct.
 // exercises: interop-embedded-array, descriptor-embedded-pair, boundary-struct-by-value, foreign-call
 // questions: Q13, Q4

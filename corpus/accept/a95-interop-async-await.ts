@@ -1,4 +1,5 @@
 // corpus: accept/a95-interop-async-await
+// interpreter: no — calls the synthetic native interop library
 // purpose: Exercises deterministic foreign polling from an async function.
 // exercises: foreign-poll, Context.suspend, async-main
 // questions: Q34, Q1, C8

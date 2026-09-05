@@ -1,4 +1,5 @@
 // corpus: accept/a28-interop-callback
+// interpreter: no — calls the synthetic native interop library
 // purpose: Registers a callback with userdata, fires it twice, and narrows the userdata via `as`.
 // exercises: interop-callback, userdata-narrowing, as-narrowing, foreign-call
 // questions: Q13, Q16

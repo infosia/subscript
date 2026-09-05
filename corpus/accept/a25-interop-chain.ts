@@ -1,4 +1,5 @@
 // corpus: accept/a25-interop-chain
+// interpreter: no — calls the synthetic native interop library
 // purpose: Builds an intrusive extension chain and observes its depth through the callback.
 // exercises: interop-chain, chain-header, struct-pointer-slot, callback, foreign-call
 // questions: Q13, Q16

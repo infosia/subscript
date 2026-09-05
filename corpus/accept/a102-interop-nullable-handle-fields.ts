@@ -1,4 +1,5 @@
 // corpus: accept/a102-interop-nullable-handle-fields
+// interpreter: no — calls the synthetic native interop library
 // purpose: Round-trips one-of-three nullable opaque-handle fields through a bind-group-entry-shaped C record in both directions.
 // exercises: nullable-handle-field, null-lowering, null-readback, boundary-struct-pointer, one-of-three
 // questions: Q13, C7

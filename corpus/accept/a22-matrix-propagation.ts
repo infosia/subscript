@@ -1,4 +1,5 @@
 // corpus: accept/a22-matrix-propagation
+// cost: benchmark
 // purpose: Runs the fixed matrix-propagation benchmark and prints one f32 checksum.
 // exercises: value-struct, fixed-array, slices, lcg, matrix-propagation, benchmark
 // questions: Q1, Q2, Q3, Q4, Q12, Q14, Q15, Q17

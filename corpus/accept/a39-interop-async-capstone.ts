@@ -1,4 +1,5 @@
 // corpus: accept/a39-interop-async-capstone
+// interpreter: no — calls the synthetic native interop library
 // purpose: Composed Future-shape async — kick returns a future by value, wait writes an out-array and fires a two-userdata callback.
 // exercises: interop-struct-return, two-userdata, out-array, async-deferred-fire, as-narrowing, foreign-call
 // questions: Q13, Q16

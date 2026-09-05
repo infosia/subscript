@@ -1,4 +1,5 @@
 // corpus: accept/a112-worker-echo
+// interpreter: no — requires a runtime worker adapter and a second interpreter Context
 // purpose: Pins one deterministic parent-to-worker-to-parent echo round-trip.
 // exercises: Worker.spawn, Worker.post, Inbox.wait, Outbox.post, Worker.close, Worker.join, Worker.poll
 // questions: Q35

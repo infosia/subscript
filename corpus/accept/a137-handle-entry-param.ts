@@ -1,4 +1,5 @@
 // corpus: accept/a137-handle-entry-param
+// interpreter: no — exported main requires a host-supplied handle
 // purpose: Proves that a host passes one opaque handle and one scalar to a script entry.
 // exercises: host-callable-export-parameters, borrowed-opaque-handle, stored-wrapper
 // questions: R30

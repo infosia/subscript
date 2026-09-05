@@ -1,4 +1,5 @@
 // corpus: accept/a127-interop-external-type
+// interpreter: no — calls two synthetic native interop libraries
 // purpose: Passes one opaque handle between two generated mirrors that share its external type spelling.
 // exercises: external-mirror-type, two-header-binding, opaque-handle, foreign-call
 // questions: Q13, C7

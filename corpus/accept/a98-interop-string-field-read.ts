@@ -1,4 +1,5 @@
 // corpus: accept/a98-interop-string-field-read
+// interpreter: no — calls the synthetic native interop library
 // purpose: Materializes language strings from C-filled string views inside pointer-passed boundary structs.
 // exercises: string-view-field, boundary-struct-pointer, c-layout-scratch, view-copy-in, all-zero-view
 // questions: Q13, C4

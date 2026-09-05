@@ -1,4 +1,5 @@
 // corpus: accept/a126-interop-by-value-packing
+// interpreter: no — calls the synthetic native interop library
 // purpose: Pins target-ABI register images for by-value boundary structs, including AAPCS64 eightbyte packing, HFAs, padding, and indirect composites.
 // exercises: interop-by-value, aapcs64-eightbytes, hfa, c-layout-padding, indirect-composite
 // questions: OBS-4

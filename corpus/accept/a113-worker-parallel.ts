@@ -1,4 +1,5 @@
 // corpus: accept/a113-worker-parallel
+// interpreter: no — requires runtime worker adapters and child interpreter Contexts
 // purpose: Pins two workers computing disjoint chunks with parent-observed worker-order output.
 // exercises: two-workers, concurrent-computation, ordered-parent-aggregation
 // questions: Q35

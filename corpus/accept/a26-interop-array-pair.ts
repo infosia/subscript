@@ -1,4 +1,5 @@
 // corpus: accept/a26-interop-array-pair
+// interpreter: no — calls the synthetic native interop library
 // purpose: Submits a (pointer,count) command view and observes its sum through the callback.
 // exercises: interop-array-pair, pointer-count-view, callback, foreign-call
 // questions: Q13, Q16

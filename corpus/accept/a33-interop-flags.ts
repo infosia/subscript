@@ -1,4 +1,5 @@
 // corpus: accept/a33-interop-flags
+// interpreter: no — calls the synthetic native interop library
 // purpose: Combines flag-typedef members with | (Q18) and passes the combined u64 to a foreign bit test.
 // exercises: interop-flags, flag-typedef, u64-bitwise, foreign-call
 // questions: Q13, Q18

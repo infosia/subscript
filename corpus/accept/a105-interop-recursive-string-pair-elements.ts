@@ -1,4 +1,5 @@
 // corpus: accept/a105-interop-recursive-string-pair-elements
+// interpreter: no — calls the synthetic native interop library
 // purpose: Rebuilds a collapsed constants pair as a scratch array whose entries each expand a string key view.
 // exercises: recursive-boundary-lowering, string-field-struct-elements, scratch-element-array, programmable-stage-constants
 // questions: Q13, C4

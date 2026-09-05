@@ -1,4 +1,5 @@
 // corpus: accept/a30-interop-compose
+// interpreter: no — calls the synthetic native interop library
 // purpose: Composes all five C interop patterns in one program.
 // exercises: interop-chain, interop-array-pair, interop-string-view, interop-callback, interop-handle, foreign-call
 // questions: Q13, Q16

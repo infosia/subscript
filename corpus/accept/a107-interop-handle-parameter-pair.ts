@@ -1,4 +1,5 @@
 // corpus: accept/a107-interop-handle-parameter-pair
+// interpreter: no — calls the synthetic native interop library
 // purpose: Collapses an adjacent const opaque-handle parameter pair beside a leading handle, preserving count and per-element identity in C.
 // exercises: handle-parameter-pair, input-array, count-elision, opaque-handle, pointer-identity, foreign-call
 // questions: Q13, C4

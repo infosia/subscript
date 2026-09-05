@@ -1,4 +1,5 @@
 // corpus: accept/a123-interop-wide-descriptor
+// interpreter: no — calls the synthetic native interop library
 // purpose: Pins scratch ownership for a wide render-pipeline-shaped descriptor combining nested pairs, by-value states, handles, and two reach-through pointer trees.
 // exercises: recursive-boundary-lowering, wide-descriptor, breadth-depth-composition, pointer-bearing-array-elements, sibling-independent-scratch
 // questions: Q13, C4, C7

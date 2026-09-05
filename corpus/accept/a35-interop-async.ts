@@ -1,4 +1,5 @@
 // corpus: accept/a35-interop-async
+// interpreter: no — calls the synthetic native interop library
 // purpose: Deferred (host-driven) callback — registered now, fired later by a pump; userdata outlives the registration.
 // exercises: interop-callback, async-deferred-fire, userdata-lifetime, as-narrowing, foreign-call
 // questions: Q13, Q16

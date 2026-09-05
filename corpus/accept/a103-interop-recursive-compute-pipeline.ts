@@ -1,4 +1,5 @@
 // corpus: accept/a103-interop-recursive-compute-pipeline
+// interpreter: no — calls the synthetic native interop library
 // purpose: Recursively lowers an embedded compute state whose entry point is a string view.
 // exercises: recursive-boundary-lowering, embedded-string-view, compute-pipeline-descriptor, c-layout-scratch
 // questions: Q13, C4

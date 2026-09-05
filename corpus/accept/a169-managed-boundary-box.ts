@@ -1,4 +1,5 @@
 // corpus: accept/a169-managed-boundary-box
+// interpreter: no — calls the synthetic native interop library; the instruction-level box test is interpreted separately
 // purpose: Keeps nullable boundary aggregates valid after global, return, array, and recursive-chain escapes.
 // exercises: nullable-boundary-box, module-global, return, array-element, recursive-boundary-lowering
 // questions: §33.5, §68

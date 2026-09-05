@@ -1,4 +1,5 @@
 // corpus: accept/a129-interop-wire-enum
+// interpreter: no — calls the synthetic native interop library
 // purpose: Crosses a synthetic C boundary through an R23 wire-mapped literal union.
 // exercises: CEnum, foreign-return, foreign-parameter, switch, non-dense-wire-values
 // questions: R23, Q32

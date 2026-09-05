@@ -125,55 +125,6 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
         .filter(|n| n.ends_with(".ts"))
         .collect();
     single_files.sort();
-    let regex_entries = single_files
-        .iter()
-        .filter(|name| name.starts_with("a82-regex") || name.starts_with("a83-regex"))
-        .count();
-    assert_eq!(regex_entries, 2, "expected two regex entries");
-    assert_eq!(
-        single_files.len(),
-        180,
-        "expected 80 standing single-file accept entries (23 run set + a25–a39 interop \
-         + a40–a45 stdlib + a46–a50 narrow numerics + a51–a56 Map/Set \
-         + a57–a59 Number + a60 Unicode String + a61 SameValueZero \
-         + a62 Q26 Number formatting/clz32 + a63–a68 Q27 stages 1–6 \
-         + a69 P13 JSON.stringify + a70–a72 P13 JSON.parse \
-         + a73 P19 divisor single-evaluation + a74–a76 P20 review fixes \
-         + a77–a81 P22 for-of/container iteration/array spread), plus two \
-         P23 regex entries, four a84–a87 P24 code-point entries, and the \
-         a88 P24 astral-intern collection entry, and the a89 P25 chain \
-         payload read-back through an embedded header entry \
-         (compiler.md §23.7a), the a90 callback-userdata rooting entry, \
-         the a91 Q32 string-literal-union entry, and the a92 Q33 \
-         descriptor-literal entry, the three a93–a95 Q34 async entries, and \
-         the a96 R5 scalar parameter-pair interop entry, the a97–a98 R6 \
-         pointer-passed boundary-struct string-view entries, and the a99–a100 \
-         R7 texture-descriptor write/read entries, the a101–a102 R8 \
-         opaque-handle aggregate entries, and the a103–a105 R9 recursive \
-         boundary-lowering entries, plus the a106 R10 struct-pointer-member \
-         recursive-lowering entry, the a107 R11 handle-parameter-pair entry, \
-         the a108 R12 nullable-handle-parameter entry, the a109 OBS-1 \
-         null-only boundary type reachability entry, the a110–a111 R13 \
-         async instance-method entries, the a112–a113 Q35 worker entries, and the \
-         a114 capturing-lambda recursion review pin, the a115 R14 Q32 \
-         alias-switch entry, the a116 R15 divergence-flow entry, and the \
-         a117 R17 nullable-descriptor-literal entry, and the a118 R16 \
-         absence-capable descriptor-member entry, the a119 OBS-3 \
-         handle-beside-arrays entry, and the a120 OBS-3 \
-         nested-behind-element-pointer entry, and the a121 OBS-3 \
-         unmarked-reach-through entry, the a122 OBS-3 two-pointer-members \
-         entry, the a123 OBS-3 wide-descriptor entry, and the a124 R18 \
-         contextual-conditional entry, and the a125 R19 conditional-arm \
-         narrowing entry, and the a126 OBS-4 by-value register-image \
-         packing entry, the a127 R20 external-type two-mirror entry, and the \
-         a128 R21 host-owned-state entry, the a129 R23 wire-enum entry, and \
-         the a130 R24 bind-generated enum-typedef wire-enum entry, and the a131 §52 \
-         wire-enum boundary-struct entry, the a132 R26 full-width integer-literal entry, and the \
-         a133–a134 R27 field-initializer entries, the a135 R28 binary32 bit-access entry, and the \
-         a136 R29 class-index-signature entry, the a137 R30 handle-entry-parameter entry, and the \
-         a138–a139 R31 using-declaration entries, the a140 R32 wire-entry-parameter entry, and the \
-         a141 R33 CStruct-alignment entry, the a142 R34 Context-storage-byte entry, the a143 R36 async-generic entry, the a144 R37 named-accessor entry, the a145 §66 emitted-identifier entry, the a146 §66 scoped-local entry, the a147–a148 §67 switch-body-scope entries, the a149 §67 suspension-state entry, the a150–a153 §68 entries, the a154–a155 §70 held-async-handle entries, the a156 value-class receiver-by-value entry, the a157 suspension-loop-liveness entry, the a159 address-base-liveness entry, the a160 §67 module-initializer-order entry, the a161–a162 §70 counted-store/copy-site entries, the a163 address-taken activation-liveness entry, the a164–a165 and a167 §68 consumer entries, the a166 resume-parameter-interference entry, the a168 §71 static-member entry, the a169 §33.5 managed-boundary-box entry, the a170 iteration-bound-spelling entry, the a171–a172 static-callback entries, the a173 §8.1e callback-collect-rooted entry, the a174 §72 enum-widening-cast entry, the a175 closure-environment-collect entry, the a176 compound-through-accessor entry, the a177 nullish entry, the a178 generic-method entry, the a179 static-read-accessor entry, the a180–a181 operation entries, and the a182 worker-string message entry"
-    );
     for name in &single_files {
         let module = check_entry(&[(name.as_str(), accept.join(name))]);
         assert!(

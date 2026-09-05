@@ -1,4 +1,5 @@
 // corpus: accept/a109-interop-null-only-boundary-reference
+// interpreter: no — calls the synthetic native interop library
 // purpose: Passes null to a nullable boundary-struct parameter without constructing or accessing the boundary class.
 // exercises: null-only-boundary-reference, boundary-struct-pointer, referenced-type-reachability, foreign-call
 // questions: OBS-1

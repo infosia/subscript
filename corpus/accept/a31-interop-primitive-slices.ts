@@ -1,4 +1,5 @@
 // corpus: accept/a31-interop-primitive-slices
+// interpreter: no — calls the synthetic native interop library
 // purpose: Passes primitive-typed arrays zero-copy to typed C slice facades (f32/i32/f64/i64) and prints each checksum.
 // exercises: interop-array-pair, pointer-count-view, zero-copy-slice, foreign-call, multi-primitive
 // questions: Q13, Q4

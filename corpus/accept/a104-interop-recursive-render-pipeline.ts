@@ -1,4 +1,5 @@
 // corpus: accept/a104-interop-recursive-render-pipeline
+// interpreter: no — calls the synthetic native interop library
 // purpose: Composes recursive lowering through an embedded vertex state, a buffer-layout pair, and each layout's scalar attribute pair.
 // exercises: recursive-boundary-lowering, render-pipeline-depth-chain, struct-element-scratch-array, nested-collapsed-pair, deepest-evidence
 // questions: Q13, C4

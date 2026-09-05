@@ -1,4 +1,5 @@
 // corpus: accept/a182-worker-string-message
+// interpreter: no — requires a runtime worker adapter and Context-owned string copies
 // purpose: Pins copied strings and distinct input/output descriptors across worker round trips.
 // exercises: Worker messages, string byte copies, FixedArray string slots, Context isolation, u8-led padding
 // questions: Q35

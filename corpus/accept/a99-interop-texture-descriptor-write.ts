@@ -1,4 +1,5 @@
 // corpus: accept/a99-interop-texture-descriptor-write
+// interpreter: no — calls the synthetic native interop library
 // purpose: Lowers a texture descriptor mixing a string view, embedded extent, enum array pair, and trailing scalars from script to C.
 // exercises: string-view-field, nested-boundary-aggregate, struct-enum-pair, c-layout-scratch, zero-copy-slice, scalar-offsets
 // questions: Q13, C4

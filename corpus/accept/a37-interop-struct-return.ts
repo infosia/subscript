@@ -1,4 +1,5 @@
 // corpus: accept/a37-interop-struct-return
+// interpreter: no — calls the synthetic native interop library
 // purpose: Reads fields of boundary value classes returned BY VALUE from foreign calls (register and sret ABI).
 // exercises: interop-struct-return, by-value-aggregate-abi, boundary-value-class, foreign-call
 // questions: Q13

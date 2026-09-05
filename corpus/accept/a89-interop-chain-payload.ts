@@ -1,4 +1,5 @@
 // corpus: accept/a89-interop-chain-payload
+// interpreter: no — calls the synthetic native interop library
 // purpose: Reads an extension payload through its embedded chain header.
 // exercises: interop-chain, embedded-header-address, payload-read, foreign-call
 // questions: Q13, Q16, compiler.md §23.7a

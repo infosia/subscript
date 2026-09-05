@@ -1,4 +1,5 @@
 // corpus: accept/a97-interop-string-field-write
+// interpreter: no — calls the synthetic native interop library
 // purpose: Expands a leading language string handle to a C string view inside a pointer-passed boundary struct.
 // exercises: string-view-field, boundary-struct-pointer, c-layout-scratch, zero-copy-string-view, scalar-offsets
 // questions: Q13, C4

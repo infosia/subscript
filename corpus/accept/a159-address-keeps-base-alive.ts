@@ -1,4 +1,5 @@
 // corpus: accept/a159-address-keeps-base-alive
+// interpreter: no — calls the synthetic native interop library
 // purpose: Keeps a conditional boundary-aggregate temporary alive through a nullable member address.
 // exercises: address-provenance, conditional-temporary, nullable-boundary-member, recursive-boundary-lowering
 // questions: §33.4, §68

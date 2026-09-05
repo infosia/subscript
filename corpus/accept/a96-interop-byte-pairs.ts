@@ -1,4 +1,5 @@
 // corpus: accept/a96-interop-byte-pairs
+// interpreter: no — calls the synthetic native interop library
 // purpose: Passes scalar arrays through adjacent count/pointer C parameters in const-input and mutable-fill directions.
 // exercises: scalar-parameter-pair, zero-copy-slice, out-array, u8, u16, foreign-call
 // questions: Q13, C4

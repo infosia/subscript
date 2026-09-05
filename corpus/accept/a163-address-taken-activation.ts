@@ -1,4 +1,5 @@
 // corpus: accept/a163-address-taken-activation
+// interpreter: no — calls the synthetic native interop library
 // purpose: Keeps conditional boundary-aggregate temporaries alive until the activation ends after their addresses are taken.
 // exercises: address-taken-liveness, nullable-boundary-member, foreign-call, script-call
 // questions: §33.4, §68

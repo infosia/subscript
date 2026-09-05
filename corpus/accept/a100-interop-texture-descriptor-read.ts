@@ -1,4 +1,5 @@
 // corpus: accept/a100-interop-texture-descriptor-read
+// interpreter: no — calls the synthetic native interop library
 // purpose: Copies a C-filled embedded extent back beside string materialization while preserving the collapsed pair's script array handle.
 // exercises: string-view-field, nested-boundary-aggregate, struct-enum-pair, c-layout-scratch, aggregate-copy-back, view-copy-in
 // questions: Q13, C4

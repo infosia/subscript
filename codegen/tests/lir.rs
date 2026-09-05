@@ -1174,744 +1174,7 @@ export function main(): void {
     );
 }
 
-/// Corpus programs whose observable result depends on a host facility the
-/// reference interpreter cannot supply. The reason is deliberately repeated
-/// per entry: adding a new program can never inherit a broad silent skip.
-const INTERPRETER_EXCLUSIONS: &[(&str, &str)] = &[
-    (
-        "a25-interop-chain",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a26-interop-array-pair",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a27-interop-string-view",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a28-interop-callback",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a29-interop-handle",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a30-interop-compose",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a31-interop-primitive-slices",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a32-interop-embedded-array",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a33-interop-flags",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a34-interop-bulk-facade",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a35-interop-async",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a36-interop-chained-flags",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a37-interop-struct-return",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a38-interop-out-field",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a39-interop-async-capstone",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a48-interop-narrow-slices",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a89-interop-chain-payload",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a90-callback-userdata-rooted",
-        "registers a callback with the synthetic native interop library",
-    ),
-    (
-        "a95-interop-async-await",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a96-interop-byte-pairs",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a97-interop-string-field-write",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a98-interop-string-field-read",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a99-interop-texture-descriptor-write",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a100-interop-texture-descriptor-read",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a101-interop-handle-array-pair",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a102-interop-nullable-handle-fields",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a103-interop-recursive-compute-pipeline",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a104-interop-recursive-render-pipeline",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a105-interop-recursive-string-pair-elements",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a106-interop-recursive-struct-pointer-members",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a159-address-keeps-base-alive",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a163-address-taken-activation",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a169-managed-boundary-box",
-        "calls the synthetic native interop library; the instruction-level box test is interpreted separately",
-    ),
-    (
-        "a107-interop-handle-parameter-pair",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a108-interop-nullable-handle-parameter",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a109-interop-null-only-boundary-reference",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a111-interop-async-method-poll",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a112-worker-echo",
-        "requires a runtime worker adapter and a second interpreter Context",
-    ),
-    (
-        "a113-worker-parallel",
-        "requires runtime worker adapters and child interpreter Contexts",
-    ),
-    (
-        "a182-worker-string-message",
-        "requires a runtime worker adapter and Context-owned string copies",
-    ),
-    (
-        "a119-interop-handle-beside-arrays",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a120-interop-nested-behind-element-pointer",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a121-interop-unmarked-reach-through",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a122-interop-two-pointer-members",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a123-interop-wide-descriptor",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a124-contextual-conditional",
-        "calls the synthetic native interop library for boundary-handle arms",
-    ),
-    (
-        "a125-conditional-arm-narrowing",
-        "calls the synthetic native interop library for boundary-handle arms",
-    ),
-    (
-        "a126-interop-by-value-packing",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a127-interop-external-type",
-        "calls two synthetic native interop libraries",
-    ),
-    (
-        "a128-host-owned-state",
-        "requires host pre-entry and post-run hooks",
-    ),
-    (
-        "a129-interop-wire-enum",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a130-interop-wire-enum-bind",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a131-interop-wire-enum-struct",
-        "calls the synthetic native interop library",
-    ),
-    (
-        "a137-handle-entry-param",
-        "exported main requires a host-supplied handle",
-    ),
-    (
-        "a140-wire-entry-param",
-        "exported main requires a host-supplied wire value",
-    ),
-    (
-        "a149-suspension-state",
-        "reaches the synthetic native interop library after its suspension checks",
-    ),
-];
-
-const RELEASE_RUNNABLE_COUNT: usize = 125;
-const DEBUG_RUNNABLE_COUNT: usize = 124;
 const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
-const DEBUG_COST_EXCLUSIONS: &[(&str, &str)] = &[(
-    "a22-matrix-propagation",
-    "its purpose is benchmark cost; one million matrix multiplications add no interpreter semantics",
-)];
-
-/// The debug profile checks semantics that Rust debug checks can affect.
-/// Rust checks integer overflow in debug, but Subscript arithmetic always
-/// wraps. The list also checks stateful interpreter protocols in debug.
-///
-/// The interpreter can run `a22-matrix-propagation`, and the release sweep
-/// runs it. Debug omits it because its purpose is benchmark cost. One million
-/// matrix multiplications add cost, but they do not add interpreter semantics.
-/// No other runnable entry is outside this declared debug subset.
-const DEBUG_INTERPRETER_SUBSET: &[(&str, &str)] = &[
-    (
-        "a01-hello",
-        "exported entry, host output, and string literals",
-    ),
-    (
-        "a02-integer-types",
-        "baseline signed/unsigned arithmetic and explicit numeric conversions",
-    ),
-    (
-        "a03-integer-literals",
-        "contextual integer literals in bindings, calls, and arrays",
-    ),
-    (
-        "a04-value-struct",
-        "value-aggregate field access and copy-on-assignment",
-    ),
-    (
-        "a05-nominal-identity",
-        "nominal identity for same-shape value aggregates",
-    ),
-    (
-        "a06-fixed-array",
-        "fixed-array storage nested in a value aggregate",
-    ),
-    (
-        "a07-slice-pair",
-        "dynamic-array length, indexed reads, loops, and slice parameters",
-    ),
-    (
-        "a08-string-view",
-        "string length, slicing, parameters, and returned handles",
-    ),
-    (
-        "a09-enums",
-        "numeric enum values, parameters, and comparisons",
-    ),
-    (
-        "a10-control-flow",
-        "if, while, for, switch, break, and continue edges",
-    ),
-    (
-        "a11-functions",
-        "direct calls, default parameters, and return values",
-    ),
-    (
-        "a110-async-method-receiver",
-        "method receiver state and roots live across suspension and collection",
-    ),
-    (
-        "a114-lambda-env-recursion",
-        "capturing closure environments across recursive re-entry",
-    ),
-    (
-        "a115-switch-literal-union",
-        "string-alias values and integer-dispatched switch arms",
-    ),
-    (
-        "a116-exhaustive-switch-returns",
-        "exhaustive switch returns and unreachable control-flow construction",
-    ),
-    (
-        "a117-descriptor-literal-nullable-member",
-        "nullable nested descriptor aggregates, defaults, and arrays",
-    ),
-    (
-        "a118-absence-capable-member",
-        "descriptor omission, presence narrowing, and string aliases",
-    ),
-    (
-        "a12-generics-mono",
-        "generic functions and value aggregates at multiple instantiations",
-    ),
-    (
-        "a13-closures-noncapture",
-        "noncapturing function values and indirect calls",
-    ),
-    (
-        "a132-int-literal-64bit",
-        "full-range i64/u64 literals and numeric separators",
-    ),
-    (
-        "a133-field-init-no-ctor",
-        "field initializers for value and reference classes without constructors",
-    ),
-    (
-        "a134-field-init-order",
-        "constructor argument, field initializer, and body evaluation order",
-    ),
-    ("a135-f32-bits", "binary32 bit conversion and canonical NaN"),
-    (
-        "a136-index-signature",
-        "generic class index reads and writes through accessors",
-    ),
-    (
-        "a138-using-dispose",
-        "scope exits and reverse-order synchronous disposal",
-    ),
-    (
-        "a139-using-async",
-        "a disposable binding carried as an SSA live-in across suspension",
-    ),
-    (
-        "a14-closures-capture",
-        "capturing closure creation, storage, and indirect calls",
-    ),
-    (
-        "a141-cstruct-align",
-        "aligned value aggregates, nested copies, and fixed-array stride",
-    ),
-    (
-        "a142-bytes-of",
-        "aligned value aggregates, fixed arrays, padding, and byte-copy intrinsics",
-    ),
-    (
-        "a143-async-generic",
-        "generic async functions and methods at multiple instantiations",
-    ),
-    (
-        "a144-accessor",
-        "read and write accessor calls on reference, value, and generic classes",
-    ),
-    (
-        "a145-emitted-identifiers",
-        "coroutine live values under dense identifier reuse",
-    ),
-    (
-        "a146-scoped-locals",
-        "scoped values across generators, async, for-of, switch, lambdas, and using",
-    ),
-    (
-        "a147-switch-body-scope",
-        "one switch-body scope, distinct declarations, and fallthrough",
-    ),
-    (
-        "a148-switch-using-scope",
-        "resource disposal across switch fallthrough and scope exit",
-    ),
-    (
-        "a150-receiver-address-invalidation",
-        "receiver address recomputation after dynamic-array storage invalidation",
-    ),
-    (
-        "a151-lambda-env-outlives-block",
-        "capturing closure environment storage beyond its source block",
-    ),
-    (
-        "a152-lambda-env-per-iteration",
-        "distinct loop-iteration closure environments across suspension",
-    ),
-    (
-        "a153-nested-cstruct-array-roundtrip",
-        "nested value-aggregate dynamic-array storage and round-trip reads",
-    ),
-    (
-        "a154-held-async-handle",
-        "held async-handle creation, delayed polling, and deterministic completion order",
-    ),
-    (
-        "a155-async-handle-array",
-        "async-handle array storage, indexed held awaits, and scope release",
-    ),
-    (
-        "a156-cstruct-this-by-value",
-        "value-class receiver loads for by-value returns and arguments",
-    ),
-    (
-        "a157-await-loop-liveness",
-        "await-result liveness through a loop and a later suspension",
-    ),
-    (
-        "a160-module-initializer-order",
-        "module initializers and entry calls read initialized data bindings",
-    ),
-    (
-        "a161-counted-handle-stores",
-        "counted global, field, index, and spread stores across frame reuse",
-    ),
-    (
-        "a162-async-copy-sites",
-        "shared async-copy sites across loops, lambdas, conditionals, and pop",
-    ),
-    (
-        "a164-frame-class-locals",
-        "frame-class fixed-array locals across generator and async suspension",
-    ),
-    (
-        "a165-empty-template-float-remainder",
-        "empty template and IEEE floating remainder edges",
-    ),
-    (
-        "a166-resume-parameter-interference",
-        "resume-parameter interference under conditional lambda storage",
-    ),
-    (
-        "a167-saturating-float-casts",
-        "saturating float-to-integer casts and NaN-to-zero",
-    ),
-    (
-        "a168-static-members",
-        "static globals and free functions for fields, methods, and accessors",
-    ),
-    (
-        "a170-iteration-bound-spelling",
-        "live for-of and Map.forEach bounds plus the fixed Array.forEach bound",
-    ),
-    (
-        "a171-static-array-callbacks",
-        "static callback loops, direct calls, short circuits, and function-value intrinsics",
-    ),
-    (
-        "a172-array-callback-mutation",
-        "fixed callback ranges while the receiver grows or shrinks",
-    ),
-    (
-        "a173-callback-collect-rooted",
-        "a result array rooted across a callback that collects",
-    ),
-    (
-        "a174-enum-widening-cast",
-        "enum to sized-integer conversion at every target width",
-    ),
-    (
-        "a175-closure-environment-collect",
-        "a capturing lambda's environment across collection",
-    ),
-    (
-        "a176-compound-through-accessor",
-        "compound accessor and index writes with single operand evaluation",
-    ),
-    (
-        "a177-nullish",
-        "nullish and optional-chain conditional rewrites with single evaluation",
-    ),
-    (
-        "a178-generic-method",
-        "generic instance and static method instances at explicit type arguments",
-    ),
-    (
-        "a179-static-read-accessor",
-        "static read accessor calls before and after a static field write",
-    ),
-    (
-        "a180-for-of-generator-only",
-        "generator calls synthesized by for-of for scalar and value-class elements",
-    ),
-    (
-        "a181-operation-in-every-owner",
-        "operation-table calls in every expression owner",
-    ),
-    (
-        "a15-manual-lifetime",
-        "reference allocation, field access, and explicit free",
-    ),
-    (
-        "a16-explicit-collect",
-        "dropped references and explicit collection",
-    ),
-    (
-        "a17-null-story",
-        "nullable parameters, fields, branches, and narrowed references",
-    ),
-    (
-        "a18-error-handling",
-        "result aggregates and guarded integer division",
-    ),
-    (
-        "a19-modules",
-        "multi-file imports, exported calls, and module initialization",
-    ),
-    (
-        "a20-coroutine-generator",
-        "generator creation, yield, resume, and completion",
-    ),
-    (
-        "a21-methods",
-        "value and reference method receivers and calls",
-    ),
-    (
-        "a23-game-loop",
-        "bounded loops over arrays of value aggregates",
-    ),
-    (
-        "a24-particle-system",
-        "array-of-struct and struct-of-arrays aggregate updates",
-    ),
-    (
-        "a40-math",
-        "Math intrinsics, constants, float edges, and formatting",
-    ),
-    (
-        "a41-math-random",
-        "deterministic Context random-number state",
-    ),
-    (
-        "a42-date",
-        "Date construction, accessors, formatting, arrays, and reference fields",
-    ),
-    (
-        "a43-string",
-        "string search, split, trim, padding, case, and replacement intrinsics",
-    ),
-    (
-        "a44-array",
-        "array equality, search, slice, fill, reverse, and concatenation",
-    ),
-    (
-        "a45-array-fn",
-        "array callbacks, changed element types, folds, and short-circuit traversal",
-    ),
-    (
-        "a46-narrow-numerics",
-        "i8/u8/i16/u16/f16 conversion, wrapping arithmetic, and bitwise operations",
-    ),
-    (
-        "a47-narrow-layout",
-        "mixed-width fields, aggregate layout, and copy-on-assignment",
-    ),
-    (
-        "a49-f16-conversions",
-        "binary16 rounding, overflow, subnormal, NaN, and signed-zero conversions",
-    ),
-    (
-        "a50-narrow-callbacks-shifts",
-        "narrow callback extension and masked shifts at every integer width, including u64 wrap",
-    ),
-    (
-        "a51-map",
-        "map operations, aggregate values, nullable lookup, and collection",
-    ),
-    (
-        "a52-map-order",
-        "map insertion order across overwrite, removal, and reinsertion",
-    ),
-    ("a53-set", "set operations and SameValueZero float keys"),
-    (
-        "a54-map-reference-key",
-        "reference identity for map keys across mutation",
-    ),
-    (
-        "a55-map-set-foreach",
-        "map/set callbacks and callback-owned trap sites",
-    ),
-    (
-        "a56-map-aggregate-foreach",
-        "value-class and fixed-array copy semantics across callbacks",
-    ),
-    (
-        "a57-number",
-        "Number constants and typed numeric predicates",
-    ),
-    (
-        "a58-number-parse",
-        "integer and float parsing, casts, and parse-failure values",
-    ),
-    (
-        "a59-number-to-fixed",
-        "fixed decimal formatting, rounding, signs, and exponent fallback",
-    ),
-    (
-        "a60-string-unicode",
-        "Unicode case conversion and whitespace trimming",
-    ),
-    (
-        "a61-same-value-zero",
-        "NaN and negative-zero equality in arrays, maps, and sets",
-    ),
-    (
-        "a62-number-formatting-clz32",
-        "radix and precision formatting plus zero-defined clz32",
-    ),
-    (
-        "a63-q27-math-number",
-        "overflowing i32 Math.imul and binary32 rounding",
-    ),
-    (
-        "a64-q27-string",
-        "substring, code points, concatenation, positions, and replacement substitutions",
-    ),
-    (
-        "a65-q27-array",
-        "array callbacks and structural mutation operations",
-    ),
-    (
-        "a66-q27-map-set",
-        "Map.groupBy, Set algebra, callbacks, and insertion order",
-    ),
-    (
-        "a67-q27-array-callback-index",
-        "array callback arities and index argument order",
-    ),
-    (
-        "a68-q27-fixed-array-callbacks",
-        "fixed-array callback arities and dynamic result arrays",
-    ),
-    (
-        "a69-json-stringify",
-        "JSON serialization of scalars, arrays, dates, and aggregates",
-    ),
-    (
-        "a70-json-roundtrip",
-        "typed JSON parse and serialization round-trips for aggregates",
-    ),
-    (
-        "a71-json-parse",
-        "typed JSON parse failures, duplicate keys, and numeric ranges",
-    ),
-    (
-        "a72-json-parse-limits",
-        "JSON depth, UTF-8, and f32 representation failures",
-    ),
-    (
-        "a73-p19-divisor-single-eval",
-        "single evaluation of a call-valued integer divisor",
-    ),
-    (
-        "a74-p20-string-array-compound",
-        "string-array indexed compound assignment",
-    ),
-    (
-        "a75-p20-array-compound-expression",
-        "integer-array compound assignment in expression position",
-    ),
-    (
-        "a76-p20-dynamic-value-field-write",
-        "dynamic value-aggregate fields, index side effects, and address provenance",
-    ),
-    (
-        "a77-for-of-containers",
-        "array, fixed-array, map, set, and Unicode iteration cursors",
-    ),
-    (
-        "a78-for-of-views",
-        "array, map, and set key/value iteration views",
-    ),
-    (
-        "a79-for-of-generator",
-        "generator suspension composed with the for-of protocol",
-    ),
-    (
-        "a80-for-of-foreach-mutation",
-        "captured iteration bounds and removal/appending mutation semantics",
-    ),
-    (
-        "a81-array-literal-spread",
-        "array spread from arrays, fixed arrays, maps, sets, and strings",
-    ),
-    (
-        "a82-regex",
-        "regular-expression matches, captures, search, replacement, and split",
-    ),
-    (
-        "a83-regex-review",
-        "regular-expression source, flags, collection roots, and non-BMP behavior",
-    ),
-    (
-        "a84-for-of-bmp",
-        "BMP string iteration with static code-point handles",
-    ),
-    (
-        "a85-for-of-repeated-astral",
-        "repeated astral string iteration and handle interning",
-    ),
-    (
-        "a86-for-of-mixed-unicode",
-        "mixed BMP and astral string iteration representations",
-    ),
-    (
-        "a87-for-of-distinct-astral",
-        "distinct astral code-point handles and iteration order",
-    ),
-    (
-        "a88-astral-intern-collect",
-        "astral string roots across explicit collection",
-    ),
-    (
-        "a91-string-literal-union",
-        "string aliases in parameters, fields, returns, and arrays",
-    ),
-    (
-        "a92-descriptor-literals",
-        "descriptor defaults, nesting, arrays, and member initialization",
-    ),
-    (
-        "a93-async-chain",
-        "nested async calls, suspension propagation, and resume values",
-    ),
-    (
-        "a94-async-two-roots",
-        "standard-runner kick and pump order for multiple async roots",
-    ),
-];
 
 /// Reachable trap semantics kept in the debug profile beside the accepted
 /// subset. Each entry proves both the trap kind/site and trap-stop stdout.
@@ -1982,10 +1245,28 @@ const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
     ),
 ];
 
-fn interpreter_skip_line(debug: bool, full_sweep: bool) -> Option<String> {
+fn interpreter_entries() -> Vec<(String, subscript_compiler::language_reference::CorpusHeader)> {
+    let accept = corpus::corpus_accept();
+    corpus::entry_ids(&accept)
+        .into_iter()
+        .map(|id| {
+            let path = if accept.join(&id).is_dir() {
+                accept.join(&id).join("main.ts")
+            } else {
+                accept.join(format!("{id}.ts"))
+            };
+            let source = std::fs::read_to_string(&path).expect("read corpus header");
+            let header = subscript_compiler::language_reference::parse_header(&path, &source)
+                .unwrap_or_else(|error| panic!("{error}"));
+            (id, header)
+        })
+        .collect()
+}
+
+fn interpreter_skip_line(debug: bool, full_sweep: bool, runnable_count: usize) -> Option<String> {
     (!debug && !full_sweep).then(|| {
         format!(
-            "gate-skip: lir_interpreter_profile_matches_corpus_goldens release omits {RELEASE_RUNNABLE_COUNT} runnable entries; set {FULL_INTERPRETER_SWEEP_ENV}=1 for the full sweep"
+            "gate-skip: lir_interpreter_profile_matches_corpus_goldens release omits {runnable_count} runnable entries; set {FULL_INTERPRETER_SWEEP_ENV}=1 for the full sweep"
         )
     })
 }
@@ -1993,52 +1274,29 @@ fn interpreter_skip_line(debug: bool, full_sweep: bool) -> Option<String> {
 #[test]
 fn interpreter_skip_line_is_declared() {
     assert_eq!(
-        interpreter_skip_line(false, false).as_deref(),
-        Some("gate-skip: lir_interpreter_profile_matches_corpus_goldens release omits 125 runnable entries; set SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 for the full sweep")
+        interpreter_skip_line(false, false, 3).as_deref(),
+        Some("gate-skip: lir_interpreter_profile_matches_corpus_goldens release omits 3 runnable entries; set SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 for the full sweep")
     );
-    assert_eq!(interpreter_skip_line(true, false), None);
-    assert_eq!(interpreter_skip_line(false, true), None);
-    assert_eq!(interpreter_skip_line(true, true), None);
+    assert_eq!(interpreter_skip_line(true, false, 3), None);
+    assert_eq!(interpreter_skip_line(false, true, 3), None);
+    assert_eq!(interpreter_skip_line(true, true, 3), None);
 }
 
 #[test]
 fn lir_interpreter_profile_matches_corpus_goldens() {
     let started = std::time::Instant::now();
     let accept = corpus::corpus_accept();
-    let entries = corpus::golden_ids(&accept);
-    assert_eq!(
-        INTERPRETER_EXCLUSIONS.len(),
-        56,
-        "the declared host-dependent exclusion count changed"
-    );
-    for (id, reason) in INTERPRETER_EXCLUSIONS {
-        assert!(
-            entries.iter().any(|entry| entry == id),
-            "declared interpreter exclusion {id} has no corpus golden"
-        );
-        assert!(
-            !reason.trim().is_empty(),
-            "declared interpreter exclusion {id} has no reason"
-        );
-    }
-
+    let entries = interpreter_entries();
     let runnable = entries
         .iter()
-        .filter(|id| {
-            !INTERPRETER_EXCLUSIONS
-                .iter()
-                .any(|(excluded, _)| excluded == *id)
-        })
+        .filter(|(_, header)| header.interpreter_exclusion.is_none())
         .collect::<Vec<_>>();
-    assert_eq!(
-        runnable.len(),
-        RELEASE_RUNNABLE_COUNT,
-        "release runnable corpus count changed"
-    );
+    let excluded_count = entries.len() - runnable.len();
 
     if let Some(line) = interpreter_skip_line(
         cfg!(debug_assertions),
         std::env::var_os(FULL_INTERPRETER_SWEEP_ENV).is_some(),
+        runnable.len(),
     ) {
         use std::io::Write;
         // Start a new line after any test harness prefix, outside its capture.
@@ -2046,52 +1304,28 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
         return;
     }
 
-    let selected = if cfg!(debug_assertions) {
-        let mut selected = Vec::with_capacity(DEBUG_INTERPRETER_SUBSET.len());
-        for (id, reason) in DEBUG_INTERPRETER_SUBSET {
-            assert!(!reason.trim().is_empty(), "debug subset {id} has no reason");
-            assert!(
-                runnable.iter().any(|entry| entry.as_str() == *id),
-                "debug subset {id} is not a runnable corpus entry"
-            );
-            assert!(
-                !selected.iter().any(|selected| selected == id),
-                "debug subset contains duplicate {id}"
-            );
-            selected.push(*id);
-        }
-        assert_eq!(
-            selected.len(),
-            DEBUG_RUNNABLE_COUNT,
-            "debug runnable corpus count changed"
-        );
-        for (id, reason) in DEBUG_COST_EXCLUSIONS {
-            assert!(
-                !reason.trim().is_empty(),
-                "debug cost exclusion {id} has no reason"
-            );
-            assert!(
-                runnable.iter().any(|entry| entry.as_str() == *id),
-                "debug cost exclusion {id} is not a runnable corpus entry"
-            );
-        }
-        let outside = runnable
-            .iter()
-            .filter(|id| !selected.iter().any(|selected| selected == &id.as_str()))
-            .map(|id| id.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            outside,
-            DEBUG_COST_EXCLUSIONS
-                .iter()
-                .map(|(id, _)| *id)
-                .collect::<Vec<_>>(),
-            "only declared cost-purpose entries can be outside the debug subset"
-        );
-        selected
-    } else {
-        runnable.iter().map(|id| id.as_str()).collect()
-    };
+    let selected = runnable
+        .iter()
+        .filter(|(id, header)| {
+            if cfg!(debug_assertions) && header.benchmark {
+                use std::io::Write;
+                writeln!(
+                    std::io::stdout().lock(),
+                    "\ngate-skip: lir_interpreter_profile_matches_corpus_goldens debug omits {id}: cost: benchmark"
+                )
+                .expect("write the gate skip line");
+                false
+            } else {
+                true
+            }
+        })
+        .map(|(id, _)| id.as_str())
+        .collect::<Vec<_>>();
+    eprintln!(
+        "interpreter selection: {} runnable, {} selected",
+        runnable.len(),
+        selected.len()
+    );
 
     let mut ran = 0usize;
     let mut matched = 0usize;
@@ -2118,7 +1352,7 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
         findings.is_empty(),
         "interpreter {profile} corpus: {ran} run, {matched} matched, {} findings, {} declared exclusions\n{}",
         findings.len(),
-        INTERPRETER_EXCLUSIONS.len(),
+        excluded_count,
         findings.join("\n"),
         profile = if cfg!(debug_assertions) {
             "debug"
@@ -2128,7 +1362,7 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
     );
     eprintln!(
         "interpreter {profile} corpus: {ran} run, {matched} matched, {} declared exclusions, {:.3} s",
-        INTERPRETER_EXCLUSIONS.len(),
+        excluded_count,
         started.elapsed().as_secs_f64(),
         profile = if cfg!(debug_assertions) {
             "debug"

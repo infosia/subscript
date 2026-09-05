@@ -1,4 +1,5 @@
 // corpus: accept/a36-interop-chained-flags
+// interpreter: no — calls the synthetic native interop library
 // purpose: Combines members of a TWO-LEVEL flag alias with | (Q18) and passes the combined u64 to a foreign bit test.
 // exercises: interop-flags, chained-flag-typedef, u64-bitwise, foreign-call
 // questions: Q13, Q18

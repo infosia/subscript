@@ -1,4 +1,5 @@
 // corpus: accept/a140-wire-entry-param
+// interpreter: no — exported main requires a host-supplied wire value
 // purpose: Proves that a host passes one wire-mapped alias and one scalar to a script entry.
 // exercises: host-callable-export-parameters, CEnum, unknown-wire-value-validation
 // questions: R32

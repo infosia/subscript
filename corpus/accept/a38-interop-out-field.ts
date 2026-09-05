@@ -1,4 +1,5 @@
 // corpus: accept/a38-interop-out-field
+// interpreter: no — calls the synthetic native interop library
 // purpose: Passes a boundary struct by reference; the callee WRITES its fields and the script reads them after the call.
 // exercises: interop-out-field, boundary-struct-by-reference, callee-writes, foreign-call
 // questions: Q13, Q16

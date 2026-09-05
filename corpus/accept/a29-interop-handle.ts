@@ -1,4 +1,5 @@
 // corpus: accept/a29-interop-handle
+// interpreter: no — calls the synthetic native interop library
 // purpose: Exercises the opaque-handle create/retain/release lifecycle and observes completion.
 // exercises: interop-handle, opaque-handle, lifecycle, foreign-call
 // questions: Q13, Q16

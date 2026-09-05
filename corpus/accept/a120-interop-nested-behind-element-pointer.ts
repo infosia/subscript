@@ -1,4 +1,5 @@
 // corpus: accept/a120-interop-nested-behind-element-pointer
+// interpreter: no — calls the synthetic native interop library
 // purpose: Pins nested component structs behind a nullable blend pointer inside a scratch-lowered target-element array.
 // exercises: recursive-boundary-lowering, nullable-struct-pointer, pointer-in-array-element, nested-behind-pointer, mixed-depth-scratch
 // questions: Q13, C4, C7

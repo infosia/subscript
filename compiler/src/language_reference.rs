@@ -239,10 +239,17 @@ struct Pin {
 struct HeaderField {
     key: String,
     value: String,
+    line: usize,
 }
 
+/// The metadata in a corpus source's initial comment block.
 #[derive(Debug)]
-struct CorpusHeader {
+#[non_exhaustive]
+pub struct CorpusHeader {
+    /// The reason the reference interpreter cannot run this entry, if any.
+    pub interpreter_exclusion: Option<String>,
+    /// Whether the debug interpreter sweep omits this cost benchmark.
+    pub benchmark: bool,
     corpus: String,
     purpose: String,
     exercises: String,
@@ -255,7 +262,13 @@ impl CorpusHeader {
         self.fields.iter().filter(|field| {
             !matches!(
                 field.key.as_str(),
-                "corpus" | "purpose" | "exercises" | "questions" | "warning"
+                "corpus"
+                    | "purpose"
+                    | "exercises"
+                    | "questions"
+                    | "warning"
+                    | "interpreter"
+                    | "cost"
             )
         })
     }
@@ -445,7 +458,13 @@ fn render_corpus_table(out: &mut String, repository_root: &Path, arm: &str) -> i
     };
     writeln!(out, "\n## {title}").expect("write to String");
     let has_expected = matches!(arm, "accept" | "trap");
-    if has_expected {
+    if arm == "accept" {
+        writeln!(
+            out,
+            "\n| Entry | Purpose | Exercises | Questions | Expected output | Interpreter |\n|---|---|---|---|---|---|"
+        )
+        .expect("write to String");
+    } else if has_expected {
         writeln!(
             out,
             "\n| Entry | Purpose | Exercises | Questions | Expected output |\n|---|---|---|---|---|"
@@ -494,6 +513,17 @@ fn render_corpus_table(out: &mut String, repository_root: &Path, arm: &str) -> i
                 expected_relative
             )
             .expect("write to String");
+        }
+        if arm == "accept" {
+            let interpreter = match &header.interpreter_exclusion {
+                Some(reason) => format!("no — {reason}"),
+                None => "yes".to_string(),
+            };
+            write!(out, " {}", escape_table(&interpreter)).expect("write to String");
+            if header.benchmark {
+                write!(out, "; cost: benchmark").expect("write to String");
+            }
+            write!(out, " |").expect("write to String");
         }
         writeln!(out).expect("write to String");
     }
@@ -624,11 +654,16 @@ fn parse_pin_table(
     Ok(pins)
 }
 
-fn parse_header(path: &Path, source: &str) -> io::Result<CorpusHeader> {
+/// Reads the structured header and its optional interpreter and cost facts.
+///
+/// # Errors
+///
+/// Fails for missing required fields or malformed execution facts. Execution errors name the source line.
+pub fn parse_header(path: &Path, source: &str) -> io::Result<CorpusHeader> {
     let mut fields: Vec<HeaderField> = Vec::new();
     let mut current: Option<usize> = None;
 
-    for line in source.lines() {
+    for (line_index, line) in source.lines().enumerate() {
         let Some(comment) = line.strip_prefix("//") else {
             break;
         };
@@ -639,12 +674,23 @@ fn parse_header(path: &Path, source: &str) -> io::Result<CorpusHeader> {
         }
         let mut parsed_field = false;
         for segment in content.split(" // ") {
+            if matches!(
+                segment.split_whitespace().next(),
+                Some("interpreter" | "cost")
+            ) {
+                return Err(invalid(format!(
+                    "{}:{}: malformed execution header key",
+                    path.display(),
+                    line_index + 1
+                )));
+            }
             if let Some((key, value)) = segment.split_once(':') {
                 let key = key.trim();
                 if !key.is_empty() {
                     fields.push(HeaderField {
                         key: key.to_string(),
                         value: value.trim().to_string(),
+                        line: line_index + 1,
                     });
                     current = Some(fields.len() - 1);
                     parsed_field = true;
@@ -671,7 +717,38 @@ fn parse_header(path: &Path, source: &str) -> io::Result<CorpusHeader> {
         Ok(matches[0].value.clone())
     };
 
+    let mut interpreter_exclusion = None;
+    let mut benchmark = false;
+    for field in &fields {
+        let malformed = || {
+            invalid(format!(
+                "{}:{}: malformed or duplicate `// {}:` header field",
+                path.display(),
+                field.line,
+                field.key
+            ))
+        };
+        match field.key.as_str() {
+            "interpreter" => {
+                let reason = field.value.strip_prefix("no — ").ok_or_else(malformed)?;
+                if reason.trim().is_empty() || interpreter_exclusion.is_some() {
+                    return Err(malformed());
+                }
+                interpreter_exclusion = Some(reason.to_string());
+            }
+            "cost" => {
+                if field.value != "benchmark" || benchmark {
+                    return Err(malformed());
+                }
+                benchmark = true;
+            }
+            _ => {}
+        }
+    }
+
     Ok(CorpusHeader {
+        interpreter_exclusion,
+        benchmark,
         corpus: required("corpus")?,
         purpose: required("purpose")?,
         exercises: required("exercises")?,
@@ -765,6 +842,50 @@ fn invalid(message: impl Into<String>) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn execution_headers_parse_facts_and_report_malformed_lines() {
+        let source = "// corpus: accept/test\n// purpose: Test headers.\n// exercises: headers\n// questions: none\n";
+        let path = Path::new("test.ts");
+        let header = parse_header(
+            path,
+            &format!("{source}// interpreter: no — needs a host\n// cost: benchmark\n"),
+        )
+        .expect("parse execution facts");
+        assert_eq!(
+            header.interpreter_exclusion.as_deref(),
+            Some("needs a host")
+        );
+        assert!(header.benchmark);
+        let defaults = parse_header(path, source).expect("parse optional defaults");
+        assert_eq!(defaults.interpreter_exclusion, None);
+        assert!(!defaults.benchmark);
+        let continuation = parse_header(
+            path,
+            "// corpus: accept/test\n// purpose: Test headers.\n// costly operations need a host.\n// exercises: headers\n// questions: none\n",
+        )
+        .expect("parse a continuation whose first word is not an execution key");
+        assert_eq!(
+            continuation.purpose,
+            "Test headers. costly operations need a host."
+        );
+        for malformed in [
+            "interpreter: yes",
+            "interpreter: no —",
+            "interpreter no — needs a host",
+            "cost: cheap",
+            "cost benchmark",
+        ] {
+            let error = parse_header(path, &format!("{source}// {malformed}\n"))
+                .expect_err("reject malformed execution fact");
+            assert!(error.to_string().contains("test.ts:5:"), "{error}");
+        }
+        for duplicate in ["interpreter: no — needs a host", "cost: benchmark"] {
+            let error = parse_header(path, &format!("{source}// {duplicate}\n// {duplicate}\n"))
+                .expect_err("reject duplicate execution fact");
+            assert!(error.to_string().contains("test.ts:6:"), "{error}");
+        }
+    }
 
     #[test]
     fn generated_ai_references_are_byte_identical() {

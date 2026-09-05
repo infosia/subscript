@@ -1,4 +1,5 @@
 // corpus: accept/a130-interop-wire-enum-bind
+// interpreter: no — calls the synthetic native interop library
 // purpose: Crosses C through an enum typedef mapped by bind to an ambient CEnum alias.
 // exercises: subscript-cenum, enum-typedef, foreign-return, foreign-parameter, switch
 // questions: R24, R23, Q32

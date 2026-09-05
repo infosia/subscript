@@ -1,4 +1,5 @@
 // corpus: accept/a111-interop-async-method-poll
+// interpreter: no — calls the synthetic native interop library
 // purpose: Exercises deterministic foreign polling from an async instance method.
 // exercises: async-instance-method, foreign-poll, receiver-state, Context.suspend
 // questions: R13, Q34, Q1, C8

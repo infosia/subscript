@@ -1,4 +1,5 @@
 // corpus: accept/a90-callback-userdata-rooted
+// interpreter: no — registers a callback with the synthetic native interop library
 // purpose: Registered callback userdata remains live across Context.collect after all script references are dropped.
 // exercises: interop-callback, two-userdata, async-deferred-fire, callback-userdata-rooting, explicit-collection
 // questions: Q7, Q13, Q16

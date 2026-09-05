@@ -1,4 +1,5 @@
 // corpus: accept/a131-interop-wire-enum-struct
+// interpreter: no — calls the synthetic native interop library
 // purpose: Stores wire-mapped aliases directly and in a zero-copy pair inside a C boundary struct.
 // exercises: CEnum, boundary-struct-member, embedded-array-pair, member-read-validation, switch
 // questions: §52, Q32
