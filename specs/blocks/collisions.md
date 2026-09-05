@@ -382,6 +382,26 @@ programs whose two tiers printed different numbers with no diagnostic.
 
 Accept: `a147`, `a148`. Reject: `r148`–`r156`.
 
+### C15. String literal length — a ship-tier limit
+
+A string literal, or the static text of one template literal, whose
+UTF-8 length exceeds 65,000 bytes is rejected with S019. TypeScript
+has no limit. The C compilers the ship tier targets do: MSVC accepts
+at most 65,535 bytes in one concatenated literal *(docs)*, and the
+downstream measured `error C2026` on a 32,768-character literal
+(`compiler.md` §89). A string built at run time is not a literal and
+is not limited.
+
+*(Owner decision 2026-09-06: a diagnostic, not an array form in the
+emitted C. The emitter writes a literal as adjacent pieces of at
+most 4,000 source bytes, §89.1 rule 1, so every admitted literal
+compiles on MSVC.)*
+
+**Matching TypeScript here is not available** without emitting a
+form MSVC accepts above 65,535 bytes; the owner chose the limit.
+
+Accept: `a183`. Reject: `r184`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different

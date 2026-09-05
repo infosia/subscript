@@ -55,3 +55,9 @@ up to 65,000 bytes on MSVC.
 ```text
 gate full c6323c0ab1c434a329c7a269526e6bbf42b6fb7d dirty:6 debug 1285/0/2 release 1283/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
 ```
+
+## Round 2 — rule 3 decided (2026-09-06)
+
+Owner decision: a checker diagnostic, S019, at 65,000 bytes; not the
+array form. `collisions.md` C15. The reject entry r184 and the
+four-case unit test are §89.3 item 5.

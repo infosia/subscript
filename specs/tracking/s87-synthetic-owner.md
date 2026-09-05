@@ -102,3 +102,14 @@ fresh reviews, two contract corrections forced by measurement (the
 `Declarator` owner; the drain as the boundary), one review claim
 refuted by measurement (a183). Open: the `while`-condition owner
 (§82.10 rule 3a); the doc lines and the result-trait note above.
+
+## The `while`-condition claim, measured (2026-09-06)
+
+The owner asked for the "bug" of §82.10 rule 3a to be fixed. Measured
+first: a receiver that returns a new object twice and then `null`,
+in `while ((next() ?? fb).v > 0)` and `while ((next()?.v ?? 0) > 0)`,
+prints `3,2` / `3,2` on the dev JIT, the ship tier, and `node`. The
+call runs every iteration; the review's claim was wrong for the same
+reason as its M1 (the prefix is `let [[c0]] = null;`, the assignment
+stays in the expression). Rule 3a is closed at `134074d`; no code
+changed.
