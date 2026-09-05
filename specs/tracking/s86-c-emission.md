@@ -770,3 +770,51 @@ gate full a5f9f9b5df0d132e58b055033aa796619be0e544 dirty:2 debug 1274/0/1 releas
 
 Step wall seconds: debug 1,728, release 657, clippy 43, hygiene 23
 (a review subagent ran beside the debug step).
+
+## Task B — landed at `3a4bdff`
+
+One `EmissionIndex` per function (definitions, definition blocks,
+use blocks, parameter blocks, incoming targets, local seeds, first
+stores) replaces the per-value scans in `fixed_iterator_values`,
+`promoted_local_values`, `removable_block_parameter_copies`, the
+delayed-declarations loop, and the `assign` lookup in
+`emit_instruction`. The five Task A review items are in the same
+commit. A temporary control compared the emitted C of 181 entries
+and the fixture at widths 8 and 16 against captures taken before the
+change: 183 of 183 byte-identical; deleted before landing.
+
+Stage table after Task B, release, Apple M2 (seconds; the full
+before/after tables are in the round's report):
+
+| Stage | Width 16 | Width 32 | Ratio |
+|---|---:|---:|---:|
+| `Body::new` before coalescing | 0.0014 | 0.0106 | 7.3× |
+| delayed-declarations loop | 0.0002 | 0.0012 | 5.9× |
+| `emit_graph` | 0.0102 | 0.0493 | 4.9× |
+| `emit_c` total | 0.034 | 0.193 | 5.7× |
+| maximum RSS | | 134 MiB | |
+
+§86.3 item 2: `emit_c` at width 32 is 0.193 s (limit 5 s; ratio
+5.7× against a limit of 10.75×); the debug
+`boundary_scratch_breadth` test alone is 34.5 s (limit 120 s); RSS
+134 MiB (limit 300 MiB). From the round-1 profile: 27.2 s → 0.193 s
+(141×), 1.59 GiB → 134 MiB.
+
+Fresh review (read-only): CRITICAL 0, MAJOR 1, MINOR 4. The MAJOR
+and three MINOR are walks the one-block fixture cannot measure
+(`value_used_from` per edge argument, `suspend_state` per suspend)
+plus the index range check and index tests; assigned as Task C at
+`bd58ffb`. Recorded, not assigned: `declaration_scopes` clones the
+reachable-block set per block. The reviewer confirmed the index
+derivations equal the old scans on every shape asked, including
+shapes the corpus lacks, and no new HashMap iteration decides an
+order.
+
+Gate on the Task B tree (record `target/gate/`):
+
+```text
+gate full e7b870f7a2fd160cde1bd724d774e0cb181d7538 dirty:2 debug 1277/0/1 release 1275/0/1 skips 1/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: build 46, debug 1,443, release 629, clippy 44,
+hygiene 24 (a review subagent ran beside the debug step).
