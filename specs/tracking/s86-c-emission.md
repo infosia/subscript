@@ -721,3 +721,52 @@ Fresh review (read-only): CRITICAL 0, MAJOR 2, MINOR 6.
 The first full gate on the round-3 tree stopped at `build`: four
 dead-code warnings from the `lib test` control helpers. Round 4
 lands the control.
+
+## Task A round 4 — landed at `3695860`
+
+Fixes: `Coalescing::try_merge` and the root-slot loop test a
+candidate against one merged interval list per group with a
+parameter-membership union (one sweep); the parameter rules are
+indexed by origin; test (d) isolates both parameter rules; docs; the
+dead guard. The control apparatus (edge graph, reference mode, the
+record hook, `codegen/tests/interference_control.rs`) is deleted
+after a last run: 181 entries, 1,051 functions, widths 8 and 16, all
+equal, C byte-identical.
+
+Stage table after round 4, release, Apple M2 (seconds):
+
+| Stage | Width 16 | Width 32 | Ratio |
+|---|---:|---:|---:|
+| `Interference` build | 0.0018 | 0.0065 | 3.6× |
+| slot loop | 0.0002 | 0.0008 | 3.4× |
+| plan tail | 0.0001 | 0.0003 | 3.3× |
+| `coalesced_value_storage` | 0.0001 | 0.0008 | 7.6× |
+| `emit_c` total | 0.43 | 8.72 | 20.4× |
+| maximum RSS | 31 MiB | 130 MiB | |
+
+Every Task A stage is under 2× the instruction ratio (10.75). The
+total is Task B's.
+
+Second fresh review (read-only): CRITICAL 0, MAJOR 0, MINOR 6 — an
+alias merge copies the group's list (a smaller constant of the M1
+shape); `origin()` does not range-check the origin id, so five index
+sites can panic on a malformed id; `PartialEq` derives left from the
+control; an unreachable `Membership.multiple`; one more group test
+for the interleaved union; a `//` comment where `///` belongs. All
+six go to the Task B round (same file). The reviewer confirmed the
+group query exact under "merge only after a false query", the plan
+the old greedy plan, and no HashMap iteration in the new code.
+
+Rule 2a effect the control cannot see (core principle 12): root
+slots at width 16 / 32 went from 505 / 1,777 to 100 / 196, because a
+dead array no longer holds a slot to the block's last call. The
+differential gate is the check: `goldens-moved 0`.
+
+Gate on the round-4 tree (record `target/gate/`, this host):
+
+```text
+gate full a5f9f9b5df0d132e58b055033aa796619be0e544 dirty:2 debug 1274/0/1 release 1272/0/1 skips 1/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: debug 1,728, release 657, clippy 43, hygiene 23
+(a review subagent ran beside the debug step).
