@@ -1982,6 +1982,25 @@ const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
     ),
 ];
 
+fn interpreter_skip_line(debug: bool, full_sweep: bool) -> Option<String> {
+    (!debug && !full_sweep).then(|| {
+        format!(
+            "gate-skip: lir_interpreter_profile_matches_corpus_goldens release omits {RELEASE_RUNNABLE_COUNT} runnable entries; set {FULL_INTERPRETER_SWEEP_ENV}=1 for the full sweep"
+        )
+    })
+}
+
+#[test]
+fn interpreter_skip_line_is_declared() {
+    assert_eq!(
+        interpreter_skip_line(false, false).as_deref(),
+        Some("gate-skip: lir_interpreter_profile_matches_corpus_goldens release omits 125 runnable entries; set SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 for the full sweep")
+    );
+    assert_eq!(interpreter_skip_line(true, false), None);
+    assert_eq!(interpreter_skip_line(false, true), None);
+    assert_eq!(interpreter_skip_line(true, true), None);
+}
+
 #[test]
 fn lir_interpreter_profile_matches_corpus_goldens() {
     let started = std::time::Instant::now();
@@ -2017,10 +2036,13 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
         "release runnable corpus count changed"
     );
 
-    if !cfg!(debug_assertions) && std::env::var_os(FULL_INTERPRETER_SWEEP_ENV).is_none() {
-        eprintln!(
-            "interpreter release corpus: skipped {RELEASE_RUNNABLE_COUNT} runnable entries; set {FULL_INTERPRETER_SWEEP_ENV}=1 for the full sweep"
-        );
+    if let Some(line) = interpreter_skip_line(
+        cfg!(debug_assertions),
+        std::env::var_os(FULL_INTERPRETER_SWEEP_ENV).is_some(),
+    ) {
+        use std::io::Write;
+        // Start a new line after any test harness prefix, outside its capture.
+        writeln!(std::io::stdout().lock(), "\n{line}").expect("write the gate skip line");
         return;
     }
 
