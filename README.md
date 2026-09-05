@@ -302,9 +302,12 @@ TypeScript-subset source
   → parse (SWC)
   → semantic checker (sound narrowing; rule-specific diagnostics)
   → typed HIR
-      ├─ dev tier:  HIR → Cranelift JIT  (hot reload)
-      └─ ship tier: HIR → C → platform C compiler (AOT)
-  both over one runtime: Context memory, values, strings, arrays,
+  → LIR (one ordered IR: evaluation order, control flow, liveness,
+    trap sites as data; verified before any consumer reads it)
+      ├─ dev tier:  LIR → Cranelift JIT  (hot reload)
+      ├─ ship tier: LIR → C → platform C compiler (AOT)
+      └─ reference interpreter over LIR (the third witness of the gate)
+  all over one runtime: Context memory, values, strings, arrays,
   traps, coroutine state, deterministic numeric formatting
 ```
 
