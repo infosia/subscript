@@ -111,3 +111,5 @@ way (the stub run's `HEAD` and the test's `HEAD` differed). Both are
 one defect: a test that reads the checkout's state is a test the
 checkout can fail. Contract `d47eabc`: every case runs with a `GIT`
 stub; the expected verdict is a literal.
+
+Landed at `a4f6001`; the §88 gate above ran the twelve cases green with the stub.

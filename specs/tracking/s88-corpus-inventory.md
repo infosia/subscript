@@ -1,7 +1,7 @@
 # §88 — the corpus index is the inventory
 
-Status: **in progress.** Contract: `specs/blocks/compiler.md` §88
-(`74bc806`; corrected `b1a5246`), `specs/blocks/corpus.md` §1
+Status: **landed** at `8a61352`. Contract: `specs/blocks/compiler.md` §88
+(`74bc806`; corrected `b1a5246`, `a3432cd`), `specs/blocks/corpus.md` §1
 (`e7b870f`). Origin:
 `specs/tracking/development-cost-review-2026-09-05.md` finding 4.
 
@@ -66,3 +66,20 @@ skips 2/0 goldens-moved 1 exit 1`. The nine failures are
 this section's golden move (`s85-gate-command.md`, round 4); no §88
 suite failed. `skips 2/0` and `goldens-moved 1` are the values §88.3
 item 4 expects.
+
+
+## Gate and result
+
+```text
+gate full a88408a15fe16e0fc069d019b517f392dd9f5946 dirty:67 debug 1283/0/2 release 1281/0/2 skips 2/0 clippy 7/18/13 goldens-moved 1 exit 0
+```
+
+`goldens-moved 1` is `codegen/tests/lir-goldens/corpus.txt`, named
+above under §2 (positions only, 4 entries, 1,127 lines). `skips
+2/0` is `perf_gate` and the a22 omission, both declared. Landed with
+the §85 round-4 fix (`a4f6001`) that the same gate exercised.
+
+One new entry now edits one file (its own) and the regenerated
+index; the five count pins and the three id tables are gone. Three
+rounds, one fresh review, two contract corrections (the Red
+fixture; the trap column and the debug skip count), one golden move.
