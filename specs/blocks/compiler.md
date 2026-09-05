@@ -12101,6 +12101,22 @@ Task B (`codegen/src/cemit.rs`: `Body::new` before coalescing —
 `Body::emit_graph` and `emit_dominator_subtree`): rules 4–5.
 `codegen/tests/boundary_scratch_breadth.rs`: unchanged assertions.
 
+Task C *(added 2026-09-05 after the Task B review; the one-block
+fixture cannot measure these)*: `value_used_from` (`cemit.rs`
+~1966, one CFG walk per edge argument with an unused parameter —
+`O(uses × blocks)`; derive the predicate once per value from a
+reachability table built once, or from `liveness.live_ins` of the
+target); `suspend_state` (`cemit.rs` ~3697, a scan of the block list
+per emitted suspend; one table built in `Body::new`);
+`EmissionIndex::build` range-checks every LIR id once and returns
+`Result` (core principle 5); a hand-built index test per table
+(`use_blocks`, `local_seeds`, `first_stores`, `parameter_blocks`,
+`definition_blocks`) and one more group-test query
+(`O3: b0[4,5]` → `true`). Recorded, not assigned:
+`declaration_scopes` clones the reachable-block set per block
+(`O(blocks²)`), pre-existing and outside every task's list; it
+becomes a site when a fixture measures it.
+
 ### 86.3 Corpus and gate (pre-registered exit criteria)
 
 1. **Profile before the fix** — done at `97c9991`; the table above
