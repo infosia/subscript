@@ -644,3 +644,19 @@ fn main() {
 '''
 Path('codegen/examples/s86_measure.rs').write_text(probe)
 ```
+
+---
+
+## Task A round 1 — the migration control stopped (at `f683a72`)
+
+The interval query and the edge graph disagreed on
+`a117-descriptor-literal-nullable-member` `main`, origins `%42` and
+`%50`: interval `true`, graph `false`. Cause, measured with a LIR
+dump: the form's live-in of block 4 is `[%50]`; the walk inserted
+`%42` from the `invalidates` lists of three calls (`print` at lines
+48, 52, 59 of the entry), which the lowering fills with every array
+value in scope. `%42` was dead after block 3 and held its root slot
+to the last call of blocks 4 and 6; the cross-block sets came from
+the form, so the two liveness notions met inside one function.
+Contract: §86.1 rule 2a at `75e96a6` (forced). Found by the coding
+agent's control test, as §86.3 item 3 intends.
