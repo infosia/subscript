@@ -12016,7 +12016,33 @@ touches the live set or scans the block.
    in one block", plus the two parameter rules (block parameters and
    function parameters interfere with each other and with the
    values live at the block's or the function's entry). The
-   relation is the one the edge graph holds today.
+   relation is the one the edge graph holds today, under rule 2a.
+2a. **Root-storage liveness is the form's liveness.** *(Added
+   2026-09-05, forced, after the migration control of 86.3 item 3
+   stopped at its first disagreement.)* A value is live for root
+   storage where the LIR says it is live: `liveness.live_ins`,
+   instruction operands, and terminator `value_uses()`, plus
+   `Suspend.invalidates` at the suspending terminator (§73 rule 2:
+   the suspended operation holds those arrays). An instruction's
+   `invalidates` list is not a mention for root storage: it names
+   the arrays whose addresses go stale (§68 rule 9) and the lowering
+   fills it with every array value in scope (`codegen/src/lir.rs`
+   `invalidates: self.array_values.clone()`), live or dead.
+   Measured at `f683a72`, `a117-descriptor-literal-nullable-member`
+   `main`: the walk at `root_storage.rs` lines 230 and 372 inserted
+   the invalidated array `%42` into the live set of blocks 4 and 6
+   where the form's live-in holds only `%50`, so `%42` held its root
+   slot to the last call of each block after its last read, and the
+   graph lacked the edge (`%42`, `%50`) that the walk's own live set
+   at block 4's entry implies. The two derivations disagreed inside
+   one function. The walk's extension is deleted, not propagated:
+   root storage reads no liveness the form does not carry (core
+   principle 8). The edge "result interferes with the values its
+   instruction invalidates" goes with it; a live invalidated array
+   is in the live set already. A root slot of a dead array is
+   cleared at the array's last read, which is earlier than before;
+   an entry whose golden moves under this rule is named in the
+   tracking note with its output (rule 6).
 3. **Per-point facts come from interval ends.** `clear_after_instruction`
    lists, at instruction `i`, the slots of origins whose last
    interval in the block ends at `i`; `clear_at_block_entry` comes
@@ -12035,9 +12061,13 @@ touches the live set or scans the block.
    defect of this section, reported with the site.
 6. **The plan is the same plan.** For every corpus entry and for
    the fixture at widths 8 and 16, `value_slots`, the slot list, the
-   clear sets, and the coalesced storage are identical to today's,
-   and the emitted C is byte-identical. The migration control of
-   86.3 item 3 holds both derivations side by side for one round.
+   clear sets, and the coalesced storage are identical to today's
+   under rule 2a, and the emitted C is byte-identical. The migration
+   control of 86.3 item 3 holds both derivations side by side for
+   one round: the edge graph with rule 2a applied is the reference
+   for the interval query, and the edge graph before rule 2a is
+   compared once against the graph after it to count the functions
+   whose plan rule 2a changes.
 
 ### 86.2 Sites
 
@@ -12063,7 +12093,8 @@ Task B (`codegen/src/cemit.rs`: `Body::new` before coalescing —
    maximum resident set at width 32 is under 300 MiB. Each figure is
    in the tracking note with the host.
 3. **Migration control** (core principle 11): for one round, the
-   interval query and the edge graph both exist, and a test asserts
+   interval query and the edge graph both exist, both under rule
+   2a, and a test asserts
    for every function of every runnable corpus entry and for the
    fixture at widths 8 and 16 that the two relations are equal
    (every pair, both directions) and that the plan of rule 6 is
