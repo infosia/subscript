@@ -11427,12 +11427,16 @@ defect of the form, so this section states the form.)*
    before rule 1 named that owner. *(Amended 2026-09-02: the first
    text asked for a test hook, which changed the record the check
    reads, against core principle 9.)*
-3a. **Open, recorded 2026-09-05 (the §87 review).** A `while`
-   condition is not an owner: its prefix drains before the loop, so
-   `while ((maybe() ?? fb).v > 0) { … }` calls `maybe()` once, not
-   per iteration. The `for` condition has the per-iteration form
-   (rule 2). This is the same class and needs its own request and
-   corpus entry; nothing in §87 changes it.
+3a. **Closed, measured 2026-09-06.** The §87 review claimed that a
+   `while` condition's prefix drains before the loop, so
+   `while ((maybe() ?? fb).v > 0)` would call `maybe()` once. Measured
+   on the dev JIT and under `node` with a receiver that returns a
+   new object twice and then `null`: `3,2` on both, for `?? ` and for
+   `?.v ?? 0` — the call runs on every iteration. The prefix of §82.3
+   is `let [[c0]] = null;` and the assignment stays inside the
+   condition expression, so where the `Let` lands does not move the
+   call (the same fact as §87.1 rule 2's note). No defect; no owner
+   is added for `while`.
 4. **No lowering failure is the report.** A program that checks
    clean lowers on both tiers. The four probes above are in a177, and
    the empty-body `for` with a prefix in its condition (green at
