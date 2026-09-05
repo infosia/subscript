@@ -217,6 +217,62 @@ Measured at `346f2bd`, release profile:
 Every gate now runs on this host. No count is borrowed from the
 reference machine.
 
+## Three x86-64 defects the pull of 2026-09-05 exposed
+
+This host last ran the gate at `346f2bd` (2026-08-10), green. The next
+run was at `90aa5cb`, about 250 commits later. Measured Red at `90aa5cb`,
+both profiles: 66 suites, 1,252 passed, 2 failed, 1 ignored in debug, and
+1,249 passed, 3 failed, 1 ignored in release.
+
+Each defect is x86-64-only, and each shows on a SysV host alone. The
+arm64 reference machine and the Windows host do not reach any of them.
+
+1. **A SysV MEMORY-class argument was not rounded to whole eightbytes.**
+   `AggregateArgPlan::Memory` passed the raw struct size to Cranelift
+   `StructArgument`, whose x64 backend asserts a multiple of 8.
+   `EngineTransform` measures size 20 and align 4, so
+   `e09-c-structs-and-slices` and `gate/two-header-binding` panicked in
+   the dev-JIT thread. Cause: `ec1d8be` (2026-08-28). Both corpus MEMORY
+   shapes are 24 bytes, so the corpus never reached a rounded size. Fix:
+   the plan carries the rounded stack size, and the emission zero-fills
+   the slot before it copies. Contract: `compiler.md` §12.3a.
+2. **The benchmark timing entry lost the POSIX clock declarations.**
+   `perf-gate` compiles the entry at `-std=c11`, and glibc hides
+   `clock_gettime` and `CLOCK_MONOTONIC` in a strict ISO dialect.
+   Measured on glibc 2.35: `-std=c11` fails, `-std=gnu11` passes, and
+   `-std=c11 -D_POSIX_C_SOURCE=199309L` passes. The macro must come from
+   the command line. The entry unit is `subscript_runtime.h` concatenated
+   with `aot-entry.c`, so glibc latches its feature set at the runtime
+   header and a `#define` in `aot-entry.c` is too late. Contract:
+   `compiler.md` §11.
+3. **Two C link sites held a local system-library list.** Each harness
+   had its own `runtime_system_libs`, Windows-only, so the Linux
+   staticlib link resolved no `-lm` and the ship subject failed on
+   `tan`, `acos`, and `log`. This is cause B above, third and fourth
+   site. Both now read
+   `subscript_codegen::runtime_system_libraries(CCompilerStyle::Unix)`.
+
+Defects 2 and 3 were invisible until `bbced38` made `perf-gate` a test
+target. The gate that reports a defect must run where the defect lives:
+defect 1 waited 8 days for a SysV host, and defects 2 and 3 waited for a
+hand-run binary to join `cargo test`.
+
+### Gates after the fix, this host, both profiles
+
+- debug: 66 suites, 1,255 passed, 0 failed, 1 ignored, 1,603 s.
+- release: 66 suites, 1,253 passed, 0 failed, 1 ignored, 393 s.
+- Zero-warning build in both profiles; `cargo fmt --check`, `tsc`, and
+  `tools/hygiene.sh` exit 0; clippy 7 / 18 / 13, the recorded baseline.
+- No corpus entry, golden, `.expected`, or `benchmarks/results.json`
+  moved.
+
+### One site of defect 3's class stays
+
+`codegen/tests/cemit.rs:2543` holds the fifth copy of the list. It is
+inside `#[cfg(all(windows, target_env = "msvc"))]`, so this host cannot
+build it or test it. An unverified edit is worse than the record. The
+Windows host must make that site read the canonical list.
+
 ## Follow-ups (tracked, beyond this phase)
 
 - SysV argument **register-pressure stack revert** (psABI §3.2.3 step 5) —
