@@ -85,6 +85,24 @@ esac
             "#!/bin/sh\ncase \"$1\" in -v) echo 'Version stub';; -p) echo 'tsc ran';; *) exit 92;; esac\n",
         );
         stubs.write("cc", "#!/bin/sh\necho 'cc stub'\necho 'second cc line'\n");
+        stubs.write(
+            "git",
+            &format!(
+                r#"#!/bin/sh
+case "$*" in
+    'rev-parse HEAD') echo '0123456789abcdef0123456789abcdef01234567' ;;
+    'status --porcelain')
+        if [ '{case}' = moved-goldens ]; then
+            echo ' M corpus/accept/x.expected'
+            echo 'D  codegen/tests/lir-goldens/corpus.txt'
+            echo ' M codegen/src/lib.rs'
+        fi
+        ;;
+    *) exit 93 ;;
+esac
+"#
+            ),
+        );
         stubs
     }
 
@@ -109,7 +127,7 @@ esac
             .env("NODE", self.dir.join("node"))
             .env("TSC", self.dir.join("tsc"))
             .env("CC", self.dir.join("cc"))
-            .env("GIT", "git");
+            .env("GIT", self.dir.join("git"));
         command
     }
 
@@ -151,34 +169,7 @@ fn diagnostic(stdout: &str) -> String {
     stdout.lines().map(|line| format!("| {line}\n")).collect()
 }
 
-fn git(args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root())
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    String::from_utf8(output.stdout).unwrap()
-}
-
 fn assert_record(output: &std::process::Output, shape: &str, expected: &str) -> String {
-    let rev = git(&["rev-parse", "HEAD"]);
-    let dirty = git(&["status", "--porcelain"]);
-    let state = if dirty.is_empty() {
-        "clean".to_owned()
-    } else {
-        format!("dirty:{}", dirty.lines().count())
-    };
-    assert_record_with_identity(output, shape, expected, rev.trim(), &state)
-}
-
-fn assert_record_with_identity(
-    output: &std::process::Output,
-    shape: &str,
-    expected: &str,
-    rev: &str,
-    state: &str,
-) -> String {
     let stdout = String::from_utf8(output.stdout.clone()).unwrap();
     let lines: Vec<_> = stdout.lines().collect();
     assert!(lines.len() >= 2, "{}", diagnostic(&stdout));
@@ -193,12 +184,10 @@ fn assert_record_with_identity(
     assert!(stamp[9..15].bytes().all(|b| b.is_ascii_digit()));
     assert!(root().join(path).is_file());
     let record = std::fs::read_to_string(root().join(path)).unwrap();
-    let verdict = format!("gate {shape} {} {state} {expected}", rev.trim());
-    assert_eq!(lines.last().unwrap(), &verdict);
-    assert_eq!(record.lines().last().unwrap(), verdict);
+    assert_eq!(*lines.last().unwrap(), expected);
+    assert_eq!(record.lines().last().unwrap(), expected);
     assert!(record.starts_with(&format!(
-        "shape: {shape}\nUTC: {stamp}\nrevision: {}\ndirty: ",
-        rev.trim()
+        "shape: {shape}\nUTC: {stamp}\nrevision: 0123456789abcdef0123456789abcdef01234567\ndirty: "
     )));
     assert!(record.contains("cargo stub\nv22.0.0-stub\nVersion stub\ncc stub\n```"));
     record
@@ -213,7 +202,7 @@ fn quick_sums_results_and_lists_skip() {
     let record = assert_record(
         &output,
         "quick",
-        "debug 5/0/3 skips 1 goldens-moved 0 exit 0",
+        "gate quick 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 skips 1 goldens-moved 0 exit 0",
     );
     assert!(record.contains("tests: 5/0/3\ngate-skip count: 1\n```text\ngate-skip: stub_suite unset fixture variable\n```"));
     assert!(
@@ -231,7 +220,7 @@ fn full_fails_on_release_skip() {
     let record = assert_record(
         &output,
         "full",
-        "debug 5/0/3 release 5/0/3 skips 1/1 clippy 7/18/13 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 1/1 clippy 7/18/13 goldens-moved 0 exit 1",
     );
     let release = record.split("## release\n").nth(1).unwrap();
     assert!(release.contains(" test --offline --locked --workspace --no-fail-fast --release\nenvironment: SUBSCRIPT_FULL_INTERPRETER_SWEEP=1\n"));
@@ -249,7 +238,7 @@ fn quick_stops_at_build_warning() {
     let record = assert_record(
         &output,
         "quick",
-        "debug 0/0/0 skips 0 goldens-moved 0 exit 1",
+        "gate quick 0123456789abcdef0123456789abcdef01234567 clean debug 0/0/0 skips 0 goldens-moved 0 exit 1",
     );
     assert!(
         record.contains(" build --offline --locked --workspace --all-targets\nenvironment: none\n")
@@ -268,7 +257,7 @@ fn full_continues_after_failed_tests() {
     let record = assert_record(
         &output,
         "full",
-        "debug 2/1/0 release 2/1/0 skips 0/0 clippy 7/18/13 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 2/1/0 release 2/1/0 skips 0/0 clippy 7/18/13 goldens-moved 0 exit 1",
     );
     assert!(record.contains("exit status: 1\ntests: 2/1/0\ngate-skip count: 0\n"));
     assert!(record.contains("release sweep: 1"));
@@ -285,7 +274,7 @@ fn full_fails_above_codegen_clippy_baseline() {
     let record = assert_record(
         &output,
         "full",
-        "debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/14 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/14 goldens-moved 0 exit 1",
     );
     assert!(record
         .contains(" clippy --offline --locked --workspace --all-targets\nenvironment: none\n"));
@@ -315,7 +304,7 @@ fn full_stops_at_build_warning_without_unrun_fields() {
     let record = assert_record(
         &output,
         "full",
-        "debug 0/0/0 skips 0 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 0/0/0 skips 0 goldens-moved 0 exit 1",
     );
     assert!(record.contains("stderr:\n```text\nwarning: build warning\n"));
     assert!(!record.contains("## debug\n"));
@@ -332,7 +321,7 @@ fn full_passes_at_all_clippy_baselines() {
     let record = assert_record(
         &output,
         "full",
-        "debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/13 goldens-moved 0 exit 0",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/13 goldens-moved 0 exit 0",
     );
     assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\nenvironment: none\n"));
     assert!(record.contains("tests: 5/0/3\ngate-skip count: 0\n"));
@@ -347,7 +336,7 @@ fn full_fails_above_compiler_clippy_baseline() {
     let record = assert_record(
         &output,
         "full",
-        "debug 5/0/3 release 5/0/3 skips 0/0 clippy 8/18/13 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 8/18/13 goldens-moved 0 exit 1",
     );
     assert!(record.contains("warning: `subscript-compiler` (lib) generated 8 warnings"));
     assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\n"));
@@ -362,7 +351,7 @@ fn full_fails_above_runtime_clippy_baseline() {
     let record = assert_record(
         &output,
         "full",
-        "debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/19/13 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/19/13 goldens-moved 0 exit 1",
     );
     assert!(record.contains("warning: `subscript-runtime` (lib) generated 19 warnings"));
     assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\n"));
@@ -371,33 +360,13 @@ fn full_fails_above_runtime_clippy_baseline() {
 #[test]
 fn moved_goldens_are_listed_without_failure() {
     let _guard = GATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let stubs = Stubs::new("plain");
-    stubs.write(
-        "git",
-        r#"#!/bin/sh
-case "$*" in
-    'rev-parse HEAD') echo '0123456789012345678901234567890123456789' ;;
-    'status --porcelain')
-        echo ' M corpus/accept/x.expected'
-        echo 'D  codegen/tests/lir-goldens/corpus.txt'
-        echo ' M codegen/src/lib.rs'
-        ;;
-    *) exit 93 ;;
-esac
-"#,
-    );
-    let output = stubs
-        .command("full")
-        .env("GIT", stubs.dir.join("git"))
-        .output()
-        .unwrap();
+    let stubs = Stubs::new("moved-goldens");
+    let output = stubs.run("full");
     assert_eq!(output.status.code(), Some(0));
-    let record = assert_record_with_identity(
+    let record = assert_record(
         &output,
         "full",
-        "debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/13 goldens-moved 2 exit 0",
-        "0123456789012345678901234567890123456789",
-        "dirty:3",
+        "gate full 0123456789abcdef0123456789abcdef01234567 dirty:3 debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/13 goldens-moved 2 exit 0",
     );
     assert!(record.contains("dirty: 3\n```text\n M corpus/accept/x.expected\nD  codegen/tests/lir-goldens/corpus.txt\n M codegen/src/lib.rs\n```"));
     let goldens = record
