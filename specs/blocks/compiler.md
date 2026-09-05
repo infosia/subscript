@@ -957,6 +957,8 @@ Per §1's rules, made testable:
   committed golden, **dev-JIT bytes ≡ AOT bytes ≡ golden bytes**.
   Byte-exact; no normalization; a missing AOT toolchain fails the test
   rather than skipping it (the gate machine is the dev machine).
+  The command that runs this gate, its two shapes, and its record
+  are §85.
 - On green, the a22–a24 goldens captured at P2 are **frozen** (§2): the
   tracking entry records the confirmation, and later changes follow the
   golden-change procedure.
@@ -11792,3 +11794,140 @@ reason said "specially" (rewritten); and, outside this diff, a null
 `string` handle in a field with no initializer makes `print` emit
 nothing on both tiers (a shared defect under principle 12; it needs
 its own request and its own corpus entry).
+
+## 85. One gate command, two shapes
+
+*(Owner decision 2026-09-05.)* Origin: the development-cost review of
+2026-09-05 (`specs/tracking/development-cost-review-2026-09-05.md`,
+finding 3).
+
+Measured at `3677d1f`, this host. The three commands a landing note
+calls "the gate" run three different sets:
+
+| Command | Interpreter corpus | Performance thresholds |
+|---|---|---|
+| `cargo test` (debug) | 124 runnable entries | skipped, `perf_gate.rs` line 3 |
+| `cargo test --release` | skipped, `lir.rs` line 2020 | run |
+| `--release` with `SUBSCRIPT_FULL_INTERPRETER_SWEEP=1` | 125 entries | run |
+
+A skip prints a free-text line, and nothing counts the lines. The
+q35 record (`specs/tracking/q35-string-messages.md`) cites a release
+pass at a pin where one release test fails 3 of 3 runs. The record
+does not say which command ran. §8.3 states the gate as a rule and
+names no command. The 2026-08-26 decision (s68 tracking, "Owner
+decisions") separates the round's targeted run from the one full run
+and names no command either.
+
+### 85.1 Rule
+
+1. **Two shapes, one script.** `tools/gate.sh quick` and
+   `tools/gate.sh full` are the gate. A landing note, a tracking
+   note, or a report cites a gate result only as the verdict line of
+   a record that this script wrote. A test count quoted from any
+   other command is not a gate result.
+2. **`quick` is the round gate.** It runs, in this order, and stops
+   at the first non-zero exit:
+   `cargo fmt --check`;
+   `cargo build --offline --locked --workspace --all-targets`, and
+   one rustc warning is a failure;
+   `cargo test --offline --locked --workspace --no-fail-fast` in the
+   debug profile.
+3. **`full` is the landing gate.** It runs every `quick` step, then:
+   `cargo test --offline --locked --workspace --no-fail-fast --release`
+   with `SUBSCRIPT_FULL_INTERPRETER_SWEEP=1` in the environment;
+   `cargo clippy --offline --locked --workspace --all-targets`, and a
+   `(lib)` warning count above the baseline for `subscript-compiler`,
+   `subscript-runtime`, or `subscript-codegen` is a failure. The
+   baseline is three integers at the top of the script, and it moves
+   only by an owner decision that the tracking note records;
+   `node_modules/.bin/tsc -p tsconfig.json`;
+   `tools/hygiene.sh`.
+   `full` does not stop at the first failure of a test command,
+   because the record must hold every failing suite; it stops at a
+   failed build.
+4. **A skip is a declared fact.** A test that returns without its
+   assertion because of the profile or an unset environment variable
+   prints one line to stdout in this form:
+   `gate-skip: <suite> <reason>`. The script counts these lines per
+   test command. In `full`, the release run must print zero
+   `gate-skip:` lines; one line is a failure. In `quick` the lines
+   are listed, not failed. A test that skips by any other text is a
+   defect of that test.
+5. **The record.** Every run writes
+   `target/gate/<UTC timestamp>-<shape>.md` and prints its path. The
+   record holds, in this order: the shape; the UTC time; `git
+   rev-parse HEAD`; the dirty state as the count and the list of
+   `git status --porcelain` lines; the host triple; `rustc -V`,
+   `cargo -V`, `node -v`, `tsc -v`, and the first line of `cc
+   --version`; then one block per command with the exact command, the
+   environment variables the script set, the wall seconds, the exit
+   status, the sum of every `test result:` line as
+   `passed/failed/ignored`, the count of `gate-skip:` lines and the
+   lines themselves; then the list of pre-existing golden or
+   `.expected` files that `git status --porcelain` reports modified
+   or deleted under `corpus/` and `codegen/tests/lir-goldens/`
+   (`M`, `D`); then the verdict line.
+6. **The verdict line** is one line, last in the record and last on
+   stdout:
+   `gate <shape> <rev> <clean|dirty:N> debug <p>/<f>/<i> [release <p>/<f>/<i>] skips <n> [clippy <c>/<r>/<g>] goldens-moved <m> exit <status>`.
+   The exit status is 0 only when every command exits 0, every test
+   command reports 0 failed, and rule 4 holds. A moved golden does
+   not change the exit status; the reviewer reads `goldens-moved`
+   against the golden-change procedure (§2).
+7. **The script owns no test.** It runs the commands above and reads
+   their stdout. It sets no `CARGO_TARGET_DIR`, so a run measures the
+   checkout it is in. `CARGO`, `NODE`, and `CC` are read from the
+   environment with the defaults `cargo`, `node`, and `cc`, so a
+   test can substitute a stub.
+
+### 85.2 Sites
+
+- `tools/gate.sh` (new): POSIX `sh`, the shape of `tools/hygiene.sh`.
+- `codegen/tests/lir.rs` line 2020 area and
+  `benchmarks/tests/perf_gate.rs` line 3 area: the skip text becomes
+  the rule 4 form. `runtime/src/context.rs` and the benchmark
+  binaries under `benchmarks/src/bin/` read `debug_assertions` for
+  another purpose and do not change.
+- `cli/tests/gate.rs` (new): the script's direct tests (core
+  principle 1).
+- §8.3 gains one line that names this section.
+
+### 85.3 Corpus and gate (pre-registered exit criteria)
+
+1. `cli/tests/gate.rs` runs the script with `CARGO` set to a stub
+   `sh` script that the test writes. Each case compares the record
+   and the verdict line against a **hand-written** expectation:
+   (a) a stub whose `test` prints two `test result:` lines and one
+   `gate-skip:` line, in `quick`: verdict `debug` sums the two lines,
+   `skips 1`, `exit 0`;
+   (b) the same stub in `full`: the release block's `gate-skip:` line
+   makes `exit 1` (rule 4), and the record names the line;
+   (c) a stub whose `build` writes `warning:` to stderr: `quick` exits
+   1 at the build step and the record has no test block;
+   (d) a stub whose `test` prints `1 failed`: `full` still runs the
+   release step and `hygiene.sh`, and the verdict has `exit 1`;
+   (e) a stub whose `clippy` prints a `(lib)` count one above the
+   baseline for `subscript-codegen`: `exit 1`, and the verdict's
+   `clippy` field shows the measured count;
+   (f) an unknown shape argument: exit 2 and a usage line.
+   Positive control for the record: case (a) also asserts the record
+   file exists at the printed path and that the verdict line is its
+   last line.
+   The stub for `node_modules/.bin/tsc` and `cc` is a directory the
+   test prepends to `PATH`; `hygiene.sh` runs for real, on the
+   checkout, because it reads the tree.
+2. `cargo test -p subscript-codegen --test lir` in the release
+   profile without the sweep variable prints exactly one `gate-skip:`
+   line; `cargo test -p subscript-benchmarks --test perf_gate` in the
+   debug profile prints exactly one. A test in each of the two files
+   pins the exact line text by running the sibling test's skip path
+   through a function that returns the line, compared against a
+   hand-written string.
+3. `tools/gate.sh full` at the landing revision, this host: the
+   verdict shows `skips 0`, `goldens-moved 0`, `exit 0`, and the
+   passed counts are within the tracking note. Every pre-existing
+   golden and `.expected` stays byte-identical.
+4. Windows: `tools/gate.sh` runs under the `sh` that
+   `tools/hygiene.sh` already requires. The record states the host
+   triple, and the windows-portability note gains the verdict line
+   when that host next runs.
