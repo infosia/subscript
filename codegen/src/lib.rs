@@ -2,8 +2,10 @@
 //! Code generation for both execution tiers of subscript (plan
 //! phases P2 and P3, `specs/blocks/compiler.md` §7, §8).
 //!
-//! The dev-tier JIT lowers HIR to Cranelift IR. The ship tier lowers HIR
-//! to LIR, emits C, and invokes the platform C compiler.
+//! The shared lowering (`lir.rs`) lowers the checker's HIR once to LIR
+//! and verifies it. The dev-tier JIT (`lower/`), ship-tier C emitter
+//! (`cemit.rs`), and reference interpreter (`interpreter.rs`) each consume
+//! verified LIR under the §68 contract.
 //!
 //! Three entry points, all returning the exact stdout bytes of a run, a
 //! [`TrapReport`], or an [`AbnormalTermination`] that retains stdout produced
