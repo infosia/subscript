@@ -11954,3 +11954,104 @@ and names no command either.
    `tools/hygiene.sh` already requires. The record states the host
    triple, and the windows-portability note gains the verdict line
    when that host next runs.
+
+## 86. C emission is linear in the function it emits
+
+*(Owner decision 2026-09-05.)* Origin: the development-cost review of
+2026-09-05 (`specs/tracking/development-cost-review-2026-09-05.md`,
+finding 2).
+
+Measured at `3677d1f`, this host, release libraries, the §44.8
+breadth fixture (`codegen/tests/boundary_scratch_breadth.rs`), one
+function and one block per program:
+
+| Width | LIR instructions | Check | Lower and verify | Emit C | JIT pipeline |
+|---|---:|---:|---:|---:|---:|
+| 8 | 2,400 | 0.0045 s | 0.0034 s | 0.12 s | 0.10 s |
+| 16 | 11,072 | 0.015 s | 0.018 s | 2.02 s | 0.81 s |
+| 32 | 59,520 | 0.060 s | 0.105 s | 58.9 s | 14.6 s |
+
+Instructions grow 5.4× from width 16 to 32; C emission grows 29×;
+the verifier alone is 0.04 s at width 32. The whole-process maximum
+resident set at width 32 is 1.66 GiB. In the debug profile the
+fixture's one test is 668 s of the 926 s debug suite. The
+orchestrator's debug probe: `emit_c` is 10.9 s at width 16 where
+`check_program` is 0.08 s.
+
+The code: `Body::new` (`codegen/src/cemit.rs`, near line 2379) calls
+`root_storage::plan`, which computes `value_interference_with`, and
+then `coalesced_value_storage` (near line 2107), which calls
+`root_storage::value_interference` and computes the same interference
+a second time. `value_interference_with`
+(`codegen/src/root_storage.rs` line 187) adds every value held to
+exit (`address_taken_values`) to the live set of every instruction,
+so each instruction result gains one `HashSet` edge per held value.
+`plan` (line 284) picks a slot by a scan over every slot's members.
+`Coalescing::try_merge` (`cemit.rs` line 2073) tests every member pair
+of two groups. These are candidates; the profile of 86.3 item 1
+names the measured pass.
+
+### 86.1 Rule
+
+1. **One interference computation per function.** `Body::new`
+   computes the interference once and passes it to both storage
+   planning and coalescing. The two public functions of
+   `root_storage` that each computed it become one.
+2. **A value held to exit is not an edge.** A value in
+   `address_taken_values` has its own root slot and shares it with no
+   value. It enters no interference set; `interferes(a, b)` is
+   `held(a) || held(b) || edges[a] contains b`. The observable plan
+   for such a value is unchanged: its own slot, cleared at exit.
+3. **Slot reuse is a lookup, not a scan.** Free slots are indexed by
+   value type; a value takes the first free slot of its type whose
+   members do not interfere, or a new slot. The number of
+   interference tests per value is bounded by the live values of
+   that type at its definition, not by the number of slots.
+4. **The bound.** For a function of `n` instructions and at most `k`
+   values live at any point, storage planning and coalescing run in
+   `O(n · k)` set operations and `O(n + k²)` memory. A `k` that grows
+   with `n` (one block, every value live to the end) is the fixture's
+   shape and is covered by rule 2.
+5. **The plan is the same plan.** Every slot assignment that today's
+   code produces for every corpus entry is byte-identical after this
+   section, or the change is named in the tracking note with the
+   entry and the measured output. The emitted C of every corpus entry
+   is byte-identical unless named the same way.
+
+### 86.2 Sites
+
+- `codegen/src/root_storage.rs`: `value_interference`,
+  `value_interference_with`, `plan`, `add_interference`,
+  `occupied_slots`.
+- `codegen/src/cemit.rs`: `Body::new`, `coalesced_value_storage`,
+  `Coalescing`.
+- `codegen/tests/boundary_scratch_breadth.rs`: unchanged assertions;
+  a stage-timing probe is not a test.
+- `codegen/src/lir.rs` only if the profile names it.
+
+### 86.3 Corpus and gate (pre-registered exit criteria)
+
+1. **Profile before the fix.** A round that changes no production
+   code runs the breadth fixture at widths 8, 16, 32 with a timer per
+   stage inside `emit_c` (lowering, verification, root storage plan,
+   coalescing, text emission) in the release profile and reports the
+   table in `REPORT.md`. The dominant stage at width 32 is named with
+   its seconds. The fix round starts from that table.
+2. **After the fix**, the same table: `emit_c` at width 32 is at most
+   2× the width-16 figure multiplied by the instruction ratio (5.4),
+   and at most 5 s in release on this host; the debug
+   `boundary_scratch_breadth` test is under 120 s alone. Both
+   figures are in the tracking note with the host.
+3. `codegen/src/root_storage.rs` unit tests, hand-written
+   expectations: (a) a function with two values held to exit and one
+   short-lived value: two dedicated slots, the short-lived value in a
+   third, and no edge on the held values; (b) a function where two
+   values of one type are live together and a third is defined after
+   both die: two slots, the third reuses the first; (c) the same
+   function through the old scan and the new lookup yields the same
+   `value_slots` (migration control, core principle 11, deleted at
+   the landing or kept as a hand-written fact).
+4. `tools/gate.sh full`: `goldens-moved 0`; the LIR text goldens
+   unchanged; `codegen/tests/cemit.rs` C-text assertions unchanged.
+5. The `collect` and `bound-call` perf-gate workloads do not move
+   past their §3 thresholds (the release gate runs them).
