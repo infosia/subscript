@@ -14,3 +14,8 @@ members = [
     "spike/mobile-link",
     "spike/mobile-link/runtime-stub",
 ]
+
+# compiler.md §85.1 rule 7a: loose .rcgu.o files in target/debug/deps
+# made a relinked test binary take 26–36 s to reach main.
+[profile.dev]
+split-debuginfo = "off"
