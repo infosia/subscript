@@ -12341,9 +12341,16 @@ entries), the second being the complement of one cost exclusion.
 
 ### 88.3 Corpus and gate (pre-registered exit criteria)
 
-1. Red: with one accept entry copied to a new id and no other edit,
-   `generated_ai_references_are_byte_identical` fails and no other
-   suite fails. Recorded with the diff line.
+1. Red: with one accept entry copied to a new id — its source with
+   the `// corpus:` header line changed to the new id, and its
+   `.expected` copied beside it, no other edit —
+   `generated_ai_references_are_byte_identical` fails. Before §88
+   the count pins fail with it (measured at `f2c2481`: the three
+   compiler count suites and the golden count); after §88 no other
+   suite fails. Recorded with the diff line. *(Corrected 2026-09-06:
+   the first text said "no other edit", and the header check of
+   `render_corpus_index` rejects a copied header before the byte
+   comparison, while `js_corpus.rs` requires the `.expected`.)*
 2. The header reader has a direct unit test: a hand-written header
    with `interpreter: no — reason` and `cost: benchmark` parses to the
    two facts; a header with a malformed key is an error naming the
