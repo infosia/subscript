@@ -1275,15 +1275,34 @@ on Linux, empty on macOS. Evidence: `specs/tracking/linux-portability.md`.
 
 The benchmark harness (`benchmarks/src/bin/perf-gate.rs`, with its committed
 `benchmarks/a22-baseline.c` and `benchmarks/aot-entry.c`) is a fourth clang site with
-the same treatment — clang location, `.exe` suffix, Windows system libs on
+the same treatment — clang location, `.exe` suffix, the system libraries on
 the staticlib links, and binary-mode stdout in both committed C entries so
-each subject matches the frozen golden. Its C entries also read the timed
+each subject matches the frozen golden. *(2026-09-05.)* The library list
+is `subscript_codegen::runtime_system_libraries`, the one §11b names. The
+two harnesses held a local list that was Windows-only, so on Linux the
+staticlib link resolved no `-lm` and the ship subject failed to link
+(`tan`, `acos`, `log`). A C link site in this repository reads the
+canonical list; it does not carry a copy. Its C entries also read the timed
 span from `QueryPerformanceCounter` on Windows (the MSVC UCRT has no
 `clock_gettime`/`CLOCK_MONOTONIC`), converted to nanoseconds by
 overflow-safe integer arithmetic — the same monotonic span, and since every
 subject is timed the same way the cross-subject ratio is timing-method
-independent. It is not gate-driven, so it is verified by running the
-benchmark, not by `cargo test`; the §3 performance thresholds it reports are
+independent. *(2026-09-05.)* On Linux both harnesses compile the timing
+entry with `-D_POSIX_C_SOURCE=199309L`. The entry is compiled with
+`-std=c11` to match the ship path's dialect, and glibc's `<time.h>`
+hides `clock_gettime` and `CLOCK_MONOTONIC` in a strict ISO dialect.
+Measured on glibc 2.35: `-std=c11` fails, `-std=gnu11` passes, and
+`-std=c11 -D_POSIX_C_SOURCE=199309L` passes. Darwin shows both without
+the macro, so the arm64 reference machine never met it.
+
+The macro must come from the command line. The entry translation unit is
+`runtime/include/subscript_runtime.h` concatenated with
+`benchmarks/aot-entry.c`, so the first libc header of the unit comes from
+the runtime header. glibc latches its feature set at that header, and a
+`#define` inside `aot-entry.c` is then too late. The macro is
+Linux-scoped, because Darwin's strict-POSIX mode hides
+`CLOCK_MONOTONIC_RAW`, which `benchmarks/boundary-noop.c` reads. Its gate run is a test target (§3), so `cargo test
+--release` reports a missed threshold; the §3 performance thresholds it reports are
 machine- and toolchain-dependent (the recorded ship-tier figures are the
 reference setup's, §11).
 
@@ -1525,6 +1544,28 @@ Implemented 2026-08-09 and verified byte-exact on the x86-64-linux gate
   pointer — and a return passes through a hidden pointer. SysV and AAPCS64
   diverge here: AAPCS64 passes a larger struct **by reference**, so the
   by-reference `Indirect` path stays AAPCS64/Win64 only.
+
+*(2026-09-05, measured on the x86-64 Linux gate host.)* **A MEMORY-class
+argument occupies whole eightbytes.** The psABI stack is eight-byte
+aligned and each stack argument takes an integral number of eightbytes,
+so the dev JIT rounds the caller copy up to a multiple of 8, zero-fills
+it, and then copies the struct's bytes into it. The Cranelift
+`StructArgument` size is the rounded size. Cranelift's x64 backend
+asserts that the size is a multiple of 8, so an unrounded size is a
+panic in the JIT thread, not a mis-marshal. `plan_aggregate_arg` carries
+the rounded stack size, because the emission is its consumer (core
+principle 8).
+
+The shape that shows it is a struct whose width is over 16 bytes and is
+not a multiple of 8. `EngineTransform` (`examples/engine/engine.h`,
+`{ bool; float; float; float; uint16_t; }`) measures size 20 and align 4
+on this host, and `e09-c-structs-and-slices` and
+`gate/two-header-binding` pass it by value. The two corpus MEMORY shapes
+this section names — `SubCallbackInfo` and a126's `{ i64, i64, i64 }` —
+are both 24 bytes, so neither reaches a rounded size. Red measured at
+`90aa5cb` in both profiles: each entry panics with "StructArgument size
+is not properly aligned". The 2026-08-09 SysV verification above
+predates the `ec1d8be` rewrite, so it does not cover this path.
 
 On any host whose ABI is none of AAPCS64, Win64, or SysV, lowering a
 foreign call that passes or returns a boundary struct by value stays a
