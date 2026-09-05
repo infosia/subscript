@@ -27,10 +27,12 @@ use subscript_codegen::{
     run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_memory_accounting,
     run_jit_with_native_libraries, RunError, TrapReport,
 };
-// The MSVC branch uses `cc::windows_registry` and its own system library
-// list, so these symbols have no use.
+// The MSVC branch uses `cc::windows_registry` to find the compiler.
 #[cfg(not(all(windows, target_env = "msvc")))]
-use subscript_codegen::{host_c_compiler, runtime_system_libraries};
+use subscript_codegen::host_c_compiler;
+use subscript_codegen::runtime_system_libraries;
+#[cfg(all(windows, target_env = "msvc"))]
+use subscript_codegen::CCompilerStyle;
 use subscript_compiler::{check_program, SourceFile};
 use subscript_runtime::TrapKind;
 
@@ -2539,13 +2541,6 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     #[cfg(all(windows, target_env = "msvc"))]
     let compile = {
         use std::ffi::OsString;
-        let system_libs: &[&str] = &[
-            "kernel32.lib",
-            "ntdll.lib",
-            "userenv.lib",
-            "ws2_32.lib",
-            "dbghelp.lib",
-        ];
         let mut command = if let Some(cc) = std::env::var_os("CC") {
             Command::new(cc)
         } else {
@@ -2568,7 +2563,7 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
             .arg(&src_path)
             .arg(&entry_path)
             .arg(&staticlib)
-            .args(system_libs)
+            .args(runtime_system_libraries(CCompilerStyle::Msvc))
             .arg(exe_arg)
             .arg("-link")
             .output()

@@ -266,12 +266,35 @@ hand-run binary to join `cargo test`.
 - No corpus entry, golden, `.expected`, or `benchmarks/results.json`
   moved.
 
-### One site of defect 3's class stays
+### One site of defect 3's class stayed
 
-`codegen/tests/cemit.rs:2543` holds the fifth copy of the list. It is
+`codegen/tests/cemit.rs:2543` held the fifth copy of the list. It is
 inside `#[cfg(all(windows, target_env = "msvc"))]`, so this host cannot
 build it or test it. An unverified edit is worse than the record. The
 Windows host must make that site read the canonical list.
+
+**Closed 2026-09-05 on the `x86_64-pc-windows-msvc` host.** The MSVC arm
+now reads `runtime_system_libraries(CCompilerStyle::Msvc)`. That call
+returns the same five arguments in the same order, so the link line does
+not change. No corpus entry, golden, or `.expected` moved.
+
+The class is now unreachable. Every C link site in this repository reads
+the canonical list. Two spellings of the five names stay, and neither is
+a link site: `WINDOWS_SYSTEM_LIBRARIES` (`codegen/src/ship.rs:538`) is
+the list itself, and the unit test at `codegen/src/ship.rs:1158` derives
+its expected arguments separately from the function it checks (core
+principle 9).
+
+Gates on that host, both profiles, after the fix:
+
+- debug: 66 suites, 1,232 passed, 0 failed, 1 ignored, 575 s.
+- release: 66 suites, 1,230 passed, 0 failed, 1 ignored, 136 s.
+- Zero-warning build in both profiles; `cargo fmt --check` and
+  `tools/hygiene.sh` exit 0; clippy 7 / 18 / 13, the recorded baseline.
+- `generated-docs/` regenerates with no diff.
+
+`cargo test -p subscript-codegen --test cemit` links the emitted C with
+MSVC `cl`, so the run proves the canonical list links on this host.
 
 ## Follow-ups (tracked, beyond this phase)
 
