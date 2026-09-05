@@ -100,3 +100,14 @@ owner's decision: fewer test binaries (one `tests/main.rs` per
 crate with `mod` per file; the count is what the host charges), or
 a host setting that exempts `target/` from the check. Recorded, not
 changed.
+
+## Round 4 (2026-09-06) — the cases read the checkout
+
+The first landing that moves a golden (§88, the LIR text golden)
+made nine `cli/tests/gate.rs` cases fail: they ran the real `git
+status` and reported `goldens-moved 1` against a hand-written `0`.
+The day before, a commit during a gate had failed one case the same
+way (the stub run's `HEAD` and the test's `HEAD` differed). Both are
+one defect: a test that reads the checkout's state is a test the
+checkout can fail. Contract `d47eabc`: every case runs with a `GIT`
+stub; the expected verdict is a literal.

@@ -51,3 +51,18 @@ debug count is 2; `goldens-moved 1` named; the migration control is
 deleted at landing. MINOR: a prefix match in the reader's
 malformed-key check; a corpus.md sentence wider than rule 3; this
 tracking entry. Round 3 takes the code items.
+
+## Round 3 (at `a3432cd`)
+
+The `Interpreter` column on the accept table only; the reader's
+malformed-key check matches the first word; the migration control
+ran once more (`interpreter_header_selection_matches_migration_control`,
+1 passed) and is deleted. compiler 425, golden 35, LIR 37; clippy
+7 / 18 / 13; workspace build 0 warnings.
+
+The first full gate on this tree: `debug 1274/9/2 release 1272/9/2
+skips 2/0 goldens-moved 1 exit 1`. The nine failures are
+`cli/tests/gate.rs` cases that read the real `git status` and saw
+this section's golden move (`s85-gate-command.md`, round 4); no §88
+suite failed. `skips 2/0` and `goldens-moved 1` are the values §88.3
+item 4 expects.
