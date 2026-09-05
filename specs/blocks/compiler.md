@@ -11431,8 +11431,9 @@ defect of the form, so this section states the form.)*
    `while` condition's prefix drains before the loop, so
    `while ((maybe() ?? fb).v > 0)` would call `maybe()` once. Measured
    on the dev JIT and under `node` with a receiver that returns a
-   new object twice and then `null`: `3,2` on both, for `?? ` and for
-   `?.v ?? 0` — the call runs on every iteration. The prefix of §82.3
+   new object twice and then `null`: `3,2` on the dev JIT, the ship
+   tier, and `node`, for `??` and for `?.v ?? 0` — the call runs on
+   every iteration. The prefix of §82.3
    is `let [[c0]] = null;` and the assignment stays inside the
    condition expression, so where the `Let` lands does not move the
    call (the same fact as §87.1 rule 2's note). No defect; no owner
@@ -12422,20 +12423,29 @@ translation minimum, which clang and gcc do not enforce.
 2. **Every call site.** The rule is inside `c_string_literal`, so a
    source name, a class name, a position file, and a string literal
    all split the same way; no caller decides.
-3. **Above 65,000 result bytes: open.** *(Owner decision, item 2 of
-   the request.)* Two options: a `static const unsigned char` array
-   with an initializer list in the constants section, named at the
-   use site; or a checker diagnostic that names the limit. Until the
-   owner decides, the emitter writes adjacent literals past 65,000
-   bytes and MSVC reports the concatenation limit; the tracking note
-   records this as a known limit. No corpus entry for the 70,000-byte
-   program until then.
+3. **Above 65,000 bytes: the checker rejects.** *(Owner decision
+   2026-09-06, item 2 of the request: a diagnostic, not the array
+   form.)* A string literal, or the static text of one template
+   literal, whose UTF-8 length exceeds 65,000 bytes is **S019**
+   "string literal of N bytes exceeds the ship-tier limit of 65,000
+   bytes" at the literal's position. The limit is a constant the
+   checker and the message share. A string built at run time
+   (concatenation, `repeat`, a template with substitutions whose
+   result is long) is not a literal and is not limited. `tsc` accepts
+   the program; the divergence is a ship-tier limit, and
+   `collisions.md` gains the row. No emitter change: rule 1 already
+   covers every literal the checker admits (at most 65,000 source
+   bytes, 17 pieces).
 4. **The dev tier and the interpreter do not change.** Both read the
    bytes from the program image; the C text is the only output that
    moves.
 
 ### 89.2 Sites
 
+- `compiler/src/check/expr.rs` (string and template literal
+  checking): the S019 report; `compiler/src/diag.rs`: the code;
+  `compiler/src/language_reference.rs` if it lists codes;
+  `specs/blocks/collisions.md`: the row (orchestrator).
 - `codegen/src/cemit.rs` `c_string_literal`, and one unit test
   beside it.
 - `corpus/accept/a183-long-string-literal.ts` + `.expected`.
@@ -12468,3 +12478,12 @@ translation minimum, which clang and gcc do not enforce.
    assertion unchanged; the windows-msvc host result is recorded in
    the tracking note when that host next runs (the downstream's W8
    program is the witness there).
+5. *(Round 2, rule 3.)* `corpus/reject/r184-string-literal-too-long.ts`:
+   a 65,001-byte string literal in the source text; `expected-error:
+   S019 at the literal`; `tsc: accepts`. Red at `97e1110`: the
+   program checks clean. A unit test in the checker with hand-written
+   expectations: 65,000 bytes accepted, 65,001 rejected with the
+   message text naming 65001, a template literal whose static text is
+   65,001 bytes rejected, a template whose total with substitutions
+   would exceed the limit but whose static parts are short accepted.
+   a183 (20,000 bytes) stays green.
