@@ -138,3 +138,26 @@ Gate on the cleaned directory: debug step 543 s (against 1,443–1,728
 s before), release 646 s. The earlier record above that attributed
 the cost to the host's first-launch check is superseded by this
 entry.
+
+## Rule 7a landed at `40a67a6` (2026-09-06)
+
+`[profile.dev] split-debuginfo = "off"` in the workspace
+`Cargo.toml`. The coding agent measured: `.rcgu.o` in
+`target/debug/deps` 2,504 before and after a full workspace build
+and a relink (no growth); a relinked test binary's first run 0.45 s,
+second 0.01 s; 364 OSO references, 320 into rlibs, 44 to files that
+no longer exist (the pre-change loose objects; harmless to
+execution). The owner also approved the deletion of
+`target/_rcgu-aside` (707,606 files, 154 s; `target/` 33 GB → 21 GB).
+
+Gate:
+
+```text
+gate full ff3a53caf1fea2241f90a559e4a7986e8847121a dirty:1 debug 1286/0/2 release 1284/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: debug 518, release 602, clippy 16, hygiene 23 —
+about 19 minutes for `full`, against about 38 before. The debug
+step's tests alone were 489 s, so the untimed part is now about
+30 s. The question "run the debug profile less often" is closed by
+this measurement: both profiles stay in every landing gate.
