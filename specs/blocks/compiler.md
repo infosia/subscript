@@ -11866,12 +11866,18 @@ and names no command either.
    lines themselves; then the list of pre-existing golden or
    `.expected` files that `git status --porcelain` reports modified
    or deleted under `corpus/` and `codegen/tests/lir-goldens/`
-   (`M`, `D`); then the verdict line.
+   (`M`, `D`); then the verdict line. A run that a signal (`HUP`,
+   `INT`, `TERM`) ends deletes its record and exits non-zero: there
+   is no partial record. *(Added 2026-09-05 after review round 2: an
+   interrupted run left a record with duplicated command blocks and
+   no verdict.)*
 6. **The verdict line** is one line, last in the record and last on
    stdout:
    `gate <shape> <rev> <clean|dirty:N> debug <p>/<f>/<i> [release <p>/<f>/<i>] skips <d>[/<r>] [clippy <c>/<r>/<g>] goldens-moved <m> exit <status>`.
    `<d>` is the count of `gate-skip:` lines of the debug test
-   command and `<r>` that of the release test command. *(Amended
+   command and `<r>` that of the release test command. A bracketed
+   field appears only when its step ran; a `full` run that stops at
+   `fmt` or `build` shows no `release` and no `clippy` field. *(Amended
    2026-09-05, forced: the debug command declares the `perf_gate`
    skip by rule 4, so one total could not be 0 in `full`.)*
    The exit status is 0 only when every command exits 0, every test
@@ -11880,10 +11886,10 @@ and names no command either.
    against the golden-change procedure (§2).
 7. **The script owns no test.** It runs the commands above and reads
    their stdout. It sets no `CARGO_TARGET_DIR`, so a run measures the
-   checkout it is in. `CARGO`, `NODE`, `TSC`, and `CC` are read from
-   the environment with the defaults `cargo`, `node`,
-   `node_modules/.bin/tsc`, and `cc`, so a test can substitute a
-   stub.
+   checkout it is in. `CARGO`, `NODE`, `TSC`, `CC`, and `GIT` are
+   read from the environment with the defaults `cargo`, `node`,
+   `node_modules/.bin/tsc`, `cc`, and `git`, so a test can substitute
+   a stub. `GIT` serves every `git` call the script makes.
 
 ### 85.2 Sites
 
@@ -11914,10 +11920,22 @@ and names no command either.
    (e) a stub whose `clippy` prints a `(lib)` count one above the
    baseline for `subscript-codegen`: `exit 1`, and the verdict's
    `clippy` field shows the measured count;
-   (f) an unknown shape argument: exit 2 and a usage line.
+   (f) an unknown shape argument: exit 2 and a usage line;
+   (g) the plain stub in `full`, with no skip, no failure, and the
+   baseline counts: `exit 0`, `skips 0/0`, `goldens-moved 0`;
+   (h) a `GIT` stub whose `status --porcelain` prints
+   ` M corpus/accept/x.expected`, `D  codegen/tests/lir-goldens/corpus.txt`,
+   and ` M codegen/src/lib.rs`: `goldens-moved 2` and the two paths in
+   the record, `exit 0`;
+   (i) a stub whose `test` sleeps, and the test sends `TERM` to the
+   script during that step: the exit status is non-zero and the set
+   of files under `target/gate/` is the same as before the run;
+   (e) also covers the compiler and the runtime baselines, one stub
+   variant each.
    Positive control for the record: case (a) also asserts the record
    file exists at the printed path and that the verdict line is its
-   last line.
+   last line. Every case deletes the record it made before it
+   returns, so `target/gate/` holds only real runs.
    `TSC` and `CC` point at stubs the test writes; `hygiene.sh` runs
    for real, on the checkout, because it reads the tree.
 2. `cargo test -p subscript-codegen --test lir` in the release
