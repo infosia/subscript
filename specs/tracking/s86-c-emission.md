@@ -660,3 +660,16 @@ to the last call of blocks 4 and 6; the cross-block sets came from
 the form, so the two liveness notions met inside one function.
 Contract: §86.1 rule 2a at `75e96a6` (forced). Found by the coding
 agent's control test, as §86.3 item 3 intends.
+
+## Task A round 2 — the control stopped again (at `75e96a6`)
+
+Under rule 2a the plan of 97 functions in 77 entries changes (the
+agent's comparison, old walk before and after 2a; the entry list is
+in the round's report and is reproduced by the control test). The
+relation control then stopped at `a03-integer-literals` `main`,
+origins `%0` and `%9`: interval `true`, graph `false`. Cause:
+`%9 = LoadAddress(%8)`, `%8` an address with base `%0`;
+`record_operand` inserts the base into the live set, the edge loop
+adds edges to direct value operands only. Contract: §86.1 rule 2b at
+`311e6f6` (forced). The interval query is the definition; the old
+graph is corrected for the control.
