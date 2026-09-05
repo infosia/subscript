@@ -44,6 +44,7 @@ Every section, with its status:
 | §11a | C toolchain selection is target-portable (crate build) | active |
 | §11b | C toolchain at runtime is clang, located portably | active; its Windows clang choice is superseded by §11c |
 | §11c | C toolchain on Windows is MSVC `cl` (supersedes §11b's Windows clang) | active |
+| §12 | P5 C-header binding vertical slice | active |
 | §11d | No emitted type has an empty member list | active |
 | §11e | A label is followed by a statement | active |
 | §13 | P6 — production-C-header interop (host-agnostic) | active |
@@ -1561,7 +1562,9 @@ declaration is not one; clang reports it under `-pedantic` as a C23
 extension, and MSVC rejects it *(docs)*. The emitter writes `;` after
 every label it emits, so a declaration that follows is a statement's
 successor. `verify_no_empty_aggregate`'s neighbour checks the emitted
-text for a label followed by a declaration, over every corpus entry.## 12. P5 C-header binding vertical slice
+text for a label followed by a declaration, over every corpus entry.
+
+## 12. P5 C-header binding vertical slice
 
 The language's founding purpose (plan §4): express zero-copy C-ABI
 interop. P5 proves it against a **neutral synthetic C header**
