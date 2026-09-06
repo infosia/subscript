@@ -1118,8 +1118,7 @@ dependencies = [
 [[package]]
 name = "swc_ecma_parser"
 version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b92d3a25349d7f612c38d940f09f9c19c7b7aa3bf4d22fbe31ea44fd5354de02"
+source = "git+https://github.com/infosia/swc_ecma_parser?branch=subscript-eof-bump#113e3c470d9a91538aaa723c1ed244fbfde8b300"
 dependencies = [
  "either",
  "new_debug_unreachable",

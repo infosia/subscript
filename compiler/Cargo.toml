@@ -10,5 +10,8 @@ description = "Semantic checker and typed HIR for the subscript language (plan p
 serde = "=1.0.219"
 swc_common = "=5.0.1"
 swc_ecma_ast = "=5.1.0"
-swc_ecma_parser = "=6.0.2"
+# Forked for the EOF fix in `parse_ts_enum_member` (compiler.md §90):
+# upstream 6.0.2 calls `bump!` with no current token, a panic in debug
+# and undefined behaviour in release. Pinned by commit in `Cargo.lock`.
+swc_ecma_parser = { git = "https://github.com/infosia/swc_ecma_parser", branch = "subscript-eof-bump" }
 regress = { git = "https://github.com/infosia/regress", branch = "subscript-exec-budget" }
