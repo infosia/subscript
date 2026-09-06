@@ -379,8 +379,11 @@ fn moved_goldens_are_listed_without_failure() {
     assert!(!goldens.contains("codegen/src/lib.rs"));
 }
 
+// Case (i): Windows has no POSIX signal path to the script (compiler.md §85.3).
+#[cfg(unix)]
 struct RunningChild(std::process::Child);
 
+#[cfg(unix)]
 impl Drop for RunningChild {
     fn drop(&mut self) {
         if self.0.try_wait().unwrap().is_none() {
@@ -391,6 +394,7 @@ impl Drop for RunningChild {
 }
 
 #[test]
+#[cfg(unix)]
 fn term_during_debug_deletes_the_partial_record() {
     let _guard = GATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let stubs = Stubs::new("sleep");

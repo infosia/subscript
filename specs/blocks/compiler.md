@@ -11786,7 +11786,16 @@ and names no command either.
    the record, `exit 0`;
    (i) a stub whose `test` sleeps, and the test sends `TERM` to the
    script during that step: the exit status is non-zero and the set
-   of files under `target/gate/` is the same as before the run;
+   of files under `target/gate/` is the same as before the run. This
+   case runs on a POSIX host only.
+   *(Scoped 2026-09-06, measured on `x86_64-pc-windows-msvc`: a
+   native parent starts the script, and the MSYS `kill` cannot map
+   that Windows process id to a signal target. `kill -TERM`,
+   `kill -W -TERM`, and `kill -f -TERM` each report `No such
+   process`. `kill -W -f -TERM` ends the process through the Win32
+   interface, so the trap does not run and the record stays. Windows
+   has no delivery path for this case, so the test carries
+   `#[cfg(unix)]`.)*
    (e) also covers the compiler and the runtime baselines, one stub
    variant each.
    Positive control for the record: case (a) also asserts the record
@@ -11819,7 +11828,9 @@ and names no command either.
 4. Windows: `tools/gate.sh` runs under the `sh` that
    `tools/hygiene.sh` already requires. The record states the host
    triple, and the windows-portability note gains the verdict line
-   when that host next runs.
+   when that host next runs. Case (i) of item 1 does not run there.
+   The signal path of rule 5 stays unverified on Windows, and the
+   windows-portability note records that fact.
 
 ## 86. C emission is linear in the function it emits
 

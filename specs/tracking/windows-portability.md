@@ -1260,3 +1260,61 @@ arm64 host (`r38-write-only-copy.md`, `s70-held-async-handle.md`). The
 `2f9ed28` row above measured 18 before either section landed, so the
 `22` is stale in both sections. The contract is corrected to
 `7 / 18 / 13`.
+
+## §85 gate script — the first Windows run, 2026-09-06
+
+`tools/gate.sh full` on this host, at `e45ba42` with two files modified
+(the §85.3 amendment and its `cli/tests/gate.rs` change):
+
+```text
+gate full e45ba42ef895100813b01f1f603c480b9bb59d8b dirty:2 debug 1262/0/2 release 1260/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 3, build 10, debug 875, release 1,257, clippy 10,
+tsc 1, hygiene 108. The script runs under the `sh` that
+`tools/hygiene.sh` already requires (§85.3 item 4).
+
+### Case (i) does not run here
+
+`term_during_debug_deletes_the_partial_record` failed at `e45ba42`:
+
+```text
+assertion failed: Command::new("kill").arg("-TERM").arg(child.0.id().to_string()).status().unwrap().success()
+```
+
+A native parent starts the script, so the MSYS `kill` cannot map that
+Windows process id to a signal target. Measured:
+
+| command | result |
+|---|---|
+| `kill -TERM <winpid>` | `No such process`, exit 1 |
+| `kill -W -TERM <winpid>` | no signal, the trap does not run |
+| `kill -f -TERM <winpid>` | `No such process` |
+| `kill -W -f -TERM <winpid>` | the Win32 interface ends the process, so the trap does not run |
+
+Windows has no delivery path for a POSIX signal to that child. §85.3
+item 1 case (i) is scoped to a POSIX host, and the test carries
+`#[cfg(unix)]`. The signal path of §85.1 rule 5 stays unverified here.
+
+A record also survives a `taskkill /F` of the process tree, because a
+forced termination runs no trap. Rule 5 covers `HUP`, `INT`, and `TERM`
+only.
+
+### The debug step reports two skips, not one
+
+§85.3 item 3 predicts `skips 1/0` at the landing revision. This host
+measures `2/0`. The second line is
+`lir_interpreter_profile_matches_corpus_goldens debug omits
+a22-matrix-propagation: cost: benchmark`, which landed after §85. A
+debug skip is a listed fact, not a failure (rule 4), so the verdict
+stays `exit 0`.
+
+### The gate spends its time in one suite
+
+`cli/tests/gate.rs` measures 753 s of the 875 s debug step and 767 s of
+the release step. About seven of its cases run `tools/hygiene.sh` for
+real (§85.3 item 1), one mutex serializes them, and one hygiene run
+measures 108 s on this host. The host has 20 logical CPUs, and the total
+CPU load measured 23-34% through the debug step. `tools/hygiene.sh`
+starts about six processes per file over 1,031 files, and Windows
+process creation is the cost. The script is the target, not the gate.
