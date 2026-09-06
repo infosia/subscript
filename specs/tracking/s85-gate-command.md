@@ -161,3 +161,13 @@ about 19 minutes for `full`, against about 38 before. The debug
 step's tests alone were 489 s, so the untimed part is now about
 30 s. The question "run the debug profile less often" is closed by
 this measurement: both profiles stay in every landing gate.
+
+## Windows (2026-09-06, the owner's record)
+
+`specs/tracking/windows-portability.md`: `full` green on
+`x86_64-pc-windows-msvc` at `e45ba42` (§85.3 item 4). Case (i) of
+item 1 is POSIX-only (`d314ce0`): a native parent starts the script
+and the MSYS `kill` has no delivery path; the signal path of rule 5
+stays unverified there. `tools/hygiene.sh` scans in batches
+(`80789a5`): 103 s → 0.86 s on that host; the debug step 875 s →
+135 s, the release step 1,257 s → 351 s.

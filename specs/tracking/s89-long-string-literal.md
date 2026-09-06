@@ -97,3 +97,14 @@ gate full 0f31668a9777baff581908ceb33ad79c66e12b4e dirty:8 debug 1286/0/2 releas
 
 R40 is closed: rule 1 at `97e1110`, rule 3 at `05195b4`. The
 windows-msvc result stays pending that host.
+
+## Windows (2026-09-06)
+
+The owner's `tools/gate.sh full` on `x86_64-pc-windows-msvc` at
+`e45ba42` (`specs/tracking/windows-portability.md`, "§85 gate script
+— the first Windows run") reports `debug 1262/0/2 release 1260/0/2
+goldens-moved 0 exit 0`; the golden suite there builds every accept
+entry's ship tier with `cl`, a183 among them. §89.3 item 4's host
+result is that record: the five-piece literal compiles under MSVC.
+The downstream's W8 program is not in this corpus; a183 is the
+witness of the same shape at 20,000 bytes.
