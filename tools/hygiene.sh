@@ -15,8 +15,9 @@ cd "$repo_root"
 
 failed=0
 file_list=$(mktemp "${TMPDIR:-/tmp}/subscript-hygiene.XXXXXX")
-trap 'rm -f "$file_list"' EXIT HUP INT TERM
+trap 'rm -f "$file_list" "$file_list.scan" "$file_list.hits" "$file_list.files"' EXIT HUP INT TERM
 git ls-files --cached --others --exclude-standard >"$file_list"
+gitlinks=$(git ls-files -s | sed -n 's/^160000 [^	]*	//p')
 
 # A pattern requires a path component or the form a tool writes, so a
 # document that names the pattern (this script, the hygiene record) does
@@ -31,30 +32,35 @@ while IFS= read -r file; do
             continue
             ;;
     esac
-    mode=$(git ls-files -s -- "$file" | sed -n '1s/ .*//p')
-    if [ "$mode" = "160000" ]; then
-        continue
-    fi
+    case "
+$gitlinks
+" in
+        *"
+$file
+"*) continue ;;
+    esac
     if [ ! -f "$file" ]; then
         continue
     fi
+    printf '%s\0' "$file"
+done <"$file_list" >"$file_list.scan"
+
+scan_pattern() {
     # Binary files are outside the scan.
-    if ! grep -Iq . "$file" 2>/dev/null; then
-        continue
-    fi
-    if grep -nE "$paths" "$file"; then
-        echo "hygiene: local path in $file" >&2
+    xargs -0 grep -IHnE -- "$1" <"$file_list.scan" >"$file_list.hits" || :
+    if [ -s "$file_list.hits" ]; then
+        cat "$file_list.hits"
+        cut -d: -f1 "$file_list.hits" | sort -u >"$file_list.files"
+        while IFS= read -r file; do
+            echo "hygiene: $2 in $file" >&2
+        done <"$file_list.files"
         failed=1
     fi
-    if grep -nE "$siblings" "$file"; then
-        echo "hygiene: sibling or predecessor reference in $file" >&2
-        failed=1
-    fi
-    if grep -nE "$trailers" "$file"; then
-        echo "hygiene: agent session trailer in $file" >&2
-        failed=1
-    fi
-done <"$file_list"
+}
+
+scan_pattern "$paths" 'local path'
+scan_pattern "$siblings" 'sibling or predecessor reference'
+scan_pattern "$trailers" 'agent session trailer'
 
 # Every commit message, for an agent session trailer. This is the one
 # history scan: one `git log` over the messages, not the blobs.

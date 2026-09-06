@@ -1318,3 +1318,7 @@ measures 108 s on this host. The host has 20 logical CPUs, and the total
 CPU load measured 23-34% through the debug step. `tools/hygiene.sh`
 starts about six processes per file over 1,031 files, and Windows
 process creation is the cost. The script is the target, not the gate.
+
+Closed the same day. The script now scans in batches:
+`specs/tracking/repo-hygiene.md`, "The script scans in batches". The
+debug step measures 135 s and the release step 351 s at `d314ce0`.

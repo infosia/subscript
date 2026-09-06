@@ -134,3 +134,57 @@ them.
 The working tree and the commit messages are the scope; the history's
 blobs were swept by hand and found clean (the records above). *(Owner
 decision, 2026-08-30.)*
+
+## The script scans in batches — 2026-09-06
+
+The script started about six processes for every file: `git ls-files -s`
+and `sed` for the gitlink mode, `grep -Iq` for the binary probe, and one
+`grep -nE` for each of the three patterns. The file list holds 1,031
+files, so one run started about 6,200 processes, one after the other.
+
+It now starts about fifteen. One `git ls-files -s` collects every
+gitlink before the loop, and the loop tests membership with a shell
+`case`, so the loop starts no process. The loop writes one
+null-delimited scan list. Each pattern then runs one `grep` batch
+through `xargs`, with `-I` in place of the binary probe and `-H` for the
+file name. The patterns, the exclusions, the `git log` scan, and the
+exit status do not change.
+
+The stdout format changes and now matches the paragraph above: a
+single-file `grep` printed `line:text`, and a batched `grep -H` prints
+`file:line:text`. The order of the hits changes from file-major to
+pattern-major; nothing pins the order.
+
+### Measured on `x86_64-pc-windows-msvc`
+
+One run of the script: 103.487 s before, 0.862 s after.
+
+Controls, each measured: a probe file with a local path, one with a
+sibling reference, and one with a session trailer each exit 1 and print
+the hit as `file:line:text` with the matching stderr line. A probe file
+whose name holds a space reports one stderr line for two hits. A binary
+probe that holds all three violations reports nothing. A gitlink entry,
+added through a temporary index outside the repository, excludes its
+path. The clean tree exits 0.
+
+`tools/gate.sh full` on this host, at `d314ce0` with the script
+modified:
+
+```text
+gate full d314ce0267880588ba3ace8b6c849ee97f76d00f dirty:1 debug 1262/0/2 release 1260/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+| step | before | after |
+|---|---:|---:|
+| debug | 875 s | 135 s |
+| release | 1,257 s | 351 s |
+| hygiene | 108 s | 1 s |
+
+`cli/tests/gate.rs` measures 23.30 s against 753.29 s, because about
+seven of its cases run the script for real and one mutex serializes
+them. The test counts do not move, so the gate lost no check. The other
+steps move with the build cache, not with this change.
+
+The stderr line reads its file name from the `grep` output, up to the
+first `:`. No path in this repository holds a `:`, and Windows forbids
+one in a file name.
