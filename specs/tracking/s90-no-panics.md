@@ -1,6 +1,6 @@
 # §90 — no public entry point panics or faults on any input
 
-Status: **in progress.** Contract: `specs/blocks/compiler.md` §90
+Status: **landed** at `155660d`. Contract: `specs/blocks/compiler.md` §90
 (`3782747`). Origin: the owner's question of 2026-09-06.
 
 ## The measurement (at `68b4213`, this host)
@@ -81,3 +81,27 @@ Excluded: the 213 runtime `extern "C"` functions (invariant 6;
   deleted; no history reached `main`. The fork repository now lives
   outside the project tree, and `target/forks/patches/` holds the
   `format-patch` of the fix.
+
+
+## Landed at `155660d`
+
+The fork is `https://github.com/infosia/swc_ecma_parser`, branch
+`subscript-eof-bump`, pinned in `Cargo.lock` at `113e3c47` (base
+`a0b54ed` = 6.0.2 as published). No other swc crate moved.
+
+Gate:
+
+```text
+gate full d118fdc52bb493edc3dfd6f5bbe9c44226d44311 dirty:6 debug 1287/0/2 release 1285/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: build 17, debug 383, release 499, clippy 9,
+hygiene 1 — about 15 minutes for `full`.
+
+## §90 result
+
+Every public entry of the five crates survived 15,897 inputs in each
+profile; the one fault was a third-party parser's, now a pinned
+fork with a one-line fix, a reject entry, and a 15,000-input
+mutation test in every gate. No production code of this project
+changed.
