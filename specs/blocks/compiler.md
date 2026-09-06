@@ -404,6 +404,24 @@ considered and rejected — it reads as an embedded TypeScript runtime,
 which this project is not, and `tsc` is the name of the TypeScript
 compiler the gate runs.)*
 
+### 5.x Comments in Rust code *(Owner decision 2026-09-07)*
+
+1. A comment states what the code does, or the rule it follows. A
+   rule is cited as the current contract section (`compiler.md §N`,
+   `stdlib.md §N`, `collisions.md Cn`). Nothing else is cited.
+2. A comment names no plan phase (`P6`, `P25`), request (`R39`),
+   observation (`OBS-3`), review round, date, commit, or former
+   behaviour ("previously", "no longer", "used to", "superseded",
+   "retired"). The history is in `specs/tracking/` and
+   `compiler-history.md`; a comment is not a changelog.
+3. A comment that restates the code beside it is deleted. A `///`
+   on a public item states the item's contract in one to three
+   sentences and stays (`missing_docs`). A `// SAFETY:` comment
+   stays and states the invariant, not its history.
+4. A test's `//!` states what the test proves and cites the
+   contract section it proves; it does not name the round or the
+   request that produced it.
+
 ## 6. P1 checker contract
 
 Observable obligations only; internal design is the implementer's.
