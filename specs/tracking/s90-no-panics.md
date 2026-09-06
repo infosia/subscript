@@ -48,3 +48,35 @@ version, in-process, died at that input).
 
 Excluded: the 213 runtime `extern "C"` functions (invariant 6;
 §90.1 rule 5).
+
+## Round 1 (at `68f2087`)
+
+- The fork: `swc_ecma_parser` 6.0.2 as published (base commit
+  `a0b54ed`) and one commit on branch `subscript-eof-bump`
+  (`113e3c4`): `parse_ts_enum_member` tests `eof!` before `bump!` in
+  its recovery branch and emits TS1005 at the end position; a
+  regression test `tests/enum_eof.rs` registered from `src/lib.rs`.
+  The patch is 21 lines. The fork's own test suite cannot run
+  offline outside the workspace (dev-dependencies absent from the
+  local registry); the test runs inside the workspace.
+- r185 Red at `68f2087` with the registry crate: debug, 2 of 35
+  reject tests fail at `typescript.rs:788:13` with "parser should
+  not call bump() without knowing current token"; release, the test
+  process dies with SIGSEGV. Green with the fork: 35 passed in both
+  profiles; S100 at line 9; `tsc` rejects with TS1005.
+- `compiler/tests/robustness.rs`: 421 sources (183 accept, 174
+  reject, 5 warn, 53 trap, 6 interop), 14,985 mutated inputs
+  through `check_program` under `catch_unwind`, 0 panics, 6.1 s in
+  debug.
+- The debug-profile repeat of the survey stopped at 3,500 of 15,898
+  inputs with no finding when its binary was rebuilt away; the
+  standing test above is the debug-profile witness for the checker,
+  and the corpus suites run the later stages in debug.
+- An incident, recorded: the coding agent's `git init` inside
+  `target/forks/` was cut short by its sandbox (no `HEAD`), so a git
+  command run in that directory resolved to the project repository;
+  one commit landed on a stray branch of the project with the
+  round's files. Reverted with `reset --soft` and the branch
+  deleted; no history reached `main`. The fork repository now lives
+  outside the project tree, and `target/forks/patches/` holds the
+  `format-patch` of the fix.
