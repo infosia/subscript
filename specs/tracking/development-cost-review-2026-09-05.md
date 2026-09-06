@@ -344,3 +344,23 @@ These are ignored build artifacts, not committed source changes.
 The first detailed resource report could not complete because the sandbox rejected the timer's system query.
 After approval, the same probe completed outside the sandbox with exit 0 and produced the resource figures above.
 The initial repeat still produced its C-emission timing; it is not used as a successful resource measurement.
+
+---
+
+## Closure — 2026-09-06 (owner decision)
+
+The findings of this review, with where each closed:
+
+| Finding | Status |
+|---|---|
+| 1 checker synthetic-owner protocol | §87, `eba4537` |
+| 2 C emission scaling | §86, `3695860` `3a4bdff` `5ac6b01`: `emit_c` 27.2 s → 0.19 s at width 32 |
+| 3 gate identity | §85, `72fe77e` … `a4f6001`; rule 7a `40a67a6` (the debug step 1,443 s → 518 s); the owner's hygiene batching `80789a5` |
+| 4 corpus inventory | §88, `8a61352` |
+| 5 platform defects surface late | windows-msvc records of 2026-09-06 in `windows-portability.md`; Linux CI declined 2026-09-05 |
+| 6 contracts and history | `cccfb62`, `e45ba42` (`compiler-history.md`, §0 index); README and `codegen/src/lib.rs` |
+| 7 crate boundaries | not started; the review's own "later" |
+
+Open MINOR items stay in their tracking notes (`s86-…`, `s87-…`,
+`s89-…`). The build-time and review-round task of 2026-09-05 is
+closed by the owner on 2026-09-06.
