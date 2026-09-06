@@ -68,10 +68,11 @@ Excluded: the 213 runtime `extern "C"` functions (invariant 6;
   reject, 5 warn, 53 trap, 6 interop), 14,985 mutated inputs
   through `check_program` under `catch_unwind`, 0 panics, 6.1 s in
   debug.
-- The debug-profile repeat of the survey stopped at 3,500 of 15,898
-  inputs with no finding when its binary was rebuilt away; the
-  standing test above is the debug-profile witness for the checker,
-  and the corpus suites run the later stages in debug.
+- The debug-profile repeat of the survey (this project's 19
+  `debug_assert!` sites and swc's debug assertions live): 15,898
+  inputs, 15,897 completed, 1 panic caught — the same swc site,
+  `typescript.rs:788` — 0 faults, 1,783 s. No `debug_assert!` of
+  this project fired.
 - An incident, recorded: the coding agent's `git init` inside
   `target/forks/` was cut short by its sandbox (no `HEAD`), so a git
   command run in that directory resolved to the project repository;
