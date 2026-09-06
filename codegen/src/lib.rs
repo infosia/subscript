@@ -1,6 +1,6 @@
 #![warn(missing_docs)]
-//! Code generation for both execution tiers of subscript (plan
-//! phases P2 and P3, `specs/blocks/compiler.md` §7, §8).
+//! Code generation for both execution tiers of subscript
+//! (`specs/blocks/compiler.md` §7, §8).
 //!
 //! The shared lowering (`lir.rs`) lowers the checker's HIR once to LIR
 //! and verifies it. The dev-tier JIT (`lower/`), ship-tier C emitter
@@ -25,7 +25,7 @@
 //! The standing differential gate (§8.3) compares the first two
 //! against the committed goldens on every `cargo test`.
 //!
-//! [`jit_bench`] is the dev tier's measurement entry point for the P4
+//! [`jit_bench`] is the dev tier's measurement entry point for the
 //! performance gate (§9): same compilation, but the exported `main` is
 //! called repeatedly and each call is timed on its own.
 
@@ -547,7 +547,7 @@ export function main(): void {
         assert_eq!(out, "11,12,12\n");
     }
 
-    // ----- P2 phase-review regression tests -----
+    // ----- lowering regression tests -----
 
     #[test]
     fn m1_reference_held_only_in_a_fixed_array_survives_collect() {
@@ -616,8 +616,8 @@ export function main(): void {
 
     #[test]
     fn n4_trap_inside_a_generator_unwinds_to_a_report() {
-        // The resume unwind path (which now also stores the terminal
-        // state) must hand the trap back through `.next()` and `main`.
+        // The resume unwind path stores the terminal state and must
+        // hand the trap back through `.next()` and `main`.
         let t = run_trap(
             "function* bad() {\n  const xs: i32[] = [1];\n  yield xs[5];\n}\nexport function main(): void {\n  const g = bad();\n  const s = g.next();\n  print(`${s.value}`);\n}\n",
         );
@@ -665,7 +665,7 @@ export function main(): void {
         assert_eq!(out, "NaN,Infinity,-Infinity,-0\n");
     }
 
-    // ----- P4.1 bounds-check elimination: safety net (compiler.md §10) -----
+    // ----- bounds-check elimination: safety net (compiler.md §10) -----
     //
     // Proven-in-range FixedArray indices lose their check; every index
     // the analysis cannot prove must still trap at its TS position.
@@ -741,11 +741,10 @@ export function main(): void {
     #[test]
     fn constant_out_of_range_index_stays_a_checker_error() {
         // A constant literal index equal to the length is a checker
-        // error (P1, S100), and remains so — the bounds-check elimination
-        // must never turn a rejected program into an unchecked access.
-        // Division of responsibility: constant OOB is P1's; every
-        // non-constant OOB the analysis cannot prove is a runtime trap
-        // (the tests above).
+        // error (S100). The bounds-check elimination must never turn a
+        // rejected program into an unchecked access. The checker owns a
+        // constant out-of-range index; every non-constant index the
+        // analysis cannot prove is a runtime trap (the tests above).
         let err = run(
             "export function main(): void {\n  const xs: FixedArray<i32, 3> = [1, 2, 3];\n  print(`${xs[3]}`);\n}\n",
         );

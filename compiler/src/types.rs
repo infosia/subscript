@@ -13,7 +13,7 @@ pub const MAX_AGGREGATE_BYTES: u32 = i32::MAX as u32;
 /// targets.
 pub const CRANELIFT_FRAME_ALIGNMENT: u32 = 16;
 
-/// Reserved plain-Q32 discriminant used for an absent descriptor member (R16).
+/// Reserved plain-Q32 discriminant used for an absent descriptor member (§43).
 ///
 /// Ordinary plain-alias members are numbered from zero in declaration order,
 /// so this value is outside every plain member set. Wire-mapped aliases choose
@@ -135,13 +135,13 @@ impl HandleKind {
     }
 
     /// Acceptance filter (S100/S014): does the language accept this handle
-    /// kind where the old reference-class surface is required?
+    /// kind where a reference class is required?
     ///
-    /// The runtime could support identity operations for `RegExp`, `Object`,
-    /// `Array`, `Generator`, `AsyncHandle`, `Worker`, `Inbox`, and `Outbox`,
-    /// plus nullable forms of identity handles. They remain candidate
-    /// widenings; equality, `as`, object narrowing, and Map/Set acceptance keep
-    /// the corpus-recorded `Map`, `Set`, and reference-class answer.
+    /// Equality, `as`, object narrowing, and Map/Set acceptance take `Map`,
+    /// `Set`, and reference-class handles. The runtime also represents
+    /// `RegExp`, `Object`, `Array`, `Generator`, `AsyncHandle`, `Worker`,
+    /// `Inbox`, `Outbox`, and nullable identity handles; the corpus does not
+    /// accept them here.
     #[must_use]
     pub fn uses_reference_identity(self) -> bool {
         matches!(self, Self::Map | Self::Set | Self::ReferenceClass)
@@ -457,10 +457,10 @@ impl Type {
     /// Acceptance filter (S011): can this type appear as the non-null member
     /// of `Ref | null` under the corpus-recorded language surface?
     ///
-    /// Candidate widenings that the runtime could represent but the language
-    /// does not accept today are `RegExp`, `Array`, `Generator`, and
-    /// `AsyncHandle`. Already-nullable types also retain the old `false`
-    /// answer; plain value classes remain outside this surface.
+    /// The runtime represents `RegExp`, `Array`, `Generator`, and
+    /// `AsyncHandle`; the language does not accept them here. An
+    /// already-nullable type is not a union member, and a plain value class
+    /// is outside this surface.
     #[must_use]
     pub fn is_reference_shape(&self, classes: &[HandleClass]) -> bool {
         if matches!(self, Type::Nullable(_)) {
@@ -471,13 +471,13 @@ impl Type {
             .is_some_and(HandleKind::supports_nullable)
     }
 
-    /// Acceptance filter (S100/S014): does the old language surface treat
-    /// this non-null type as a reference class?
+    /// Acceptance filter (S100/S014): does the language treat this non-null
+    /// type as a reference class?
     ///
-    /// Runtime-capable candidates deliberately not accepted are `RegExp`,
-    /// `Object`, `Array`, `Generator`, `AsyncHandle`, `Worker`, `Inbox`,
-    /// `Outbox`, and nullable identity handles. They remain candidates for a
-    /// separate corpus decision, not part of handle-table consolidation.
+    /// `RegExp`, `Object`, `Array`, `Generator`, `AsyncHandle`, `Worker`,
+    /// `Inbox`, `Outbox`, and nullable identity handles are representable at
+    /// runtime and are not accepted here. A separate corpus decision can
+    /// add one.
     #[must_use]
     pub fn uses_reference_identity(&self, classes: &[HandleClass]) -> bool {
         !matches!(self, Type::Nullable(_))

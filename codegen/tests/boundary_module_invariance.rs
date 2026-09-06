@@ -1,4 +1,4 @@
-//! OBS-3 §44.9: unrelated module declarations cannot change recursive
+//! §44.9: unrelated module declarations cannot change recursive
 //! boundary lowering. The descriptor is built and consumed in one activation;
 //! uncalled helper padding must not change its two pointer targets.
 

@@ -1,4 +1,5 @@
-//! P25 typed ingestion of fixed-shape C provenance records.
+//! Typed ingestion of fixed-shape C provenance records (compiler.md
+//! §23.3).
 
 use subscript_compiler::hir::{ForeignMirrorId, ForeignTypeProvenance};
 use subscript_compiler::{check_program, Diagnostic, SourceFile};

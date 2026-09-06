@@ -5,7 +5,7 @@
 //! the committed goldens.
 //!
 //! Most programs are written inline because each exists as two source
-//! revisions. P20's stale-coroutine trap is the exception: its first
+//! revisions. The stale-coroutine trap is the exception: its first
 //! revision and JIT stdout live in `corpus/trap`, while this test derives
 //! the body-only replacement that makes the saved coroutine stale.
 

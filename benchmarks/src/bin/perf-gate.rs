@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! The P4 performance-gate harness (`specs/blocks/compiler.md` §3, §9).
+//! The performance-gate harness (`specs/blocks/compiler.md` §3, §9).
 //!
 //! It measures three subjects on the `a22-matrix-propagation` and `collect`
 //! workloads, in one process, in one session:
@@ -207,7 +207,7 @@ impl ShipLimit {
     }
 }
 
-/// The workloads that the P4 gate measures.
+/// The workloads that the gate measures.
 const WORKLOADS: [Workload; 2] = [
     Workload {
         name: "a22",

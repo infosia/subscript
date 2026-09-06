@@ -1,8 +1,9 @@
 //! Byte-identical regeneration test (`specs/blocks/compiler.md` §12.2)
-//! plus Q13/P14 mapping checks. Running the generator on the pinned header
-//! reproduces the committed mirror byte-for-byte; drift fails the test.
-//! This is how "generated code is never hand-edited" (CLAUDE.md core
-//! principle 6) is enforced for the mirror.
+//! plus the boundary mapping checks of `specs/blocks/collisions.md` §2 and
+//! `specs/blocks/compiler.md` §16. The generator runs on the pinned header
+//! and reproduces the committed mirror byte-for-byte; drift fails the
+//! test. This enforces "generated code is never hand-edited" (CLAUDE.md
+//! core principle 6) for the mirror.
 
 use std::fs;
 use std::path::PathBuf;
@@ -101,8 +102,8 @@ fn binding_rules_are_reflected_in_the_mirror() {
     // Fixed C array → FixedArray<T, N>.
     assert!(m.contains("basis: FixedArray<f32, 16>;"));
 
-    // P6.2 (§13.2). Descriptor-embedded (count, pointer) array: the count
-    // is elided, the pointer field becomes `T[]`.
+    // §13.2. Descriptor-embedded (count, pointer) array: the count is
+    // elided, the pointer field becomes `T[]`.
     assert!(m.contains("draws: u32[];"));
     assert!(!m.contains("drawsCount"));
     assert!(m.contains("constructor(layer: u32, draws: u32[]);"));
@@ -117,9 +118,9 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("subBulkConsume(data: object | null, size: u64): i32;"));
     assert!(m.contains("subBulkConsumeF32(data: f32[]): i32;"));
 
-    // P14 (§16). The production-shaped packet proves the scalar blocker
-    // is removed: byte, short, and binary16 fields retain exact widths,
-    // and each narrow typed descriptor collapses to a zero-copy `T[]`.
+    // §16. The production-shaped packet keeps exact scalar widths: byte,
+    // short, and binary16 fields hold their own widths, and each narrow
+    // typed descriptor collapses to a zero-copy `T[]`.
     assert!(m.contains("type SubFloat16 = f16;"));
     assert!(m.contains("kind: u8;"));
     assert!(m.contains("delta: i16;"));
@@ -129,37 +130,37 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("subSliceChecksumU8(data: u8[]): i32;"));
     assert!(m.contains("subSliceChecksumF16(data: SubFloat16[]): i32;"));
 
-    // P7.2 (§14.5). Mutable (pointer, count) descriptor over a value class
-    // → `SubWaitEntry[]`; the descriptor struct (SubWaitList) is absorbed,
+    // §14.5. Mutable (pointer, count) descriptor over a value class →
+    // `SubWaitEntry[]`; the descriptor struct (SubWaitList) is absorbed,
     // never emitted as a named type.
     assert!(m.contains("subDeviceWait(device: SubDevice, waits: SubWaitEntry[]): void;"));
     assert!(!m.contains("declare class SubWaitList"));
-    // R5 (§27). Adjacent scalar count/pointer function parameters collapse
-    // to one array in both const-input and mutable-fill directions.
+    // §27. Adjacent scalar count/pointer function parameters collapse to
+    // one array in both const-input and mutable-fill directions.
     assert!(m.contains("subDeviceSumBytes(data: u8[]): u32;"));
     assert!(m.contains("subDeviceFillBytes(data: u8[]): void;"));
     assert!(m.contains("subDeviceFillShorts(data: u16[]): void;"));
-    // R11 (§34). The final parameter-pair cell reuses the same provenance
-    // path for const registered-handle elements; neither half of the old
-    // leaked-count/nullable-pointer mirror may survive.
+    // §34. The final parameter-pair cell reuses the same provenance path
+    // for const registered-handle elements; neither the leaked count nor
+    // the nullable pointer appears in the mirror.
     assert!(m.contains(
         "subProbeQueueSubmitCheck(queue: SubDevice, commands: SubDevice[], selector: u32): u64;"
     ));
     assert!(!m.contains("commandsCount: u64"));
     assert!(!m.contains("commands: SubDevice | null"));
-    // R12 (§35). A direct registered-handle foreign-function parameter
-    // retains null while the leading unqualified handle remains non-null.
+    // §35. A direct registered-handle foreign-function parameter retains
+    // null while the leading unqualified handle remains non-null.
     assert!(
         m.contains("subProbeSetBindGroupCheck(encoder: SubDevice, group: SubDevice | null): u32;")
     );
-    // R21 (§49). The host-owned fixture is an opaque handle with explicit
+    // §49. The host-owned fixture is an opaque handle with explicit
     // lifecycle functions and a non-owning accessor used by script code.
     assert!(m.contains("interface SubHostOwnedState {"));
     assert!(!m.contains("subHostOwnedStateCreate"));
     assert!(!m.contains("subHostOwnedStateDestroy"));
     assert!(m.contains("subHostOwnedStateBorrow(): SubHostOwnedState;"));
     assert!(m.contains("subHostOwnedStateAdvance(state: SubHostOwnedState): i32;"));
-    // R7 (§30). A direct string field can share its pointer scratch with a
+    // §30. A direct string field can share its pointer scratch with a
     // recursively plain embedded aggregate and a collapsed enum-element
     // count-first pair. The count and nullable-pointer evidence shape must
     // never survive in the mirror.
@@ -167,14 +168,14 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("viewFormats: SGPUProbeFormat[];"));
     assert!(!m.contains("viewFormatsCount"));
     assert!(!m.contains("SGPUProbeFormat | null"));
-    // R8 (§31). A const registered-handle pair collapses input-only, and
-    // direct `_Nullable` handle fields retain null in the mirror.
+    // §31. A const registered-handle pair collapses input-only, and direct
+    // `_Nullable` handle fields retain null in the mirror.
     assert!(m.contains("bindGroupLayouts: SubDevice[];"));
     assert!(!m.contains("bindGroupLayoutsCount"));
     assert!(m.contains("buffer: SubDevice | null;"));
     assert!(m.contains("sampler: SubDevice | null;"));
     assert!(m.contains("textureView: SubDevice | null;"));
-    // R10 (§33). Pointer-reachable fragment state lowers through its
+    // §33. Pointer-reachable fragment state lowers through its
     // string/pairs, and each target's nullable plain blend pointer remains
     // explicit in the mirror.
     assert!(m.contains("fragment: SGPUProbeFragmentState | null;"));
@@ -182,33 +183,33 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("constants: SGPUProbeConstantEntry[];"));
     assert!(m.contains("targets: SGPUProbeColorTargetState[];"));
     assert!(m.contains("blend: SGPUProbeBlendState | null;"));
-    // OBS-3 (§44). The scalar nullable handle remains a distinct field
-    // beside both collapsed pairs in the pointer-reachable fragment.
+    // §44. The scalar nullable handle remains a distinct field beside both
+    // collapsed pairs in the pointer-reachable fragment.
     assert!(m.contains("fragment: SGPUProbeHandleFragmentState | null;"));
     assert!(m.contains("module: SubDevice | null;"));
     assert!(m.contains(
         "constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeColorTargetState[]);"
     ));
-    // OBS-3 round 2 (§44.5). The target element's nullable pointer reaches
-    // a blend aggregate whose color and alpha fields are embedded structs.
+    // §44.5. The target element's nullable pointer reaches a blend
+    // aggregate whose color and alpha fields are embedded structs.
     assert!(m.contains("blend: SGPUProbeNestedBlendState | null;"));
     assert!(m.contains("color: SGPUProbeNestedBlendComponent;"));
     assert!(m.contains("alpha: SGPUProbeNestedBlendComponent;"));
     assert!(m.contains(
         "constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeNestedColorTargetState[]);"
     ));
-    // OBS-3 round 3 (§44.6). A plain, count-less pointer to a registered
-    // boundary struct has the same nullable mirror shape as the annotated
-    // spellings above; the adjacent enum and u64 alias remain exact.
+    // §44.6. A plain, count-less pointer to a registered boundary struct
+    // has the same nullable mirror shape as the annotated spellings above;
+    // the adjacent enum and u64 alias remain exact.
     assert!(m.contains("format: SGPUProbeUnmarkedTextureFormat;"));
     assert!(m.contains("blend: SGPUProbeUnmarkedBlendState | null;"));
     assert!(m.contains("writeMask: SGPUProbeUnmarkedColorWriteMask;"));
     assert!(m.contains(
         "constructor(module: SubDevice | null, entryPoint: string, constants: SGPUProbeConstantEntry[], targets: SGPUProbeUnmarkedColorTargetState[]);"
     ));
-    // OBS-3 round 4 (§44.7). Both count-less pointer members remain
-    // independently reachable across the by-value primitive aggregate, and
-    // both pointed-to count/pointer pairs collapse without leaking counts.
+    // §44.7. Both count-less pointer members remain independently
+    // reachable across the by-value primitive aggregate, and both
+    // pointed-to count/pointer pairs collapse without leaking counts.
     assert!(m.contains("depthStencil: SGPUProbeBreadthDepthStencilState | null;"));
     assert!(m.contains("fragment: SGPUProbeBreadthFragmentState | null;"));
     assert!(m.contains("primitive: SGPUProbeBreadthPrimitiveState;"));
@@ -216,9 +217,9 @@ fn binding_rules_are_reflected_in_the_mirror() {
     assert!(m.contains("constants: u32[];"));
     assert!(!m.contains("biasesCount"));
     assert!(!m.contains("constantsCount"));
-    // OBS-3 round 5 (§44.8). The wide descriptor keeps both count-less
-    // pointers independently reachable while every nested pair collapses,
-    // including pairs in array elements and behind element pointers.
+    // §44.8. The wide descriptor keeps both count-less pointers
+    // independently reachable while every nested pair collapses, including
+    // pairs in array elements and behind element pointers.
     assert!(m.contains("vertex: SGPUProbeWideVertexState;"));
     assert!(m.contains("buffers: SGPUProbeWidePairEntry[];"));
     assert!(m.contains("depthStencil: SGPUProbeWideDepthStencilState | null;"));

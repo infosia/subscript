@@ -1,6 +1,6 @@
-//! P5.2a: ingestion of the generated ambient C-header mirror into the
-//! checker. Verifies the using-program is accepted and that boundary-rule
-//! violations are rejected with the right S-code.
+//! Ingestion of the generated ambient C-header mirror into the checker
+//! (compiler.md §12.2): the using program is accepted, and a
+//! boundary-rule violation is rejected with its S-code.
 
 use std::fs;
 use std::path::PathBuf;
@@ -122,70 +122,70 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subSliceChecksumU16",
             "subSliceChecksumI16",
             "subSliceChecksumF16",
-            // P6.2 shapes: flag bit test, embedded-array struct consumer,
+            // §13.2 shapes: flag bit test, embedded-array struct consumer,
             // untyped bulk API + its typed facade.
             "subAccessMatches",
             "subDrawListTotal",
             "subBulkConsume",
             "subBulkConsumeF32",
-            // P6.3 async model: deferred-fire register + host pump; plus a
+            // §13.3 async model: deferred-fire register + host pump; plus a
             // production-scale embedded-array consumer.
             "subDeviceOnComplete",
             "subDevicePump",
             "subCommandBufferTotal",
-            // P7.1 async/Future shapes (§14): chained-flag bit test,
+            // §14.1-§14.3 async/Future shapes: chained-flag bit test,
             // by-value struct returns, and an out-field writer.
             "subStageMatches",
             "subFutureMake",
             "subStatsMake",
             "subDeviceQuery",
-            // P7.2 composed async capstone (§14.4/§14.5): kick returns a
-            // future by value + two-userdata callback-info; wait takes the
-            // out-array of SubWaitEntry.
+            // §14.4/§14.5 composed async capstone: kick returns a future by
+            // value + two-userdata callback-info; wait takes the out-array of
+            // SubWaitEntry.
             "subDeviceKickAsync",
             "subDeviceWait",
-            // R5 (§27): adjacent count-first scalar parameter pairs.
+            // §27: adjacent count-first scalar parameter pairs.
             "subDeviceSumBytes",
             "subDeviceFillBytes",
             "subDeviceFillShorts",
-            // R6 (§28): string-view fields in pointer-passed boundary structs.
+            // §28: string-view fields in pointer-passed boundary structs.
             "subBoundaryStringCheck",
             "subBoundaryStringFill",
-            // R7 (§30): nested aggregate + collapsed enum pair scratch.
+            // §30: nested aggregate + collapsed enum pair scratch.
             "subProbeTextureDescriptorCheck",
             "subProbeTextureDescriptorFill",
-            // R8 (§31): collapsed opaque-handle pair and nullable handle
-            // fields in both aggregate directions.
+            // §31: collapsed opaque-handle pair and nullable handle fields in
+            // both aggregate directions.
             "subProbePipelineLayoutCheck",
             "subProbeBindGroupEntryCheck",
             "subProbeBindGroupEntryFill",
-            // R9 (§32): recursive embedded aggregates and lowered
-            // collapsed-pair element arrays.
+            // §32: recursive embedded aggregates and lowered collapsed-pair
+            // element arrays.
             "subProbeComputePipelineCheck",
             "subProbeRenderPipelineCheck",
             "subProbeProgrammableStageCheck",
-            // R10 (§33): nullable struct-pointer members at fragment and
-            // blend depth.
+            // §33: nullable struct-pointer members at fragment and blend
+            // depth.
             "subProbeFullRenderPipelineCheck",
-            // OBS-3 (§44): a nullable scalar handle beside two pairs in a
+            // §44: a nullable scalar handle beside two pairs in a
             // scratch-lowered fragment behind a nullable pointer member.
             "subProbeFullRenderPipelineWithHandleCheck",
-            // OBS-3 round 2 (§44.5): nested component aggregates behind a
-            // nullable pointer in a target-array element.
+            // §44.5: nested component aggregates behind a nullable pointer
+            // in a target-array element.
             "subProbeFullRenderPipelineWithNestedBlendCheck",
-            // OBS-3 round 3 (§44.6): the same target-array reach-through
-            // with a plain, count-less registered struct pointer.
+            // §44.6: the same target-array reach-through with a plain,
+            // count-less registered struct pointer.
             "subProbeFullRenderPipelineWithUnmarkedBlendCheck",
-            // OBS-3 round 4 (§44.7): two count-less reach-through pointers
-            // separated by a by-value aggregate.
+            // §44.7: two count-less reach-through pointers separated by a
+            // by-value aggregate.
             "subProbeBreadthRenderPipelineCheck",
-            // OBS-3 round 5 (§44.8): the downstream-wide descriptor profile.
+            // §44.8: the downstream-wide descriptor profile.
             "subProbeWideRenderPipelineCheck",
-            // R11 (§34): registered-handle pair at parameter position.
+            // §34: registered-handle pair at parameter position.
             "subProbeQueueSubmitCheck",
-            // R12 (§35): nullable registered handle at parameter position.
+            // §35: nullable registered handle at parameter position.
             "subProbeSetBindGroupCheck",
-            // OBS-4 (§47): by-value register-image argument shapes.
+            // §47: by-value register-image argument shapes.
             "subByValueI32OneReport",
             "subByValueI32PairReport",
             "subByValueI32TripleReport",
@@ -197,8 +197,8 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subByValueI32F32Report",
             "subByValueI32I64Report",
             "subByValueI64TripleReport",
-            // R21 (§49): the script-visible borrow-only surface. The
-            // create/destroy pair is host-only and absent from the mirror.
+            // §49: the script-visible borrow-only surface. The create/destroy
+            // pair is host-only and absent from the mirror.
             "subHostOwnedStateBorrow",
             "subHostOwnedStateAdvance",
         ]

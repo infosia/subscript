@@ -1,8 +1,8 @@
-//! Hardcoded ambient prelude surface (Q12/R15): sized-numeric aliases,
-//! `print`, `unreachable`, and `Context.collect`/`Context.free`.
+//! Hardcoded ambient prelude surface: sized-numeric aliases, `print`,
+//! `unreachable`, and `Context.collect`/`Context.free`.
 //!
 //! `prelude/lang.d.ts` is the `tsc`-facing reference for these
-//! declarations; the checker does not parse it (P1 contract).
+//! declarations; the checker does not parse it.
 
 use crate::diag::RuleCode;
 use crate::hir::RegexFn;
@@ -765,9 +765,8 @@ pub(crate) fn str_method(name: &str) -> Option<StrFn> {
 }
 
 /// Maps an `Array` method name to its intrinsic (stdlib.md §9, Q22).
-/// `push`/`pop` are not here — they predate the §9 surface and stay on
-/// the `Callee::Method` path; the out-of-subset members resolve to
-/// nothing.
+/// `push`/`pop` are not here; they stay on the `Callee::Method` path.
+/// The out-of-subset members resolve to nothing.
 pub(crate) fn arr_method(name: &str) -> Option<ArrFn> {
     ArrFn::ALL.iter().copied().find(|f| f.name() == name)
 }

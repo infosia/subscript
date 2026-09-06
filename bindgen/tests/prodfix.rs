@@ -1,14 +1,13 @@
-//! P6.1 production-C parse test (`specs/blocks/compiler.md` §13.1). Proves
-//! the libclang frontend ingests a neutral header carrying the real-C
-//! features the P5 synthetic fixture lacked: object-like and
-//! function-like macros, an attribute (visibility) macro applied to a
-//! declaration, a nullability attribute macro that expands to nothing,
-//! `/** doc comments */`, `static const` integer constants, a flag
-//! typedef with `static const` members, nested structs, a function-
-//! pointer typedef, and an intrusive-chain struct.
+//! Production-C parse test (`specs/blocks/compiler.md` §13.1). Proves the
+//! libclang frontend ingests a neutral header that carries real-C
+//! features: object-like and function-like macros, an attribute
+//! (visibility) macro applied to a declaration, a nullability attribute
+//! macro that expands to nothing, `/** doc comments */`, `static const`
+//! integer constants, a flag typedef with `static const` members, nested
+//! structs, a function-pointer typedef, and an intrusive-chain struct.
 //!
-//! P6.1 asserts the parser extracts these; mapping the new shapes to the
-//! boundary mirror is P6.2, so no golden mirror is produced here.
+//! The test asserts the parser extracts these facts. It produces no
+//! mirror.
 
 use std::fs;
 use std::path::PathBuf;

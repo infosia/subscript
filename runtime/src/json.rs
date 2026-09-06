@@ -1,4 +1,5 @@
-//! Shared JSON support for P13 `JSON.stringify` and `JSON.parse`.
+//! Shared JSON support for `JSON.stringify` and `JSON.parse`
+//! (stdlib.md §13).
 //!
 //! The checker emits traversal for one exact static type. This module owns
 //! the representation-independent behavior: output assembly and escaping,

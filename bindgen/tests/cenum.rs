@@ -1,4 +1,5 @@
-//! R24 CEnum alias references emitted from header-owned typedef spellings.
+//! CEnum alias references emitted from header-owned typedef spellings
+//! (`specs/blocks/compiler.md` §51).
 
 use subscript_bindgen::generate_for_header;
 

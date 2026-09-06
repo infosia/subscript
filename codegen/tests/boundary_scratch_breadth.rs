@@ -1,4 +1,4 @@
-//! OBS-3 §44.8: combined breadth-and-depth coverage for recursive boundary
+//! §44.8: combined breadth-and-depth coverage for recursive boundary
 //! scratch.
 
 use std::collections::HashSet;

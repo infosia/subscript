@@ -4,10 +4,10 @@
 //! **dev-JIT bytes ≡ ship-C-AOT bytes ≡ golden bytes**, byte-exact, with
 //! no normalization. The ship tier is C emission compiled by the
 //! platform C compiler and linked with the runtime static library
-//! (§11, plan §8 Rev 2); this is where dev/ship agreement is now
-//! established — by verification, since the two tiers are separate
-//! lowerings. The entry set is derived from `corpus/accept/`, so a new
-//! entry or golden is picked up with no edit here.
+//! (§11). The two tiers are separate lowerings, so this test
+//! establishes their agreement by verification. The entry set is derived
+//! from `corpus/accept/`, so a new entry or golden is picked up with no
+//! edit here.
 //!
 //! There are no skips of the ship tier. A missing host C compiler, a
 //! missing runtime static library, or a failing compile/link fails this

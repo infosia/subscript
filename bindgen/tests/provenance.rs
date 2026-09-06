@@ -1,4 +1,4 @@
-//! P25 mirror-provenance records (`specs/blocks/compiler.md` §23.3).
+//! Mirror-provenance records (`specs/blocks/compiler.md` §23.3).
 //! Each record kind is generated from a minimal header, and the const/mutable
 //! descriptor pair proves provenance is keyed by parameter rather than
 //! element type.

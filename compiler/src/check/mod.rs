@@ -108,7 +108,8 @@ fn string_alias_members(ty: &ast::TsType) -> Option<Vec<String>> {
         .collect()
 }
 
-/// Returns the object-literal mapping from the one R23 alias form.
+/// Returns the object-literal mapping from the one wire-mapped alias form
+/// (§50.1).
 fn wire_alias_literal(ty: &ast::TsType) -> Option<&ast::TsTypeLit> {
     let ast::TsType::TsTypeRef(reference) = ty else {
         return None;
@@ -130,7 +131,7 @@ fn wire_alias_literal(ty: &ast::TsType) -> Option<&ast::TsTypeLit> {
 }
 
 /// Reads one parser-accepted integer spelling exactly, applying the folded
-/// unary sign before returning its mathematical value (R26).
+/// unary sign before returning its mathematical value (§56.1).
 fn parse_integer_spelling(raw: &str, negate: bool) -> Option<i128> {
     let (radix, digits) =
         if let Some(digits) = raw.strip_prefix("0x").or_else(|| raw.strip_prefix("0X")) {
@@ -154,7 +155,8 @@ fn parse_integer_spelling(raw: &str, negate: bool) -> Option<i128> {
 
 /// The integer value of a non-negative numeric-literal expression (a flag
 /// member initializer, §13.2), or `None` for any other expression. Source
-/// spellings are read exactly; synthesized nodes retain the f64 path.
+/// spellings are read exactly; a synthesized node goes through the f64
+/// path.
 fn int_literal_value(e: &ast::Expr) -> Option<i64> {
     match e {
         ast::Expr::Lit(ast::Lit::Num(n)) => {
@@ -352,7 +354,7 @@ pub(crate) enum ScopeItem {
     Enum(EnumId),
     StringAlias(StringAliasId),
     Global(String),
-    /// A foreign C-ABI function declared by an ambient mirror (P5.2);
+    /// A foreign C-ABI function declared by an ambient mirror (§12.2);
     /// callable but not usable as a value.
     Foreign(String),
 }
@@ -427,8 +429,8 @@ pub(crate) struct Frame {
     pub missing_this_divergence: Option<Divergence>,
 }
 
-/// Per-body checking state: scope stack, frames, and the C7/R16 narrowing
-/// set (path keys currently known non-null or present).
+/// Per-body checking state: scope stack, frames, and the narrowing set of
+/// path keys known non-null or present (C7, §43).
 #[derive(Debug)]
 pub(crate) struct FnCtx {
     pub frames: Vec<Frame>,
@@ -726,7 +728,7 @@ pub(crate) struct Checker<'p> {
     pub cur_file: usize,
     pub subst: HashMap<String, Type>,
     /// Global ambient names contributed by ingested mirror (`.d.ts`)
-    /// files (P5.2): handles, boundary structs, enums, foreign functions,
+    /// files (§12.2): handles, boundary structs, enums, foreign functions,
     /// ambient constants. Consulted after the per-file scope.
     pub ambient_scope: HashMap<String, ScopeItem>,
     /// Resolved signatures of foreign functions, keyed by symbol name.
@@ -752,8 +754,9 @@ pub(crate) struct Checker<'p> {
     /// (`Struct | null`, `object`/`object | null`) are legal here and
     /// rejected elsewhere (C7).
     pub in_boundary: bool,
-    /// True only while resolving a direct foreign-function signature.
-    /// R23 wire aliases are admitted there, but not in boundary structs.
+    /// True while resolving a boundary position that accepts a wire-mapped
+    /// alias: a foreign-function signature, a boundary-struct member, or a
+    /// mirror-class constructor parameter (§50.2, §52.2).
     pub allow_wire_alias_boundary: bool,
     /// True while resolving a `Map`/`Set` key argument. It lets the
     /// resolver preserve otherwise-banned key shapes (`object`,
@@ -767,8 +770,8 @@ pub(crate) struct Checker<'p> {
     pub in_json_argument: bool,
     /// True only while checking the expression to the right of
     /// `for…of`. It preserves a direct `as object` assertion long
-    /// enough for P22's closed-list S014 instead of the general
-    /// boundary-only-type diagnostic.
+    /// enough for the closed-list S014 of stdlib.md §14, instead of the
+    /// general boundary-only-type diagnostic.
     pub in_for_of_subject: bool,
     /// The divergence for an aggregate type in the current declaration.
     pub aggregate_type_divergence: Option<Divergence>,
@@ -2413,7 +2416,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Collects and validates one R23 `CEnum<{ key: wire }>` alias.
+    /// Collects and validates one `CEnum<{ key: wire }>` alias (§50.1).
     fn collect_wire_string_alias(
         &mut self,
         file: usize,
@@ -2566,7 +2569,7 @@ impl<'p> Checker<'p> {
         read(e, false)
     }
 
-    // ----- mirror (`.d.ts`) ingestion (P5.2) -----
+    // ----- mirror (`.d.ts`) ingestion -----
 
     /// Pass A for a mirror declaration: registers the name (handle,
     /// boundary struct, enum, type alias, foreign function, or ambient
@@ -5208,7 +5211,7 @@ impl<'p> Checker<'p> {
     // ----- shared lookups -----
 
     /// Resolves a name against the current file's top-level scope, then
-    /// the global ambient scope (mirror declarations, P5.2).
+    /// the global ambient scope (mirror declarations, §12.2).
     pub(crate) fn scope_item(&self, name: &str) -> Option<ScopeItem> {
         self.file_scopes
             .get(self.cur_file)

@@ -57,7 +57,7 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
         })
         .collect();
     // Interop entries name a foreign function, boundary struct, or flag
-    // member of the synthetic header (P5 device/slice APIs plus the P6.2
+    // member of the synthetic header (§12 device/slice APIs plus the §13.2
     // shapes); prepend the mirror ambient surface so those names resolve. A
     // false negative is not silent — the entry then fails to check with an
     // unresolved identifier.

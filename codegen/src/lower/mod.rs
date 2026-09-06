@@ -60,9 +60,9 @@ pub(crate) use func::define_function;
 /// Identity of a lowered function.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum FnKey {
-    /// Free function by HIR name (legacy module orchestration only).
+    /// Free function by source name.
     Free(String),
-    /// Generator resume function by source name (legacy module orchestration only).
+    /// Generator resume function by source name.
     Resume(String),
     /// Host ABI wrapper for an exported async function.
     AsyncExport(String),
@@ -318,7 +318,7 @@ pub(crate) struct ModLower<'a, M: Module> {
     /// Per-message-class runtime descriptors in program-image data.
     pub worker_message_descriptors: HashMap<ClassId, DataId>,
     pub globals: HashMap<String, (GlobalSlot, Type)>,
-    /// Imported foreign C symbols, declared on first use (P5.2b).
+    /// Imported foreign C symbols, declared on first use.
     pub foreign_ids: HashMap<String, FuncId>,
     /// Foreign imports in deterministic first-use order.
     pub foreign_symbols: Vec<String>,
@@ -987,7 +987,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             &[I64, I64, I64, I64, I64],
             Some(I64),
         )?,
-        // The generic C-ABI callback trampoline (P5.2b, §14.4). Generated
+        // The generic C-ABI callback trampoline (§14.4). Generated
         // code never calls it — a foreign C API does — so it is imported
         // only to take its address (`func_addr`) for a callback-info
         // struct's function-pointer slot; the declared signature (message
@@ -1612,7 +1612,6 @@ fn lower_lir_module_with<M: Module>(
         }
     }
 
-    // Define bodies.
     for function in &lirm.functions {
         if matches!(function.kind, lir::FunctionKind::ModuleInitializer) {
             continue;

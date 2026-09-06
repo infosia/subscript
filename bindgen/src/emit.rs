@@ -1607,11 +1607,9 @@ fn map_use(f: &CField, reg: &HashMap<String, Kind>) -> Result<String, ParseError
         return Ok(format!("{} | null", f.base));
     }
     if let Some(n) = f.array_len {
-        // Fixed C array `T[N]` → `FixedArray<T, N>`.
         return Ok(format!("FixedArray<{}, {}>", map_element(&f.base, reg)?, n));
     }
     if f.pointer {
-        // `void*` userdata → `object | null`; struct pointer → `X | null`.
         if f.base == "void" {
             return Ok("object | null".to_string());
         }
@@ -2214,7 +2212,6 @@ mod tests {
         assert!(err.0.contains("SubOpaqueId"), "{}", err.0);
     }
 
-    // Tiny helper to keep the flag test terse.
     struct Constant(&'static str, &'static str, i64);
     impl From<Constant> for crate::clangfe::Constant {
         fn from(c: Constant) -> Self {

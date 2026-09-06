@@ -4,11 +4,11 @@
 //! in `golden.rs`. This file pins ship-tier properties the committed
 //! goldens do not exercise: the a22 checksum entry through the ship
 //! path, reachable traps reported with kind and position (the trap
-//! model), and — the P4.3 phase-review regressions — cross-tier
-//! byte-equality (dev-JIT ≡ ship-C-AOT) for a mutating value method
-//! (C1), non-i32 lambda captures (C2), and `Context.collect()` interacting with
-//! live handles (M1). Cross-tier byte-equality is the real invariant, so
-//! these need no committed golden.
+//! model), and cross-tier byte-equality (dev-JIT ≡ ship-C-AOT) for a
+//! mutating value method, non-i32 lambda captures, and
+//! `Context.collect()` interacting with live handles. Cross-tier
+//! byte-equality is the real invariant, so these need no committed
+//! golden.
 
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
@@ -327,11 +327,11 @@ fn float_to_narrow_int_casts_saturate_to_the_narrow_range_on_both_tiers() {
     );
 }
 
-// ----- P4.3 phase-review regressions (dev-JIT ≡ ship-C-AOT) -----
+// ----- cross-tier byte-equality (dev-JIT ≡ ship-C-AOT) -----
 
 #[test]
 fn c1_mutating_value_method_persists_like_the_jit() {
-    // A value method that mutates `this` must mutate the receiver (C2);
+    // A value method that mutates `this` must mutate the receiver;
     // a non-mutating call on a copy must be unaffected.
     assert_tiers_agree(
         "@CStruct\nclass V { x: i32; constructor(x: i32) { this.x = x; } bump(): void { this.x += 100; } }\nexport function main(): void {\n  const v: V = new V(1);\n  v.bump();\n  const c: V = v;\n  c.bump();\n  print(`${v.x},${c.x}`);\n}\n",
@@ -594,7 +594,7 @@ fn to_fixed_out_of_range_digits_trap_identically() {
     );
 }
 
-/// Asserts a P13 JSON trap has an identical tuple and pre-trap stdout on
+/// Asserts a JSON trap has an identical tuple and pre-trap stdout on
 /// both lowering tiers.
 fn assert_json_trap_identical(src: &str, kind: TrapKind, line: u32) {
     let files = [SourceFile::new("test.ts", src)];
@@ -884,10 +884,8 @@ fn p20_review_accept_entries_reach_both_generators() {
 
 #[test]
 fn out_of_range_320_byte_cstruct_store_stops_before_the_store() {
-    // P19: the old ship-tier path let subscript_arr_at return its 256-byte
-    // scratch sentinel after trapping, then copied this 320-byte value
-    // into it. Under ASan that was a global-buffer-overflow. The store
-    // must now be unreachable, in addition to stdout matching the dev
+    // An out-of-range `subscript_arr_at` traps. The 320-byte store into
+    // its result must be unreachable, and stdout must match the dev
     // tier.
     let fields = std::iter::repeat("0")
         .take(80)
@@ -1859,15 +1857,15 @@ fn fill_reverse_and_sort_return_the_receiver_not_a_copy() {
 fn join_prints_negative_zero_as_the_q14_rules_require() {
     // Q14 formatting, not the host's: `-0` keeps its sign in `join`
     // exactly as in interpolation. Node 24.18.0 prints `0.1,2.5,0` for
-    // the same array (run 2026-07-25) — a recorded divergence, and one
-    // no committed golden pins.
+    // the same array — a recorded divergence that no committed golden
+    // pins.
     assert_tiers_print(
         "export function main(): void {\n  const xs: f64[] = [0.1, 2.5, -0];\n  print(xs.join(\",\"));\n}\n",
         "0.1,2.5,-0\n",
     );
 }
 
-// ----- P11 phase-review regressions: evaluation order (CRITICAL 1) -----
+// ----- evaluation order: the receiver before the arguments -----
 //
 // TS/JS evaluate a method call's receiver before its arguments. The dev
 // JIT does so by construction (SSA order); the ship tier must bind the

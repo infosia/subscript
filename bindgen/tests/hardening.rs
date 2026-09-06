@@ -1,10 +1,9 @@
 //! Emitter hardening, end to end through the libclang frontend
-//! (`specs/blocks/compiler.md` §13.2, the P6.1 review's carried-in
-//! requirement). Raw C builtins map to the sized numerics on the LP64
-//! target; any base spelling that is neither a mapped scalar/builtin nor a
-//! registered named type, or a record layout the language cannot reproduce,
-//! makes `generate()` return an `Err` naming the offending construct —
-//! never a literal in the mirror, never a panic.
+//! (`specs/blocks/compiler.md` §13.2). Raw C builtins map to the sized
+//! numerics on the LP64 target; any base spelling that is neither a mapped
+//! scalar/builtin nor a registered named type, or a record layout the
+//! language cannot reproduce, makes `generate()` return an `Err` naming the
+//! offending construct — never a literal in the mirror, never a panic.
 
 use subscript_bindgen::generate;
 

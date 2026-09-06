@@ -1,4 +1,5 @@
-//! P13: statically typed, call-site-monomorphized JSON construction.
+//! Statically typed, call-site-monomorphized JSON construction
+//! (stdlib.md §13).
 //!
 //! No language RTTI is involved. Once an exact `T` is known, this module
 //! builds a finite graph of ordinary HIR helper functions. Stringify
@@ -29,8 +30,8 @@ impl Checker<'_> {
         }
     }
 
-    /// Monomorphizes P13's ambient `JsonResult<T>` reference class on
-    /// first use. The zeroed payload is exactly the failed-result shape.
+    /// Monomorphizes the ambient `JsonResult<T>` reference class on first
+    /// use. The zeroed payload is exactly the failed-result shape.
     pub(crate) fn instantiate_json_result(&mut self, value: &Type, pos: Pos) -> ClassId {
         let name = self.mono_name("JsonResult", std::slice::from_ref(value));
         if let Some(&id) = self.class_ids.get(&name) {
@@ -315,9 +316,10 @@ impl Checker<'_> {
         visit(self, ty, &mut HashSet::new())
     }
 
-    /// P13's serializable-type predicate. A currently active class is
-    /// provisionally accepted so recursive reference graphs terminate;
-    /// every distinct field shape is still checked before success.
+    /// The serializable-type predicate (stdlib.md §13). A currently
+    /// active class is provisionally accepted so recursive reference
+    /// graphs terminate; every distinct field shape is still checked
+    /// before success.
     fn json_serializable(&self, ty: &Type) -> bool {
         fn visit(
             checker: &Checker<'_>,

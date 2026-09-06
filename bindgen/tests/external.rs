@@ -1,4 +1,5 @@
-//! R20 external types supplied by another generated ambient mirror.
+//! External types supplied by another generated ambient mirror
+//! (`specs/blocks/compiler.md` §48).
 
 use subscript_bindgen::generate_for_header;
 

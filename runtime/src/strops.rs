@@ -309,8 +309,8 @@ pub fn to_lower(s: &[u8]) -> Vec<u8> {
 /// Appends one ECMA replacement against a caller-supplied capture set.
 ///
 /// The literal-string operations pass zero captures, preserving Q27's
-/// rule that numeric and named substitutions remain literal. P23's
-/// regex operations pass the match's numbered and named ranges, so both
+/// rule that numeric and named substitutions remain literal. The regex
+/// operations pass the match's numbered and named ranges, so both
 /// surfaces share the exact parser for `$$`, `$&`, ``$` ``, `$'`,
 /// `$1`–`$99`, and `$<name>`.
 pub(crate) fn append_replacement(

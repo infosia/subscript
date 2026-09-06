@@ -232,7 +232,8 @@ pub unsafe extern "C" fn subscript_rt_trap_index_out_of_bounds(
     );
 }
 
-/// Records an R23 boundary trap for an integer outside a `CEnum` mapping.
+/// Records a boundary trap for an integer outside a `CEnum` wire
+/// mapping (compiler.md §50).
 ///
 /// # Safety
 ///
@@ -2359,7 +2360,7 @@ pub unsafe extern "C" fn subscript_rt_json_null(ctx: *mut Context, builder: u64,
 }
 
 /// Adds a reference to the tracked serializer's active path. A revisit
-/// records the P13 cycle trap and returns zero.
+/// records the JSON cycle trap and returns zero.
 ///
 /// # Safety
 ///
@@ -3591,9 +3592,8 @@ pub unsafe extern "C" fn subscript_rt_array_ptr(
 // when the Context is already trapped and re-checks the trap flag after
 // each callback return (stdlib.md §9).
 
-/// Decodes an element-kind tag. The code generators emit only known tags.
-/// An unknown tag records an Internal trap and means a defect in this compiler,
-/// not a program fault or a build mismatch.
+/// Decodes an element-kind tag. The code generators emit only known
+/// tags; an unknown tag records an Internal trap.
 ///
 /// # Safety
 ///
@@ -4405,7 +4405,7 @@ pub unsafe extern "C" fn subscript_rt_arr_sort(
     unsafe { crate::arrops::sort(ctx, a, code, env, kind) }
 }
 
-// ----- C-boundary marshaling (P5.2b) -----
+// ----- C-boundary marshaling (compiler.md §12) -----
 
 /// Data pointer of a string handle: the `const char*` half of a
 /// `(ptr, len)` string view passed to a foreign call. Length is
@@ -4440,9 +4440,9 @@ pub unsafe extern "C" fn subscript_rt_array_data(ctx: *const Context, a: *const 
 }
 
 /// Registers a C-callback binding and returns the stable pointer a
-/// boundary marshaler stores in a C `void* userdata` slot (P5.2b). The
-/// binding bundles the Context, the language function value's
-/// `(code, env)`, and both real userdata slots (§14.4);
+/// boundary marshaler stores in a C `void* userdata` slot. The binding
+/// bundles the Context, the language function value's `(code, env)`, and
+/// both real userdata slots (§14.4);
 /// [`subscript_rt_cb_trampoline`] reads it back. The binding lives for the whole
 /// Context (Q13 lifetime rule). Re-registering the same
 /// `(code, userdata1, userdata2)` identity returns the same stable pointer
@@ -4465,7 +4465,7 @@ pub unsafe extern "C" fn subscript_rt_cb_bind(
     unsafe { &mut *ctx }.bind_callback(code, env, userdata1, userdata2)
 }
 
-/// The generic C-ABI callback trampoline (P5.2b, §14.4). A C API invokes
+/// The generic C-ABI callback trampoline (§14.4). A C API invokes
 /// it with the two-userdata callback ABI `(message, userdata1, userdata2)`,
 /// where `userdata1` is the binding pointer a marshaler installed via
 /// [`subscript_rt_cb_bind`]. It reconstructs the language `string` from the

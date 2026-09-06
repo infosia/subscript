@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! subscript runtime (plan phase P2, `specs/blocks/compiler.md` §7).
+//! subscript runtime (`specs/blocks/compiler.md` §7).
 //!
 //! The single runtime crate shared by both execution tiers: Context
 //! memory (`Context.free`, explicit `Context.collect`), strings, arrays, traps,

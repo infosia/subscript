@@ -36,8 +36,8 @@ pub struct Module {
     /// Checker-derived signatures for intrinsic and built-in calls.
     pub operation_signatures: Vec<OperationSignature>,
     /// Foreign (C-ABI) functions declared by an ingested ambient mirror
-    /// (`declare function` in a `.d.ts`, P5.2). They carry a signature
-    /// but no body; lowering a call to one is P5.2b, not P5.2a.
+    /// (`declare function` in a `.d.ts`, §12.2). They carry a signature
+    /// but no body; a call to one lowers to an imported C symbol.
     pub foreign_fns: Vec<ForeignFn>,
     /// Ambient mirrors that contribute foreign functions, with the exact
     /// C header include spelling recovered from generated provenance.
@@ -294,7 +294,7 @@ pub enum ForeignTypeProvenance {
 }
 
 /// A foreign function declared by an ambient C-header mirror
-/// (`declare function`, P5.2). It is neither a script [`Function`] nor a
+/// (`declare function`, §12.2). It is neither a script [`Function`] nor a
 /// hardcoded [`AmbientFn`]: it names a C-ABI callee resolved at link
 /// time, with a mapped boundary signature and no in-language body.
 #[derive(Debug, Clone, PartialEq)]
@@ -327,7 +327,7 @@ pub struct ClassDef {
     /// through [`ExprKind::DescriptorLit`].
     pub is_descriptor: bool,
     /// True for a mirror-ingested boundary struct (a `declare class` in a
-    /// `.d.ts`, P5.2): a C-layout value type whose constructor has no
+    /// `.d.ts`, §12.2): a C-layout value type whose constructor has no
     /// in-language body. `new` initializes its fields positionally from
     /// the constructor arguments (arg `i` → field `i`), applying the
     /// boundary coercions at each field (the chain-slot address-of for a
@@ -391,7 +391,7 @@ pub struct Field {
     /// True when this is a Q33 descriptor field spelled `name?: T = expr`.
     /// For every other field this is false.
     pub is_defaulted: bool,
-    /// True when this is an R16 descriptor field spelled `name?: A`, where
+    /// True when this is a descriptor field spelled `name?: A` (§43), where
     /// `A` is a Q32 string-literal union alias. Omission stores the reserved
     /// absent discriminant instead of evaluating a default.
     pub is_absence_capable: bool,
@@ -423,8 +423,8 @@ pub struct StringAliasDef {
     pub name: String,
     /// Member spellings in declaration/discriminant order.
     pub members: Vec<String>,
-    /// Per-member C-boundary values for an R23 `CEnum` alias, in the same
-    /// declaration order. `None` identifies a plain Q32 alias.
+    /// Per-member C-boundary values for a `CEnum` alias (§50.1), in the
+    /// same declaration order. `None` identifies a plain Q32 alias.
     pub wire_values: Option<Vec<i32>>,
     /// Position of the alias declaration.
     pub pos: Pos,
@@ -432,7 +432,7 @@ pub struct StringAliasDef {
 
 impl StringAliasDef {
     /// The implementation-reserved discriminant for an absent descriptor
-    /// member. Plain aliases retain R16's `-1`; a wire alias chooses the
+    /// member. A plain alias uses `-1` (§43); a wire alias chooses the
     /// first `i32` at or above `i32::MIN` that is outside its wire set.
     #[must_use]
     pub fn absence_discriminant(&self) -> i64 {
@@ -489,7 +489,7 @@ pub struct Function {
     /// True for `function*` coroutines (C8).
     pub is_generator: bool,
     /// True for a poll-driven async function or reference-class instance
-    /// method (Q34/R13). `ret` is the fulfilled value type inside the
+    /// method (§26, §37). `ret` is the fulfilled value type inside the
     /// source-level `Promise<ret>` view.
     pub is_async: bool,
     /// Parameters, in order.
@@ -949,7 +949,7 @@ pub enum BinOp {
     UShr,
 }
 
-/// Ambient prelude functions and namespace members (Q6, Q7, Q12, R15);
+/// Ambient prelude functions and namespace members (Q6, Q7, Q12, §42.2);
 /// their signatures are hardcoded in the checker, not parsed from
 /// `.d.ts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -965,7 +965,7 @@ pub enum AmbientFn {
     UnsafeDelete,
 }
 
-/// Typed `Context` storage-byte operations (stdlib.md section 18, R34).
+/// Typed `Context` storage-byte operations (stdlib.md §18).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ContextBytesFn {
@@ -3054,8 +3054,9 @@ impl ArrFmtKind {
 pub enum Callee {
     /// A module function by (possibly monomorphized) name.
     Func(String),
-    /// A foreign C-ABI function declared by an ambient mirror (P5.2);
-    /// carries the symbol name. No lowering path yet (P5.2b).
+    /// A foreign C-ABI function declared by an ambient mirror (§12.2);
+    /// carries the symbol name. Both tiers lower the call to an imported
+    /// C symbol.
     Foreign(String),
     /// An ambient prelude function.
     Ambient(AmbientFn),
@@ -3375,7 +3376,7 @@ pub enum ExprKind {
     Yield(Option<Box<Expr>>),
     /// `await Context.suspend()` inside an async function (Q34).
     AsyncSuspend,
-    /// A direct async call in await position (Q34/R13). The result type is
+    /// A direct async call in await position (§26, §37). The result type is
     /// the callee's fulfilled value type; no Promise value exists in HIR.
     AsyncCall {
         /// Direct free-function or reference-class method target.
@@ -3431,7 +3432,7 @@ impl ExprKind {
     }
 }
 
-/// Target of a direct async call in await position (Q34/R13).
+/// Target of a direct async call in await position (§26, §37).
 ///
 /// Keeping the method receiver inside the target makes its source-order
 /// relationship to the explicit arguments structural: it is evaluated once,

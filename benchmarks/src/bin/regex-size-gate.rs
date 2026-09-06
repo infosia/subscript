@@ -1,4 +1,4 @@
-//! macOS arm64 linked-binary size gate for the P23 RegExp surface.
+//! macOS arm64 linked-binary size gate for the RegExp surface.
 //!
 //! The two committed programs are a matched pair: the regex side adds
 //! only one RegExp call and otherwise reaches the same runtime surfaces.

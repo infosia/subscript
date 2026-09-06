@@ -97,7 +97,7 @@ pub fn trap_expected(trap: &Path, id: &str) -> Vec<u8> {
     fs::read(&path).unwrap_or_else(|e| panic!("read trap golden {}: {e}", path.display()))
 }
 
-/// Drives the R32 unknown wire value through the dev host-entry surface.
+/// Drives the unknown wire value through the dev host-entry surface.
 pub fn run_wire_entry_unknown_dev(
     sources: &[SourceFile],
     libraries: &[NativeLibrary],
@@ -108,7 +108,7 @@ pub fn run_wire_entry_unknown_dev(
     Ok(session.take_output())
 }
 
-/// Drives the R32 unknown wire value through the ship host-entry surface.
+/// Drives the unknown wire value through the ship host-entry surface.
 pub fn run_wire_entry_unknown_ship(
     sources: &[SourceFile],
     libraries: &[NativeLibrary],

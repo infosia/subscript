@@ -1,19 +1,19 @@
-//! Foreign C-header binding: cross-tier differential tests (P5.2b).
+//! Foreign C-header binding: cross-tier differential tests.
 //!
 //! Each program exercises one Q13 boundary pattern through a real foreign
 //! call against the committed synthetic header (`corpus/interop/`), whose
 //! implementation (`interop.c`) is linked into both tiers. The assertion
 //! is the one the ship=C decision rests on: **dev-JIT bytes == ship-C-AOT
 //! bytes**, plus a check that the observable effect is the expected one.
-//! P5.3 will add committed goldens; here the two tiers are each other's
-//! oracle, and no golden is committed yet.
+//! The two tiers are each other's oracle here; this target commits no
+//! golden.
 //!
-//! interop.c's behaviour (which defines the P5.3 goldens): setLabel stores
-//! a label; setLogger fires the callback once with the stored label as the
-//! message; submit sums the (ptr,count) commands and fires the callback
-//! with a message of length (sum + chain depth). The language callback
-//! accumulates `message.length` into a userdata sink, so a program
-//! surfaces every effect by printing the sink's count.
+//! interop.c's behaviour: setLabel stores a label; setLogger fires the
+//! callback once with the stored label as the message; submit sums the
+//! (ptr,count) commands and fires the callback with a message of length
+//! (sum + chain depth). The language callback accumulates
+//! `message.length` into a userdata sink, so a program surfaces every
+//! effect by printing the sink's count.
 
 // Every test here binds the synthetic interop header, whose fixture compiles
 // `corpus/interop/interop.c` (`_Float16`), unbuildable by MSVC `cl`. The whole
@@ -219,12 +219,13 @@ fn chain_extension_payload_is_read_through_its_embedded_header() {
     );
 }
 
-/// P6.3 async model: a completion callback is REGISTERED (subDeviceOnComplete)
-/// but not fired; intervening work runs; a host-driven pump (subDevicePump)
-/// fires it AFTER the registering call returned. The sink is 0 at
-/// registration and after the intervening submit, then nonzero after the
-/// pump — proving the deferred fire and that the userdata (and the
-/// Context-held callback binding behind it) outlived the registration.
+/// The §13.3 async model: a completion callback is registered
+/// (subDeviceOnComplete) but not fired; intervening work runs; a
+/// host-driven pump (subDevicePump) fires it after the registering call
+/// returned. The sink is 0 at registration and after the intervening
+/// submit, then nonzero after the pump. This proves the deferred fire.
+/// It also proves that the userdata, and the Context-held callback
+/// binding behind it, outlived the registration.
 #[test]
 fn deferred_completion_callback_fires_on_pump() {
     let prog = format!(
@@ -305,8 +306,8 @@ fn callback_userdata_fire_check_traps_identically_on_both_tiers() {
     );
 }
 
-/// All five patterns composed in one program (the P5.3 "compose all five"
-/// shape): chain + handle + string + (ptr,count) + callback with userdata.
+/// All five patterns composed in one program: chain + handle + string +
+/// (ptr,count) + callback with userdata.
 #[test]
 fn all_patterns_composed() {
     let prog = format!(

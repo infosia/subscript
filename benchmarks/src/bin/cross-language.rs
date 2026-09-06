@@ -88,8 +88,9 @@ fn workload_params(id: &str) -> &'static str {
 }
 
 /// The AOT timing entry: measures a warm-up phase and each timed workload call,
-/// printing machine-readable durations on stderr (shared with the P4 gate
-/// harness). Reused verbatim so the ship-tier span matches the gate.
+/// printing machine-readable durations on stderr (shared with the
+/// performance-gate harness). Reused verbatim so the ship-tier span
+/// matches the gate.
 const AOT_BENCH_ENTRY_C: &str = concat!(
     include_str!("../../../runtime/include/subscript_runtime.h"),
     include_str!("../../aot-entry.c")

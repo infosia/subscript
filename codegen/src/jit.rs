@@ -87,7 +87,7 @@ impl std::fmt::Display for TrapReport {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum RunError {
-    /// The program was rejected by the checker (P1 diagnostics).
+    /// The program was rejected by the checker.
     Rejected(Vec<Diagnostic>),
     /// The program ran and trapped.
     Trap(TrapReport),
@@ -1205,7 +1205,7 @@ pub fn run_jit_with_alloc_failure(files: &[SourceFile], n: u64) -> Result<Vec<u8
     .stdout)
 }
 
-/// Timed samples for one subject of the P4 performance gate
+/// Timed samples for one subject of the performance gate
 /// (`specs/blocks/compiler.md` §9).
 #[derive(Debug, Clone)]
 #[non_exhaustive]

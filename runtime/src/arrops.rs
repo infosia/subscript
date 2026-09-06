@@ -176,8 +176,7 @@ fn abi_of(kind: ElemKind, size: usize) -> Option<Abi> {
 }
 
 /// Records the internal trap for an element shape the code generators
-/// never produce. This trap means a defect in this compiler, not a program
-/// fault or a build mismatch.
+/// never produce.
 unsafe fn abi_or_trap(ctx: *mut Context, kind: ElemKind, size: usize) -> Option<Abi> {
     let abi = abi_of(kind, size);
     if abi.is_none() {
@@ -473,9 +472,8 @@ unsafe fn position(
     }
     // SAFETY: caller contract.
     let (n, esz) = unsafe { (len_of(ctx, h, 0), (*ctx).array_elem_size(h)) };
-    // The code generators never produce this element shape. The trap prevents
-    // a silent wrong comparison. It means a defect in this compiler, not a
-    // program fault or a build mismatch.
+    // The code generators never produce this element shape; the trap
+    // prevents a silent wrong comparison.
     // SAFETY: caller contract.
     if unsafe { abi_or_trap(ctx, kind, esz) }.is_none() {
         return -1;
@@ -724,9 +722,8 @@ pub unsafe fn concat(ctx: *mut Context, a: *mut u8, b: *mut u8, pos_id: u32) -> 
     let esz = unsafe { (*ctx).array_elem_size(a) };
     // SAFETY: caller contract.
     if esz != unsafe { (*ctx).array_elem_size(b) } {
-        // The code generators never give concat operands different element
-        // sizes. This trap means a defect in this compiler, not a program fault
-        // or a build mismatch.
+        // The code generators never give concat operands different
+        // element sizes.
         // SAFETY: caller contract.
         unsafe { &mut *ctx }.trap(
             TrapKind::Internal,
@@ -910,9 +907,9 @@ pub unsafe fn copy_within(ctx: *mut Context, h: *mut u8, target: i32, start: i32
 
 // ----- callback operations -----
 
-/// True when the operation must not (or no longer) run script code:
-/// the Context is already trapped, or the inputs are null (post-trap
-/// ship-C execution).
+/// True when the operation must not run script code: the Context is
+/// already trapped, or the inputs are null (post-trap ship-C
+/// execution).
 ///
 /// # Safety
 ///
@@ -2682,10 +2679,10 @@ mod tests {
 
     #[test]
     fn unknown_abi_shape_traps_in_the_equality_searches() {
-        // P11 review MINOR 2: the searches validate the element shape
-        // exactly as the callback entries do. Two 3-byte elements have
-        // no ABI class; comparing them as zero-extended words would
-        // report them *equal*, so the entry traps and misses instead.
+        // The searches validate the element shape exactly as the
+        // callback entries do. Two 3-byte elements have no ABI class;
+        // a comparison as zero-extended words reports them equal, so
+        // the entry traps and misses instead.
         let mut c = ctx();
         let p: *mut Context = &mut *c;
         let h = c.array_new(3, 0);

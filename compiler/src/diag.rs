@@ -7,8 +7,8 @@ use crate::divergence::Divergence;
 /// Stable rule code carried by every diagnostic.
 ///
 /// Codes are the tested contract (`specs/blocks/compiler.md` §6); they are
-/// never renumbered. `S015` is retired and cannot be reused. `S100` is the
-/// catch-all for constructs outside the decided surface.
+/// never renumbered. No rule takes `S015`, and none will (§33.4).
+/// `S100` is the catch-all for constructs outside the decided surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum RuleCode {

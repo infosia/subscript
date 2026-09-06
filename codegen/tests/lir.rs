@@ -1668,9 +1668,9 @@ fn print_snapshot_module(module: &Module) -> String {
         let values = function.values.clone();
         for block in &mut function.blocks {
             if let Terminator::Suspend { invalidates, .. } = &mut block.terminator {
-                // The committed text record predates the live-only filter.
-                // Reconstruct its all-arrays-so-far view for this snapshot;
-                // verifier/interpreter tests inspect the real terminator.
+                // The committed text record holds the all-arrays-so-far
+                // view. Rebuild it for this snapshot; the verifier and
+                // interpreter tests inspect the real terminator.
                 *invalidates = legacy_suspend_invalidates[block.id.0 as usize].clone();
             }
             for instruction in &mut block.instructions {
@@ -2102,9 +2102,9 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
                 | "a180-for-of-generator-only"
                 | "a181-operation-in-every-owner"
         ) {
-            // This round must not extend or move the pre-existing behavior
-            // record. The new entries have dedicated ownership, verifier,
-            // interpreter, and tier-differential assertions above.
+            // These entries stay out of the text record. Each one has
+            // dedicated ownership, verifier, interpreter, and
+            // tier-differential assertions above.
             continue;
         }
         let lir = lower_entry(&accept, &id);
@@ -2126,8 +2126,6 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
             actual.push_str("===== ");
             actual.push_str(&id);
             actual.push_str(" =====\n");
-            // Preserve the old call-signature and suspend metadata display.
-            // Print structural unreachable terminators without conversion.
             actual.push_str(&print_snapshot_module(&lir));
         }
     }

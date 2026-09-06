@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! Mirror generator (this project's own `bindgen`, plan P5.2 /
+//! Mirror generator (this project's own `bindgen`,
 //! `specs/blocks/compiler.md` §12.2).
 //!
 //! Reads a C interop header and emits the ambient `.d.ts` boundary mirror
@@ -99,8 +99,7 @@ pub use cparse::{CField, Decl, ParseError};
 /// Generates the ambient `.d.ts` mirror text for a C interop header.
 ///
 /// The header is parsed by the libclang-based frontend
-/// ([`clangfe`], `specs/blocks/compiler.md` §13.1), which replaced the
-/// narrow fixture parser at P6.1.
+/// ([`clangfe`], `specs/blocks/compiler.md` §13.1).
 ///
 /// # Errors
 ///

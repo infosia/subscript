@@ -20,9 +20,9 @@ pub fn corpus_accept() -> PathBuf {
 /// generated from the pinned synthetic header. Interop entries (a25+) are
 /// written against these global ambient declarations exactly as the
 /// language prelude, so the gate ingests it as an ambient source for any
-/// entry that uses it (`specs/blocks/compiler.md` §12.4). Linking of
-/// The corpus gate supplies the fixture's [`subscript_codegen::NativeLibrary`]
-/// beside this mirror for entries that use it.
+/// entry that uses it (`specs/blocks/compiler.md` §12.4). The corpus gate
+/// supplies the fixture's [`subscript_codegen::NativeLibrary`] beside this
+/// mirror for entries that use it.
 fn interop_mirror() -> SourceFile {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop/interop.generated.d.ts");
@@ -40,7 +40,7 @@ fn external_device_mirror() -> SourceFile {
     SourceFile::ambient("external-device.generated.d.ts", text)
 }
 
-/// The bind-generated R24 mirror for the synthetic wire-enum fixture.
+/// The bind-generated mirror for the synthetic wire-enum fixture.
 fn wire_enum_mirror() -> SourceFile {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../corpus/interop/wire-enum.generated.d.ts");
@@ -71,8 +71,8 @@ fn uses_external_device_mirror(sources: &[SourceFile]) -> bool {
         .any(|source| source.source.contains("subExternalDevice"))
 }
 
-/// Interop-mirror name fragments: the P5 device/slice APIs plus the P6.2
-/// shapes (embedded-array struct, flag members, untyped-facade APIs).
+/// Interop-mirror name fragments: the device/slice APIs plus the
+/// embedded-array struct, flag member, and untyped-facade shapes.
 pub(crate) fn references_interop(src: &str) -> bool {
     const TOKENS: &[&str] = &[
         "subDevice",
@@ -83,39 +83,39 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "SUB_ACCESS",
         "subAccessMatches",
         "subBulk",
-        // P7.1 async/Future shapes (compiler.md §14).
+        // Async/Future shapes (compiler.md §14).
         "SUB_STAGE",
         "subStageMatches",
         "subFutureMake",
         "subStatsMake",
         "SubQueryStatus",
-        // P7.2 composed async capstone (compiler.md §14.4/§14.5).
+        // Composed async capstone (compiler.md §14.4/§14.5).
         "SubWaitEntry",
-        // R6 string-view field inside a pointer-passed boundary struct.
+        // String-view field inside a pointer-passed boundary struct.
         "subBoundaryString",
-        // R7 texture descriptor: nested aggregate + struct enum pair.
+        // Texture descriptor: nested aggregate plus struct enum pair.
         "subProbeTexture",
-        // R8 opaque-handle pair and nullable aggregate fields.
+        // Opaque-handle pair and nullable aggregate fields.
         "subProbePipelineLayout",
         "subProbeBindGroupEntry",
         "subProbeComputePipeline",
         "subProbeRenderPipeline",
         "subProbeProgrammableStage",
-        // R10 recursive lowering through struct-pointer members.
+        // Recursive lowering through struct-pointer members.
         "subProbeFullRenderPipeline",
-        // OBS-3 round 4: two simultaneous reach-through pointer members.
+        // Two simultaneous reach-through pointer members.
         "subProbeBreadthRenderPipeline",
-        // OBS-3 round 5: wide descriptor breadth and depth combined.
+        // Wide descriptor breadth and depth combined.
         "subProbeWideRenderPipeline",
-        // R11 registered-handle pairs at parameter position.
+        // Registered-handle pairs at parameter position.
         "subProbeQueueSubmit",
-        // R12 nullable registered handles at parameter position.
+        // Nullable registered handles at parameter position.
         "subProbeSetBindGroup",
-        // OBS-4 by-value register-image packing (compiler.md §47).
+        // By-value register-image packing (compiler.md §47).
         "subByValue",
-        // R21 host-owned state (compiler.md §49).
+        // Host-owned state (compiler.md §49).
         "subHostOwnedState",
-        // R23/R24 wire-mapped literal-union boundary crossings.
+        // Wire-mapped literal-union boundary crossings.
         "subWireMode",
         "subBindTone",
     ];

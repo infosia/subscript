@@ -196,8 +196,8 @@ fn literalish(e: &ast::Expr) -> bool {
 }
 
 /// Recognizes the one token whose ordinary identifier path is banned by C7.
-/// R16 handles it before general expression checking only for strict
-/// comparisons against an absence-capable descriptor member.
+/// The checker admits it before general expression checking only in a
+/// strict comparison against an absence-capable descriptor member (§43).
 fn is_undefined_ident(e: &ast::Expr) -> bool {
     match e {
         ast::Expr::Ident(id) => id.sym.as_ref() == "undefined",
@@ -351,8 +351,8 @@ fn diagnostic_expr_spelling(expression: &ast::Expr) -> String {
 }
 
 /// Returns the nominal class supplied by an object literal's context.
-/// Q33/R17 permits descriptor construction through either `D` or `D | null`;
-/// retaining plain classes here also preserves their specific S005 rejection.
+/// Descriptor construction goes through either `D` or `D | null` (§25,
+/// §25.3a); a plain class here keeps its specific S005 rejection.
 fn contextual_object_class(ctx: Option<&Type>) -> Option<ClassId> {
     match ctx? {
         Type::Class(id) => Some(*id),
@@ -395,8 +395,9 @@ fn regex_literal(e: &ast::Expr) -> Option<&ast::Regex> {
     }
 }
 
-/// The pre-R26 f64 range retained for synthesized numeric nodes without a
-/// source spelling. Such nodes are exact within this channel's old cap.
+/// The `f64` range for a synthesized numeric node with no source spelling
+/// (§56.1). Such a node carries an `f64` value, which is exact up to
+/// 2^53 - 1.
 fn synthesized_int_range(ty: &Type) -> Option<(i64, i64)> {
     const EXACT: i128 = 9_007_199_254_740_991;
     let (lo, hi) = ty.int_bounds()?;
@@ -805,9 +806,9 @@ impl<'p> Checker<'p> {
         statements
     }
 
-    /// Checks Q34/R13's three awaitable forms. The AST call is handled here
-    /// instead of through the ordinary call path so an async call can never
-    /// materialize a Promise-typed value in HIR.
+    /// Checks the three awaitable forms (§26, §37). The AST call is handled
+    /// here instead of through the ordinary call path so an async call can
+    /// never materialize a Promise-typed value in HIR.
     fn check_await(&mut self, awaited: &ast::AwaitExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         if !fx.frames.last().is_some_and(|frame| frame.is_async) {
             self.error_diverging(
@@ -1211,8 +1212,8 @@ impl<'p> Checker<'p> {
                 .filter(|value| *value >= lo && *value <= hi)
                 .map(|value| value as i64)
         } else {
-            // Synthesized numeric nodes have no source spelling; retain the
-            // parser-value path used before R26.
+            // A synthesized node has no spelling, so the range check reads
+            // its `f64` value (§56.1).
             let (lo, hi) = synthesized_int_range(&target).unwrap_or((i64::MIN, i64::MAX));
             (value >= lo as f64 && value <= hi as f64).then_some(value as i64)
         };
@@ -2405,7 +2406,7 @@ impl<'p> Checker<'p> {
         })
     }
 
-    /// Checks R16's sole legal `undefined` appearance.
+    /// Checks the sole legal `undefined` appearance (§43).
     fn check_absence_presence_comparison(
         &mut self,
         binary: &ast::BinExpr,
@@ -3117,9 +3118,9 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Checks an array literal containing spread. P22 keeps this as a
-    /// distinct HIR form so ordinary literals and `FixedArray` in-place
-    /// construction retain their existing lowering unchanged.
+    /// Checks an array literal containing spread (stdlib.md §14). It is a
+    /// distinct HIR form, so ordinary literals and `FixedArray` in-place
+    /// construction keep their own lowering.
     fn check_array_spread_lit(
         &mut self,
         a: &ast::ArrayLit,
@@ -4047,8 +4048,8 @@ impl<'p> Checker<'p> {
     }
 
     /// Checks the String methods whose first argument is overloaded
-    /// between the standing literal-string pattern and P23's RegExp
-    /// handle. The first argument is checked once so a regex literal
+    /// between a literal-string pattern and a RegExp handle (stdlib.md
+    /// §15). The first argument is checked once so a regex literal
     /// cannot produce duplicate diagnostics.
     fn check_string_pattern_method(
         &mut self,
@@ -5427,13 +5428,12 @@ impl<'p> Checker<'p> {
     ///
     /// An arrow callback spells it as its first parameter's annotation:
     /// resolved here without reporting, because the callback check
-    /// resolves the same annotation for real afterwards. Any other
-    /// callback expression is a function value whose declared type
-    /// already gives `U`; it is checked **once**, here, and returned so
-    /// the caller shape-validates it rather than checking it again.
-    /// `(None, None)` when the callback does not spell `U` (an
-    /// un-annotated arrow, or an expression that is not a function),
-    /// which leaves `init` context-free as before.
+    /// resolves the same annotation afterwards. Any other callback
+    /// expression is a function value whose declared type already gives
+    /// `U`; it is checked once, here, and returned so the caller
+    /// shape-validates it. `(None, None)` when the callback does not
+    /// spell `U` (an un-annotated arrow, or an expression that is not a
+    /// function), which leaves `init` context-free.
     fn reduce_acc_context(
         &mut self,
         arg: &ast::ExprOrSpread,
@@ -7022,9 +7022,9 @@ impl<'p> Checker<'p> {
     }
 
     /// Checks a call to a foreign C-ABI function declared by an ambient
-    /// mirror (P5.2). Type-checks arguments against the mapped boundary
-    /// signature and emits a [`Callee::Foreign`] call; no lowering path
-    /// exists yet (P5.2b).
+    /// mirror (§12.2). Type-checks arguments against the mapped boundary
+    /// signature and emits a [`Callee::Foreign`] call, which both tiers
+    /// lower to an imported C symbol.
     fn check_foreign_call(
         &mut self,
         name: &str,

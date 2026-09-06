@@ -1000,9 +1000,9 @@ impl<'p> Checker<'p> {
         out.push(hir::Stmt::Block(block));
     }
 
-    /// Checks and binds P22's closed `for…of` surface. Container views
-    /// are recognized here, before ordinary call checking, because
-    /// `keys()` / `values()` intentionally have no value type outside
+    /// Checks and binds the closed `for…of` surface (stdlib.md §14).
+    /// Container views are recognized here, before ordinary call
+    /// checking, because `keys()` / `values()` have no value type outside
     /// this exact subject position.
     fn check_for_of(&mut self, f: &ast::ForOfStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(f.span);

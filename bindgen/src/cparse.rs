@@ -1,21 +1,18 @@
 //! The boundary intermediate representation ([`CField`], [`Decl`]) shared
-//! by the frontend and the emitter, plus the original narrow fixture
-//! parser.
+//! by the frontend and the emitter, plus a narrow fixture parser.
 //!
 //! The narrow parser (`specs/blocks/compiler.md` §12.1: comments,
 //! preprocessor lines, `typedef enum`/`struct`, opaque-handle typedefs,
 //! function-pointer typedefs, function declarations — no unions, no
-//! bitfields) was the P5 frontend. At P6.1 it is superseded by the
-//! libclang frontend ([`crate::clangfe`], §13.1); it is retained
-//! **test-only** — under `#[cfg(test)]` — as a documented record of the
-//! fixture grammar and is exercised by its own unit tests. The
-//! production path never uses it; only the [`CField`]/[`Decl`] types below
-//! remain in the shipped library.
+//! bitfields) is **test-only** — under `#[cfg(test)]` — a documented
+//! record of the fixture grammar with its own unit tests. The production
+//! path parses with the libclang frontend ([`crate::clangfe`], §13.1);
+//! only the [`CField`]/[`Decl`] types below are in the shipped library.
 
 use std::fmt;
 
 /// A parse failure with a human-readable reason: the libclang loader or
-/// translation-unit diagnostics, or (in the retained fixture parser) the
+/// translation-unit diagnostics, or (in the fixture parser) the
 /// offending text. Carries no structured source position.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError(pub String);
@@ -96,8 +93,8 @@ fn err<T>(msg: impl Into<String>) -> Result<T, ParseError> {
     Err(ParseError(msg.into()))
 }
 
-/// Parses the header into ordered declarations. Retained test-only (see
-/// the module docs); superseded in production by [`crate::clangfe`].
+/// Parses the header into ordered declarations. Test-only (see the module
+/// docs); the production path uses [`crate::clangfe`].
 ///
 /// # Errors
 ///
@@ -121,7 +118,6 @@ pub fn parse_header(src: &str) -> Result<Vec<Decl>, ParseError> {
 /// lines, leaving the declaration text.
 #[cfg(test)]
 fn strip_comments_and_directives(src: &str) -> String {
-    // First strip comments.
     let mut out = String::with_capacity(src.len());
     let bytes = src.as_bytes();
     let mut i = 0;
@@ -142,7 +138,6 @@ fn strip_comments_and_directives(src: &str) -> String {
             i += 1;
         }
     }
-    // Then drop preprocessor lines.
     out.lines()
         .filter(|line| !line.trim_start().starts_with('#'))
         .collect::<Vec<_>>()

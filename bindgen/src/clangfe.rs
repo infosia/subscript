@@ -1,12 +1,11 @@
-//! libclang-based C frontend (plan P6.1, `specs/blocks/compiler.md`
-//! §13.1). Replaces the narrow fixture parser (`cparse`) as the shipped
-//! frontend for [`crate::generate`]. It parses a real C header — including
-//! preprocessor `#define`s, function/nullable attribute macros, doc
-//! comments, `typedef`, nested structs, function-pointer typedefs,
+//! libclang-based C frontend (`specs/blocks/compiler.md` §13.1). It is the
+//! shipped frontend for [`crate::generate`]. It parses a real C header —
+//! including preprocessor `#define`s, function/nullable attribute macros,
+//! doc comments, `typedef`, nested structs, function-pointer typedefs,
 //! `static const` constants, enums, and scalar (flag) typedefs — into the
-//! same [`CField`]/[`Decl`] internal representation that
-//! [`crate::emit`](../emit/index.html) already consumes, plus the extra
-//! production-C facts ([`Parsed`]) that P6.2 will map.
+//! [`CField`]/[`Decl`] internal representation that
+//! [`crate::emit`](../emit/index.html) consumes, plus the production-C
+//! facts in [`Parsed`].
 //!
 //! # libclang location
 //!
@@ -38,8 +37,7 @@ use crate::cparse::{CField, Decl, ParseError};
 
 /// Everything the frontend extracts from a header: the boundary
 /// declarations consumed by the emitter, plus the production-C facts
-/// (macros, constants, scalar/flag typedef aliases, doc comments) that the
-/// P6.2 shape mapping will use. P6.1 emits only from [`Parsed::decls`].
+/// (macros, constants, scalar/flag typedef aliases, doc comments).
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct Parsed {
@@ -385,8 +383,9 @@ fn external_is_used(parsed: &Parsed, external: &str) -> bool {
     })
 }
 
-/// Validates all R24 restrictions before the emitter can erase the C typedef
-/// declaration or substitute its ambient alias.
+/// Validates every CEnum restriction (`specs/blocks/compiler.md` §51)
+/// before the emitter erases the C typedef declaration or substitutes its
+/// ambient alias.
 fn validate_cenum_mappings(
     parsed: &Parsed,
     mappings: &[CEnumMapping],

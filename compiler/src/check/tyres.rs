@@ -187,7 +187,7 @@ impl<'p> Checker<'p> {
             return sized;
         }
         // Mirror `type` aliases (function-pointer typedefs, flag-set
-        // `u64` aliases) resolve to their aliased language type (P5.2).
+        // `u64` aliases) resolve to their aliased language type (§12.2).
         if let Some(alias) = self.type_aliases.get(name) {
             return alias.clone();
         }
@@ -394,9 +394,9 @@ impl<'p> Checker<'p> {
             _ => {}
         }
 
-        // P13's ambient generic result reference. Like Map/Set below, the
-        // language checker monomorphizes it directly; a source declaration
-        // with the same name shadows the ambient class.
+        // The ambient generic result reference (stdlib.md §13). Like
+        // Map/Set below, the checker monomorphizes it directly; a source
+        // declaration with the same name shadows the ambient class.
         if name == "JsonResult" && self.scope_item(name).is_none() {
             let Some(args) = &r.type_params else {
                 self.error(

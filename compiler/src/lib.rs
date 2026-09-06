@@ -1,7 +1,6 @@
 #![warn(missing_docs)]
-//! subscript compiler front end (plan phase P1): SWC parse, semantic
-//! checker for the collision rules (`specs/blocks/collisions.md`), and
-//! the typed HIR.
+//! subscript compiler front end: SWC parse, the semantic checker for the
+//! collision rules (`specs/blocks/collisions.md`), and the typed HIR.
 //!
 //! The primary public entry point is [`check_program`]: it takes one or
 //! more source files (multi-file programs use `import`/`export`, e.g.
@@ -52,7 +51,7 @@ pub struct SourceFile {
     pub source: String,
     /// True for an ambient declaration file (`.d.ts`): parsed in ambient
     /// mode, and its top-level declarations become a global ambient
-    /// source (the generated C-header mirror, P5.2) rather than a
+    /// source (the generated C-header mirror, §12.2) rather than a
     /// checked program module.
     pub dts: bool,
 }
@@ -69,8 +68,8 @@ impl SourceFile {
     }
 
     /// Builds an ambient declaration source (`.d.ts`): parsed in ambient
-    /// mode; its declarations join the global ambient surface (P5.2
-    /// mirror ingestion), visible to every program file without import.
+    /// mode; its declarations join the global ambient surface (mirror
+    /// ingestion, §12.2), visible to every program file without import.
     #[must_use]
     pub fn ambient(name: impl Into<String>, source: impl Into<String>) -> Self {
         SourceFile {
@@ -1608,9 +1607,7 @@ mod tests {
     #[test]
     fn nonwhitelisted_string_member_is_s100_naming_the_member() {
         // A member outside both the accepted §8 surface and the named
-        // Q21 rejected set stays the generic S100 surface diagnostic
-        // (`toUpperCase`, this test's former subject, joined the
-        // accepted surface in P10).
+        // Q21 rejected set takes the generic S100 surface diagnostic.
         let err = check_one(
             "export function main(): void {\n  const s: string = \"a\";\n  print(s.reverse());\n}\n",
         )
@@ -1908,9 +1905,9 @@ mod tests {
 
     #[test]
     fn reduce_init_takes_its_contextual_type_from_the_callback() {
-        // P11 review MINOR 1 (C4): the callback's annotated accumulator
-        // type is `init`'s contextual type, so a plain literal init does
-        // not default to `i32` and poison `U`.
+        // C4: the callback's annotated accumulator type is `init`'s
+        // contextual type, so a plain literal init does not default to
+        // `i32` and poison `U`.
         for (acc, cb) in [
             ("i64", "(a: i64, v: i32): i64 => a + (v as i64)"),
             ("f64", "(a: f64, v: i32): f64 => a + (v as f64)"),
@@ -1951,8 +1948,8 @@ mod tests {
 
     #[test]
     fn reduce_without_an_annotated_accumulator_still_types_from_the_init() {
-        // An un-annotated arrow does not spell `U`; `init` keeps giving
-        // it, as before (contextual typing then flows to the callback).
+        // An un-annotated arrow does not spell `U`; `init` gives it, and
+        // contextual typing then flows to the callback.
         let module = check_one(
             "export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const joined: string = xs.reduce((acc, v) => acc + `${v}`, \"#\");\n  print(joined);\n}\n",
         )
@@ -2425,7 +2422,7 @@ mod tests {
         assert_eq!(construct_err[0].message, "unknown class `Context`");
     }
 
-    // ----- P1 phase-review regression tests -----
+    // ----- checker regression tests -----
 
     #[test]
     fn m1_enum_implicit_value_overflow_is_s008_not_a_panic() {
@@ -2590,7 +2587,7 @@ mod tests {
         assert!(err[0].message.contains("FixedArray length"));
     }
 
-    // ----- P9.2 Date (stdlib.md §3, Q20) -----
+    // ----- Date (stdlib.md §3, Q20) -----
 
     #[test]
     fn date_round_trip_program_checks_clean_with_nominal_types() {

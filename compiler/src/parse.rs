@@ -17,9 +17,10 @@ pub(crate) struct ParsedFile {
     pub stem: String,
     /// The SWC module AST.
     pub module: ast::Module,
-    /// True for an ambient declaration source (`.d.ts`): its
-    /// declarations are ingested into the global ambient surface (the
-    /// P5.2 mirror), not checked as a program module.
+    /// True for an ambient declaration source (`.d.ts`): the checker
+    /// ingests its declarations into the global ambient surface (the
+    /// generated mirror, compiler.md §12.2) and does not check it as a
+    /// program module.
     pub dts: bool,
     /// Fixed-shape C provenance parsed from a generated ambient mirror.
     pub provenance: provenance::Mirror,

@@ -563,7 +563,7 @@ type AddressSet = HashSet<usize, BuildHasherDefault<AddressHasher>>;
 // builds, where the premise assertion is disabled.
 type CallbackIdentity = (*const u8, *const u8, *mut u8, *mut u8);
 
-/// A registered C-callback binding (P5.2b). The language's function value
+/// A registered C-callback binding. The language's function value
 /// is a `(code, env)` pair with the calling convention `(ctx, env,
 /// args...)`; a C callback wants a bare `(fnptr, void* userdata)`. A
 /// generic C-ABI trampoline ([`crate::ffi::subscript_rt_cb_trampoline`]) bridges
@@ -573,8 +573,8 @@ type CallbackIdentity = (*const u8, *const u8, *mut u8, *mut u8);
 /// script registered. Records live for the whole Context (the Q13
 /// lifetime rule: userdata must outlive the registration that holds it).
 ///
-/// P7.2 (§14.4): the record carries **two** userdata slots (`userdata1`,
-/// `userdata2`), both delivered to the language callback. A callback-info
+/// The record carries **two** userdata slots (`userdata1`, `userdata2`,
+/// §14.4), both delivered to the language callback. A callback-info
 /// with one userdata slot binds the second as null.
 #[repr(C)]
 pub struct CallbackBinding {
@@ -664,10 +664,11 @@ pub struct Context {
     roots: Vec<(usize, usize)>,
     callbacks: Vec<Box<CallbackBinding>>,
     callback_interns: HashMap<CallbackIdentity, *mut CallbackBinding>,
-    // Transient P13 JSON output builders. Untracked serializers create
-    // no active-reference set; tracked ones do so explicitly.
+    // Transient JSON output builders (stdlib.md §13). Untracked
+    // serializers create no active-reference set; tracked ones do so
+    // explicitly.
     json_builders: crate::json::JsonBuilders,
-    // Transient P13 parsed syntax trees. They contain no language
+    // Transient parsed JSON syntax trees. They contain no language
     // allocations and are removed before JSON.parse returns.
     json_parsers: crate::json::JsonParsers,
     // The ship construction path uses the §8.1b arena while freed-handle
@@ -2817,7 +2818,7 @@ impl Context {
         let retained_bytes = &mut self.retained_bytes;
         // `extract_if` retains the live map's bucket storage. Later bursts
         // reuse it; accumulated deletion tombstones can eventually force one
-        // bounded rebuild, but dead-count growth no longer repeats peak
+        // bounded rebuild, but dead-count growth does not repeat peak
         // rehashes.
         for (addr, allocation) in self.allocations.extract_if(|_, allocation| {
             if allocation.marked {
@@ -3113,8 +3114,8 @@ impl Context {
         unsafe { (*(handle as *const ArrayHeader)).data }
     }
 
-    /// Registers a C-callback binding and returns a stable pointer to it
-    /// (P5.2b). The pointer is what a boundary marshaler stores in a C
+    /// Registers a C-callback binding and returns a stable pointer to it.
+    /// The pointer is what a boundary marshaler stores in a C
     /// `void* userdata` slot; the generic trampoline
     /// ([`crate::ffi::subscript_rt_cb_trampoline`]) reads the binding back
     /// through it. Bindings live for the whole Context (the Q13 lifetime

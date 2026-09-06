@@ -1,4 +1,5 @@
-//! Budgeted, Context-cached regular-expression operations (P23/Q31).
+//! Budgeted, Context-cached regular-expression operations
+//! (stdlib.md §15).
 
 use std::collections::HashMap;
 use std::ops::Range;

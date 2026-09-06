@@ -80,8 +80,8 @@ pub enum TrapKind {
     WorkerTrapped = 22,
     /// Execution reached an `unreachable()` call statement.
     UnreachableReached = 23,
-    /// A foreign function returned an integer not present in the R23
-    /// `CEnum` alias's wire mapping.
+    /// A foreign function returned an integer not present in the
+    /// `CEnum` alias's wire mapping (compiler.md §50).
     WireEnumUnknownValue = 24,
 }
 
