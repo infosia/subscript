@@ -12476,16 +12476,25 @@ and "exports take no arguments". No test reads `docs/`.
    `docs/*.md`. No block is exempt, and no marker excuses one.
 2. **A program** is a block that declares `export function main` or
    `export async function main`. The gate checks it and runs it on the
-   dev tier. If a ` ```text ` block follows it immediately, the
-   program's stdout equals that block, byte for byte.
+   dev tier. If a ` ```text ` block follows it **immediately**, the
+   program's stdout equals that block, byte for byte. *Immediately*
+   means the `text` fence opens on the line after the program's
+   closing fence, or one blank line after it. A `text` block that
+   prose separates from the program is not the program's output, and
+   the gate does not compare it. *(Defined 2026-09-08, measured: the
+   first gate paired a worker program in `tutorial-rust.md` with a
+   host's reload message eight paragraphs below it.)*
 3. **A fragment** is any other `ts` block. The gate checks it. A
    fragment reports no diagnostic.
 4. **Ambient names.** A fragment that declares `interface` or
-   `declare` is given to the checker as an ambient source. A block
-   that names a type the prelude does not carry is checked again with
-   each committed mirror under `examples/` and `corpus/interop/`, one
-   at a time; one mirror must make it clean, and the failure message
-   names the mirrors tried.
+   `declare` is given to the checker as an ambient source. A mirror
+   excerpt carries the provenance line a real mirror carries
+   (`// @subscript-c-header include="<header>"`), because a mirror
+   without it is rejected (S100) and a reader who copies the excerpt
+   copies a rejection. A block that names a type the prelude does not
+   carry is checked again with each committed mirror under
+   `examples/` and `corpus/interop/`, one at a time; one mirror must
+   make it clean, and the failure message names the mirrors tried.
 5. **Siblings.** A block that imports `./name` takes the ` ```ts `
    block immediately before it as the module `name.ts`.
 6. **The failure names the block.** A failure reports the file, the
@@ -12500,8 +12509,16 @@ and "exports take no arguments". No test reads `docs/`.
 
 ### 91.3 Corpus and gate (pre-registered exit criteria)
 
-1. Red at `95c7d74`: the gate fails on the `EventLog` block with
-   `S016 unknown type name`, and on nothing else.
+1. Red at `1b44a64`, measured: the gate fails on four blocks, not one.
+   `tutorial-c-cpp.md` line 813 names `EventLog` and declares it
+   nowhere (S016). Line 993 names `Job` and `Total` and declares them
+   nowhere (S016). Line 756's mirror excerpt has no provenance line
+   (S100). `tutorial-rust.md` line 451 is the pairing defect of rule 2.
+   Each doc block gains the smallest declaration that makes it check;
+   the pairing defect is a gate defect and the documents do not move
+   for it. *(The first text of this item predicted one failure. Three
+   documents carried a block a reader cannot compile, which is the
+   defect class this section exists to find.)*
 2. Green: every block of the four documents passes. The test prints
    the count of programs, of compared outputs, and of fragments.
 3. A negative control, in the same test: a program block whose stated
