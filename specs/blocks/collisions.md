@@ -190,8 +190,10 @@ zero-initialized when `done` — the `undefined`-bearing TS lib
 event loop exists.
 
 **Revised 2026-07-31 (Q34): `async`/`await` are accepted** as poll-driven
-sugar over the same Context-owned frame machinery — no scheduler, no
-microtask queue, no `Promise` object; the lib `Promise<T>` is only the
+sugar over the same Context-owned frame machinery. *(Revised
+2026-09-08 by compiler.md §94; implementation pending.)* A host-driven
+continuation queue schedules async resumes. There is no autonomous event
+loop or user-constructible `Promise` object; the lib `Promise<T>` is only the
 `tsc` view of an async function's value, exactly as `IteratorResult` is
 for coroutines. The model, lifetimes, and the retired entry
 `retired:r14-async` are Q34's; `Promise` construction and combinators stay rejected. Host
@@ -409,37 +411,20 @@ Accept: `a183`. Reject: `r184`.
 
 ### C16. An `await` of a completed handle does not yield
 
-JavaScript's `await` yields to the microtask queue even when its
-operand is already settled, so two async chains interleave. Measured
-with `node v24.18.0`:
-`async function f(id) { console.log(\`a${id}\`); await 0;
-console.log(\`b${id}\`); } f(1); f(2);` prints `a1 a2 b1 b2`.
+**Retired by contract, 2026-09-08; implementation pending (§94).**
+Every await now suspends under that contract, including completed
+handles. A host checkpoint executes FIFO continuations. B1 and B2
+measured the supported settled-await shapes against Node v24.18.0.
+The prototype matched those shapes on both production tiers.
 
-Here the caller continues in the same step. Two chains that pass
-through settled awaits run one after the other:
-`start1 leaf end1 start2 leaf end2` where `node` prints
-`start1 leaf start2 leaf end1 end2`.
-
-*(Owner decision 2026-09-08 with `compiler.md` §92, which matches
-JavaScript's start timing. Matching the interleaving needs a
-microtask queue. C8 and Q34 exclude an event loop and a microtask
-queue, and the host owns the loop, so no construct in this language
-gives a second chain a chance to run at a settled await.)*
-
-A held handle shows the same mechanism. `outer` prints, awaits an
-`inner` that completes, and prints; the caller prints between the
-call and the await. Here that gives
-`outer:start inner outer:end main:mid`; `node` gives
-`outer:start inner main:mid outer:end`.
-
-**Matching TypeScript here is not available** without a scheduler
-this language does not have. Concurrent completion, if it is wanted,
-is a separate request with its own surface (`compiler.md` §92.1
-rule 7).
+C8 still defines the restricted Promise surface and explicit host
+boundary. This retirement does not claim full JS Promise compatibility.
+a185 becomes JS-comparable when §94 lands. The title remains for
+existing links; the entry is historical, not an active divergence.
 
 No diagnostic reports this.
 
-Accept: `a184`, `a185`.
+Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
 
 ## 2. Q-register resolutions not covered above
 
@@ -1283,7 +1268,7 @@ Accept: `a184`, `a185`.
   Contract and exit criteria: `compiler.md` §25. Accept: `a92`.
   Reject: `r90`–`r95`.
 
-- **Q34 (async/await — poll-driven, schedulerless)** — *(Owner,
+- **Q34 (async/await — host-driven continuations)** — *(Owner,
   2026-07-31; downstream request R4. Boa v0.21.1 was source-read as
   the design reference for the no-scheduler architecture — see the
   HANDOFF appendix record in `specs/tracking/q34-async.md`.)*
@@ -1306,20 +1291,14 @@ Accept: `a184`, `a185`.
     not a value; the same immediate-await rule applies. R36,
     2026-08-23: the class can be generic, and the named function
     can be a generic instance; `compiler.md` §64.)*
-  - **Structure.** Each root invocation of an async export forms a
-    single linear chain of Context-owned frames: `await f(...)` runs
-    the callee until it suspends, and suspension propagates to the
-    root. Stepping resumes the innermost suspended frame.
-    Concurrency is **multiple pending root invocations** (the
-    downstream GPU norm); one frame awaits one value at a time, and
-    combinators are impossible by construction, not merely
-    out of scope.
-  - **Driving.** Nothing schedules. The host (or the CLI runner, or
-    the generated AOT entry) steps pending roots explicitly:
-    `subscript_rt_ctx_async_pending` / `subscript_rt_ctx_async_step`
-    (`compiler.md` §26.3), stepping each pending root once per call
-    in kick order — deterministic, gate-comparable. Script
-    evaluation never pumps (the Boa separation, kept).
+  - **Structure.** *(Revised 2026-09-08 by compiler.md §94.)*
+    Async calls start their bodies. Every await suspends and registers
+    a continuation. Completion queues waiters in registration order.
+    Held children progress independently of their holder's await order.
+  - **Driving.** Only the host checkpoint drains continuations.
+    It appends pre-existing parked frames after ready jobs, then drains
+    FIFO work to empty. New `Context.suspend()` waits for the next
+    checkpoint. Calls never pump. §94 defines counts and unbounded drains.
   - **Lifetime and teardown (R4.4).** Suspended frames are
     Context-owned like coroutine frames; releasing the Context drops
     them without running continuations, and **no cleanup construct

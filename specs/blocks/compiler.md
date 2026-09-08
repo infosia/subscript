@@ -128,6 +128,7 @@ Every section, with its status:
 | §91 | The tutorials' programs run in the gate | active |
 | §92 | An async call starts its body at the call | active |
 | §93 | An async method declares type parameters | active |
+| §94 | Host-driven async continuation queue | contracted; implementation pending |
 
 ## 1. Architecture
 
@@ -3769,37 +3770,27 @@ is also awaitable.)*
 
 ### 26.2 Lowering (both tiers)
 
-An async function lowers onto the existing Context-owned coroutine
-frame machinery: `await Context.suspend()` is a suspend point;
-`await f(...)` allocates the callee frame, runs it to its first
-suspension or completion, and on suspension suspends the whole
-chain up to the root. A root invocation (from the host symbol) runs
-to first suspension and registers a pending root; each
-`async_step` resumes each pending root once, in kick order,
-resuming at the innermost suspended frame; a root that completes
-leaves the pending set. Frames free with their Context (teardown
-drops, no continuations). Byte-exact across tiers under the
-standing gate.
+*(Revised 2026-09-08 by §94; implementation pending.)*
+Async frames use the continuation protocol in §68.7.4 and §94.
+Every await suspends. A call starts its callee, but an await never
+resumes that callee. Completion queues the caller's continuation.
+`Context.suspend()` waits for the next host checkpoint.
 
 ### 26.3 Runtime C API and drivers
 
 ```c
 uint64_t subscript_rt_ctx_async_pending(const subscript_rt_context*);
-uint64_t subscript_rt_ctx_async_step(subscript_rt_context*);  /* returns remaining */
+uint64_t subscript_rt_ctx_async_unfinished(const subscript_rt_context*);
+uint64_t subscript_rt_ctx_async_step(subscript_rt_context*);
 ```
 
-`async_step` on a trapped Context is a no-op returning the pending
-count (the trampoline precedent); on an empty pending set it returns
-0. **Standard-runner convention** *(added 2026-07-31 when the first
-contract draft left a94 undrivable — the gate invokes only `main`)*:
-the generated AOT entry, the JIT runner, and `subscript run` invoke
-`main`, then every **other** exported async function in declaration
-order, then pump `async_step` to quiescence. A host embedding the
-runtime kicks whatever it chooses — the convention is the runners',
-not the language's. Synchronous programs see no change (no async
-exports, empty pump), so no existing golden moves. The generated
-host header documents both functions; hot-reload's §8.2 staleness
-applies to suspended async frames unchanged.
+§94 defines the counts, checkpoint, traps, and teardown.
+The standard runners invoke `main`, then other exported async
+functions in declaration order, then step while `async_pending` is
+nonzero. Embedding hosts choose their exports and checkpoint boundaries.
+The runner stops on a trap. Quiescence does not imply that every
+invocation completed; `async_unfinished` exposes that distinction.
+No runner adds a deadlock trap or resumes blocked work at quiescence.
 
 ### 26.4 Corpus
 
@@ -9616,6 +9607,15 @@ interpreter poisons it, and a use of a poisoned address is an error
 that names the instruction and the invalidation. Neither tier
 performs that check, so the interpreter is the only place it exists.
 
+**Async driver.** *(Added 2026-09-08 by §94.)* The suspension
+kind determines registration: `Async` parks for the next checkpoint;
+`AsyncCall` and `AsyncHandle` register on the awaited frame.
+A completed await also suspends. Completion queues continuations;
+only the host checkpoint drains them. The resume edge reads the
+cached result and never drives the child. §94 defines this protocol
+for both tiers and the independent interpreter. Generator suspension
+keeps its existing protocol.
+
 **Suspension and resume.** `Suspend` is a terminator with a successor
 block id (§68.2 item 7). **The successor block's parameters are the
 live-in set of the suspension.** When the suspension produces a
@@ -9944,17 +9944,18 @@ change.
    arbitrary reference class is **not** in this section. It is the
    general form of the same mechanism and it waits for evidence.
 2. **At least one `await` is required.** Holding a handle, storing it,
-   and passing it are legal. **Dropping it without awaiting is
-   rejected.** `r100`'s intent stands: a coroutine that never
-   completes runs none of its effects **after its first suspension**,
-   and a silent no-op is the bug that rule exists to prevent.
-   *(Amended 2026-09-08 by §92: a call now runs the callee to its
-   first suspension, so an abandoned handle runs that prefix. Where
-   the must-await analysis approximates, the prefix runs and the rest
-   does not. The rule stands; its reason is narrower than it read.)* `r100` and `r105` are rewritten, not
-   deleted: they reject a *dropped* handle rather than a held one.
+   and passing it remain legal. Dropping it without awaiting remains
+   rejected. Under §94, an accepted call progresses independently of
+   its holder's await. The restriction requires result observation;
+   it does not control execution or cancellation. The checker keeps
+   its current approximation and diagnostics (`r100`, `r105`, `r157`).
 
 ### 70.2 Where the count lives
+
+*(Added 2026-09-08 by §94.)* The runtime scheduler also reads the
+async resume pointer at frame offset 8. The count stays at offset 4.
+The Context metadata stores the reload epoch and fulfilled-value size.
+Generated code derives that size from the LIR function's return type.
 
 **Measured 2026-08-27.** The allocation header is 16 bytes, fully
 packed: an 8-byte state word at `-16`, a class id at `-8`, and a
@@ -12603,6 +12604,10 @@ and "exports take no arguments". No test reads `docs/`.
 
 ## 92. An async call starts its body at the call
 
+*(Revised 2026-09-08 by §94; implementation pending.)* §94 supersedes
+this section's completed-await, root-exclusion, and concurrent-progress
+rules. The measurements below record the earlier implementation.
+
 *(Owner decision 2026-09-08.)* Origin: the async proposal of
 2026-09-08 asked for concurrent progress. The measurement that
 answered it found a divergence nobody had decided.
@@ -12653,9 +12658,9 @@ Measured reach of rule 1, against `node`:
    return, before the call's value reaches the caller. The value is
    the handle, as §70 has it.
 2. **A callee that does not suspend completes at the call.** Its
-   handle is complete when the caller receives it. The later `await`
-   yields the stored result and suspends nothing. §70's rule that
-   every handle needs one awaited completion is unchanged.
+   handle is complete when the caller receives it. Under §94, a later
+   `await` suspends and reads the stored result on queued resumption.
+   §70's required-await rule is unchanged.
 2a. **An abandoned handle has already run its prefix.** §70.1 rule 2
    rejects a dropped handle, and where that analysis approximates,
    the callee's statements before its first suspension have already
@@ -12669,37 +12674,23 @@ Measured reach of rule 1, against `node`:
 4. **Order is call order.** Two calls start their bodies in the
    order the calls run. A trap in a started body reports at the call,
    with the callee's position.
-5. **Roots are unchanged.** An exported async function that the
-   runner kicks (§64 rule 4) already runs at its kick. Its behaviour
-   does not change, and the kick order stays the runner's.
+5. **Export kicks keep their order.** An exported async function
+   starts at its kick. §94 replaces its later root-poll behavior
+   with continuation registration and host checkpoints.
 6. **One order in three witnesses.** The dev JIT, the ship C, and
    the reference interpreter produce one byte sequence, as the
    standing gate requires.
-1a. **An `await` of a completed handle does not yield.** The caller
-   continues in the same step. JavaScript yields to its microtask
-   queue there, so a program that interleaves two chains through
-   settled awaits prints a different order. This is a decided
-   divergence, recorded as `collisions.md` C16. Nothing in this
-   language gives a second chain a chance to run at that point.
-1b. **The form carries the start.** The LIR operation that creates a
-   handle states, in its own definition, whether it starts the body.
-   `AsyncHandleCreate`'s definition today is "create an async
-   coroutine frame without polling it"; a consumer that starts the
-   body under that definition contradicts the form. Either the
-   definition changes with this section, or a second operation
-   carries the start. The chosen form states: the child runs at the
-   call to its first suspension or its return; the handle keeps its
-   owner and caches a completed result for a later await; the child
-   is not an exported root and does not join that queue; a trap in
-   the started body reports before the caller continues, at the
-   call, with the callee's position. *(Added 2026-09-08: the round
-   stopped here, correctly, under core principle 8.)*
-7. **Concurrent completion is a separate question and stays open.**
-   With rule 1 both bodies start, and the work after each first
-   suspension still completes in await order. `a94` shows the pump
-   advancing two pending roots; a handle from a call is not in that
-   root set. Nothing here changes that. *(Recorded so the next
-   request states its own problem, per core principle 13.)*
+1a. **Every await suspends.** §94 replaces the former completed-await
+   fast path. C16 retires under that contract.
+1b. **The form carries the start and the driver.** `AsyncHandleCreate`
+   starts the body to its first await or return. A suspension registers
+   the continuation according to its kind. The handle retains its
+   ownership and completion cache. §94 defines scheduler ownership.
+   A trap before the first await reports before the caller continues,
+   with the callee's position.
+7. **Concurrent progress is decided by §94.** A called body's progress
+   does not depend on whether its holder awaits it. The host checkpoint
+   advances registered work with the specified FIFO order.
 
 ### 92.2 Sites
 
@@ -12722,18 +12713,10 @@ Measured reach of rule 1, against `node`:
    `compiler/tests/js_corpus.rs` reports it. *(This entry is the one
    the corpus lacked: every async entry before it opted out of the
    node comparison.)*
-1a. **The divergence has its own entry.**
-   `corpus/accept/a185-async-settled-await-order.ts` holds two
-   shapes, both measured against `node`: two handles whose inner
-   await is already complete, and one held handle whose body passes
-   through a settled await (`outer` prints, awaits a completing
-   `inner`, prints; the caller prints between the call and the
-   await). The second gives `outer:start inner outer:end main:mid`
-   here and `outer:start inner main:mid outer:end` under `node`. It
-   carries `js-comparable: no C16`, and its header states the
-   `node` order beside this language's. It is green before and after
-   this section; it exists so the divergence has a program, not only
-   a paragraph.
+1a. **The former divergence has its own entry.** a185 records the
+   two settled-await shapes. Under §94 it carries `js-comparable: yes`
+   and matches the specified FIFO order. Its former C16 explanation
+   and `node-order` header lines retire.
 2. **Green.** The entry matches `node` byte for byte, on the dev
    JIT, the ship tier, and the interpreter.
 3. **The goldens that move.** `a154`'s order changes by rule 1. Every
@@ -12937,3 +12920,199 @@ on this host with exit 1.
    a187's block removed, the captured text is byte-identical to the
    committed snapshot. The §2 record names this one file, and the
    gate reports its move.
+
+## 94. Host-driven async continuation queue
+
+*(Contract decision 2026-09-08, Codex as the owner-assigned
+orchestrator. Implementation pending.)*
+
+Baseline pin: `d8cc19c34ac5e2db27bdc0411d5210924528029b`.
+B1 and B2 measured both production tiers at that pin. The permanent
+record is `specs/tracking/s94-async-continuations.md`.
+
+The problem is observable order. Two called bodies start together,
+but their continuations currently depend on the holder's await order.
+A completed await currently runs inline. This contract removes those
+two dependencies while the host retains control of checkpoints.
+
+This section supersedes §26's root polling, §70's execution rationale,
+and §92's rules 1a, 1b, 2, 5, and 7 where they conflict.
+It preserves call-time start, the accepted type surface, and generator
+semantics. It adds no Promise construction, combinators, thenables,
+rejection handling, implicit collection, or background execution.
+
+### 94.1 Execution protocol
+
+1. An async call runs its body synchronously to its first await or
+   return. A body without await completes before the call returns.
+2. Every await suspends the caller. This includes completed handles,
+   direct calls, held handles, methods, and generic instances.
+3. `SuspendKind::Async` registers the frame in the parked list.
+   `Context.suspend()` remains the existing primitive await form.
+4. `SuspendKind::AsyncCall` creates and starts the child, then registers
+   the caller on that child's completion. `AsyncHandle` registers on
+   the named handle. Neither await path resumes the child.
+5. An unfinished handle holds waiting continuations in registration
+   order. Completion moves them to the ready queue's tail in that order.
+6. An await of a completed handle appends the caller to the ready tail.
+   It does not invoke the continuation inline.
+7. Calls and export kicks never drain ready work. A suspension registers
+   before control returns to its caller or host.
+8. One checkpoint appends the entire pre-existing parked list after
+   existing ready jobs. It then drains the ready queue in FIFO order.
+   Jobs added during that drain participate in the same checkpoint.
+9. A frame newly parked during the drain waits for the next checkpoint.
+   A frame can execute multiple distinct continuations in one checkpoint.
+   It has only one outstanding scheduler registration at a time,
+   apart from its current active resume during registration transfer.
+10. Exported roots and call-created frames use the same rules. Calls
+    retain source evaluation order. Export kicks retain host order.
+11. A resumed await reads the immutable cached completion and binds
+    the successor's result parameter. It never polls the awaited body.
+    Multiple holders and repeated awaits read the same completion.
+12. A checkpoint has no job budget or termination guarantee. A finite
+    ready chain drains in one checkpoint. An infinite ready chain can
+    prevent return. `Context.suspend()` is the explicit host-step boundary.
+    This is not a real-time execution bound.
+
+The LIR instruction and terminator definitions must state this protocol.
+The verifier checks async target kind, result types, suspension edges,
+and required stale-trap positions. Scheduling readiness is a runtime
+invariant, not a fact a static verifier can prove for arbitrary values.
+A resume without its required completion is an internal protocol defect.
+No consumer silently re-registers, polls, or fabricates a result there.
+Use the existing `TrapKind::Internal` (runtime code 11), with message
+`async resume without completion`, at the suspension position.
+The Context stops under the ordinary trap policy. The interpreter
+reports the same internal defect. Add a focused invalid-protocol test;
+this is not a new source-language trap or a library panic.
+
+### 94.2 Host API, traps, and lifetime
+
+`async_pending` returns ready jobs plus parked registrations, including
+preserved trapping jobs. It excludes blocked continuations and completed
+frames retained only by handles. `async_step` returns this count.
+
+`subscript_rt_ctx_async_unfinished` returns the number of registered
+async invocations without a cached completion. `ReloadSession` exposes
+an equivalent read-only accessor. Both observers execute no script.
+Other B1 counters remain test or benchmark instrumentation.
+
+Pending zero means no work can advance at a checkpoint. It does not
+promise successful completion. An unfinished positive count at that
+boundary exposes blocked work, including self-await and mutual waits.
+No deadlock detector, new diagnostic, or cancellation API is added.
+Standard runners stop at that boundary as §26.3 specifies.
+
+A trap before the first await reports during the call. A trap after
+an await reports when its continuation executes, with its original
+callee position. It can therefore report earlier or later than at
+the baseline. Traps remain Context traps, not Promise rejections.
+
+A trapped checkpoint stops immediately and preserves the trapping
+registration and all other outstanding work. Repeated steps are no-ops
+until host clearance. Clearing the trap does not clear frame staleness.
+A stale async resume traps at the suspension position before body effects.
+The JIT retains old code while queued frames can reference it.
+
+A registration owns a reference independent of caller handles. That
+ownership transfers between ready, parked, blocked, and active states.
+A new suspension acquires its registration before the active resume
+releases its ownership. Normal completion releases active scheduler
+ownership immediately. No extra cleanup checkpoint counts as pending.
+
+The completion cache and values reachable from it survive until their
+last owner releases them. Collection roots include all scheduler states,
+active frames, completion values, and blocked continuations.
+Context release discards all work without resumption. It releases
+scheduler storage, including blocked cycles, without implicit collection.
+No cleanup body is guaranteed during Context teardown.
+
+The generated-code registration ABI carries the fulfilled-value size
+from the LIR return type. Runtime result storage has the required
+alignment and size. Runtime and generated code read the contracted
+resume pointer at frame offset 8 (§70.2). All ABI declarations and
+bindings change together; the host header is generated from its source.
+
+### 94.3 Corpus and semantic exit criteria
+
+New ordering entries must be Red against a binary built from the pin.
+Expected order derives from this contract before implementation.
+Node is a divergence detector for comparable shapes, never the oracle.
+New acceptance cases add no syntax and require no new rejection rule.
+Existing rejected Promise forms and required-await diagnostics remain.
+
+The implementation must supply these cases:
+
+- Two nested settled chains and a held outer handle (B1 p15 and a185).
+- Two parents awaiting one handle, followed by repeated completed awaits
+  (B1 p14). Include reference and aggregate completion values.
+- Concurrent children across parent suspension (B1 p03 and p04).
+- Mixed ready and parked work in both creation orders (B2 q01 and q02).
+- A trap after settled await, with caller effects before the trap (B1 p08b).
+- Direct, held, method, and generic await paths under the same protocol.
+
+Use the next free corpus IDs. Add direct host tests for exact checkpoint
+boundaries, quiescence counts, and the unfinished observer. A finite long
+settled chain finishes in one checkpoint. A self-await control reaches
+pending zero with unfinished work and releases its Context safely.
+
+Carry B2's ready and parked reload, trap-retry, and blocked-parent tests
+into permanent tests. Assert exact positions from independent source
+locations, not only equality between repeated reports. Keep the mixed
+queue mutation as recorded sensitivity evidence, not production code.
+
+Test ownership without print allocations, pending Context teardown,
+explicit collection during a drain, and cached owned-result survival.
+All new public observers have direct unit tests.
+
+The independent interpreter implements §68.7.4 and §94 from their
+protocol, with ready, parked, and blocked states. It must not call the
+production scheduler or reuse either tier's driver as its oracle.
+All admitted corpus cases follow the same order in all three witnesses.
+
+Authorized existing output changes are a154, a155, and a185, whose exact
+before/after bytes appear in the tracking record. No existing trap
+expected file changes. Any additional change requires evidence and
+orchestrator review before its expected file moves.
+
+The aggregate LIR snapshot can change only for async instruction streams
+and new corpus entries. Record byte sizes and prove unrelated blocks
+identical. a185 becomes `js-comparable: yes`; C16 references retire.
+Update generated reference sources, generated outputs, and tutorial prose.
+Do not hand-edit generated files or invent a new divergence to hide order.
+
+### 94.4 Cost and final validation
+
+The implementation acceptance limit is 3.0 times the baseline median
+for each B1 workload: 200,000 completed-handle awaits; 20 rounds of
+2,000 held handles; and 400 chains of depth 200.
+
+This limit is set after B1's measurements and before permanent
+implementation. It is a regression cap, not an independent prediction
+or an unavoidable cost of JS order. It applies to ship C on aarch64
+macOS, the measured platform. Other platforms report results without
+an invented numeric threshold. The existing §3 limits still apply.
+
+Use identical sources, release runtime, compiler options, and host
+harness on both revisions, with a fresh Context per iteration.
+Measure initialization, export calls, all checkpoints, and Context
+release. Exclude code compilation. Use three warmups and eleven timed
+iterations, then report median and range. If spread exceeds 20%, repeat
+under quiet conditions before judging the ratio. Build the baseline
+from the pin in isolated scratch storage; never change the active checkout.
+
+Preserve reproducible workload sources and a benchmark driver in the
+repository. Record old/new timing and Context payload counters separately
+from Rust scheduler allocations. Do not infer total retained memory from
+Context counters. Benchmark instrumentation does not become a public API.
+
+Move the LIR form first, then one consumer at a time. Record expected
+migration mismatches without changing the final exit criteria.
+Final acceptance requires `tools/gate.sh full` exit 0, both profiles,
+full release interpreter coverage, the unchanged clippy ceiling 7/18/13,
+stock `tsc`, rustfmt, §3 benchmarks, and this section's async measurements.
+
+The phase ends with an independent fresh-context review and correction
+of every CRITICAL or MAJOR finding. Run `tools/hygiene.sh` afterward.
+The coding agent leaves a reviewable diff and REPORT; it does not commit.
