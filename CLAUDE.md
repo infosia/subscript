@@ -260,6 +260,16 @@ version.
 4. Run the tier-differential suite.
 5. Log evidence in `specs/tracking/<topic>.md`.
 
+**Step 0, when the question is whether a rule must change: measure
+first.** *(Owner, 2026-09-08.)* A measurement round builds a
+prototype, records what it measures, and reverts every production
+change. It lands nothing, so it may contradict a stated rule — that
+is what it is for. The handoff names the rule the prototype
+contradicts, and the tracking note records it beside the numbers. A
+round told to measure does not stop at the rule it was sent to test.
+Contract first still governs step 3: nothing lands before the rule
+changes.
+
 **Two review rounds are the limit for a defect class.** *(Owner,
 2026-08-26.)* A review raises a class. A round fixes it. If the next
 review raises that class again, the class is a defect of the form.
