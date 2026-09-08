@@ -12487,14 +12487,22 @@ and "exports take no arguments". No test reads `docs/`.
 3. **A fragment** is any other `ts` block. The gate checks it. A
    fragment reports no diagnostic.
 4. **Ambient names.** A fragment that declares `interface` or
-   `declare` is given to the checker as an ambient source. A mirror
-   excerpt carries the provenance line a real mirror carries
-   (`// @subscript-c-header include="<header>"`), because a mirror
-   without it is rejected (S100) and a reader who copies the excerpt
-   copies a rejection. A block that names a type the prelude does not
-   carry is checked again with each committed mirror under
-   `examples/` and `corpus/interop/`, one at a time; one mirror must
-   make it clean, and the failure message names the mirrors tried.
+   `declare` is given to the checker as an ambient source. A block
+   that names a type the prelude does not carry is checked again with
+   each committed mirror under `examples/` and `corpus/interop/`, one
+   at a time; one mirror must make it clean, and the failure message
+   names the mirrors tried.
+4a. **An excerpt is verified as an excerpt.** A block whose first line
+   is `// excerpt of <repository-relative path>` shows part of a
+   committed file. The gate requires every non-blank line of the block
+   to appear in that file, and it checks nothing else about the block.
+   *(Added 2026-09-08, measured: rule 3 asked a generated-mirror
+   excerpt to stand alone as a mirror. That needs the string-view and
+   descriptor provenance records and two more declarations — a page of
+   generated text where three declarations teach the shape. An excerpt
+   that the gate holds line-for-line against its source catches the
+   drift rule 3 exists to catch, and it stays readable. The reader
+   also gets the path to the whole file.)*
 5. **Siblings.** A block that imports `./name` takes the ` ```ts `
    block immediately before it as the module `name.ts`.
 6. **The failure names the block.** A failure reports the file, the
@@ -12512,8 +12520,8 @@ and "exports take no arguments". No test reads `docs/`.
 1. Red at `1b44a64`, measured: the gate fails on four blocks, not one.
    `tutorial-c-cpp.md` line 813 names `EventLog` and declares it
    nowhere (S016). Line 993 names `Job` and `Total` and declares them
-   nowhere (S016). Line 756's mirror excerpt has no provenance line
-   (S100). `tutorial-rust.md` line 451 is the pairing defect of rule 2.
+   nowhere (S016). Line 756 is a generated-mirror excerpt and becomes
+   one under rule 4a. `tutorial-rust.md` line 451 is the pairing defect of rule 2.
    Each doc block gains the smallest declaration that makes it check;
    the pairing defect is a gate defect and the documents do not move
    for it. *(The first text of this item predicted one failure. Three
