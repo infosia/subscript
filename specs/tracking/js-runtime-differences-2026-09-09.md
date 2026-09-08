@@ -113,3 +113,19 @@ one is added for the supplementary-character split.
 
 The documentation correction was the one plain defect, and it landed
 at `0f6a5c7`.
+
+## Red at the contract pin
+
+Measured at `10c2db7`, aarch64 macOS, dev JIT, `subscript run`:
+
+| Program | exit | first line |
+|---|---:|---|
+| `"ab".padStart(4, "")` | 1 | `trap [string-range]: padStart(4): an empty pad cannot reach the target length (string length 2)` |
+| `"ab".padEnd(4, "")` | 1 | `trap [string-range]: padEnd(4): an empty pad cannot reach the target length (string length 2)` |
+| `"ab".split("").length` | 1 | `trap [string-range]: split(""): an empty separator is not accepted` |
+| `"ab".replaceAll("", "-")` | 1 | `trap [string-range]: replaceAll("", ...): an empty pattern is not accepted` |
+| `${x}` with `const x: f64 = -0.0` | 0 | `-0` |
+| `${x}` with `const x: f32 = -0.0` | 0 | `-0` |
+
+The node results for the same six are `"ab"`, `"ab"`, `2`, `"-a-b-"`,
+`0`, `0`, measured on node v24.18.0.
