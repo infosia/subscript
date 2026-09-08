@@ -1505,3 +1505,107 @@ mod tests {
         assert!(text.contains("generations"), "got {text}");
     }
 }
+
+#[cfg(test)]
+mod async_review_tests {
+    use super::*;
+    use subscript_runtime::TrapKind;
+    mod programs {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/support/async_review.rs"
+        ));
+    }
+
+    #[test]
+    fn cleared_continuations_never_replay_or_leak() {
+        for (source, expected, unfinished, line) in [
+            (programs::BODY, "m1\nm2\n", 1, 6),
+            (programs::CALLEE, "m1\nm2\nboom:start\n", 2, 4),
+            (programs::SETTLED, "m1\nm2\n", 1, 7),
+        ] {
+            let mut session =
+                ReloadSession::new(&[SourceFile::new("replay.ts", source)]).expect("session");
+            session.call_main().expect("kick");
+            let Err(RunError::Trap(trap)) = session.async_step() else {
+                panic!("expected bounds trap")
+            };
+            assert_eq!(trap.rule, TrapKind::IndexOutOfBounds);
+            assert_eq!(trap.message, "index 5 out of bounds for array length 0");
+            assert_eq!((trap.pos.line, trap.pos.col), (line, 14));
+            assert_eq!(session.take_output(), expected.as_bytes());
+            assert_eq!(session.async_pending(), 1);
+            assert_eq!(session.async_unfinished(), unfinished);
+            let allocations = session.ctx.live_count();
+            eprintln!("replay.ts:{line}:14 allocations={allocations} unfinished={unfinished}");
+            for _ in 0..5 {
+                let ctx = &mut *session.ctx as *mut Context;
+                // SAFETY: the host owns the Context; no script is active.
+                assert_eq!(
+                    unsafe { subscript_runtime::ffi::subscript_rt_ctx_clear_trap(ctx) },
+                    1
+                );
+                assert_eq!(session.async_pending(), 0);
+                assert_eq!(session.async_step().expect("cleared checkpoint"), 0);
+                assert_eq!(session.async_unfinished(), unfinished);
+                assert_eq!(session.ctx.live_count(), allocations);
+                assert_eq!(session.take_output(), b"");
+            }
+        }
+    }
+
+    #[test]
+    fn clearance_preserves_blocked_waiters_and_advances_other_work() {
+        let source = "async function faulty(): Promise<i32> {
+  await Context.suspend();
+  unreachable();
+  return 1;
+}
+export async function main(): Promise<void> {
+  const value: i32 = await faulty();
+  print(\"blocked\");
+}
+export async function peer(): Promise<void> {
+  await Context.suspend();
+  Context.collect();
+  print(\"peer\");
+}
+";
+        let mut session =
+            ReloadSession::new(&[SourceFile::new("blocked.ts", source)]).expect("session");
+        session.call_main().expect("kick main");
+        session.call_export("peer").expect("kick peer");
+        assert!(matches!(session.async_step(), Err(RunError::Trap(_))));
+        assert_eq!(
+            (session.async_pending(), session.async_unfinished()),
+            (2, 3)
+        );
+        session.ctx.clear_trap();
+        assert_eq!(
+            (session.async_pending(), session.async_unfinished()),
+            (1, 3)
+        );
+        assert_eq!(session.async_step().expect("peer advances and collects"), 0);
+        assert_eq!(session.async_unfinished(), 2);
+        assert_eq!(session.take_output(), b"peer\n");
+        assert_eq!(
+            session.async_step().expect("blocked waiter stays blocked"),
+            0
+        );
+        assert_eq!(session.async_unfinished(), 2);
+    }
+
+    #[test]
+    fn cleared_checkpoint_control_advances_the_same_shape() {
+        let mut session = ReloadSession::new(&[SourceFile::new("control.ts", programs::CONTROL)])
+            .expect("session");
+        session.call_main().expect("kick");
+        assert_eq!(session.take_output(), b"m1\n");
+        assert_eq!(session.async_step().expect("first step"), 1);
+        assert_eq!(session.take_output(), b"m2\n");
+        session.ctx.clear_trap();
+        assert_eq!(session.async_step().expect("control resumes"), 0);
+        assert_eq!(session.take_output(), b"m3\n");
+        assert_eq!(session.async_unfinished(), 0);
+    }
+}

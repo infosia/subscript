@@ -4119,9 +4119,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         Ok(())
     }
 
-    // The resume side of a direct await. The scheduler runs it only after the
-    // awaited handle completes, so the cached result is present. A missing
-    // result re-registers the continuation.
+    // §94.1: a resumed direct await reads the cached completion. A missing
+    // result calls async_missing_completion and unwinds with an Internal
+    // trap. It never re-registers the continuation.
     fn emit_async_child_resume(
         &mut self,
         out: &mut String,

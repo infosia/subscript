@@ -232,7 +232,9 @@ struct IteratorCursor {
 }
 
 struct Coroutine {
-    state: Frame,
+    // Execution storage has its own allocation and borrow domain.
+    // Handle ownership and waiter registration never borrow this cell.
+    state: Rc<RefCell<Frame>>,
     completed: bool,
     completion: Option<Value>,
     owners: u32,
@@ -335,6 +337,8 @@ struct Interpreter<'m> {
     // frames that wait for the next host checkpoint.
     async_ready: std::collections::VecDeque<Rc<RefCell<Coroutine>>>,
     async_parked: std::collections::VecDeque<Rc<RefCell<Coroutine>>>,
+    async_trapping: Option<InterpretError>,
+    async_stopped: Vec<Rc<RefCell<Coroutine>>>,
     // Runtime helpers can report while an instruction is still executing.
     // Keep the enclosing LIR sites here so that even those reports use the
     // checker-owned source position rather than the instruction's broad span.
@@ -356,6 +360,8 @@ impl<'m> Interpreter<'m> {
             async_handles: RefCell::new(HashMap::new()),
             async_ready: std::collections::VecDeque::new(),
             async_parked: std::collections::VecDeque::new(),
+            async_trapping: None,
+            async_stopped: Vec::new(),
             active_traps: Vec::new(),
         };
         interpreter.compute_class_layouts()?;
@@ -368,6 +374,7 @@ impl<'m> Interpreter<'m> {
     }
 
     fn run(&mut self) -> Result<Vec<u8>, InterpretError> {
+        self.clear_trap();
         if let Some(initializer) = self.module.initializer {
             let _ = self.call_function(initializer, Vec::new())?;
         }
@@ -480,7 +487,7 @@ impl<'m> Interpreter<'m> {
                 }
             }
             let coroutine = Rc::new(RefCell::new(Coroutine {
-                state: frame,
+                state: Rc::new(RefCell::new(frame)),
                 completed: false,
                 completion: None,
                 owners: u32::from(function.is_async),
@@ -523,6 +530,7 @@ impl<'m> Interpreter<'m> {
     fn release_scheduler_storage(&mut self) {
         let mut work: Vec<Rc<RefCell<Coroutine>>> = self.async_ready.drain(..).collect();
         work.extend(self.async_parked.drain(..));
+        work.append(&mut self.async_stopped);
         work.extend(
             self.async_handles
                 .borrow_mut()
@@ -546,21 +554,23 @@ impl<'m> Interpreter<'m> {
             // gave it, and two frames that hold each other's handle form the
             // same ring. Teardown discards the work, so the saved state goes
             // with the registration.
-            for value in state.state.values.iter().flatten() {
+            let frame_cell = Rc::clone(&state.state);
+            let mut saved = frame_cell.borrow_mut();
+            for value in saved.values.iter().flatten() {
                 collect_coroutines(value, &mut work);
             }
-            for local in &state.state.locals {
+            for local in &saved.locals {
                 collect_coroutines(&local.slot.borrow(), &mut work);
             }
-            if let Some(resume) = state.state.resume.as_ref() {
+            if let Some(resume) = saved.resume.as_ref() {
                 collect_coroutines(resume, &mut work);
             }
             if let Some(completion) = state.completion.as_ref() {
                 collect_coroutines(completion, &mut work);
             }
-            state.state.values.clear();
-            state.state.locals.clear();
-            state.state.resume = None;
+            saved.values.clear();
+            saved.locals.clear();
+            saved.resume = None;
             state.completion = None;
         }
     }
@@ -585,18 +595,38 @@ impl<'m> Interpreter<'m> {
         Ok(())
     }
 
+    // §94.2: the reference driver clears at a host entry boundary.
+    fn clear_trap(&mut self) {
+        if self.async_trapping.take().is_some() {
+            // This witness has no reload adapter or staleness exception.
+            if let Some(frame) = self.async_ready.pop_front() {
+                self.async_stopped.push(frame);
+            }
+        }
+        self.context.clear_trap();
+    }
+
     /// One host checkpoint (§94.1 rules 8 and 9). It appends the whole
     /// pre-existing parked list after the jobs that are already ready, then
     /// drains the ready queue in FIFO order. A frame parked during the drain
     /// waits for the next checkpoint.
     fn async_step(&mut self) -> Result<(), InterpretError> {
+        if let Some(error) = &self.async_trapping {
+            return Err(error.clone());
+        }
         if self.context.trapped() {
             return Ok(());
         }
         let parked = std::mem::take(&mut self.async_parked);
         self.async_ready.extend(parked);
         while let Some(frame) = self.async_ready.pop_front() {
-            self.async_resume(&frame)?;
+            if let Err(error) = self.async_resume(&frame) {
+                if matches!(error, InterpretError::Trap { .. }) {
+                    self.async_trapping = Some(error.clone());
+                    self.async_ready.push_front(frame);
+                }
+                return Err(error);
+            }
             if self.context.trapped() {
                 // The trap policy preserves the trapping registration and
                 // every entry this checkpoint has not reached.
@@ -629,7 +659,7 @@ impl<'m> Interpreter<'m> {
                     message: "async resume without completion".to_string(),
                 });
             };
-            coroutine.borrow_mut().state.resume = Some(value);
+            coroutine.borrow().state.borrow_mut().resume = Some(value);
             if awaited.owned {
                 self.release_coroutine(&awaited.handle);
             }
@@ -644,18 +674,19 @@ impl<'m> Interpreter<'m> {
         &mut self,
         coroutine: &Rc<RefCell<Coroutine>>,
     ) -> Result<Flow, InterpretError> {
-        let mut state = coroutine.borrow_mut();
-        if state.completed {
-            return Ok(Flow::Returned(
-                state.completion.clone().unwrap_or(Value::Void),
-            ));
-        }
-        let frame = &mut state.state as *mut Frame;
-        drop(state);
-        // SAFETY: a frame is executed by exactly one driver at a time. §94.1
-        // rule 9 gives a frame one outstanding registration, so no other
-        // borrow of this coroutine is live while it runs.
-        self.execute_frame(unsafe { &mut *frame })
+        let frame = {
+            let state = coroutine.borrow();
+            if state.completed {
+                return Ok(Flow::Returned(
+                    state.completion.clone().unwrap_or(Value::Void),
+                ));
+            }
+            Rc::clone(&state.state)
+        };
+        let mut frame = frame
+            .try_borrow_mut()
+            .map_err(|_| self.invalid(None, "coroutine frame is already executing"))?;
+        self.execute_frame(&mut frame)
     }
 
     /// Applies one execution outcome to the scheduler state.
@@ -757,13 +788,10 @@ impl<'m> Interpreter<'m> {
         coroutine: &Rc<RefCell<Coroutine>>,
         value_ty: &Type,
     ) -> Result<Value, InterpretError> {
-        let flow = {
-            let mut coroutine = coroutine.borrow_mut();
-            if coroutine.completed {
-                return self.iter_result(true, self.zero(value_ty), value_ty);
-            }
-            self.execute_frame(&mut coroutine.state)?
-        };
+        if coroutine.borrow().completed {
+            return self.iter_result(true, self.zero(value_ty), value_ty);
+        }
+        let flow = self.execute_coroutine(coroutine)?;
         match flow {
             Flow::Returned(_) => {
                 coroutine.borrow_mut().completed = true;
@@ -6162,6 +6190,90 @@ mod tests {
                                      \x20 const b: Promise<i32> = work(2);\n\
                                      \x20 print(`${await a},${await b}`);\n\
                                      }\n";
+
+    #[test]
+    fn running_frame_can_retain_its_own_handle() {
+        let source = SELF_AWAIT.replace(
+            "return await mine;",
+            "print(\"retained\"); return await mine;",
+        );
+        let (module, ()) = interpreter_for(&source);
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        assert_eq!(interpreter.run().expect("self retain"), b"retained\n");
+        assert_eq!(interpreter.async_pending(), 0);
+    }
+
+    #[test]
+    fn child_can_register_on_its_executing_creator() {
+        let source = "async function child(others: Promise<i32>[]): Promise<i32> {
+  return await others[0];
+}
+async function creator(others: Promise<i32>[]): Promise<i32> {
+  await Context.suspend();
+  const waiting: Promise<i32> = child(others);
+  print(\"registered\");
+  return await waiting;
+}
+export async function main(): Promise<void> {
+  const handles: Promise<i32>[] = [];
+  const h: Promise<i32> = creator(handles);
+  handles.push(h);
+  const value: i32 = await h;
+}
+";
+        let (module, ()) = interpreter_for(source);
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        assert_eq!(
+            interpreter.run().expect("child registration"),
+            b"registered\n"
+        );
+        assert_eq!(interpreter.async_pending(), 0);
+        let frames = reachable_frames(&interpreter);
+        assert_eq!(frames.len(), 3);
+        let weak: Vec<_> = frames.iter().map(Rc::downgrade).collect();
+        drop(frames);
+        drop(interpreter);
+        assert!(weak.iter().all(|frame| frame.upgrade().is_none()));
+    }
+
+    #[test]
+    fn interpreter_clearance_stops_the_trapping_continuation() {
+        mod programs {
+            include!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/support/async_review.rs"
+            ));
+        }
+        for (source, expected) in [
+            (programs::BODY, b"m1\nm2\n".as_slice()),
+            (programs::CALLEE, b"m1\nm2\nboom:start\n".as_slice()),
+            (programs::SETTLED, b"m1\nm2\n".as_slice()),
+        ] {
+            let (module, ()) = interpreter_for(source);
+            let mut interpreter = Interpreter::new(&module).expect("interpreter");
+            let error = interpreter.run().expect_err("bounds trap");
+            assert!(matches!(error, InterpretError::Trap { .. }));
+            assert_eq!(interpreter.context.take_stdout(), expected);
+            assert_eq!(interpreter.async_pending(), 1);
+            assert_eq!(interpreter.async_step(), Err(error));
+            for _ in 0..5 {
+                interpreter.clear_trap();
+                assert_eq!(interpreter.async_pending(), 0);
+                interpreter.async_step().expect("idle checkpoint");
+                assert_eq!(interpreter.context.take_stdout(), b"");
+                assert_eq!(interpreter.async_stopped.len(), 1);
+            }
+            let weak = Rc::downgrade(&interpreter.async_stopped[0]);
+            drop(interpreter);
+            assert!(weak.upgrade().is_none());
+        }
+        let (module, ()) = interpreter_for(programs::CONTROL);
+        let mut interpreter = Interpreter::new(&module).expect("control interpreter");
+        assert_eq!(
+            interpreter.run().expect("control advances"),
+            b"m1\nm2\nm3\n"
+        );
+    }
 
     #[test]
     fn teardown_releases_a_mutual_await_cycle() {

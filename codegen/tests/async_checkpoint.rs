@@ -155,23 +155,52 @@ fn quiescence_can_leave_blocked_work_that_the_unfinished_observer_reports() {
 
 #[test]
 fn a_dropped_context_with_pending_work_runs_no_continuation() {
-    let source = "async function work(): Promise<i32> {\n\
-                  \x20 print(\"start\");\n\
-                  \x20 await Context.suspend();\n\
-                  \x20 print(\"never\");\n\
-                  \x20 return 1;\n\
-                  }\n\
-                  export async function main(): Promise<void> {\n\
-                  \x20 print(`v=${await work()}`);\n\
-                  }\n";
-    let mut session = ReloadSession::new(&files(source)).expect("session");
-    kick(&mut session, &[]);
-    assert_eq!(text(&session.take_output()), "start\n");
-    assert_eq!(session.async_pending(), 1);
-    assert_eq!(session.async_unfinished(), 2);
-    // §94.2: release discards the work without resumption. The `never` line
-    // is the observable proof that no continuation ran at teardown.
-    drop(session);
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use subscript_codegen::NativeLibrary;
+
+    static RESUMES: AtomicUsize = AtomicUsize::new(0);
+    extern "C" fn resumed() {
+        RESUMES.fetch_add(1, Ordering::SeqCst);
+    }
+    let source = "async function work(): Promise<i32> {
+  await Context.suspend();
+  resumed();
+  return 1;
+}
+export async function main(): Promise<void> {
+  const value: i32 = await work();
+}
+";
+    let mut sources = files(source);
+    sources.push(SourceFile::ambient(
+        "teardown.generated.d.ts",
+        "// @subscript-c-header include=\"teardown.h\"\ndeclare function resumed(): void;\n",
+    ));
+    // SAFETY: the static callback matches the mirror's void(void) C ABI.
+    let native = unsafe {
+        NativeLibrary::new(
+            Vec::new(),
+            Vec::new(),
+            vec![("resumed".to_string(), resumed as *const u8)],
+        )
+    };
+    for advance in [false, true] {
+        RESUMES.store(0, Ordering::SeqCst);
+        let mut session =
+            ReloadSession::new_with_native_libraries(&sources, std::slice::from_ref(&native))
+                .expect("session");
+        kick(&mut session, &[]);
+        assert_eq!(session.async_pending(), 1);
+        assert_eq!(session.async_unfinished(), 2);
+        assert_eq!(RESUMES.load(Ordering::SeqCst), 0);
+        if advance {
+            assert_eq!(session.async_step().expect("control resumes"), 0);
+        }
+        drop(session);
+        // §94.2: the host counter survives release. The control proves that
+        // this same generated continuation changes the observed counter.
+        assert_eq!(RESUMES.load(Ordering::SeqCst), usize::from(advance));
+    }
 }
 
 #[test]
@@ -270,4 +299,31 @@ fn a_trapped_checkpoint_preserves_its_work_and_repeats_as_a_no_op() {
         assert_eq!(text(&session.take_output()), "");
         assert_eq!(session.async_pending(), pending);
     }
+}
+
+#[test]
+fn self_await_reaches_zero_pending_with_two_unfinished_invocations() {
+    let source = "async function selfish(others: Promise<i32>[]): Promise<i32> {
+  await Context.suspend();
+  const mine: Promise<i32> = others[0];
+  return await mine;
+}
+export async function main(): Promise<void> {
+  const handles: Promise<i32>[] = [];
+  const h: Promise<i32> = selfish(handles);
+  handles.push(h);
+  const value: i32 = await h;
+}
+";
+    let mut session = ReloadSession::new(&files(source)).expect("session");
+    kick(&mut session, &[]);
+    assert_eq!(
+        (session.async_pending(), session.async_unfinished()),
+        (1, 2)
+    );
+    assert_eq!(session.async_step().expect("self registration"), 0);
+    assert_eq!(session.async_unfinished(), 2);
+    assert_eq!(session.async_step().expect("idle checkpoint"), 0);
+    assert_eq!(session.async_unfinished(), 2);
+    drop(session);
 }

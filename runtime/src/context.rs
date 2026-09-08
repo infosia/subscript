@@ -658,6 +658,9 @@ pub struct Context {
     // frames that wait for the next host checkpoint.
     async_ready: VecDeque<*mut u8>,
     async_parked: VecDeque<*mut u8>,
+    // §94.2: clearance transfers the recorded ready job to stopped storage.
+    async_trapping: Option<(*mut u8, TrapKind)>,
+    async_stopped: Vec<*mut u8>,
     active_async_frames: Vec<usize>,
     // §70 held async handles. The reference count itself occupies the
     // frame header's four-byte `reserved` word; Context metadata holds
@@ -790,6 +793,8 @@ impl Context {
             script_depth: 0,
             async_ready: VecDeque::new(),
             async_parked: VecDeque::new(),
+            async_trapping: None,
+            async_stopped: Vec::new(),
             active_async_frames: Vec::new(),
             async_frames: HashMap::new(),
             allocations: HashMap::new(),
@@ -1400,10 +1405,9 @@ impl Context {
     /// during the drain join the same checkpoint; a frame parked during it
     /// waits for the next one. The drain has no job budget.
     ///
-    /// A trap stops the round and preserves the trapping root plus every
-    /// not-yet-stepped root. Consequently clearing a reload-staleness trap
-    /// and stepping again observes the same stale frame, matching §8.2's
-    /// coroutine behavior.
+    /// A trap preserves the ready head until clearance (§94.2).
+    /// Clearance stops that frame permanently, except for reload staleness.
+    /// A stale frame remains ready and reports again after clearance.
     ///
     /// # Safety
     ///
@@ -1440,8 +1444,11 @@ impl Context {
             let done = unsafe { resume(ctx, frame, storage.out()) };
             self.active_async_frames.pop();
             if self.trapped() {
-                // The existing trap policy preserves the trapping entry and
-                // every entry the round has not reached.
+                // §94.2: preserve pending until host clearance. Record the
+                // kind now; only reload staleness permits another resume.
+                if let Some(trap) = self.trap_record() {
+                    self.async_trapping = Some((frame, trap.kind));
+                }
                 self.async_ready.push_front(frame);
                 break;
             }
@@ -1603,8 +1610,9 @@ impl Context {
     /// (`specs/blocks/compiler.md` §8.2: a trap does not end the dev
     /// session).
     ///
-    /// Only trap *reporting* state and unfinished transient JSON builders
-    /// are touched. Allocations, globals, roots, the stdout sink, and the
+    /// Clearance also stops the recorded async job, except for reload
+    /// staleness (§94.2), and discards unfinished transient JSON builders.
+    /// Allocations, globals, roots, the stdout sink, and the
     /// reload epoch are all untouched, so nothing a trap protected
     /// against becomes reachable again: a deleted allocation stays
     /// poisoned and a stale coroutine stays stale (its frame epoch still
@@ -1616,6 +1624,12 @@ impl Context {
     /// frame is live would resume a run that has already given up.
     /// [`Context::script_depth`] is the check.
     pub fn clear_trap(&mut self) {
+        if let Some((frame, kind)) = self.async_trapping.take() {
+            if kind != TrapKind::StaleCoroutine {
+                self.async_ready.retain(|queued| *queued != frame);
+                self.async_stopped.push(frame);
+            }
+        }
         self.trap = None;
         self.trap_flag = 0;
         // A trapping JSON operation may unwind before its finish leaf on
@@ -2817,6 +2831,12 @@ impl Context {
             .enumerate()
             .map(|(index, frame)| (index, 0, *frame as usize));
         self.push_root_set(&mut work, &mut tracer, "async_parked", async_parked);
+        let async_stopped = self
+            .async_stopped
+            .iter()
+            .enumerate()
+            .map(|(index, frame)| (index, 0, *frame as usize));
+        self.push_root_set(&mut work, &mut tracer, "async_stopped", async_stopped);
         let async_blocked = self
             .async_frames
             .values()

@@ -6921,10 +6921,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         self.suspend_after_await(plan)
     }
 
-    // B1 experiment: the resume side of an await. The scheduler runs it only
-    // after the awaited handle completes, so the cached result is present.
-    // A missing result re-registers the continuation instead of continuing
-    // with an unwritten value.
+    // §94.1: a resumed await reads the cached completion. A missing result
+    // calls async_missing_completion and unwinds with an Internal trap.
+    // It never re-registers the continuation.
     fn resume_async_child(
         &mut self,
         block: l::BlockId,
