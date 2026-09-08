@@ -12990,8 +12990,9 @@ this is not a new source-language trap or a library panic.
 ### 94.2 Host API, traps, and lifetime
 
 `async_pending` returns ready jobs plus parked registrations, including
-preserved trapping jobs. It excludes blocked continuations and completed
-frames retained only by handles. `async_step` returns this count.
+a trapping job that the Context still holds trapped. It excludes blocked
+continuations, stopped frames, and completed frames retained only by
+handles. `async_step` returns this count.
 
 `subscript_rt_ctx_async_unfinished` returns the number of registered
 async invocations without a cached completion. `ReloadSession` exposes
@@ -13014,6 +13015,30 @@ registration and all other outstanding work. Repeated steps are no-ops
 until host clearance. Clearing the trap does not clear frame staleness.
 A stale async resume traps at the suspension position before body effects.
 The JIT retains old code while queued frames can reference it.
+
+*(Added 2026-09-09, after the Phase Review measured a replay.)* **A
+trap inside a resumed continuation stops that frame permanently.** The
+host clears the trap and steps again; the checkpoint then advances
+every other registration, and the trapping frame never re-enters the
+ready queue. Its registration stays until Context release.
+`async_pending` excludes a stopped frame, because nothing can advance
+it. `async_unfinished` includes it, because it holds no cached
+completion. Waiters on its handle stay blocked, and `async_unfinished`
+reports them.
+
+The reason is the saved state. A frame stores the state word of the
+suspension it resumes from, and it writes the next state word only when
+it suspends again. A trap between those two points leaves the word
+naming the earlier suspension, so a second resume repeats every effect
+between that suspension and the trap. The review measured the replay:
+a body that prints, awaits `Context.suspend()`, prints again, and then
+traps on an out-of-range index re-printed its second line and leaked
+one allocation on each cleared step, without advancing.
+
+The dev-tier reload staleness trap is the one exception. It reports at
+the adapter head before any body effect, so the frame is unchanged and
+stays ready. Clearing that trap and stepping again reports it again,
+as §18.2b has it. Every other trap stops the frame.
 
 A registration owns a reference independent of caller handles. That
 ownership transfers between ready, parked, blocked, and active states.
@@ -13056,6 +13081,27 @@ Use the next free corpus IDs. Add direct host tests for exact checkpoint
 boundaries, quiescence counts, and the unfinished observer. A finite long
 settled chain finishes in one checkpoint. A self-await control reaches
 pending zero with unfinished work and releases its Context safely.
+
+*(Added 2026-09-09 by the Phase Review.)* Three more host tests, each
+through generated code and a real Context, not a synthetic frame:
+
+- **A cleared trap does not replay.** A body prints, awaits
+  `Context.suspend()`, prints again, then traps. The host clears the
+  trap and steps five times. The second print appears once. The
+  allocation count does not grow across those steps, and pending
+  reaches zero while unfinished stays positive.
+- **A cleared trap in a started callee does not replay either**, and it
+  leaks no registration: `unfinished` does not grow across cleared
+  steps.
+- **Teardown runs no continuation, and the test can fail.** The existing
+  Context-level test holds a counter that a resumed continuation would
+  increment. The `ReloadSession` test must observe the same fact after
+  the drop, not only before it.
+
+The self-await control is a host test with the `unfinished` observer,
+not an interpreter test. A mutual two-frame wait does not stand in for
+it: self-registration appends a frame to its own waiter list, which is
+a distinct path.
 
 Carry B2's ready and parked reload, trap-retry, and blocked-parent tests
 into permanent tests. Assert exact positions from independent source
