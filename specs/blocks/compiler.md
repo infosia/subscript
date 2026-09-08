@@ -128,7 +128,7 @@ Every section, with its status:
 | §91 | The tutorials' programs run in the gate | active |
 | §92 | An async call starts its body at the call | active |
 | §93 | An async method declares type parameters | active |
-| §94 | Host-driven async continuation queue | contracted; implementation pending |
+| §94 | Host-driven async continuation queue | active |
 
 ## 1. Architecture
 
@@ -3770,7 +3770,7 @@ is also awaitable.)*
 
 ### 26.2 Lowering (both tiers)
 
-*(Revised 2026-09-08 by §94; implementation pending.)*
+*(Revised 2026-09-08 by §94, landed 2026-09-09.)*
 Async frames use the continuation protocol in §68.7.4 and §94.
 Every await suspends. A call starts its callee, but an await never
 resumes that callee. Completion queues the caller's continuation.
@@ -12604,7 +12604,7 @@ and "exports take no arguments". No test reads `docs/`.
 
 ## 92. An async call starts its body at the call
 
-*(Revised 2026-09-08 by §94; implementation pending.)* §94 supersedes
+*(Revised 2026-09-08 by §94, landed 2026-09-09.)* §94 supersedes
 this section's completed-await, root-exclusion, and concurrent-progress
 rules. The measurements below record the earlier implementation.
 
@@ -12924,7 +12924,7 @@ on this host with exit 1.
 ## 94. Host-driven async continuation queue
 
 *(Contract decision 2026-09-08, Codex as the owner-assigned
-orchestrator. Implementation pending.)*
+orchestrator. Landed 2026-09-09.)*
 
 Baseline pin: `d8cc19c34ac5e2db27bdc0411d5210924528029b`.
 B1 and B2 measured both production tiers at that pin. The permanent

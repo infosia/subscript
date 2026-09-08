@@ -115,7 +115,8 @@ void subscript_init(subscript_rt_context* ctx);
 void subscript_export_main(subscript_rt_context* ctx);
 
 /**
- * Returns the number of suspended async root invocations owned by `ctx`.
+ * Returns the work a host checkpoint can advance: runnable continuations
+ * plus frames that wait for the next checkpoint.
  *
  * # Safety
  *
@@ -123,16 +124,24 @@ void subscript_export_main(subscript_rt_context* ctx);
  */
 uint64_t subscript_rt_ctx_async_pending(const subscript_rt_context* ctx);
 /**
- * Resumes every root pending at call entry exactly once, in host kick
- * order, and returns the number still pending. On a trapped subscript_rt_context this
+ * Makes every parked waiter runnable, then drains the ready queue to
+ * empty, and returns the work still pending. On a trapped subscript_rt_context this
  * is a no-op returning the current count; an empty subscript_rt_context returns zero.
  *
  * # Safety
  *
  * `ctx` follows the exclusive subscript_rt_context contract. Generated code for every
- * pending root remains linked and callable.
+ * registered frame remains linked and callable.
  */
 uint64_t subscript_rt_ctx_async_step(subscript_rt_context* ctx);
+/**
+ * Returns the number of started invocations without a completion.
+ *
+ * # Safety
+ *
+ * `ctx` follows the shared subscript_rt_context contract.
+ */
+uint64_t subscript_rt_ctx_async_unfinished(const subscript_rt_context* ctx);
 int32_t subscript_rt_ctx_clear_trap(subscript_rt_context* ctx);
 void subscript_rt_ctx_enter_script(subscript_rt_context* ctx);
 void subscript_rt_ctx_exit_script(subscript_rt_context* ctx);

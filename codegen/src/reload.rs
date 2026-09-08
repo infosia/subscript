@@ -924,8 +924,17 @@ impl ReloadSession {
         self.ctx.async_pending()
     }
 
-    /// Polls every async root pending at call entry once, in kick order,
-    /// and returns the number still pending.
+    /// The number of registered async invocations without a cached
+    /// completion (`compiler.md` §94.2). A reload host reads it beside
+    /// [`ReloadSession::async_pending`] to tell quiescence from blocked
+    /// work. It executes no script.
+    #[must_use]
+    pub fn async_unfinished(&self) -> usize {
+        self.ctx.async_unfinished()
+    }
+
+    /// Runs one host checkpoint (`compiler.md` §94.1) and returns the work
+    /// still pending.
     ///
     /// This does not clear a pending trap: the runtime's trapped-Context
     /// no-op rule remains observable. Old JIT generations are retained by
@@ -1220,6 +1229,168 @@ mod tests {
             Err(RunError::Trap(trap)) => assert_eq!(trap.rule, TrapKind::StaleCoroutine),
             other => panic!("expected stale async-frame trap, got {other:?}"),
         }
+    }
+
+    // ----- §94 async reload: one test per scheduler state -----
+
+    /// The 1-based line and column of `needle` in `source`, so a position
+    /// assertion is derived from the program rather than from a repeat of
+    /// the report it checks (CLAUDE.md core principle 9).
+    fn source_position(source: &str, needle: &str) -> (u32, u32) {
+        let offset = source.find(needle).expect("the program contains the site");
+        let line = source[..offset].matches('\n').count() + 1;
+        let column = offset - source[..offset].rfind('\n').map_or(0, |index| index + 1) + 1;
+        (line as u32, column as u32)
+    }
+
+    /// The host trap-clear mechanism, exactly as an embedding host calls it.
+    fn host_clear_trap(session: &mut ReloadSession) -> i32 {
+        let ctx: *mut Context = &mut *session.ctx;
+        // SAFETY: the session owns this Context and no script frame is live.
+        unsafe { subscript_runtime::ffi::subscript_rt_ctx_clear_trap(ctx) }
+    }
+
+    fn expect_stale(result: Result<usize, RunError>, what: &str) -> TrapReport {
+        match result {
+            Err(RunError::Trap(trap)) => {
+                assert_eq!(trap.rule, TrapKind::StaleCoroutine, "{what}: trap kind");
+                assert_eq!(
+                    trap.message, "stale coroutine after reload",
+                    "{what}: trap message"
+                );
+                trap
+            }
+            other => panic!("{what}: expected a stale-coroutine trap, got {other:?}"),
+        }
+    }
+
+    const READY_ROOT: &str = "async function settled(): Promise<i32> {\n\
+                              \x20 return 7;\n\
+                              }\n\
+                              export async function main(): Promise<void> {\n\
+                              \x20 print(\"before\");\n\
+                              \x20 const h: Promise<i32> = settled();\n\
+                              \x20 const v: i32 = await h;\n\
+                              \x20 print(`old ${v}`);\n\
+                              }\n";
+
+    const BLOCKED_PARENT: &str = "async function child(): Promise<i32> {\n\
+                                  \x20 print(\"child:before\");\n\
+                                  \x20 await Context.suspend();\n\
+                                  \x20 print(\"child:old\");\n\
+                                  \x20 return 5;\n\
+                                  }\n\
+                                  export async function main(): Promise<void> {\n\
+                                  \x20 print(\"main:before\");\n\
+                                  \x20 const h: Promise<i32> = child();\n\
+                                  \x20 const v: i32 = await h;\n\
+                                  \x20 print(`main:old ${v}`);\n\
+                                  }\n";
+
+    /// A ready job carries a reload's staleness: the checkpoint resumes it,
+    /// the epoch check fires before any body effect, and clearing the trap
+    /// does not clear the staleness (`compiler.md` §94.2).
+    #[test]
+    fn a_ready_async_job_is_stale_after_reload_and_stays_stale() {
+        let after = READY_ROOT.replace("old ", "new ");
+        let mut session = ReloadSession::new(&src(READY_ROOT)).expect("session");
+        session.call_main().expect("async kick");
+        assert_eq!(session.take_output(), b"before\n");
+        // An await of an already-completed handle leaves a ready job, so the
+        // reload finds work in the ready queue rather than the parked list.
+        assert_eq!(session.async_pending(), 1);
+        assert_eq!(session.async_unfinished(), 1);
+
+        session.reload(&src(&after)).expect("body-only reload");
+
+        // The position is the suspension's, derived from the program.
+        let (line, column) = source_position(READY_ROOT, "await h");
+        let trap = expect_stale(session.async_step(), "first step after the reload");
+        assert_eq!((trap.pos.line, trap.pos.col), (line, column));
+        assert_eq!(trap.pos.file, "live.ts");
+        assert_eq!(session.take_output(), b"", "no post-await body ran");
+        assert_eq!(session.async_pending(), 1, "the trapping job is preserved");
+
+        // Repeated steps while the trap is set are no-ops.
+        let again = expect_stale(session.async_step(), "second step while trapped");
+        assert_eq!(again.pos, trap.pos);
+        assert_eq!(session.take_output(), b"");
+        assert_eq!(session.async_pending(), 1);
+
+        // Clearing the trap does not clear frame staleness.
+        assert_eq!(
+            host_clear_trap(&mut session),
+            1,
+            "the host cleared the trap"
+        );
+        let third = expect_stale(session.async_step(), "step after the trap clear");
+        assert_eq!(third.pos, trap.pos);
+        assert_eq!(session.take_output(), b"");
+        assert_eq!(session.async_pending(), 1);
+    }
+
+    /// A parked frame carries the same staleness, at its own suspension.
+    #[test]
+    fn a_parked_async_frame_reports_its_own_suspension_position() {
+        let before = "export async function main(): Promise<void> {\n\
+                      \x20 print(\"before\");\n\
+                      \x20 await Context.suspend();\n\
+                      \x20 print(\"old continuation\");\n\
+                      }\n";
+        let after = before.replace("old continuation", "new continuation");
+        let mut session = ReloadSession::new(&src(before)).expect("session");
+        session.call_main().expect("async kick");
+        assert_eq!(session.take_output(), b"before\n");
+        assert_eq!(session.async_pending(), 1);
+        session.reload(&src(&after)).expect("body-only reload");
+        let (line, column) = source_position(before, "await Context.suspend()");
+        let trap = expect_stale(session.async_step(), "step after the reload");
+        assert_eq!((trap.pos.line, trap.pos.col), (line, column));
+        assert_eq!(session.take_output(), b"");
+        assert_eq!(session.async_pending(), 1);
+    }
+
+    /// A blocked parent stays blocked when its parked child traps first. The
+    /// checkpoint stops at the child, so the parent's own stale check does
+    /// not run, and its registration is preserved.
+    #[test]
+    fn a_blocked_parent_keeps_waiting_when_its_parked_child_is_stale() {
+        let after = BLOCKED_PARENT
+            .replace("child:old", "child:new")
+            .replace("main:old", "main:new");
+        let mut session = ReloadSession::new(&src(BLOCKED_PARENT)).expect("session");
+        session.call_main().expect("async kick");
+        assert_eq!(session.take_output(), b"main:before\nchild:before\n");
+        // The child parked; the parent is a continuation registered on it,
+        // so it is unfinished but not pending work of its own.
+        assert_eq!(session.async_pending(), 1);
+        assert_eq!(session.async_unfinished(), 2);
+
+        session.reload(&src(&after)).expect("body-only reload");
+
+        // The child is the frame the checkpoint reaches, so the report names
+        // the child's suspension, not the parent's await.
+        let (line, column) = source_position(BLOCKED_PARENT, "await Context.suspend()");
+        let trap = expect_stale(session.async_step(), "first step after the reload");
+        assert_eq!((trap.pos.line, trap.pos.col), (line, column));
+        assert_eq!(session.take_output(), b"", "no post-await body ran");
+        assert_eq!(session.async_pending(), 1);
+        assert_eq!(session.async_unfinished(), 2, "the parent stays blocked");
+
+        let again = expect_stale(session.async_step(), "second step while trapped");
+        assert_eq!(again.pos, trap.pos);
+        assert_eq!(session.take_output(), b"");
+        assert_eq!(session.async_unfinished(), 2);
+
+        assert_eq!(
+            host_clear_trap(&mut session),
+            1,
+            "the host cleared the trap"
+        );
+        let third = expect_stale(session.async_step(), "step after the trap clear");
+        assert_eq!(third.pos, trap.pos);
+        assert_eq!(session.take_output(), b"");
+        assert_eq!(session.async_unfinished(), 2);
     }
 
     #[test]

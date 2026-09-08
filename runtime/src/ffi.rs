@@ -317,8 +317,51 @@ pub unsafe extern "C" fn subscript_rt_async_kick(
 ///
 /// Shared contract; `frame` is a fresh live generated async frame owned by `ctx`.
 #[no_mangle]
-pub unsafe extern "C" fn subscript_rt_async_register(ctx: *mut Context, frame: *mut u8) {
-    unsafe { &mut *ctx }.async_register(frame);
+pub unsafe extern "C" fn subscript_rt_async_register(
+    ctx: *mut Context,
+    frame: *mut u8,
+    result_size: u64,
+) {
+    unsafe { &mut *ctx }.async_register(frame, result_size as usize);
+}
+
+/// Parks a frame suspended at `Context.suspend()` (`compiler.md` §94.1
+/// rule 3). The next host checkpoint makes it runnable.
+///
+/// # Safety
+///
+/// Shared contract; `frame` is a registered async frame owned by `ctx`.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_park(ctx: *mut Context, frame: *mut u8) {
+    unsafe { &mut *ctx }.async_park(frame);
+}
+
+/// Registers `frame` as a continuation of `handle` (`compiler.md` §94.1
+/// rules 4 to 6).
+///
+/// # Safety
+///
+/// Shared contract; both are registered async frames owned by `ctx`.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_await(
+    ctx: *mut Context,
+    frame: *mut u8,
+    handle: *mut u8,
+) {
+    unsafe { &mut *ctx }.async_await(frame, handle);
+}
+
+/// Reports a scheduled await resume whose awaited handle carries no
+/// completion (`compiler.md` §94.1). This is an internal protocol defect,
+/// never a source-language trap, and no consumer recovers from it.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_missing_completion(ctx: *mut Context, pos_id: u32) {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.async_missing_completion(pos_id);
 }
 
 /// Copies a held async handle, incrementing its frame count.
@@ -5023,7 +5066,8 @@ pub unsafe extern "C" fn subscript_rt_ctx_clear_trap(ctx: *mut Context) -> i32 {
     1
 }
 
-/// Returns the number of suspended async root invocations owned by `ctx`.
+/// Returns the work a host checkpoint can advance: runnable continuations
+/// plus frames that wait for the next checkpoint.
 ///
 /// # Safety
 ///
@@ -5034,14 +5078,25 @@ pub unsafe extern "C" fn subscript_rt_ctx_async_pending(ctx: *const Context) -> 
     unsafe { &*ctx }.async_pending() as u64
 }
 
-/// Resumes every root pending at call entry exactly once, in host kick
-/// order, and returns the number still pending. On a trapped Context this
+/// Returns the number of started invocations without a completion.
+///
+/// # Safety
+///
+/// `ctx` follows the shared Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_async_unfinished(ctx: *const Context) -> u64 {
+    // SAFETY: shared Context contract.
+    unsafe { &*ctx }.async_unfinished() as u64
+}
+
+/// Makes every parked waiter runnable, then drains the ready queue to
+/// empty, and returns the work still pending. On a trapped Context this
 /// is a no-op returning the current count; an empty Context returns zero.
 ///
 /// # Safety
 ///
 /// `ctx` follows the exclusive Context contract. Generated code for every
-/// pending root remains linked and callable.
+/// registered frame remains linked and callable.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_ctx_async_step(ctx: *mut Context) -> u64 {
     // SAFETY: exclusive Context contract and queued callbacks were installed

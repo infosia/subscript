@@ -1,10 +1,10 @@
 start1
 leaf
-end1
 start2
 leaf
+end1
 end2
 outer:start
 inner
-outer:end
 main:mid
+outer:end

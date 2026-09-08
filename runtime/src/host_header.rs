@@ -61,6 +61,10 @@ pub fn render() -> Result<String, String> {
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_async_step",
     )?;
+    let async_unfinished_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_async_unfinished",
+    )?;
     let mut functions = parse_functions(FFI_SOURCE, "subscript_rt_ctx_")?;
     functions.sort_by(|a, b| a.name.cmp(&b.name));
     let mut worker_functions = parse_functions(FFI_SOURCE, "subscript_rt_worker_")?;
@@ -179,6 +183,9 @@ pub fn render() -> Result<String, String> {
         }
         if function.name == "subscript_rt_ctx_async_step" {
             push_comment(&mut out, &async_step_docs);
+        }
+        if function.name == "subscript_rt_ctx_async_unfinished" {
+            push_comment(&mut out, &async_unfinished_docs);
         }
         out.push_str(&c_function(&function.name, function)?);
         out.push_str(";\n");
@@ -459,11 +466,16 @@ mod tests {
     }
 
     #[test]
-    fn generated_host_header_documents_async_polling() {
+    fn generated_host_header_documents_the_async_checkpoint() {
         let header = render().expect("render host header");
         assert!(header.contains("subscript_rt_ctx_async_pending"));
         assert!(header.contains("subscript_rt_ctx_async_step"));
-        assert!(header.contains("every root pending at call entry exactly once"));
+        assert!(header.contains("subscript_rt_ctx_async_unfinished"));
+        // The three observers of `compiler.md` §94.2: what a checkpoint can
+        // advance, what one checkpoint does, and what stays unfinished.
+        assert!(header.contains("runnable continuations"));
+        assert!(header.contains("drains the ready queue to\n * empty"));
+        assert!(header.contains("started invocations without a completion"));
         assert!(header.contains("On a trapped subscript_rt_context this\n * is a no-op"));
     }
 

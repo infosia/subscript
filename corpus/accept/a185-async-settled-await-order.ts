@@ -1,10 +1,8 @@
 // corpus: accept/a185-async-settled-await-order
-// purpose: Pins the settled-await order without a microtask queue.
+// purpose: Pins the settled-await order that the host checkpoint produces.
 // exercises: async-call, direct-await, held-handle, settled-await
-// questions: Q34
-// tsc: accepts; js-comparable: no C16: Settled awaits continue in the same step.
-// node-order: start1 leaf start2 leaf end1 end2
-// node-order: outer:start inner main:mid outer:end
+// questions: §94, Q34
+// tsc: accepts; js-comparable: yes
 async function leaf(): Promise<void> {
   print("leaf");
 }

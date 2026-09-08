@@ -629,13 +629,26 @@ export async function main(): Promise<void> {
         .expect("hand-built async C emission")
         .source;
 
+    // §94.1 rules 2 and 3: an await registers and returns, so a child slot
+    // is cleared on exactly one path, the scheduled resume. There is no
+    // inline completion path to clear a second time.
     assert_eq!(
         source.matches("_child = NULL;").count(),
-        4,
-        "both initial and resumed paths must clear both child members"
+        2,
+        "each child member is cleared once, on its resume path"
     );
-    assert_eq!(source.matches("frame->b0_child = NULL;").count(), 2);
-    assert_eq!(source.matches("frame->b1_child = NULL;").count(), 2);
+    assert_eq!(source.matches("frame->b0_child = NULL;").count(), 1);
+    assert_eq!(source.matches("frame->b1_child = NULL;").count(), 1);
+    // The suspension registers the caller and returns; it never resumes the
+    // child it created.
+    for block in ["b0", "b1"] {
+        let register = format!("subscript_rt_async_await(ctx, frame, frame->{block}_child)");
+        assert_eq!(
+            source.matches(register.as_str()).count(),
+            1,
+            "{block} registers exactly one continuation"
+        );
+    }
     let release = source
         .find("subscript_rt_async_release(ctx, frame->b0_child")
         .expect("direct async call releases its child");
@@ -1321,6 +1334,13 @@ const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
         "async body traps at the call before the caller continues",
         "unreachable-reached",
         9,
+        3,
+    ),
+    (
+        "t55-async-trap-after-settled-await",
+        "async body traps inside the checkpoint that runs its continuation",
+        "unreachable-reached",
+        15,
         3,
     ),
 ];
@@ -2395,7 +2415,7 @@ fn async_binding_crosses_resume_as_an_ssa_value() {
 }
 
 #[test]
-fn started_handles_keep_descendants_out_of_the_root_queue_and_cache_aggregate_results() {
+fn started_handles_progress_independently_and_cache_aggregate_results() {
     let sources = [SourceFile::new(
         "started-handles.ts",
         r#"
@@ -2445,10 +2465,13 @@ export async function main(): Promise<void> {
     )];
     let hir = check_program(&sources).expect("started handles check");
     let module = lower_module(&hir).expect("started handles lower");
-    // Without child roots: after-pump, leaf1:mid, leaf1:end, chain1:end,
-    // leaf2:mid, leaf2:end, chain2:end, sum. Queued children run their
-    // leaf1:mid and leaf2:mid before after-pump, during the first pump.
-    let expected = b"value:start\nvalue:held\nvalue=3,4\nchain1:start\nleaf1:start\nchain2:start\nleaf2:start\nheld\nafter-pump\nleaf1:mid\nleaf1:end\nchain1:end\nleaf2:mid\nleaf2:end\nchain2:end\nsum=3\n";
+    // §94.1: both held chains progress together, and their order does not
+    // depend on the holder's await order. Checkpoint 2 promotes the two
+    // parked leaves before the parked holder, so `leaf1:mid leaf2:mid`
+    // precede `after-pump`; the leaves park again, so their `end` lines
+    // wait for checkpoint 3. The completed `value` handle survives an
+    // explicit collection and answers both of its awaits from one cache.
+    let expected = b"value:start\nvalue:held\nvalue=3,4\nchain1:start\nleaf1:start\nchain2:start\nleaf2:start\nheld\nleaf1:mid\nleaf2:mid\nafter-pump\nleaf1:end\nleaf2:end\nchain1:end\nchain2:end\nsum=3\n";
     assert_eq!(
         interpret(&module).expect("started handles interpret"),
         expected

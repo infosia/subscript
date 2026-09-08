@@ -8536,6 +8536,8 @@ fn verify_terminator_types(
         l::Terminator::Trap(_) | l::Terminator::Unreachable { .. } => {}
         l::Terminator::Suspend {
             kind,
+            pos,
+            traps,
             successor,
             resume_value,
             arguments,
@@ -8602,6 +8604,19 @@ fn verify_terminator_types(
                 }
                 l::SuspendKind::Async => {}
                 l::SuspendKind::AsyncCall { target, operands } => {
+                    // §94.1 rule 4: the suspension creates and starts a
+                    // frame, so its target is an async function.
+                    let declared_async = match target.kind {
+                        l::CallTargetKind::Function(id) => declared_function(module, id),
+                        l::CallTargetKind::Method(id) => declared_method_function(module, id),
+                        _ => None,
+                    };
+                    if declared_async.is_none_or(|function| !function.is_async) {
+                        errors.push(finding(
+                            function,
+                            format!("block {} async-call target is not async", block.id.0),
+                        ));
+                    }
                     if let Some((parameters, result)) =
                         declared_call_signature(module, &target.kind, &target.parameter_types)
                     {
@@ -8655,6 +8670,23 @@ fn verify_terminator_types(
                     }
                 }
                 l::SuspendKind::AsyncHandle { handle } => {
+                    // §94.1: a held await resumes from the scheduler, so its
+                    // stale-coroutine site must exist and must carry the
+                    // suspension's own position. The resume reports there,
+                    // before any body effect.
+                    let stale: Vec<&l::Trap> = traps
+                        .iter()
+                        .filter(|trap| trap.kind == l::TrapKind::DevReloadOnlyStaleCoroutine)
+                        .collect();
+                    if stale.len() != 1 || stale[0].pos != *pos {
+                        errors.push(finding(
+                            function,
+                            format!(
+                                "block {} held await needs one stale-coroutine site at its own position",
+                                block.id.0
+                            ),
+                        ));
+                    }
                     let Some(l::ValueType::Data(Type::AsyncHandle(value))) =
                         value_type(function, *handle)
                     else {

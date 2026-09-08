@@ -324,7 +324,7 @@ fn documentation_blocks() {
             "README.md" => 1,
             "docs/tutorial-c-cpp.md" => 11,
             "docs/tutorial-rust.md" => 3,
-            "docs/tutorial-typescript.md" => 16,
+            "docs/tutorial-typescript.md" => 17,
             _ => panic!("{file}: add the measured TypeScript fence count to the scope table"),
         };
         assert_eq!(

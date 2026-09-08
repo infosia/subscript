@@ -108,6 +108,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t46-callback-userdata-freed" => (TrapKind::CallbackUserdataFreed, 31, 43),
         "t47-unreachable-reached" => (TrapKind::UnreachableReached, 10, 3),
         "t54-async-start-fault" => (TrapKind::UnreachableReached, 9, 3),
+        "t55-async-trap-after-settled-await" => (TrapKind::UnreachableReached, 15, 3),
         "t48-wire-enum-unknown-value" => (TrapKind::WireEnumUnknownValue, 10, 30),
         "t49-wire-enum-struct-unknown-member" => (TrapKind::WireEnumUnknownValue, 12, 36),
         "t50-wire-entry-unknown-value" => (TrapKind::WireEnumUnknownValue, 8, 27),

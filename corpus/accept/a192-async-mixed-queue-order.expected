@@ -1,0 +1,12 @@
+A:parked-start
+A:ready-start
+A:held
+B:ready-start
+B:parked-start
+B:held
+A:ready-resume
+B:ready-resume
+A:parked-resume
+B:parked-resume
+B=3
+A=3

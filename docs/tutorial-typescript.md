@@ -427,10 +427,10 @@ produced before the fault.
 
 `async` and `await` are accepted, and they mean something narrower
 than in JavaScript. **Nothing schedules the resumption.** A pending `await`
-suspends the function and every caller up to the entry point. The
-computation continues when the host steps it. There is no event loop,
-no microtask queue, and no `Promise` object at run time. `Promise<T>`
-in an annotation is the `tsc` view of a Context-owned handle.
+suspends the function. The computation continues when the host steps
+it. There is no event loop and no `Promise` object at run time.
+`Promise<T>` in an annotation is the `tsc` view of a Context-owned
+handle.
 
 ```ts
 let clock: i32 = 0;
@@ -460,24 +460,65 @@ passes to another function. Every handle a program creates must have
 one awaited completion. `new Promise`, `.then`, `Promise.all`, and the
 other statics do not exist.
 
-An async call runs the callee to its first suspension at the call.
-A callee that never awaits completes at the call.
-An await of a completed handle continues in the same step, where JavaScript yields
-([C16](../specs/blocks/collisions.md#c16-an-await-of-a-completed-handle-does-not-yield)).
+An async call runs the callee to its first await at the call. A callee
+that never awaits completes at the call, and its handle carries the
+result.
 
-Three reasons shape this, and each follows from a decision the
-repository records:
+**Every `await` suspends its caller**, a completed handle included. The
+await registers the caller as a continuation of the awaited work and
+returns. It never resumes that work itself. When the awaited handle
+completes, its registered continuations join a first-in, first-out
+ready queue.
 
-1. **`await` needs a decision about when work resumes.** In JavaScript
-   the event loop decides. Here the host owns the loop, so the host's
-   explicit step is the only resumption.
-2. **A stored pending promise assumes a collector.** Its continuation
-   chain stays alive until something reclaims it. That lifetime has no
-   answer without a collector, so a suspended frame stays owned by its
-   Context and the Context's release drops it.
-3. **Both execution tiers must produce identical bytes.** A microtask
-   queue is scheduler state to reproduce exactly in the JIT and in the
-   emitted C. Host-stepped suspension has no such state.
+**Only the host runs that queue.** One host step makes the frames that
+waited for a step runnable, after the jobs that are already ready, and
+then runs the queue until it is empty. A frame that waits for a step
+during that run waits for the next one. So a call never runs another
+frame's continuation, and two held calls make progress together rather
+than in the order their holder awaits them:
+
+```ts
+async function leaf(tag: string): Promise<i32> {
+  print(`${tag}:leaf`);
+  return 1;
+}
+
+async function chain(tag: string): Promise<i32> {
+  print(`${tag}:start`);
+  const value: i32 = await leaf(tag);
+  print(`${tag}:end`);
+  return value + 1;
+}
+
+export async function main(): Promise<void> {
+  const a: Promise<i32> = chain("A");
+  const b: Promise<i32> = chain("B");
+  print("main:mid");
+  print(`a=${await a} b=${await b}`);
+}
+```
+
+```text
+A:start
+A:leaf
+B:start
+B:leaf
+main:mid
+A:end
+B:end
+a=2 b=2
+```
+
+That is JavaScript's order for the same program, and this language
+reaches it without an event loop: the queue advances only inside the
+host's step.
+
+Two consequences follow. A host step has no work budget, so a chain of
+completed awaits that never ends keeps one step from returning;
+`Context.suspend()` is the boundary a program uses to hand control back.
+And a host that sees no pending work has not proved that every call
+finished: `subscript_rt_ctx_async_unfinished` reports invocations that
+are still waiting on something nothing will complete.
 
 A failed `await` returns a value; it does not throw.
 

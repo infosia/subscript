@@ -6716,7 +6716,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     self.store_data(&ty, output, 0, value)?;
                 }
             }
-            l::SuspendKind::Async => {}
+            l::SuspendKind::Async => {
+                // B1 experiment rule 8: a `Context.suspend()` waiter becomes
+                // eligible at the next host checkpoint.
+                self.call_runtime(self.ml.rt.async_park, &[self.ctx, frame], false)?;
+            }
             l::SuspendKind::AsyncCall { target, operands } => {
                 let child = self.create_async_child(target, operands, traps)?;
                 let child_offset = plan
@@ -6725,7 +6729,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.builder
                     .ins()
                     .store(flags(), child, frame, child_offset as i32);
-                return self.resume_async_child(block, target, child, &plan);
+                // B1 experiment rule 1: the call runs the callee's prefix.
+                self.start_async_handle(target, child)?;
+                return self.await_async_child(block, child, &plan, traps, true);
             }
             l::SuspendKind::AsyncHandle { handle } => {
                 let handle_value = self.value(*handle)?;
@@ -6736,7 +6742,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.builder
                     .ins()
                     .store(flags(), handle, frame, handle_offset as i32);
-                return self.resume_async_handle(block, handle, &plan, traps, true);
+                return self.await_async_handle(block, handle, &plan, traps, true);
             }
         }
         let state = self.iconst(types::I32, plan.state);
@@ -6849,6 +6855,76 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(())
     }
 
+    // B1 experiment: an await registers a continuation and suspends. It
+    // never resumes the awaited child. The scheduler resumes the caller
+    // after the child completes, and the caller reads the cached result.
+    fn suspend_after_await(&mut self, plan: &SuspendPlan) -> Result<(), String> {
+        let frame = self
+            .frame
+            .ok_or_else(|| internal("await has no parent frame"))?;
+        let state = self.iconst(types::I32, plan.state);
+        self.builder.ins().store(flags(), state, frame, 0);
+        self.pop_shadow()?;
+        let zero = self.iconst(types::I8, 0);
+        self.builder.ins().return_(&[zero]);
+        Ok(())
+    }
+
+    fn await_async_child(
+        &mut self,
+        block: l::BlockId,
+        child: Value,
+        plan: &SuspendPlan,
+        traps: &[l::Trap],
+        consume_traps: bool,
+    ) -> Result<(), String> {
+        // The `Call` trap of a direct await is consumed where the child is
+        // created, exactly as it was before this experiment.
+        let _ = (block, traps, consume_traps);
+        let frame = self
+            .frame
+            .ok_or_else(|| internal("async parent has no frame"))?;
+        self.call_runtime(self.ml.rt.async_await, &[self.ctx, frame, child], false)?;
+        self.suspend_after_await(plan)
+    }
+
+    fn await_async_handle(
+        &mut self,
+        block: l::BlockId,
+        handle: Value,
+        plan: &SuspendPlan,
+        traps: &[l::Trap],
+        consume_traps: bool,
+    ) -> Result<(), String> {
+        let _ = block;
+        if let Some(stale) = traps
+            .iter()
+            .find(|trap| trap.kind == l::TrapKind::DevReloadOnlyStaleCoroutine)
+        {
+            if consume_traps {
+                self.emit_trap(stale, TrapOperand::Value(handle))?;
+            } else {
+                self.reload_epoch_check(handle, &stale.pos)?;
+            }
+        }
+        if consume_traps {
+            for trap in traps {
+                if trap.kind == l::TrapKind::Call {
+                    self.emit_trap(trap, TrapOperand::Pending)?;
+                }
+            }
+        }
+        let frame = self
+            .frame
+            .ok_or_else(|| internal("held await parent has no frame"))?;
+        self.call_runtime(self.ml.rt.async_await, &[self.ctx, frame, handle], false)?;
+        self.suspend_after_await(plan)
+    }
+
+    // B1 experiment: the resume side of an await. The scheduler runs it only
+    // after the awaited handle completes, so the cached result is present.
+    // A missing result re-registers the continuation instead of continuing
+    // with an unwritten value.
     fn resume_async_child(
         &mut self,
         block: l::BlockId,
@@ -6856,55 +6932,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         child: Value,
         plan: &SuspendPlan,
     ) -> Result<(), String> {
-        let function = match target.kind {
-            l::CallTargetKind::Function(function) => function,
-            l::CallTargetKind::Method(method) => self.method_function(method)?,
-            ref other => {
-                return Err(internal(format!(
-                    "async suspension has invalid target {other:?}"
-                )))
-            }
-        };
-        let output = match target.return_type.as_ref() {
-            Some(l::ValueType::Data(ty)) => {
-                let (size, align) = self.ml.layouts.size_align(ty)?;
-                let output = self.stack_slot(size.max(1), align.max(1));
-                self.zero_bytes(output, size.max(1), align.max(1));
-                Some((output, ty.clone()))
-            }
-            Some(other) => {
-                return Err(internal(format!("async result has invalid type {other:?}")))
-            }
-            None => None,
-        };
-        let output_pointer = output
-            .as_ref()
-            .map_or_else(|| self.iconst(types::I64, 0), |(output, _)| *output);
-        let results = self.call_script(
-            &FnKey::LirResume(function),
-            &[self.ctx, child, output_pointer],
-            false,
-        )?;
-        self.trap_check();
-        let done = *results
-            .first()
-            .ok_or_else(|| internal("async resume has no done result"))?;
-        let completed = self.builder.create_block();
-        let suspended = self.builder.create_block();
-        self.builder
-            .ins()
-            .brif(done, completed, &[], suspended, &[]);
-        self.builder.switch_to_block(suspended);
-        let frame = self
-            .frame
-            .ok_or_else(|| internal("async parent has no frame"))?;
-        let state = self.iconst(types::I32, plan.state);
-        self.builder.ins().store(flags(), state, frame, 0);
-        self.pop_shadow()?;
-        let zero = self.iconst(types::I8, 0);
-        self.builder.ins().return_(&[zero]);
-
-        self.builder.switch_to_block(completed);
         let source = self
             .function
             .blocks
@@ -6919,12 +6946,31 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         else {
             return Err(internal("async attempt source is not a suspension"));
         };
+        let successor = *successor;
+        let has_resume_value = resume_value.is_some();
+        let pos = pos.clone();
+        let output = match target.return_type.as_ref() {
+            Some(l::ValueType::Data(ty)) => {
+                let (size, align) = self.ml.layouts.size_align(ty)?;
+                let address = self.stack_slot(size.max(1), align.max(1));
+                self.zero_bytes(address, size.max(1), align.max(1));
+                Some((address, ty.clone(), size))
+            }
+            Some(other) => {
+                return Err(internal(format!("async result has invalid type {other:?}")))
+            }
+            None => None,
+        };
+        self.read_completion(child, output.as_ref(), &pos)?;
+        let frame = self
+            .frame
+            .ok_or_else(|| internal("async parent has no frame"))?;
         let mut arguments = Vec::new();
-        if resume_value.is_some() {
-            let (output, ty) = output
+        if has_resume_value {
+            let (address, ty, _) = output
                 .as_ref()
                 .ok_or_else(|| internal("async resume value has no output slot"))?;
-            arguments.extend(rv_args(self.load_data(ty, *output, 0)?));
+            arguments.extend(rv_args(self.load_data(ty, *address, 0)?));
         }
         for slot in &plan.arguments {
             arguments.extend(rv_args(self.load_value_type(
@@ -6933,7 +6979,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 slot.offset as i32,
             )?));
         }
-        let release_pos = self.position_id(pos);
+        let release_pos = self.position_id(&pos);
         let release_pos = self.iconst(types::I32, release_pos);
         self.call_runtime(
             self.ml.rt.async_release,
@@ -6958,7 +7004,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         handle: Value,
         plan: &SuspendPlan,
         traps: &[l::Trap],
-        consume_traps: bool,
     ) -> Result<(), String> {
         let source = self
             .function
@@ -6974,19 +7019,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         else {
             return Err(internal("held await source is not a suspension"));
         };
+        let successor = *successor;
+        let resume_value = *resume_value;
+        let pos = pos.clone();
         if let Some(stale) = traps
             .iter()
             .find(|trap| trap.kind == l::TrapKind::DevReloadOnlyStaleCoroutine)
         {
-            if consume_traps {
-                self.emit_trap(stale, TrapOperand::Value(handle))?;
-            } else {
-                self.reload_epoch_check(handle, &stale.pos)?;
-            }
+            self.reload_epoch_check(handle, &stale.pos)?;
         }
-
         let output = if let Some(value) = resume_value {
-            let ty = data_type(self.value_type(*value)?)?.clone();
+            let ty = data_type(self.value_type(value)?)?.clone();
             let (size, align) = self.ml.layouts.size_align(&ty)?;
             let address = self.stack_slot(size.max(1), align.max(1));
             self.zero_bytes(address, size.max(1), align.max(1));
@@ -6994,68 +7037,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         } else {
             None
         };
-        let output_pointer = output
-            .as_ref()
-            .map_or_else(|| self.iconst(types::I64, 0), |(address, _, _)| *address);
-        let output_size = self.iconst(
-            types::I64,
-            i64::from(output.as_ref().map_or(0, |(_, _, size)| *size)),
-        );
-        let cached = self
-            .call_runtime(
-                self.ml.rt.async_result,
-                &[self.ctx, handle, output_pointer, output_size],
-                false,
-            )?
-            .ok_or_else(|| internal("held async result check has no result"))?;
-        let completed = self.builder.create_block();
-        let poll = self.builder.create_block();
-        self.builder.ins().brif(cached, completed, &[], poll, &[]);
-
-        self.builder.switch_to_block(poll);
-        let resume = self
-            .builder
-            .ins()
-            .load(types::I64, flags(), handle, COROUTINE_RESUME_OFFSET);
-        let signature = self.builder.import_signature(self.ml.resume_sig());
-        let call = self.builder.ins().call_indirect(
-            signature,
-            resume,
-            &[self.ctx, handle, output_pointer],
-        );
-        let done = self.builder.inst_results(call)[0];
-        if let Some(call_trap) = traps.iter().find(|trap| trap.kind == l::TrapKind::Call) {
-            if consume_traps {
-                self.emit_trap(call_trap, TrapOperand::Pending)?;
-            } else {
-                self.trap_check();
-            }
-        }
-        let newly_completed = self.builder.create_block();
-        let suspended = self.builder.create_block();
-        self.builder
-            .ins()
-            .brif(done, newly_completed, &[], suspended, &[]);
-
-        self.builder.switch_to_block(newly_completed);
-        self.call_runtime(
-            self.ml.rt.async_complete,
-            &[self.ctx, handle, output_pointer, output_size],
-            false,
-        )?;
-        self.builder.ins().jump(completed, &[]);
-
-        self.builder.switch_to_block(suspended);
+        self.read_completion(handle, output.as_ref(), &pos)?;
         let frame = self
             .frame
             .ok_or_else(|| internal("held await parent has no frame"))?;
-        let state = self.iconst(types::I32, plan.state);
-        self.builder.ins().store(flags(), state, frame, 0);
-        self.pop_shadow()?;
-        let zero = self.iconst(types::I8, 0);
-        self.builder.ins().return_(&[zero]);
-
-        self.builder.switch_to_block(completed);
         let mut arguments = Vec::new();
         if resume_value.is_some() {
             let (address, ty, _) = output
@@ -7080,7 +7065,49 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         self.builder
             .ins()
             .jump(self.blocks[successor.0 as usize], &arguments);
-        let _ = pos;
+        Ok(())
+    }
+
+    // Reads the awaited handle's cached completion into `output`, and
+    // continues in the caller's current block. The scheduler resumes an
+    // await only after its handle completes, so a missing completion is an
+    // internal protocol defect (`compiler.md` §94.1): the Context stops and
+    // nothing re-registers, polls, or fabricates a result.
+    fn read_completion(
+        &mut self,
+        handle: Value,
+        output: Option<&(Value, Type, u32)>,
+        pos: &Pos,
+    ) -> Result<(), String> {
+        let output_pointer =
+            output.map_or_else(|| self.iconst(types::I64, 0), |(address, _, _)| *address);
+        let output_size = self.iconst(
+            types::I64,
+            i64::from(output.map_or(0, |(_, _, size)| *size)),
+        );
+        let cached = self
+            .call_runtime(
+                self.ml.rt.async_result,
+                &[self.ctx, handle, output_pointer, output_size],
+                false,
+            )?
+            .ok_or_else(|| internal("await resume has no cached-result check"))?;
+        let completed = self.builder.create_block();
+        let missing = self.builder.create_block();
+        self.builder
+            .ins()
+            .brif(cached, completed, &[], missing, &[]);
+        self.builder.switch_to_block(missing);
+        let pos_id = self.position_id(pos);
+        let pos_id = self.iconst(types::I32, pos_id);
+        self.call_runtime(
+            self.ml.rt.async_missing_completion,
+            &[self.ctx, pos_id],
+            false,
+        )?;
+        let unwind = self.unwind_block();
+        self.builder.ins().jump(unwind, &[]);
+        self.builder.switch_to_block(completed);
         Ok(())
     }
 
@@ -7129,7 +7156,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.resume_async_child(source.id, target, child, suspend)?;
                     }
                     l::SuspendKind::AsyncHandle { .. } => {
-                        self.resume_async_handle(source.id, child, suspend, traps, false)?;
+                        self.resume_async_handle(source.id, child, suspend, traps)?;
                     }
                     _ => unreachable!(),
                 }
@@ -7583,8 +7610,10 @@ export async function main(): Promise<void> {
                 })
                 .count()
         };
-        assert_eq!(zero_stores_at(16), 2, "direct child clear on both paths");
-        assert_eq!(zero_stores_at(32), 2, "held child clear on both paths");
+        // §94.1 rules 2 and 3: an await registers and returns, so each child
+        // slot is cleared on exactly one path, the scheduled resume.
+        assert_eq!(zero_stores_at(16), 1, "direct child clear on its resume");
+        assert_eq!(zero_stores_at(32), 1, "held child clear on its resume");
     }
 }
 
@@ -7846,7 +7875,17 @@ pub(crate) fn define_coroutine<M: Module>(
                 .ins()
                 .store(flags(), resume, frame, COROUTINE_RESUME_OFFSET);
             if function.is_async {
-                body.call_runtime(body.ml.rt.async_register, &[body.ctx, frame], false)?;
+                let result_size = if function.return_type == Type::Void {
+                    0
+                } else {
+                    body.ml.layouts.size_align(&function.return_type)?.0
+                };
+                let result_size = body.iconst(types::I64, i64::from(result_size));
+                body.call_runtime(
+                    body.ml.rt.async_register,
+                    &[body.ctx, frame, result_size],
+                    false,
+                )?;
             } else if body.ml.opts.reload {
                 let offset = ctx_off(rtc::Context::reload_epoch_offset())?;
                 let epoch = body

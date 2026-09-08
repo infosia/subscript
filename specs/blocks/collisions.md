@@ -191,7 +191,7 @@ event loop exists.
 
 **Revised 2026-07-31 (Q34): `async`/`await` are accepted** as poll-driven
 sugar over the same Context-owned frame machinery. *(Revised
-2026-09-08 by compiler.md §94; implementation pending.)* A host-driven
+2026-09-08 by compiler.md §94, landed 2026-09-09.)* A host-driven
 continuation queue schedules async resumes. There is no autonomous event
 loop or user-constructible `Promise` object; the lib `Promise<T>` is only the
 `tsc` view of an async function's value, exactly as `IteratorResult` is
@@ -411,7 +411,7 @@ Accept: `a183`. Reject: `r184`.
 
 ### C16. An `await` of a completed handle does not yield
 
-**Retired by contract, 2026-09-08; implementation pending (§94).**
+**Retired 2026-09-08 by contract, landed 2026-09-09 (§94).**
 Every await now suspends under that contract, including completed
 handles. A host checkpoint executes FIFO continuations. B1 and B2
 measured the supported settled-await shapes against Node v24.18.0.
@@ -419,7 +419,7 @@ The prototype matched those shapes on both production tiers.
 
 C8 still defines the restricted Promise surface and explicit host
 boundary. This retirement does not claim full JS Promise compatibility.
-a185 becomes JS-comparable when §94 lands. The title remains for
+a185 is JS-comparable. The title remains for
 existing links; the entry is historical, not an active divergence.
 
 No diagnostic reports this.

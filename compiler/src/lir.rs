@@ -512,10 +512,9 @@ pub enum InstructionKind {
     MakeClosure(FunctionId),
     /// Invoke a resolved call target.
     Call(CallTarget),
-    /// Create an async handle and run its child to its first suspension or return.
-    /// The caller does not suspend.
+    /// Create an async handle and run its child to its first await or return.
+    /// The caller does not suspend, and the child becomes no runnable job here.
     /// The handle keeps its owner and caches a completed result for later awaits.
-    /// The child is not an exported root and never joins the root queue.
     /// A body trap stops the caller at this call, with the callee's position.
     AsyncHandleCreate(CallTarget),
     /// Increment one async frame's non-atomic owner count.
@@ -1180,22 +1179,46 @@ pub struct SwitchArm {
 }
 
 /// Suspension operations.
+///
+/// Async suspensions follow the host-driven continuation protocol of
+/// `compiler.md` §94.1, which §68.7.4 states for every consumer:
+///
+/// - Every await suspends its caller, a completed handle included.
+/// - A suspension registers the suspending frame and then returns. It
+///   never resumes another frame.
+/// - The Context holds a FIFO ready queue of runnable continuations and a
+///   registration-ordered list of frames that wait for a host checkpoint.
+/// - A frame's completion moves the continuations registered on it to the
+///   ready queue's tail, in registration order.
+/// - A host checkpoint appends the whole pre-existing parked list after the
+///   jobs that are already ready, then drains the ready queue to empty. A
+///   frame parked during that drain waits for the next checkpoint.
+/// - An ordinary call and an export kick never drain ready work.
+/// - A resumed await reads the immutable cached completion. A resume
+///   without that completion is an internal protocol defect.
+///
+/// Generator suspension keeps its own `.next()`-driven protocol.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SuspendKind {
     /// Generator yield with an optional yielded value.
     Yield(Option<ValueId>),
-    /// Explicit async scheduler suspension.
+    /// Explicit async suspension: the frame waits for the next host
+    /// checkpoint.
     Async,
-    /// Direct awaited async call.
+    /// Direct awaited async call. The suspension creates the child and runs
+    /// it to its first await or return, then registers the caller on that
+    /// child's completion. It never resumes the child.
     AsyncCall {
         /// Resolved async target.
         target: CallTarget,
         /// Flat call operands.
         operands: Vec<ValueId>,
     },
-    /// Await a previously created async handle.
+    /// Await a previously created async handle. The suspension registers the
+    /// caller on the handle's completion, and a completed handle places that
+    /// registration at the ready queue's tail.
     AsyncHandle {
-        /// The handle value to poll.
+        /// The awaited handle value.
         handle: ValueId,
     },
 }

@@ -1,6 +1,6 @@
 # §94 — host-driven async continuations
 
-Status: contracted, implementation pending. Date: 2026-09-08.
+Status: landed 2026-09-09. Contract dated 2026-09-08.
 Orchestrator: Codex, assigned by the owner. Coding agent: Opus.
 Contract: `specs/blocks/compiler.md` §94, §68.7.4, and C8/C16.
 Baseline pin: `d8cc19c34ac5e2db27bdc0411d5210924528029b`.
@@ -127,3 +127,50 @@ Node remains a divergence detector. The permanent three-witness gate is required
 Not yet implemented. No final gate or implementation review result exists.
 The next round ports the form, both tiers, and independent interpreter,
 adds permanent corpus and host tests, and returns a reviewable diff.
+
+## Landing, 2026-09-09
+
+The implementation landed on top of pin `d8cc19c`. Two review rounds
+ran before it: round 1 raised two MAJOR findings and one MINOR, and
+round 2 fixed and measured every one.
+
+Round 1's MAJOR findings, and their fixes:
+
+- **The interpreter leaked every frame in a blocked wait ring.**
+  `register_continuation` held strong references in both directions,
+  so two frames that hold each other's handle keep each other alive.
+  The class is wider than the two scheduler edges: a suspended
+  frame's own saved state holds the handles the program gave it.
+  `Interpreter::release_scheduler_storage`, called from a new `Drop`,
+  releases scheduler storage transitively, with no continuation run
+  and no collector. Five permanent tests: three cycle shapes, a
+  completed-program control, and a queued-work control.
+- **The cost measurements were invalid.** The cause was the warm-up,
+  not allocation noise: three iterations is 12 ms against §9's 200 ms
+  floor. With a measured warm-up floor every spread falls below 20%.
+  Two sequential pairs give 2.73x / 2.35x / 2.56x and 2.71x / 2.31x /
+  2.55x, inside §94.4's 3.0x cap.
+
+Counts after the landing: accept `.ts` 191, `.expected` 192, reject
+`.ts` 175, trap `.ts` 55. New entries: a188 to a193 and t55.
+
+Gate verdict at the landing state:
+
+```
+gate full d8cc19c34ac5e2db27bdc0411d5210924528029b dirty:45 debug 1339/0/2 release 1337/0/2 skips 2/0 clippy 7/18/13 goldens-moved 4 exit 0
+```
+
+Record: `target/gate/20260908T192841Z-full.md`.
+
+The four moved goldens are the three §94.3 authorizes plus the
+aggregate LIR snapshot:
+
+| File | Change |
+|---|---|
+| `a154-held-async-handle.expected` | `work2:resume=3` moves before `main:first=13` |
+| `a155-async-handle-array.expected` | the three `resume=` lines precede the three `value=` lines |
+| `a185-async-settled-await-order.expected` | `start2 leaf` precede `end1`; `main:mid` precedes `outer:end` |
+| `codegen/tests/lir-goldens/corpus.txt` | async instruction streams and the new entries |
+
+a185 now matches `node v24.18.0` and carries `js-comparable: yes`.
+Its former C16 explanation and `node-order` header lines are gone.

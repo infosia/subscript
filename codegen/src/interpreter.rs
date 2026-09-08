@@ -113,10 +113,10 @@ impl InterpretError {
 ///
 /// The synthetic initializer, when present, runs before the exported
 /// zero-argument `main`. Every other exported zero-argument async function is
-/// then kicked in declaration order, and the pending roots are stepped in kick
-/// order to quiescence. Runtime-owned strings, arrays, maps, sets, JSON state,
-/// dates, regular expressions, and formatting all go through
-/// `subscript-runtime`.
+/// then kicked in declaration order, and host checkpoints run until no work
+/// can advance (`compiler.md` §26.3 and §94). Runtime-owned strings, arrays,
+/// maps, sets, JSON state, dates, regular expressions, and formatting all go
+/// through `subscript-runtime`.
 ///
 /// # Errors
 ///
@@ -130,6 +130,29 @@ pub fn interpret(module: &l::Module) -> Result<Vec<u8>, InterpretError> {
             output: interpreter.context.take_stdout(),
             source: Box::new(source),
         }),
+    }
+}
+
+/// Pushes every coroutine handle one value owns: directly, through a
+/// closure capture, or as an iteration subject. Every other variant owns
+/// none, and an address is a borrow of a slot this walk already clears.
+fn collect_coroutines(value: &Value, out: &mut Vec<Rc<RefCell<Coroutine>>>) {
+    match value {
+        Value::Coroutine(frame) => out.push(Rc::clone(frame)),
+        Value::Callable(callable) => {
+            for capture in &callable.captures {
+                collect_coroutines(capture, out);
+            }
+        }
+        Value::Iterator(cursor) => collect_coroutines(&cursor.subject, out),
+        _ => {}
+    }
+}
+
+impl Drop for Interpreter<'_> {
+    fn drop(&mut self) {
+        // §94.2: Context release discards all work without resumption.
+        self.release_scheduler_storage();
     }
 }
 
@@ -213,14 +236,31 @@ struct Coroutine {
     completed: bool,
     completion: Option<Value>,
     owners: u32,
-    /// Awaited descendants retained when a call-time start suspends.
-    pending: Vec<(Rc<RefCell<Coroutine>>, bool)>,
+    /// Continuations registered on this frame, in registration order
+    /// (`compiler.md` §94.1 rule 5). Completion moves them to the ready
+    /// queue's tail in that order.
+    waiters: Vec<Rc<RefCell<Coroutine>>>,
+    /// The awaited frame this suspension registered on, with the position
+    /// that reports a resume without a completion, and whether this frame
+    /// owns the awaited reference (a direct `await f(...)` does).
+    awaiting: Option<AwaitedHandle>,
 }
 
-struct CoroutineRoot {
-    // `true` means this poll stack owns the creator's initial reference and
-    // releases it when that frame completes. Held awaits borrow instead.
-    stack: Vec<(Rc<RefCell<Coroutine>>, bool)>,
+/// One outstanding await registration.
+struct AwaitedHandle {
+    handle: Rc<RefCell<Coroutine>>,
+    pos: Pos,
+    owned: bool,
+}
+
+/// What a suspension asks the scheduler to do (`compiler.md` §94.1).
+enum AsyncRequest {
+    /// `SuspendKind::Async`: wait for the next host checkpoint.
+    Park,
+    /// `SuspendKind::AsyncCall`: create and start the child, then register.
+    Call(l::CallTarget, Vec<Value>, Pos),
+    /// `SuspendKind::AsyncHandle`: register on the named handle.
+    Handle(Rc<RefCell<Coroutine>>, Pos),
 }
 
 struct Frame {
@@ -252,8 +292,8 @@ enum Flow {
     Returned(Value),
     Suspended {
         yielded: Option<Value>,
-        async_call: Option<(l::CallTarget, Vec<Value>)>,
-        async_handle: Option<Rc<RefCell<Coroutine>>>,
+        /// `None` for a generator yield, which keeps its own protocol.
+        request: Option<AsyncRequest>,
     },
 }
 
@@ -291,6 +331,10 @@ struct Interpreter<'m> {
     padding_cache: HashMap<String, Vec<Range<usize>>>,
     poison_registry: HashMap<l::ValueId, Vec<Weak<RefCell<Option<Invalidation>>>>>,
     async_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
+    // §94 scheduler state: runnable continuations in FIFO order, and the
+    // frames that wait for the next host checkpoint.
+    async_ready: std::collections::VecDeque<Rc<RefCell<Coroutine>>>,
+    async_parked: std::collections::VecDeque<Rc<RefCell<Coroutine>>>,
     // Runtime helpers can report while an instruction is still executing.
     // Keep the enclosing LIR sites here so that even those reports use the
     // checker-owned source position rather than the instruction's broad span.
@@ -310,6 +354,8 @@ impl<'m> Interpreter<'m> {
             padding_cache: HashMap::new(),
             poison_registry: HashMap::new(),
             async_handles: RefCell::new(HashMap::new()),
+            async_ready: std::collections::VecDeque::new(),
+            async_parked: std::collections::VecDeque::new(),
             active_traps: Vec::new(),
         };
         interpreter.compute_class_layouts()?;
@@ -340,35 +386,22 @@ impl<'m> Interpreter<'m> {
         }
         let entry_id = entry.id;
         let entry_pos = entry.pos.clone();
-        let mut pending = Vec::new();
+        // §26.3 and §94.1 rule 10: the standard runner kicks `main`, then
+        // every other exported async function in declaration order, and then
+        // steps while pending work remains. An export kick starts a body and
+        // never drains ready work (rule 7).
         let result = self.call_function(entry_id, Vec::new())?;
         if let Value::Coroutine(coroutine) = result {
-            let mut root = CoroutineRoot {
-                stack: vec![(coroutine, true)],
-            };
-            if self.step_coroutine_root(&mut root)?.is_none() {
-                pending.push(root);
-            }
+            self.async_kick(&coroutine)?;
         }
         for function in self.module.async_roots.clone() {
             let Value::Coroutine(coroutine) = self.call_function(function, Vec::new())? else {
                 return Err(self.invalid(None, "async export did not create a coroutine"));
             };
-            let mut root = CoroutineRoot {
-                stack: vec![(coroutine, true)],
-            };
-            if self.step_coroutine_root(&mut root)?.is_none() {
-                pending.push(root);
-            }
+            self.async_kick(&coroutine)?;
         }
-        while !pending.is_empty() {
-            let mut remaining = Vec::with_capacity(pending.len());
-            for mut root in pending {
-                if self.step_coroutine_root(&mut root)?.is_none() {
-                    remaining.push(root);
-                }
-            }
-            pending = remaining;
+        while self.async_pending() != 0 {
+            self.async_step()?;
         }
         self.check_runtime(&entry_pos)?;
         Ok(self.context.take_stdout())
@@ -451,7 +484,8 @@ impl<'m> Interpreter<'m> {
                 completed: false,
                 completion: None,
                 owners: u32::from(function.is_async),
-                pending: Vec::new(),
+                waiters: Vec::new(),
+                awaiting: None,
             }));
             if function.is_async {
                 self.async_handles
@@ -470,82 +504,242 @@ impl<'m> Interpreter<'m> {
         }
     }
 
-    fn drive_coroutine(
-        &mut self,
-        coroutine: &Rc<RefCell<Coroutine>>,
-    ) -> Result<Value, InterpretError> {
-        let mut root = CoroutineRoot {
-            stack: vec![(Rc::clone(coroutine), true)],
-        };
-        loop {
-            if let Some(value) = self.step_coroutine_root(&mut root)? {
-                return Ok(value);
-            }
-        }
-    }
+    // ----- §94 host-driven continuation scheduler -----
 
-    /// Advances the innermost suspended frame once, then runs through
-    /// completed awaited calls until the root suspends again or completes.
-    fn step_coroutine_root(
-        &mut self,
-        root: &mut CoroutineRoot,
-    ) -> Result<Option<Value>, InterpretError> {
-        loop {
-            let Some((coroutine, release_on_complete)) = root.stack.last().cloned() else {
-                return Ok(Some(Value::Void));
-            };
-            let pending = std::mem::take(&mut coroutine.borrow_mut().pending);
-            if !pending.is_empty() {
-                root.stack.extend(pending);
+    /// Releases every scheduler registration, including the reference cycles
+    /// a blocked wait forms (`compiler.md` §94.2: "It releases scheduler
+    /// storage, including blocked cycles, without implicit collection").
+    ///
+    /// A blocked frame and the frame it waits on own each other: the waiter
+    /// list owns the caller, and the caller's registration owns the awaited
+    /// handle. That is the ownership §94.2 asks for while the program runs,
+    /// and it is what a self-await, a mutual wait, or a longer wait ring
+    /// leaves behind at quiescence. The production runtime frees such a ring
+    /// with its Context arena; here the walk below breaks it instead.
+    ///
+    /// The walk starts at every scheduler state and follows the two owning
+    /// edges, so it also reaches a frame the handle table has already
+    /// released. It runs no continuation and invokes no collector.
+    fn release_scheduler_storage(&mut self) {
+        let mut work: Vec<Rc<RefCell<Coroutine>>> = self.async_ready.drain(..).collect();
+        work.extend(self.async_parked.drain(..));
+        work.extend(
+            self.async_handles
+                .borrow_mut()
+                .drain()
+                .map(|(_, frame)| frame),
+        );
+        for global in &self.globals {
+            collect_coroutines(&global.borrow(), &mut work);
+        }
+        let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        while let Some(frame) = work.pop() {
+            if !seen.insert(Rc::as_ptr(&frame) as usize) {
                 continue;
             }
-            let flow = {
-                let mut coroutine = coroutine.borrow_mut();
-                if coroutine.completed {
-                    Flow::Returned(coroutine.completion.clone().unwrap_or(Value::Void))
-                } else {
-                    self.execute_frame(&mut coroutine.state)?
-                }
+            let mut state = frame.borrow_mut();
+            work.extend(std::mem::take(&mut state.waiters));
+            if let Some(awaited) = state.awaiting.take() {
+                work.push(awaited.handle);
+            }
+            // A suspended frame's own state holds the handles the program
+            // gave it, and two frames that hold each other's handle form the
+            // same ring. Teardown discards the work, so the saved state goes
+            // with the registration.
+            for value in state.state.values.iter().flatten() {
+                collect_coroutines(value, &mut work);
+            }
+            for local in &state.state.locals {
+                collect_coroutines(&local.slot.borrow(), &mut work);
+            }
+            if let Some(resume) = state.state.resume.as_ref() {
+                collect_coroutines(resume, &mut work);
+            }
+            if let Some(completion) = state.completion.as_ref() {
+                collect_coroutines(completion, &mut work);
+            }
+            state.state.values.clear();
+            state.state.locals.clear();
+            state.state.resume = None;
+            state.completion = None;
+        }
+    }
+
+    /// Work a checkpoint can advance: ready jobs plus parked frames
+    /// (`compiler.md` §94.2).
+    fn async_pending(&self) -> usize {
+        self.async_ready.len() + self.async_parked.len()
+    }
+
+    /// Starts an exported root and registers whatever it suspends on
+    /// (§94.1 rules 1, 7 and 10). The kick drains nothing.
+    fn async_kick(&mut self, coroutine: &Rc<RefCell<Coroutine>>) -> Result<(), InterpretError> {
+        self.async_start(coroutine)?;
+        if self.context.trapped() {
+            // The existing trap policy preserves the trapping frame.
+            return Ok(());
+        }
+        // The kick holds no scheduler reference: a suspended root registered
+        // its own, and a completed root has no continuation work.
+        self.release_coroutine(coroutine);
+        Ok(())
+    }
+
+    /// One host checkpoint (§94.1 rules 8 and 9). It appends the whole
+    /// pre-existing parked list after the jobs that are already ready, then
+    /// drains the ready queue in FIFO order. A frame parked during the drain
+    /// waits for the next checkpoint.
+    fn async_step(&mut self) -> Result<(), InterpretError> {
+        if self.context.trapped() {
+            return Ok(());
+        }
+        let parked = std::mem::take(&mut self.async_parked);
+        self.async_ready.extend(parked);
+        while let Some(frame) = self.async_ready.pop_front() {
+            self.async_resume(&frame)?;
+            if self.context.trapped() {
+                // The trap policy preserves the trapping registration and
+                // every entry this checkpoint has not reached.
+                self.async_ready.push_front(frame);
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Runs one frame to its first await or return, then applies its
+    /// outcome to the scheduler.
+    fn async_start(&mut self, coroutine: &Rc<RefCell<Coroutine>>) -> Result<(), InterpretError> {
+        let flow = self.execute_coroutine(coroutine)?;
+        self.apply_async_flow(coroutine, flow)
+    }
+
+    /// Resumes a queued continuation. §94.1 rule 11: the resume reads the
+    /// awaited frame's immutable cached completion and never polls it.
+    fn async_resume(&mut self, coroutine: &Rc<RefCell<Coroutine>>) -> Result<(), InterpretError> {
+        let awaited = coroutine.borrow_mut().awaiting.take();
+        if let Some(awaited) = awaited {
+            let completion = awaited.handle.borrow().completion.clone();
+            let Some(value) = completion else {
+                // §94.1: an internal protocol defect, never a source trap and
+                // never a reason to poll or re-register.
+                return Err(InterpretError::Trap {
+                    kind: subscript_runtime::TrapKind::Internal.rule().to_string(),
+                    pos: awaited.pos.clone(),
+                    message: "async resume without completion".to_string(),
+                });
             };
-            match flow {
-                Flow::Returned(value) => {
-                    {
-                        let mut state = coroutine.borrow_mut();
-                        state.completed = true;
-                        state.completion = Some(value.clone());
-                    }
-                    root.stack.pop();
-                    if release_on_complete {
-                        self.release_coroutine(&coroutine);
-                    }
-                    if let Some((parent, _)) = root.stack.last() {
-                        parent.borrow_mut().state.resume = Some(value);
-                    } else {
-                        return Ok(Some(value));
-                    }
+            coroutine.borrow_mut().state.resume = Some(value);
+            if awaited.owned {
+                self.release_coroutine(&awaited.handle);
+            }
+        }
+        let flow = self.execute_coroutine(coroutine)?;
+        self.apply_async_flow(coroutine, flow)
+    }
+
+    /// Executes one coroutine frame once. A frame already completed
+    /// produces its stored completion rather than running again.
+    fn execute_coroutine(
+        &mut self,
+        coroutine: &Rc<RefCell<Coroutine>>,
+    ) -> Result<Flow, InterpretError> {
+        let mut state = coroutine.borrow_mut();
+        if state.completed {
+            return Ok(Flow::Returned(
+                state.completion.clone().unwrap_or(Value::Void),
+            ));
+        }
+        let frame = &mut state.state as *mut Frame;
+        drop(state);
+        // SAFETY: a frame is executed by exactly one driver at a time. §94.1
+        // rule 9 gives a frame one outstanding registration, so no other
+        // borrow of this coroutine is live while it runs.
+        self.execute_frame(unsafe { &mut *frame })
+    }
+
+    /// Applies one execution outcome to the scheduler state.
+    fn apply_async_flow(
+        &mut self,
+        coroutine: &Rc<RefCell<Coroutine>>,
+        flow: Flow,
+    ) -> Result<(), InterpretError> {
+        match flow {
+            Flow::Returned(value) => {
+                let waiters = {
+                    let mut state = coroutine.borrow_mut();
+                    state.completed = true;
+                    state.completion = Some(value);
+                    std::mem::take(&mut state.waiters)
+                };
+                // §94.1 rule 5: completion makes every registered
+                // continuation runnable, in registration order, at the tail.
+                self.async_ready.extend(waiters);
+                Ok(())
+            }
+            Flow::Suspended {
+                request: Some(AsyncRequest::Park),
+                ..
+            } => {
+                self.async_parked.push_back(Rc::clone(coroutine));
+                Ok(())
+            }
+            Flow::Suspended {
+                request: Some(AsyncRequest::Call(target, arguments, pos)),
+                ..
+            } => {
+                // §94.1 rules 1 and 4: the suspension creates the child and
+                // runs its prefix, then registers. It never resumes it.
+                let Value::Coroutine(child) =
+                    self.invoke_target(&target, arguments, None, Some(&pos))?
+                else {
+                    return Err(self.invalid(Some(pos), "async call did not create a coroutine"));
+                };
+                self.async_start(&child)?;
+                if self.context.trapped() {
+                    return Ok(());
                 }
-                Flow::Suspended {
-                    yielded: _,
-                    async_call: Some((target, arguments)),
-                    ..
-                } => match self.invoke_target(&target, arguments, None, None)? {
-                    Value::Coroutine(child) => root.stack.push((child, true)),
-                    value => coroutine.borrow_mut().state.resume = Some(value),
-                },
-                Flow::Suspended {
-                    yielded: _,
-                    async_handle: Some(child),
-                    ..
-                } => root.stack.push((child, false)),
-                Flow::Suspended {
-                    yielded: _,
-                    async_call: None,
-                    async_handle: None,
-                } => return Ok(None),
+                self.register_continuation(coroutine, &child, pos, true);
+                Ok(())
+            }
+            Flow::Suspended {
+                request: Some(AsyncRequest::Handle(handle, pos)),
+                ..
+            } => {
+                self.register_continuation(coroutine, &handle, pos, false);
+                Ok(())
+            }
+            Flow::Suspended { request: None, .. } => {
+                Err(self.invalid(None, "a generator suspension reached the async scheduler"))
             }
         }
     }
 
+    /// §94.1 rules 4 to 6: an unfinished handle keeps the continuation in
+    /// its registration-ordered list; a completed handle appends it to the
+    /// ready queue's tail. Neither path resumes the handle.
+    fn register_continuation(
+        &mut self,
+        frame: &Rc<RefCell<Coroutine>>,
+        handle: &Rc<RefCell<Coroutine>>,
+        pos: Pos,
+        owned: bool,
+    ) {
+        frame.borrow_mut().awaiting = Some(AwaitedHandle {
+            handle: Rc::clone(handle),
+            pos,
+            owned,
+        });
+        if handle.borrow().completed {
+            self.async_ready.push_back(Rc::clone(frame));
+        } else {
+            handle.borrow_mut().waiters.push(Rc::clone(frame));
+        }
+    }
+
+    /// Ends one holder's ownership of a handle. The last release drops the
+    /// interpreter's handle table entry; the completion cache and the values
+    /// reachable from it live as long as some owner holds them (§94.2).
     fn release_coroutine(&self, coroutine: &Rc<RefCell<Coroutine>>) {
         let key = Rc::as_ptr(coroutine) as usize;
         let mut state = coroutine.borrow_mut();
@@ -577,19 +771,13 @@ impl<'m> Interpreter<'m> {
             }
             Flow::Suspended {
                 yielded: Some(value),
-                async_call: None,
-                async_handle: None,
+                request: None,
             } => Ok(self.iter_result(false, value, value_ty)?),
-            Flow::Suspended { async_call, .. } => {
-                if let Some((target, arguments)) = async_call {
-                    let called = self.invoke_target(&target, arguments, None, None)?;
-                    let resume = match called {
-                        Value::Coroutine(child) => self.drive_coroutine(&child)?,
-                        other => other,
-                    };
-                    coroutine.borrow_mut().state.resume = Some(resume);
-                }
-                self.resume_generator(coroutine, value_ty)
+            // A generator body holds no `await`: async generators are outside
+            // the decided surface, so an async suspension here is invalid LIR
+            // rather than work for the §94 scheduler.
+            Flow::Suspended { .. } => {
+                Err(self.invalid(None, "a generator suspension is not a yield with a value"))
             }
         }
     }
@@ -686,21 +874,25 @@ impl<'m> Interpreter<'m> {
                             )
                         })?;
                     // Read every terminator operand before changing the frame.
-                    let pending = match kind {
+                    // §68.7.4 and §94.1: the suspension kind decides which
+                    // registration the scheduler makes.
+                    let pending: (Option<Value>, Option<AsyncRequest>) = match kind {
                         l::SuspendKind::Yield(value) => (
                             value
                                 .map(|value| self.get_value(frame, value, &function.pos))
                                 .transpose()?,
                             None,
-                            None,
                         ),
-                        l::SuspendKind::Async => (None, None, None),
+                        l::SuspendKind::Async => (None, Some(AsyncRequest::Park)),
                         l::SuspendKind::AsyncCall { target, operands } => {
                             let arguments = operands
                                 .iter()
                                 .map(|value| self.get_value(frame, *value, &function.pos))
                                 .collect::<Result<Vec<_>, _>>()?;
-                            (None, Some((target.clone(), arguments)), None)
+                            (
+                                None,
+                                Some(AsyncRequest::Call(target.clone(), arguments, pos.clone())),
+                            )
                         }
                         l::SuspendKind::AsyncHandle { handle } => {
                             let Value::Coroutine(handle) =
@@ -711,7 +903,7 @@ impl<'m> Interpreter<'m> {
                                     "held await operand is not an async handle",
                                 ));
                             };
-                            (None, None, Some(handle))
+                            (None, Some(AsyncRequest::Handle(handle, pos.clone())))
                         }
                     };
                     let parameters = &destination.parameters[usize::from(resume_value.is_some())..];
@@ -747,12 +939,8 @@ impl<'m> Interpreter<'m> {
                     }
                     frame.block = *successor;
                     frame.resume_target = *resume_value;
-                    let (yielded, async_call, async_handle) = pending;
-                    return Ok(Flow::Suspended {
-                        yielded,
-                        async_call,
-                        async_handle,
-                    });
+                    let (yielded, request) = pending;
+                    return Ok(Flow::Suspended { yielded, request });
                 }
             }
         }
@@ -1154,12 +1342,11 @@ impl<'m> Interpreter<'m> {
                         "async creation did not return a handle",
                     ));
                 };
-                let mut root = CoroutineRoot {
-                    stack: vec![(Rc::clone(handle), false)],
-                };
-                if self.step_coroutine_root(&mut root)?.is_none() {
-                    handle.borrow_mut().pending = root.stack.split_off(1);
-                }
+                // §94.1 rule 1: the call runs the body to its first await or
+                // return. The child becomes no runnable job here, and the
+                // caller does not suspend.
+                let handle = Rc::clone(handle);
+                self.async_start(&handle)?;
                 Some(value)
             }
             l::InstructionKind::AsyncHandleRetain => {
@@ -5785,6 +5972,306 @@ mod tests {
         }
     }
 
+    /// §94.1: a scheduled await resume whose handle carries no completion
+    /// is an internal protocol defect. The interpreter reports the same
+    /// kind, message, and suspension position as the two tiers, and it does
+    /// not poll, re-register, or fabricate a result.
+    #[test]
+    fn an_await_resume_without_a_completion_reports_the_internal_defect() {
+        let pos = Pos::new("invalid-protocol.ts", 4, 11);
+        let function = l::Function {
+            id: l::FunctionId(0),
+            source_name: "waiting".to_string(),
+            kind: l::FunctionKind::Free,
+            exported: false,
+            is_generator: false,
+            is_async: true,
+            creation_traps: Vec::new(),
+            host_entry_traps: None,
+            parameters: Vec::new(),
+            return_type: Type::Void,
+            locals: Vec::new(),
+            values: Vec::new(),
+            liveness: l::Liveness::default(),
+            blocks: vec![l::BasicBlock {
+                id: l::BlockId(0),
+                source_name: Some("entry".to_string()),
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: l::Terminator::Return {
+                    value: None,
+                    pos: pos.clone(),
+                },
+            }],
+            entry: l::BlockId(0),
+            pos: pos.clone(),
+        };
+        let module = empty_module(vec![function]);
+        let mut interpreter = Interpreter::new(&module).expect("module is valid");
+        let Value::Coroutine(waiting) = interpreter
+            .call_function(l::FunctionId(0), Vec::new())
+            .expect("async frame")
+        else {
+            panic!("an async function produces a coroutine");
+        };
+        let Value::Coroutine(handle) = interpreter
+            .call_function(l::FunctionId(0), Vec::new())
+            .expect("async frame")
+        else {
+            panic!("an async function produces a coroutine");
+        };
+        // The state a correct scheduler never builds: a ready continuation
+        // whose awaited frame has not completed.
+        waiting.borrow_mut().awaiting = Some(AwaitedHandle {
+            handle: Rc::clone(&handle),
+            pos: pos.clone(),
+            owned: false,
+        });
+        assert!(!handle.borrow().completed);
+        let error = interpreter
+            .async_resume(&waiting)
+            .expect_err("the resume reports the defect");
+        assert_eq!(
+            error,
+            InterpretError::Trap {
+                kind: subscript_runtime::TrapKind::Internal.rule().to_string(),
+                pos,
+                message: "async resume without completion".to_string(),
+            }
+        );
+    }
+
+    // ----- §94.2 teardown: scheduler storage, including blocked cycles -----
+
+    /// Lowers one program and builds an interpreter for it.
+    fn interpreter_for(source: &str) -> (l::Module, ()) {
+        let hir = subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
+            "teardown.ts",
+            source,
+        )])
+        .expect("the program checks");
+        (
+            crate::lir::lower_module(&hir).expect("the program lowers"),
+            (),
+        )
+    }
+
+    /// Every frame the scheduler can still reach: the ready queue, the parked
+    /// list, the handle table, and, transitively, each frame's waiter list
+    /// and its awaited handle. A frame released from the handle table is
+    /// still reachable this way, so the closure sees it.
+    fn reachable_frames(interpreter: &Interpreter<'_>) -> Vec<Rc<RefCell<Coroutine>>> {
+        let mut work: Vec<Rc<RefCell<Coroutine>>> = interpreter
+            .async_ready
+            .iter()
+            .chain(interpreter.async_parked.iter())
+            .cloned()
+            .collect();
+        work.extend(interpreter.async_handles.borrow().values().cloned());
+        let mut seen: HashMap<usize, Rc<RefCell<Coroutine>>> = HashMap::new();
+        while let Some(frame) = work.pop() {
+            if seen
+                .insert(Rc::as_ptr(&frame) as usize, Rc::clone(&frame))
+                .is_some()
+            {
+                continue;
+            }
+            let state = frame.borrow();
+            work.extend(state.waiters.iter().cloned());
+            if let Some(awaited) = state.awaiting.as_ref() {
+                work.push(Rc::clone(&awaited.handle));
+            }
+        }
+        seen.into_values().collect()
+    }
+
+    /// Runs `source` to quiescence, then reports how many frames outlive the
+    /// interpreter. `Weak` is the lifetime evidence: a Context payload
+    /// counter cannot see a leaked Rust allocation.
+    fn frames_surviving_teardown(source: &str) -> (usize, usize, usize, usize) {
+        let (module, ()) = interpreter_for(source);
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        let _ = interpreter.run();
+        let pending = interpreter.async_pending();
+        let reachable = reachable_frames(&interpreter);
+        let weak: Vec<Weak<RefCell<Coroutine>>> = reachable.iter().map(Rc::downgrade).collect();
+        let captured = weak.len();
+        drop(reachable);
+        drop(interpreter);
+        let survivors = weak
+            .iter()
+            .filter(|frame| frame.upgrade().is_some())
+            .count();
+        (captured, survivors, pending, weak.len())
+    }
+
+    const MUTUAL_AWAIT: &str =
+        "async function waiter(id: i32, others: Promise<i32>[]): Promise<i32> {\n\
+                                \x20 await Context.suspend();\n\
+                                \x20 const other: Promise<i32> = others[1 - id];\n\
+                                \x20 return await other;\n\
+                                }\n\
+                                export async function main(): Promise<void> {\n\
+                                \x20 const handles: Promise<i32>[] = [];\n\
+                                \x20 const a: Promise<i32> = waiter(0, handles);\n\
+                                \x20 const b: Promise<i32> = waiter(1, handles);\n\
+                                \x20 handles.push(a);\n\
+                                \x20 handles.push(b);\n\
+                                \x20 const x: i32 = await a;\n\
+                                \x20 const y: i32 = await b;\n\
+                                }\n";
+
+    const SELF_AWAIT: &str = "async function selfish(others: Promise<i32>[]): Promise<i32> {\n\
+                              \x20 await Context.suspend();\n\
+                              \x20 const mine: Promise<i32> = others[0];\n\
+                              \x20 return await mine;\n\
+                              }\n\
+                              export async function main(): Promise<void> {\n\
+                              \x20 const handles: Promise<i32>[] = [];\n\
+                              \x20 const h: Promise<i32> = selfish(handles);\n\
+                              \x20 handles.push(h);\n\
+                              \x20 const v: i32 = await h;\n\
+                              }\n";
+
+    const TRAP_WITH_BLOCKED_WORK: &str =
+        "async function blocked(others: Promise<i32>[]): Promise<i32> {\n\
+                                          \x20 await Context.suspend();\n\
+                                          \x20 const other: Promise<i32> = others[0];\n\
+                                          \x20 return await other;\n\
+                                          }\n\
+                                          async function faulty(): Promise<i32> {\n\
+                                          \x20 await Context.suspend();\n\
+                                          \x20 unreachable();\n\
+                                          \x20 return 1;\n\
+                                          }\n\
+                                          export async function main(): Promise<void> {\n\
+                                          \x20 const handles: Promise<i32>[] = [];\n\
+                                          \x20 const bad: Promise<i32> = faulty();\n\
+                                          \x20 const waiting: Promise<i32> = blocked(handles);\n\
+                                          \x20 handles.push(waiting);\n\
+                                          \x20 const v: i32 = await bad;\n\
+                                          \x20 const w: i32 = await waiting;\n\
+                                          }\n";
+
+    const COMPLETED_CONTROL: &str = "async function work(id: i32): Promise<i32> {\n\
+                                     \x20 await Context.suspend();\n\
+                                     \x20 return id;\n\
+                                     }\n\
+                                     export async function main(): Promise<void> {\n\
+                                     \x20 const a: Promise<i32> = work(1);\n\
+                                     \x20 const b: Promise<i32> = work(2);\n\
+                                     \x20 print(`${await a},${await b}`);\n\
+                                     }\n";
+
+    #[test]
+    fn teardown_releases_a_mutual_await_cycle() {
+        let (captured, survivors, pending, _) = frames_surviving_teardown(MUTUAL_AWAIT);
+        assert_eq!(pending, 0, "the program reaches quiescence");
+        assert!(
+            captured >= 3,
+            "the scheduler still reaches the blocked frames"
+        );
+        assert_eq!(survivors, 0, "frames retained after interpreter teardown");
+    }
+
+    #[test]
+    fn teardown_releases_a_self_await_cycle() {
+        let (captured, survivors, pending, _) = frames_surviving_teardown(SELF_AWAIT);
+        assert_eq!(pending, 0, "the program reaches quiescence");
+        assert!(
+            captured >= 2,
+            "the scheduler still reaches the blocked frames"
+        );
+        assert_eq!(survivors, 0, "frames retained after interpreter teardown");
+    }
+
+    #[test]
+    fn teardown_releases_frames_after_a_trap_with_blocked_work() {
+        let (captured, survivors, _, _) = frames_surviving_teardown(TRAP_WITH_BLOCKED_WORK);
+        assert!(captured >= 2, "a blocked registration outlives the trap");
+        assert_eq!(survivors, 0, "frames retained after interpreter teardown");
+    }
+
+    /// The control that separates a cycle from ordinary completion: a
+    /// program whose awaits all complete leaves the scheduler reaching no
+    /// frame at all, so the three tests above measure a cycle rather than
+    /// the handle table.
+    #[test]
+    fn a_completed_program_leaves_the_scheduler_empty() {
+        let (captured, survivors, pending, _) = frames_surviving_teardown(COMPLETED_CONTROL);
+        assert_eq!(pending, 0);
+        assert_eq!(
+            captured, 0,
+            "no ready job, parked frame, handle, waiter, or awaited handle remains"
+        );
+        assert_eq!(survivors, 0);
+    }
+
+    /// Teardown must not free work the program is still using. `twice`
+    /// parks twice, so one checkpoint leaves queued work, and the frames the
+    /// scheduler holds are still alive at that boundary.
+    #[test]
+    fn queued_work_survives_until_the_interpreter_is_dropped() {
+        let source = "async function twice(id: i32): Promise<i32> {\n\
+                      \x20 await Context.suspend();\n\
+                      \x20 await Context.suspend();\n\
+                      \x20 return id;\n\
+                      }\n\
+                      export async function main(): Promise<void> {\n\
+                      \x20 const a: Promise<i32> = twice(1);\n\
+                      \x20 const b: Promise<i32> = twice(2);\n\
+                      \x20 print(`${await a},${await b}`);\n\
+                      }\n";
+        let (module, ()) = interpreter_for(source);
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        let entry = module.entry.expect("entry");
+        let Value::Coroutine(root) = interpreter
+            .call_function(entry, Vec::new())
+            .expect("root frame")
+        else {
+            panic!("an async export produces a coroutine");
+        };
+        interpreter.async_kick(&root).expect("kick");
+        drop(root);
+        assert!(
+            interpreter.async_pending() > 0,
+            "the kick leaves queued work"
+        );
+        let queued: Vec<Weak<RefCell<Coroutine>>> = reachable_frames(&interpreter)
+            .iter()
+            .map(Rc::downgrade)
+            .collect();
+        assert_eq!(queued.len(), 3, "two children and the blocked holder");
+
+        interpreter.async_step().expect("first checkpoint");
+        assert!(
+            interpreter.async_pending() > 0,
+            "the children park again, so work remains"
+        );
+        assert_eq!(
+            queued
+                .iter()
+                .filter(|frame| frame.upgrade().is_some())
+                .count(),
+            3,
+            "a checkpoint must not free the work it is still running"
+        );
+
+        while interpreter.async_pending() != 0 {
+            interpreter.async_step().expect("checkpoint");
+        }
+        assert_eq!(interpreter.context.take_stdout(), b"1,2\n");
+        drop(interpreter);
+        assert_eq!(
+            queued
+                .iter()
+                .filter(|frame| frame.upgrade().is_some())
+                .count(),
+            0,
+            "frames retained after interpreter teardown"
+        );
+    }
+
     #[test]
     fn poisoned_address_names_use_and_invalidation() {
         let module = empty_module(Vec::new());
@@ -5825,7 +6312,9 @@ mod tests {
             kind: l::FunctionKind::Free,
             exported: false,
             is_generator: false,
-            is_async: false,
+            // §94.1 rule 4: an `AsyncCall` target is an async function, so
+            // the suspension creates a frame and registers on it.
+            is_async: true,
             creation_traps: Vec::new(),
             host_entry_traps: None,
             parameters: Vec::new(),

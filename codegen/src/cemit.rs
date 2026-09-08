@@ -1245,11 +1245,16 @@ impl<'m> Emitter<'m> {
             function.id.0
         );
         if function.is_async {
+            let result_size = if function.return_type == Type::Void {
+                "0u".to_string()
+            } else {
+                format!("(uint64_t)sizeof({})", self.ctype(&function.return_type)?)
+            };
             let register = self.runtime_call(
                 "void",
                 "subscript_rt_async_register",
-                &["void*".into(), "void*".into()],
-                &["ctx".into(), "frame".into()],
+                &["void*".into(), "void*".into(), "uint64_t".into()],
+                &["ctx".into(), "frame".into(), result_size],
             );
             let _ = writeln!(out, "    {register};");
         }
@@ -3057,7 +3062,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
         }
         out.push_str("    goto coroutine_done;\n");
-        state = 1;
         for block in &self.function.blocks {
             let l::Terminator::Suspend {
                 successor,
@@ -3071,10 +3075,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             let _ = writeln!(out, "resume_b{}:\n    ;", block.id.0);
             match kind {
                 l::SuspendKind::AsyncCall { .. } => {
-                    self.emit_async_child_resume(out, block, state)?;
+                    self.emit_async_child_resume(out, block)?;
                 }
                 l::SuspendKind::AsyncHandle { .. } => {
-                    self.emit_async_handle_resume(out, block, state, false)?;
+                    self.emit_async_handle_resume(out, block)?;
                 }
                 _ => {
                     if resume_value.is_some() {
@@ -3084,7 +3088,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     let _ = writeln!(out, "    goto b{};", successor.0);
                 }
             }
-            state += 1;
         }
         Ok(())
     }
@@ -3881,13 +3884,23 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 out.push_str("    return 0;\n");
             }
             l::SuspendKind::Async => {
+                // B1 experiment rule 8: a `Context.suspend()` waiter becomes
+                // eligible at the next host checkpoint.
+                let park = self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_async_park",
+                    &["void*".into(), "void*".into()],
+                    &["ctx".into(), "frame".into()],
+                );
+                let _ = writeln!(out, "    {park};");
                 let _ = writeln!(out, "    frame->state = {state};");
                 self.emit_pop(out);
                 out.push_str("    return 0;\n");
             }
             l::SuspendKind::AsyncCall { target, operands } => {
                 self.emit_async_child_create(out, block, target, operands, traps)?;
-                self.emit_async_child_resume(out, block, state)?;
+                self.emit_async_child_start(out, block, target)?;
+                self.emit_await_registration(out, block, state)?;
             }
             l::SuspendKind::AsyncHandle { handle } => {
                 let _ = writeln!(
@@ -3896,7 +3909,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     block.id.0,
                     self.value(*handle)
                 );
-                self.emit_async_handle_resume(out, block, state, true)?;
+                self.emit_async_handle_stale_check(out, block)?;
+                self.emit_await_registration(out, block, state)?;
             }
         }
         Ok(())
@@ -4014,14 +4028,107 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         Ok(())
     }
 
-    fn emit_async_child_resume(
+    // B1 experiment: an async call runs the callee's prefix at the call.
+    fn emit_async_child_start(
+        &mut self,
+        out: &mut String,
+        block: &l::BasicBlock,
+        target: &l::CallTarget,
+    ) -> Result<(), String> {
+        let function = match target.kind {
+            l::CallTargetKind::Function(function) => function,
+            l::CallTargetKind::Method(method) => self.emitter.method_function(method)?,
+            ref other => return Err(internal(format!("async target {other:?} is invalid"))),
+        };
+        let handle = format!("frame->b{}_child", block.id.0);
+        let (output, size) = if let Some(ty) = &target.return_type {
+            let value = self.fresh();
+            let _ = writeln!(
+                out,
+                "    {} {value} = {};",
+                self.emitter.value_ctype(ty)?,
+                self.emitter.zero(ty)?
+            );
+            (format!("&{value}"), format!("sizeof({value})"))
+        } else {
+            ("NULL".into(), "0u".into())
+        };
+        let done = self.fresh();
+        let _ = writeln!(
+            out,
+            "    uint8_t {done} = sub_f{}_resume(ctx, {handle}, {output});",
+            function.0
+        );
+        self.emit_pending_check(out);
+        let complete = self.emitter.runtime_call(
+            "void",
+            "subscript_rt_async_complete",
+            &[
+                "void*".into(),
+                "void*".into(),
+                "const void*".into(),
+                "uint64_t".into(),
+            ],
+            &["ctx".into(), handle, output, size],
+        );
+        let _ = writeln!(out, "    if ({done}) {complete};");
+        Ok(())
+    }
+
+    fn emit_async_handle_stale_check(
+        &mut self,
+        out: &mut String,
+        block: &l::BasicBlock,
+    ) -> Result<(), String> {
+        let l::Terminator::Suspend { traps, .. } = &block.terminator else {
+            return Err(internal("held await source is not a suspension"));
+        };
+        for trap in traps {
+            match trap.kind {
+                l::TrapKind::DevReloadOnlyStaleCoroutine => self.consume(trap),
+                l::TrapKind::Call => self.consume(trap),
+                ref other => return Err(internal(format!("unexpected held-await trap {other:?}"))),
+            }
+        }
+        let _ = out;
+        Ok(())
+    }
+
+    // B1 experiment rules 3 to 5: the await registers a continuation on the
+    // awaited handle and suspends. It never resumes the awaited child.
+    fn emit_await_registration(
         &mut self,
         out: &mut String,
         block: &l::BasicBlock,
         state: u32,
     ) -> Result<(), String> {
+        let register = self.emitter.runtime_call(
+            "void",
+            "subscript_rt_async_await",
+            &["void*".into(), "void*".into(), "void*".into()],
+            &[
+                "ctx".into(),
+                "frame".into(),
+                format!("frame->b{}_child", block.id.0),
+            ],
+        );
+        let _ = writeln!(out, "    {register};");
+        let _ = writeln!(out, "    frame->state = {state};");
+        self.emit_pop(out);
+        out.push_str("    return 0;\n");
+        Ok(())
+    }
+
+    // The resume side of a direct await. The scheduler runs it only after the
+    // awaited handle completes, so the cached result is present. A missing
+    // result re-registers the continuation.
+    fn emit_async_child_resume(
+        &mut self,
+        out: &mut String,
+        block: &l::BasicBlock,
+    ) -> Result<(), String> {
         let l::Terminator::Suspend {
-            kind: l::SuspendKind::AsyncCall { target, .. },
+            kind: l::SuspendKind::AsyncCall { .. },
             successor,
             resume_value,
             pos,
@@ -4030,26 +4137,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         else {
             return Err(internal("child resume on non-call suspend"));
         };
-        let function = match target.kind {
-            l::CallTargetKind::Function(function) => function,
-            l::CallTargetKind::Method(method) => self.emitter.method_function(method)?,
-            ref other => return Err(internal(format!("async target {other:?} is invalid"))),
-        };
-        let output = if let Some(value) = resume_value {
-            format!("&{}", self.value(*value))
+        let (output, size) = if let Some(value) = resume_value {
+            (
+                format!("&{}", self.value(*value)),
+                format!("sizeof({})", self.value(*value)),
+            )
         } else {
-            "NULL".into()
+            ("NULL".into(), "0u".into())
         };
-        let done = self.fresh();
-        let _ = writeln!(
-            out,
-            "    uint8_t {done} = sub_f{}_resume(ctx, frame->b{}_child, {output});",
-            function.0, block.id.0
-        );
-        self.emit_pending_check(out);
-        let _ = writeln!(out, "    if (!{done}) {{ frame->state = {state};");
-        self.emit_pop(out);
-        out.push_str("        return 0;\n    }\n");
+        self.emit_completion_read(out, block, &output, &size)?;
         self.restore_suspend_arguments(out, block)?;
         let pos = self.emitter.pos_id(pos);
         let release = self.emitter.runtime_call(
@@ -4072,30 +4168,16 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         &mut self,
         out: &mut String,
         block: &l::BasicBlock,
-        state: u32,
-        consume_traps: bool,
     ) -> Result<(), String> {
         let l::Terminator::Suspend {
             kind: l::SuspendKind::AsyncHandle { .. },
             successor,
             resume_value,
-            traps,
             ..
         } = &block.terminator
         else {
             return Err(internal("held async resume on non-handle suspend"));
         };
-        if consume_traps {
-            for trap in traps {
-                match trap.kind {
-                    l::TrapKind::DevReloadOnlyStaleCoroutine => self.consume(trap),
-                    l::TrapKind::Call => {}
-                    ref other => {
-                        return Err(internal(format!("unexpected held-await trap {other:?}")))
-                    }
-                }
-            }
-        }
         let (output, size) = if let Some(value) = resume_value {
             (
                 format!("&{}", self.value(*value)),
@@ -4104,6 +4186,28 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         } else {
             ("NULL".into(), "0u".into())
         };
+        self.emit_completion_read(out, block, &output, &size)?;
+        self.restore_suspend_arguments(out, block)?;
+        let _ = writeln!(out, "    frame->b{}_child = NULL;", block.id.0);
+        let _ = writeln!(out, "    goto b{};", successor.0);
+        Ok(())
+    }
+
+    // The scheduler resumes an await only after its handle completes, so a
+    // missing completion is an internal protocol defect (`compiler.md`
+    // §94.1). The Context stops; nothing re-registers, polls, or fabricates
+    // a result.
+    fn emit_completion_read(
+        &mut self,
+        out: &mut String,
+        block: &l::BasicBlock,
+        output: &str,
+        size: &str,
+    ) -> Result<(), String> {
+        let l::Terminator::Suspend { pos, .. } = &block.terminator else {
+            return Err(internal("completion read on a non-suspend block"));
+        };
+        let pos = self.emitter.pos_id(pos);
         let handle = format!("frame->b{}_child", block.id.0);
         let cached = self.emitter.runtime_call(
             "uint8_t",
@@ -4114,38 +4218,22 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 "void*".into(),
                 "uint64_t".into(),
             ],
-            &["ctx".into(), handle.clone(), output.clone(), size.clone()],
+            &[
+                "ctx".into(),
+                handle.clone(),
+                output.to_string(),
+                size.to_string(),
+            ],
         );
         let done = self.fresh();
         let _ = writeln!(out, "    uint8_t {done} = {cached};");
-        let _ = writeln!(
-            out,
-            "    if (!{done}) {done} = ((SubCoroutinePrefix*)({handle}))->resume(ctx, {handle}, {output});"
-        );
-        if consume_traps {
-            if let Some(trap) = traps.iter().find(|trap| trap.kind == l::TrapKind::Call) {
-                self.consume(trap);
-            }
-        }
-        self.emit_pending_check(out);
-        let complete = self.emitter.runtime_call(
+        let missing = self.emitter.runtime_call(
             "void",
-            "subscript_rt_async_complete",
-            &[
-                "void*".into(),
-                "void*".into(),
-                "const void*".into(),
-                "uint64_t".into(),
-            ],
-            &["ctx".into(), handle, output, size],
+            "subscript_rt_async_missing_completion",
+            &["void*".into(), "uint32_t".into()],
+            &["ctx".into(), format!("{pos}u")],
         );
-        let _ = writeln!(out, "    if ({done}) {complete};");
-        let _ = writeln!(out, "    if (!{done}) {{ frame->state = {state};");
-        self.emit_pop(out);
-        out.push_str("        return 0;\n    }\n");
-        self.restore_suspend_arguments(out, block)?;
-        let _ = writeln!(out, "    frame->b{}_child = NULL;", block.id.0);
-        let _ = writeln!(out, "    goto b{};", successor.0);
+        let _ = writeln!(out, "    if (!{done}) {{ {missing}; goto unwind; }}");
         Ok(())
     }
 

@@ -132,16 +132,45 @@ pub type ScriptMainEntry = unsafe extern "C" fn(ctx: *mut Context);
 /// suspension.
 pub type AsyncResume = unsafe extern "C" fn(ctx: *mut Context, frame: *mut u8, out: *mut u8) -> u8;
 
-#[derive(Clone, Copy)]
-struct AsyncRoot {
-    frame: *mut u8,
-    resume: AsyncResume,
-}
-
 #[derive(Default)]
 struct AsyncFrameMeta {
     created_epoch: u32,
     completion: Option<Vec<u8>>,
+    // The fulfilled-value size the scheduler supplies when it resumes this
+    // frame, and the continuations registered on it (§94.1 rule 5).
+    result_size: usize,
+    waiters: Vec<*mut u8>,
+}
+
+/// Aligned result storage for one scheduler resume (`compiler.md` §94.2).
+struct ResultStorage {
+    words: Vec<u128>,
+    size: usize,
+}
+
+impl ResultStorage {
+    fn new(size: usize) -> Self {
+        Self {
+            words: vec![0u128; size.div_ceil(16)],
+            size,
+        }
+    }
+
+    fn out(&mut self) -> *mut u8 {
+        if self.size == 0 {
+            std::ptr::null_mut()
+        } else {
+            self.words.as_mut_ptr().cast()
+        }
+    }
+
+    fn value(&self) -> *const u8 {
+        if self.size == 0 {
+            std::ptr::null()
+        } else {
+            self.words.as_ptr().cast()
+        }
+    }
 }
 
 /// Bytes between an allocation's base and its payload.
@@ -623,14 +652,17 @@ pub struct Context {
     // the worker module; the Context itself remains thread-affine.
     workers: WorkerSet,
     script_depth: u32,
-    // Q34 pending root invocations, in host kick order. Active frames are
-    // tracked separately while a callback is on the stack so explicit
-    // collection keeps the whole current frame chain alive.
-    async_roots: VecDeque<AsyncRoot>,
+    // Active frames are tracked separately while a callback is on the stack
+    // so explicit collection keeps the running frame alive.
+    // §94 scheduler state: runnable continuations in FIFO order, and the
+    // frames that wait for the next host checkpoint.
+    async_ready: VecDeque<*mut u8>,
+    async_parked: VecDeque<*mut u8>,
     active_async_frames: Vec<usize>,
     // §70 held async handles. The reference count itself occupies the
-    // frame header's four-byte `reserved` word; Context metadata holds only
-    // reload provenance and the fulfilled bytes needed by a later holder.
+    // frame header's four-byte `reserved` word; Context metadata holds
+    // reload provenance, the fulfilled-value size the scheduler needs, the
+    // cached completion, and the continuations registered on the frame.
     async_frames: HashMap<usize, AsyncFrameMeta>,
     // Exact-size live allocations. The dev tier uses this path; a ship
     // Context switches to it when freed-handle diagnostics are enabled.
@@ -756,7 +788,8 @@ impl Context {
             module_globals: None,
             workers: WorkerSet::default(),
             script_depth: 0,
-            async_roots: VecDeque::new(),
+            async_ready: VecDeque::new(),
+            async_parked: VecDeque::new(),
             active_async_frames: Vec::new(),
             async_frames: HashMap::new(),
             allocations: HashMap::new(),
@@ -1121,7 +1154,7 @@ impl Context {
     ///
     /// `frame` is a fresh live coroutine allocation with at least eight
     /// payload bytes and belongs to this Context.
-    pub unsafe fn async_register(&mut self, frame: *mut u8) {
+    pub unsafe fn async_register(&mut self, frame: *mut u8, result_size: usize) {
         if frame.is_null() {
             return;
         }
@@ -1133,8 +1166,84 @@ impl Context {
             AsyncFrameMeta {
                 created_epoch: self.reload_epoch,
                 completion: None,
+                result_size,
+                waiters: Vec::new(),
             },
         );
+    }
+
+    /// Parks a frame that suspended at `Context.suspend()`
+    /// (`compiler.md` §94.1 rule 3). The next host checkpoint makes it
+    /// runnable, in registration order.
+    ///
+    /// # Safety
+    ///
+    /// `frame` is a registered live async frame in this Context.
+    pub unsafe fn async_park(&mut self, frame: *mut u8) {
+        if frame.is_null() || !self.async_frames.contains_key(&(frame as usize)) {
+            return;
+        }
+        // The scheduler owns one reference for every frame it tracks.
+        unsafe { self.async_retain(frame) };
+        self.async_parked.push_back(frame);
+    }
+
+    /// Registers `frame` as a continuation of `handle` (`compiler.md`
+    /// §94.1 rules 4 to 6). A completed handle places the continuation at
+    /// the ready queue's tail; an unfinished handle keeps it in its own
+    /// registration-ordered list.
+    ///
+    /// # Safety
+    ///
+    /// Both pointers are registered live async frames in this Context.
+    pub unsafe fn async_await(&mut self, frame: *mut u8, handle: *mut u8) {
+        if frame.is_null() || !self.async_frames.contains_key(&(frame as usize)) {
+            return;
+        }
+        // The scheduler owns one reference for every frame it tracks.
+        unsafe { self.async_retain(frame) };
+        match self.async_frames.get_mut(&(handle as usize)) {
+            Some(meta) if meta.completion.is_none() => meta.waiters.push(frame),
+            _ => self.async_ready.push_back(frame),
+        }
+    }
+
+    /// Reports a scheduled await resume without its cached completion.
+    /// `compiler.md` §94.1 makes this an internal protocol defect: the
+    /// Context stops under the ordinary trap policy, and no consumer
+    /// re-registers, polls, or fabricates a result.
+    pub fn async_missing_completion(&mut self, pos_id: u32) {
+        self.trap(
+            TrapKind::Internal,
+            "async resume without completion",
+            pos_id,
+        );
+    }
+
+    /// The runnable continuation count. Test and benchmark
+    /// instrumentation; `compiler.md` §94.2 contracts only
+    /// `async_pending` and `async_unfinished` as host observers.
+    #[must_use]
+    pub fn async_ready_len(&self) -> usize {
+        self.async_ready.len()
+    }
+
+    /// The count of frames that wait for a host checkpoint. Test
+    /// instrumentation, as `async_ready_len` is.
+    #[must_use]
+    pub fn async_parked_len(&self) -> usize {
+        self.async_parked.len()
+    }
+
+    /// The number of registered async invocations without a cached
+    /// completion (`compiler.md` §94.2). A host reads it beside
+    /// `async_pending` to tell quiescence from blocked work.
+    #[must_use]
+    pub fn async_unfinished(&self) -> usize {
+        self.async_frames
+            .values()
+            .filter(|meta| meta.completion.is_none())
+            .count()
     }
 
     /// Increments one held async handle count.
@@ -1215,6 +1324,10 @@ impl Context {
             unsafe { std::slice::from_raw_parts(value, size) }.to_vec()
         };
         meta.completion = Some(bytes);
+        // §94.1 rule 5: completion makes every registered continuation
+        // runnable, in registration order, at the queue's tail.
+        let waiters = std::mem::take(&mut meta.waiters);
+        self.async_ready.extend(waiters);
     }
 
     /// Copies a cached fulfilled representation into `out`, returning
@@ -1261,23 +1374,31 @@ impl Context {
         // reachable if the generated body explicitly collects.
         let done = unsafe { resume(ctx, frame, std::ptr::null_mut()) };
         self.active_async_frames.pop();
-        if done == 0 && !self.trapped() {
-            self.async_roots.push_back(AsyncRoot { frame, resume });
-        } else if done != 0 {
-            // The pending root owns the creator's initial reference.
-            unsafe { self.async_release(frame, 0) };
+        if self.trapped() {
+            // The existing trap policy preserves the trapping frame.
+            return;
         }
+        if done != 0 {
+            // A root returns no value, so its completion record is empty.
+            unsafe { self.async_complete(frame, std::ptr::null(), 0) };
+        }
+        // §94.1 rule 10: an export kick follows the same rules as a call.
+        // A suspended root already registered itself with the scheduler,
+        // which holds its own reference, so the kick never keeps one.
+        unsafe { self.async_release(frame, 0) };
     }
 
-    /// Number of suspended async root invocations.
+    /// Work a host checkpoint can advance: runnable jobs plus parked waiters.
     #[must_use]
     pub fn async_pending(&self) -> usize {
-        self.async_roots.len()
+        self.async_ready.len() + self.async_parked.len()
     }
 
-    /// Resumes every root that was pending at call entry exactly once, in
-    /// kick order. A root that suspends returns to the back in the same
-    /// relative order; a completed root leaves the queue.
+    /// Runs one host checkpoint (`compiler.md` §94.1 rules 8 and 9): it
+    /// appends the whole pre-existing parked list after the jobs that are
+    /// already ready, then drains the ready queue in FIFO order. Jobs added
+    /// during the drain join the same checkpoint; a frame parked during it
+    /// waits for the next one. The drain has no job budget.
     ///
     /// A trap stops the round and preserves the trapping root plus every
     /// not-yet-stepped root. Consequently clearing a reload-staleness trap
@@ -1289,37 +1410,52 @@ impl Context {
     /// Every queued callback/frame pair was supplied through
     /// [`Context::async_kick`] and its generated code remains live.
     pub unsafe fn async_step(&mut self) -> usize {
-        if self.trapped() || self.async_roots.is_empty() {
-            return self.async_roots.len();
+        if self.trapped() {
+            return self.async_pending();
         }
-        let mut round = std::mem::take(&mut self.async_roots);
+        // §94.1 rule 8: the checkpoint appends the entire pre-existing
+        // parked list after the jobs that are already ready, then drains the
+        // ready queue in FIFO order. Rule 9 leaves a frame parked during
+        // this drain for the next checkpoint.
+        let parked = std::mem::take(&mut self.async_parked);
+        self.async_ready.extend(parked);
+        if self.async_ready.is_empty() {
+            return self.async_pending();
+        }
         let active_base = self.active_async_frames.len();
-        // `round` is temporarily outside `self.async_roots`. Keep every
-        // root in the fixed poll set registered for collection, including
-        // roots not yet reached when an earlier callback collects.
-        self.active_async_frames
-            .extend(round.iter().map(|root| root.frame as usize));
         self.enter_script();
-        while let Some(root) = round.pop_front() {
+        while let Some(frame) = self.async_ready.pop_front() {
+            let size = self
+                .async_frames
+                .get(&(frame as usize))
+                .map_or(0, |meta| meta.result_size);
+            let mut storage = ResultStorage::new(size);
+            self.active_async_frames.push(frame as usize);
             let ctx = self as *mut Context;
-            // SAFETY: roots enter the queue only through `async_kick`.
-            let done = unsafe { (root.resume)(ctx, root.frame, std::ptr::null_mut()) };
+            // SAFETY: a queued frame is a registered generated coroutine, so
+            // its resume pointer sits at the fixed header offset.
+            let resume = unsafe { frame.add(8).cast::<AsyncResume>().read() };
+            // SAFETY: frames enter the queue only through the generated
+            // registration calls, which supply the matching resume function.
+            let done = unsafe { resume(ctx, frame, storage.out()) };
+            self.active_async_frames.pop();
             if self.trapped() {
-                self.async_roots.push_back(root);
-                self.async_roots.append(&mut round);
+                // The existing trap policy preserves the trapping entry and
+                // every entry the round has not reached.
+                self.async_ready.push_front(frame);
                 break;
             }
-            if done == 0 {
-                self.async_roots.push_back(root);
-            } else {
-                // Queue ownership ends at completion; no collector pass is
-                // needed for the decrement that reaches zero.
-                unsafe { self.async_release(root.frame, 0) };
+            if done != 0 {
+                // SAFETY: `storage` holds `size` initialized bytes.
+                unsafe { self.async_complete(frame, storage.value(), size) };
             }
+            // The scheduler's own reference ends here. A frame that
+            // suspended again registered a new one before it returned.
+            unsafe { self.async_release(frame, 0) };
         }
         self.active_async_frames.truncate(active_base);
         self.exit_script();
-        self.async_roots.len()
+        self.async_pending()
     }
 
     // ----- Math.random state (stdlib.md §2) -----
@@ -2665,12 +2801,30 @@ impl Context {
                 })
             });
         self.push_root_set(&mut work, &mut tracer, "shadow", shadow);
-        let async_roots = self
-            .async_roots
+        // §94.2: every scheduler state is a collection root. Ready jobs,
+        // parked frames, and blocked continuations are named separately, so
+        // the enumeration shows each state rather than relying on the
+        // registration map to cover them all.
+        let async_ready = self
+            .async_ready
             .iter()
             .enumerate()
-            .map(|(index, root)| (index, 0, root.frame as usize));
-        self.push_root_set(&mut work, &mut tracer, "async_roots", async_roots);
+            .map(|(index, frame)| (index, 0, *frame as usize));
+        self.push_root_set(&mut work, &mut tracer, "async_ready", async_ready);
+        let async_parked = self
+            .async_parked
+            .iter()
+            .enumerate()
+            .map(|(index, frame)| (index, 0, *frame as usize));
+        self.push_root_set(&mut work, &mut tracer, "async_parked", async_parked);
+        let async_blocked = self
+            .async_frames
+            .values()
+            .flat_map(|meta| meta.waiters.iter())
+            .copied()
+            .enumerate()
+            .map(|(index, frame)| (index, 0, frame as usize));
+        self.push_root_set(&mut work, &mut tracer, "async_blocked", async_blocked);
         let active_async_frames = self
             .active_async_frames
             .iter()
@@ -3586,12 +3740,6 @@ mod tests {
     use super::*;
 
     #[repr(C)]
-    struct TestAsyncFrame {
-        id: u8,
-        polls: u8,
-    }
-
-    #[repr(C)]
     struct TestCountedAsyncFrame {
         state: i32,
         count: u32,
@@ -3604,18 +3752,6 @@ mod tests {
         _out: *mut u8,
     ) -> u8 {
         1
-    }
-
-    unsafe extern "C" fn test_async_resume(ctx: *mut Context, frame: *mut u8, _out: *mut u8) -> u8 {
-        // SAFETY: the tests pass matching live `TestAsyncFrame` values.
-        let ctx = unsafe { &mut *ctx };
-        let frame = unsafe { &mut *frame.cast::<TestAsyncFrame>() };
-        ctx.print_line(if frame.id == 1 { b"one" } else { b"two" });
-        frame.polls += 1;
-        if frame.id == 3 && frame.polls == 2 {
-            ctx.collect();
-        }
-        u8::from(frame.polls == 2)
     }
 
     #[test]
@@ -3641,7 +3777,7 @@ mod tests {
                     count: 0,
                     resume: counted_test_resume,
                 });
-            ctx.async_register(frame);
+            ctx.async_register(frame, 4);
             assert_eq!((*frame.cast::<TestCountedAsyncFrame>()).count, 1);
             assert_eq!(ctx.async_count(frame), 1);
 
@@ -3669,81 +3805,229 @@ mod tests {
         assert_eq!(ctx.live_bytes(), 0);
     }
 
-    #[test]
-    fn async_step_resumes_pending_roots_in_kick_order() {
-        let mut ctx = Context::new();
-        let mut one = TestAsyncFrame { id: 1, polls: 0 };
-        let mut two = TestAsyncFrame { id: 2, polls: 0 };
-        // SAFETY: both frames remain live until their second poll completes.
-        unsafe {
-            ctx.async_kick((&mut one as *mut TestAsyncFrame).cast(), test_async_resume);
-            ctx.async_kick((&mut two as *mut TestAsyncFrame).cast(), test_async_resume);
+    #[repr(C)]
+    struct TestSchedulerFrame {
+        state: i32,
+        count: u32,
+        resume: AsyncResume,
+        id: u8,
+        polls: u8,
+    }
+
+    /// Counts every scheduler resume of `teardown_park_resume`, so a test
+    /// can observe that Context teardown runs no continuation.
+    static TEARDOWN_RESUMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+    fn frame_label(id: u8) -> &'static [u8] {
+        match id {
+            1 => b"one".as_slice(),
+            2 => b"two".as_slice(),
+            _ => b"three".as_slice(),
         }
-        assert_eq!(ctx.async_pending(), 2);
+    }
+
+    /// Allocates and registers one Context-owned scheduler frame with the
+    /// emitted coroutine header (§70.2), which the scheduler reads.
+    fn spawn_test_frame(ctx: &mut Context, id: u8, resume: AsyncResume) -> *mut u8 {
+        let frame = ctx.alloc(
+            std::mem::size_of::<TestSchedulerFrame>(),
+            CLASS_GENERATOR,
+            0,
+        );
+        // SAFETY: the allocation has exactly the test-frame payload.
+        unsafe {
+            frame
+                .cast::<TestSchedulerFrame>()
+                .write(TestSchedulerFrame {
+                    state: 0,
+                    count: 0,
+                    resume,
+                    id,
+                    polls: 0,
+                });
+            ctx.async_register(frame, 0);
+        }
+        frame
+    }
+
+    /// Parks twice and completes on its third resume, so one frame spans
+    /// the kick and two checkpoints, as two `Context.suspend()` awaits do.
+    unsafe extern "C" fn parking_test_resume(
+        ctx: *mut Context,
+        frame: *mut u8,
+        _out: *mut u8,
+    ) -> u8 {
+        // SAFETY: the tests pass matching live `TestSchedulerFrame` values.
+        let context = unsafe { &mut *ctx };
+        let record = unsafe { &mut *frame.cast::<TestSchedulerFrame>() };
+        context.print_line(frame_label(record.id));
+        record.polls += 1;
+        if record.polls == 3 {
+            return 1;
+        }
+        // SAFETY: the frame is registered in this Context.
+        unsafe { context.async_park(frame) };
+        0
+    }
+
+    /// Parks forever and collects on every resume after the first.
+    unsafe extern "C" fn collecting_park_resume(
+        ctx: *mut Context,
+        frame: *mut u8,
+        _out: *mut u8,
+    ) -> u8 {
+        // SAFETY: the tests pass matching live `TestSchedulerFrame` values.
+        let context = unsafe { &mut *ctx };
+        let record = unsafe { &mut *frame.cast::<TestSchedulerFrame>() };
+        context.print_line(frame_label(record.id));
+        record.polls += 1;
+        if record.polls > 1 {
+            context.collect();
+        }
+        // SAFETY: the frame is registered in this Context.
+        unsafe { context.async_park(frame) };
+        0
+    }
+
+    /// Parks forever and counts its resumes in `TEARDOWN_RESUMES`.
+    unsafe extern "C" fn teardown_park_resume(
+        ctx: *mut Context,
+        frame: *mut u8,
+        _out: *mut u8,
+    ) -> u8 {
+        TEARDOWN_RESUMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // SAFETY: the test passes a matching live `TestSchedulerFrame`.
+        let context = unsafe { &mut *ctx };
+        // SAFETY: the frame is registered in this Context.
+        unsafe { context.async_park(frame) };
+        0
+    }
+
+    #[test]
+    fn async_step_promotes_parked_frames_in_registration_order() {
+        let mut ctx = Context::new();
+        let one = spawn_test_frame(&mut ctx, 1, parking_test_resume);
+        let two = spawn_test_frame(&mut ctx, 2, parking_test_resume);
+        // SAFETY: both frames are registered and live.
+        unsafe {
+            ctx.async_kick(one, parking_test_resume);
+            ctx.async_kick(two, parking_test_resume);
+        }
         assert_eq!(ctx.take_stdout(), b"one\ntwo\n");
-        // SAFETY: the queued callbacks and frames are still valid.
+        // The kick parks each frame; nothing is ready (§94.1 rules 3 and 7).
+        assert_eq!((ctx.async_ready_len(), ctx.async_parked_len()), (0, 2));
+        assert_eq!(ctx.async_pending(), 2);
+        assert_eq!(ctx.async_unfinished(), 2);
+
+        // The first checkpoint promotes the whole parked list, in
+        // registration order. Each frame parks again, so rule 9 defers that
+        // work to the next checkpoint rather than looping inside this one.
+        // SAFETY: both frames are still registered and live.
+        assert_eq!(unsafe { ctx.async_step() }, 2);
+        assert_eq!(ctx.take_stdout(), b"one\ntwo\n");
+        assert_eq!((ctx.async_ready_len(), ctx.async_parked_len()), (0, 2));
+
+        // The second checkpoint completes both, in the same order.
+        // SAFETY: both frames are still registered and live.
         assert_eq!(unsafe { ctx.async_step() }, 0);
         assert_eq!(ctx.take_stdout(), b"one\ntwo\n");
+        assert_eq!(ctx.async_unfinished(), 0);
+        assert_eq!(ctx.live_bytes(), 0);
     }
 
     #[test]
     fn async_step_on_trapped_context_is_no_op() {
         let mut ctx = Context::new();
-        let mut frame = TestAsyncFrame { id: 1, polls: 0 };
-        // SAFETY: `frame` remains live for the test.
-        unsafe {
-            ctx.async_kick(
-                (&mut frame as *mut TestAsyncFrame).cast(),
-                test_async_resume,
-            )
-        };
-        ctx.trap(TrapKind::Internal, "test trap", 7);
-        // SAFETY: the queued callback and frame remain valid, but the trap
-        // contract prevents the callback from being invoked.
-        assert_eq!(unsafe { ctx.async_step() }, 1);
-        assert_eq!(frame.polls, 1);
+        let frame = spawn_test_frame(&mut ctx, 1, parking_test_resume);
+        // SAFETY: the frame is registered and live.
+        unsafe { ctx.async_kick(frame, parking_test_resume) };
+        assert_eq!(ctx.take_stdout(), b"one\n");
         assert_eq!(ctx.async_pending(), 1);
+        ctx.trap(TrapKind::Internal, "test trap", 7);
+        // The trap contract stops the checkpoint before any resume, and the
+        // parked registration is preserved.
+        // SAFETY: the frame is still registered and live.
+        assert_eq!(unsafe { ctx.async_step() }, 1);
+        assert_eq!(ctx.take_stdout(), b"");
+        assert_eq!(ctx.async_pending(), 1);
+        assert_eq!(ctx.async_parked_len(), 1);
     }
 
     #[test]
-    fn dropping_context_does_not_resume_suspended_async_roots() {
-        let mut frame = TestAsyncFrame { id: 1, polls: 0 };
+    fn dropping_context_does_not_resume_registered_async_frames() {
+        TEARDOWN_RESUMES.store(0, std::sync::atomic::Ordering::Relaxed);
         {
             let mut ctx = Context::new();
-            // SAFETY: `frame` outlives the Context and its pending queue.
-            unsafe {
-                ctx.async_kick(
-                    (&mut frame as *mut TestAsyncFrame).cast(),
-                    test_async_resume,
-                )
-            };
+            let frame = spawn_test_frame(&mut ctx, 1, teardown_park_resume);
+            // SAFETY: the frame is registered and live.
+            unsafe { ctx.async_kick(frame, teardown_park_resume) };
             assert_eq!(ctx.async_pending(), 1);
+            assert_eq!(ctx.async_unfinished(), 1);
         }
-        assert_eq!(frame.polls, 1, "teardown must not run a continuation");
+        assert_eq!(
+            TEARDOWN_RESUMES.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "teardown must not run a continuation"
+        );
+    }
+
+    /// The invalid-protocol report of `compiler.md` §94.1. A scheduled await
+    /// resume without its cached completion is an internal defect with a
+    /// fixed message, reported at the suspension's position.
+    #[test]
+    fn async_missing_completion_reports_the_internal_protocol_defect() {
+        let mut ctx = Context::new();
+        ctx.async_missing_completion(31);
+        let record = ctx.trap_record().expect("the defect stops the Context");
+        assert_eq!(record.kind, TrapKind::Internal);
+        assert_eq!(record.message, "async resume without completion");
+        assert_eq!(record.pos_id, 31);
+        assert!(ctx.trapped());
+    }
+
+    /// `async_unfinished` counts registered invocations without a cached
+    /// completion, and nothing else (`compiler.md` §94.2).
+    #[test]
+    fn async_unfinished_counts_invocations_without_a_completion() {
+        let mut ctx = Context::new();
+        assert_eq!(ctx.async_unfinished(), 0);
+        let first = spawn_test_frame(&mut ctx, 1, parking_test_resume);
+        let second = spawn_test_frame(&mut ctx, 2, parking_test_resume);
+        assert_eq!(ctx.async_unfinished(), 2);
+        // A completion removes one from the count while its holder keeps it.
+        // SAFETY: `first` is a registered live frame and the value is empty.
+        unsafe { ctx.async_complete(first, std::ptr::null(), 0) };
+        assert_eq!(ctx.async_unfinished(), 1);
+        assert_eq!(ctx.async_pending(), 0, "a completion is not pending work");
+        // Releasing the last owner drops the record entirely.
+        // SAFETY: each frame holds exactly the registration reference.
+        unsafe {
+            ctx.async_release(first, 0);
+            ctx.async_release(second, 0);
+        }
+        assert_eq!(ctx.async_unfinished(), 0);
     }
 
     #[test]
-    fn async_step_keeps_unstepped_roots_live_during_collection() {
+    fn async_step_keeps_queued_frames_live_during_collection() {
         let mut ctx = Context::new();
-        let first = ctx.alloc(std::mem::size_of::<TestAsyncFrame>(), CLASS_GENERATOR, 0);
-        let second = ctx.alloc(std::mem::size_of::<TestAsyncFrame>(), CLASS_GENERATOR, 0);
-        // SAFETY: both allocations have exactly the test-frame payload and
-        // remain Context-owned throughout the poll round.
+        let collector = spawn_test_frame(&mut ctx, 3, collecting_park_resume);
+        let other = spawn_test_frame(&mut ctx, 2, parking_test_resume);
+        // SAFETY: both frames are registered and live.
         unsafe {
-            first
-                .cast::<TestAsyncFrame>()
-                .write(TestAsyncFrame { id: 3, polls: 0 });
-            second
-                .cast::<TestAsyncFrame>()
-                .write(TestAsyncFrame { id: 2, polls: 0 });
-            ctx.async_kick(first, test_async_resume);
-            ctx.async_kick(second, test_async_resume);
-            assert_eq!(ctx.async_step(), 0);
+            ctx.async_kick(collector, collecting_park_resume);
+            ctx.async_kick(other, parking_test_resume);
         }
+        let _ = ctx.take_stdout();
+        // The collector runs first and collects while `other` is still an
+        // unreached ready job. §94.2 makes every scheduler state a root.
+        // SAFETY: both frames are still registered and live.
+        assert_eq!(unsafe { ctx.async_step() }, 2);
         assert!(
-            ctx.is_live(second as usize),
-            "the first root's collect must retain roots not yet polled"
+            ctx.is_live(other as usize),
+            "a collect inside the drain must retain the frames still queued"
         );
+        assert!(ctx.is_live(collector as usize));
     }
 
     impl Context {
