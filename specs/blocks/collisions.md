@@ -426,10 +426,18 @@ microtask queue. C8 and Q34 exclude an event loop and a microtask
 queue, and the host owns the loop, so no construct in this language
 gives a second chain a chance to run at a settled await.)*
 
+A held handle shows the same mechanism. `outer` prints, awaits an
+`inner` that completes, and prints; the caller prints between the
+call and the await. Here that gives
+`outer:start inner outer:end main:mid`; `node` gives
+`outer:start inner main:mid outer:end`.
+
 **Matching TypeScript here is not available** without a scheduler
 this language does not have. Concurrent completion, if it is wanted,
 is a separate request with its own surface (`compiler.md` §92.1
 rule 7).
+
+No diagnostic reports this.
 
 Accept: `a184`, `a185`.
 

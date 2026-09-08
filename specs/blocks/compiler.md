@@ -9941,8 +9941,12 @@ change.
 2. **At least one `await` is required.** Holding a handle, storing it,
    and passing it are legal. **Dropping it without awaiting is
    rejected.** `r100`'s intent stands: a coroutine that never
-   completes runs none of its effects, and a silent no-op is the bug
-   that rule exists to prevent. `r100` and `r105` are rewritten, not
+   completes runs none of its effects **after its first suspension**,
+   and a silent no-op is the bug that rule exists to prevent.
+   *(Amended 2026-09-08 by §92: a call now runs the callee to its
+   first suspension, so an abandoned handle runs that prefix. Where
+   the must-await analysis approximates, the prefix runs and the rest
+   does not. The rule stands; its reason is narrower than it read.)* `r100` and `r105` are rewritten, not
    deleted: they reject a *dropped* handle rather than a held one.
 
 ### 70.2 Where the count lives
@@ -10061,9 +10065,18 @@ because an arbitrary class's allocation has no spare word.)*
 5. **A handle is not a `Promise`.** It has no `then`, no combinator,
    and no constructor. C8's rejections stand.
 6. **A cycle leaks**, and a program that leaks is correct, merely
-   larger — invariant 2's own words. A frame cannot hold a handle to
-   itself today; if a shape appears that can, it is recorded, not
-   collected.
+   larger — invariant 2's own words. *(Corrected 2026-09-08, the
+   shape appeared, and rule 6 asked for it to be recorded.)* A frame
+   can hold a handle to itself, through a module global: a handle
+   created before the global is assigned, then stored into it, then
+   awaited from inside its own body. The checker accepts it. Measured
+   at `b1eaa56`: the dev tier reports "program terminated abnormally
+   (dev-JIT child signal 4)" with exit 2, and the ship binary repeats
+   its body until the stack ends. **The control**: a plain
+   `function f(n: i32): i32 { return f(n + 1); }` produces the same
+   dev-tier line and the same exit code, so this is unbounded
+   recursion, not a defect of the handle. The language traps no stack
+   depth, in either shape. Recorded, not collected and not rejected.
 7. **Workers are unaffected.** Q35 gives per-Context isolation and
    copy-only messaging, so no count crosses a thread and no atomic is
    needed.
@@ -10527,6 +10540,18 @@ and every `why` is 25 words or fewer.
 
 **Corpus.** No new entry: the 126 existing `tsc: accepts` reject
 entries are the pins, and rule 4 makes each one carry a block.
+
+### 79.1 A collision that rejects nothing carries no variant
+
+*(Added 2026-09-08.)* §79's divergence block belongs to a rejection:
+it shows the TypeScript form and the subscript form of a program the
+checker refuses. A collision that names a behaviour difference and
+rejects nothing has no diagnostic to carry it. Such an entry states
+`No diagnostic reports this.` on its own line, and the totality check
+that pairs every `collisions.md` heading with a `Divergence` variant
+skips a heading that carries that line. A `Divergence` variant no
+diagnostic can produce is a value that names no rejection, and the
+enum stops being a total map of the rejections.
 
 ## 80. Array data past `len` is zero
 
@@ -12609,6 +12634,12 @@ Measured reach of rule 1, against `node`:
    handle is complete when the caller receives it. The later `await`
    yields the stored result and suspends nothing. §70's rule that
    every handle needs one awaited completion is unchanged.
+2a. **An abandoned handle has already run its prefix.** §70.1 rule 2
+   rejects a dropped handle, and where that analysis approximates,
+   the callee's statements before its first suspension have already
+   run. A program that creates a handle and never awaits it is
+   rejected; a program that overwrites one after creating it has run
+   the overwritten callee's prefix.
 3. **The caller does not suspend.** After the callee suspends or
    returns, the caller continues at the statement that follows the
    call. An `await` in the caller is the only construct that
@@ -12670,8 +12701,13 @@ Measured reach of rule 1, against `node`:
    the corpus lacked: every async entry before it opted out of the
    node comparison.)*
 1a. **The divergence has its own entry.**
-   `corpus/accept/a185-async-settled-await-order.ts` holds the third
-   shape: two handles whose inner await is already complete. It
+   `corpus/accept/a185-async-settled-await-order.ts` holds two
+   shapes, both measured against `node`: two handles whose inner
+   await is already complete, and one held handle whose body passes
+   through a settled await (`outer` prints, awaits a completing
+   `inner`, prints; the caller prints between the call and the
+   await). The second gives `outer:start inner outer:end main:mid`
+   here and `outer:start inner main:mid outer:end` under `node`. It
    carries `js-comparable: no C16`, and its header states the
    `node` order beside this language's. It is green before and after
    this section; it exists so the divergence has a program, not only
