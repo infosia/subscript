@@ -11828,9 +11828,18 @@ and names no command either.
    and ` M codegen/src/lib.rs`: `goldens-moved 2` and the two paths in
    the record, `exit 0`;
    (i) a stub whose `test` sleeps, and the test sends `TERM` to the
-   script during that step: the exit status is non-zero and the set
-   of files under `target/gate/` is the same as before the run. This
-   case runs on a POSIX host only.
+   script during that step: the exit status is non-zero, **the
+   record the run reserved is absent**, and its scratch directory is
+   gone. The case reads the record's path from the run's own output
+   or from the one name that appeared under `target/gate/` after the
+   spawn; it does not compare the whole directory against a snapshot.
+   *(Corrected 2026-09-08, measured: the whole-directory comparison
+   failed once inside a real `full` run, naming a record neither the
+   case nor the enclosing run owned. `target/gate/` holds every run's
+   records, and this case executes inside one, so a set comparison
+   makes any concurrent writer a false failure. Rule 5's fact is
+   about the run's own record.)* This case runs on a POSIX host
+   only.
    *(Scoped 2026-09-06, measured on `x86_64-pc-windows-msvc`: a
    native parent starts the script, and the MSYS `kill` cannot map
    that Windows process id to a signal target. `kill -TERM`,
