@@ -734,11 +734,22 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   Byte-measured `length`/`slice` are unaffected and still diverge from
   JS's UTF-16 units on non-ASCII input — that is Q5's representation
   choice, not a limit that was lifted here.
-  Range/argument
-  errors trap (`charCodeAt` OOB, `repeat(-1)`, `split("")`,
-  `replaceAll("", …)`, empty-`pad` padding — JS returns NaN or silent
-  no-ops there). `replace`/`replaceAll` are literal: `$` substitution
-  patterns are not interpreted. Rejected members: `stdlib.md` §8.
+  Range and argument errors trap: `charCodeAt` out of range,
+  `repeat(-1)`, `split("")`, `replaceAll("", …)`, and an empty `pad`
+  that cannot reach the target. *(Revised 2026-09-09. The former text
+  said "JS returns NaN or silent no-ops there". That holds for one of
+  the five.)* Measured on node v24.18.0: `"ab".charCodeAt(5)` is
+  `NaN`; `"ab".repeat(-1)` throws a `RangeError`; `"ab".split("")` is
+  `["a", "b"]`; `"ab".replaceAll("", "-")` is `"-a-b-"`;
+  `"ab".padStart(4, "")` is `"ab"`. Only the first returns NaN.
+  `repeat(-1)` is no divergence in kind, because both implementations
+  reject it. The last three give up a defined result. An empty pad
+  traps only above the receiver length: `"ab".padStart(1, "")` is
+  `"ab"` here and under node.
+  `replace` and `replaceAll` interpret `$` substitution patterns, as
+  Q27 reinstated on 2026-07-25. *(Corrected 2026-09-09. Q21 said they
+  do not, and the runtime always did: `"a-b".replaceAll("-", "[$&]")`
+  is `a[-]b` here and under node.)* Rejected members: `stdlib.md` §8.
 - **Q22 (`Array` methods)** — the checker accepts the `stdlib.md` §9
   subset on `T[]`. Element equality follows JS `===` per element
   kind (scalars by value, strings by content, `Date` by millis,
