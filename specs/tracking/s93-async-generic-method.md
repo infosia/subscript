@@ -142,3 +142,38 @@ message` against two commits of this session. The trailer came from a
 tool instruction, not from the repository rules. `hygiene.sh` rejects
 it, and the repository rules govern. The two commits are rewritten
 without the trailer.
+
+## Round 2 — green
+
+Tasks D to G landed. Gate verdict, round 2:
+
+```
+gate full ab9f814d7113a2b888301e988d16f66004b50764 dirty:15 debug 1320/0/2 release 1318/0/2 skips 2/0 clippy 7/18/13 goldens-moved 1 exit 0
+```
+
+Record: `target/gate/20260908T101847Z-full.md`. Every step exits 0,
+including `tools/hygiene.sh`.
+
+### Verified here, not only reported
+
+- The LIR snapshot grows by exactly a187's block. With the 22,086
+  bytes of `===== a187-async-generic-method =====` removed, the new
+  file equals `git show HEAD:codegen/tests/lir-goldens/corpus.txt`
+  byte for byte. `goldens-moved 1` names that one file.
+- a187 runs and matches its committed golden.
+- r186 reports one diagnostic, S100 at 16:25, with the
+  `GenericMethodTypeArguments` block.
+- Counts: accept `.ts` 185, `.expected` 186, reject `.ts` 175.
+- The file set equals the authorized set. Nothing under `specs/`,
+  `codegen/src/`, `tools/`, or any Cargo manifest changed.
+
+### The reach of rule 12, measured
+
+Rule 12 sends every collection rule that rejects a method with type
+parameters through one record. The round reports one consequence
+beyond the call: a static method with type parameters on a generic
+class now reports "generic classes cannot declare static members"
+alone, where it reported that rule and "generic classes cannot
+declare generic methods" together. §93.1 rule 12a records it. Sixteen
+tests in `compiler/tests/async_generic_method.rs` pin the ten
+collection rules, each beside an accepted control in the same shape.

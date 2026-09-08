@@ -12844,6 +12844,15 @@ program is rejected today, and each one names the wrong rule.
    call. One construct reports one diagnostic. This rule holds for
    every collection rule that rejects a method with type parameters,
    not for the value-class rule alone.
+12a. *(Added 2026-09-08, after the round measured the reach of rule
+   12.)* One construct reports one diagnostic at its declaration too.
+   A static method with type parameters on a generic class reports
+   S100 "generic classes cannot declare static members" alone. It
+   reported that rule and "generic classes cannot declare generic
+   methods" together before this section. The first rule that names
+   the construct reports; a later rule that the same declaration also
+   breaks stays silent. A program that removes `static` then reports
+   the generic-method rule.
 
 ### 93.2 Checker and lowering
 
