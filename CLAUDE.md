@@ -226,6 +226,17 @@ numbered rules do not apply to them.
    share.** *(Owner, 2026-08-26.)* A shape where both tiers agree
    needs a golden, or a hand-checked value. Record every such defect
    with its measured output.
+13. **A change needs a stated problem, and evidence that the problem
+   is real.** *(Owner, 2026-09-08.)* A downstream request with
+   measured sites is one source of that evidence. It is not a
+   requirement, and it is not the main one: of the 26 contract
+   sections after §65, three came from a downstream request. The
+   other sources carry the same weight — a measured divergence from
+   the system this language is shaped after, a measured cost, a
+   soundness gap, a review finding, and a hole that is arbitrary
+   where the fix is mechanical. Refuse a proposal that states no
+   problem, whoever writes it. The surface is the product: an
+   accepted form stays in three witnesses and both corpora.
 
 ## Code conventions
 
