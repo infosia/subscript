@@ -12833,6 +12833,17 @@ program is rejected today, and each one names the wrong rule.
    the divergence block to a rejection that `tsc` accepts, so §82.4
    rule 1a's `BodilessDeclareGenericMethod` variant stays with the
    sync form alone.
+12. *(Added 2026-09-08, after the round measured a cascade.)* A
+   collection rule that rejects a method with type parameters records
+   the method as a rejected template, in the namespace that `static`
+   selects. §82.4 rule 1a states the consequence: the method reports
+   nothing more at a call that names it. Rule 9 moved the value-class
+   rejection above the template branch, and the round measured the
+   cascade that the move creates: r187 reports its S100 at the
+   declaration and then S018 "`Vec2` has no method `load`" at the
+   call. One construct reports one diagnostic. This rule holds for
+   every collection rule that rejects a method with type parameters,
+   not for the value-class rule alone.
 
 ### 93.2 Checker and lowering
 
@@ -12882,6 +12893,14 @@ on this host with exit 1.
    surface" at the declaration (rule 9).
 4. `corpus/reject/r181-async-generic-method.ts` is deleted, and its
    harness row is removed, as r104 was in §64 rule 7.
+5a. *(Added 2026-09-08.)* One rejected declaration gives one
+   diagnostic. For each collection rule that rejects a method with
+   type parameters, a program that also calls the method reports
+   exactly that rule, and no S018 and no "is not generic" at the call
+   (rule 12). The rules to cover: the `@CStruct` value-class async
+   rejection, the async static rejection, and the async generator
+   rejection. The control is a program whose method no rule rejects,
+   where the call reports nothing.
 5. Unit tests in the same commit: a floating `box.load<i32>(1)` is
    S013 at the statement; a read of `box.load` is the async
    first-class S100; two type-argument lists give two HIR method
