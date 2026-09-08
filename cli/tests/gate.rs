@@ -398,7 +398,6 @@ impl Drop for RunningChild {
 fn term_during_debug_deletes_the_partial_record() {
     let _guard = GATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let stubs = Stubs::new("sleep");
-    let before = gate_records();
     let mut child = RunningChild(
         stubs
             .command("full")
@@ -410,14 +409,15 @@ fn term_during_debug_deletes_the_partial_record() {
     );
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     // The marker proves that TERM reaches the sleep inside the debug step.
-    loop {
-        if !gate_records()
-            .difference(&before)
-            .collect::<Vec<_>>()
-            .is_empty()
-            && stubs.dir.join("test-started").exists()
-        {
-            break;
+    // Completed steps name this run's unique stub directory in its record.
+    let record = loop {
+        if stubs.dir.join("test-started").exists() {
+            if let Some(record) = gate_records().into_iter().find(|path| {
+                std::fs::read_to_string(path)
+                    .is_ok_and(|record| record.contains(stubs.dir.to_string_lossy().as_ref()))
+            }) {
+                break record;
+            }
         }
         assert!(
             child.0.try_wait().unwrap().is_none(),
@@ -428,7 +428,7 @@ fn term_during_debug_deletes_the_partial_record() {
             "stub test step did not start"
         );
         std::thread::sleep(std::time::Duration::from_millis(50));
-    }
+    };
     assert!(Command::new("kill")
         .arg("-TERM")
         .arg(child.0.id().to_string())
@@ -448,7 +448,10 @@ fn term_during_debug_deletes_the_partial_record() {
     };
     assert!(!status.success());
     // Assert before Stubs::drop, so test cleanup cannot hide a script defect.
-    assert_eq!(gate_records(), before);
+    assert!(
+        !record.exists(),
+        "the interrupted run's reserved record still exists"
+    );
     assert!(!std::fs::read_dir(&stubs.dir).unwrap().any(|entry| {
         entry
             .unwrap()
