@@ -237,6 +237,18 @@ numbered rules do not apply to them.
    where the fix is mechanical. Refuse a proposal that states no
    problem, whoever writes it. The surface is the product: an
    accepted form stays in three witnesses and both corpora.
+14. **A record is not a reason.** *(Owner, 2026-09-09.)* "It is
+   recorded", "the contract says so", and "a golden pins it" are
+   never grounds to refuse a change. Each of them is the result of
+   someone asking what the right form is, so each is evidence of a
+   past answer, not of a correct one. Ask what the form must be
+   first. Then read the record, to learn what the change costs and
+   what else must move. A decided divergence still needs a reason
+   that holds today; when the reason does not survive measurement,
+   the divergence goes. §95 produced this rule: three divergences
+   from TypeScript were each an exception inside a rule that
+   otherwise followed ECMA, and the first review refused all three
+   by citing the record.
 
 ## Code conventions
 
