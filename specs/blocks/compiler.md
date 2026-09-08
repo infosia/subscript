@@ -12577,7 +12577,27 @@ as a golden, and every async entry declares `js-comparable: no`
 because it uses `Context.suspend()`. A divergence this project did
 not decide reads as a decision (CLAUDE.md, "Compiler and oracle").
 
-The owner decides to match JavaScript.
+The owner decides to match JavaScript **at the start of a call**, and
+to record the rest as a decided divergence.
+
+*(Amended 2026-09-08, after the round measured what "match
+JavaScript" reaches.)* JavaScript interleaves two async chains
+through its microtask queue: `await` yields once even when its
+operand is already settled. Measured with `node v24.18.0`:
+`async function f(id) { console.log(\`a${id}\`); await 0;
+console.log(\`b${id}\`); } f(1); f(2);` prints `a1 a2 b1 b2`. Reaching
+that order needs a queue, which C8 and Q34 exclude and which the
+host-owned loop has no place for. Rule 1 below therefore matches
+JavaScript where a start is observable, and rule 1a states where the
+two still differ.
+
+Measured reach of rule 1, against `node`:
+
+| Shape | With rule 1 | `node` | Same |
+|---|---|---|---|
+| a call that never awaits | `quick1 after-create` | `quick1 after-create` | yes |
+| two handles whose bodies suspend | `start1 start2 end1 end2` | `start1 start2 end1 end2` | yes |
+| two handles whose inner await is already complete | `start1 leaf end1 start2 leaf end2` | `start1 leaf start2 leaf end1 end2` | no |
 
 ### 92.1 Rule
 
@@ -12602,6 +12622,25 @@ The owner decides to match JavaScript.
 6. **One order in three witnesses.** The dev JIT, the ship C, and
    the reference interpreter produce one byte sequence, as the
    standing gate requires.
+1a. **An `await` of a completed handle does not yield.** The caller
+   continues in the same step. JavaScript yields to its microtask
+   queue there, so a program that interleaves two chains through
+   settled awaits prints a different order. This is a decided
+   divergence, recorded as `collisions.md` C16. Nothing in this
+   language gives a second chain a chance to run at that point.
+1b. **The form carries the start.** The LIR operation that creates a
+   handle states, in its own definition, whether it starts the body.
+   `AsyncHandleCreate`'s definition today is "create an async
+   coroutine frame without polling it"; a consumer that starts the
+   body under that definition contradicts the form. Either the
+   definition changes with this section, or a second operation
+   carries the start. The chosen form states: the child runs at the
+   call to its first suspension or its return; the handle keeps its
+   owner and caches a completed result for a later await; the child
+   is not an exported root and does not join that queue; a trap in
+   the started body reports before the caller continues, at the
+   call, with the callee's position. *(Added 2026-09-08: the round
+   stopped here, correctly, under core principle 8.)*
 7. **Concurrent completion is a separate question and stays open.**
    With rule 1 both bodies start, and the work after each first
    suspension still completes in await order. `a94` shows the pump
@@ -12623,14 +12662,20 @@ The owner decides to match JavaScript.
 
 ### 92.3 Corpus and gate (pre-registered exit criteria)
 
-1. **Red at `34e0af3`.** `corpus/accept/a184-async-start-order.ts`
-   holds both shapes of the table above, with no `Context.suspend()`
-   in the js-comparable path, and carries `js-comparable: yes`. At
-   the pin the entry's output differs from `node`'s, and
-   `compiler/tests/js_corpus.rs` reports it. The measured difference
-   goes in the tracking note. *(This entry is the one the corpus
-   lacked: every async entry before it opted out of the node
-   comparison.)*
+1. **Red at `dc119e7`, measured.** `corpus/accept/a184-async-start-order.ts`
+   carries `js-comparable: yes` and holds only the two shapes rule 1
+   reaches: a call that never awaits, and a chain whose body
+   suspends. At the pin its output differs from `node`'s, and
+   `compiler/tests/js_corpus.rs` reports it. *(This entry is the one
+   the corpus lacked: every async entry before it opted out of the
+   node comparison.)*
+1a. **The divergence has its own entry.**
+   `corpus/accept/a185-async-settled-await-order.ts` holds the third
+   shape: two handles whose inner await is already complete. It
+   carries `js-comparable: no C16`, and its header states the
+   `node` order beside this language's. It is green before and after
+   this section; it exists so the divergence has a program, not only
+   a paragraph.
 2. **Green.** The entry matches `node` byte for byte, on the dev
    JIT, the ship tier, and the interpreter.
 3. **The goldens that move.** `a154`'s order changes by rule 1. Every

@@ -407,6 +407,32 @@ form MSVC accepts above 65,535 bytes; the owner chose the limit.
 
 Accept: `a183`. Reject: `r184`.
 
+### C16. An `await` of a completed handle does not yield
+
+JavaScript's `await` yields to the microtask queue even when its
+operand is already settled, so two async chains interleave. Measured
+with `node v24.18.0`:
+`async function f(id) { console.log(\`a${id}\`); await 0;
+console.log(\`b${id}\`); } f(1); f(2);` prints `a1 a2 b1 b2`.
+
+Here the caller continues in the same step. Two chains that pass
+through settled awaits run one after the other:
+`start1 leaf end1 start2 leaf end2` where `node` prints
+`start1 leaf start2 leaf end1 end2`.
+
+*(Owner decision 2026-09-08 with `compiler.md` §92, which matches
+JavaScript's start timing. Matching the interleaving needs a
+microtask queue. C8 and Q34 exclude an event loop and a microtask
+queue, and the host owns the loop, so no construct in this language
+gives a second chain a chance to run at a settled await.)*
+
+**Matching TypeScript here is not available** without a scheduler
+this language does not have. Concurrent completion, if it is wanted,
+is a separate request with its own surface (`compiler.md` §92.1
+rule 7).
+
+Accept: `a184`, `a185`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different
