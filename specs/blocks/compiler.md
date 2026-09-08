@@ -124,6 +124,10 @@ Every section, with its status:
 | §87 | A synthetic owner is one scoped operation | active |
 | §88 | The corpus index is the inventory | active |
 | §89 | R40 — a long string constant is adjacent C literals | active |
+| §90 | No public entry point panics or faults on any input | active |
+| §91 | The tutorials' programs run in the gate | active |
+| §92 | An async call starts its body at the call | active |
+| §93 | An async method declares type parameters | active |
 
 ## 1. Architecture
 
@@ -7219,7 +7223,8 @@ Measurements at the pin, on this host:
    the non-generic forms: `await f<A>(...)` and `await recv.m(...)`
    with `recv` of an instantiated generic class type. The await
    grammar gains no other form; async functions and methods stay
-   non-first-class.
+   non-first-class. *(§93, 2026-09-08: `await recv.m<A>(...)`
+   is a fourth form. Async methods stay non-first-class.)*
 4. Each distinct type-argument list yields one instance, checked
    and lowered as a §26.2 async function or a §37.2 async method.
    The instance name is the monomorphized name (`first<u32>`); the
@@ -11086,6 +11091,9 @@ fails; `?.[i]` fails; the right operand of `??` runs only on `null`
    method (the await grammar gains no form; §64 rule 3). A type
    parameter list on an accessor or a constructor keeps today's
    rejection. A mirror class and a `@Descriptor` class keep theirs.
+   *(§93, 2026-09-08: the `async` half is superseded. An async
+   method with type parameters on a non-generic reference class is
+   accepted. The generic-class half stands.)*
 6. `this`, a value-class receiver, `private`, and method-as-value
    keep their rules on an instance.
 7. Lowering: an instance is an ordinary method; a static instance
@@ -12736,3 +12744,138 @@ Measured reach of rule 1, against `node`:
    callee's position: one `corpus/trap/` entry.
 5. `tools/gate.sh full` green in both profiles; clippy at the
    baseline; the perf gate within its §3 thresholds.
+
+## 93. An async method declares type parameters
+
+*(2026-09-08.)* Origin: the review of `REPORT.md` on 2026-09-08 named
+the form as the one hole between two accepted features. §82.4 accepts
+`recv.m<A>(...)`. §64 accepts `await f<A>(...)` and `await
+recv.m(...)`. Only the combination is rejected. Stock `tsc` accepts
+it. §82.4 rule 5 gives the reason as "the await grammar gains no
+form", which is a statement about the checker, not about the
+language.
+
+Measurements at pin `61c64c3`, this host (aarch64 macOS, rustc
+1.95.0, Apple clang 21.0.0):
+
+1. An async method with type parameters on a non-generic reference
+   class (r181): S100 "async generic methods are not in the decided
+   surface" at the declaration, with a divergence block
+   (`Divergence::AsyncGenericMethod`).
+2. The rejection is at collection. A call without type arguments, a
+   floating call, and a read of the method as a value all report that
+   same declaration diagnostic. No call site reports.
+3. The same method on a generic class: S100 "generic classes cannot
+   declare generic methods" (§82.4 rule 5, first half). That check
+   runs first.
+4. `static async m<T>()`: S100 "async static methods are not in the
+   decided surface" (§37.1, C8). That check runs first.
+5. The same method on a `@CStruct` value class: S100 "async generic
+   methods are not in the decided surface". The value-class rejection
+   sits after the generic-method branch in `collect_class`, so the
+   branch masks it.
+6. A bodiless async method with type parameters in a `declare class`
+   written in a `.ts` source: the same masked result. §82.4 rule 1a
+   states "function bodies are required" for that construct.
+7. The sync call path instantiates a generic method at the call
+   (`instantiate_generic_method_call`). The await path has no such
+   step: it rejects a type-argument list with "method `m` is not
+   generic".
+
+Items 5 and 6 are defects of the message, not of the verdict. Each
+program is rejected today, and each one names the wrong rule.
+
+### 93.1 Rule
+
+1. An `async` instance method on a non-generic reference class
+   declares type parameters, as §82.4 rule 1 has it for a sync
+   method. The parameters are in scope in the signature and the body.
+2. `await recv.m<A>(...)` instantiates the method and awaits the
+   instance. The await grammar gains this one form. §64 rule 3 now
+   reads: the accepted forms are `await f(...)`, `await f<A>(...)`,
+   `await recv.m(...)`, and `await recv.m<A>(...)`. Async functions
+   and methods stay non-first-class.
+3. Each distinct type-argument list yields one instance (§82.4 rule
+   3). The instance is an ordinary async method of the class,
+   checked and lowered as a §37.2 async method. Every consumer sees
+   the instance name `m<A>`.
+4. A call without type arguments fails with S100 "generic method `m`
+   requires explicit type arguments" and a divergence block, as §82.4
+   rule 2 has it. The site is the call.
+5. A call outside await position drops the handle. The instance
+   exists first, so the diagnostic is S013 at the statement, as r100
+   has it.
+6. A handle held for a later await is legal, as §70 has it. The
+   instance is an ordinary async method, so §70 needs no change.
+7. A read of the method as a value fails with S100 "async method `m`
+   is not a first-class value; call it directly in await position".
+   The template carries `is_async`, so the read reports the async
+   text, not the §82.4 rule 6 text.
+8. These rejections do not change, and each one reports at its own
+   site: an async generic method on a generic class (§82.4 rule 5,
+   first half); an async generic **static** method (§37.1); an async
+   generic method on a `@CStruct` value class (§37.1); an async
+   generic **generator** method (§37.1); a `@Descriptor` class and a
+   mirror class.
+9. Items 5 and 6 of the measurements report the rule that names the
+   construct. The value-class rejection runs before the
+   generic-method branch. The bodiless rejection stays inside the
+   branch and now reaches an async template.
+10. `Divergence::AsyncGenericMethod` is deleted. No site rejects with
+   it, and §79.1 forbids a variant that no diagnostic produces.
+
+### 93.2 Checker and lowering
+
+- `compiler/src/check/mod.rs` `collect_class`: the `is_async`
+  rejection inside the generic-method branch is removed. The
+  `@CStruct` value-class async rejection moves above that branch
+  (rule 9).
+- `compiler/src/check/expr.rs`, the await path, member callee: when
+  the receiver class declares a generic method of that name,
+  `instantiate_generic_method_call` runs first, and the arm continues
+  with the instance name. The "is not generic" rejection applies only
+  when the class declares no template of that name.
+- `compiler/src/check/expr.rs`, the member read path: the async text
+  when the template is async (rule 7).
+- `compiler/src/divergence.rs`: the variant and its table row are
+  deleted.
+- `compiler/src/language_reference.rs`: the Q34 text names the fourth
+  await form; the corpus list replaces r181 with a187 and r186;
+  `generated-docs/` regenerates.
+- No change in `codegen/`, in the tiers, or in the runtime. The
+  instance is an ordinary async method in HIR.
+
+### 93.3 Corpus and gate (pre-registered exit criteria)
+
+Red first, at the contract pin: measurement items 1 and 2, recorded
+on this host with exit 1.
+
+1. `corpus/accept/a187-async-generic-method.ts` + `.expected`: a
+   non-generic reference class with `async load<T>(value: T):
+   Promise<T>` that awaits `Context.suspend()` and returns the value.
+   Two instances: `i32` and a `@CStruct` value class `Vec2` of two
+   `f32` fields. One await is direct; one handle is held in a local
+   and awaited two statements later (rule 6). `main` prints each
+   result. The header carries `js-comparable: no C8`. The golden
+   comes from the dev JIT; the ship tier and the interpreter match it
+   byte for byte.
+2. `corpus/reject/r186-async-generic-method-without-type-args.ts`:
+   S100 at the call, with the divergence block (rule 4).
+3. `corpus/reject/r187-async-generic-method-on-value-class.ts`: S100
+   "async methods on `@CStruct` value classes are not in the decided
+   surface" at the declaration (rule 9).
+4. `corpus/reject/r181-async-generic-method.ts` is deleted, and its
+   harness row is removed, as r104 was in §64 rule 7.
+5. Unit tests in the same commit: a floating `box.load<i32>(1)` is
+   S013 at the statement; a read of `box.load` is the async
+   first-class S100; two type-argument lists give two HIR method
+   names and two LIR function ids; an async generic method on a
+   generic class keeps its S100; an async generic static method keeps
+   its S100; a bodiless async generic method in a `declare class`
+   reports "function bodies are required".
+6. Counts: accept `.ts` 184 → 185, `.expected` 185 → 186; reject
+   `.ts` 174 → 175. The §88 index and `generated-docs/` regenerate
+   and agree.
+7. Gates: `tools/gate.sh full` green in both profiles; clippy at the
+   7/18/13 baseline; `cargo fmt --check`; the `tsc` gate; every
+   pre-existing golden and `.expected` byte-identical.
