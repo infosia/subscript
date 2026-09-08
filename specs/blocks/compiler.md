@@ -12494,8 +12494,15 @@ and "exports take no arguments". No test reads `docs/`.
    names the mirrors tried.
 4a. **An excerpt is verified as an excerpt.** A block whose first line
    is `// excerpt of <repository-relative path>` shows part of a
-   committed file. The gate requires every non-blank line of the block
-   to appear in that file, and it checks nothing else about the block.
+   tracked file. The gate requires every non-blank line of the block
+   **after the first** to appear in that file, read from the working
+   tree, and it checks nothing else about the block. The citation line
+   is the marker and is not part of the excerpt. *(Corrected
+   2026-09-08: the first text asked for every line, and the citation
+   line is in no file; and it said "committed", which one round read as
+   "the text at `HEAD`" — a gate that stays green at the moment a
+   regenerated file drifts, and fails when a document and its file are
+   fixed together.)*
    *(Added 2026-09-08, measured: rule 3 asked a generated-mirror
    excerpt to stand alone as a mirror. That needs the string-view and
    descriptor provenance records and two more declarations — a page of
@@ -12508,6 +12515,16 @@ and "exports take no arguments". No test reads `docs/`.
 6. **The failure names the block.** A failure reports the file, the
    line of the block's opening fence, the first diagnostic or the
    output difference, and both byte strings when an output differs.
+7. **A CLI transcript is an output too.** A ` ```sh ` block that
+   immediately follows a program (rule 2's definition of immediately)
+   and whose first line is `$ subscript run <file>` states that
+   program's stdout in the lines below the command. The gate compares
+   them. *(Added 2026-09-08: the first rule left the two "hello"
+   transcripts unchecked, which are the first output a reader copies.)*
+8. **The scope is asserted, not assumed.** The gate asserts the count
+   of ` ```ts ` blocks it found in each document against a
+   hand-written table. A fence that changes spelling, or a pairing
+   that breaks, then fails the gate instead of leaving it silently.
 
 ### 91.2 Sites
 
