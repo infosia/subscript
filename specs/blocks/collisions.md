@@ -209,7 +209,12 @@ a generic async function with explicit type arguments is awaitable
 call is a reference-counted handle that can be held, stored, passed,
 and awaited later; dropping one without an await stays rejected
 (`r100`, `r105` rewritten to that form). Accept adds `a154`–`a155`;
-reject adds `r157`.
+reject adds `r157`. *Revised 2026-09-08 (§92):* an async call runs
+the callee to its first suspension, or to its return, at the call —
+JavaScript's timing. A callee that never suspends completes at the
+call. Measured before the revision: `node` printed
+`start1 start2 end1 end2` where this language printed
+`start1 end1 start2 end2`. Accept adds `a184`.
 
 ### C9. Field initializers — every construction, no `this`
 

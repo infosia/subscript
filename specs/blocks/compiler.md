@@ -12553,3 +12553,91 @@ and "exports take no arguments". No test reads `docs/`.
 4. The gate runs in both profiles under `tools/gate.sh`, and it needs
    no host C toolchain, so it stays inside the headless rule
    (CLAUDE.md principle 4).
+
+## 92. An async call starts its body at the call
+
+*(Owner decision 2026-09-08.)* Origin: the async proposal of
+2026-09-08 asked for concurrent progress. The measurement that
+answered it found a divergence nobody had decided.
+
+An async call creates a handle and runs no part of the callee.
+Nothing in this contract or in `collisions.md` C8 states that, and C8
+describes the async model in detail. Measured at `34e0af3`, this
+host, two shapes:
+
+| Program | `node` | subscript |
+|---|---|---|
+| `a = work(1); b = work(2); await a; await b;` where `work` prints, awaits once, prints | `start1 start2 end1 end2` | `start1 end1 start2 end2` |
+| `h = quick(1); print("after-create"); await h;` where `quick` prints and never awaits | `quick1 after-create` | `after-create quick1` |
+
+JavaScript runs an async body synchronously to its first `await`.
+This language defers all of it to the first `await` of the handle.
+The corpus cannot see the difference: `a154` pins the deferred order
+as a golden, and every async entry declares `js-comparable: no`
+because it uses `Context.suspend()`. A divergence this project did
+not decide reads as a decision (CLAUDE.md, "Compiler and oracle").
+
+The owner decides to match JavaScript.
+
+### 92.1 Rule
+
+1. **The body starts at the call.** An async call runs the callee
+   from its first statement to its first suspension point, or to its
+   return, before the call's value reaches the caller. The value is
+   the handle, as §70 has it.
+2. **A callee that does not suspend completes at the call.** Its
+   handle is complete when the caller receives it. The later `await`
+   yields the stored result and suspends nothing. §70's rule that
+   every handle needs one awaited completion is unchanged.
+3. **The caller does not suspend.** After the callee suspends or
+   returns, the caller continues at the statement that follows the
+   call. An `await` in the caller is the only construct that
+   suspends the caller.
+4. **Order is call order.** Two calls start their bodies in the
+   order the calls run. A trap in a started body reports at the call,
+   with the callee's position.
+5. **Roots are unchanged.** An exported async function that the
+   runner kicks (§64 rule 4) already runs at its kick. Its behaviour
+   does not change, and the kick order stays the runner's.
+6. **One order in three witnesses.** The dev JIT, the ship C, and
+   the reference interpreter produce one byte sequence, as the
+   standing gate requires.
+7. **Concurrent completion is a separate question and stays open.**
+   With rule 1 both bodies start, and the work after each first
+   suspension still completes in await order. `a94` shows the pump
+   advancing two pending roots; a handle from a call is not in that
+   root set. Nothing here changes that. *(Recorded so the next
+   request states its own problem, per core principle 13.)*
+
+### 92.2 Sites
+
+- `codegen/src/lir.rs` (`lower_async_call`, `AsyncHandleCreate`):
+  the created frame runs to its first suspension at the call. The
+  runtime entry exists (`subscript_rt_async_kick`), and the export
+  runner uses it.
+- `codegen/src/lower/func.rs`, `codegen/src/cemit.rs`,
+  `codegen/src/interpreter.rs`: whatever the LIR change requires; the
+  three consumers read one form.
+- `specs/blocks/collisions.md` C8: the start timing, stated
+  (orchestrator).
+
+### 92.3 Corpus and gate (pre-registered exit criteria)
+
+1. **Red at `34e0af3`.** `corpus/accept/a184-async-start-order.ts`
+   holds both shapes of the table above, with no `Context.suspend()`
+   in the js-comparable path, and carries `js-comparable: yes`. At
+   the pin the entry's output differs from `node`'s, and
+   `compiler/tests/js_corpus.rs` reports it. The measured difference
+   goes in the tracking note. *(This entry is the one the corpus
+   lacked: every async entry before it opted out of the node
+   comparison.)*
+2. **Green.** The entry matches `node` byte for byte, on the dev
+   JIT, the ship tier, and the interpreter.
+3. **The goldens that move.** `a154`'s order changes by rule 1. Every
+   moved golden is listed in the tracking note with its old and new
+   bytes, under the §2 golden-change procedure. A golden that does
+   not move is not touched.
+4. **A trap in a started body** reports at the call with the
+   callee's position: one `corpus/trap/` entry.
+5. `tools/gate.sh full` green in both profiles; clippy at the
+   baseline; the perf gate within its §3 thresholds.
