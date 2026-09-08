@@ -13286,8 +13286,19 @@ on this host with their exit codes.
    citing Q5: `"aé"` and `"😀a"` under `split("")` and
    `replaceAll("", "-")`. Its header states the `node` result beside
    this language's.
-3. The three moved goldens carry their before and after bytes in the
-   tracking note, under the §2 procedure.
+3. Four goldens move, and each carries its before and after bytes in
+   the tracking note under the §2 procedure:
+   `corpus/accept/a40-math.expected`,
+   `corpus/accept/a45-array-fn.expected`,
+   `corpus/accept/a49-f16-conversions.expected`, and
+   `examples/e07-determinism.expected`. *(Corrected 2026-09-09. The
+   section first named three and said no other golden moves. It
+   counted `corpus/` alone, and `examples/` carries goldens too.)*
+   `examples/e07-determinism.ts` also quotes its own output in a
+   comment, which the change makes wrong; correct that comment with
+   it. `corpus/accept/a59-number-to-fixed.expected` does not move:
+   its `-0.00` comes from `(-0.0001).toFixed(2)`, a negative value,
+   and node prints `-0.00` there too.
 4. Unit tests in the same commit: `str_pad` with an empty fill at a
    target below, equal to, and above the receiver length; the split
    and replace algorithms at a code-point boundary and at the string
@@ -13296,4 +13307,4 @@ on this host with their exit codes.
 5. The `node` comparison runs for every `js-comparable: yes` entry.
 6. Gates: `tools/gate.sh full` green in both profiles; clippy at the
    7/18/13 baseline; `cargo fmt --check`; the `tsc` gate; every golden
-   byte-identical except the three item 3 names.
+   byte-identical except the four that item 3 names.
