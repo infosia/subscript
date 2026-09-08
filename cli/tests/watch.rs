@@ -151,7 +151,7 @@ fn a_trap_ends_one_call_but_not_the_watch_session() -> Result<(), String> {
 let calls: i32 = 0;
 export function main(): void {
   calls += 1;
-  print(\"partial output is discarded\");
+  print(\"output before the trap\");
   const empty: i32[] = [];
   empty.pop();
 }
@@ -167,7 +167,8 @@ export function main(): void {
     match watch.step(&files(trapping)).outcome {
         WatchOutcome::Started(call) => {
             assert!(call.output.is_empty());
-            assert!(call.trap.is_some());
+            let trap = call.trap.ok_or("expected trap report")?;
+            assert_eq!(trap.stdout, b"output before the trap\n");
         }
         other => return Err(format!("expected trapped start, got {other:?}")),
     }
@@ -474,5 +475,45 @@ fn spawned_watch_polls_imports_and_keeps_stdout_program_only() -> Result<(), Str
         render_diagnostics(&broken_files, &diagnostics)
     );
     assert_eq!(captured_stderr, expected_stderr.as_bytes());
+    Ok(())
+}
+
+// cli.md §13: every trapped watch invocation forwards the committed output.
+#[test]
+fn spawned_watch_preserves_stdout_before_each_trap() -> Result<(), String> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let source = std::fs::read_to_string(root.join("corpus/trap/t03-loop-stops-at-fault.ts"))
+        .map_err(|error| error.to_string())?;
+    let expected = std::fs::read(root.join("corpus/trap/t03-loop-stops-at-fault.expected"))
+        .map_err(|error| error.to_string())?;
+    let directory = TestDir::new()?;
+    directory.write("main.ts", &source)?;
+    let mut child = ChildGuard(
+        Command::new(env!("CARGO_BIN_EXE_subscript"))
+            .current_dir(&directory.0)
+            .args(["run", "--watch", "main.ts"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("spawn watch: {error}"))?,
+    );
+    let (stdout, stdout_thread) = Capture::reader(child.0.stdout.take().ok_or("missing stdout")?);
+    let (stderr, stderr_thread) = Capture::reader(child.0.stderr.take().ok_or("missing stderr")?);
+    let result = (|| {
+        stderr.wait_for_count(b"index-out-of-bounds", 1)?;
+        stdout.wait_for_count(&expected, 1)?;
+        // This body edit preserves output and forces another trapped call.
+        directory.write("main.ts", &source.replace("while (i < 3)", "while (i < 4)"))?;
+        stderr.wait_for_count(b"watch: swapped\n", 1)?;
+        stderr.wait_for_count(b"index-out-of-bounds", 2)?;
+        stdout.wait_for_count(&expected, 2)?;
+        Ok::<(), String>(())
+    })();
+    let _ = child.0.kill();
+    let _ = child.0.wait();
+    let _ = stdout_thread.join();
+    let _ = stderr_thread.join();
+    result?;
+    assert_eq!(stdout.bytes()?, expected.repeat(2));
     Ok(())
 }

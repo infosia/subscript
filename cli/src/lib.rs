@@ -606,7 +606,12 @@ fn run_command<O: Write, E: Write>(
             Ok(SUCCESS)
         }
         Err(RunError::Rejected(diagnostics)) => Err(rejection(&files, diagnostics)),
-        Err(RunError::Trap(report)) => Err(Failure::program(report.to_string())),
+        Err(RunError::Trap(report)) => {
+            let _ = stdout
+                .write_all(&report.stdout)
+                .and_then(|_| stdout.flush());
+            Err(Failure::program(report.to_string()))
+        }
         Err(RunError::UnresolvedForeignSymbol(symbol)) => Err(Failure::usage(format!(
             "run supports only programs without host C bindings; unresolved symbol `{symbol}`"
         ))),
@@ -805,7 +810,7 @@ fn write_watch_call<O: Write, E: Write>(
     stderr: &mut E,
 ) -> Result<(), Failure> {
     stdout
-        .write_all(&call.output)
+        .write_all(call.trap.as_ref().map_or(&call.output, |trap| &trap.stdout))
         .and_then(|_| stdout.flush())
         .map_err(|error| Failure::usage(format!("write program stdout: {error}")))?;
     if let Some(trap) = call.trap {

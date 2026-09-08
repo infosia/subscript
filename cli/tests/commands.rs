@@ -127,6 +127,39 @@ fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
+#[test]
+fn run_preserves_stdout_before_a_trap() {
+    let source = workspace_root().join("corpus/trap/t03-loop-stops-at-fault.ts");
+    let expected = std::fs::read(source.with_extension("expected")).unwrap();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = subscript_cli::execute(
+        [std::ffi::OsString::from("run"), source.into_os_string()],
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(stdout, expected);
+    assert_eq!(code, 1);
+    assert!(String::from_utf8_lossy(&stderr).contains("trap"));
+}
+
+#[test]
+fn run_trap_without_output_keeps_stdout_empty() {
+    let source = workspace_root().join("corpus/trap/t01-json-result-value.ts");
+    let expected = std::fs::read(source.with_extension("expected")).unwrap();
+    assert!(expected.is_empty());
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = subscript_cli::execute(
+        [std::ffi::OsString::from("run"), source.into_os_string()],
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(stdout, expected);
+    assert_eq!(code, 1);
+    assert!(String::from_utf8_lossy(&stderr).contains("json-result-value"));
+}
+
 fn directory_sources(directory: &Path) -> Result<Vec<SourceFile>, String> {
     let entries = std::fs::read_dir(directory)
         .map_err(|error| format!("read {}: {error}", directory.display()))?;
@@ -755,4 +788,32 @@ fn unknown_subcommand_is_a_usage_error() -> Result<(), String> {
     assert!(result.stdout.is_empty());
     assert!(String::from_utf8_lossy(&result.stderr).contains("unknown subcommand"));
     Ok(())
+}
+
+#[test]
+fn run_trap_keeps_exit_one_when_stdout_fails() {
+    struct FailingOutput(bool);
+    impl std::io::Write for FailingOutput {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if self.0 {
+                Err(std::io::ErrorKind::BrokenPipe.into())
+            } else {
+                Ok(bytes.len())
+            }
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+    }
+    for fail_write in [true, false] {
+        let source = workspace_root().join("corpus/trap/t03-loop-stops-at-fault.ts");
+        let mut stderr = Vec::new();
+        let code = subscript_cli::execute(
+            [std::ffi::OsString::from("run"), source.into_os_string()],
+            &mut FailingOutput(fail_write),
+            &mut stderr,
+        );
+        assert_eq!(code, 1, "fail_write={fail_write}");
+        assert!(String::from_utf8_lossy(&stderr).contains("index-out-of-bounds"));
+    }
 }

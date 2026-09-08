@@ -8,14 +8,14 @@
 use subscript_codegen::{ReloadError, ReloadSession, RunError, TrapReport};
 use subscript_compiler::{check_program, check_warnings, Diagnostic, SourceFile, Warning};
 
-/// The result of one successful call to the watched program's `main`.
+/// The output and optional trap from one watched program call.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct WatchCall {
     /// Program stdout produced by the call.
     ///
-    /// This is empty when `trap` is present, matching non-watch `run`, which
-    /// reports the trap without forwarding partial output from the failed run.
+    /// This is empty when `trap` is present; `trap.stdout` holds the bytes
+    /// produced before the trap.
     pub output: Vec<u8>,
     /// A trap that ended this call without ending the reload session.
     pub trap: Option<TrapReport>,
@@ -136,7 +136,7 @@ impl WatchSession {
     fn start(&mut self, files: &[SourceFile], warnings: Vec<Warning>) -> WatchStep {
         match ReloadSession::new_capturing_initializer_trap(files) {
             Ok((mut session, Some(trap))) => {
-                // Non-watch `run` does not forward output from a trapped run.
+                // The initializer output is available in `trap.stdout`.
                 let _ = session.take_output();
                 self.session = Some(session);
                 WatchStep::outcome(
@@ -196,8 +196,7 @@ fn call_main(session: &mut ReloadSession) -> Result<WatchCall, String> {
             trap: None,
         }),
         Err(RunError::Trap(trap)) => {
-            // Match non-watch `run`: the trap is rendered, while partial
-            // stdout from the failed invocation is discarded.
+            // The call output is available in `trap.stdout`.
             let _ = session.take_output();
             Ok(WatchCall {
                 output: Vec::new(),
