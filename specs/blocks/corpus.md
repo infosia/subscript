@@ -77,7 +77,14 @@ corpus/
   (`compiler.md` §88): `// interpreter: no — <reason>` on an accept
   or trap entry the reference interpreter does not run;
   `// cost: benchmark` on an entry whose purpose is cost and which
-  the debug interpreter sweep omits. A suite derives its selection
+  the debug interpreter sweep omits.
+- An entry whose header says `js-comparable: no` because the other
+  system's **order** differs states that order:
+  `// node-order: <the bytes node prints, one line>`, one line per
+  shape the entry holds. This language's order is the entry's
+  `.expected`, so the header does not repeat it. *(Added 2026-09-08
+  with `compiler.md` §92.3 item 1a, which requires the header to
+  carry the measured `node` order.)* A suite derives its selection
   from these lines; no suite holds a list of entry ids as its
   selection (a table of expected facts per entry, such as trap
   tuples, is a test's own record).

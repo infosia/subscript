@@ -12255,6 +12255,11 @@ entries), the second being the complement of one cost exclusion.
 - `compiler/tests/corpus_accept.rs`, `corpus_warn.rs`,
   `js_corpus.rs`, `codegen/tests/golden.rs`: delete the count
   assertions; keep every other assertion.
+- `codegen/tests/cemit.rs`: the trap-corpus count assertion. *(Added
+  2026-09-08: this site was missed, so §88 left one entry count in
+  the tree. Adding `t54` had to edit it, which is the one-fact-many-
+  files cost rule 1 removes. The byte-identity of the index is the
+  inventory check.)*
 - `compiler/src/lib.rs` or a shared test-support module if the header
   reader is shared between the generator and the suites: one reader.
 
