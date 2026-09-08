@@ -1,16 +1,37 @@
 # subscript for TypeScript developers
 
-subscript's syntax is a subset of TypeScript: every accepted program
-also type-checks under stock `tsc`, so your editor tooling — tsserver
-completion, rename, go-to-definition — works unchanged. The semantics
-underneath are not JavaScript's: values have C data layout, integers
-have fixed widths, memory is managed explicitly, and the compiler
-rejects the dynamic patterns it cannot compile soundly. It is a
-scripting language a native application embeds; the application owns
-the main loop and calls your exported functions.
+subscript writes the logic that runs inside a native application. The
+application owns the process and the main loop. It calls the functions
+your script exports. A game engine is the first example, but the same
+shape fits audio, simulation, creative tools, and embedded control.
 
-This tutorial covers what changes coming from TypeScript. Every
-command and output shown was run against the repository as committed.
+The syntax is a subset of TypeScript. Every accepted program also
+type-checks under stock `tsc`, so tsserver gives you completion,
+rename, and go-to-definition with no plugin. The semantics below the
+syntax are not JavaScript's. Values have C data layout. Integers have
+fixed widths. Memory is explicit. The compiler rejects the dynamic
+patterns that it cannot compile to predictable machine code.
+
+This page is the list of what changes. Every program and every output
+on this page was run against the repository as committed, and every
+program type-checks under stock `tsc --strict`.
+
+## The short version
+
+| In TypeScript | In subscript |
+|---|---|
+| `number` | `i8`–`i64`, `u8`–`u64`, `f16`, `f32`, `f64` |
+| Structural types | Nominal types; same shape is not the same type |
+| `class` | Reference class (`new`, heap) or `@CStruct` value class (copied) |
+| `undefined`, `T \| U` | `Ref \| null` only, narrowed before use |
+| `enum` of strings | `type Mode = "fast" \| "safe"`, closed and nominal |
+| Garbage collection | `Context.free`, `Context.collect`, `using`; nothing runs unbidden |
+| `throw` / `try` | Values (`Ref \| null`) for expected failure, traps for faults |
+| Event loop, `Promise` | Host-stepped suspension; `Promise<T>` is an annotation |
+| `Worker` with structured clone | `Worker.spawn` with copied, typed messages |
+| A program with a top level | Exported entry points the host calls |
+| `string` of UTF-16 units | `string` of UTF-8 bytes |
+| npm | Sibling `./file` imports only |
 
 ## Setup
 
@@ -32,15 +53,16 @@ $ subscript run hello.ts
 hello from subscript
 ```
 
-`run` executes under the development tier (a JIT). `print` goes to a
-host-owned sink; there is no `console`.
+`run` executes the program on the development tier, a JIT compiler.
+`print` writes to a sink the host owns. There is no `console`.
 
-## `number` is gone; integers are sized
+## Numbers have widths
 
-JavaScript's `number` is a 64-bit float. Here every numeric type names
-its width: `i8/i16/i32/i64`, `u8/u16/u32/u64`, `f32/f64`, and
-storage-only `f16`. Using `number` is rejected, and the error names the
-alternatives:
+JavaScript has one numeric type, a 64-bit float. Here every numeric
+type names its width: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`,
+`u64`, `f32`, `f64`, and storage-only `f16`. A field's width is part
+of the C layout, so a default numeric type has no correct answer.
+Bare `number` is rejected, and the diagnostic shows both spellings:
 
 ```text
 error[S007]: bare `number` is rejected; there is no default numeric type — use a sized type (i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, f64)
@@ -49,196 +71,419 @@ error[S007]: bare `number` is rejected; there is no default numeric type — use
 2 |   const count: number = 3;
   |                ^
   = rule: Bare `number` is rejected; sized numeric types are mandatory.
+  = TypeScript accepts:
+  |   const count: number = 3;
+  = subscript:
+  |   const count: i32 = 3;
+  = why: `number` is a 64-bit float with no C width, so every declaration names one of the sized types. (collisions.md C3)
 error: 1 error(s)
 ```
 
-Conversions are explicit with `as`, and integer conversions truncate
-like a C cast — not like JavaScript's float rounding:
+A literal takes the type of its context, and it must fit that type. A
+conversion is explicit, with `as`, and an integer conversion truncates
+like a C cast. Integer arithmetic wraps; it does not widen to a float.
 
 ```ts
 export function main(): void {
   const wide: i64 = 4000000000;
   const narrow: u8 = 255;
   const truncated: u8 = wide as u8;
-  print(`wide=${wide} narrow=${narrow} truncated=${truncated}`);
+  const scaled: f32 = 1.0 / 3.0;
+  print(`wide=${wide} narrow=${narrow} truncated=${truncated} scaled=${scaled}`);
+  const wrapped: u8 = (narrow + 1) as u8;
+  print(`wrapped=${wrapped}`);
 }
 ```
 
 ```text
-wide=4000000000 narrow=255 truncated=0
+wide=4000000000 narrow=255 truncated=0 scaled=0.33333334
+wrapped=0
 ```
 
-## Types are nominal and closed
+`f32` prints as an `f32`. `1.0 / 3.0` is `0.33333334`, not the `f64`
+value JavaScript prints. `f16` holds storage only: convert it to `f32`
+or `f64` before arithmetic.
 
-Two classes with the same shape are different types; passing one where
-the other is expected is rejected (structural substitution is what
-makes C-identical layout unverifiable). Objects have exactly their
-declared properties — there is no adding properties later, no index
-signatures on classes, no prototype mutation.
+## Classes are nominal, and there are two kinds
 
-`@CStruct` marks a class as a **value class**: it has C struct layout
-and is copied on assignment and calls, like a struct in C — there is
-no aliasing to observe. A plain class is a **reference class**,
-heap-allocated with `new`:
+Two classes with the same fields are two types. Passing one where the
+other is declared is rejected. Structural substitution is what makes a
+C-identical layout impossible to guarantee, so the language does not
+have it. A class also has exactly the members it declares: no property
+appears later, and no prototype changes.
+
+A plain `class` is a **reference class**. `new` allocates it in the
+Context, and assignment copies the reference, as in TypeScript.
+
+`@CStruct` marks a **value class**. It has C struct layout, and it is
+copied on assignment and on every call. Nothing aliases it, so no
+second name observes a write. A value class cannot use `extends`.
 
 ```ts
 @CStruct
 class Vec2 {
   x: f32;
   y: f32;
-
   constructor(x: f32, y: f32) {
     this.x = x;
     this.y = y;
   }
+  length2(): f32 {
+    return this.x * this.x + this.y * this.y;
+  }
+}
+
+class Counter {
+  static made: i32 = 0;
+  count: i32 = 0;
+  constructor() {
+    Counter.made += 1;
+  }
+  get doubled(): i32 {
+    return this.count * 2;
+  }
+  set doubled(value: i32) {
+    this.count = value / 2;
+  }
 }
 
 export function main(): void {
-  const a: Vec2 = new Vec2(1.0, 2.0);
-  const b: Vec2 = a;  // a copy, not a second reference
-  b.x = 9.0;
-  print(`a.x=${a.x} b.x=${b.x}`);
+  const a: Vec2 = new Vec2(3.0, 4.0);
+  const b: Vec2 = a;
+  b.x = 0.0;
+  print(`a.x=${a.x} b.x=${b.x} len2=${a.length2()}`);
+  const c: Counter = new Counter();
+  c.doubled = 10;
+  print(`count=${c.count} doubled=${c.doubled} made=${Counter.made}`);
 }
 ```
 
 ```text
-a.x=1 b.x=9
+a.x=3 b.x=0 len2=25
+count=5 doubled=10 made=1
 ```
 
-Value classes cannot use `extends`.
+`b` is a copy of `a`, so the write to `b.x` leaves `a.x` at 3.
 
-## Memory is explicit — there is no garbage collector
+The class body carries more than fields. Field initializers run on
+every construction. Static fields and static methods live on the class.
+Accessors are sugar for methods: `get name()` becomes a method that a
+read calls, and `set name(v)` becomes a method that a statement write
+calls. A value class declares read accessors; only a reference class
+declares an instance write accessor.
 
-No collector runs on its own, ever. The rules:
+Two more members are available. A class declares an index signature
+(`[index: u32]: T`, with `readonly` for read-only access). A method on
+a non-generic class takes type parameters, and each call states them:
 
-- `new` allocates a reference class in the **Context**, the memory
-  arena the host application creates and releases.
-- `Context.free(x)` releases one allocation immediately.
-- `Context.collect()` collects whatever script references can no
-  longer reach — but only when you call it.
-- A program that never frees anything is **correct**; it retains more
-  memory until the host releases the Context. Dropping the last
-  reference does not free the object.
+```ts
+class Pair {
+  first<T>(values: T[]): T {
+    return values[0];
+  }
+}
 
-The compiler warns where unbounded growth is statically provable:
-allocating in a loop without releasing or storing the object is
-`warning[W001]`, and using a variable after `Context.free` is
-`warning[W002]`:
+export function main(): void {
+  const p: Pair = new Pair();
+  print(`${p.first<i32>([7, 8])} ${p.first<string>(["a", "b"])}`);
+}
+```
 
 ```text
-warning[W001]: `token` is allocated in each loop iteration but neither escapes the iteration nor is released
- --> w01-loop-allocation-unreleased.ts:15:26
-   |
-15 |     const token: Token = new Token(i);
-   |                          ^
-   = rule: A reference-class allocation repeated by a loop should escape the iteration or be released.
-warning: 1 warning(s)
+7 a
 ```
 
-Warnings do not fail the build; `subscript check --deny-warnings`
-makes them fail for CI.
+Explicit type arguments are required. The compiler emits one function
+per argument list, which is how a call stays a direct call.
 
-## `null` but not `undefined`, and narrowing is mandatory
+## `Ref | null` is the only union, and narrowing is mandatory
 
-The only union type is `T | null`, and member access requires
-narrowing first — the same control-flow narrowing TypeScript already
-taught you, now required:
+There is no `undefined`. There is no optional property that means
+absence. The only union is `Ref | null`, where `Ref` is a reference
+class, an opaque handle, a function type, or a boundary struct
+pointer. A member access needs narrowing first. `i32 | null` is
+rejected: a scalar has no null. This is the control-flow narrowing TypeScript already
+taught you. Here the compiler requires it.
+
+`a ?? b` works when `a` has type `Ref | null`. It reads `a` once, and
+it evaluates `b` only when `a` is `null`.
 
 ```ts
 class Node {
   value: i32;
   next: Node | null;
-
   constructor(value: i32, next: Node | null) {
     this.value = value;
     this.next = next;
   }
 }
 
-export function main(): void {
-  const head: Node = new Node(1, new Node(2, null));
+function find(head: Node | null, value: i32): Node | null {
   let cursor: Node | null = head;
-  let sum: i32 = 0;
   while (cursor !== null) {
-    sum += cursor.value;
+    if (cursor.value === value) {
+      return cursor;
+    }
     cursor = cursor.next;
   }
-  print(`sum=${sum}`);
+  return null;
+}
+
+export function main(): void {
+  const head: Node = new Node(1, new Node(2, null));
+  const fallback: Node = new Node(-1, null);
+  const found: Node = find(head, 2) ?? fallback;
+  const missing: Node = find(head, 9) ?? fallback;
+  print(`found=${found.value} missing=${missing.value}`);
 }
 ```
 
 ```text
-sum=3
+found=2 missing=-1
 ```
 
-`undefined`, optional properties as absence, and non-null `T | U`
-unions are rejected.
+Optional chaining exists in two positions, because every other
+position produces `undefined`. `x?.v` is legal as the whole left
+operand of `??`, as in `x?.next?.v ?? 0`. `x?.m();` is legal as a
+statement whose last step is a call. Elsewhere the compiler rejects it.
 
-## No exceptions; faults trap
+A `@Descriptor` class is the one place where an omitted member is a
+state of its own. It is a data-only class built from an object literal,
+which suits the option bags that C APIs take. `name!: T` is required,
+and `name?: T = default` has a default:
 
-`throw` and `try/catch` are not in the language. A runtime fault — an
-out-of-range index, integer division by zero, a failed allocation —
-records a **trap** in the Context and stops the current entry; the
-host reads what happened and where:
+```ts
+@Descriptor
+class Limits {
+  maxItems!: i32;
+  label?: string = "default";
+}
+
+function describe(limits: Limits): string {
+  return `${limits.label}:${limits.maxItems}`;
+}
+
+export function main(): void {
+  print(describe({ maxItems: 4 }));
+  print(describe({ maxItems: 9, label: "tuned" }));
+}
+```
+
+```text
+default:4
+tuned:9
+```
+
+## Closed string unions replace string enums
+
+A declared alias of string literals is a nominal, closed type. A
+non-member, an inline union, and a value from another alias of the
+same members are all rejected. A `switch` over the alias without a
+`default` must name every member exactly once. The compiler then knows
+the switch is exhaustive, so a function that returns from every arm
+needs no trailing return:
+
+```ts
+type Mode = "fast" | "safe" | "debug";
+
+function budget(mode: Mode): i32 {
+  switch (mode) {
+    case "fast":
+      return 1;
+    case "safe":
+      return 4;
+    case "debug":
+      return 16;
+  }
+}
+
+export function main(): void {
+  print(`fast=${budget("fast")} safe=${budget("safe")} debug=${budget("debug")}`);
+}
+```
+
+```text
+fast=1 safe=4 debug=16
+```
+
+Add a member to `Mode` later, and this function stops compiling until
+you handle it. `unreachable()` marks a path that no input reaches. It
+is legal as a statement, it counts as a diverging path for return-flow
+analysis, and it traps if execution arrives there.
+
+Numeric `enum` also exists, and it lowers to a C enum.
+
+## Memory is explicit
+
+No collector runs on its own. This is a design invariant, not a
+setting:
+
+- `new` allocates a reference class in the **Context**, the arena the
+  host creates and releases.
+- `Context.free(value)` releases one allocation at once.
+- `Context.collect()` collects what script references no longer reach,
+  and it runs only where you write it.
+- A program that frees nothing is **correct**. It holds more memory
+  until the host releases the Context. Dropping the last reference
+  frees nothing by itself.
+
+```ts
+class Frame {
+  id: i32;
+  constructor(id: i32) {
+    this.id = id;
+  }
+}
+
+export function main(): void {
+  const kept: Frame = new Frame(1);
+  const temp: Frame = new Frame(2);
+  Context.free(temp);
+  for (let i: i32 = 0; i < 3; i += 1) {
+    const scratch: Frame = new Frame(i);
+    Context.free(scratch);
+  }
+  Context.collect();
+  print(`kept=${kept.id}`);
+}
+```
+
+```text
+kept=1
+```
+
+`using` releases at scope exit, in reverse declaration order. The class
+declares `[Symbol.dispose]()`, as in TypeScript's explicit resource
+management:
+
+```ts
+class Buffer {
+  id: i32;
+  constructor(id: i32) {
+    this.id = id;
+    print(`open ${id}`);
+  }
+  [Symbol.dispose](): void {
+    print(`close ${this.id}`);
+  }
+}
+
+export function main(): void {
+  using first = new Buffer(1);
+  {
+    using second = new Buffer(2);
+    print("inner work");
+  }
+  print("outer work");
+}
+```
+
+```text
+open 1
+open 2
+inner work
+close 2
+outer work
+close 1
+```
+
+The compiler warns where it proves unbounded growth. `W001` flags an
+allocation that a loop repeats and that neither escapes the iteration
+nor is released. `W002` flags a local read after `Context.free`. `W003`
+flags fresh callback userdata registered in a loop. `W004` flags a
+value copy that a function writes through and never reads. Warnings do
+not fail a build. `subscript check --deny-warnings` makes them fail in
+CI.
+
+## Failures are values or traps, never exceptions
+
+`throw`, `try`, and `catch` are not in the language. Two mechanisms
+replace them, and the split is deliberate.
+
+An expected failure is a value. A lookup that finds nothing returns
+`T | null`. `JSON.parse` returns a `JsonResult<T>` whose `ok` you test
+before you read `value`.
+
+A fault is a **trap**. An index outside an array, an integer division
+or remainder by zero, a `null` where an `as` narrowing promised a
+reference, a use after `Context.free`, and a reached `unreachable()`
+are traps. A trap records the rule, the message, and the source
+position in the Context. It stops the current entry. The host then
+reads what happened:
 
 ```sh
-$ subscript run oob.ts   # reads values[5] of a 3-element array
-subscript: oob.ts:4:12: trap [index-out-of-bounds]: index 5 out of bounds for array length 3
+$ subscript run oob.ts
+subscript: oob.ts:4:17: trap [index-out-of-bounds]: index 5 out of bounds for array length 3
 ```
 
-Recoverable conditions are values in the type system (`T | null`),
-not exceptions.
+A trap is not catchable in script. A fault is a defect to fix, and
+the host decides what happens next. The host reads the rule, the
+message, and the position through its C API. The Context stays
+readable, so the host inspects state before it releases it.
+`corpus/trap/` holds 53 programs over the trap kinds, each with the
+output it produced before the fault.
 
 ## `async`/`await` without a scheduler
 
-`async function` and `await` are accepted, and they mean something
-slightly different from JavaScript: **nothing schedules the
-resumption**. Awaiting suspends the function — the whole chain of
-callers up to the exported entry — and it resumes only when the
-embedding host explicitly steps pending computations. There is no
-event loop, no microtask queue, and no `Promise` object at runtime
-(`Promise<T>` in your annotations is the `tsc` view only):
+`async` and `await` are accepted, and they mean something narrower
+than in JavaScript. **Nothing schedules the resumption.** `await`
+suspends the function and every caller up to the entry point. The
+computation continues when the host steps it. There is no event loop,
+no microtask queue, and no `Promise` object at run time. `Promise<T>`
+in an annotation is the `tsc` view of a Context-owned handle.
 
 ```ts
-let readyAt: i32 = 3;
 let clock: i32 = 0;
 
-async function fetchValue(): Promise<i32> {
-  while (clock < readyAt) {
+async function settle(steps: i32): Promise<i32> {
+  for (let i: i32 = 0; i < steps; i += 1) {
     clock += 1;
-    await Context.suspend();   // suspend until the host's next step
+    await Context.suspend();
   }
   return clock * 10;
 }
 
 export async function main(): Promise<void> {
-  const value: i32 = await fetchValue();
-  print(`ready after ${clock} steps: ${value}`);
+  const value: i32 = await settle(3);
+  print(`after ${clock} steps: ${value}`);
 }
 ```
 
-```sh
-$ subscript run async.ts
-ready after 3 steps: 30
+```text
+after 3 steps: 30
 ```
 
-Two awaitable forms exist, and only two: `Context.suspend()` (one
-suspension, resumed at the next step) and a **direct call of an
-`async` function in await position**. Promises are not values — a
-call you do not await is a compile error (stock `tsc` allows the
-floating promise; this language does not), so promise storage,
-`Promise.all`, `.then`, and `new Promise` do not exist. Fallible
-operations put failure in the value domain (`T | null`), as
-everywhere else — a failed `await` does not throw.
+Three forms are awaitable: `Context.suspend()`, a direct call of an
+`async` function or `async` instance method, and a handle that an
+earlier call produced. A handle lives in a local or an array, and it
+passes to another function. Every handle a program creates must have
+one awaited completion. `new Promise`, `.then`, `Promise.all`, and the
+other statics do not exist.
+
+Three reasons shape this, and each follows from a decision the
+repository records:
+
+1. **`await` needs a decision about when work resumes.** In JavaScript
+   the event loop decides. Here the host owns the loop, so the host's
+   explicit step is the only resumption.
+2. **A stored pending promise assumes a collector.** Its continuation
+   chain stays alive until something reclaims it. That lifetime has no
+   answer without a collector, so a suspended frame stays owned by its
+   Context and the Context's release drops it.
+3. **Both execution tiers must produce identical bytes.** A microtask
+   queue is scheduler state to reproduce exactly in the JIT and in the
+   emitted C. Host-stepped suspension has no such state.
+
+A failed `await` returns a value; it does not throw.
 
 ## Coroutines
 
-Generator-shaped suspension is a `function*` coroutine, advanced
-explicitly; the host (or your own code) calls `next()` once per
-step:
+A `function*` coroutine yields typed values. The caller advances it,
+one step per call, which suits per-frame work. `for...of` over a
+generator is accepted:
 
 ```ts
-function* updates(): Generator<i32> {
+function* positions(): Generator<i32> {
   let position: i32 = 0;
   for (let step: i32 = 1; step <= 3; step += 1) {
     position += step * 2;
@@ -247,82 +492,123 @@ function* updates(): Generator<i32> {
 }
 
 export function main(): void {
-  const update: Generator<i32> = updates();
-  for (let frame: i32 = 0; frame < 4; frame += 1) {
-    const result = update.next();
-    if (result.done) {
-      print(`frame=${frame} done`);
-    } else {
-      print(`frame=${frame} value=${result.value}`);
-    }
+  for (const position of positions()) {
+    print(`position=${position}`);
   }
 }
 ```
 
 ```text
-frame=0 value=2
-frame=1 value=6
-frame=2 value=12
-frame=3 done
+position=2
+position=6
+position=12
 ```
 
-### Why there is no Promise object or scheduler
+`Generator<T>.next()` gives the explicit form, with `done` and `value`
+on the result, for a host that drives one step per frame.
 
-The same three reasons that once excluded `async` entirely now shape
-*how* it exists — each follows from a documented decision, not from
-implementation effort.
+## Workers are threads with copied messages
 
-1. **`await` needs someone to decide when continuations resume.** In
-   JavaScript that is the event loop's microtask queue. subscript is
-   embedded and the host owns the loop, so the language defines no
-   scheduling of its own: awaiting suspends a Context-owned frame,
-   and the host's explicit step is the only resumption. `await` here
-   is poll-driven suspension wearing JavaScript's syntax.
-2. **Promise lifetimes assume a garbage collector.** A stored pending
-   promise keeps its continuation chain alive until a collector
-   reclaims it — an unanswerable lifetime in a no-GC language. That
-   is why promises are not values here: an async call must be
-   awaited immediately, so every suspended frame sits in one linear
-   chain owned by its Context, and releasing the Context drops
-   pending frames without running anything.
-3. **Both tiers must run byte-identically.** A microtask queue is
-   scheduler state to reproduce exactly in the JIT and the emitted
-   C. Poll-driven stepping has none: pending computations resume in
-   the order they were started, and the corpus pins that order under
-   both tiers.
+A `Worker` runs one named, module-level, synchronous function on an OS
+thread with a **fresh Context**. Nothing is shared. A message is
+copied into the receiving Context, so no reference crosses a thread.
 
-Scripts are also single-threaded by design — there are no workers and
-no cross-thread callbacks; asynchronous host work reaches the script
-on the thread that owns its Context, when the host delivers it.
+```ts
+class Job {
+  from: i32;
+  to: i32;
+  constructor(from: i32, to: i32) {
+    this.from = from;
+    this.to = to;
+  }
+}
 
-What replaces the pattern: asynchronous host work (I/O, threads)
-reaches scripts as C callbacks, delivered on the calling thread when
-the host pumps — never spontaneously from another thread — and the
-script-side "waiting" logic is a coroutine. Composed, those two give
-Future-shaped async without a `Promise` object; see
-[`e10-c-callbacks-and-handles.ts`](../examples/e10-c-callbacks-and-handles.ts)
-and the callback model in
-[`specs/blocks/compiler.md`](../specs/blocks/compiler.md) §13.3, §14.5.
+class Tally {
+  count: i32;
+  constructor(count: i32) {
+    this.count = count;
+  }
+}
 
-## Exported functions are the host's entry points
+function countEven(inbox: Inbox<Job>, outbox: Outbox<Tally>): void {
+  const job: Job | null = inbox.wait();
+  if (job === null) {
+    return;
+  }
+  let count: i32 = 0;
+  for (let n: i32 = job.from; n < job.to; n += 1) {
+    if (n % 2 === 0) {
+      count += 1;
+    }
+  }
+  outbox.post(new Tally(count));
+}
 
-There is no top-level program: the embedding application calls your
-exports. Each `export function <name>(): void` becomes a C symbol
-`subscript_export_<name>` that the host invokes — `main` for a
-one-shot run, or `init`/`update`/`shutdown`-style entries driven once
-per frame. Exports take no arguments and return nothing; inputs are
-read from the host's declared API at the start of the entry, and
-results are written back through it. Module-level variables persist
-between calls (they live in the Context), which is how per-frame
-entries share state:
+export function main(): void {
+  const left: Worker<Job, Tally> = Worker.spawn(countEven);
+  const right: Worker<Job, Tally> = Worker.spawn(countEven);
+  left.post(new Job(0, 100));
+  right.post(new Job(100, 200));
+  left.close();
+  right.close();
+  left.join();
+  right.join();
+  const a: Tally | null = left.poll();
+  const b: Tally | null = right.poll();
+  if (a !== null && b !== null) {
+    print(`left=${a.count} right=${b.count} total=${a.count + b.count}`);
+  }
+}
+```
+
+```text
+left=50 right=50 total=100
+```
+
+The rules that follow from the isolation:
+
+- The entry is a named module function. It captures nothing: a capture
+  names memory in the Context it came from.
+- A message class holds sized numerics, booleans, enums, string-literal
+  union aliases, value classes, top-level `string` fields, and
+  top-level `FixedArray<string, N>` fields. A string travels as a copy
+  of its bytes. Reference, growable-array, function, and nullable
+  fields are not transferable.
+- A worker handle belongs to the Context that spawned it. It is not a
+  module global, a class field, an array element, a `Map` or `Set` type
+  argument, or a lambda capture.
+- `post` never blocks. `poll` never blocks and answers `null` when
+  nothing is available. Worker-side `wait` blocks that worker's thread
+  only. `close` then `join` shuts a worker down, and `join` reports a
+  worker's trap to the parent.
+- Post all independent work before the first `join`, or the work runs
+  in sequence.
+
+The host still owns the main loop. Workers are the language's own
+threads for computation, not a way to call the host from a thread it
+does not know.
+
+## Exports are the host's entry points
+
+There is no top-level program. The application calls what you export.
+A one-shot program exports `main`. A frame-driven program exports
+entries such as `init`, `update`, and `shutdown`, and the host calls
+them.
+
+An export is **host-callable** when three facts hold. It is
+synchronous. It returns `void`. Every parameter is a boundary scalar
+(a sized numeric or a `boolean`) or an opaque handle from the host's C
+API. A host-callable export becomes the C symbol
+`subscript_export_<name>`. A zero-argument `void` async export is
+host-callable too. Any other export stays a legal script function that
+other script code calls; it gets no C symbol.
+
+Module-level variables live in the Context and persist between calls.
+That is how per-frame entries share state:
 
 ```ts
 class SessionState {
-  distance: f32;
-
-  constructor() {
-    this.distance = 0.0;
-  }
+  distance: f32 = 0.0;
 }
 
 let session: SessionState | null = null;
@@ -331,89 +617,164 @@ export function init(): void {
   session = new SessionState();
 }
 
-export function update(): void {
+export function update(dt: f32): void {
   if (session !== null) {
-    session.distance += 0.016;
+    session.distance += dt;
   }
 }
 ```
 
-The complete version — where `update` reads the frame's real inputs
-from the host's declared API instead of a constant — is
-[`examples/host/game.ts`](../examples/host/game.ts); the calling side
+The complete version, where `update` reads the frame's real inputs
+from the host's declared API, is
+[`examples/host/game.ts`](../examples/host/game.ts). The calling side
 is step 6 of the [C/C++ tutorial](tutorial-c-cpp.md).
 
-## The standard library is a deliberate subset
+## Strings are UTF-8
 
-Arrays, strings, `Map`/`Set`, `Math`, `Date`, `JSON` (typed, via a
-declared target class), and regular expressions exist, with documented
-divergences from JavaScript where soundness or determinism requires
-them. `Math.random()` starts from a fixed seed in every fresh Context
-(the host can reseed it), and `Date` observes only the time the host
-sets — so two runs of the same program produce the same output, and
-replays reproduce. What is not in the subset is rejected with `S014`
-rather than silently missing at runtime.
+A JavaScript string is a sequence of UTF-16 code units. Here a string
+is UTF-8 bytes, because that is what a C API takes and returns. Every
+index, length, and offset counts bytes:
 
-## Programs can span files
+```ts
+export function main(): void {
+  const text: string = "café";
+  print(`length=${text.length}`);
+  print(`slice=${text.slice(0, 3)}`);
+  print(`upper=${text.toUpperCase()}`);
+}
+```
 
-`import`/`export` between script files works as in TypeScript:
+```text
+length=5
+slice=caf
+upper=CAFÉ
+```
+
+`"café".length` is 5 here and 4 in Node. `charCodeAt` returns one
+UTF-8 byte; `codePointAt` and `charAt` read the code point that starts
+at a byte index. Case conversion applies Unicode default case
+conversion, without locale rules.
+
+## The standard library is a subset
+
+Arrays (growable `T[]` and `FixedArray<T, N>`), strings, `Map`, `Set`,
+`Math`, `Number`, `Date`, typed `JSON`, and regular expressions are
+available. Their divergences from JavaScript are documented one by one
+in [`generated-docs/api-reference.md`](../generated-docs/api-reference.md),
+with the subscript result and the Node result beside each other.
+
+Two properties drive most of the differences.
+
+**Determinism.** `Math.random()` starts from a fixed seed in every
+fresh Context, and the host reseeds it, so a run replays. `Date` has
+UTC accessors only; local-time accessors are rejected. `Date.now()`
+reads the system UTC clock by default, and the host pins it to a
+value it chooses. A program that pins the clock and the seed produces
+one output for one input.
+
+**A scalar has no miss value.** `T[].find` is absent, because a
+missing `i32` has nothing to return; `findIndex` returns `-1`.
+`Map.get` returns `V | null` for a reference value, and `Map.getOr`
+takes the fallback for a scalar value. `JSON.parse<T>` returns a
+`JsonResult<T>` against a class you declare, not an `any`.
+
+What is outside the subset is rejected at compile time, with `S014`
+and a named replacement. It does not fail at run time.
+
+## Modules
+
+`import` and `export` work between script files. `math.ts` exports a
+function, and `main.ts` beside it imports the name:
+
+```ts
+export function triangular(n: i32): i32 {
+  return (n * (n + 1)) / 2;
+}
+```
 
 ```ts
 import { triangular } from "./math";
+
+export function main(): void {
+  print(`t(5)=${triangular(5)}`);
+}
 ```
 
-with the ordinary `export function` on the defining side
-(`corpus/accept/a19-modules/` is the pinned example). The CLI follows
-relative imports from the entry file, so `subscript check main.ts` or
-`subscript run main.ts` loads the whole program. The decided surface
-is narrower than TypeScript's: named imports from same-directory
-siblings (`./name`) — no parent or nested paths, no packages, no
-default or namespace imports.
+```text
+t(5)=15
+```
 
-## What is rejected, and the code that says so
+The surface is narrower than TypeScript's: named imports from
+same-directory siblings (`./name`). There are no parent paths, no
+nested paths, no packages, and no default or namespace imports. The
+CLI follows the imports from the entry file, so `subscript check
+main.ts` loads the whole program.
 
-Every rejection carries a stable rule code; these are the ones that
-reshape TypeScript habits:
+## Diagnostics
+
+Every rejection carries a stable code. The full text of each, with a
+pinned corpus example, is in
+[`generated-docs/language-reference.md`](../generated-docs/language-reference.md).
 
 | Code | Rejected |
 |---|---|
 | S001 | `any` |
 | S002 | `eval`, `new Function` |
-| S003 | prototype mutation |
-| S004 | undeclared properties |
-| S005 | structural substitution between nominal types |
+| S003 | Prototype mutation |
+| S004 | Undeclared properties on a nominal type |
+| S005 | Structural substitution between nominal types |
 | S006 | `extends` on a value class |
-| S007 | bare `number` |
-| S009 | a capturing lambda escaping its defining function |
-| S010 | exceptions |
-| S011 | unions beyond `T \| null`, unnarrowed access |
+| S007 | Bare `number` |
+| S008 | A numeric literal that does not fit its context |
+| S009 | A capturing lambda that escapes its defining function |
+| S010 | Exceptions |
+| S011 | Unions beyond `Ref \| null`, and unnarrowed access |
 | S012 | `undefined` |
-| S013 | the `Promise` object surface (`new Promise`, `.then`, combinators, un-awaited async calls) — `async`/`await` themselves are accepted, poll-driven |
+| S013 | The `Promise` object surface, and an async handle never awaited |
+| S014 | Standard-library use outside the subset, and `f16` arithmetic |
+| S016 | A name with no declaration |
+| S017 | Two declarations of one name in one namespace |
+| S018 | A member the receiver type does not declare |
+| S019 | A string literal above the ship-tier byte limit |
+| S100 | Constructs outside the decided surface |
 
-A consequence, stated plainly: existing npm packages and most existing
-TypeScript code will not compile, because the ecosystem is written
-against the dynamic patterns this list rejects. That is structural,
-not a missing feature — subscript uses TypeScript's syntax and
-tooling, not its ecosystem.
+Four warnings exist. `W001` flags a loop allocation that neither
+escapes nor is released. `W002` flags a use after `Context.free`.
+`W003` flags fresh callback userdata registered in a loop. `W004`
+flags a value copy that a function writes through and never reads.
 
-## Tooling you already have
+A consequence of this list, stated plainly: existing npm packages and
+most existing TypeScript code will not compile here. The ecosystem is
+written against the patterns this list rejects. That is structural.
+subscript uses TypeScript's syntax and tooling, not its ecosystem.
 
-Because accepted programs are valid TypeScript, `tsc` and tsserver
-work on them directly — this repository's own gate runs stock `tsc`
-over every corpus program. The CLI adds the semantic layer:
+## Tooling
+
+Accepted programs are valid TypeScript, so `tsc` and tsserver work on
+them directly. This repository's own gate runs stock `tsc` over every
+corpus program. The CLI adds the semantic layer:
 
 ```sh
-subscript check file.ts       # errors and warnings, with source context
-subscript run file.ts         # execute under the dev JIT
-subscript emit file.ts -o d/  # emit the ship-tier C
+subscript check file.ts              # errors and warnings, with source context
+subscript check file.ts --deny-warnings
+subscript run file.ts                # execute on the dev JIT
+subscript run file.ts --watch        # re-check and hot-reload on edit
+subscript emit file.ts -o out/       # emit the ship-tier C
+subscript build --source file.ts     # emit C and link a native binary
+subscript bind engine.h              # generate the .d.ts mirror of a C header
+subscript link-flags                 # what a host links against
 ```
 
 ## Reading on
 
-- [`examples/README.md`](../examples/README.md) — ten single-concept
-  examples, each with its divergence from TypeScript stated, plus two
-  complete C-host capstones.
+- [`examples/README.md`](../examples/README.md) — eleven single-concept
+  examples, each with its divergence stated, plus the C-host capstones.
 - [`docs/tutorial-c-cpp.md`](tutorial-c-cpp.md) — the same language
-  from the host's side, including the embedding walkthrough.
+  from the host's side, with the embedding walkthrough.
+- [`docs/tutorial-rust.md`](tutorial-rust.md) — embedding from a Rust
+  host, where the JIT and hot reload live in your process.
+- [`generated-docs/api-reference.md`](../generated-docs/api-reference.md)
+  — the accepted standard-library surface, and every divergence from
+  ECMA with both results shown.
 - [`specs/blocks/collisions.md`](../specs/blocks/collisions.md) — the
-  decision record for every place subscript diverges from TypeScript.
+  decision record for each place subscript diverges from TypeScript.

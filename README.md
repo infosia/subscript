@@ -94,10 +94,12 @@ gaps to be closed later:
 
 - [subscript for C and C++ developers](docs/tutorial-c-cpp.md) — the
   language from the host's side, ending in a step-by-step embedding
-  walkthrough (a complete host is 29 lines of C).
+  walkthrough (a complete host is 31 lines of C).
 - [subscript for TypeScript developers](docs/tutorial-typescript.md) —
-  what changes coming from TypeScript: sized integers, explicit memory,
-  value classes, traps, coroutines, and the rejection table.
+  what changes coming from TypeScript: sized integers, nominal and value
+  classes, `null` without `undefined`, explicit memory, traps instead of
+  exceptions, host-stepped `async`, coroutines, workers, and the
+  complete rejection table.
 - [subscript for Rust embedders](docs/tutorial-rust.md) — embedding
   through the crates directly: the dev tier in your process, a
   frame-loop host with hot reload in four steps, backed by a
@@ -167,6 +169,13 @@ handles all cross the boundary with no conversion. No specific host header
 is privileged by the language; if host data must become script-visible,
 the host grows a C facade.
 
+### Workers, when the work divides
+
+`Worker.spawn` runs a named script function on an OS thread with a fresh
+Context. Nothing is shared: a message is copied into the receiving
+Context, so no reference crosses a thread. The host keeps its main loop
+and its own Context stays single-threaded.
+
 ### No implicit GC
 
 Memory is Context-scoped. Allocate objects normally, release finished
@@ -183,17 +192,18 @@ subset** of them with sized-type signatures and rejects the rest with a
 clear diagnostic — `tsc` accepts more than the language does, never less.
 What is in so far: `Math` (ECMA edge semantics, plus a seeded PRNG so
 `Math.random` is replayable), a UTC-only `Date` that erases to `i64`
-millis, 17 `String` methods, 16 `Array` methods including
-`map`/`filter`/`reduce`/`sort` with real closures, and `Map`/`Set` in
-progress. Every operation with a runtime component is implemented **once**
-and called by both tiers through an opaque symbol, so the two tiers cannot
-drift apart — and every accepted operation is deterministic given the
-Context, which is what makes replay and the golden corpus possible.
-Anything whose result would depend on a locale table, a random seed the
-program cannot control, or the host's libc is either rejected or made
-explicit.
+millis, the `String` and `Array` methods listed in the API reference,
+`map`/`filter`/`reduce`/`sort` with real closures, `Map`/`Set`, typed
+`JSON` against a class you declare, and regular expressions. Every
+operation with a runtime component is implemented **once** and called
+through an opaque symbol, so no tier carries its own copy. Every
+accepted operation is deterministic given the Context, which is what
+makes replay and the golden corpus possible.
+An operation whose result depends on a locale table, on a random seed
+the program does not control, or on the host's libc is either rejected
+or made explicit.
 
-### Two execution tiers, checked against each other
+### Two execution tiers, and a third witness
 
 - **Development tier** — an in-process JIT ([Cranelift](https://cranelift.dev))
   with hot reload: a function-body edit is recompiled and swapped at a
@@ -205,10 +215,17 @@ explicit.
   Android) and the desktop hosts (macOS arm64, Windows x86-64, Linux
   x86-64). The development tier runs on the same three desktops.
 
-The two tiers are held to **byte-identical output**: a standing
-differential gate runs every corpus program under both tiers and compares
-the bytes against a committed golden, on every test run. The language's
-behaviour is defined by that corpus, not by either backend.
+A **reference interpreter** reads the same verified IR. It is written
+from the IR contract alone, so it shares no assumption with either
+tier.
+
+The tiers are held to **byte-identical output**: a standing
+differential gate runs every corpus program under the dev tier and the
+ship tier and compares both against a committed golden, on every test
+run. The interpreter runs the entries that need no host C library, as
+the third witness: 124 of them in the debug profile, and 125 under
+`SUBSCRIPT_FULL_INTERPRETER_SWEEP=1`. The language's behaviour is
+defined by that corpus, not by any one backend.
 
 ## Performance
 
