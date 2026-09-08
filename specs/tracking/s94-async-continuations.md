@@ -174,3 +174,76 @@ aggregate LIR snapshot:
 
 a185 now matches `node v24.18.0` and carries `js-comparable: yes`.
 Its former C16 explanation and `node-order` header lines are gone.
+
+## Phase Review, 2026-09-09
+
+Two fresh no-context reviewers reviewed `d8cc19c..f86bcd1`, one on the
+runtime and the two compiled tiers, one on the interpreter, the tests,
+the corpus, the benchmarks and the docs. They raised two CRITICAL and
+three MAJOR findings.
+
+CRITICAL: a cleared trap replays the continuation, because the frame's
+saved state names the earlier suspension (§94.2 now states the rule);
+and the interpreter aliases a running frame, because `execute_coroutine`
+keeps a `*mut Frame` into a `RefCell` that `AsyncHandleRetain` and
+`register_continuation` borrow while the frame runs.
+
+MAJOR: two comments state the opposite of §94.1 rule 11; the
+`ReloadSession` teardown test observes nothing after its drop, so it
+cannot fail for the property it names; and §94.3's self-await control
+has no host test with the `unfinished` observer.
+
+### Confirmed by the review, not only claimed
+
+- Every §94.3 required case is covered except the self-await control.
+- All ten changed or new corpus entries are Red at pin `d8cc19c`.
+- `a185`, `a188`, `a189` and `a193` match `node v24.18.0` byte for byte.
+- The interpreter calls no `Context::async_*`; its scheduler is its own.
+- Removing the interpreter's `Drop` makes three teardown tests fail, so
+  the lifetime fix has a firing control.
+- The LIR snapshot went 1,139,176 → 1,260,829 bytes, 27 → 33 blocks.
+  `a185` is the only changed pre-existing block, and its change is line
+  and column shifts from the two deleted `node-order:` header lines. No
+  instruction differs. Every other block is byte-identical.
+- Async cost reproduced from the committed driver, ship C, release,
+  two sequential pairs:
+
+| Workload | Baseline median | New median | Ratio |
+|---|---|---|---|
+| settled-awaits | 10.640 / 10.590 ms | 29.486 / 28.304 ms | 2.77 / 2.67 |
+| held-handles | 4.014 / 4.025 ms | 8.976 / 9.078 ms | 2.24 / 2.26 |
+| deep-chains | 6.368 / 6.203 ms | 16.595 / 16.070 ms | 2.61 / 2.59 |
+
+  Spreads 1.7% to 5.7%, every ratio under §94.4's 3.0x cap. Context
+  payload at release is identical on both revisions, so §94 adds no
+  retention.
+
+### MINOR findings, open
+
+Recorded here, not fixed in the correction round.
+
+1. Seven comments cite a measurement round instead of the contract, and
+   their rule numbers are the round's: `cemit.rs` 3887, 4031, 4097;
+   `lower/func.rs` 6720, 6732, 6858, 6924, and 6882's "before this
+   experiment".
+2. Stale doc text on `Context::async_kick` and `async_step`, and the
+   `poll-driven async roots` section header in `runtime/src/context.rs`.
+3. A dead second staleness check at `lower/func.rs:7026-7030`.
+4. `emit_async_handle_stale_check` emits nothing; the name says it does.
+5. Three dead parameters kept alive by a discard in
+   `await_async_child` and `await_async_handle`.
+6. The LIR form carries the stale-trap site for `AsyncHandle` only,
+   while the consumer derives it for `Async` and `AsyncCall`.
+7. `subscript_rt_ctx_async_unfinished` has no behavioural test; nothing
+   gated calls it.
+8. The host-header generator gained a ninth hand-listed function name
+   beside a generic loop that already covers them.
+9. `a189` shares a reference value, not an aggregate one, where §94.3
+   names both.
+10. `docs/tutorial-typescript.md:429` still says "A pending `await`
+    suspends"; every await suspends now. Line 518 describes
+    `async_unfinished` more narrowly than §94.2 defines it.
+11. The interpreter's `run()` loop has no progress guarantee on the
+    branch where `async_step` returns `Ok(())` while trapped.
+12. `kick`'s `exports` parameter in `codegen/tests/async_checkpoint.rs`
+    is dead at all six call sites, so `call_export` is unexercised there.
