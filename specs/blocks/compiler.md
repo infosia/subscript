@@ -13017,14 +13017,22 @@ A stale async resume traps at the suspension position before body effects.
 The JIT retains old code while queued frames can reference it.
 
 *(Added 2026-09-09, after the Phase Review measured a replay.)* **A
-trap inside a resumed continuation stops that frame permanently.** The
-host clears the trap and steps again; the checkpoint then advances
-every other registration, and the trapping frame never re-enters the
-ready queue. Its registration stays until Context release.
-`async_pending` excludes a stopped frame, because nothing can advance
-it. `async_unfinished` includes it, because it holds no cached
-completion. Waiters on its handle stay blocked, and `async_unfinished`
-reports them.
+trap inside a resumed continuation stops that frame at host
+clearance.** The transition has two steps, and the order matters.
+
+While the Context stays trapped, nothing changes. The scheduler
+records the trapping frame and keeps it at the head of the ready
+queue, so `async_pending` counts it and repeated steps are no-ops, as
+the paragraph above states.
+
+`clear_trap` performs the transition. The scheduler moves the recorded
+frame out of the ready queue into the stopped set. From that point the
+frame never re-enters the ready queue, and a later checkpoint advances
+every other registration. Its registration stays until Context
+release. `async_pending` excludes it, because nothing can advance it.
+`async_unfinished` includes it, because it holds no cached completion.
+Waiters on its handle stay blocked, and `async_unfinished` reports
+them.
 
 The reason is the saved state. A frame stores the state word of the
 suspension it resumes from, and it writes the next state word only when
@@ -13036,9 +13044,10 @@ traps on an out-of-range index re-printed its second line and leaked
 one allocation on each cleared step, without advancing.
 
 The dev-tier reload staleness trap is the one exception. It reports at
-the adapter head before any body effect, so the frame is unchanged and
-stays ready. Clearing that trap and stepping again reports it again,
-as §18.2b has it. Every other trap stops the frame.
+the adapter head before any body effect, so the frame is unchanged.
+`clear_trap` leaves that frame in the ready queue, and stepping again
+reports the staleness again, as §18.2b has it. The scheduler decides
+by the recorded trap kind. Every other trap stops the frame.
 
 A registration owns a reference independent of caller handles. That
 ownership transfers between ready, parked, blocked, and active states.
