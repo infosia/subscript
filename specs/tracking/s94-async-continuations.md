@@ -247,3 +247,51 @@ Recorded here, not fixed in the correction round.
     branch where `async_step` returns `Ok(())` while trapped.
 12. `kick`'s `exports` parameter in `codegen/tests/async_checkpoint.rs`
     is dead at all six call sites, so `call_export` is unexercised there.
+
+## Correction round, 2026-09-09
+
+Both CRITICAL findings and all three MAJOR findings are fixed at
+`4dcbd98`. The twelve MINOR findings stay open.
+
+The round stopped once before implementing, on a contract
+contradiction it was right to raise: §94.2 counted a trapping job in
+`async_pending` while the Context stayed trapped, and the new rule
+excluded a stopped frame from that count. The same frame met both
+descriptions, and `async_checkpoint.rs` asserts `pending == 1` right
+after the trap. `610fd75` names the transition point: the stop happens
+at `clear_trap`, not at the trap.
+
+**The cleared-trap replay.** `Context` records the trapping frame and
+its trap kind at the ready head. `clear_trap` moves that frame into
+`async_stopped` unless the kind is `StaleCoroutine`. Measured on both
+tiers, five clear-and-step rounds, three shapes:
+
+| Shape | Output | Live allocations | Unfinished | Trap position |
+|---|---|---:|---:|---|
+| Resumed body | `m1 m2` | 4 | 1 | 6:14 |
+| Started callee | `m1 m2 boom:start` | 6 | 2 | 4:14 |
+| Resumed completed direct await | `m1 m2` | 4 | 1 | 7:14 |
+
+No further output, no allocation growth, no unfinished growth, and no
+stale-child `Internal` report. The successful control prints a third
+line, so a later checkpoint can still run a continuation in that
+shape.
+
+**The interpreter aliasing.** Execution storage is now a separate
+`Rc<RefCell<Frame>>`. `execute_coroutine` holds no raw pointer and no
+`unsafe`, and a reentrant borrow reports an internal `InvalidLir`
+rather than panicking, which core principle 5 requires.
+
+**Verified here, not only reported.** The reload staleness tests pass
+unchanged, so the exception holds. The two interpreter tests for the
+reaching paths pass. Reverting the clearance transfer makes
+`ship_c_cleared_continuations_never_replay_or_leak` fail on its
+pending assertion, so the test fires.
+
+Gate verdict for the correction round:
+
+```
+gate full 610fd75d8aeb8b9d3dc755b13092ff051b383e05 dirty:8 debug 1347/0/2 release 1345/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Record: `target/gate/20260908T214015Z-full.md`. No golden moved.
