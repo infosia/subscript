@@ -754,6 +754,8 @@ size_t engineWorldReadEntities(EngineWorld engineWorld, EngineEntityStateOut eng
 — becomes this mirror:
 
 ```ts
+// excerpt of examples/engine/engine.generated.d.ts
+// @subscript-c-header include="engine.h"
 interface EngineWorld {
   readonly __sub_handle_EngineWorld: never;
 }
@@ -811,6 +813,7 @@ registered callback with two userdata slots
 ([`e10-c-callbacks-and-handles.ts`](../examples/e10-c-callbacks-and-handles.ts)):
 
 ```ts
+class EventLog { hits: i32 = 0; }
 const log: EventLog = new EventLog();     // script-side reference class
 const sink: EngineEventSink = new EngineEventSink(
   (message, userdata1, userdata2) => {    // non-capturing (C5)
@@ -991,6 +994,22 @@ cross as copies (`specs/blocks/compiler.md` §38–§40, §84;
 `specs/blocks/stdlib.md` §16). A worker script looks like this:
 
 ```ts
+class Job {
+  start: i32;
+  end: i32;
+  constructor(start: i32, end: i32) {
+    this.start = start;
+    this.end = end;
+  }
+}
+
+class Total {
+  sum: i32;
+  constructor(sum: i32) {
+    this.sum = sum;
+  }
+}
+
 function accumulate(inbox: Inbox<Job>, outbox: Outbox<Total>): void {
   const job: Job | null = inbox.wait();   // blocks on the worker's own thread
   if (job === null) {
