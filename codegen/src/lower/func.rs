@@ -6374,9 +6374,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 &instruction.traps,
                 &instruction.pos,
             )?),
-            l::InstructionKind::AsyncHandleCreate(target) => Some(RV::Scalar(
-                self.create_async_child_from_values(target, &operands, &instruction.traps)?,
-            )),
+            l::InstructionKind::AsyncHandleCreate(target) => {
+                let handle =
+                    self.create_async_child_from_values(target, &operands, &instruction.traps)?;
+                self.start_async_handle(target, handle)?;
+                Some(RV::Scalar(handle))
+            }
             l::InstructionKind::AsyncHandleRetain => {
                 let frame = self.expect_scalar(
                     *operands
@@ -6808,6 +6811,42 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .first()
             .copied()
             .ok_or_else(|| internal("async creator has no frame result"))
+    }
+
+    fn start_async_handle(&mut self, target: &l::CallTarget, handle: Value) -> Result<(), String> {
+        let (output, size) = match &target.return_type {
+            Some(ty) => {
+                let (size, align) = self.ml.layouts.size_align(data_type(ty)?)?;
+                let output = self.stack_slot(size.max(1), align.max(1));
+                self.zero_bytes(output, size.max(1), align.max(1));
+                (output, size)
+            }
+            None => (self.iconst(types::I64, 0), 0),
+        };
+        let resume = self
+            .builder
+            .ins()
+            .load(types::I64, flags(), handle, COROUTINE_RESUME_OFFSET);
+        let signature = self.builder.import_signature(self.ml.resume_sig());
+        let call = self
+            .builder
+            .ins()
+            .call_indirect(signature, resume, &[self.ctx, handle, output]);
+        let done = self.builder.inst_results(call)[0];
+        self.trap_check();
+        let complete = self.builder.create_block();
+        let continued = self.builder.create_block();
+        self.builder.ins().brif(done, complete, &[], continued, &[]);
+        self.builder.switch_to_block(complete);
+        let size = self.iconst(types::I64, i64::from(size));
+        self.call_runtime(
+            self.ml.rt.async_complete,
+            &[self.ctx, handle, output, size],
+            false,
+        )?;
+        self.builder.ins().jump(continued, &[]);
+        self.builder.switch_to_block(continued);
+        Ok(())
     }
 
     fn resume_async_child(

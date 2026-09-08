@@ -512,7 +512,11 @@ pub enum InstructionKind {
     MakeClosure(FunctionId),
     /// Invoke a resolved call target.
     Call(CallTarget),
-    /// Create an async coroutine frame without polling it.
+    /// Create an async handle and run its child to its first suspension or return.
+    /// The caller does not suspend.
+    /// The handle keeps its owner and caches a completed result for later awaits.
+    /// The child is not an exported root and never joins the root queue.
+    /// A body trap stops the caller at this call, with the callee's position.
     AsyncHandleCreate(CallTarget),
     /// Increment one async frame's non-atomic owner count.
     AsyncHandleRetain,

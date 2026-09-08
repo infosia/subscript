@@ -213,6 +213,8 @@ struct Coroutine {
     completed: bool,
     completion: Option<Value>,
     owners: u32,
+    /// Awaited descendants retained when a call-time start suspends.
+    pending: Vec<(Rc<RefCell<Coroutine>>, bool)>,
 }
 
 struct CoroutineRoot {
@@ -449,6 +451,7 @@ impl<'m> Interpreter<'m> {
                 completed: false,
                 completion: None,
                 owners: u32::from(function.is_async),
+                pending: Vec::new(),
             }));
             if function.is_async {
                 self.async_handles
@@ -491,6 +494,11 @@ impl<'m> Interpreter<'m> {
             let Some((coroutine, release_on_complete)) = root.stack.last().cloned() else {
                 return Ok(Some(Value::Void));
             };
+            let pending = std::mem::take(&mut coroutine.borrow_mut().pending);
+            if !pending.is_empty() {
+                root.stack.extend(pending);
+                continue;
+            }
             let flow = {
                 let mut coroutine = coroutine.borrow_mut();
                 if coroutine.completed {
@@ -1133,12 +1141,27 @@ impl<'m> Interpreter<'m> {
                 Some(&operand_types),
                 Some(&instruction.pos),
             )?),
-            l::InstructionKind::AsyncHandleCreate(target) => Some(self.invoke_target(
-                target,
-                operands,
-                Some(&operand_types),
-                Some(&instruction.pos),
-            )?),
+            l::InstructionKind::AsyncHandleCreate(target) => {
+                let value = self.invoke_target(
+                    target,
+                    operands,
+                    Some(&operand_types),
+                    Some(&instruction.pos),
+                )?;
+                let Value::Coroutine(handle) = &value else {
+                    return Err(self.invalid(
+                        Some(instruction.pos.clone()),
+                        "async creation did not return a handle",
+                    ));
+                };
+                let mut root = CoroutineRoot {
+                    stack: vec![(Rc::clone(handle), false)],
+                };
+                if self.step_coroutine_root(&mut root)?.is_none() {
+                    handle.borrow_mut().pending = root.stack.split_off(1);
+                }
+                Some(value)
+            }
             l::InstructionKind::AsyncHandleRetain => {
                 let Value::Coroutine(handle) = operands
                     .first()

@@ -420,13 +420,13 @@ A trap is not catchable in script. A fault is a defect to fix, and
 the host decides what happens next. The host reads the rule, the
 message, and the position through its C API. The Context stays
 readable, so the host inspects state before it releases it.
-`corpus/trap/` holds 53 programs over the trap kinds, each with the
-output it produced before the fault.
+`corpus/trap/` holds the trapping programs, each with the output it
+produced before the fault.
 
 ## `async`/`await` without a scheduler
 
 `async` and `await` are accepted, and they mean something narrower
-than in JavaScript. **Nothing schedules the resumption.** `await`
+than in JavaScript. **Nothing schedules the resumption.** A pending `await`
 suspends the function and every caller up to the entry point. The
 computation continues when the host steps it. There is no event loop,
 no microtask queue, and no `Promise` object at run time. `Promise<T>`
@@ -459,6 +459,11 @@ earlier call produced. A handle lives in a local or an array, and it
 passes to another function. Every handle a program creates must have
 one awaited completion. `new Promise`, `.then`, `Promise.all`, and the
 other statics do not exist.
+
+An async call runs the callee to its first suspension at the call.
+A callee that never awaits completes at the call.
+An await of a completed handle continues in the same step, where JavaScript yields
+([C16](../specs/blocks/collisions.md#c16-an-await-of-a-completed-handle-does-not-yield)).
 
 Three reasons shape this, and each follows from a decision the
 repository records:

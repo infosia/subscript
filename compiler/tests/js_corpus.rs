@@ -99,6 +99,66 @@ fn collision_ids_in(text: &str) -> impl Iterator<Item = &str> {
 }
 
 fn scan_corpus_references(text: &str) -> Vec<ScannedCorpusReference> {
+    scan_reference_tokens(&without_inline_code(text))
+}
+
+// Preserve reference-only spans, such as `a5`, but skip code and output.
+// Mask bytes rather than remove them so source positions and lines stay intact.
+fn without_inline_code(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut masked = bytes.to_vec();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'`' || (index > 0 && bytes[index - 1] == b'\\') {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && bytes[index] == b'`' {
+            index += 1;
+        }
+        let width = index - start;
+        let content_start = index;
+        let mut closing = None;
+        while index < bytes.len() {
+            if bytes[index] != b'`' || (index > 0 && bytes[index - 1] == b'\\') {
+                index += 1;
+                continue;
+            }
+            let end = index;
+            while index < bytes.len() && bytes[index] == b'`' {
+                index += 1;
+            }
+            if index - end == width {
+                closing = Some(end);
+                break;
+            }
+        }
+        let Some(end) = closing else {
+            break;
+        };
+        let content = &text[content_start..end];
+        let references = scan_reference_tokens(content);
+        let reference_only = width == 1
+            && references.len() == 1
+            && matches!(
+                &content[..references[0].start],
+                "" | "corpus/accept/" | "corpus/reject/" | "corpus/trap/"
+            )
+            && (references[0].end == content.len()
+                || (content.starts_with("corpus/") && &content[references[0].end..] == ".ts"));
+        if !reference_only {
+            for byte in &mut masked[start..index] {
+                if *byte != b'\n' {
+                    *byte = b' ';
+                }
+            }
+        }
+    }
+    String::from_utf8(masked).expect("code-span masking preserves UTF-8")
+}
+
+fn scan_reference_tokens(text: &str) -> Vec<ScannedCorpusReference> {
     let bytes = text.as_bytes();
     let mut references = Vec::new();
     let mut index = 0;
@@ -193,6 +253,9 @@ fn corpus_reference_number(name: &str) -> Option<(char, u32)> {
 
 impl CollisionIndex {
     fn parse(source: &str) -> Result<Self, String> {
+        // Inline examples can span lines; mask them before the line walk.
+        let source = without_inline_code(source);
+        let source = source.as_str();
         let mut index = Self::default();
         for reference in scan_corpus_references(source) {
             if reference.retired {
@@ -701,6 +764,36 @@ Accept: `a05`.
         ])
     );
     assert_eq!(index.retired, BTreeSet::from(["r04-old".to_string()]));
+}
+
+#[test]
+fn corpus_references_skip_code_but_keep_single_digit_references() {
+    let references = scan_corpus_references(
+        "prints `a1 a2 b1 b2 r1`; runs ``print(`a7`)`` and `return a7`; Accept: `a5`, `a185`, `corpus/accept/a80-for-of-foreach-mutation`, `corpus/accept/a80-for-of-foreach-mutation.ts`. Reject: r6.",
+    );
+    let names = references
+        .iter()
+        .map(|reference| reference.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        [
+            "a5",
+            "a185",
+            "a80-for-of-foreach-mutation",
+            "a80-for-of-foreach-mutation",
+            "r6"
+        ]
+    );
+}
+
+#[test]
+fn collision_index_reports_one_digit_typos_after_multiline_code() {
+    let source = "## 1. Collision rules\n\n### C1. Rule\n\n`function f() {\n  print(\\`a7 r8\\`);\n}` prints `a1 a2`.\n\nAccept: `a5`, `a185`.\n";
+    let index = CollisionIndex::parse(source).expect("parse code spans and references");
+    let errors = index.consistency_errors(&BTreeSet::from(["a185-present".to_string()]));
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].contains("absent corpus entry `a5`"), "{errors:?}");
 }
 
 #[test]

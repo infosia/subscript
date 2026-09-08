@@ -786,17 +786,43 @@ mod tests {
     /// that the table itself did not produce (CLAUDE.md principle 9).
     const SOURCE: &str = include_str!("divergence.rs");
 
-    /// Every `### C<n>` heading id in the collision record.
+    /// Every collision heading that requires a rejection diagnostic.
     fn recorded_headings() -> BTreeSet<String> {
-        COLLISIONS
-            .lines()
-            .filter_map(|line| line.strip_prefix("### "))
-            .filter_map(|rest| rest.split('.').next())
-            .filter(|id| {
-                id.starts_with('C') && id.len() > 1 && id[1..].chars().all(|c| c.is_ascii_digit())
-            })
-            .map(str::to_owned)
-            .collect()
+        diagnostic_headings(COLLISIONS)
+    }
+
+    fn diagnostic_headings(source: &str) -> BTreeSet<String> {
+        let mut headings = BTreeSet::new();
+        let mut current = None;
+        for line in source.lines() {
+            if line.starts_with("## ") || line.starts_with("### ") {
+                current = line
+                    .strip_prefix("### ")
+                    .and_then(|rest| rest.split('.').next())
+                    .filter(|id| {
+                        id.starts_with('C')
+                            && id.len() > 1
+                            && id[1..].chars().all(|c| c.is_ascii_digit())
+                    });
+                if let Some(id) = current {
+                    headings.insert(id.to_owned());
+                }
+            } else if line == "No diagnostic reports this." {
+                if let Some(id) = current {
+                    headings.remove(id);
+                }
+            }
+        }
+        headings
+    }
+
+    #[test]
+    fn only_an_explicit_standalone_marker_exempts_its_collision_heading() {
+        let source = "### C1. Reject\nText: No diagnostic reports this.\n\n### C2. Behavior\nNo diagnostic reports this.\n\n### C3. Reject\nAccept: `a5`.\n\n## 2. Other records\nNo diagnostic reports this.\n";
+        assert_eq!(
+            diagnostic_headings(source),
+            BTreeSet::from(["C1".to_owned(), "C3".to_owned()])
+        );
     }
 
     /// The variant names declared in the `Divergence` enum body.

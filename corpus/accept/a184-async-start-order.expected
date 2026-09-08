@@ -1,0 +1,7 @@
+chain:start
+leaf
+chain:end
+quick
+after-create
+result=42
+cached=42

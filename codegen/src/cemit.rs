@@ -3363,12 +3363,47 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     }
                 };
                 let separator = if operands.is_empty() { "" } else { ", " };
+                let handle = result
+                    .clone()
+                    .ok_or_else(|| internal("async handle creation has no result"))?;
                 self.assign(
                     out,
                     result,
                     &format!("sub_f{}(ctx{separator}{})", function.0, operands.join(", ")),
                 )?;
-                self.consume_runtime_traps(out, &instruction.traps, true, true)
+                self.consume_runtime_traps(out, &instruction.traps, true, true)?;
+                let (output, size) = if let Some(ty) = &target.return_type {
+                    let value = self.fresh();
+                    let _ = writeln!(
+                        out,
+                        "    {} {value} = {};",
+                        self.emitter.value_ctype(ty)?,
+                        self.emitter.zero(ty)?
+                    );
+                    (format!("&{value}"), format!("sizeof({value})"))
+                } else {
+                    ("NULL".into(), "0u".into())
+                };
+                let done = self.fresh();
+                let _ = writeln!(
+                    out,
+                    "    uint8_t {done} = sub_f{}_resume(ctx, {handle}, {output});",
+                    function.0
+                );
+                self.emit_pending_check(out);
+                let complete = self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_async_complete",
+                    &[
+                        "void*".into(),
+                        "void*".into(),
+                        "const void*".into(),
+                        "uint64_t".into(),
+                    ],
+                    &["ctx".into(), handle, output, size],
+                );
+                let _ = writeln!(out, "    if ({done}) {complete};");
+                Ok(())
             }
             l::InstructionKind::AsyncHandleRetain => {
                 let call = self.emitter.runtime_call(

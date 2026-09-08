@@ -5575,7 +5575,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             l::InstructionKind::AsyncHandleCreate(target),
             operands,
             stored,
-            (Some(l::ValueType::Data(expr.ty.clone())), false),
+            (Some(l::ValueType::Data(expr.ty.clone())), true),
             convert_traps(&expr.trap_sites(self.lowering.hir)),
             expr.pos.clone(),
         )?

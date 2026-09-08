@@ -535,6 +535,79 @@ async function main(): Promise<void> {
 }
 
 #[test]
+fn async_handle_create_invalidates_all_arrays_created_before_the_call() {
+    let module = lower_source(
+        "async-start-invalidates.ts",
+        r#"
+async function grow(a: i32[]): Promise<void> { a.push(3); }
+export async function main(): Promise<void> {
+  const first: i32[] = [1];
+  const second: i32[] = [2];
+  const third: i32[] = [3];
+  const h: Promise<void> = grow(second);
+  const later: i32[] = [4];
+  print(`${second.length},${later.length}`);
+  await h;
+}
+"#,
+    );
+    let main = module
+        .functions
+        .iter()
+        .find(|f| f.source_name == "main")
+        .expect("main function");
+    let instructions = main
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .collect::<Vec<_>>();
+    let start_index = instructions
+        .iter()
+        .position(|instruction| matches!(instruction.kind, InstructionKind::AsyncHandleCreate(_)))
+        .expect("async handle creation");
+    // Derive the expected storage facts from array definitions, not invalidates.
+    let array_definitions = |instructions: &[&subscript_compiler::lir::Instruction]| {
+        instructions
+            .iter()
+            .filter_map(|instruction| instruction.result)
+            .filter(|value| {
+                matches!(
+                    main.values[value.0 as usize].ty,
+                    ValueType::Data(Type::Array(_))
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = array_definitions(&instructions[..start_index]);
+    let after = array_definitions(&instructions[start_index + 1..]);
+    assert_eq!(before.len(), 3, "three arrays are defined before the call");
+    assert_eq!(after.len(), 1, "one array is defined after the call");
+    assert_eq!(
+        instructions[start_index].invalidates, before,
+        "the call invalidates exactly the preceding array definitions in order"
+    );
+}
+
+#[test]
+fn async_start_array_growth_matches_all_three_witnesses() {
+    let sources = corpus::entry_sources(
+        &corpus::corpus_accept(),
+        "a186-async-start-array-invalidation",
+    );
+    let hir = check_program(&sources).expect("array growth checks");
+    let module = lower_module(&hir).expect("array growth lowers");
+    let expected = b"a0=5 len=66 last=163\nv=5\n";
+    let outputs = [
+        interpret(&module).expect("array growth interprets"),
+        run_jit(&sources).expect("array growth runs in JIT"),
+        subscript_codegen::run_c_aot(&sources).expect("array growth runs in C"),
+    ];
+    for output in outputs {
+        assert_eq!(output, expected);
+    }
+}
+
+#[test]
 fn emitted_coroutine_clears_completed_child_slots() {
     let sources = [SourceFile::new(
         "clear-async-child.ts",
@@ -1242,6 +1315,13 @@ const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
         "index-out-of-bounds",
         9,
         18,
+    ),
+    (
+        "t54-async-start-fault",
+        "async body traps at the call before the caller continues",
+        "unreachable-reached",
+        9,
+        3,
     ),
 ];
 
@@ -2312,6 +2392,75 @@ fn async_binding_crosses_resume_as_an_ssa_value() {
                 .operands
                 .contains(&Operand::Value(resumed_resource))
     }));
+}
+
+#[test]
+fn started_handles_keep_descendants_out_of_the_root_queue_and_cache_aggregate_results() {
+    let sources = [SourceFile::new(
+        "started-handles.ts",
+        r#"
+@CStruct class Pair {
+  x: f64;
+  y: f64;
+  constructor(x: f64, y: f64) { this.x = x; this.y = y; }
+}
+class Reader {
+  async read(): Promise<Pair> {
+    print("value:start");
+    return new Pair(3, 4);
+  }
+}
+async function leaf(id: i32): Promise<i32> {
+  print(`leaf${id}:start`);
+  await Context.suspend();
+  print(`leaf${id}:mid`);
+  await Context.suspend();
+  print(`leaf${id}:end`);
+  return id;
+}
+async function chain(id: i32): Promise<i32> {
+  print(`chain${id}:start`);
+  const value: i32 = await leaf(id);
+  print(`chain${id}:end`);
+  return value;
+}
+export async function main(): Promise<void> {
+  const reader: Reader = new Reader();
+  const value: Promise<Pair> = reader.read();
+  print("value:held");
+  Context.collect();
+  const firstValue: Pair = await value;
+  const cachedValue: Pair = await value;
+  print(`value=${firstValue.x},${cachedValue.y}`);
+  const first: Promise<i32> = chain(1);
+  const second: Promise<i32> = chain(2);
+  print("held");
+  await Context.suspend();
+  print("after-pump");
+  const a: i32 = await first;
+  const b: i32 = await second;
+  print(`sum=${a + b}`);
+}
+"#,
+    )];
+    let hir = check_program(&sources).expect("started handles check");
+    let module = lower_module(&hir).expect("started handles lower");
+    // Without child roots: after-pump, leaf1:mid, leaf1:end, chain1:end,
+    // leaf2:mid, leaf2:end, chain2:end, sum. Queued children run their
+    // leaf1:mid and leaf2:mid before after-pump, during the first pump.
+    let expected = b"value:start\nvalue:held\nvalue=3,4\nchain1:start\nleaf1:start\nchain2:start\nleaf2:start\nheld\nafter-pump\nleaf1:mid\nleaf1:end\nchain1:end\nleaf2:mid\nleaf2:end\nchain2:end\nsum=3\n";
+    assert_eq!(
+        interpret(&module).expect("started handles interpret"),
+        expected
+    );
+    assert_eq!(
+        run_jit(&sources).expect("started handles run in JIT"),
+        expected
+    );
+    assert_eq!(
+        subscript_codegen::run_c_aot(&sources).expect("started handles run in C"),
+        expected
+    );
 }
 
 #[test]
