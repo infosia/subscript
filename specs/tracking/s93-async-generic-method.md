@@ -61,3 +61,84 @@ of each entry is measured, not assumed.
 The `compiler.md` §0 section index stopped at §89. §90, §91, and §92
 were absent. The rows are added with §93's. No check reads the index,
 so nothing reported the gap.
+
+## Round 1 — what the implementation round measured
+
+The round implemented §93.1 rules 1 to 10 and reported three contract
+defects. Each is measured, and each one changed the contract.
+
+### The bodiless declare case rejects under `tsc`
+
+§93.3 item 5 asked for a `BodilessDeclareGenericMethod` divergence
+block on the async form. `tsc` 5.9.2 rejects that form, so §79 rule 2
+forbids the block:
+
+| Source | tsc result |
+|---|---|
+| `declare class Box { async load<T>(value: T): Promise<T>; }` | TS1040 "'async' modifier cannot be used in an ambient context", exit 2 |
+| the same without `async` | exit 0 |
+
+Command: `node_modules/.bin/tsc --noEmit --strict --target ES2020
+--skipLibCheck <file>`. Measured twice, by the round and again here.
+§93.1 rule 11 records the corrected rule.
+
+### The aggregate LIR snapshot gains a block by construction
+
+`codegen/tests/lir.rs`
+`coroutine_and_measurement_lir_text_matches_goldens` collects every
+async corpus entry, so a187 adds a block to
+`codegen/tests/lir-goldens/corpus.txt`. Both profiles reported:
+
+```
+LIR text golden differs at line 11071 (actual 1139176 bytes, expected 1117090 bytes)
+```
+
+The added block is 22,086 bytes. With that block removed, the
+captured text is byte-identical to the committed snapshot, so no
+pre-existing block moves. §93.3 item 8 records the corrected
+requirement: capture the snapshot and record the move under §2.
+
+### The LIR half of the two-instance assertion needs a codegen crate
+
+`compiler/tests/` does not depend on `subscript-codegen`, and
+`lower_module` belongs to that crate. The sync equivalent is
+`codegen/tests/cemit.rs`
+`generic_method_instances_hold_distinct_hir_names_and_lir_ids`.
+§93.2 now names that file.
+
+### Measured results the round reports as green
+
+a187 runs and matches on three witnesses. The measured golden equals
+the predicted one, and the round wrote the file from captured stdout:
+
+```
+load:i32:start
+load:i32:resume
+number=7
+load:vec2:start
+main:held
+load:vec2:resume
+vector=1.5,2.5
+calls=2
+```
+
+`a187 HIR ["load<i32>", "load<Vec2>"]; LIR {FunctionId(1),
+FunctionId(2)}`. The independent SHA-256 comparison of 252
+pre-existing golden and `.expected` files reports no move.
+
+Gate verdict, round 1:
+
+```
+gate full cbba2b8294af82971a776a34ad8c4d20f4fc693c dirty:13 debug 1308/3/2 release 1306/3/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 1
+```
+
+The three failures per profile are the LIR snapshot above, and two
+gate-wrapper tests that the hygiene failure below causes.
+
+### A hygiene failure this session caused
+
+`tools/hygiene.sh` reported `agent session trailer in a commit
+message` against two commits of this session. The trailer came from a
+tool instruction, not from the repository rules. `hygiene.sh` rejects
+it, and the repository rules govern. The two commits are rewritten
+without the trailer.

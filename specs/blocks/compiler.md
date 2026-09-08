@@ -12823,6 +12823,16 @@ program is rejected today, and each one names the wrong rule.
    branch and now reaches an async template.
 10. `Divergence::AsyncGenericMethod` is deleted. No site rejects with
    it, and §79.1 forbids a variant that no diagnostic produces.
+11. *(Amended 2026-09-08, after the round measured `tsc`.)* A
+   bodiless async method with type parameters, in a `declare class`
+   written in a `.ts` source, reports S100 "function bodies are
+   required" with **no** divergence block. Measured with tsc 5.9.2:
+   `declare class Box { async load<T>(value: T): Promise<T>; }` gives
+   TS1040 "'async' modifier cannot be used in an ambient context",
+   exit 2. The same shape without `async` exits 0. §79 rule 2 gives
+   the divergence block to a rejection that `tsc` accepts, so §82.4
+   rule 1a's `BodilessDeclareGenericMethod` variant stays with the
+   sync form alone.
 
 ### 93.2 Checker and lowering
 
@@ -12842,7 +12852,13 @@ program is rejected today, and each one names the wrong rule.
 - `compiler/src/language_reference.rs`: the Q34 text names the fourth
   await form; the corpus list replaces r181 with a187 and r186;
   `generated-docs/` regenerates.
-- No change in `codegen/`, in the tiers, or in the runtime. The
+- `codegen/tests/cemit.rs`: the async two-instance assertion sits
+  beside the sync one,
+  `generic_method_instances_hold_distinct_hir_names_and_lir_ids`.
+  `compiler/tests/` does not depend on `subscript-codegen`, so the
+  LIR half of that assertion cannot live there. *(Added 2026-09-08,
+  after the round reported the crate boundary.)*
+- No change in `codegen/src/`, in the tiers, or in the runtime. The
   instance is an ordinary async method in HIR.
 
 ### 93.3 Corpus and gate (pre-registered exit criteria)
@@ -12872,10 +12888,24 @@ on this host with exit 1.
    names and two LIR function ids; an async generic method on a
    generic class keeps its S100; an async generic static method keeps
    its S100; a bodiless async generic method in a `declare class`
-   reports "function bodies are required".
+   reports "function bodies are required" with no divergence block
+   (rule 11), beside a sync control that keeps the
+   `BodilessDeclareGenericMethod` block.
 6. Counts: accept `.ts` 184 → 185, `.expected` 185 → 186; reject
    `.ts` 174 → 175. The §88 index and `generated-docs/` regenerate
    and agree.
 7. Gates: `tools/gate.sh full` green in both profiles; clippy at the
    7/18/13 baseline; `cargo fmt --check`; the `tsc` gate; every
-   pre-existing golden and `.expected` byte-identical.
+   pre-existing golden and `.expected` byte-identical, with the one
+   exception item 8 names.
+8. *(Added 2026-09-08, after the round measured it.)* The aggregate
+   LIR text snapshot `codegen/tests/lir-goldens/corpus.txt` gains
+   a187's block. `codegen/tests/lir.rs`
+   `coroutine_and_measurement_lir_text_matches_goldens` collects
+   every async corpus entry, so a new async entry adds a block by
+   construction. Capture the snapshot with
+   `SUBSCRIPT_CAPTURE_LIR_GOLDENS=1`, and record the change under the
+   §2 procedure. The evidence that no pre-existing block moves: with
+   a187's block removed, the captured text is byte-identical to the
+   committed snapshot. The §2 record names this one file, and the
+   gate reports its move.
