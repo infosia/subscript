@@ -975,6 +975,9 @@ impl<'p> Checker<'p> {
                 };
                 let name = method.sym.to_string();
                 let method_pos = self.pos(method.span);
+                if self.rejected_static_generic_method(&member.obj, &name, fx) {
+                    return self.err_expr(pos);
+                }
                 let receiver = self.check_receiver(&member.obj, fx);
                 let Type::Class(class) = receiver.ty.clone() else {
                     if receiver.ty != Type::Error {
@@ -986,6 +989,21 @@ impl<'p> Checker<'p> {
                         );
                     }
                     return self.err_expr(pos);
+                };
+                let generic = self.class_sigs[class.0].has_generic_method(&name, false);
+                let name = if generic {
+                    let Some(instance) = self.instantiate_generic_method_call(
+                        class,
+                        &name,
+                        call,
+                        false,
+                        method_pos.clone(),
+                    ) else {
+                        return self.err_expr(pos);
+                    };
+                    instance
+                } else {
+                    name
                 };
                 let Some(sig) = self.class_sigs[class.0].methods.get(&name).cloned() else {
                     let class_name = self.classes[class.0].name.clone();
@@ -1004,7 +1022,7 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                if call.type_args.is_some() {
+                if !generic && call.type_args.is_some() {
                     self.error(
                         RuleCode::S100,
                         format!("method `{name}` is not generic"),
@@ -5925,12 +5943,16 @@ impl<'p> Checker<'p> {
                         },
                         prop_pos.clone(),
                     );
-                } else if self.class_sigs[id.0].has_generic_method(name, false) {
-                    // §82.4 rule 6: a generic method keeps the
-                    // method-as-value rule. Only a call names an instance.
+                } else if let Some(template) = self.class_sigs[id.0].generic_methods.get(name) {
                     self.error(
                         RuleCode::S100,
-                        format!("method `{name}` may only be called, not read as a value"),
+                        if template.function.is_async {
+                            format!(
+                                "async method `{name}` is not a first-class value; call it directly in await position"
+                            )
+                        } else {
+                            format!("method `{name}` may only be called, not read as a value")
+                        },
                         prop_pos.clone(),
                     );
                 } else {
@@ -7305,6 +7327,28 @@ impl<'p> Checker<'p> {
         }
     }
 
+    fn rejected_static_generic_method(&self, receiver: &ast::Expr, name: &str, fx: &FnCtx) -> bool {
+        let ast::Expr::Ident(receiver) = receiver else {
+            return false;
+        };
+        if fx.owns_local_name(receiver.sym.as_ref()) {
+            return false;
+        }
+        match self.scope_item(receiver.sym.as_ref()) {
+            Some(ScopeItem::Class(class)) => {
+                self.class_sigs[class.0].generic_method_is_rejected(name, true)
+            }
+            Some(ScopeItem::GenericClass(key)) => {
+                self.generic_classes.get(&key).is_some_and(|class| {
+                    class
+                        .rejected_generic_methods
+                        .contains_key(&(Some(name.to_string()), true))
+                })
+            }
+            _ => false,
+        }
+    }
+
     fn check_static_method_call(
         &mut self,
         member: &ast::MemberExpr,
@@ -7314,6 +7358,9 @@ impl<'p> Checker<'p> {
         member_pos: Pos,
         name: &str,
     ) -> Option<hir::Expr> {
+        if self.rejected_static_generic_method(&member.obj, name, fx) {
+            return Some(self.err_expr(pos));
+        }
         let ast::Expr::Ident(receiver) = &*member.obj else {
             return None;
         };

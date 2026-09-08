@@ -141,8 +141,6 @@ pub enum Divergence {
     BodilessDeclareGenericMethod,
     /// A generic method declared on a generic class.
     GenericMethodOnGenericClass,
-    /// An `async` method that declares type parameters.
-    AsyncGenericMethod,
 }
 
 /// The four facts that a divergence diagnostic shows.
@@ -223,7 +221,6 @@ impl Divergence {
         Divergence::GenericMethodTypeArguments,
         Divergence::BodilessDeclareGenericMethod,
         Divergence::GenericMethodOnGenericClass,
-        Divergence::AsyncGenericMethod,
     ];
 
     /// The four facts for this topic.
@@ -758,15 +755,6 @@ impl Divergence {
                             function pick<U>(other: U): U { return other; }",
                 why: "The checker holds one substitution, so a class parameter and a \
                       method parameter cannot bind at the same time.",
-                collision: "compiler.md §64",
-            },
-            Divergence::AsyncGenericMethod => DivergenceEntry {
-                ts: "class Box { async load<T>(value: T): Promise<T> {\n\
-                       await Context.suspend(); return value; } }",
-                subscript: "class Box { async load(value: i32): Promise<i32> {\n\
-                              await Context.suspend(); return value; } }",
-                why: "The await grammar gains no form for a type-argument list, so an \
-                      async method declares no type parameter.",
                 collision: "compiler.md §64",
             },
         }

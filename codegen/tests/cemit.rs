@@ -1009,6 +1009,58 @@ fn generic_method_instances_hold_distinct_hir_names_and_lir_ids() {
 }
 
 #[test]
+fn async_generic_method_instances_hold_distinct_hir_names_and_lir_ids() {
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    let source = include_str!("../../corpus/accept/a187-async-generic-method.ts");
+    let files = [SourceFile::new("a187-async-generic-method.ts", source)];
+    let hir = check_program(&files).expect("the async generic method program must check");
+    let loader = hir
+        .classes
+        .iter()
+        .find(|class| class.name == "Loader")
+        .expect("Loader must exist");
+    let names = loader
+        .methods
+        .iter()
+        .map(|method| method.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["load<i32>", "load<Vec2>"]);
+    assert!(loader.methods.iter().all(|method| method.is_async));
+    let lir = lower_module(&hir).expect("the async generic method program must lower");
+    let loader = lir
+        .classes
+        .iter()
+        .find(|class| class.source_name == "Loader")
+        .expect("Loader must lower");
+    assert_eq!(loader.methods.len(), 2);
+    let method_ids = loader
+        .methods
+        .iter()
+        .map(|method| method.function)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        method_ids.len(),
+        2,
+        "each async instance must have its own id"
+    );
+    for id in method_ids {
+        let functions = lir
+            .functions
+            .iter()
+            .filter(|function| function.id == id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            functions.len(),
+            1,
+            "each method id must name exactly one LIR function"
+        );
+        assert!(functions[0].is_async);
+    }
+}
+
+#[test]
 fn aligned_value_class_emits_alignas_on_the_first_field() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;

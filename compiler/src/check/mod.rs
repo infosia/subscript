@@ -329,6 +329,22 @@ pub(crate) struct GenericMethod {
     pub rejected: bool,
 }
 
+impl GenericMethod {
+    fn rejected(file: usize, function: &ast::Function) -> Option<Self> {
+        let declaration = function.type_params.as_ref()?;
+        Some(Self {
+            file,
+            type_params: declaration
+                .params
+                .iter()
+                .map(|parameter| parameter.name.sym.to_string())
+                .collect(),
+            function: function.clone(),
+            rejected: true,
+        })
+    }
+}
+
 /// A generic class template awaiting monomorphization.
 #[derive(Debug, Clone)]
 pub(crate) struct GenericClass {
@@ -338,7 +354,8 @@ pub(crate) struct GenericClass {
     pub alignment_override: Option<hir::AlignmentOverride>,
     pub type_params: Vec<String>,
     pub has_static_member: bool,
-    pub has_generic_method: bool,
+    /// Rejected method templates, partitioned by the static namespace flag.
+    pub rejected_generic_methods: HashMap<(Option<String>, bool), GenericMethod>,
     pub class: ast::Class,
     pub pos: Pos,
 }
@@ -460,6 +477,10 @@ impl DiagnosticSink {
 
     fn is_empty(&self) -> bool {
         self.0.borrow().is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.0.borrow().len()
     }
 
     fn take(&self) -> Vec<Diagnostic> {
@@ -2117,19 +2138,28 @@ impl<'p> Checker<'p> {
                     if method.kind == ast::MethodKind::Method
                         && method.function.type_params.is_some() =>
                 {
-                    Some(method.span)
+                    Some(method)
                 }
                 _ => None,
             });
-            let mut has_generic_method = false;
-            for span in generic_methods {
-                has_generic_method = true;
-                self.error_diverging(
-                    RuleCode::S100,
-                    "generic classes cannot declare generic methods",
-                    self.pos(span),
-                    Divergence::GenericMethodOnGenericClass,
-                );
+            let mut rejected_generic_methods: HashMap<(Option<String>, bool), GenericMethod> =
+                HashMap::new();
+            for method in generic_methods {
+                if let Some(template) = GenericMethod::rejected(file, &method.function) {
+                    rejected_generic_methods.insert(
+                        (Self::class_method_name(&method.key), method.is_static),
+                        template,
+                    );
+                }
+                // The static-member rule already reports a static method.
+                if !method.is_static {
+                    self.error_diverging(
+                        RuleCode::S100,
+                        "generic classes cannot declare generic methods",
+                        self.pos(method.span),
+                        Divergence::GenericMethodOnGenericClass,
+                    );
+                }
             }
             let type_params: Vec<String> =
                 tp.params.iter().map(|p| p.name.sym.to_string()).collect();
@@ -2142,7 +2172,7 @@ impl<'p> Checker<'p> {
                     alignment_override,
                     type_params,
                     has_static_member,
-                    has_generic_method,
+                    rejected_generic_methods,
                     class: (*c.class).clone(),
                     pos: pos.clone(),
                 },
@@ -3244,6 +3274,340 @@ impl<'p> Checker<'p> {
         true
     }
 
+    /// The statically named member of a method declaration, including a
+    /// literal key whose spelling the collection rules reject.
+    fn class_method_name(key: &ast::PropName) -> Option<String> {
+        if is_dispose_method_key(key) {
+            return Some(hir::DISPOSE_METHOD_NAME.to_string());
+        }
+        match key {
+            ast::PropName::Ident(key) => Some(key.sym.to_string()),
+            ast::PropName::Str(key) => Some(key.value.to_string()),
+            ast::PropName::Num(key) => Some(key.value.to_string()),
+            ast::PropName::BigInt(key) => Some(key.value.to_string()),
+            ast::PropName::Computed(key) => match &*key.expr {
+                ast::Expr::Lit(ast::Lit::Str(key)) => Some(key.value.to_string()),
+                ast::Expr::Lit(ast::Lit::Num(key)) => Some(key.value.to_string()),
+                _ => None,
+            },
+        }
+    }
+
+    fn resolve_class_method(
+        &mut self,
+        id: ClassId,
+        method: &ast::ClassMethod,
+        declared: bool,
+        write_accessors: &mut Vec<(String, Pos, bool)>,
+    ) {
+        let is_value = self.classes[id.0].is_value;
+        let is_descriptor = self.classes[id.0].is_descriptor;
+        let (name, key_pos, is_dispose) = match &method.key {
+            ast::PropName::Ident(key) => (key.sym.to_string(), self.pos(key.span), false),
+            key if is_dispose_method_key(key) => (
+                hir::DISPOSE_METHOD_NAME.to_string(),
+                self.pos(method.span),
+                true,
+            ),
+            _ => {
+                let pos = self.pos(method.span);
+                self.error(RuleCode::S100, "computed method names are not decided", pos);
+                return;
+            }
+        };
+        if is_descriptor {
+            self.error(
+                RuleCode::S100,
+                if is_dispose {
+                    "descriptor classes cannot declare `[Symbol.dispose]()`"
+                } else if method.kind != ast::MethodKind::Method {
+                    "descriptor classes cannot declare accessors"
+                } else {
+                    "descriptor classes cannot declare methods"
+                },
+                key_pos,
+            );
+            return;
+        }
+        if method.is_static && (self.in_boundary || self.classes[id.0].is_boundary) {
+            self.error(
+                RuleCode::S100,
+                "mirror classes cannot declare static methods or accessors",
+                key_pos,
+            );
+            return;
+        }
+        if is_dispose && method.is_static {
+            self.error(
+                RuleCode::S100,
+                "`[Symbol.dispose]()` must be non-static",
+                key_pos,
+            );
+            return;
+        }
+        if method.is_static && method.function.is_async {
+            self.error_diverging(
+                RuleCode::S100,
+                "async static methods are not in the decided surface",
+                self.pos(method.span),
+                Divergence::AsyncFunctionShape,
+            );
+            return;
+        }
+        if is_dispose && is_value {
+            self.error(
+                RuleCode::S100,
+                "value classes cannot declare `[Symbol.dispose]()`",
+                key_pos,
+            );
+            return;
+        }
+        if method.kind != ast::MethodKind::Method && self.in_boundary {
+            let pos = self.pos(method.span);
+            self.error(
+                RuleCode::S100,
+                "mirror classes cannot declare accessors",
+                pos,
+            );
+            return;
+        }
+        if method.kind == ast::MethodKind::Getter {
+            if !self.claim_class_member_name(
+                id,
+                &name,
+                ClassMemberDeclaration::ReadAccessor,
+                method.is_static,
+                key_pos.clone(),
+            ) {
+                return;
+            }
+            if !method.function.params.is_empty() {
+                self.error(
+                    RuleCode::S100,
+                    "a read accessor must declare no parameters",
+                    key_pos.clone(),
+                );
+                return;
+            }
+            let Some(return_type) = &method.function.return_type else {
+                self.error(
+                    RuleCode::S100,
+                    "a read accessor requires an explicit return type",
+                    key_pos,
+                );
+                return;
+            };
+            let sig = FnSig {
+                params: Vec::new(),
+                ret: self.resolve_type(&return_type.type_ann),
+                is_generator: false,
+                is_async: false,
+                yield_known: true,
+            };
+            if method.is_static {
+                let symbol = static_member_symbol(&self.classes[id.0].name, &name);
+                self.class_sigs[id.0]
+                    .static_methods
+                    .insert(name, sig.clone());
+                self.fn_sigs.insert(symbol, sig);
+            } else {
+                self.class_sigs[id.0].methods.insert(name, sig);
+            }
+            return;
+        }
+        if method.kind == ast::MethodKind::Setter {
+            let write_name = format!("{name}=");
+            if is_value && !method.is_static {
+                let class_name = self.classes[id.0].name.clone();
+                self.error_diverging(
+                    RuleCode::S100,
+                    format!("value class `{class_name}` cannot declare a write accessor"),
+                    key_pos,
+                    Divergence::NamedAccessor,
+                );
+                return;
+            }
+            if !self.claim_class_member_name(
+                id,
+                &name,
+                ClassMemberDeclaration::WriteAccessor,
+                method.is_static,
+                key_pos.clone(),
+            ) {
+                return;
+            }
+            if method.function.return_type.is_some() {
+                self.error(
+                    RuleCode::S100,
+                    "a write accessor cannot declare a return type",
+                    key_pos,
+                );
+                return;
+            }
+            let [parameter] = method.function.params.as_slice() else {
+                self.error(
+                    RuleCode::S100,
+                    "a write accessor must declare exactly one parameter",
+                    key_pos.clone(),
+                );
+                return;
+            };
+            let binding = match &parameter.pat {
+                ast::Pat::Ident(binding) => binding,
+                ast::Pat::Assign(_) => {
+                    self.error(
+                        RuleCode::S100,
+                        "a write accessor parameter cannot have a default",
+                        key_pos.clone(),
+                    );
+                    return;
+                }
+                _ => {
+                    self.error(
+                        RuleCode::S100,
+                        "a write accessor parameter must be an identifier",
+                        key_pos.clone(),
+                    );
+                    return;
+                }
+            };
+            let Some(annotation) = &binding.type_ann else {
+                self.error(
+                    RuleCode::S100,
+                    "a write accessor parameter requires a type annotation",
+                    key_pos.clone(),
+                );
+                return;
+            };
+            let sig = FnSig {
+                params: vec![ParamSig {
+                    name: binding.id.sym.to_string(),
+                    ty: self.resolve_type(&annotation.type_ann),
+                    has_default: false,
+                }],
+                ret: Type::Void,
+                is_generator: false,
+                is_async: false,
+                yield_known: true,
+            };
+            write_accessors.push((name.clone(), key_pos, method.is_static));
+            if method.is_static {
+                let symbol = static_member_symbol(&self.classes[id.0].name, &write_name);
+                self.class_sigs[id.0]
+                    .static_methods
+                    .insert(write_name, sig.clone());
+                self.fn_sigs.insert(symbol, sig);
+            } else {
+                self.class_sigs[id.0].methods.insert(write_name, sig);
+            }
+            return;
+        }
+        if !self.claim_class_member_name(
+            id,
+            &name,
+            ClassMemberDeclaration::Method,
+            method.is_static,
+            key_pos.clone(),
+        ) {
+            return;
+        }
+        if method.function.is_generator && !method.is_static {
+            let pos = self.pos(method.span);
+            if method.function.is_async {
+                self.error_diverging(
+                    RuleCode::S100,
+                    "async generator methods are not in the decided surface",
+                    pos,
+                    Divergence::AsyncFunctionShape,
+                );
+            } else {
+                self.error(
+                    RuleCode::S100,
+                    "generator methods are not in the decided surface",
+                    pos,
+                );
+            }
+            return;
+        }
+        if method.function.is_async && is_value && !method.is_static {
+            let pos = self.pos(method.span);
+            self.error_diverging(
+                RuleCode::S100,
+                "async methods on `@CStruct` value classes are not in the decided surface",
+                pos,
+                Divergence::AsyncFunctionShape,
+            );
+            return;
+        }
+        // §82.4 rules 1 and 5: a method with type parameters
+        // collects as a template. Each call instantiates it.
+        if !(is_dispose || self.in_boundary || self.classes[id.0].is_boundary)
+            && method.function.type_params.is_some()
+        {
+            let bodiless = method.function.body.is_none();
+            if bodiless && declared && !method.function.is_async {
+                self.error_diverging(
+                    RuleCode::S100,
+                    "function bodies are required",
+                    key_pos.clone(),
+                    Divergence::BodilessDeclareGenericMethod,
+                );
+            } else if bodiless {
+                self.error(
+                    RuleCode::S100,
+                    "function bodies are required",
+                    key_pos.clone(),
+                );
+            }
+            let (type_params, duplicate_type_parameter) = method
+                .function
+                .type_params
+                .as_deref()
+                .map(|declaration| self.collect_type_parameter_names(declaration))
+                .unwrap_or_default();
+            let template = GenericMethod {
+                file: self.cur_file,
+                type_params,
+                function: (*method.function).clone(),
+                rejected: bodiless || duplicate_type_parameter,
+            };
+            if method.is_static {
+                self.class_sigs[id.0]
+                    .static_generic_methods
+                    .insert(name, template);
+            } else {
+                self.class_sigs[id.0].generic_methods.insert(name, template);
+            }
+            return;
+        }
+        if is_dispose && method.function.is_async {
+            self.error(
+                RuleCode::S100,
+                "`[Symbol.dispose]()` must be synchronous",
+                key_pos,
+            );
+            return;
+        }
+        let sig = self.resolve_fn_sig(&method.function, key_pos.clone());
+        if is_dispose && (!sig.params.is_empty() || sig.ret != Type::Void) {
+            self.error(
+                RuleCode::S100,
+                "`[Symbol.dispose]()` takes no parameters and returns `void`",
+                key_pos,
+            );
+            return;
+        }
+        if method.is_static {
+            let symbol = static_member_symbol(&self.classes[id.0].name, &name);
+            self.class_sigs[id.0]
+                .static_methods
+                .insert(name, sig.clone());
+            self.fn_sigs.insert(symbol, sig);
+        } else {
+            self.class_sigs[id.0].methods.insert(name, sig);
+        }
+    }
+
     /// Resolves a class's fields and callable signatures (pass B), and
     /// enforces C2 (no inheritance for value classes; field whitelist).
     pub(crate) fn resolve_class_shape(&mut self, id: ClassId, class: &ast::Class, declared: bool) {
@@ -3542,327 +3906,23 @@ impl<'p> Checker<'p> {
                     self.class_sigs[id.0].ctor = Some(params);
                 }
                 ast::ClassMember::Method(method) => {
-                    let (name, key_pos, is_dispose) = match &method.key {
-                        ast::PropName::Ident(key) => {
-                            (key.sym.to_string(), self.pos(key.span), false)
-                        }
-                        key if is_dispose_method_key(key) => (
-                            hir::DISPOSE_METHOD_NAME.to_string(),
-                            self.pos(method.span),
-                            true,
-                        ),
-                        _ => {
-                            let pos = self.pos(method.span);
-                            self.error(
-                                RuleCode::S100,
-                                "computed method names are not decided",
-                                pos,
-                            );
-                            continue;
-                        }
-                    };
-                    if is_descriptor {
-                        self.error(
-                            RuleCode::S100,
-                            if is_dispose {
-                                "descriptor classes cannot declare `[Symbol.dispose]()`"
-                            } else if method.kind != ast::MethodKind::Method {
-                                "descriptor classes cannot declare accessors"
-                            } else {
-                                "descriptor classes cannot declare methods"
-                            },
-                            key_pos,
-                        );
-                        continue;
-                    }
-                    if method.is_static && (self.in_boundary || self.classes[id.0].is_boundary) {
-                        self.error(
-                            RuleCode::S100,
-                            "mirror classes cannot declare static methods or accessors",
-                            key_pos,
-                        );
-                        continue;
-                    }
-                    if is_dispose && method.is_static {
-                        self.error(
-                            RuleCode::S100,
-                            "`[Symbol.dispose]()` must be non-static",
-                            key_pos,
-                        );
-                        continue;
-                    }
-                    if method.is_static && method.function.is_async {
-                        self.error_diverging(
-                            RuleCode::S100,
-                            "async static methods are not in the decided surface",
-                            self.pos(method.span),
-                            Divergence::AsyncFunctionShape,
-                        );
-                        continue;
-                    }
-                    if is_dispose && is_value {
-                        self.error(
-                            RuleCode::S100,
-                            "value classes cannot declare `[Symbol.dispose]()`",
-                            key_pos,
-                        );
-                        continue;
-                    }
-                    if method.kind != ast::MethodKind::Method && self.in_boundary {
-                        let pos = self.pos(method.span);
-                        self.error(
-                            RuleCode::S100,
-                            "mirror classes cannot declare accessors",
-                            pos,
-                        );
-                        continue;
-                    }
-                    if method.kind == ast::MethodKind::Getter {
-                        if !self.claim_class_member_name(
-                            id,
-                            &name,
-                            ClassMemberDeclaration::ReadAccessor,
-                            method.is_static,
-                            key_pos.clone(),
-                        ) {
-                            continue;
-                        }
-                        if !method.function.params.is_empty() {
-                            self.error(
-                                RuleCode::S100,
-                                "a read accessor must declare no parameters",
-                                key_pos.clone(),
-                            );
-                            continue;
-                        }
-                        let Some(return_type) = &method.function.return_type else {
-                            self.error(
-                                RuleCode::S100,
-                                "a read accessor requires an explicit return type",
-                                key_pos,
-                            );
-                            continue;
-                        };
-                        let sig = FnSig {
-                            params: Vec::new(),
-                            ret: self.resolve_type(&return_type.type_ann),
-                            is_generator: false,
-                            is_async: false,
-                            yield_known: true,
-                        };
-                        if method.is_static {
-                            let symbol = static_member_symbol(&self.classes[id.0].name, &name);
-                            self.class_sigs[id.0]
-                                .static_methods
-                                .insert(name, sig.clone());
-                            self.fn_sigs.insert(symbol, sig);
-                        } else {
-                            self.class_sigs[id.0].methods.insert(name, sig);
-                        }
-                        continue;
-                    }
-                    if method.kind == ast::MethodKind::Setter {
-                        let write_name = format!("{name}=");
-                        if is_value && !method.is_static {
-                            let class_name = self.classes[id.0].name.clone();
-                            self.error_diverging(
-                                RuleCode::S100,
-                                format!(
-                                    "value class `{class_name}` cannot declare a write accessor"
-                                ),
-                                key_pos,
-                                Divergence::NamedAccessor,
-                            );
-                            continue;
-                        }
-                        if !self.claim_class_member_name(
-                            id,
-                            &name,
-                            ClassMemberDeclaration::WriteAccessor,
-                            method.is_static,
-                            key_pos.clone(),
-                        ) {
-                            continue;
-                        }
-                        if method.function.return_type.is_some() {
-                            self.error(
-                                RuleCode::S100,
-                                "a write accessor cannot declare a return type",
-                                key_pos,
-                            );
-                            continue;
-                        }
-                        let [parameter] = method.function.params.as_slice() else {
-                            self.error(
-                                RuleCode::S100,
-                                "a write accessor must declare exactly one parameter",
-                                key_pos.clone(),
-                            );
-                            continue;
-                        };
-                        let binding = match &parameter.pat {
-                            ast::Pat::Ident(binding) => binding,
-                            ast::Pat::Assign(_) => {
-                                self.error(
-                                    RuleCode::S100,
-                                    "a write accessor parameter cannot have a default",
-                                    key_pos.clone(),
-                                );
-                                continue;
+                    let diagnostics_before = self.diags.len();
+                    self.resolve_class_method(id, method, declared, &mut write_accessors);
+                    // §93 rule 12: every collection rejection preserves a
+                    // template, including exits before normal collection.
+                    if self.diags.len() != diagnostics_before {
+                        if let Some(template) =
+                            GenericMethod::rejected(self.cur_file, &method.function)
+                        {
+                            if let Some(name) = Self::class_method_name(&method.key) {
+                                let templates = if method.is_static {
+                                    &mut self.class_sigs[id.0].static_generic_methods
+                                } else {
+                                    &mut self.class_sigs[id.0].generic_methods
+                                };
+                                templates.insert(name, template);
                             }
-                            _ => {
-                                self.error(
-                                    RuleCode::S100,
-                                    "a write accessor parameter must be an identifier",
-                                    key_pos.clone(),
-                                );
-                                continue;
-                            }
-                        };
-                        let Some(annotation) = &binding.type_ann else {
-                            self.error(
-                                RuleCode::S100,
-                                "a write accessor parameter requires a type annotation",
-                                key_pos.clone(),
-                            );
-                            continue;
-                        };
-                        let sig = FnSig {
-                            params: vec![ParamSig {
-                                name: binding.id.sym.to_string(),
-                                ty: self.resolve_type(&annotation.type_ann),
-                                has_default: false,
-                            }],
-                            ret: Type::Void,
-                            is_generator: false,
-                            is_async: false,
-                            yield_known: true,
-                        };
-                        write_accessors.push((name.clone(), key_pos, method.is_static));
-                        if method.is_static {
-                            let symbol =
-                                static_member_symbol(&self.classes[id.0].name, &write_name);
-                            self.class_sigs[id.0]
-                                .static_methods
-                                .insert(write_name, sig.clone());
-                            self.fn_sigs.insert(symbol, sig);
-                        } else {
-                            self.class_sigs[id.0].methods.insert(write_name, sig);
                         }
-                        continue;
-                    }
-                    if !self.claim_class_member_name(
-                        id,
-                        &name,
-                        ClassMemberDeclaration::Method,
-                        method.is_static,
-                        key_pos.clone(),
-                    ) {
-                        continue;
-                    }
-                    if method.function.is_generator && !method.is_static {
-                        let pos = self.pos(method.span);
-                        if method.function.is_async {
-                            self.error_diverging(
-                                RuleCode::S100,
-                                "async generator methods are not in the decided surface",
-                                pos,
-                                Divergence::AsyncFunctionShape,
-                            );
-                        } else {
-                            self.error(
-                                RuleCode::S100,
-                                "generator methods are not in the decided surface",
-                                pos,
-                            );
-                        }
-                        continue;
-                    }
-                    // §82.4 rules 1 and 5: a method with type parameters
-                    // collects as a template. Each call instantiates it.
-                    if !(is_dispose || self.in_boundary || self.classes[id.0].is_boundary)
-                        && method.function.type_params.is_some()
-                    {
-                        if method.function.is_async {
-                            self.error_diverging(
-                                RuleCode::S100,
-                                "async generic methods are not in the decided surface",
-                                self.pos(method.span),
-                                Divergence::AsyncGenericMethod,
-                            );
-                            continue;
-                        }
-                        let bodiless = method.function.body.is_none();
-                        if bodiless && declared {
-                            self.error_diverging(
-                                RuleCode::S100,
-                                "function bodies are required",
-                                key_pos.clone(),
-                                Divergence::BodilessDeclareGenericMethod,
-                            );
-                        } else if bodiless {
-                            self.error(
-                                RuleCode::S100,
-                                "function bodies are required",
-                                key_pos.clone(),
-                            );
-                        }
-                        let (type_params, duplicate_type_parameter) = method
-                            .function
-                            .type_params
-                            .as_deref()
-                            .map(|declaration| self.collect_type_parameter_names(declaration))
-                            .unwrap_or_default();
-                        let template = GenericMethod {
-                            file: self.cur_file,
-                            type_params,
-                            function: (*method.function).clone(),
-                            rejected: bodiless || duplicate_type_parameter,
-                        };
-                        if method.is_static {
-                            self.class_sigs[id.0]
-                                .static_generic_methods
-                                .insert(name, template);
-                        } else {
-                            self.class_sigs[id.0].generic_methods.insert(name, template);
-                        }
-                        continue;
-                    }
-                    if is_dispose && method.function.is_async {
-                        self.error(
-                            RuleCode::S100,
-                            "`[Symbol.dispose]()` must be synchronous",
-                            key_pos,
-                        );
-                        continue;
-                    }
-                    if method.function.is_async && is_value && !method.is_static {
-                        let pos = self.pos(method.span);
-                        self.error_diverging(
-                            RuleCode::S100,
-                            "async methods on `@CStruct` value classes are not in the decided surface",
-                            pos,
-                            Divergence::AsyncFunctionShape,
-                        );
-                        continue;
-                    }
-                    let sig = self.resolve_fn_sig(&method.function, key_pos.clone());
-                    if is_dispose && (!sig.params.is_empty() || sig.ret != Type::Void) {
-                        self.error(
-                            RuleCode::S100,
-                            "`[Symbol.dispose]()` takes no parameters and returns `void`",
-                            key_pos,
-                        );
-                        continue;
-                    }
-                    if method.is_static {
-                        let symbol = static_member_symbol(&self.classes[id.0].name, &name);
-                        self.class_sigs[id.0]
-                            .static_methods
-                            .insert(name, sig.clone());
-                        self.fn_sigs.insert(symbol, sig);
-                    } else {
-                        self.class_sigs[id.0].methods.insert(name, sig);
                     }
                 }
                 ast::ClassMember::TsIndexSignature(signature) if !self.in_boundary => {
@@ -5177,7 +5237,7 @@ impl<'p> Checker<'p> {
             );
             return None;
         }
-        if template.has_static_member || template.has_generic_method {
+        if template.has_static_member || !template.rejected_generic_methods.is_empty() {
             return None;
         }
         let name = self.mono_name(key, args);

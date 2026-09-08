@@ -1,0 +1,8 @@
+load:i32:start
+load:i32:resume
+number=7
+load:vec2:start
+main:held
+load:vec2:resume
+vector=1.5,2.5
+calls=2
