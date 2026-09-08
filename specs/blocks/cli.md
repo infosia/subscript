@@ -90,7 +90,9 @@ crash. `--watch` (hot reload, compiler.md §8.2) is contracted at §12
 - All work is offline and headless; the CLI never fetches anything.
 - Output files land only under `-o`; nothing is written to the CWD.
 - stdout carries only program output (`run`, `build --run`) or the
-  requested answer (`link-flags`); everything else is stderr.
+  requested answer (`link-flags`); everything else is stderr. A trap
+  does not change that: the bytes the program printed before the fault
+  are program output, and `run` writes them (§13).
 
 ## 4. Path resolution (runtime archive and include dir)
 
@@ -378,3 +380,50 @@ imports included), checks it, and enters the watch loop:
    and zero-warning sweeps, and its walkthrough is documented; its
    interactive session itself is not golden-pinned (the device-link
    precedent: gated by nature, not by CI).
+
+## 13. `run` prints what the program printed — Rev 2026-09-08
+
+*(Owner decision 2026-09-08.)* Origin: the docs refresh of
+2026-09-08 measured the two paths against one program.
+
+`corpus/trap/t03-loop-stops-at-fault.ts` prints three lines and then
+faults. Its committed golden holds those three lines, because §19
+makes the pre-fault stdout observable and the standing gate compares
+it. Measured at `95c7d74`:
+
+| Command | stdout | stderr | exit |
+|---|---|---|---|
+| `subscript run` | *(empty)* | the trap line | 1 |
+| `subscript build --source … --run` | `len=3` | the trap line | 3 |
+
+The ship path forwards the program's own stdout (§2.4). The dev path
+drops it: `RunError::Trap(report)` carries `report.stdout`, "the exact
+stdout bytes produced before the Context stopped", and
+`cli/src/lib.rs` renders only `report.to_string()`. A program's output
+disappears at the moment it is most useful, and the two paths disagree
+for one program.
+
+### 13.1 Rule
+
+1. On a trap, `subscript run` writes the trap report's stdout bytes to
+   stdout, unchanged and unbuffered by any rule of §8, before it
+   renders the trap on stderr. §3's "stdout carries only program
+   output" is unchanged: these bytes are program output.
+2. The exit code stays 1. §2.4's `--run` path is unchanged; it already
+   forwards the program's stdout and the program's exit code.
+3. `run --watch` follows rule 1 for each trapping run (§12.1).
+4. No other stream changes. A rejection and a usage error still write
+   nothing to stdout.
+
+### 13.2 Exit criteria (pre-registered)
+
+1. Red at `95c7d74`: a test runs `corpus/trap/t03-loop-stops-at-fault.ts`
+   through `subscript_cli::execute` and asserts stdout equals the
+   committed `.expected` bytes. It fails, because stdout is empty.
+2. Green: the same test passes, and stderr carries the trap line.
+3. A second case pins that a trapping program with no output before
+   the fault writes nothing to stdout
+   (`corpus/trap/t01-json-result-value.ts`, whose `.expected` is
+   empty).
+4. `run --watch`: the watch test's trap case asserts the same bytes.
+5. `tools/gate.sh full` green; no golden moves.
