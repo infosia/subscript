@@ -68,19 +68,48 @@ byte-measured string cannot return bytes without producing invalid
 UTF-8, so the policy must be code points, which is a third answer
 that neither existing rule gives.
 
-## Recommendation
+## Recommendation, corrected 2026-09-09
 
-Do not take any of the three without an owner decision. Each one
-changes a recorded divergence that carries a rationale and an
-executable witness. Proposal 3 also needs a new collision entry
-before it can be implemented, because it invents a boundary policy.
+The first version of this record weighed each proposal by what it
+costs in contract text and moved goldens, and recommended that none
+proceed. **The owner corrected the test: the point is to match
+TypeScript, not to keep the records still.** Being recorded makes a
+divergence decided. It does not make it right.
 
-The documentation correction was a defect and it is fixed at
-`0f6a5c7`. Q21 said the trapping cases are ones where "JS returns NaN
-or silent no-ops", which holds for one of the five, and it said
-`replace` and `replaceAll` do not interpret `$` substitutions, which
-Q27 reinstated on 2026-07-25 and the runtime implements.
+Re-measured under that test, all three proceed. §95 holds the rules.
 
-If the owner takes proposal 1, it is the cheapest of the three: no
-golden moves and no new policy. Proposal 2 is next. Proposal 3 needs
-a contract section first.
+**Each is an exception inside a rule that otherwise follows ECMA.**
+
+- Empty pad: `"ab".padStart(1, "")` returns `"ab"` and reports
+  nothing, and `"abcd".padStart(2, "x")` does too. The trap fires only
+  above the receiver length, so it reports an arbitrary subset of the
+  mistake `stdlib.md` §8 names.
+- Negative zero: Q14 names ECMA's `Number::toString` as its reference
+  and follows it for the exponent thresholds, `NaN` and `Infinity`.
+  `toFixed` follows it too, measured: `(-0.0).toFixed(2)` is `0.00`
+  here and under node. Interpolation is the one exception, with no
+  stated reason.
+- Empty separator: this record's first version claimed the change
+  needs a new Unicode boundary policy. **That was wrong.** `slice`
+  already traps on an offset that is not on a UTF-8 boundary, so the
+  rule exists: a produced piece starts and ends on a boundary.
+  Splitting at every boundary applies it at every position. No new
+  collision entry is needed.
+
+**The non-ASCII result is better than JavaScript's, not worse.**
+Measured: `"😀a".split("")` is `["\ud83d", "\ude00", "a"]` under
+node, two lone surrogates. This language returns `["😀", "a"]`, which
+is valid UTF-8, under Q5's already-recorded divergence.
+
+**Two traps stay.** `charCodeAt` out of range keeps its trap, because
+the return type carries no NaN and the alternative is a silent wrong
+integer. `repeat(-1)` keeps its trap, because JS throws there too, so
+both implementations reject it.
+
+**Cost.** Three goldens move: `a40-math.expected`,
+`a45-array-fn.expected`, `a49-f16-conversions.expected`. Five
+divergence witnesses retire from `compiler/src/api_reference.rs` and
+one is added for the supplementary-character split.
+
+The documentation correction was the one plain defect, and it landed
+at `0f6a5c7`.
