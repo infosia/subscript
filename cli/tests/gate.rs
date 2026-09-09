@@ -36,6 +36,11 @@ case "$1" in
         if [ '{case}' = warning ]; then echo 'warning: build warning' >&2; fi
         ;;
     test)
+        if [ '{case}' = timeout ]; then exec sleep 3; fi
+        if [ '{case}' = timeout-unenforced ]; then
+            trap '' TERM
+            sleep 3
+        fi
         if [ '{case}' = sleep ]; then
             touch "$(dirname "$0")/test-started"
             sleep 20
@@ -192,6 +197,73 @@ fn assert_record(output: &std::process::Output, shape: &str, expected: &str) -> 
     )));
     assert!(record.contains("cargo stub\nv22.0.0-stub\nVersion stub\ncc stub\n```"));
     record
+}
+
+#[test]
+fn quick_step_timeout_fails_with_a_passing_control() {
+    let _guard = GATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let stubs = Stubs::new("timeout");
+    let output = stubs
+        .command("quick")
+        .env("GATE_STEP_TIMEOUT", "1")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let record = assert_record(
+        &output,
+        "quick",
+        "gate quick 0123456789abcdef0123456789abcdef01234567 clean debug 0/0/0 skips 0 goldens-moved 0 exit 1",
+    );
+    let debug = record.split("## debug\n").nth(1).unwrap();
+    let status = debug
+        .lines()
+        .find_map(|line| line.strip_prefix("exit status: "))
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    assert_ne!(status, 0);
+    assert!(debug.contains(
+        "\ngate-timeout: step debug stopped at the 1 second bound (compiler.md 102 rule 3b)\n"
+    ));
+    assert!(!record.contains("gate-timeout-unenforced:"));
+
+    let output = stubs
+        .command("quick")
+        .env("GATE_STEP_TIMEOUT", "10")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let record = assert_record(
+        &output,
+        "quick",
+        "gate quick 0123456789abcdef0123456789abcdef01234567 clean debug 0/0/0 skips 0 goldens-moved 0 exit 0",
+    );
+    assert!(record.contains("## debug\n"));
+    assert!(!record.contains("gate-timeout:"));
+    assert!(!record.contains("gate-timeout-unenforced:"));
+}
+
+#[test]
+fn quick_step_timeout_unenforced_still_passes() {
+    let _guard = GATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let stubs = Stubs::new("timeout-unenforced");
+    let output = stubs
+        .command("quick")
+        .env("GATE_STEP_TIMEOUT", "1")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let record = assert_record(
+        &output,
+        "quick",
+        "gate quick 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 skips 0 goldens-moved 0 exit 0",
+    );
+    let debug = record.split("## debug\n").nth(1).unwrap();
+    assert!(debug.contains("\nexit status: 0\n"));
+    assert!(debug.contains(
+        "\ngate-timeout-unenforced: step debug ran past the 1 second bound and the signal did not reach it\n"
+    ));
+    assert!(!record.contains("gate-timeout:"));
 }
 
 #[test]

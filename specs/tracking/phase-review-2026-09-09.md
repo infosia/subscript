@@ -293,3 +293,23 @@ second step under a 3 second bound is stopped at 3.4 with exit 143.
 A verification chosen for speed can pick the conditions that hide the
 defect. The round's bound was ten seconds and mine was two, and only
 one of them was slow enough to notice.
+
+### The bound's own test
+
+`cli/tests/gate.rs` gains two cases, and they cover all three
+branches.
+
+`quick_step_timeout_fails_with_a_passing_control` runs with
+`GATE_STEP_TIMEOUT=1`: the gate exits 1, the record carries
+`gate-timeout: step debug stopped at the 1 second bound`, and it does
+not carry the unenforced line. Its control runs the same stub at 10
+seconds: exit 0, and neither line.
+
+`quick_step_timeout_unenforced_still_passes` reaches the branch I
+expected to be unreachable on this host: a step outruns the bound,
+still exits 0, and the gate passes with `exit status: 0` and the
+unenforced line.
+
+Gate at the landing: `debug 1384/0/2 release 1382/0/2 exit 0`, debug
+422 wall seconds and release 470, so no real step comes near the 3600
+second bound.
