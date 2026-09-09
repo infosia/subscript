@@ -276,9 +276,13 @@ returning a string allocates via the Context):
   offsets (the position arguments were added by Q27)
 - `charCodeAt(i: i32): i32` — the byte value 0–255 (Q21; JS returns
   the UTF-16 unit); out of range traps (JS returns NaN)
-- `split(sep: string): string[]` — no-match → `[whole]`; adjacent
-  separators produce empty strings (JS semantics); an **empty
-  separator traps** (byte-splitting would fracture UTF-8 code points)
+- `split(sep: string): string[]` — no-match → `[whole]`; adjacent,
+  leading and trailing non-empty separators produce empty strings (JS
+  semantics). An **empty separator returns one piece per UTF-8 code
+  point** (§95.3); `"".split("")` is `[]`. Every piece starts and ends
+  on a UTF-8 boundary, which is `slice`'s rule applied at every
+  position. ASCII matches JS; a supplementary character differs from
+  JS's UTF-16 units under Q5
 - `trim/trimStart/trimEnd(): string` — ECMA WhiteSpace + LineTerminator
   (Q21): `U+0009`, `U+000A`, `U+000B`, `U+000C`, `U+000D`, `U+0020`,
   `U+00A0`, `U+1680`, `U+2000`–`U+200A`, `U+2028`, `U+2029`, `U+202F`,
@@ -287,19 +291,24 @@ returning a string allocates via the Context):
   out rather than delegated
 - `repeat(n: i32): string` — `n < 0` traps; `repeat(0)` is `""`
 - `padStart(len: i32, pad?: string): string`, `padEnd` — `pad`
-  defaults `" "`; byte lengths; already-long-enough → unchanged;
-  an empty `pad` with `len > length` traps (JS returns the string
-  unchanged for empty pad — divergence recorded in Q21: silent
-  non-padding hides bugs)
+  defaults `" "`; byte lengths; already-long-enough → unchanged.
+  An **empty `pad` returns the receiver unchanged at every `len`**
+  (§95.1), as ECMA's StringPad does. The result is a fresh Context
+  allocation of the receiver length when no bytes are added
 - `toUpperCase(): string`, `toLowerCase(): string` — Unicode Default
   Case Conversion, including the special-casing table (Q21)
 - `replace(pat: string, repl: string): string` — first occurrence, no
-  regex. **`$` in the replacement is interpreted** (Q27): `$$`, `$&`,
-  `` $` ``, `$'`. `$1`–`$9` stay literal, which is ECMA's own behaviour
-  for a string pattern — it has no capture groups — so no regex engine
-  is involved
-- `replaceAll(pat: string, repl: string): string` — all occurrences;
-  empty `pat` traps (JS inserts between every unit)
+  regex. An empty `pat` matches once at the start, on an empty
+  receiver too (§95.3). **`$` in the replacement is interpreted**
+  (Q27): `$$`, `$&`, `` $` ``, `$'`. `$1`–`$9` stay literal, which is
+  ECMA's own behaviour for a string pattern — it has no capture
+  groups — so no regex engine is involved
+- `replaceAll(pat: string, repl: string): string` — all occurrences,
+  with no rescan of the replacement; the same `$` substitutions as
+  `replace`. An **empty `pat` matches every UTF-8 code-point
+  boundary**, both ends included (§95.3); `"".replaceAll("", r)` is
+  `r`. ASCII matches JS; a supplementary character differs from JS's
+  UTF-16 units under Q5
 
 Added by Q27 (2026-07-25) — all byte-indexed, following Q5:
 
@@ -350,10 +359,11 @@ golden-change procedure; the corpus source's assertion is unchanged).
 `a64` covers the rest of the Q27 String surface. Rejects:
 `localeCompare`, `match`, `toLocaleUpperCase` — each S014;
 `r25-string-substring` was **removed**, `substring` now being accepted.
-Trap paths (`charCodeAt` OOB, `repeat(-1)`, `split("")`,
-`replaceAll("", …)`, and Q27's `charAt`/`codePointAt` off a UTF-8
-boundary and `codePointAt` OOB) are cross-tier
-cemit tests (identical kind/message/position), not corpus entries.
+Trap paths (`charCodeAt` OOB, `repeat(-1)`, and Q27's
+`charAt`/`codePointAt` off a UTF-8 boundary and `codePointAt` OOB) are
+cross-tier cemit tests (identical kind/message/position), not corpus
+entries. §95's entries `a194`–`a197` cover the empty pad, the empty
+separator and pattern, zero formatting, and the UTF-8 boundaries.
 
 Gate (pre-registered): standing differential gate byte-exact incl.
 `a43`; `tsc` zero errors unchanged config (every accepted call types

@@ -630,7 +630,8 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   integers in decimal; `f32`/`f64` by shortest round-trip (Ryu class
   algorithm), with integral values in the ordinary range printed without
   a decimal point or exponent (`7`, never `7.0` or `7E0`); `-0`, `NaN`,
-  `Infinity` spelled `-0`, `NaN`, `Infinity`.
+  `Infinity` spelled `0`, `NaN`, `Infinity` *(compiler.md §95.2,
+  2026-09-09; the spelling was `-0` before)*.
   **Exponent thresholds (owner decision 2026-07-25, correcting the
   original rule):** a magnitude outside `[1e-6, 1e21)` is printed in
   exponential form, exactly as ECMA's `Number::toString` does — `1e-7`,
@@ -662,9 +663,10 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   `2205594957347911.2` here and in node). It also removed the
   hand-written exponent thresholds and `toFixed` rounding — net 111
   lines of hand-written float code deleted.
-  **The one Q14 divergence that remains is the `-0` spelling above**,
-  which is deliberate. The episode produced the standing rule recorded
-  in `specs/tracking/js-alignment-audit.md`: a negative claim — "no
+  **No Q14 divergence remains.** §95.2 retired the `-0` spelling on
+  2026-09-09: both zero signs format as `0`, and the value keeps its
+  sign. The episode produced the standing rule recorded in
+  `specs/tracking/js-alignment-audit.md`: a negative claim — "no
   solution exists" — needs investigation most of all.
   Both tiers share one implementation; byte-identical output is a
   standing differential-gate assertion (plan P3).
@@ -734,18 +736,21 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   Byte-measured `length`/`slice` are unaffected and still diverge from
   JS's UTF-16 units on non-ASCII input — that is Q5's representation
   choice, not a limit that was lifted here.
-  Range and argument errors trap: `charCodeAt` out of range,
-  `repeat(-1)`, `split("")`, `replaceAll("", …)`, and an empty `pad`
-  that cannot reach the target. *(Revised 2026-09-09. The former text
-  said "JS returns NaN or silent no-ops there". That holds for one of
-  the five.)* Measured on node v24.18.0: `"ab".charCodeAt(5)` is
-  `NaN`; `"ab".repeat(-1)` throws a `RangeError`; `"ab".split("")` is
-  `["a", "b"]`; `"ab".replaceAll("", "-")` is `"-a-b-"`;
-  `"ab".padStart(4, "")` is `"ab"`. Only the first returns NaN.
-  `repeat(-1)` is no divergence in kind, because both implementations
-  reject it. The last three give up a defined result. An empty pad
-  traps only above the receiver length: `"ab".padStart(1, "")` is
-  `"ab"` here and under node.
+  Range and argument errors trap: `charCodeAt` out of range and
+  `repeat(-1)`. Measured on node v24.18.0: `"ab".charCodeAt(5)` is
+  `NaN`, and the return type carries no NaN; `"ab".repeat(-1)` throws
+  a `RangeError`, so both implementations reject it and that is no
+  divergence in kind.
+  *(Revised 2026-09-09 by compiler.md §95. Three more cases trapped
+  before it: `split("")`, `replaceAll("", …)`, and an empty `pad`
+  above the target. Each gave up a result that ECMA defines, so each
+  one now matches JS on ASCII input.)* An empty `pad` returns the
+  receiver at every target. `split("")` returns one piece per UTF-8
+  code point and `"".split("")` is `[]`. `replaceAll("", r)` inserts
+  `r` at every code-point boundary. Under Q5 a supplementary
+  character stays one piece: `"😀a".split("")` is `["😀", "a"]` here
+  and two lone surrogates then `"a"` under node, so this language
+  returns valid UTF-8 where node does not.
   `replace` and `replaceAll` interpret `$` substitution patterns, as
   Q27 reinstated on 2026-07-25. *(Corrected 2026-09-09. Q21 said they
   do not, and the runtime always did: `"a-b".replaceAll("-", "[$&]")`
@@ -875,12 +880,12 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   **`(-0).toFixed(d)` follows ECMA and drops the sign** (`0.00`): the
   sign is taken only when `x < 0`, which is false for `-0`. A value that
   merely *rounds* to zero keeps it (`(-0.0001).toFixed(2)` is `-0.00`),
-  as in every JS engine. This is deliberately unlike Q14's interpolation
-  rule, which spells `-0` as `-0`: `${x}` is the language's only
-  general-purpose number-to-string path, so losing the sign there would
-  discard information a program has no other way to see, whereas
-  `toFixed` is a specific formatting request with ECMA-defined
-  semantics and `${}` remains available when the sign matters.
+  as in every JS engine. Q14's interpolation spells a negative zero
+  `0` as well, under §95.2. *(Revised 2026-09-09. This entry argued
+  that `${x}` must keep the sign, because it is the only
+  general-purpose number-to-string path and the program has no other
+  way to see it. Measured, the program has three: `1.0 / x`,
+  `Math.f32ToBits`, and `Math.atan2(x, -1.0)`.)*
   *(An earlier revision of this entry claimed the opposite — that the
   sign is kept — and was wrong: it was written from an assumption about
   a corpus line rather than from the source. The 2026-07-25 Phase Review
@@ -1033,11 +1038,9 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   loses information silently — `0` comes back where a `NaN` went in —
   and this is the third application of one rule, after Q20 refused
   Invalid-Date and Q24 refused a zeroed `get` miss. **`-0` serializes
-  as `0`**, as JS does; this does not contradict Q14's `-0` spelling,
-  for the reason Q25 gave about `toFixed`: Q14 governs `${…}`, the only
-  general-purpose number-to-string path, where the sign is information
-  the program cannot otherwise see, while JSON is a specific
-  interchange format with an ECMA-defined answer.
+  as `0`**, as JS does. Q14's interpolation uses the same spelling
+  under §95.2, so the two agree. *(Revised 2026-09-09; this entry
+  repeated the reason §95.2 retired.)*
 
   **`parse` reports failure as data, not as a trap.** `JsonResult<T>`
   is an ambient generic reference class — the machinery Q24 built for

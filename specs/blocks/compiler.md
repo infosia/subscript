@@ -13220,7 +13220,23 @@ ECMA's StringPad returns the receiver when the fill string is empty.
 Q14 names ECMA's `Number::toString` as its reference and follows it
 for the exponent thresholds, for `NaN`, and for `Infinity`. `toFixed`
 follows it too: `(-0.0).toFixed(2)` is `0.00` here and under node.
-Interpolation is the one exception, and Q14 states no reason for it.
+Interpolation is the one exception.
+
+*(Corrected 2026-09-09. The section first said Q14 states no reason.
+Q14 does not, but Q25 and Q28 both do, in the same words: `${…}` is
+the only general-purpose number-to-string path, so losing the sign
+there discards information the program cannot otherwise see. That
+reason does not survive measurement.)* A program reads the sign of a
+zero three other ways, measured on this host:
+
+| Expression | `-0.0` | `0.0` |
+|---|---|---|
+| `1.0 / x` | `-Infinity` | `Infinity` |
+| `Math.f32ToBits(x as f64)` | `2147483648` | `0` |
+| `Math.atan2(x, -1.0)` | `-3.141592653589793` | `3.141592653589793` |
+
+The first two are how ECMAScript programs read it as well. The sign
+is not lost, so the reason that kept the spelling is void.
 
 Three goldens move under the §2 procedure: `a40-math.expected`,
 `a45-array-fn.expected`, `a49-f16-conversions.expected`.
