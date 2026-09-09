@@ -129,3 +129,60 @@ Measured at `10c2db7`, aarch64 macOS, dev JIT, `subscript run`:
 
 The node results for the same six are `"ab"`, `"ab"`, `2`, `"-a-b-"`,
 `0`, `0`, measured on node v24.18.0.
+
+## Landed, 2026-09-09
+
+§95 landed at `9f1b894`. Final:
+`gate quick 9f1b894 clean debug 1348/0/2 skips 2 goldens-moved 0 exit 0`,
+hygiene 0. The implementation round's full gate:
+
+```
+gate full b8498614c3b6c3120ccdda9711b111068ef4cc6d dirty:27 debug 1348/0/2 release 1346/0/2 skips 2/0 clippy 7/18/13 goldens-moved 3 exit 0
+```
+
+`goldens-moved 3` counts `corpus/` alone; the fourth is
+`examples/e07-determinism.expected`.
+
+### Every ASCII shape matches node
+
+Measured here after the change, both sides:
+
+| Row | subscript | node |
+|---|---|---|
+| `padStart(4,"")` / `padEnd(4,"")` / `padStart(1,"")` | `ab ab ab` | same |
+| `"".split("")` / `"a"` / `"ab"` | `0 1 a,b` | same |
+| `"".replaceAll("","-")` / `"a"` / `"ab"` | `- -a- -a-b-` | same |
+| `"ab".replace("","-")` | `-ab` | same |
+| `${-0.0}` at f64, f32, and `toFixed(2)` | `0 0 0.00` | same |
+| `"aé".split("")` | `a,é` | same |
+| `"😀a".split("")` | `😀,a` | two lone surrogates, then `a` |
+| `"😀".replaceAll("","-")` | `-😀-` | `-` around each surrogate |
+
+### Two corpus entries joined the node comparison set
+
+`a40-math` and `a45-array-fn` were `js-comparable: no Q14`. Both are
+now `js-comparable: yes`. `a49-f16-conversions` drops Q14 and keeps
+C3 and Q23.
+
+### The reason that kept the `-0` spelling, and why it failed
+
+Q25 and Q28 both stated it: `${x}` is the only general-purpose
+number-to-string path, so losing the sign there discards information
+the program cannot otherwise see. Measured, the program has three
+other ways:
+
+| Expression | `-0.0` | `0.0` |
+|---|---|---|
+| `1.0 / x` | `-Infinity` | `Infinity` |
+| `Math.f32ToBits(x as f64)` | `2147483648` | `0` |
+| `Math.atan2(x, -1.0)` | `-3.141592653589793` | `3.141592653589793` |
+
+The first two are how ECMAScript programs read it too.
+
+### Two contract errors this round found, both mine
+
+The section named three moved goldens and said no other moves. It
+counted `corpus/` alone, and `examples/` carries goldens too. The
+section also said Q14 states no reason for the spelling; Q14 does
+not, but Q25 and Q28 do, and the reason had to be measured rather
+than assumed absent.
