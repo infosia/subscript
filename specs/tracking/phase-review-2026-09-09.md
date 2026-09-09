@@ -142,3 +142,38 @@ those three. The round reported the contradiction and stopped.
 of its own. Its change is confined to `compiler/src/check/`, the gate
 is green, and §60.1 rule 8 was verified by file set. A future phase
 review covers it.
+
+## A flaky gate test, found while landing §101
+
+`gate quick` at `2bf8da9` produced three different verdicts on the
+same clean tree:
+
+```
+debug 1376/2/2 exit 1
+debug 1377/1/2 exit 1
+debug 1378/0/2 exit 0
+```
+
+Neither failure is a defect in §101, whose own full gate at `801dbe1`
+was `debug 1378/0/2 release 1376/0/2 exit 0`.
+
+**`context_per_scene_host_builds_runs_and_matches_golden`** failed once
+with `Blocking waiting for file lock on artifact directory` and then
+`in-repo runtime archive was not found at
+target/release/libsubscript_runtime.a`. Two cargo processes contended
+for the target directory; the archive exists and is not missing. This
+is the self-inflicted-noise class already recorded for benchmarks.
+
+**`spawned_watch_preserves_stdout_before_each_trap`**
+(`cli/tests/watch.rs:483`) timed out twice waiting for
+`watch: swapped`. Run alone it passes in about 1.2 seconds, measured
+three times. Under the gate it consumed the full deadline.
+
+`wait_for_count` (`cli/tests/watch.rs:266`) uses
+`Instant::now() + Duration::from_secs(20)`. A deadline exists to stop
+a hang, not to assert how fast a rebuild is, and 20 seconds under a
+loaded machine is a performance assertion in disguise. A test that
+fails for the wrong reason costs the same as a test that cannot fail:
+it teaches the reader to re-run rather than to read.
+
+Open. The fix is the deadline's purpose, not its number.
