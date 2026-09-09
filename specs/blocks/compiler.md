@@ -23,7 +23,7 @@ The stages of the current form and the sections that hold their rules:
 | runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
 | workers | §38–§40, §84 |
-| the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88 |
+| the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88, §100 |
 
 Every section, with its status:
 
@@ -134,6 +134,7 @@ Every section, with its status:
 | §97 | A `using` binding can be null | active |
 | §98 | One shift-count rule, whatever the spelling | active |
 | §99 | A long string constant is static C byte data | active |
+| §100 | The Windows host runs the standing gate | active |
 
 ## 1. Architecture
 
@@ -13924,3 +13925,123 @@ exit 1, recorded on this host.
    so the aggregate LIR snapshot must not move.
 8. The Windows half is the owner's, as C0's was. Report what a
    Windows gate would need and stop there; this host cannot run it.
+
+## 100. The Windows host runs the standing gate
+
+*(2026-09-09.)* Origin: §99.5 item 8 left the Windows half of §99 to
+the owner. The owner ran it. The measurements are in
+`specs/tracking/s100-windows-gate.md`.
+
+The run discharges §99's Windows half: `cl` 19.44.35222 builds, links
+and runs a 1 MiB string constant, and
+`codegen/tests/long_string_constants.rs` passes 4 of 4. §99 needs no
+change.
+
+The run also found two defects. Neither is in the compiler, the
+runtime, or the emitted C. Both are in test code, and each one is a
+rule the repository states elsewhere and does not carry here.
+
+### 100.1 What the run measured
+
+`cargo check`, `cargo build`, and `cargo build --release`, each over
+the workspace with `--all-targets`, all exit 0. `cargo fmt --check`
+exits 0. Clippy holds the 7/18/13 baseline, so no lint is
+Windows-only.
+
+`cargo test --workspace --no-fail-fast`: 1338 passed, 2 failed, 2
+ignored. The recorded macOS count is 1364. The difference is §11c
+constraint 2's structural exclusions.
+
+### 100.2 Rule — a test host program obtains its entry from one helper
+
+A test that compiles its own C host program, and then compares the
+captured sink against expected bytes, must obtain the host source from
+one shared helper. The helper prefixes the generated runtime header
+and inserts the `_WIN32`-guarded `_setmode(_fileno(stdout), _O_BINARY)`
+that §11c requires. No test writes that guard itself.
+
+1. The helper is public in `subscript-codegen`, because an integration
+   test cannot reach a private test-module item. The existing private
+   `host_entry` in `codegen/src/ship.rs` becomes that helper, and the
+   `ship.rs` test module calls it.
+2. The helper returns a `Result`. It fails when the body declares no
+   `int main(void)`, and it fails when the body already spells
+   `_setmode`. One place owns the guard. *(Corrected 2026-09-09: this
+   rule first said "fails" and named no mechanism. The first
+   implementation read that as `assert!`, which made a public library
+   function panic on its input. CLAUDE.md core principle 5 gives the
+   mechanism: no panics in library code, `Result` and `?`. The FFI
+   boundary is the single exception, and this helper is not it.)*
+2a. A test call site unwraps that `Result`. A panic in a test is the
+   correct failure, and it is not library code. The test of item 4
+   below then asserts an `Err`, not a caught unwind.
+3. A build-time check reports every remaining site at once. It reads
+   the test sources and it fails when a host body reaches a C compiler
+   without the helper. A per-site fix does not converge (CLAUDE.md).
+4. This is §11c constraint 3's rule in a new place: a guard that a test
+   must copy is a guard that a test forgets. §11c carried it into the
+   native-library helper; §100 carries it into the host entry.
+
+Measured at the pin: `codegen/tests/async_cleared_trap.rs` compares
+`m1\r\nm2\r\n` against `m1\nm2\n` and fails.
+
+### 100.3 Rule — a repository-relative path is spelled with `/`
+
+A test or a generator that turns an absolute path into a
+repository-relative name must spell that name with `/` on every host.
+The name is data: a table arm matches it, a message prints it, and a
+generated document embeds it. A host separator makes one host's name
+different, and the comparison then fails on that host alone.
+
+1. One helper produces the spelling. It joins the path components with
+   `/`. It never returns the host separator.
+2. Every site uses it: a scope table, a corpus walk, an error message,
+   and a generated document. The three private helpers that exist
+   today — `compiler/tests/tsc_corpus.rs`, `compiler/src/language_reference.rs`,
+   and the site that lacks one — collapse to it.
+3. A `/`-spelled literal in a match arm or an assertion is correct. The
+   rule moves the path to the literal, never the literal to the path.
+
+Measured at the pin: `codegen/tests/docs.rs` reads
+`docs\tutorial-c-cpp.md`, misses every scope-table arm, and panics.
+
+### 100.4 Sites
+
+- `codegen/src/ship.rs`: `host_entry` becomes public and documented.
+- `codegen/tests/async_cleared_trap.rs`: its host body goes through
+  the helper.
+- `codegen/tests/docs.rs`: line 319 spells the name with `/`.
+- `compiler/tests/tsc_corpus.rs` `repository_relative`,
+  `compiler/src/language_reference.rs` `normalized_relative`, and
+  `compiler/tests/js_corpus.rs` line 416: one spelling.
+- The total check of 100.2 rule 3.
+
+### 100.5 Gate (pre-registered exit criteria)
+
+Red first, at the pin `39fb660`: the two failures above, on
+`x86_64-pc-windows-msvc`.
+
+Items 3 to 5 add three tests, and those three run on every host. The
+counts below carry them. *(Corrected 2026-09-09: this section first
+gave 1340 for item 1 and "no movement" for item 2. Both figures counted
+the two repaired tests and forgot the three added ones. The coding
+agent reported the contradiction and stopped, which is the wanted
+outcome.)*
+
+1. `cargo test --workspace` on windows-msvc: 0 failed, and 1343
+   passed. That is the pin's 1338, plus the two tests this section
+   repairs, plus the three it adds.
+2. Off Windows the count grows by the same three. The recorded macOS
+   1364 becomes 1367, and 0 fail. Both rules are no-ops off Windows,
+   so no golden moves and the LIR snapshot does not move.
+2a. If the implementation needs a different number of tests, it reports
+   the number and the reason, and it does not adjust a count to fit.
+3. The total check of 100.2 rule 3 fails on a host body that skips the
+   helper. A test builds that body and asserts the failure.
+4. A test asserts that the helper returns `Err` for a body with no
+   `int main(void)`, and for a body that already spells `_setmode`.
+   It uses no `catch_unwind`.
+5. A test asserts that the path helper returns a `/` spelling for a
+   path built with the host separator.
+6. `tools/gate.sh full` green in both profiles on the reference host.
+   `cargo fmt --check` green. Clippy at the 7/18/13 baseline.
