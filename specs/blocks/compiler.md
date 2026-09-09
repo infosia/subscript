@@ -13386,6 +13386,17 @@ string.
    Q5's recorded divergence and not a new one.
 6. Every other escape keeps its behaviour, including `\u{...}` above
    the basic plane, which already decodes.
+7. *(Added 2026-09-09, after the round measured it.)* **An identifier
+   escape is not covered.** The lexer's Unicode routine also serves
+   identifier escapes, and TypeScript rejects a surrogate pair there.
+   Measured with tsc 5.9.2: `const \ud801\udc00 = 1;` gives TS1127
+   "Invalid character" at each escape, and `const \u{10400} = 1;` is
+   accepted. Rule 1 applies to a string literal and a template part
+   alone. An identifier keeps `InvalidIdentChar`, and a valid
+   supplementary brace escape in an identifier stays accepted. A
+   prototype that decoded pairs in the shared routine accepted an
+   identifier that TypeScript rejects; that is the shape this rule
+   forbids.
 
 ### 96.2 Sites
 

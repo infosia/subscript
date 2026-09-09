@@ -39,3 +39,61 @@ introduce it. `specs/tracking/p24-monotonic-costs.md` records the
 neighbouring CESU-8 case as "unreachable from valid source". This one
 is reachable from valid source, and `subscript check --deny-warnings`
 reports nothing.
+
+## Measurement round, 2026-09-09
+
+A measurement round patched the fork under `$TMPDIR`, pointed this
+workspace at it with a `[patch]` section, prototyped the compiler
+half, and restored every repository file. `git status --porcelain` is
+empty; the report is kept as `REPORT-s96-fork.md`, which holds the
+fork diff.
+
+### Where the fix belongs
+
+The round's first report proposed the compiler side. Its own AST
+measurement argued against that and changed §96.2: `Str.value` and a
+template part's `cooked` are identical for `"\ud83d"` and for
+`"\\ud83d"`, so a compiler-side fix must re-decide which `\u`
+sequences are escapes. Only `Str.raw` and the template's `raw`
+separate them.
+
+### Measured under the fork patch, dev tier
+
+| Source spelling | Unpatched, bytes | Patched, bytes | node |
+|---|---|---|---|
+| `"👍Z"` | `👍Z`, 13 | `👍Z`, 5 | `👍Z`, UTF-16 3 |
+| `"é👍X"` | `é👍X`, 15 | `é👍X`, 7 | `é👍X`, 4 |
+| `` `t👍u` `` | `t👍u`, 14 | `t👍u`, 6 | `t👍u`, 4 |
+| `"a\ud83db"` | `a\ud83db`, 8 | rejected, exit 1 | `a` U+FFFD `b` |
+| `"\udc4d"` | `\udc4d`, 6 | rejected, exit 1 | one low surrogate |
+| `"é\|あ"` | `é\|あ`, 6 | `é\|あ`, 6 | `é\|あ` |
+| `"😀"` | `😀`, 4 | `😀`, 4 | `😀` |
+| `"\\ud83d"` | `\ud83d`, 6 | `\ud83d`, 6 | `\ud83d`, 6 |
+
+The last three rows are the controls, unchanged. The escaped
+backslash keeps its six bytes, so the patch decodes no
+surrogate-looking text that the source did not escape.
+
+The diagnostic is §96.1 rule 2's text at the escape, with the
+divergence block, measured at the start, middle and end of a literal
+and in a template part. Example, `"a\ud83db"` at 2:15:
+
+```
+error[S100]: a lone surrogate escape has no UTF-8 encoding; write the paired escape or the character
+```
+
+### The rule the round found
+
+The lexer's Unicode routine also serves identifier escapes. The first
+prototype decoded pairs there and accepted `const 𐐀 = 1;`,
+which TypeScript rejects with TS1127 at each escape. Verified here
+with tsc 5.9.2, and `const \u{10400} = 1;` is accepted. §96.1 rule 7
+now states the boundary.
+
+### Open
+
+The fork branch needs the owner's push, and this repository then
+bumps the pinned commit in `compiler/Cargo.toml` and `Cargo.lock`.
+Nothing lands before that. The fork's own test suite needs
+dependencies the offline build does not have, so only the eleven
+added tests ran there.
