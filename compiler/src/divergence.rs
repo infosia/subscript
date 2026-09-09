@@ -21,6 +21,8 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Divergence {
+    /// A surrogate escape without an adjacent paired escape.
+    LoneSurrogateEscape,
     /// `any` in a declaration.
     AnyType,
     /// `eval`, `new Function`, and a write through `.prototype`.
@@ -208,6 +210,7 @@ impl Divergence {
         Divergence::JsonSubset,
         Divergence::AggregateLayoutLimit,
         Divergence::StringLiteralLength,
+        Divergence::LoneSurrogateEscape,
         Divergence::RegExpSubset,
         Divergence::ReplaceAllGlobalFlag,
         Divergence::WorkerEntryShape,
@@ -229,6 +232,12 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::LoneSurrogateEscape => DivergenceEntry {
+                ts: r#"const text: string = "\ud83d";"#,
+                subscript: r#"const text: string = "\ud83d\udc4d";"#,
+                why: "UTF-8 has no encoding for a lone surrogate. Write the paired escape or the character.",
+                collision: "compiler.md §96",
+            },
             Divergence::AnyType => DivergenceEntry {
                 ts: "const value: any = 1;",
                 subscript: "const value: i32 = 1;",

@@ -214,6 +214,10 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         12,
     ),
+    ("r188-lone-high-surrogate.ts", RuleCode::S100, 8),
+    ("r189-lone-low-surrogate.ts", RuleCode::S100, 8),
+    ("r190-lone-surrogate-before-character.ts", RuleCode::S100, 8),
+    ("r191-lone-brace-surrogate.ts", RuleCode::S100, 8),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,

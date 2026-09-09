@@ -6,6 +6,7 @@ use swc_ecma_ast as ast;
 use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
 
 use crate::diag::{Diagnostic, Pos, RuleCode};
+use crate::divergence::Divergence;
 use crate::provenance;
 use crate::SourceFile;
 
@@ -133,11 +134,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
             Ok(module) => {
                 if let Some(err) = errors.drain(..).next() {
                     let pos = lookup(&source_map, &source.name, err.span());
-                    diags.push(Diagnostic::new(
-                        RuleCode::S100,
-                        format!("parse error: {}", err.kind().msg()),
-                        pos,
-                    ));
+                    diags.push(parser_diagnostic(&err, pos));
                 } else {
                     files.push(ParsedFile {
                         name: source.name.clone(),
@@ -150,11 +147,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
             }
             Err(err) => {
                 let pos = lookup(&source_map, &source.name, err.span());
-                diags.push(Diagnostic::new(
-                    RuleCode::S100,
-                    format!("parse error: {}", err.kind().msg()),
-                    pos,
-                ));
+                diags.push(parser_diagnostic(&err, pos));
             }
         }
     }
@@ -163,6 +156,27 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
         Ok(ParsedProgram { files, source_map })
     } else {
         Err(diags)
+    }
+}
+
+fn parser_diagnostic(err: &swc_ecma_parser::error::Error, pos: Pos) -> Diagnostic {
+    if matches!(
+        err.kind(),
+        swc_ecma_parser::error::SyntaxError::LoneSurrogateEscape
+    ) {
+        let mut diagnostic = Diagnostic::new(
+            RuleCode::S100,
+            "a lone surrogate escape has no UTF-8 encoding; write the paired escape or the character",
+            pos,
+        );
+        diagnostic.divergence = Some(Divergence::LoneSurrogateEscape);
+        diagnostic
+    } else {
+        Diagnostic::new(
+            RuleCode::S100,
+            format!("parse error: {}", err.kind().msg()),
+            pos,
+        )
     }
 }
 
@@ -246,5 +260,119 @@ mod tests {
             .expect_err("invalid source must be rejected");
         assert_eq!(diagnostics[0].code, RuleCode::S100);
         assert_eq!(diagnostics[0].pos.file, "bad.ts");
+    }
+
+    fn string_parts(source: &str) -> Vec<String> {
+        let program = parse_program(&[src("value.ts", source)]).expect("valid string expression");
+        let ast::ModuleItem::Stmt(ast::Stmt::Expr(statement)) = &program.files[0].module.body[0]
+        else {
+            panic!("expected an expression");
+        };
+        match &*statement.expr {
+            ast::Expr::Lit(ast::Lit::Str(value)) => vec![value.value.to_string()],
+            ast::Expr::Tpl(template) => template
+                .quasis
+                .iter()
+                .map(|part| {
+                    part.cooked
+                        .as_ref()
+                        .expect("cooked template part")
+                        .to_string()
+                })
+                .collect(),
+            _ => panic!("expected a string or template"),
+        }
+    }
+
+    #[test]
+    fn surrogate_pairs_equal_literal_bytes() {
+        for source in [r#""\ud83d\udc4dZ""#, r#"'\uD83D\uDC4DZ'"#] {
+            assert_eq!(
+                string_parts(source)[0].as_bytes(),
+                string_parts("\"👍Z\"")[0].as_bytes()
+            );
+        }
+        assert_eq!(string_parts(r#""\u00e9\ud83d\udc4d\u{1F600}""#), ["é👍😀"]);
+        assert_eq!(string_parts(r#"`t\ud83d\udc4du`"#), ["t👍u"]);
+        assert_eq!(
+            string_parts(r#"`\ud83d\udc4d${"x"}\ud83d\udc4d${"y"}\ud83d\udc4d`"#),
+            ["👍", "👍", "👍"]
+        );
+    }
+
+    #[test]
+    fn lone_surrogate_positions_have_positive_controls() {
+        for (bad, good, parts, column) in [
+            (r#""\ud83dab""#, r#""\ud83d\udc4dab""#, vec!["👍ab"], 2),
+            (r#""a\ud83db""#, r#""a\ud83d\udc4db""#, vec!["a👍b"], 3),
+            (r#""ab\ud83d""#, r#""ab\ud83d\udc4d""#, vec!["ab👍"], 4),
+            (r#"'a\ud83db'"#, r#"'a\ud83d\udc4db'"#, vec!["a👍b"], 3),
+            (r#""\udc4d""#, r#""\ud83d\udc4d""#, vec!["👍"], 2),
+            (r#""\u{D83D}""#, r#""\u{1F600}""#, vec!["😀"], 2),
+            (r#""é👍\ud83d""#, r#""é👍\ud83d\udc4d""#, vec!["é👍👍"], 5),
+            (r#"`a\ud83db`"#, r#"`a\ud83d\udc4db`"#, vec!["a👍b"], 3),
+            (
+                r#"`\ud83d${"x"}ok`"#,
+                r#"`\ud83d\udc4d${"x"}ok`"#,
+                vec!["👍", "ok"],
+                2,
+            ),
+            (
+                r#"`ok${"x"}\ud83d${"y"}ok`"#,
+                r#"`ok${"x"}\ud83d\udc4d${"y"}ok`"#,
+                vec!["ok", "👍", "ok"],
+                10,
+            ),
+            (
+                r#"`ok${"x"}\ud83d`"#,
+                r#"`ok${"x"}\ud83d\udc4d`"#,
+                vec!["ok", "👍"],
+                10,
+            ),
+        ] {
+            let Err(diagnostics) = parse_program(&[src("lone.ts", &format!("\n{bad}"))]) else {
+                panic!("accepted {bad}");
+            };
+            assert_eq!(diagnostics.len(), 1, "{bad}");
+            let diagnostic = &diagnostics[0];
+            assert_eq!(diagnostic.code, RuleCode::S100, "{bad}");
+            assert_eq!(diagnostic.pos, Pos::new("lone.ts", 2, column), "{bad}");
+            assert_eq!(diagnostic.message, "a lone surrogate escape has no UTF-8 encoding; write the paired escape or the character", "{bad}");
+            assert_eq!(
+                diagnostic.divergence,
+                Some(Divergence::LoneSurrogateEscape),
+                "{bad}"
+            );
+            assert_eq!(string_parts(good), parts, "{good}");
+        }
+    }
+
+    #[test]
+    fn escaped_backslash_keeps_six_bytes() {
+        for source in [r#""\\ud83d""#, r#"`\\ud83d`"#] {
+            assert_eq!(string_parts(source)[0].as_bytes(), b"\\ud83d");
+            assert_eq!(string_parts(source)[0].len(), 6);
+        }
+    }
+
+    #[test]
+    fn identifier_surrogate_pair_stays_rejected() {
+        let Err(diagnostics) = parse_program(&[src("identifier.ts", r"const \ud801\udc00 = 1;")])
+        else {
+            panic!("accepted identifier surrogate escapes");
+        };
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert_eq!(diagnostics[0].pos, Pos::new("identifier.ts", 1, 7));
+        assert_eq!(
+            diagnostics[0].message,
+            "parse error: Invalid character in identifier"
+        );
+        assert_eq!(diagnostics[0].divergence, None);
+        for good in [r"const \u{10400} = 1;", "const 𐐀 = 1;"] {
+            assert!(
+                parse_program(&[src("identifier.ts", good)]).is_ok(),
+                "{good}"
+            );
+        }
     }
 }
