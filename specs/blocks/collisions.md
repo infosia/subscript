@@ -690,11 +690,16 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   does, and what the TypeScript surface leads a reader to expect
   (`1 << 32 === 1`). The ship tier must emit the mask explicitly: C
   promotes a narrow operand to `int` before shifting, so an unmasked
-  emission diverges. Additionally, a **literal** shift amount ≥ the
-  operand width is rejected at compile time (S008, the out-of-range
-  literal rule) — a constant over-shift is a typo, and C4 already
-  rejects out-of-range literals rather than silently reinterpreting
-  them.
+  emission diverges. **The mask has no exception** *(compiler.md §98,
+  2026-09-09)*: every accepted shift masks its count, whether the
+  count is a literal, a local, a parameter, or a constant expression.
+  A literal count at or above the width was rejected from 2026-07-25
+  to that date, on the grounds that a constant over-shift is a typo
+  and that C4 covers it. Measured, the rejection reached one spelling
+  of four — `x << (16 + 16)`, `x << K` and `x << -1` all passed — and
+  C4 does not cover it, because the count is representable in its own
+  type. Reject: retired:r37-literal-overshift. A literal that does not
+  fit its type is still C4's: `x << 300` with `x: u8` stays S008.
 - **Q19 (`Math`)** — the checker accepts a deterministic subset of the
   lib's `Math` with `f64` signatures and ECMA result semantics
   (`stdlib.md` §1). **`clz32` accepted** (Q26); **`imul` and `fround`
