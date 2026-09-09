@@ -1,6 +1,6 @@
 HANDOFF.md
 REPORT.md
-REPORT-*.md
+REPORT-*
 
 target/
 node_modules/
