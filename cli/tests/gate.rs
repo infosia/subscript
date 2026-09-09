@@ -94,6 +94,7 @@ case "$*" in
     'status --porcelain')
         if [ '{case}' = moved-goldens ]; then
             echo ' M corpus/accept/x.expected'
+            echo ' M examples/e01.expected'
             echo 'D  codegen/tests/lir-goldens/corpus.txt'
             echo ' M codegen/src/lib.rs'
         fi
@@ -366,15 +367,15 @@ fn moved_goldens_are_listed_without_failure() {
     let record = assert_record(
         &output,
         "full",
-        "gate full 0123456789abcdef0123456789abcdef01234567 dirty:3 debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/13 goldens-moved 2 exit 0",
+        "gate full 0123456789abcdef0123456789abcdef01234567 dirty:4 debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/13 goldens-moved 3 exit 0",
     );
-    assert!(record.contains("dirty: 3\n```text\n M corpus/accept/x.expected\nD  codegen/tests/lir-goldens/corpus.txt\n M codegen/src/lib.rs\n```"));
+    assert!(record.contains("dirty: 4\n```text\n M corpus/accept/x.expected\n M examples/e01.expected\nD  codegen/tests/lir-goldens/corpus.txt\n M codegen/src/lib.rs\n```"));
     let goldens = record
         .split("## Modified or deleted goldens\n")
         .nth(1)
         .unwrap();
     assert!(goldens.starts_with(
-        "```text\n M corpus/accept/x.expected\nD  codegen/tests/lir-goldens/corpus.txt\n```\n"
+        "```text\n M corpus/accept/x.expected\n M examples/e01.expected\nD  codegen/tests/lir-goldens/corpus.txt\n```\n"
     ));
     assert!(!goldens.contains("codegen/src/lib.rs"));
 }

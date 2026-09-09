@@ -272,7 +272,7 @@ pub fn to_string_radix_f32(value: f32, radix: u32) -> String {
 /// ECMA `Number::toString(radix)` for a validated radix on an `f64`.
 ///
 /// Radix 10 delegates to Q14 exactly. Non-finite values use the Q14
-/// spellings; negative zero becomes `0` in non-decimal radixes.
+/// spellings; negative zero becomes `0`, as it does in decimal (`compiler.md` §95.2).
 #[must_use]
 pub fn to_string_radix_f64(value: f64, radix: u32) -> String {
     if radix == 10 {

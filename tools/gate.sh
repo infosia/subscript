@@ -187,7 +187,7 @@ finish() {
     awk '
         substr($0, 1, 2) ~ /[MD]/ {
             path=substr($0, 4)
-            if (path ~ /^(corpus\/|codegen\/tests\/lir-goldens\/)/ &&
+            if (path ~ /^(corpus\/|examples\/|codegen\/tests\/lir-goldens\/)/ &&
                 (path ~ /\.expected$/ || path ~ /(^|\/)golden(s)?(\/|\.|$)/ || path ~ /^codegen\/tests\/lir-goldens\//)) print
         }
     ' "$scratch/final-status" >"$scratch/goldens"

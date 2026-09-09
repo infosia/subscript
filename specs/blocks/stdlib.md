@@ -50,8 +50,8 @@ Phase Review found §15 citing a tracking file that did not exist, and
    Context-owned and host-settable, so tests and replays can pin them.
 4. **Result semantics are ECMA-262's** for the accepted subset, unless a
    divergence is recorded in `collisions.md` (Q19/Q20). Formatting stays
-   Q14 (runtime `fmt_f64`: shortest round-trip, `NaN`, `Infinity`,
-   `-0`).
+   Q14 (runtime `fmt_f64`: shortest round-trip, `NaN`, `Infinity`, and
+   `0` for either zero sign, `compiler.md` §95.2).
 
 ## 1. P9.1 `Math`
 
@@ -1012,12 +1012,13 @@ value that went in, and nothing reports it. That is the class Q20
 rejected for Invalid-Date and Q24 rejected for a zeroed `get` miss —
 this is the same rule applied a third time, not a new one.
 
-**`-0` serializes as `0`**, as JS does. Q14 deliberately spells `-0` as
-`-0`, and the two are consistent rather than in conflict: Q14 governs
-`${…}`, the language's only general-purpose number-to-string path,
-where losing the sign would discard information the program has no
-other way to see. JSON is a specific interchange format with its own
-ECMA-defined answer, exactly as Q25 argued for `toFixed`.
+**`-0` serializes as `0`**, as JS does. Q14's interpolation spells it
+`0` as well, under `compiler.md` §95.2, so the two agree. *(Revised
+2026-09-09. This section held the reason §95.2 retired: that `${…}` is
+the only general-purpose number-to-string path, so losing the sign
+there discards information the program cannot otherwise see. Measured,
+the program reads the sign three other ways: `1.0 / x`,
+`Math.f32ToBits`, and `Math.atan2(x, -1.0)`.)*
 
 ### 13.4 `parse` — the failure channel (owner, 2026-07-26)
 

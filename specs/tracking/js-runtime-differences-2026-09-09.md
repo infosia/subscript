@@ -106,10 +106,11 @@ the return type carries no NaN and the alternative is a silent wrong
 integer. `repeat(-1)` keeps its trap, because JS throws there too, so
 both implementations reject it.
 
-**Cost.** Three goldens move: `a40-math.expected`,
-`a45-array-fn.expected`, `a49-f16-conversions.expected`. Five
-divergence witnesses retire from `compiler/src/api_reference.rs` and
-one is added for the supplementary-character split.
+**Cost.** Four goldens move; the landing section below carries their
+before and after bytes. Five divergence witnesses retire from
+`compiler/src/api_reference.rs` and one is added for the
+supplementary-character split. *(Corrected 2026-09-09: this line first
+named three and counted `corpus/` alone.)*
 
 The documentation correction was the one plain defect, and it landed
 at `0f6a5c7`.
@@ -186,3 +187,35 @@ counted `corpus/` alone, and `examples/` carries goldens too. The
 section also said Q14 states no reason for the spelling; Q14 does
 not, but Q25 and Q28 do, and the reason had to be measured rather
 than assumed absent.
+
+### The four moved goldens, before and after
+
+Before is `4dcbd98`, the commit that precedes §95. After is the
+committed file. Sizes are bytes; digests are SHA-256 of the whole
+file.
+
+| File | Before | After | Changed lines |
+|---|---|---|---|
+| `a40-math.expected` | 621 bytes, `512088e51977c4a1` | 618 bytes, `8be7748a2c71373b` | 42, 43, 48 |
+| `a45-array-fn.expected` | 186 bytes, `b77c418fe154fb46` | 185 bytes, `41ec99fe636ce00e` | 1 |
+| `a49-f16-conversions.expected` | 113 bytes, `16e691d7b8845957` | 112 bytes, `611d506cdd9a914d` | 6 |
+| `e07-determinism.expected` | 152 bytes, `66fabb832dd9fdc9` | 151 bytes, `cf88317cd234eaba` | 6 |
+
+`corpus/accept/a40-math.expected`
+
+- line 42: `round(-0.4) -0` becomes `round(-0.4) 0`
+- line 43: `sign(-0) -0` becomes `sign(-0) 0`
+- line 48: `min(0,-0) -0` becomes `min(0,-0) 0`
+
+`corpus/accept/a45-array-fn.expected`
+
+- line 1: `map <0.5> <2> <-0>` becomes `map <0.5> <2> <0>`
+
+`corpus/accept/a49-f16-conversions.expected`
+
+- line 6: `negative-zero -0` becomes `negative-zero 0`
+
+`examples/e07-determinism.expected`
+
+- line 6: `number=1234.5678|1234.57|-0` becomes `number=1234.5678|1234.57|0`
+

@@ -516,8 +516,10 @@ Observable obligations only; internal design is the implementer's.
     checksum depends on it); 64-bit bitwise ops are true 64-bit (Q18).
   - **Q14 formatting** (template-literal interpolation, shared by both
     tiers from P3): integers in decimal; `f32`/`f64` by shortest
-    round-trip; spellings exactly `-0`, `NaN`, `Infinity`, `-Infinity`
+    round-trip; spellings exactly `0`, `NaN`, `Infinity`, `-Infinity`
     (a formatter that spells infinity `inf` must be mapped).
+    *(Revised 2026-09-09 by §95.2; a negative zero spelled `-0` here
+    before.)*
   - Coroutines: CPS transform in codegen (§1); suspended state is
     Context data; `.next()` returns `{ done, value }` with `value`
     zero-initialized when `done`.
@@ -11763,8 +11765,13 @@ and names no command either.
    `passed/failed/ignored`, the count of `gate-skip:` lines and the
    lines themselves; then the list of pre-existing golden or
    `.expected` files that `git status --porcelain` reports modified
-   or deleted under `corpus/` and `codegen/tests/lir-goldens/`
-   (`M`, `D`); then the verdict line. A run that a signal (`HUP`,
+   or deleted under `corpus/`, `examples/`, and
+   `codegen/tests/lir-goldens/` (`M`, `D`); then the verdict line.
+   *(Corrected 2026-09-09 by the §95 Phase Review. The filter read
+   `corpus/` alone, so §95's fourth moved golden,
+   `examples/e07-determinism.expected`, was invisible and the verdict
+   line said `goldens-moved 3` for four. `examples/tests/gate.rs`
+   holds those goldens to the same dev ≡ ship ≡ golden rule.)* A run that a signal (`HUP`,
    `INT`, `TERM`) ends deletes its record and exits non-zero: there
    is no partial record. *(Added 2026-09-05 after review round 2: an
    interrupted run left a record with duplicated command blocks and
