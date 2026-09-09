@@ -21,10 +21,10 @@ MINOR.
    and `int main( void )` both compile as C and bypassed it, and
    `benchmarks/` and `examples/` could write unread host bodies.
    §100.2 item 3a and `codegen/src/host_source.rs` close it.
-4. **§96.1 rules 1 and 4 disagree with the fork.** Open; it needs a
-   parser fork change. See below.
+4. **§96.1 rules 1 and 4 disagree with the fork.** **Closed
+   2026-09-10**; see below.
 
-## MAJOR 4, open
+## MAJOR 4, closed 2026-09-10
 
 The fork pairs surrogate escapes by **spelling**, not by value:
 
@@ -313,3 +313,37 @@ unenforced line.
 Gate at the landing: `debug 1384/0/2 release 1382/0/2 exit 0`, debug
 422 wall seconds and release 470, so no real step comes near the 3600
 second bound.
+
+## MAJOR 4 closed, verified at `ed7a668`
+
+The finding had three parts and each was checked rather than assumed.
+
+**The rules and the fork agree.** Rule 1 pairs by value, in either
+spelling, with line continuations between the halves producing no
+character. The fork implements it: `5428cb6` replaced the textual peek
+that matched one spelling, and `c603b41` made the lone-surrogate error
+recoverable so the diagnostic no longer depends on where the literal
+sits.
+
+**No spelling is rejected with a false reason.** Measured here:
+
+| Source | subscript | node |
+|---|---|---|
+| `"\ud83d\u{dc4d}"` | 4 bytes | U+1F44D, UTF-16 length 2 |
+| `"\u{d83d}\udc4d"` | 4 bytes | same |
+| a line continuation between the halves | 4 bytes | same |
+| `"\ud83d\udc4d"` | 4 bytes | same |
+| the literal character | 4 bytes | same |
+
+**The corpus and the record cover them.** `a198` carries six brace
+spellings and declares `js-comparable: no Q5`.
+`codegen/tests/surrogate_continuations.rs` runs a198's source and a
+CRLF transform of it through the dev JIT, the ship C tier and the
+interpreter against the same golden. It first asserts that the source
+really contains a `\` and a newline, and that it contains no `\r`, so
+the CRLF variant is a real transformation rather than a copy. Without
+those two assertions the test could pass on a source that exercises
+neither.
+
+The finding cost two fork commits and an owner push each, and it
+found a second defect on the way: rule 2a's positional diagnostic.
