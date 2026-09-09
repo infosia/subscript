@@ -79,8 +79,8 @@ way, and so does the non-nullable one; a program with no `using`
 compiles. The trigger is a `using` binding whose scope contains a
 conditionless `for` that returns. §90 asks that no public entry point
 fault on any input; this is a clean internal error rather than a
-panic, but a valid program cannot be compiled. Open, with its own
-section to come.
+panic, but a valid program cannot be compiled. Contracted as §101 on 2026-09-09,
+with the shape measured across nine loop forms.
 
 ## What the reviewers confirmed by running
 
