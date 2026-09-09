@@ -404,15 +404,22 @@ downstream measured `error C2026` on a 32,768-character literal
 (`compiler.md` §89). A string built at run time is not a literal and
 is not limited.
 
-*(Owner decision 2026-09-06: a diagnostic, not an array form in the
-emitted C. The emitter writes a literal as adjacent pieces of at
-most 4,000 source bytes, §89.1 rule 1, so every admitted literal
-compiles on MSVC.)*
+**Retired 2026-09-09 by `compiler.md` §99.** The array form is
+available and both supported compilers build it. Measured: MSVC `cl`
+19.44.35222 x64 and Apple clang 21.0.0 each compile, link and run a
+1 MiB constant, exit 0, in 1.02 s and 0.50 s. MSVC never reaches
+C2026, because the emitter switches form above 65,000 decoded bytes.
+The 65,535-byte figure this entry cited was documentation, not a
+measurement.
 
-**Matching TypeScript here is not available** without emitting a
-form MSVC accepts above 65,535 bytes; the owner chose the limit.
+The 2026-09-06 decision chose a diagnostic over the array form
+without measuring the array form. The measurement is recorded in
+`specs/tracking/s-c0-long-strings.md`.
 
-Accept: `a183`. Reject: `r184`.
+Accept: `a183`. Reject: `r184`. *(§99's implementation deletes the
+entry and rewrites this line with the retired-name form. The index
+check reads that form by spelling, so the marker and the deletion
+land in one step.)*
 
 ### C16. An `await` of a completed handle does not yield
 
