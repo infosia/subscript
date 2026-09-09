@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use subscript_compiler::repository_relative;
 
 const HEADER_PREFIX: &str = "// tsc: ";
 
@@ -92,22 +93,6 @@ fn project_root() -> PathBuf {
         .parent()
         .expect("compiler crate must have a workspace parent")
         .to_path_buf()
-}
-
-/// The repository-relative name of `absolute`, always with `/` separators.
-/// A directory walk yields the host separator and a `tsc` diagnostic yields
-/// `/`, so both spellings pass through here and name one entry on every
-/// host.
-fn repository_relative(root: &Path, absolute: &Path) -> Option<String> {
-    Some(
-        absolute
-            .strip_prefix(root)
-            .ok()?
-            .components()
-            .map(|component| component.as_os_str().to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join("/"),
-    )
 }
 
 fn corpus_entries(root: &Path) -> Result<Vec<Entry>, String> {

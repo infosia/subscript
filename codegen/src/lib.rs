@@ -54,11 +54,12 @@ pub use jit::{
 pub use layout::{padding_ranges, value_class_layouts, FieldLayout, StructLayout};
 pub use ship::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, host_c_compiler,
-    include_directory_arg, run_c_aot, run_c_aot_configured, run_c_aot_with_alloc_failure,
-    run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
-    run_c_aot_with_native_libraries_and_host_hooks, runtime_staticlib_name, runtime_staticlib_path,
-    runtime_system_libraries, tool_output_report, CCompilerStyle, HostCCompiler, AOT_ENTRY_C,
-    HOST_HEADER_C, RUNTIME_STATICLIB_ENV, WINDOWS_SYSTEM_LIBRARIES,
+    host_entry, include_directory_arg, run_c_aot, run_c_aot_configured,
+    run_c_aot_with_alloc_failure, run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
+    run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
+    runtime_staticlib_name, runtime_staticlib_path, runtime_system_libraries, tool_output_report,
+    CCompilerStyle, HostCCompiler, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
+    WINDOWS_SYSTEM_LIBRARIES,
 };
 
 /// Options shared by the development and shipping tier runners.

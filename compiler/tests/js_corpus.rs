@@ -413,11 +413,8 @@ fn entries(root: &Path) -> Result<Vec<Entry>, String> {
     paths
         .into_iter()
         .map(|absolute| {
-            let relative = absolute
-                .strip_prefix(root)
-                .expect("corpus path must be below the workspace root")
-                .to_string_lossy()
-                .into_owned();
+            let relative = subscript_compiler::repository_relative(root, &absolute)
+                .expect("corpus path must be below the workspace root");
             let source = fs::read_to_string(&absolute)
                 .map_err(|error| format!("read {relative}: {error}"))?;
             let headers: Vec<&str> = source

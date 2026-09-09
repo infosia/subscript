@@ -5,7 +5,8 @@ mod programs;
 
 use subscript_codegen::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, emit_c, host_c_compiler,
-    runtime_staticlib_path, runtime_system_libraries, tool_output_report, HOST_HEADER_C,
+    host_entry, runtime_staticlib_path, runtime_system_libraries, tool_output_report,
+    HOST_HEADER_C,
 };
 use subscript_compiler::{check_program, SourceFile};
 
@@ -47,7 +48,7 @@ fn ship_c_cleared_continuations_never_replay_or_leak() {
                 .expect("the independent source position has an emitted entry")
         };
         std::fs::write(dir.path().join("program.c"), program.source).expect("program");
-        let host = r#"
+        let host = host_entry(r#"
 #include "subscript_runtime.h"
 #include <assert.h>
 #include <stdio.h>
@@ -101,7 +102,8 @@ int main(void) {
     subscript_rt_ctx_release(ctx);
     return 0;
 }
-"#
+"#)
+        .unwrap()
         .replace("CONTROL", if control { "1" } else { "0" })
         .replace("UNFINISHED", &unfinished.to_string())
         .replace("TRAP_POS", &trap_pos.to_string());

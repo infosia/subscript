@@ -466,7 +466,9 @@ fn render_corpus_table(out: &mut String, repository_root: &Path, arm: &str) -> i
     let arm_dir = repository_root.join("corpus").join(arm);
     let mut paths = Vec::new();
     collect_typescript_files(&arm_dir, &mut paths)?;
-    paths.sort_by_key(|path| normalized_relative(repository_root, path));
+    paths.sort_by_key(|path| {
+        crate::repository_relative(repository_root, path).expect("path below repository root")
+    });
     if paths.is_empty() {
         return Err(invalid(format!(
             "{} has no TypeScript corpus entries",
@@ -504,7 +506,8 @@ fn render_corpus_table(out: &mut String, repository_root: &Path, arm: &str) -> i
     }
 
     for path in paths {
-        let relative = normalized_relative(repository_root, &path);
+        let relative = crate::repository_relative(repository_root, &path)
+            .ok_or_else(|| invalid(format!("path outside repository root: {}", path.display())))?;
         let source = read(&path)?;
         let header = parse_header(&path, &source)?;
         let expected_corpus_name = relative
@@ -530,7 +533,13 @@ fn render_corpus_table(out: &mut String, repository_root: &Path, arm: &str) -> i
         .expect("write to String");
         if has_expected {
             let expected = expected_path(&arm_dir, &path)?;
-            let expected_relative = normalized_relative(repository_root, &expected);
+            let expected_relative = crate::repository_relative(repository_root, &expected)
+                .ok_or_else(|| {
+                    invalid(format!(
+                        "path outside repository root: {}",
+                        expected.display()
+                    ))
+                })?;
             write!(
                 out,
                 " [`{}`](../{}) |",
@@ -842,13 +851,6 @@ fn expected_path(arm_dir: &Path, source_path: &Path) -> io::Result<PathBuf> {
         "{}: no expected-output file beside the source or entry directory",
         source_path.display()
     )))
-}
-
-fn normalized_relative(repository_root: &Path, path: &Path) -> String {
-    path.strip_prefix(repository_root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
 }
 
 fn escape_table(value: &str) -> String {

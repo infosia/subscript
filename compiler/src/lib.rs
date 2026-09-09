@@ -33,6 +33,23 @@ pub use parse::parse_import_specifiers;
 pub use types::{ClassId, EnumId, FuncType, StringAliasId, Type};
 pub use warn::{check_warnings, WarnCode, Warning};
 
+/// The repository-relative name of `absolute`, always with `/` separators.
+/// Returns `None` when the path is outside the root.
+/// A directory walk yields the host separator and a `tsc` diagnostic yields
+/// `/`, so both spellings pass through here and name one entry on every
+/// host.
+pub fn repository_relative(root: &std::path::Path, absolute: &std::path::Path) -> Option<String> {
+    Some(
+        absolute
+            .strip_prefix(root)
+            .ok()?
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
+}
+
 /// Options that control program checking.
 #[non_exhaustive]
 #[derive(Debug, Clone, Default)]

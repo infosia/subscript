@@ -125,6 +125,40 @@ int main(void) {
 /// Generated host header consumed by the standard and test AOT entries.
 pub const HOST_HEADER_C: &str = include_str!("../../runtime/include/subscript_runtime.h");
 
+/// Prefixes a test host body with the generated runtime header.
+///
+/// The Windows guard keeps stdout in binary mode for byte-exact sink comparisons
+/// (compiler.md §11c and §100.2). Other hosts retain their stdout mode.
+///
+/// # Errors
+///
+/// Returns an error if the body lacks `int main(void) {` or already spells `_setmode`.
+pub fn host_entry(body: &str) -> Result<String, String> {
+    const MAIN: &str = "int main(void) {";
+    if !body.contains(MAIN) {
+        return Err("test host body must define `int main(void)`".into());
+    }
+    if body.contains("_setmode") {
+        return Err("test host body must not spell `_setmode`".into());
+    }
+    let body = body.replacen(
+        MAIN,
+        "int main(void) {\n\
+         #ifdef _WIN32\n\
+         \x20   (void)_setmode(_fileno(stdout), _O_BINARY);\n\
+         #endif",
+        1,
+    );
+    Ok(format!(
+        "{HOST_HEADER_C}\n\
+         #ifdef _WIN32\n\
+         #include <fcntl.h>\n\
+         #include <io.h>\n\
+         #endif\n\
+         {body}"
+    ))
+}
+
 /// A temporary directory removed when the guard is dropped.
 struct TempDir {
     path: PathBuf,
@@ -1512,7 +1546,7 @@ int main(void) {
     return 0;
 }
 "#,
-        );
+        ).unwrap();
         let run = run_c_aot_with_entry(&program, &entry);
         assert!(
             run.status.success(),
@@ -1520,39 +1554,6 @@ int main(void) {
             run.status,
             String::from_utf8_lossy(&run.stderr)
         );
-    }
-
-    /// Prefixes a test host body with the generated runtime header, so
-    /// host tests exercise the committed ABI artifact.
-    ///
-    /// A test host defines its own `int main(void)`; on Windows the
-    /// MSVCRT opens stdout in text mode, which would translate the sink's
-    /// `\n` to `\r\n` and break the byte-exact compare. This injects the
-    /// same `_setmode(_fileno(stdout), _O_BINARY)` (and its `<io.h>` /
-    /// `<fcntl.h>` includes) that the production `AOT_ENTRY_C` uses, at
-    /// the top of `main`, `_WIN32`-guarded so it is a no-op elsewhere.
-    fn host_entry(body: &str) -> String {
-        const MAIN: &str = "int main(void) {";
-        assert!(
-            body.contains(MAIN),
-            "test host body must define `int main(void)`"
-        );
-        let body = body.replacen(
-            MAIN,
-            "int main(void) {\n\
-             #ifdef _WIN32\n\
-             \x20   (void)_setmode(_fileno(stdout), _O_BINARY);\n\
-             #endif",
-            1,
-        );
-        format!(
-            "{HOST_HEADER_C}\n\
-             #ifdef _WIN32\n\
-             #include <fcntl.h>\n\
-             #include <io.h>\n\
-             #endif\n\
-             {body}"
-        )
     }
 
     #[test]
@@ -1656,7 +1657,8 @@ int main(void) {
     return 0;
 }
 "#,
-        );
+        )
+        .unwrap();
         let run = run_c_aot_with_entry(&program, &entry);
         assert!(
             run.status.success(),
@@ -1711,7 +1713,8 @@ int main(void) {
     return 0;
 }
 "#,
-        );
+        )
+        .unwrap();
         let with = run_c_aot_with_entry(&program, &entry);
         assert!(
             with.status.success(),
@@ -1766,7 +1769,8 @@ int main(void) {
     return 0;
 }
 "#,
-        );
+        )
+        .unwrap();
         let run = run_c_aot_with_entry(&program, &entry);
         assert!(
             run.status.success(),
@@ -1880,7 +1884,8 @@ int main(void) {
     return 0;
 }
 "#,
-        );
+        )
+        .unwrap();
         let run = run_c_aot_with_entry(&program, &entry);
         assert!(
             run.status.success(),
@@ -2013,7 +2018,8 @@ int main(void) {
     return 0;
 }
 "#,
-        );
+        )
+        .unwrap();
         let run = run_c_aot_with_entry(&program, &entry);
         assert!(
             run.status.success(),
@@ -2093,7 +2099,8 @@ int main(void) {
     return 0;
 }
 "#,
-        );
+        )
+        .unwrap();
         let cases = [
             (
                 "t26-allocation-failure-new",

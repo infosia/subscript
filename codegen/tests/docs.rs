@@ -316,7 +316,8 @@ fn documentation_blocks() {
     let mut shell_control = false;
     let mut fragment_control = false;
     for document in documents {
-        let file = document.strip_prefix(root).unwrap().to_str().unwrap();
+        let relative = subscript_compiler::repository_relative(root, &document).unwrap();
+        let file = relative.as_str();
         let markdown = std::fs::read_to_string(&document).unwrap();
         let lines = markdown.lines().collect::<Vec<_>>();
         let blocks = blocks(&markdown);
