@@ -216,3 +216,42 @@ fix: notify on end of input and return an error derived from that
 fact.
 
 Source: `$TMPDIR/capture-probe`, `cargo run --offline`.
+
+## §102 landed
+
+```
+gate full 4ccc6dfff1efefc03e6df9376b8c94a131d33790 dirty:1 debug 1380/0/2 release 1378/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+`tools/gate.sh quick` three times, all `debug 1380/0/2 exit 0`. The
+flake that produced this section did not reappear.
+
+`Capture` now carries `CaptureState { bytes, ended }`. The reader sets
+`ended` and notifies on end of input, where it previously broke
+without waking anyone. `wait_for_count` returns an error naming the
+needle, the count wanted, the count seen, and everything captured.
+`Instant` and `Duration` are gone from the file; the wait is a plain
+`Condvar::wait`.
+
+`capture_reports_early_child_exit` is the firing control: a child
+prints the needle once and exits, the test waits for two, and the
+exact message including `saw 1` is asserted. Before the change that
+shape hung.
+
+### The contract defect the round found
+
+§102.2 rule 3 said a surviving clock's value would be derived from
+`cli.md` §12's 150 ms poll. §12 line 345 reads "the interval is
+implementation-chosen and not contracted". The number came from
+`27e64bd`'s commit message and was written here as though the contract
+stated it — the same defect §102 exists to remove. The round checked
+the citation rather than taking it, and stopped.
+
+With nothing to derive from, the test keeps no clock at all.
+
+### What remains, recorded rather than hidden
+
+A child that stays alive and silent still hangs, and `tools/gate.sh`
+sets no timeout. Rule 3a puts that where it belongs: a per-suite bound
+is one decision for every test, and a test that invents its own is
+what rule 2 forbids.

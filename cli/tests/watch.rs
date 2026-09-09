@@ -6,7 +6,6 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
 
 use subscript_cli::watch::{WatchOutcome, WatchSession};
 use subscript_compiler::{check_program, render_diagnostics, SourceFile};
@@ -235,22 +234,38 @@ impl Drop for TestDir {
     }
 }
 
+#[derive(Default)]
+struct CaptureState {
+    bytes: Vec<u8>,
+    ended: bool,
+}
+
 #[derive(Clone)]
-struct Capture(Arc<(Mutex<Vec<u8>>, Condvar)>);
+struct Capture(Arc<(Mutex<CaptureState>, Condvar)>);
 
 impl Capture {
     fn reader<R: Read + Send + 'static>(mut reader: R) -> (Self, JoinHandle<()>) {
-        let capture = Self(Arc::new((Mutex::new(Vec::new()), Condvar::new())));
+        let capture = Self(Arc::new((
+            Mutex::new(CaptureState::default()),
+            Condvar::new(),
+        )));
         let writer = capture.clone();
         let handle = std::thread::spawn(move || {
             let mut chunk = [0_u8; 1024];
             loop {
                 match reader.read(&mut chunk) {
-                    Ok(0) | Err(_) => break,
+                    Ok(0) | Err(_) => {
+                        let (data, ready) = &*writer.0;
+                        if let Ok(mut data) = data.lock() {
+                            data.ended = true;
+                            ready.notify_all();
+                        }
+                        break;
+                    }
                     Ok(count) => {
                         let (data, ready) = &*writer.0;
                         if let Ok(mut data) = data.lock() {
-                            data.extend_from_slice(&chunk[..count]);
+                            data.bytes.extend_from_slice(&chunk[..count]);
                             ready.notify_all();
                         } else {
                             break;
@@ -263,30 +278,25 @@ impl Capture {
     }
 
     fn wait_for_count(&self, needle: &[u8], count: usize) -> Result<(), String> {
-        let deadline = Instant::now() + Duration::from_secs(20);
         let (data, ready) = &*self.0;
         let mut data = data.lock().map_err(|_| "capture lock poisoned")?;
         loop {
             let actual = data
+                .bytes
                 .windows(needle.len())
                 .filter(|window| *window == needle)
                 .count();
             if actual >= count {
                 return Ok(());
             }
-            let now = Instant::now();
-            if now >= deadline {
+            if data.ended {
                 return Err(format!(
-                    "timed out waiting for {:?} {count} time(s); captured:\n{}",
+                    "input ended before {:?} reached {count} time(s); saw {actual}; captured:\n{}",
                     String::from_utf8_lossy(needle),
-                    String::from_utf8_lossy(&data)
+                    String::from_utf8_lossy(&data.bytes)
                 ));
             }
-            let remaining = deadline.saturating_duration_since(now);
-            let (next, _) = ready
-                .wait_timeout(data, remaining)
-                .map_err(|_| "capture wait poisoned")?;
-            data = next;
+            data = ready.wait(data).map_err(|_| "capture wait poisoned")?;
         }
     }
 
@@ -294,7 +304,7 @@ impl Capture {
         self.0
              .0
             .lock()
-            .map(|data| data.clone())
+            .map(|data| data.bytes.clone())
             .map_err(|_| "capture lock poisoned".to_string())
     }
 }
@@ -306,6 +316,56 @@ impl Drop for ChildGuard {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+// §102: an exited child supplies a fact, without a latency assertion.
+#[test]
+fn capture_reports_early_child_exit() -> Result<(), String> {
+    let directory = TestDir::new()?;
+    directory.write(
+        "main.ts",
+        "export function main(): void { print(\"needle\"); print(\"early output\"); }",
+    )?;
+    let mut child = ChildGuard(
+        Command::new(env!("CARGO_BIN_EXE_subscript"))
+            .current_dir(&directory.0)
+            .args(["run", "main.ts"])
+            .stdout(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("spawn early exit: {error}"))?,
+    );
+    let (capture, reader) = Capture::reader(child.0.stdout.take().ok_or("missing stdout")?);
+    let result = capture.wait_for_count(b"needle", 2);
+    assert!(child.0.wait().map_err(|error| error.to_string())?.success());
+    reader.join().map_err(|_| "capture reader panicked")?;
+    assert_eq!(
+        result,
+        Err("input ended before \"needle\" reached 2 time(s); saw 1; captured:\nneedle\nearly output\n".to_string())
+    );
+    // End of input must also be visible to a later waiter.
+    assert_eq!(
+        capture.wait_for_count(b"missing", 1),
+        Err("input ended before \"missing\" reached 1 time(s); saw 0; captured:\nneedle\nearly output\n".to_string())
+    );
+    capture.wait_for_count(b"needle", 1)?;
+    Ok(())
+}
+
+#[test]
+fn capture_reports_read_error() -> Result<(), String> {
+    struct FailedReader;
+    impl Read for FailedReader {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("reader failed"))
+        }
+    }
+    let (capture, reader) = Capture::reader(FailedReader);
+    assert_eq!(
+        capture.wait_for_count(b"needle", 1),
+        Err("input ended before \"needle\" reached 1 time(s); saw 0; captured:\n".to_string())
+    );
+    reader.join().map_err(|_| "capture reader panicked")?;
+    Ok(())
 }
 
 const HELPER_V1: &str = "\
