@@ -96,3 +96,49 @@ with the shape measured across nine loop forms.
 - **§98 masks identically on all three tiers** for three operators and
   three compound forms at eight widths and four counts, 32 rows.
 - **No test that cannot fail** was found in either scope.
+
+## §101 landed
+
+The pre-existing defect above is fixed. Gate verdict:
+
+```
+gate full 801dbe1a7ed7317d3881115c2f99cfc52a2595e1 dirty:20 debug 1378/0/2 release 1376/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+### Why the two infinite loops differed
+
+The round answered it before changing anything. The checker keeps both
+conditions intact and removes the trailing disposal from neither.
+`codegen/src/lir.rs` differs: `lower_while` emits a conditional branch
+even for a literal `true`, so `while.exit` carries a false edge and
+its disposal is dominated; `lower_for` emits an unconditional branch
+when the condition is absent, so `for.exit` has no predecessor.
+
+**`while (true)` passed by accident.** Its exit block was dominated
+only because the CFG carried an edge execution never takes. Both forms
+were wrong the same way, and the fix removes the disposal rather than
+repairing either lowering. §60.1 rule 8 held: only
+`compiler/src/check/` changed, verified against the working tree.
+
+### Verified here
+
+All eight shapes that failed now emit with exit 0: the conditionless
+`for` that returns, the one with a trailing statement, the one with an
+initializer and update, the one that never leaves, and the same nested
+in a block and in an `if`. `a212` keeps `while (true)`'s behaviour and
+`a213` keeps the `break` control's disposal, both against their
+committed goldens.
+
+### One contract defect the round found
+
+§101.4 item 4 asked every statement kind for a leavable case and an
+unleavable one. `return`, `break` and `continue` have no leavable
+case. The item now asks each kind for the cases it admits and names
+those three. The round reported the contradiction and stopped.
+
+### Not independently reviewed
+
+§101 is a fix for a finding of this review, so it did not get a review
+of its own. Its change is confined to `compiler/src/check/`, the gate
+is green, and §60.1 rule 8 was verified by file set. A future phase
+review covers it.

@@ -8,6 +8,7 @@
 //! monomorphized on first use (`identity<i32>`, `Box<f64>`).
 
 mod expr;
+mod fallthrough;
 mod json;
 mod layout;
 mod stmt;
@@ -4404,7 +4405,12 @@ impl<'p> Checker<'p> {
             scopes.push(Vec::new());
         }
         let mut rewritten = Vec::new();
+        let mut falls_through = true;
         for statement in statements {
+            if !falls_through {
+                break;
+            }
+            falls_through = fallthrough::can_fall_through(&statement);
             match statement {
                 hir::Stmt::Let {
                     name,
@@ -4689,10 +4695,12 @@ impl<'p> Checker<'p> {
                         .collect::<Vec<_>>();
                     let scope = scopes.pop().unwrap_or_default();
                     if let Some(last_case) = cases.last_mut() {
-                        last_case.body.extend(Self::make_disposal_statements(
-                            std::slice::from_ref(&scope),
-                            0,
-                        ));
+                        if fallthrough::sequence_can_fall_through(&last_case.body) {
+                            last_case.body.extend(Self::make_disposal_statements(
+                                std::slice::from_ref(&scope),
+                                0,
+                            ));
+                        }
                     }
                     rewritten.push(hir::Stmt::Switch { disc, cases, pos });
                 }
@@ -4701,7 +4709,7 @@ impl<'p> Checker<'p> {
         }
         if open_scope {
             let scope = scopes.pop().unwrap_or_default();
-            if !scope.is_empty() {
+            if falls_through && !scope.is_empty() {
                 rewritten.extend(Self::make_disposal_statements(
                     std::slice::from_ref(&scope),
                     0,
