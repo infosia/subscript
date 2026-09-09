@@ -194,3 +194,25 @@ interval with the multiple stated, or the test carries no wall-clock
 bound and relies on the harness timeout.
 
 Open. The fix states the rule the constant lacks.
+
+## §102 Red, measured 2026-09-09
+
+The contract claimed that removing the deadline leaves the waiter
+blocked when its child dies. Measured rather than asserted.
+
+A standalone binary reproduces `cli/tests/watch.rs` `Capture` with the
+deadline removed: `reader` breaks on `Ok(0) | Err(_)` without
+notifying, and `wait_forever` uses `Condvar::wait`. The child writes
+one line and exits without producing the needle.
+
+```
+RESULT: still blocked after 3s with the child gone
+```
+
+So "delete the deadline" turns a diagnosable failure into a hang, and
+`tools/gate.sh` has no timeout above it. The bound is necessary; the
+clock is not the thing that makes it necessary. §102.2 rule 1 is the
+fix: notify on end of input and return an error derived from that
+fact.
+
+Source: `$TMPDIR/capture-probe`, `cargo run --offline`.
