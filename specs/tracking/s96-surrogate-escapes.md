@@ -108,3 +108,39 @@ bumps the pinned commit in `compiler/Cargo.toml` and `Cargo.lock`.
 Nothing lands before that. The fork's own test suite needs
 dependencies the offline build does not have, so only the eleven
 added tests ran there.
+
+## Landed, 2026-09-09
+
+The fork commit is `383d5c8` on branch `subscript-eof-bump`, pushed by
+the owner. `Cargo.lock` names it (`8b04792`). The compiler half and the
+corpus landed at `4a74ead`.
+
+Gate verdict:
+
+```
+gate full 552a4ecbda2b88490a0cc257c6cb45fb3b33a9cc dirty:10 debug 1352/0/2 release 1350/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+No golden moved. Counts: accept `.ts` 196, reject `.ts` 179.
+
+### Verified here, not only reported
+
+- a198 runs and matches its committed golden.
+- r188 reports the contract's text at the escape column, with the
+  divergence block, and no `parse error: ` prefix.
+- `compiler/src/check/expr.rs` is unchanged, as §96.2 requires.
+- The eleven bad-and-good pairs in `parse.rs` each assert the good
+  half's decoded parts, so a pair cannot pass by failing to compile.
+
+### What the rounds cost, and why
+
+Three rounds stopped before implementing. Every stop was a table in
+which I wrote a decoded character where the escape spelling belonged,
+and every stop was correct: the two are different programs. The
+contract text was right each time, because it was written through a
+script with doubled backslashes rather than a shell heredoc.
+
+The first stop also produced the finding that changed §96.2. The round
+proposed fixing this compiler; its own AST measurement showed
+`Str.value` cannot separate `"\ud83d"` from `"\\ud83d"`, which is
+what moved the fix into the fork.
