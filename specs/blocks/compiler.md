@@ -13411,7 +13411,39 @@ string.
    source spelling `"👍Z"` byte for byte.
 2. A **lone surrogate escape**, high or low, is rejected: S100 "a lone
    surrogate escape has no UTF-8 encoding; write the paired escape or
-   the character", at the escape. UTF-8 encodes no surrogate, and Q5
+   the character", at the escape.
+
+2a. *(Added 2026-09-09; the round measured a shape where rule 2 does
+   not hold.)* **The diagnostic does not depend on where the literal
+   sits.** One shape breaks that today: a high surrogate escape
+   followed by another high surrogate escape, in a call argument.
+
+   | Program | diagnostic |
+   |---|---|
+   | `const s: string = "\ud83d\ud83d";` | rule 2's, at the first escape |
+   | `print("\ud83d\ud83d");` | `parse error: Invalid character in identifier`, at the **second** escape |
+   | `print("\udc4d");` | rule 2's |
+   | `print("\ud83dA");` | rule 2's |
+   | `print("\ud83d\u{41}");` | rule 2's |
+
+   The source declares no identifier. The lexer raises the lone
+   surrogate error with the cursor past the first escape, the string
+   token is abandoned, and recovery re-reads the second escape outside
+   a string, where `\u` begins an identifier escape.
+
+   The fix is the fork's recovery: a lone surrogate uses the
+   recoverable emission the lexer already has (`emit_error` in
+   `src/lexer/util.rs`) and returns a replacement character, so the
+   string token completes and lexing resumes after the closing quote.
+   The value is irrelevant because the program is rejected.
+
+   This predates the value-based pairing of rule 1: for two high
+   surrogates the old lookahead and the new one both find no low half
+   and error at the same point. It arrived with §96's first fork
+   change.
+
+   `corpus/reject/r197-high-surrogate-before-high.ts` is the Red. It
+   does not land until the fork carries the fix. UTF-8 encodes no surrogate, and Q5
    makes every string UTF-8. `tsc` accepts the form, so the diagnostic
    carries a divergence block with the new `Divergence` variant
    `LoneSurrogateEscape`.
