@@ -14314,12 +14314,26 @@ is the only thing that turns a dead child into a diagnosable failure.
 2. A wall-clock deadline is not a substitute for rule 1 and does not
    express a latency the product owes. A test states no performance
    bound unless a contract gives it one to state.
-3. A clock remains admissible for one case only: a child that stays
-   alive and silent. That case is a hang, and a hang belongs to the
-   harness that runs the suite, not to the assertion. If a test keeps
-   a clock for it, the value is derived from something stated — the
-   150 ms poll of `cli.md` §12, with the multiple written down — and
-   the failure message says it is a hang guard.
+3. **The test keeps no wall clock.** *(Corrected 2026-09-09; the
+   round found the citation false and stopped.)* This rule first said
+   a clock could stay if its value were derived from `cli.md` §12's
+   150 ms poll. §12 states no such number: line 345 reads "the
+   interval is implementation-chosen and not contracted". The 150 ms
+   came from `27e64bd`'s commit message, and writing it here as a
+   contract's number was the same defect this section exists to
+   remove — a number with no stated source.
+
+   Nothing is available to derive a clock from, and §12 made that so
+   deliberately. Rule 1's end-of-input fact covers a child that dies.
+   What remains is a child that stays alive and silent, which is a
+   hang.
+
+3a. **A hang belongs to the harness, and this repository has none.**
+   `tools/gate.sh` sets no timeout, so a hanging test hangs the gate.
+   That is a real gap and it is recorded here rather than hidden
+   inside one test's constant. It is not this section's work: a
+   per-suite bound is one decision for every test, and a test that
+   invents its own is the thing rule 2 forbids.
 4. This rule is about waiting, not about timing. A benchmark that
    measures duration is unaffected.
 
@@ -14335,8 +14349,8 @@ early, and record that the test hangs rather than failing.
 2. A test that reaches rule 1's error is a firing control: a child
    that exits before producing the needle fails with that message
    rather than hanging or timing out.
-3. Whatever remains of the clock satisfies rule 3, and the tracking
-   note records what it is derived from.
+3. No wall clock remains in the test. If some shape still hangs after
+   rule 1, report the shape rather than adding one back.
 4. Gates: `tools/gate.sh full` green in both profiles. Run
    `tools/gate.sh quick` three times and report all three verdict
    lines; the flake this section came from must not reappear.
