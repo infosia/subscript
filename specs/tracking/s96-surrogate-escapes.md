@@ -85,10 +85,21 @@ error[S100]: a lone surrogate escape has no UTF-8 encoding; write the paired esc
 ### The rule the round found
 
 The lexer's Unicode routine also serves identifier escapes. The first
-prototype decoded pairs there and accepted `const 𐐀 = 1;`,
-which TypeScript rejects with TS1127 at each escape. Verified here
-with tsc 5.9.2, and `const \u{10400} = 1;` is accepted. §96.1 rule 7
-now states the boundary.
+prototype decoded pairs there and accepted `const \ud801\udc00 = 1;`,
+which TypeScript rejects with TS1127 at each escape.
+*(Corrected 2026-09-09: this line first wrote the decoded character
+instead of the escape spelling. The forms differ.)* Measured here
+with tsc 5.9.2:
+
+| Identifier | tsc | subscript |
+|---|---|---|
+| `const \ud801\udc00 = 1;` | TS1127 at each escape | rejected |
+| `const 𐐀 = 1;` | accepted | accepted |
+| `const \u{10400} = 1;` | accepted | accepted |
+
+A literal supplementary character is a valid identifier in both.
+Only the surrogate escape spelling is rejected. §96.1 rule 7
+states the boundary.
 
 ### Open
 
