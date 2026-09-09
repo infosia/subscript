@@ -130,6 +130,7 @@ Every section, with its status:
 | §93 | An async method declares type parameters | active |
 | §94 | Host-driven async continuation queue | active |
 | §95 | Three unearned divergences from TypeScript | active |
+| §96 | A surrogate escape denotes its code point | active |
 
 ## 1. Architecture
 
@@ -13331,3 +13332,98 @@ on this host with their exit codes.
 6. Gates: `tools/gate.sh full` green in both profiles; clippy at the
    7/18/13 baseline; `cargo fmt --check`; the `tsc` gate; every golden
    byte-identical except the four that item 3 names.
+
+## 96. A surrogate escape denotes its code point
+
+*(2026-09-09.)* Origin: the §95 Phase Review. A reviewer measured a
+string escape that this language accepts and reads as a different
+string than TypeScript does. Nothing records it, and no diagnostic
+reports it. `CLAUDE.md` calls this class out by name: a divergence
+this project did not decide is a defect that reads as a decision.
+
+Measured at `f5aff2c` on aarch64 macOS, dev JIT, against node
+v24.18.0 and tsc 5.9.2. Every program below type-checks under `tsc
+--strict --target ES2022`, exit 0.
+
+| Source | subscript | node |
+|---|---|---|
+| `"\ud83d\udc4dZ"` | the 13 characters `\ud83d\udc4dZ` | `👍Z`, UTF-16 length 3 |
+| `"\u00e9\ud83d\udc4dX"` | `é\ud83d\udc4dX`, 15 bytes | `é👍X` |
+| `` `t\ud83d\udc4du` `` | `t\ud83d\udc4du`, 14 bytes | `t👍u` |
+| `"a\ud83db"` | `a\ud83db`, 8 bytes | `a` U+FFFD `b` |
+| `"\udc4d"` | `\udc4d`, 6 bytes | one lone low surrogate |
+| `"\u00e9|\u3042"` | `é|あ` | `é|あ` |
+| `"\u{1F600}"` | `😀` | `😀` |
+
+The parser decodes every other escape and leaves an escape in the
+range `\uD800` to `\uDFFF` as its raw source characters, in a string
+literal and in a template part alike. The result is not a divergence
+in the value's measure, which Q5 already records. It is a different
+string.
+
+### 96.1 Rule
+
+1. A **surrogate pair** — a high surrogate escape `\uD800` to
+   `\uDBFF` immediately followed by a low surrogate escape `\uDC00`
+   to `\uDFFF` — denotes the one code point that pair encodes. The
+   compiler decodes it to that code point's UTF-8 bytes.
+   `"\ud83d\udc4dZ"` is `👍Z`, five bytes, and equals the
+   source spelling `"👍Z"` byte for byte.
+2. A **lone surrogate escape**, high or low, is rejected: S100 "a lone
+   surrogate escape has no UTF-8 encoding; write the paired escape or
+   the character", at the escape. UTF-8 encodes no surrogate, and Q5
+   makes every string UTF-8. `tsc` accepts the form, so the diagnostic
+   carries a divergence block with the new `Divergence` variant
+   `LoneSurrogateEscape`.
+3. Rules 1 and 2 hold in a string literal and in every static part of
+   a template literal.
+4. A pair is recognized only across two adjacent escapes. A high
+   surrogate escape followed by a literal low surrogate character
+   cannot occur, because a lone surrogate is not valid UTF-8 source.
+   A high surrogate escape followed by any other character is rule 2.
+5. The measured length stays Q5's byte count.
+   `"\ud83d\udc4dZ".length` is 5 here and 3 under node, which is
+   Q5's recorded divergence and not a new one.
+6. Every other escape keeps its behaviour, including `\u{...}` above
+   the basic plane, which already decodes.
+
+### 96.2 Sites
+
+The parser is `swc_ecma_parser`, pinned to this project's fork
+(`https://github.com/infosia/swc_ecma_parser`, branch
+`subscript-eof-bump`). Decide first whether the fix belongs in the
+fork or in this compiler, and report the choice with its evidence.
+
+If `Str.value` and a template part's `cooked` already carry the raw
+characters for a surrogate escape, this compiler cannot distinguish
+them from a source that spelled those characters literally. In that
+case the fix needs the raw source span, which `Str.raw` and a
+template's `raw` carry. Report what the AST offers before changing
+either side.
+
+- `compiler/src/check/expr.rs` `check_lit`, the `ast::Lit::Str` arm,
+  and the template arm at its `cooked` read.
+- `compiler/src/divergence.rs`: the `LoneSurrogateEscape` variant and
+  its table row, citing `compiler.md §96`.
+
+### 96.3 Corpus and gate (pre-registered exit criteria)
+
+Red first, at the contract pin: the seven measured rows above,
+recorded on this host with their exit codes.
+
+1. One accept entry: a surrogate pair escape beside the same
+   character written literally, asserted equal; a pair inside a
+   template part; a pair adjacent to a BMP escape and to `\u{...}`;
+   and the byte length of each. `js-comparable: no Q5`, with the node
+   result in the header beside this language's.
+2. One reject entry per lone-surrogate shape: a lone high surrogate,
+   a lone low surrogate, and a high surrogate followed by an ordinary
+   character. Each header states `tsc: accepts`.
+3. Unit tests in the same commit: the decoded bytes of a pair equal
+   the bytes of the literal character; a lone surrogate at the start,
+   in the middle, and at the end of a literal each report at the
+   escape; a template part reports at the escape; a positive control
+   in each shape that decodes and runs.
+4. Gates: `tools/gate.sh full` green in both profiles; clippy at the
+   7/18/13 baseline; `cargo fmt --check`; the `tsc` gate; every
+   pre-existing golden byte-identical. No golden is expected to move.
