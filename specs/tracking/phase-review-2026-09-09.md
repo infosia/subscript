@@ -170,10 +170,27 @@ is the self-inflicted-noise class already recorded for benchmarks.
 three times. Under the gate it consumed the full deadline.
 
 `wait_for_count` (`cli/tests/watch.rs:266`) uses
-`Instant::now() + Duration::from_secs(20)`. A deadline exists to stop
-a hang, not to assert how fast a rebuild is, and 20 seconds under a
-loaded machine is a performance assertion in disguise. A test that
-fails for the wrong reason costs the same as a test that cannot fail:
-it teaches the reader to re-run rather than to read.
+`Instant::now() + Duration::from_secs(20)`.
 
-Open. The fix is the deadline's purpose, not its number.
+**The constant has no recorded basis.** *(Checked 2026-09-09 after the
+owner asked why 20.)* It entered with `27e64bd`, the commit that added
+`run --watch`. That commit records the polling interval, 150 ms mtime
+polling, and says nothing about 20 seconds. `specs/blocks/cli.md` §12
+states no timeout, deadline, latency or budget. The number appears in
+the test source and nowhere else.
+
+That is the defect, and it is not the number's size. Because no rule
+says what the deadline should be, a failure at 20 seconds cannot be
+read: nobody can say whether the product stopped working or the
+machine was busy. A first version of this note called it "a
+performance assertion in disguise", which named the symptom and
+skipped the cause.
+
+What the deadline is for decides its value. The test asserts that a
+file swap is noticed and the program re-runs. The chain is the 150 ms
+poll, a JIT recompile, and a re-invocation. A deadline stops a hang;
+it does not bound that chain. So either it is derived from the poll
+interval with the multiple stated, or the test carries no wall-clock
+bound and relies on the harness timeout.
+
+Open. The fix states the rule the constant lacks.
