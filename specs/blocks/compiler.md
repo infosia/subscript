@@ -14334,6 +14334,30 @@ is the only thing that turns a dead child into a diagnosable failure.
    inside one test's constant. It is not this section's work: a
    per-suite bound is one decision for every test, and a test that
    invents its own is the thing rule 2 forbids.
+
+3b. *(Decided 2026-09-10.)* **The gate bounds each step, and the value
+   is chosen for generosity rather than derived.** Rule 2 forbids a
+   test asserting a latency because a test-level deadline sits in the
+   assertion path: when it fires the reader cannot tell "broken" from
+   "slow". A step bound sits outside every assertion, so the only
+   reading it admits is "something hung". That is why an arbitrary
+   number is right here and wrong there.
+
+   The number needs one property, and it is not a source: it must sit
+   far above any healthy run. Measured on this host at `a31e593`, the
+   longest gate step is 561 wall seconds and the longest single test
+   binary is 144. `tools/gate.sh` bounds each step at 1800 seconds,
+   about three times the longest step, overridable with
+   `GATE_STEP_TIMEOUT` for a slower host.
+
+   A step the bound stops is a gate failure with its own line in the
+   record, naming the step and the bound. The record says the step
+   hung; it says nothing about how fast the step ought to be.
+
+   A per-test bound stays forbidden. Two tests in this suite already
+   run over 60 seconds and one binary takes 144, so any number small
+   enough to catch a hang quickly would kill work that is merely
+   slow.
 4. This rule is about waiting, not about timing. A benchmark that
    measures duration is unaffected.
 
@@ -14351,6 +14375,10 @@ early, and record that the test hangs rather than failing.
    rather than hanging or timing out.
 3. No wall clock remains in the test. If some shape still hangs after
    rule 1, report the shape rather than adding one back.
+3a. `tools/gate.sh` bounds each step per rule 3b. A `cli/tests/gate.rs`
+   case proves the bound fires: a stubbed step that sleeps past a
+   small `GATE_STEP_TIMEOUT` fails the gate, and the record names the
+   step and the bound. Without that case the bound is unfalsifiable.
 4. Gates: `tools/gate.sh full` green in both profiles. Run
    `tools/gate.sh quick` three times and report all three verdict
    lines; the flake this section came from must not reappear.
