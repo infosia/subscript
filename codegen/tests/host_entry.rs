@@ -294,7 +294,9 @@ fn host_entry_owns_the_guard_and_rejects_invalid_bodies() {
     let body = format!("int {} {{ return 0; }}", "main(void)");
     let host = host_entry(&body).unwrap();
     assert!(host.starts_with(subscript_codegen::HOST_HEADER_C));
-    assert!(host.contains("#ifdef _WIN32\n#include <fcntl.h>\n#include <io.h>\n#endif"));
+    assert!(host.contains(
+        "#ifdef _WIN32\n#include <stdio.h>\n#include <fcntl.h>\n#include <io.h>\n#endif"
+    ));
     assert!(host.contains("#ifdef _WIN32\n    (void)_setmode(_fileno(stdout), _O_BINARY);\n#endif"));
     assert_eq!(host.matches("_setmode").count(), 1);
     assert!(host.ends_with(" return 0; }"));

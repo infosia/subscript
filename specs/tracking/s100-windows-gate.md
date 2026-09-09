@@ -142,3 +142,61 @@ two owners in `codegen/src/ship.rs` by name, `AOT_ENTRY_C` and
 `host_entry`, and one literal in `codegen/tests/offsetof_layout.rs`,
 which reads its probe output with `lines()` and which §11c constraint 2
 excludes on windows-msvc.
+
+## Second Windows run, 2026-09-10, at `a3007cf`
+
+The Phase Review (`specs/tracking/phase-review-2026-09-09.md`) raised
+one MAJOR against §100: the total check of rule 3 was not total. It
+matched the byte string `int main(void)` and it read two directories,
+so `int  main(void)` and `int main( void )` both bypassed it, and the
+four hand-written host bodies in `benchmarks/src/bin/bound-call.rs`
+were unread. The finding is correct. §100.2 item 3a and
+`codegen/src/host_source.rs` close it.
+
+`cargo test --workspace --no-fail-fast` on this host: 1359 passed,
+**1 failed**, 2 ignored.
+
+### Red — the helper's prologue lacks `<stdio.h>`
+
+`codegen/tests/host_entry.rs:345`, the new
+`c_definitions_share_recognition_and_compile`:
+
+```
+int  main(void): --- stdout ---
+host.c(380): error C2065: 'stdout': undeclared identifier
+```
+
+The failure is in the helper, not in the test. `host_entry` injects
+`(void)_setmode(_fileno(stdout), _O_BINARY);` and its prologue supplies
+`HOST_HEADER_C`, `<fcntl.h>` and `<io.h>`. `HOST_HEADER_C` includes
+`<stdint.h>` only. Nothing declares `stdout` or `_fileno`.
+
+Every host body in the tree includes `<stdio.h>` itself, so the
+translation unit compiled and the gap stayed invisible. The new check
+compiles a bare body, which is what found it. Off Windows the injected
+line is inside `#ifdef _WIN32`, so no other host reaches it.
+
+Measured directly, `cl` 19.44.35222, `/nologo /std:c11 /utf-8 /Zs`,
+on the prologue plus a bare `int  main(void)`:
+
+| Source | Result |
+|---|---|
+| the prologue as shipped | `error C2065: 'stdout'`, exit 2 |
+| the same plus `#include <stdio.h>` | exit 0 |
+
+§100.2 rule 2b states the rule and rule 5 states the witness.
+
+### Green, 2026-09-10
+
+`<stdio.h>` joins the `_WIN32` block of `host_entry`'s prologue, first,
+as `AOT_ENTRY_C` orders it. The prologue off Windows does not change.
+One assertion in `host_entry_owns_the_guard_and_rejects_invalid_bodies`
+moves to the new block text. No test is added or removed.
+
+Verified here: `cargo test --workspace --no-fail-fast` 1360 passed,
+0 failed, 2 ignored, exit 0. `cargo fmt --check` exit 0.
+`cargo build --workspace --all-targets --release` exit 0.
+`tools/hygiene.sh` exit 0. Clippy holds 7/18/13.
+
+The Windows count is 1360 against the reference host's 1378. The
+difference is §11c constraint 2's structural exclusions.

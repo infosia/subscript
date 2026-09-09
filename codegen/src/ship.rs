@@ -153,6 +153,7 @@ pub fn host_entry(body: &str) -> Result<String, String> {
     Ok(format!(
         "{HOST_HEADER_C}\n\
          #ifdef _WIN32\n\
+         #include <stdio.h>\n\
          #include <fcntl.h>\n\
          #include <io.h>\n\
          #endif\n\

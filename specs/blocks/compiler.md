@@ -14065,6 +14065,28 @@ that §11c requires. No test writes that guard itself.
 2a. A test call site unwraps that `Result`. A panic in a test is the
    correct failure, and it is not library code. The test of item 4
    below then asserts an `Err`, not a caught unwind.
+2b. **The helper's prologue carries the dependencies of the code the
+   helper injects.** *(2026-09-10, measured on windows-msvc.)* The
+   injected statement reads `stdout` and calls `_fileno`, which
+   `<stdio.h>` declares. The prologue supplied `<fcntl.h>` and
+   `<io.h>` and not `<stdio.h>`, so the helper produced a translation
+   unit that does not compile unless the body itself includes
+   `<stdio.h>`. Every host body in the tree does, so the gap stayed
+   invisible until item 3a's check compiled a bare body. Off Windows
+   the injected line is inside `#ifdef _WIN32`, so only the MSVC path
+   reaches it.
+
+   Measured with `cl` 19.44.35222, `/std:c11 /Zs`: the prologue as
+   shipped gives `error C2065: 'stdout': undeclared identifier` and
+   exit 2; the same source with `<stdio.h>` added exits 0.
+
+   `<stdio.h>` joins the `_WIN32` block, beside `<fcntl.h>` and
+   `<io.h>`. The prologue off Windows does not change, because the
+   dependency does not exist there. A body that already includes
+   `<stdio.h>` is unaffected: the header is idempotent.
+
+   The rule is general. A helper that injects code owns that code's
+   includes. A body supplies only what the body itself uses.
 3. A build-time check reports every remaining site at once. It reads
    the test sources and it fails when a host body reaches a C compiler
    without the helper. A per-site fix does not converge (CLAUDE.md).
@@ -14089,6 +14111,9 @@ that §11c requires. No test writes that guard itself.
 4. This is §11c constraint 3's rule in a new place: a guard that a test
    must copy is a guard that a test forgets. §11c carried it into the
    native-library helper; §100 carries it into the host entry.
+5. A test compiles the helper's output for a body that includes
+   nothing, on every host. That is the witness for rule 2b, and it is
+   what found the defect.
 
 Measured at the pin: `codegen/tests/async_cleared_trap.rs` compares
 `m1\r\nm2\r\n` against `m1\nm2\n` and fails.
