@@ -13389,22 +13389,51 @@ string.
 
 ### 96.2 Sites
 
-The parser is `swc_ecma_parser`, pinned to this project's fork
-(`https://github.com/infosia/swc_ecma_parser`, branch
-`subscript-eof-bump`). Decide first whether the fix belongs in the
-fork or in this compiler, and report the choice with its evidence.
+*(Decided 2026-09-09, after the round measured the AST.)* **The fix
+belongs in the fork.** The round measured that `Str.value` and a
+template part's `cooked` are identical for `"\ud83d"` and for
+`"\\ud83d"`, an escaped backslash followed by the same characters.
+Only `Str.raw` and the template's `raw` separate them. Core principle
+8 names that state: a consumer needs a fact the form does not carry,
+so the form is wrong.
 
-If `Str.value` and a template part's `cooked` already carry the raw
-characters for a surrogate escape, this compiler cannot distinguish
-them from a source that spelled those characters literally. In that
-case the fix needs the raw source span, which `Str.raw` and a
-template's `raw` carry. Report what the AST offers before changing
-either side.
+A compiler-side fix would read `raw` and decide, for each `\u`, whether
+an odd run of backslashes precedes it. That is a second escape scanner
+that has to agree with the lexer's on every input, which is the
+duplicate-implementation class this project makes unreachable rather
+than fixes twice.
 
-- `compiler/src/check/expr.rs` `check_lit`, the `ast::Lit::Str` arm,
-  and the template arm at its `cooked` read.
+The fork already carries the capacity. `Char` is `Char(u32)`, so it
+holds a surrogate value; only `read_unicode_escape`'s fallback throws
+it away, resetting the cursor and pushing the raw characters when
+`char::from_u32` returns `None`
+(`src/lexer/mod.rs`, `read_unicode_escape`).
+
+Fork, `https://github.com/infosia/swc_ecma_parser`, branch
+`subscript-eof-bump`:
+
+1. A high surrogate escape immediately followed by a low surrogate
+   escape becomes the one code point that pair encodes. `Str.value`
+   and `cooked` then carry the correct string, and rule 1 needs no
+   change in this compiler.
+2. A lone surrogate escape raises a lexer error instead of falling
+   back to the raw characters. Add a `SyntaxError` variant for it if
+   the enum takes one cheaply; report which mechanism the round used.
+
+This compiler:
+
+- `compiler/src/parse.rs` maps a parser error to S100 with
+  `err.kind()` in hand. Match the lone-surrogate kind and emit §96.1
+  rule 2's text with `Divergence::LoneSurrogateEscape` at the error's
+  span, in place of the generic `parse error: …` text.
 - `compiler/src/divergence.rs`: the `LoneSurrogateEscape` variant and
   its table row, citing `compiler.md §96`.
+- `compiler/src/check/expr.rs` `check_lit` and the template arm need
+  no change: they read a value the fork has already made correct.
+
+The owner pushes the fork branch; this project then bumps the pinned
+commit in `compiler/Cargo.toml` and `Cargo.lock`. A round that cannot
+push reports the patch and its measurements, and stops.
 
 ### 96.3 Corpus and gate (pre-registered exit criteria)
 
