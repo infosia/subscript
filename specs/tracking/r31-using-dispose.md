@@ -48,7 +48,8 @@ prelude change — so the tiers agree by construction.
 
 Corpus: `a138-using-dispose` (the golden equals the `node`
 measurement shape), `a139-using-async` (`resumed` prints before
-`dispose:async`), `r131-using-nullable-init`, `r132-await-using`,
+`dispose:async`), `r131-using-nullable-init` (retired 2026-09-09 by
+`compiler.md` §97), `r132-await-using`,
 `r133-using-without-dispose`.
 
 ## v1 boundary

@@ -284,8 +284,9 @@ Two divergences from JS, both narrowings or subtractions:
 `x[Symbol.dispose]()` stays rejected; the manual cleanup call is
 an ordinary method the class declares.
 
-Accept: `a138`, `a139`. Reject: `r131-using-nullable-init`,
-`r132-await-using`, `r133-using-without-dispose`.
+Accept: `a138`, `a139`. Reject: `r132-await-using`,
+`r133-using-without-dispose`. *(`r131-using-nullable-init` retired
+2026-09-09 by `compiler.md` §97, which accepts the form.)*
 
 ### C12. Named accessors — method sugar
 

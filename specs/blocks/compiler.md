@@ -6829,8 +6829,9 @@ the corpus entries below before the implementation.
    `export async function main` with a binding that crosses an
    `await`; the golden pins the resume line before the dispose
    line.
-3. `corpus/reject/r131-using-nullable-init.ts`: a nullable
-   initializer, S100. `corpus/reject/r132-await-using.ts`:
+3. *(`corpus/reject/r131-using-nullable-init.ts` held a nullable
+   initializer at S100. It retired 2026-09-09 by §97, which accepts
+   the form.)* `corpus/reject/r132-await-using.ts`:
    `await using`, S100.
    `corpus/reject/r133-using-without-dispose.ts`: an initializer
    type without the hook, S100.
@@ -13597,6 +13598,30 @@ recorded on this host with their exit codes.
    receiver carries the non-null class type; the HIR of a non-nullable
    binding holds the bare call, unchanged; a declaration that never
    executed produces no storage read.
-7. Gates: `tools/gate.sh full` green in both profiles; clippy at the
+7. *(Corrected 2026-09-09, after the round measured it.)* The
+   aggregate LIR text snapshot `codegen/tests/lir-goldens/corpus.txt`
+   gains a block for the new async entry, exactly as §93.3 item 8
+   records for a187. `coroutine_and_measurement_lir_text_matches_goldens`
+   collects every async corpus entry, so any new one adds a block by
+   construction. Capture the snapshot with
+   `SUBSCRIPT_CAPTURE_LIR_GOLDENS=1`, record the move under the §2
+   procedure, and prove that removing the new block reproduces the
+   committed snapshot byte for byte.
+8. *(Added 2026-09-09, after the round measured it.)* **The execution
+   fact walk must model a terminating block.**
+   `codegen/tests/support/lir_facts.rs` `stops_statement_sequence`
+   returns false for every `hir::Stmt::Block`, so the disposal the
+   rewrite appends after a nested block that returns counts as a
+   required trap site although no path reaches it. The LIR correctly
+   carries one site and the walk demands two.
+
+   A statement stops a sequence when every path through it
+   terminates. Implement that for `hir::Stmt::Block`, whose own
+   sequence stops, and for `hir::Stmt::If` with both arms present and
+   both stopping. Report what a loop and a `switch` need, with a
+   program that reaches each or a statement that none does. This
+   makes the check more accurate; do not weaken it, and do not change
+   the corpus to avoid the shape.
+9. Gates: `tools/gate.sh full` green in both profiles; clippy at the
    7/18/13 baseline; `cargo fmt --check`; the `tsc` gate; every
-   pre-existing golden byte-identical. No golden is expected to move.
+   pre-existing golden byte-identical except the one item 7 names.
