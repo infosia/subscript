@@ -256,7 +256,7 @@ reports that second check.
 ### Diagnostics and warnings
 
 `Diagnostic` carries `code: RuleCode`, `message: String`, and
-`pos: Pos`. The rule codes are `S001`–`S014`, `S016`–`S019`, and
+`pos: Pos`. The rule codes are `S001`–`S014`, `S016`–`S018`, and
 `S100`. `Pos` displays as `file:line:column`.
 
 `render_diagnostics` produces the CLI's text: the source snippet,

@@ -474,6 +474,8 @@ struct Emitter<'m> {
     helper_prototypes: String,
     helpers: String,
     helper_count: u32,
+    long_string_data: String,
+    long_string_symbols: HashMap<Vec<u8>, String>,
 }
 
 struct BoundaryPtrWriteback {
@@ -505,7 +507,36 @@ impl<'m> Emitter<'m> {
             helper_prototypes: String::new(),
             helpers: String::new(),
             helper_count: 0,
+            long_string_data: String::new(),
+            long_string_symbols: HashMap::new(),
         })
+    }
+
+    // §99: this threshold selects a C representation, not a language limit.
+    // Only language data uses this pool; names and metadata keep C literals.
+    fn language_string_pointer(&mut self, bytes: &[u8]) -> String {
+        if bytes.len() <= 65_000 {
+            return format!("(const unsigned char*){}", c_string_literal(bytes));
+        }
+        if let Some(symbol) = self.long_string_symbols.get(bytes) {
+            return symbol.clone();
+        }
+        let symbol = format!("sub_long_string_{}", self.long_string_symbols.len());
+        let _ = writeln!(
+            self.long_string_data,
+            "static const unsigned char {symbol}[] = {{"
+        );
+        for chunk in bytes.chunks(16) {
+            self.long_string_data.push_str("    ");
+            for byte in chunk {
+                let _ = write!(self.long_string_data, "0x{byte:02x},");
+            }
+            self.long_string_data.push('\n');
+        }
+        self.long_string_data.push_str("};\n");
+        self.long_string_symbols
+            .insert(bytes.to_vec(), symbol.clone());
+        symbol
     }
 
     fn pos_id(&mut self, pos: &Pos) -> u32 {
@@ -755,6 +786,7 @@ impl<'m> Emitter<'m> {
         }
         source.push('\n');
         source.push_str(&types);
+        source.push_str(&self.long_string_data);
         source.push_str(&globals);
         source.push_str(&prototypes);
         source.push_str(&bodies);
@@ -1034,7 +1066,7 @@ impl<'m> Emitter<'m> {
         Ok(())
     }
 
-    fn emit_globals(&self, out: &mut String) -> Result<(), String> {
+    fn emit_globals(&mut self, out: &mut String) -> Result<(), String> {
         out.push_str("typedef struct SubscriptModuleGlobals {\n");
         if self.module.globals.is_empty() {
             out.push_str("    unsigned char empty;\n");
@@ -1054,12 +1086,8 @@ impl<'m> Emitter<'m> {
                 "static const SubStringAliasMember sub_alias_{index}[] = {{"
             );
             for member in &alias.members {
-                let _ = writeln!(
-                    out,
-                    "    {{ (const unsigned char*){}, {}ull }},",
-                    c_string_literal(member.as_bytes()),
-                    member.len()
-                );
+                let data = self.language_string_pointer(member.as_bytes());
+                let _ = writeln!(out, "    {{ {data}, {}ull }},", member.len());
             }
             out.push_str("};\n");
         }
@@ -3184,6 +3212,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::InstructionKind::StringLiteral(text) => {
                 let trap = self.take_pending_trap(&instruction.traps, l::TrapKind::Allocation)?;
                 let pos = self.emitter.pos_id(&trap.pos);
+                let data = self.emitter.language_string_pointer(text.as_bytes());
                 let call = self.emitter.runtime_call(
                     "void*",
                     "subscript_rt_str_lit",
@@ -3195,10 +3224,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     ],
                     &[
                         "ctx".into(),
-                        format!(
-                            "(const unsigned char*){}",
-                            c_string_literal(text.as_bytes())
-                        ),
+                        data,
                         format!("{}ull", text.len()),
                         format!("{pos}u"),
                     ],
@@ -5252,6 +5278,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     trap_index += 1;
                     self.consume(trap);
                     let pos = self.emitter.pos_id(&trap.pos);
+                    let data = self.emitter.language_string_pointer(text.as_bytes());
                     self.emitter.runtime_call(
                         "void*",
                         "subscript_rt_str_lit",
@@ -5263,10 +5290,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         ],
                         &[
                             "ctx".into(),
-                            format!(
-                                "(const unsigned char*){}",
-                                c_string_literal(text.as_bytes())
-                            ),
+                            data,
                             format!("{}ull", text.len()),
                             format!("{pos}u"),
                         ],

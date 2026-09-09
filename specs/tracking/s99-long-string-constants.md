@@ -83,3 +83,29 @@ static data address and the byte length, so repeated executions of one
 literal reuse one allocation. The array symbol is a static address, so
 interning behaves as it does for a literal, and the invariant to state
 is the existing interning rather than an allocation per evaluation.
+
+## Landed, 2026-09-09
+
+Gate verdict:
+
+```
+gate full f6cde3d384dff68c9ccf2752862a356879175a74 dirty:16 debug 1364/0/2 release 1362/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+No golden moved and the aggregate LIR snapshot did not grow.
+
+### Verified here
+
+- 65,001 bytes and 1 MiB both run, with lengths and checksums equal to
+  a hand calculation: `len=65001 sum=13641` and `len=1048576 sum=0`.
+- The alias-member shape that the round found now works:
+  `type Word = "<65,001 bytes>" | "b"` prints `len=65001 sum=13641`.
+  Its emitted table reads
+  `{ sub_long_string_0, 65001ull }, { (const unsigned char*)"b", 1ull }`,
+  so the long member takes the array form and the short one keeps the
+  literal, which is §99.2 rule 5a.
+- `program.c` for that program is 369,673 bytes, consistent with the
+  5.31 bytes per decoded byte C0 measured.
+- S019 survives only as a comment in `compiler/src/diag.rs` recording
+  that the code retires without renumbering the others.
+- a204 matches its committed golden.

@@ -115,8 +115,6 @@ pub enum Divergence {
     JsonSubset,
     /// An aggregate or a stack frame past its byte limit.
     AggregateLayoutLimit,
-    /// A string literal exceeds the ship-tier byte limit.
-    StringLiteralLength,
     /// `exec`, `matchAll`, `lastIndex`, `groups`, and sticky matching.
     RegExpSubset,
     /// `replaceAll` with a literal that has no `g` flag.
@@ -209,7 +207,6 @@ impl Divergence {
         Divergence::NumberCoercionAndArguments,
         Divergence::JsonSubset,
         Divergence::AggregateLayoutLimit,
-        Divergence::StringLiteralLength,
         Divergence::LoneSurrogateEscape,
         Divergence::RegExpSubset,
         Divergence::ReplaceAllGlobalFlag,
@@ -642,12 +639,6 @@ impl Divergence {
                       the whole stack frame each have a byte limit.",
                 collision: "collisions.md Q29",
             },
-            Divergence::StringLiteralLength => DivergenceEntry {
-                ts: "const text: string = \"...\"; // TypeScript has no literal length limit.",
-                subscript: "const text: string = \"a\".repeat(65001); // Build long strings at run time.",
-                why: "subscript rejects literals above 65,000 UTF-8 bytes because the ship tier's C compilers limit one concatenated literal.",
-                collision: "C15",
-            },
             Divergence::RegExpSubset => DivergenceEntry {
                 ts: "const match = /x/.exec(\"x\");\n\
                      const index: i32 = /x/g.lastIndex;",
@@ -881,7 +872,25 @@ mod tests {
 
     #[test]
     fn collision_ids_and_headings_are_total() {
-        let headings = recorded_headings();
+        let mut headings = recorded_headings();
+        // §99 retains C15's heading for links but retires its diagnostic.
+        assert!(
+            headings.remove("C15"),
+            "the retired C15 heading must remain"
+        );
+        let c15 = COLLISIONS
+            .split("### C15.")
+            .nth(1)
+            .expect("C15 exists")
+            .split("### ")
+            .next()
+            .expect("C15 has a body");
+        assert!(
+            c15.lines().any(|line| {
+                line == "Accept: `a183`. Reject: retired:r184-string-literal-too-long."
+            }),
+            "C15 must record its retired witness"
+        );
         let mut bad: Vec<String> = Vec::new();
         for divergence in Divergence::ALL {
             let id = divergence.entry().collision;
@@ -900,7 +909,7 @@ mod tests {
             .iter()
             .map(|d| d.entry().collision)
             .collect();
-        let missing: Vec<String> = recorded_headings()
+        let missing: Vec<String> = headings
             .into_iter()
             .filter(|id| !cited.contains(id.as_str()))
             .collect();

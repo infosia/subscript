@@ -200,7 +200,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ),
     ("r182-worker-reference-field.ts", RuleCode::S100, 16),
     ("r183-worker-growable-array-field.ts", RuleCode::S100, 8),
-    ("r184-string-literal-too-long.ts", RuleCode::S019, 8),
     ("r185-enum-member-at-eof.ts", RuleCode::S100, 9),
     (
         "r186-async-generic-method-without-type-args.ts",

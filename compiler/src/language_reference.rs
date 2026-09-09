@@ -50,6 +50,14 @@ struct Feature {
 
 const FEATURES: &[Feature] = &[
     Feature {
+        title: "String constants",
+        prose: "String literals and static template parts have no language byte limit. Ordinary allocation and runtime string limits still apply. The ship tier uses C literals through 65,000 decoded UTF-8 bytes and file-scope static byte arrays above that threshold. String-alias members use the same data representation. Static addresses and decoded lengths preserve Context-owned literal interning, collection roots, and traps.",
+        corpus: &[
+            "corpus/accept/a183-long-string-literal.ts",
+            "corpus/accept/a204-static-long-string.ts",
+        ],
+    },
+    Feature {
         title: "Scope-exit disposal",
         prose: USING_DECLARATIONS,
         corpus: &[

@@ -416,10 +416,7 @@ The 2026-09-06 decision chose a diagnostic over the array form
 without measuring the array form. The measurement is recorded in
 `specs/tracking/s-c0-long-strings.md`.
 
-Accept: `a183`. Reject: `r184`. *(§99's implementation deletes the
-entry and rewrites this line with the retired-name form. The index
-check reads that form by spelling, so the marker and the deletion
-land in one step.)*
+Accept: `a183`. Reject: retired:r184-string-literal-too-long.
 
 ### C16. An `await` of a completed handle does not yield
 

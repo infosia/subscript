@@ -781,7 +781,6 @@ pinned corpus example, is in
 | S016 | A name with no declaration |
 | S017 | Two declarations of one name in one namespace |
 | S018 | A member the receiver type does not declare |
-| S019 | A string literal above the ship-tier byte limit |
 | S100 | Constructs outside the decided surface |
 
 Four warnings exist. `W001` flags a loop allocation that neither
