@@ -28,6 +28,9 @@ use crate::{NativeLibrary, RunConfig, RunOutput};
 #[path = "../clang_resolver.rs"]
 mod clang_resolver;
 
+#[path = "host_source.rs"]
+mod host_source;
+
 /// Environment variable naming a prebuilt runtime static library for
 /// [`run_c_aot`] to link against. When unset, `run_c_aot` looks for the archive next to the
 /// current executable and builds `subscript-runtime` with the
@@ -132,22 +135,20 @@ pub const HOST_HEADER_C: &str = include_str!("../../runtime/include/subscript_ru
 ///
 /// # Errors
 ///
-/// Returns an error if the body lacks `int main(void) {` or already spells `_setmode`.
+/// Returns an error if the body lacks a C main definition or already spells `_setmode`.
 pub fn host_entry(body: &str) -> Result<String, String> {
-    const MAIN: &str = "int main(void) {";
-    if !body.contains(MAIN) {
-        return Err("test host body must define `int main(void)`".into());
-    }
+    let start =
+        host_source::main_body_start(body).ok_or("test host body must define a C main function")?;
     if body.contains("_setmode") {
         return Err("test host body must not spell `_setmode`".into());
     }
-    let body = body.replacen(
-        MAIN,
-        "int main(void) {\n\
+    let body = format!(
+        "{}\n\
          #ifdef _WIN32\n\
          \x20   (void)_setmode(_fileno(stdout), _O_BINARY);\n\
-         #endif",
-        1,
+         #endif\n{}",
+        &body[..start],
+        &body[start..],
     );
     Ok(format!(
         "{HOST_HEADER_C}\n\

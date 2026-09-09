@@ -2,6 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
+#[path = "../src/host_source.rs"]
+mod host_source;
+
 #[derive(Debug)]
 struct Token<'a> {
     text: &'a str,
@@ -186,13 +189,24 @@ fn violations(file: &str, source: &str) -> Vec<String> {
                 }
             }
         }
-        if !token.string || index < owner_end || !string_value(token.text).contains(&main) {
+        if !token.string
+            || index < owner_end
+            || host_source::main_body_start(&string_value(token.text)).is_none()
+        {
             continue;
         }
         // §100.2 covers byte-exact sink comparisons. This one layout probe uses
         // lines(), not sink bytes, and §11c excludes it on windows-msvc.
         // Exempt its single entry fragment, not other bodies in the same file.
         if file == "codegen/tests/offsetof_layout.rs" && token.text == format!("\"{main} {{\\n\"") {
+            continue;
+        }
+        // This literal is a Rust fake compiler driver, compiled by rustc.
+        // Exempt only that source literal, not other bodies in the resolver test.
+        if file == "codegen/clang_resolver.rs"
+            && string_value(token.text)
+                .starts_with("\nuse std::ffi::OsStr;\nuse std::path::Path;\n\nfn main()")
+        {
             continue;
         }
         // Require the body at the helper boundary. A helper call elsewhere in
@@ -212,14 +226,32 @@ fn violations(file: &str, source: &str) -> Vec<String> {
 }
 
 fn sources(directory: &Path, paths: &mut Vec<PathBuf>) {
-    for entry in std::fs::read_dir(directory).expect("source directory") {
-        let path = entry.expect("source entry").path();
-        if path.is_dir() {
-            sources(&path, paths);
-        } else if path.extension().is_some_and(|extension| extension == "rs") {
-            paths.push(path);
-        }
-    }
+    // Include tracked and new source files. Exclude ignored build products and scratch checkouts.
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(directory)
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            "*.rs",
+        ])
+        .output()
+        .expect("workspace Rust source inventory");
+    assert!(
+        output.status.success(),
+        "workspace Rust source inventory failed"
+    );
+    paths.extend(
+        output
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+            .map(|path| directory.join(std::str::from_utf8(path).expect("Rust source path"))),
+    );
 }
 
 #[test]
@@ -240,9 +272,9 @@ fn all_test_host_bodies_use_the_helper_and_bypass_is_rejected() {
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let mut paths = Vec::new();
-    sources(&root.join("codegen/tests"), &mut paths);
-    sources(&root.join("codegen/src"), &mut paths);
+    sources(root, &mut paths);
     paths.sort();
+    paths.dedup();
     let errors: Vec<_> = paths
         .iter()
         .flat_map(|path| {
@@ -266,4 +298,166 @@ fn host_entry_owns_the_guard_and_rejects_invalid_bodies() {
     assert!(host.contains("#ifdef _WIN32\n    (void)_setmode(_fileno(stdout), _O_BINARY);\n#endif"));
     assert_eq!(host.matches("_setmode").count(), 1);
     assert!(host.ends_with(" return 0; }"));
+}
+
+#[test]
+fn c_definitions_share_recognition_and_compile() {
+    use subscript_codegen::{add_c11_optimized_flags, host_c_compiler, host_entry};
+    let directory = Scratch::new();
+    let compiler = host_c_compiler().expect("C compiler");
+    for signature in [
+        "int  main(void)",
+        "int main( void )",
+        "int\nmain\t(\nvoid\n)",
+        "int /* type */ main(/* argument */ void)",
+        "signed int main(int argc, char **argv)",
+        "int ((main))(void)",
+        "int (main(void))",
+        "typedef int result; result main(void)",
+        "int main(argc, argv) int argc; char **argv;",
+        "int (main(argc, argv)) int argc; char **argv;",
+        "int ma\\\nin(void)",
+    ] {
+        let body = format!("{signature} {{ return 0; }}");
+        let raw = format!("let body = r#\"{body}\"#;");
+        assert_eq!(violations("definition.rs", &raw).len(), 1, "{signature}");
+        let wrapped = format!("let body = host_entry(r#\"{body}\"#);");
+        assert!(
+            violations("definition.rs", &wrapped).is_empty(),
+            "{signature}"
+        );
+        let host = host_entry(&body).expect("recognized definition");
+        assert_eq!(host.matches("_setmode").count(), 1);
+        // Compile both the bypass and the helper result with the selected host compiler.
+        for source in [&body, &host] {
+            let path = directory.0.join("host.c");
+            std::fs::write(&path, source).unwrap();
+            let mut command = compiler.command();
+            add_c11_optimized_flags(&mut command, compiler.style());
+            command
+                .arg(if compiler.style().is_msvc() {
+                    "/Zs"
+                } else {
+                    "-fsyntax-only"
+                })
+                .arg(&path);
+            let output = command.output().expect("compile main spelling");
+            assert!(
+                output.status.success(),
+                "{signature}: {}",
+                subscript_codegen::tool_output_report(&output)
+            );
+        }
+    }
+    let signature = ["int ", "main(void)"].concat();
+    for body in [
+        format!("{signature};"),
+        format!("// {signature} {{ return 0; }}"),
+        format!("/* {signature} {{ return 0; }} */"),
+        format!("const char *s = \"{signature} {{ return 0; }}\";"),
+        "int domain(void) { return 0; }".to_owned(),
+    ] {
+        assert!(host_entry(&body).is_err(), "{body}");
+        let raw = format!("let body = r#\"{body}\"#;");
+        assert!(violations("non-definition.rs", &raw).is_empty(), "{body}");
+    }
+}
+
+#[test]
+fn c_punctuators_and_attributes_preserve_the_insertion_offset() {
+    for (signature, open, close) in [
+        ("int main(void)", "<%", "%>"),
+        ("int main(void)", "??<", "??>"),
+        ("int ma??/\nin(void)", "{", "}"),
+        ("int main(void) __attribute__((unused))", "{", "}"),
+    ] {
+        let prefix = format!("{signature} {open}");
+        let body = format!("{prefix} return 0; {close}");
+        assert_eq!(host_source::main_body_start(&body), Some(prefix.len()));
+        let host = subscript_codegen::host_entry(&body).unwrap();
+        assert!(host.contains(&format!("{prefix}\n#ifdef _WIN32")));
+        assert_eq!(
+            violations("punctuator.rs", &format!("r#\"{body}\"#")).len(),
+            1
+        );
+    }
+}
+
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "subscript-host-entry-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        Self(path)
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.0).expect("remove scratch source tree");
+    }
+}
+
+#[test]
+fn every_new_source_directory_reports_an_injected_body_in_a_scratch_copy() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let mut paths = Vec::new();
+    sources(root, &mut paths);
+    paths.sort();
+    let mut directories = std::collections::BTreeSet::new();
+    let scratch = Scratch::new();
+    let mut found = Vec::new();
+    for path in paths {
+        let relative = path.strip_prefix(root).unwrap();
+        if relative.starts_with("codegen/src")
+            || relative.starts_with("codegen/tests")
+            || !directories.insert(relative.parent().unwrap().to_owned())
+        {
+            continue;
+        }
+        let copy = scratch.0.join(relative);
+        std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
+        std::fs::copy(&path, &copy).unwrap();
+        let file = subscript_compiler::repository_relative(root, &path).unwrap();
+        let mut source = std::fs::read_to_string(&copy).unwrap();
+        assert!(violations(&file, &source).is_empty(), "{file}");
+        for signature in ["int  main(void)", "int main( void )"] {
+            source.push_str(&format!(
+                "\nfn injected() {{ let body = r#\"{signature} {{ return 0; }}\"#; }}\n"
+            ));
+        }
+        std::fs::write(&copy, source).unwrap();
+        let errors = violations(&file, &std::fs::read_to_string(copy).unwrap());
+        assert_eq!(errors.len(), 2, "{file}: {errors:?}");
+        found.extend(errors);
+    }
+    for required in [
+        "benchmarks/src/bin",
+        "examples/tests",
+        "compiler/src",
+        "runtime/src",
+        "bindgen/src",
+        "cli/src",
+        "spike/mobile-link/src",
+        "codegen",
+    ] {
+        assert!(
+            directories.contains(Path::new(required)),
+            "unread source directory: {required}"
+        );
+    }
+    println!(
+        "{} scratch directories reported {} injected host bodies:\n{}",
+        directories.len(),
+        found.len(),
+        found.join("\n")
+    );
 }

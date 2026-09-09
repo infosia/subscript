@@ -23,9 +23,9 @@ use std::process::{Command, ExitCode};
 
 #[cfg(unix)]
 use subscript_codegen::{
-    add_c11_optimized_flags, add_executable_output, emit_c, host_c_compiler, include_directory_arg,
-    runtime_staticlib_path, runtime_system_libraries, tool_output_report, HostCCompiler,
-    AOT_ENTRY_C,
+    add_c11_optimized_flags, add_executable_output, emit_c, host_c_compiler, host_entry,
+    include_directory_arg, runtime_staticlib_path, runtime_system_libraries, tool_output_report,
+    HostCCompiler, AOT_ENTRY_C,
 };
 #[cfg(unix)]
 use subscript_compiler::{check_program, SourceFile};
@@ -48,16 +48,14 @@ const SPREAD_LIMIT: f64 = 0.20;
 const QUANTUM_LIMIT: f64 = 0.01;
 
 #[cfg(unix)]
-const MIMIC_C: &str = r#"
+fn mimic_c() -> Result<String, Fail> {
+    host_entry(
+        r#"
 #include "boundary-noop.h"
 
 #include <stdint.h>
 #include <stddef.h>
 
-extern void *subscript_rt_ctx_new(void);
-extern void subscript_rt_ctx_release(void *ctx);
-extern void subscript_rt_ctx_enter_script(void *ctx);
-extern void subscript_rt_ctx_exit_script(void *ctx);
 extern void subscript_rt_shadow_push(void *ctx, void *base, uint64_t slots);
 extern void subscript_rt_shadow_pop(void *ctx);
 extern void *subscript_rt_array_new(void *ctx, uint64_t elem_size, uint32_t pos_id);
@@ -118,19 +116,19 @@ trapped:
     subscript_rt_ctx_release(ctx);
     return 3;
 }
-"#;
+"#,
+    )
+}
 
 #[cfg(unix)]
-const NO_TRAP_C: &str = r#"
+fn no_trap_c() -> Result<String, Fail> {
+    host_entry(
+        r#"
 #include "boundary-noop.h"
 
 #include <stdint.h>
 #include <stddef.h>
 
-extern void *subscript_rt_ctx_new(void);
-extern void subscript_rt_ctx_release(void *ctx);
-extern void subscript_rt_ctx_enter_script(void *ctx);
-extern void subscript_rt_ctx_exit_script(void *ctx);
 extern void subscript_rt_shadow_push(void *ctx, void *base, uint64_t slots);
 extern void subscript_rt_shadow_pop(void *ctx);
 extern void *subscript_rt_array_new(void *ctx, uint64_t elem_size, uint32_t pos_id);
@@ -189,19 +187,19 @@ trapped:
     subscript_rt_ctx_release(ctx);
     return 3;
 }
-"#;
+"#,
+    )
+}
 
 #[cfg(unix)]
-const HOISTED_C: &str = r#"
+fn hoisted_c() -> Result<String, Fail> {
+    host_entry(
+        r#"
 #include "boundary-noop.h"
 
 #include <stdint.h>
 #include <stddef.h>
 
-extern void *subscript_rt_ctx_new(void);
-extern void subscript_rt_ctx_release(void *ctx);
-extern void subscript_rt_ctx_enter_script(void *ctx);
-extern void subscript_rt_ctx_exit_script(void *ctx);
 extern void subscript_rt_shadow_push(void *ctx, void *base, uint64_t slots);
 extern void subscript_rt_shadow_pop(void *ctx);
 extern void *subscript_rt_array_new(void *ctx, uint64_t elem_size, uint32_t pos_id);
@@ -262,10 +260,14 @@ trapped:
     subscript_rt_ctx_release(ctx);
     return 3;
 }
-"#;
+"#,
+    )
+}
 
 #[cfg(unix)]
-const FLOOR_C: &str = r#"
+fn floor_c() -> Result<String, Fail> {
+    host_entry(
+        r#"
 #include "boundary-noop.h"
 
 #include <stdint.h>
@@ -285,7 +287,9 @@ int main(void) {
     bnBindGroupRelease(group);
     return 0;
 }
-"#;
+"#,
+    )
+}
 
 #[cfg(unix)]
 struct WorkDir {
@@ -367,9 +371,9 @@ struct Measurement {
 }
 
 #[cfg(unix)]
-struct Subject<'a> {
+struct Subject {
     name: &'static str,
-    source: &'a str,
+    source: String,
     runtime: bool,
 }
 
@@ -421,22 +425,22 @@ fn run() -> Result<bool, Fail> {
     let subjects = [
         Subject {
             name: "mimic",
-            source: MIMIC_C,
+            source: mimic_c()?,
             runtime: true,
         },
         Subject {
             name: "no-trap",
-            source: NO_TRAP_C,
+            source: no_trap_c()?,
             runtime: true,
         },
         Subject {
             name: "hoisted",
-            source: HOISTED_C,
+            source: hoisted_c()?,
             runtime: true,
         },
         Subject {
             name: "floor",
-            source: FLOOR_C,
+            source: floor_c()?,
             runtime: false,
         },
     ];

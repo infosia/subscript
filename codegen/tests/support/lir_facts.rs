@@ -1945,29 +1945,99 @@ fn walk_module_expressions<'a>(hir: &'a hir::Module, visit: &mut impl FnMut(&'a 
     }
 }
 
-fn stops_statement_sequence(statement: &hir::Stmt) -> bool {
-    match statement {
-        hir::Stmt::Return { .. } | hir::Stmt::Break(_) | hir::Stmt::Continue(_) => true,
-        hir::Stmt::Expr(expr) => matches!(
-            &expr.kind,
-            hir::ExprKind::Call {
-                callee: hir::Callee::Ambient(hir::AmbientFn::Unreachable),
-                ..
+// Describe exits in one exhaustive match. A new HIR statement must supply its exits.
+// Break ends an arm's sequence, but becomes fallthrough at its owning switch.
+#[derive(Clone, Copy)]
+struct SequenceExits {
+    next: bool,
+    breaks: bool,
+}
+
+impl SequenceExits {
+    const NEXT: Self = Self {
+        next: true,
+        breaks: false,
+    };
+    const STOP: Self = Self {
+        next: false,
+        breaks: false,
+    };
+
+    fn union(self, other: Self) -> Self {
+        Self {
+            next: self.next || other.next,
+            breaks: self.breaks || other.breaks,
+        }
+    }
+
+    fn then(self, other: Self) -> Self {
+        if self.next {
+            Self {
+                next: other.next,
+                breaks: self.breaks || other.breaks,
             }
-        ),
-        hir::Stmt::Block(body) => body.iter().any(stops_statement_sequence),
-        hir::Stmt::If {
-            then,
-            els: Some(els),
-            ..
-        } => then.iter().any(stops_statement_sequence) && els.iter().any(stops_statement_sequence),
+        } else {
+            self
+        }
+    }
+}
+
+fn sequence_exits(body: &[hir::Stmt]) -> SequenceExits {
+    body.iter().fold(SequenceExits::NEXT, |exits, statement| {
+        exits.then(statement_exits(statement))
+    })
+}
+
+fn statement_exits(statement: &hir::Stmt) -> SequenceExits {
+    match statement {
+        hir::Stmt::Return { .. } | hir::Stmt::Continue(_) => SequenceExits::STOP,
+        hir::Stmt::Break(_) => SequenceExits {
+            next: false,
+            breaks: true,
+        },
+        hir::Stmt::Expr(expr) => {
+            if matches!(
+                &expr.kind,
+                hir::ExprKind::Call {
+                    callee: hir::Callee::Ambient(hir::AmbientFn::Unreachable),
+                    ..
+                }
+            ) {
+                SequenceExits::STOP
+            } else {
+                SequenceExits::NEXT
+            }
+        }
+        hir::Stmt::Block(body) => sequence_exits(body),
+        hir::Stmt::If { then, els, .. } => {
+            sequence_exits(then).union(els.as_deref().map_or(SequenceExits::NEXT, sequence_exits))
+        }
+        hir::Stmt::Switch { cases, .. } => {
+            let mut exits = if cases.iter().any(|case| case.test.is_none()) {
+                SequenceExits::STOP
+            } else {
+                SequenceExits::NEXT
+            };
+            let mut tail = SequenceExits::NEXT;
+            for case in cases.iter().rev() {
+                tail = sequence_exits(&case.body).then(tail);
+                exits = exits.union(tail);
+            }
+            SequenceExits {
+                next: exits.next || exits.breaks,
+                breaks: false,
+            }
+        }
+        // LIR retains the exit of each loop, including constant-true loops.
         hir::Stmt::Let { .. }
-        | hir::Stmt::If { els: None, .. }
         | hir::Stmt::While { .. }
         | hir::Stmt::For { .. }
-        | hir::Stmt::ForOf { .. }
-        | hir::Stmt::Switch { .. } => false,
+        | hir::Stmt::ForOf { .. } => SequenceExits::NEXT,
     }
+}
+
+fn stops_statement_sequence(statement: &hir::Stmt) -> bool {
+    !statement_exits(statement).next
 }
 
 fn walk_expr<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::Expr)) {
@@ -2027,14 +2097,23 @@ mod sequence_tests {
     fn checked(source: &str) -> (hir::Module, l::Module) {
         let hir = check_program(&[SourceFile::new("sequence.ts", source)])
             .expect("sequence witness checks");
-        let lir = subscript_codegen::lir::lower_module(&hir).expect("sequence witness lowers");
+        let lir = subscript_codegen::lir::lower_module(&hir)
+            .unwrap_or_else(|error| panic!("sequence witness lowers: {error:?}\n{source}"));
         (hir, lir)
     }
 
     #[test]
-    fn terminating_blocks_and_both_if_arms_preserve_execution_facts() {
+    fn statement_exits_preserve_execution_facts() {
         for body in [
             "{ return; }",
+            "switch (0) { case 0: return; default: return; }",
+            "switch (0) { default: { return; } case 0: if (stop) { return; } else { return; } }",
+            "switch (0) { case 0: return; } print(\"after\");",
+            "switch (0) { case 0: return; default: print(\"default\"); } print(\"after\");",
+            "switch (0) { case 0: break; default: return; } print(\"after\");",
+            "switch (0) { case 0: if (stop) { break; } return; default: return; } print(\"after\");",
+            "switch (0) { case 0: default: return; }",
+            "switch (0) { case 0: switch (1) { default: break; } return; default: return; }",
             "if (stop) { return; } else { { return; } }",
             "if (stop) { { return; } } print(\"fallthrough\");",
             "if (stop) { return; } else { print(\"else\"); } print(\"after\");",
@@ -2084,6 +2163,36 @@ mod sequence_tests {
                     .any(|finding| { finding.contains("trap \"Call\" carries") }),
                 "the missing reachable call must fail: {body}"
             );
+        }
+    }
+
+    #[test]
+    fn loops_retain_trailing_execution_facts() {
+        for body in ["while (true) { return; }", "for (;;) { return; }"] {
+            let source = format!(
+                "function run(a: i32[]): i32 {{ {body} return a[0]; }}
+                 export function main(): void {{}}"
+            )
+            .replace("{ return; }", "{ return 1; }");
+            let (hir, mut lir) = checked(&source);
+            assert!(dropped_facts(&hir, &lir).is_empty(), "{body}");
+            let function = hir.functions.iter().find(|f| f.name == "run").unwrap();
+            assert!(!stops_statement_sequence(&function.body[0]), "{body}");
+            let mut removed = 0;
+            for block in lir.functions.iter_mut().flat_map(|f| &mut f.blocks) {
+                block.instructions.retain(|instruction| {
+                    let keep = !instruction
+                        .traps
+                        .iter()
+                        .any(|trap| matches!(trap.kind, l::TrapKind::IndexRead));
+                    if !keep {
+                        removed += 1;
+                    }
+                    keep
+                });
+            }
+            assert!(removed > 0, "LIR retains the trailing array read: {body}");
+            assert!(!dropped_facts(&hir, &lir).is_empty(), "{body}");
         }
     }
 
