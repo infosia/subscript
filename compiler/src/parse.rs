@@ -301,8 +301,43 @@ mod tests {
     }
 
     #[test]
+    fn surrogate_pair_spellings_and_continuations_decode_by_value() {
+        for high in [r"\ud83d", r"\u{d83d}"] {
+            for low in [r"\udc4d", r"\u{dc4d}"] {
+                for separator in ["", "\\\n", "\\\r\n", "\\\n\\\r\n"] {
+                    let pair = format!("{high}{separator}{low}");
+                    for quote in ['"', '\''] {
+                        let source = format!("{quote}a{pair}b{quote}");
+                        assert_eq!(string_parts(&source), ["a👍b"], "{source:?}");
+                    }
+                    let source = format!("`{pair}${{1}}{pair}${{2}}{pair}`");
+                    assert_eq!(string_parts(&source), ["👍", "👍", "👍"], "{source:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn lone_surrogate_positions_have_positive_controls() {
         for (bad, good, parts, column) in [
+            (r#""\ud83d\u{41}""#, r#""\ud83d\u{dc4d}""#, vec!["👍"], 2),
+            (r#"`\ud83d\u{41}`"#, r#"`\ud83d\u{dc4d}`"#, vec!["👍"], 2),
+            (r#""\ud83d\ud83d""#, r#""\u{d83d}\udc4d""#, vec!["👍"], 2),
+            (r#"`\ud83d\ud83d`"#, r#"`\u{d83d}\udc4d`"#, vec!["👍"], 2),
+            (r#""\u{dc4d}""#, r#""\u{d83d}\u{dc4d}""#, vec!["👍"], 2),
+            (r#"`\u{dc4d}`"#, r#"`\u{d83d}\u{dc4d}`"#, vec!["👍"], 2),
+            (
+                "\"\\ud83d\\\n\\u{41}\"",
+                "\"\\ud83d\\\n\\udc4d\"",
+                vec!["👍"],
+                2,
+            ),
+            (
+                "\"\\ud83d\\\r\n\\u{41}\"",
+                "\"\\ud83d\\\r\n\\udc4d\"",
+                vec!["👍"],
+                2,
+            ),
             (r#""\ud83dab""#, r#""\ud83d\udc4dab""#, vec!["👍ab"], 2),
             (r#""a\ud83db""#, r#""a\ud83d\udc4db""#, vec!["a👍b"], 3),
             (r#""ab\ud83d""#, r#""ab\ud83d\udc4d""#, vec!["ab👍"], 4),

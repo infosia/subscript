@@ -144,3 +144,61 @@ The first stop also produced the finding that changed §96.2. The round
 proposed fixing this compiler; its own AST measurement showed
 `Str.value` cannot separate `"\ud83d"` from `"\\ud83d"`, which is
 what moved the fix into the fork.
+
+## §96.1 rule 2a, and the corpus that reaches it
+
+The Phase Review found rule 2's diagnostic depending on where the
+literal sat, and the corpus round found the shape while writing the
+entries for rule 1's correction. Both landed together.
+
+### The value-based pairing
+
+The fork paired by spelling: only a four-hex-digit low half, with
+nothing between the halves. Three spellings TypeScript accepts were
+rejected, and the diagnostic told the author the sequence has no UTF-8
+encoding, which was false for all three. `5428cb6` pairs by value.
+Measured at the pin, all six spellings decode to the same four bytes,
+and node reads each as U+1F44D:
+
+`"👍"`, `"\ud83d\u{dc4d}"`, `"\u{d83d}\udc4d"`,
+`"\u{d83d}\u{dc4d}"`, a line continuation between the halves, and the
+literal character.
+
+### The recovery
+
+A lone surrogate returned an error, abandoning the string token with
+the cursor past the offending escape. Recovery then read the next
+escape outside a string, where it begins an identifier. So the same
+literal reported rule 2 as a declaration initializer and
+`Invalid character in identifier` as a call argument, at the second
+escape. `c603b41` uses the lexer's recoverable emission and continues
+with U+FFFD, so the token completes. Measured after: rule 2 at the
+first escape in both positions.
+
+### A test that pinned the defect
+
+The draft's position table expected column 8 for the template form
+`` `\ud83d\ud83d` ``. That was the second escape, the position the
+broken recovery produced. Every neighbouring row expected column 2. A
+test written against a broken behaviour keeps it broken; this one was
+caught only because the fork fix moved the position out from under it.
+
+### Landed
+
+```
+gate full 43c29e0dd70a9fed14baf1b46cbde6948ec4b00d dirty:8 debug 1382/0/2 release 1380/0/2 skips 2/0 clippy 7/18/13 goldens-moved 1 exit 0
+```
+
+`a198`'s golden grows from 101 to 197 bytes with the new spellings.
+`r196` rejects a high surrogate before a brace escape with a
+non-surrogate value; `r197` rejects two high surrogates and is the
+entry rule 2a's defect blocked. Counts: accept `.ts` 211, reject
+`.ts` 182.
+
+### Three rounds stopped on my errors
+
+Each time I handed over a table and asked for every row to be
+re-measured, and each time the mismatch was mine: a decoded character
+written where an escape spelling belonged, twice, and a wrongly named
+table row, once. The round declined to apply the instruction and
+reported both values instead.

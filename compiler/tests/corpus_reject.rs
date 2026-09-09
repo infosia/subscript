@@ -220,6 +220,12 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r194-using-descriptor-class-hook.ts", RuleCode::S100, 9),
     ("r195-using-nullable-member.ts", RuleCode::S011, 14),
     (
+        "r196-high-surrogate-before-brace-character.ts",
+        RuleCode::S100,
+        8,
+    ),
+    ("r197-high-surrogate-before-high.ts", RuleCode::S100, 8),
+    (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
         10,
