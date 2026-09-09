@@ -285,8 +285,9 @@ Two divergences from JS, both narrowings or subtractions:
 an ordinary method the class declares.
 
 Accept: `a138`, `a139`. Reject: `r132-await-using`,
-`r133-using-without-dispose`. *(`r131-using-nullable-init` retired
-2026-09-09 by `compiler.md` §97, which accepts the form.)*
+`r133-using-without-dispose`, retired:r131-using-nullable-init.
+*(Retired 2026-09-09 by `compiler.md` §97, which accepts a nullable
+binding and guards the hook call.)*
 
 ### C12. Named accessors — method sugar
 
