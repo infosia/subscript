@@ -81,7 +81,7 @@ pub enum Divergence {
     ThisInFieldInitializer,
     /// A class index signature without its accessors, and a compound write.
     ClassIndexSignature,
-    /// A `using` declaration that is nullable, `await`ed, or inside a lambda.
+    /// A rejected disposal hook or a `using` declaration that is `await`ed or inside a lambda.
     UsingDeclaration,
     /// A value-position write, a value-class write accessor, or a mirror accessor.
     NamedAccessor,
@@ -483,12 +483,11 @@ impl Divergence {
                 collision: "C10",
             },
             Divergence::UsingDeclaration => DivergenceEntry {
-                ts: "using resource = maybeResource();\n\
+                ts: "await using resource = new Resource();\n\
                      const f = (): i32 => { using r = new Resource(); return 1; };",
-                subscript: "const value: Resource | null = maybeResource();\n\
-                            if (value !== null) { using resource = value; }",
-                why: "A null binding skips its dispose silently, so the value narrows \
-                      first; a lambda body and `await using` stay out.",
+                subscript: "using resource = new Resource();",
+                why: "Disposal is synchronous and requires a reference class. Value-class hooks, \
+                      descriptor-class hooks, lambda bodies, and `await using` stay out.",
                 collision: "C11",
             },
             Divergence::NamedAccessor => DivergenceEntry {

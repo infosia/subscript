@@ -410,6 +410,7 @@ pub(crate) struct Scope {
 struct UsingBinding {
     name: String,
     ty: Type,
+    nullable: bool,
     pos: Pos,
     active: Option<String>,
 }
@@ -3316,11 +3317,18 @@ impl<'p> Checker<'p> {
             }
         };
         if is_descriptor {
+            if is_dispose {
+                self.error_diverging(
+                    RuleCode::S100,
+                    "descriptor classes cannot declare `[Symbol.dispose]()`",
+                    key_pos,
+                    Divergence::UsingDeclaration,
+                );
+                return;
+            }
             self.error(
                 RuleCode::S100,
-                if is_dispose {
-                    "descriptor classes cannot declare `[Symbol.dispose]()`"
-                } else if method.kind != ast::MethodKind::Method {
+                if method.kind != ast::MethodKind::Method {
                     "descriptor classes cannot declare accessors"
                 } else {
                     "descriptor classes cannot declare methods"
@@ -3355,10 +3363,11 @@ impl<'p> Checker<'p> {
             return;
         }
         if is_dispose && is_value {
-            self.error(
+            self.error_diverging(
                 RuleCode::S100,
                 "value classes cannot declare `[Symbol.dispose]()`",
                 key_pos,
+                Divergence::UsingDeclaration,
             );
             return;
         }
@@ -4317,12 +4326,16 @@ impl<'p> Checker<'p> {
         let mut calls = Vec::new();
         for scope in scopes[first_scope..].iter().rev() {
             for binding in scope.iter().rev() {
+                let receiver_type = match &binding.ty {
+                    Type::Nullable(inner) if binding.nullable => inner.as_ref(),
+                    other => other,
+                };
                 let call = hir::Stmt::Expr(hir::Expr {
                     kind: hir::ExprKind::Call {
                         callee: hir::Callee::Method {
                             recv: Box::new(hir::Expr {
                                 kind: hir::ExprKind::Local(binding.name.clone()),
-                                ty: binding.ty.clone(),
+                                ty: receiver_type.clone(),
                                 pos: binding.pos.clone(),
                             }),
                             name: hir::DISPOSE_METHOD_NAME.to_string(),
@@ -4332,6 +4345,32 @@ impl<'p> Checker<'p> {
                     ty: Type::Void,
                     pos: binding.pos.clone(),
                 });
+                let call = if binding.nullable {
+                    hir::Stmt::If {
+                        cond: hir::Expr {
+                            kind: hir::ExprKind::Binary {
+                                op: hir::BinOp::Ne,
+                                left: Box::new(hir::Expr {
+                                    kind: hir::ExprKind::Local(binding.name.clone()),
+                                    ty: binding.ty.clone(),
+                                    pos: binding.pos.clone(),
+                                }),
+                                right: Box::new(hir::Expr {
+                                    kind: hir::ExprKind::Null,
+                                    ty: Type::Null,
+                                    pos: binding.pos.clone(),
+                                }),
+                            },
+                            ty: Type::Bool,
+                            pos: binding.pos.clone(),
+                        },
+                        then: vec![call],
+                        els: None,
+                        pos: binding.pos.clone(),
+                    }
+                } else {
+                    call
+                };
                 if let Some(active) = &binding.active {
                     calls.push(hir::Stmt::If {
                         cond: hir::Expr {
@@ -4395,6 +4434,7 @@ impl<'p> Checker<'p> {
                             .push(UsingBinding {
                                 name: dispose_name,
                                 ty: ty.clone(),
+                                nullable: matches!(ty, Type::Nullable(_)),
                                 pos: pos.clone(),
                                 active,
                             });

@@ -1955,13 +1955,18 @@ fn stops_statement_sequence(statement: &hir::Stmt) -> bool {
                 ..
             }
         ),
+        hir::Stmt::Block(body) => body.iter().any(stops_statement_sequence),
+        hir::Stmt::If {
+            then,
+            els: Some(els),
+            ..
+        } => then.iter().any(stops_statement_sequence) && els.iter().any(stops_statement_sequence),
         hir::Stmt::Let { .. }
-        | hir::Stmt::If { .. }
+        | hir::Stmt::If { els: None, .. }
         | hir::Stmt::While { .. }
         | hir::Stmt::For { .. }
         | hir::Stmt::ForOf { .. }
-        | hir::Stmt::Switch { .. }
-        | hir::Stmt::Block(_) => false,
+        | hir::Stmt::Switch { .. } => false,
     }
 }
 
@@ -2011,5 +2016,101 @@ fn walk_place_children<'a>(expr: &'a hir::Expr, visit: &mut impl FnMut(&'a hir::
         }
         hir::ExprKind::Local(_) | hir::ExprKind::Global(_) | hir::ExprKind::This => {}
         _ => walk_expr(expr, visit),
+    }
+}
+
+#[cfg(test)]
+mod sequence_tests {
+    use super::*;
+    use subscript_compiler::{check_program, SourceFile};
+
+    fn checked(source: &str) -> (hir::Module, l::Module) {
+        let hir = check_program(&[SourceFile::new("sequence.ts", source)])
+            .expect("sequence witness checks");
+        let lir = subscript_codegen::lir::lower_module(&hir).expect("sequence witness lowers");
+        (hir, lir)
+    }
+
+    #[test]
+    fn terminating_blocks_and_both_if_arms_preserve_execution_facts() {
+        for body in [
+            "{ return; }",
+            "if (stop) { return; } else { { return; } }",
+            "if (stop) { { return; } } print(\"fallthrough\");",
+            "if (stop) { return; } else { print(\"else\"); } print(\"after\");",
+            "{ print(\"block\"); } print(\"after\");",
+        ] {
+            let source = format!(
+                "class R {{ [Symbol.dispose](): void {{}} }}
+                 function run(stop: boolean): void {{
+                   using resource: R | null = new R();
+                   {body}
+                 }}
+                 export function main(): void {{ run(true); run(false); }}"
+            );
+            let (hir, mut lir) = checked(&source);
+            assert_eq!(dropped_facts(&hir, &lir), Vec::<String>::new(), "{body}");
+
+            // Delete a reachable call, not its trap metadata. The check must still fail.
+            let block = lir
+                .functions
+                .iter_mut()
+                .flat_map(|function| &mut function.blocks)
+                .find(|block| {
+                    block.instructions.iter().any(|instruction| {
+                        matches!(instruction.kind, l::InstructionKind::Call(_))
+                            && instruction
+                                .traps
+                                .iter()
+                                .any(|trap| matches!(trap.kind, l::TrapKind::Call))
+                    })
+                })
+                .expect("reachable call block");
+            let index = block
+                .instructions
+                .iter()
+                .position(|instruction| {
+                    matches!(instruction.kind, l::InstructionKind::Call(_))
+                        && instruction
+                            .traps
+                            .iter()
+                            .any(|trap| matches!(trap.kind, l::TrapKind::Call))
+                })
+                .expect("reachable call");
+            block.instructions.remove(index);
+            assert!(
+                dropped_facts(&hir, &lir)
+                    .iter()
+                    .any(|finding| { finding.contains("trap \"Call\" carries") }),
+                "the missing reachable call must fail: {body}"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_preserve_break_and_continue_sequence_exits() {
+        let (hir, lir) = checked(
+            "export function main(): void {
+               for (let i: i32 = 0; i < 2; i += 1) {
+                 if (i === 0) { { continue; } } else { { break; } }
+               }
+               print(\"after\");
+             }",
+        );
+        assert!(dropped_facts(&hir, &lir).is_empty());
+        let pos = hir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main")
+            .pos
+            .clone();
+        assert!(stops_statement_sequence(&hir::Stmt::Block(vec![
+            hir::Stmt::Break(pos.clone())
+        ])));
+        assert!(stops_statement_sequence(&hir::Stmt::Block(vec![
+            hir::Stmt::Continue(pos)
+        ])));
+        assert!(!stops_statement_sequence(&hir::Stmt::Block(Vec::new())));
     }
 }

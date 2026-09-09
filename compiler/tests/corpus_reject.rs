@@ -134,7 +134,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r127-f32-frombits-f64-arg.ts", RuleCode::S007, 9),
     ("r128-readonly-index-write.ts", RuleCode::S100, 19),
     ("r129-index-signature-no-get.ts", RuleCode::S100, 8),
-    ("r131-using-nullable-init.ts", RuleCode::S100, 16),
     ("r132-await-using.ts", RuleCode::S100, 12),
     ("r133-using-without-dispose.ts", RuleCode::S100, 10),
     ("r134-plain-alias-entry-param.ts", RuleCode::S100, 9),
@@ -218,6 +217,10 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r189-lone-low-surrogate.ts", RuleCode::S100, 8),
     ("r190-lone-surrogate-before-character.ts", RuleCode::S100, 8),
     ("r191-lone-brace-surrogate.ts", RuleCode::S100, 8),
+    ("r192-using-nullable-without-dispose.ts", RuleCode::S100, 10),
+    ("r193-using-value-class-hook.ts", RuleCode::S100, 9),
+    ("r194-using-descriptor-class-hook.ts", RuleCode::S100, 9),
+    ("r195-using-nullable-member.ts", RuleCode::S011, 14),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,

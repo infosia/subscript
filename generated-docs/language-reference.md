@@ -465,6 +465,12 @@ function mutate(bag: Bag, x: f32): void {
 
 ## Feature guide
 
+### Scope-exit disposal
+
+`using x = e` declares an immutable reference-class binding whose class declares `[Symbol.dispose](): void`. The binding can have type `R | null`. Each initializer evaluates once. Scope exits call the hooks in reverse declaration order and skip null bindings. Inner scopes dispose first; a return expression evaluates before disposal. Suspension preserves resources until completion. Member reads through nullable bindings require ordinary null narrowing. A bare `using x = null` needs a type annotation. Traps do not run disposal. `await using`, value-class hooks, and descriptor-class hooks stay rejected.
+
+Corpus: [`corpus/accept/a199-using-nullable.ts`](../corpus/accept/a199-using-nullable.ts), [`corpus/accept/a200-using-nullable-async.ts`](../corpus/accept/a200-using-nullable-async.ts), [`corpus/accept/a201-using-nullable-switch.ts`](../corpus/accept/a201-using-nullable-switch.ts), [`corpus/reject/r132-await-using.ts`](../corpus/reject/r132-await-using.ts), [`corpus/reject/r133-using-without-dispose.ts`](../corpus/reject/r133-using-without-dispose.ts).
+
 ### Sized numerics
 
 Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, and `f64`; bare `number` is rejected. Literals are checked against their contextual sized type. `f16` is storage-only: convert to `f32` or `f64` before arithmetic.

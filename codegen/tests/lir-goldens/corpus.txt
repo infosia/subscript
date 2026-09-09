@@ -13372,6 +13372,294 @@ fn f1 "main" kind=Free exported=true generator=false async=false -> Void entry=b
     %6: Data(I32) = LoadField(IterValue)(%3) @ a20-coroutine-generator.ts:20:19
     %7: Data(I32) = Binary(Add)(%5, %6) @ a20-coroutine-generator.ts:20:5
     -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(7))] })
+===== a200-using-nullable-async =====
+module initializer=None
+class c0 "Resource" value=false descriptor=false boundary=false align=None @ a200-using-nullable-async.ts:6:7
+  field d0 "label": Str defaulted=false absence=false foreign=None @ a200-using-nullable-async.ts:7:3
+  method m0 "constructor" -> f0
+  method m1 "[[Symbol.dispose]]" -> f1
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a200-using-nullable-async.ts:8:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a200-using-nullable-async.ts:8:3
+  param %1 "label": Data(Str) kind=Explicit storage=None @ a200-using-nullable-async.ts:8:15
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Str) name=Some("label")
+  value %2: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a200-using-nullable-async.ts", line: 8, col: 32 } }] @ a200-using-nullable-async.ts:8:37
+    StoreAddress(%2, %1) @ a200-using-nullable-async.ts:8:37
+    -> Return { value: None, pos: Pos { file: "a200-using-nullable-async.ts", line: 8, col: 3 } }
+fn f1 "[[Symbol.dispose]]" kind=Method { class: ClassId(0), method: MethodId(1) } exported=false generator=false async=false -> Void entry=b0 @ a200-using-nullable-async.ts:9:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a200-using-nullable-async.ts:9:3
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = LoadField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a200-using-nullable-async.ts", line: 9, col: 47 } }] @ a200-using-nullable-async.ts:9:52
+    %2: Data(Str) = Template([Text("dispose:"), Operand { index: 0, format: Str }])(%1) traps=[Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 9, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 9, col: 36 } }] @ a200-using-nullable-async.ts:9:36
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a200-using-nullable-async.ts:9:30
+    -> Return { value: None, pos: Pos { file: "a200-using-nullable-async.ts", line: 9, col: 3 } }
+fn f2 "make" kind=Free exported=false generator=false async=false -> Nullable(Class(ClassId(0))) entry=b0 @ a200-using-nullable-async.ts:11:10
+  param %0 "live": Data(Bool) kind=Explicit storage=None @ a200-using-nullable-async.ts:11:15
+  value %0: Data(Bool) name=Some("live")
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Nullable(Class(ClassId(0)))) name=None
+  value %4: Data(Bool) name=None
+  value %5: Data(Nullable(Class(ClassId(0)))) name=None
+  b0 Some("entry"):
+    -> ConditionalBranch { condition: Value(ValueId(0)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("if.then"):
+    %1: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 12, col: 22 } }] @ a200-using-nullable-async.ts:12:22
+    %2: Data(Str) = StringLiteral("async")() traps=[Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 12, col: 35 } }] @ a200-using-nullable-async.ts:12:35
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Str)], return_type: None })(%1, %2) traps=[Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 12, col: 22 } }] @ a200-using-nullable-async.ts:12:22
+    %3: Data(Nullable(Class(ClassId(0)))) = Coerce(%1) @ a200-using-nullable-async.ts:12:15
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a200-using-nullable-async.ts", line: 12, col: 15 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))] })
+  b3(%4: Data(Bool)) Some("if.join"):
+    %5: Data(Nullable(Class(ClassId(0)))) = Coerce(Null:Null) @ a200-using-nullable-async.ts:13:3
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a200-using-nullable-async.ts", line: 13, col: 3 } }
+fn f3 "hold" kind=Free exported=false generator=false async=true -> Void entry=b0 @ a200-using-nullable-async.ts:15:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 15, col: 16 } }]
+  value %0: Data(Nullable(Class(ClassId(0)))) name=None
+  value %1: Data(Nullable(Class(ClassId(0)))) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(Bool) name=None
+  value %5: Data(Class(ClassId(0))) name=None
+  value %6: Data(Bool) name=None
+  value %7: Data(Class(ClassId(0))) name=None
+  value %8: Data(Nullable(Class(ClassId(0)))) name=None
+  value %9: Data(Nullable(Class(ClassId(0)))) name=None
+  b0 Some("entry"):
+    %0: Data(Nullable(Class(ClassId(0)))) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Bool)], return_type: Some(Data(Nullable(Class(ClassId(0))))) })(Boolean(false):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 16, col: 18 } }] @ a200-using-nullable-async.ts:16:18
+    %1: Data(Nullable(Class(ClassId(0)))) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Bool)], return_type: Some(Data(Nullable(Class(ClassId(0))))) })(Boolean(true):Bool) traps=[Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 16, col: 38 } }] @ a200-using-nullable-async.ts:16:38
+    %2: Data(Str) = StringLiteral("hold:before")() traps=[Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 17, col: 9 } }] @ a200-using-nullable-async.ts:17:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a200-using-nullable-async.ts:17:3
+    -> Suspend { kind: Async, pos: Pos { file: "a200-using-nullable-async.ts", line: 18, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(1))], invalidates: [], traps: [] }
+  b1(%8: Data(Nullable(Class(ClassId(0)))), %9: Data(Nullable(Class(ClassId(0))))) Some("async.resume"):
+    %3: Data(Str) = StringLiteral("hold:after")() traps=[Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 19, col: 9 } }] @ a200-using-nullable-async.ts:19:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a200-using-nullable-async.ts:19:3
+    %4: Data(Bool) = Binary(Ne)(%9, Null:Null) @ a200-using-nullable-async.ts:16:31
+    -> ConditionalBranch { condition: Value(ValueId(4)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [] } }
+  b2 Some("if.then"):
+    %5: Data(Class(ClassId(0))) = Coerce(%9) @ a200-using-nullable-async.ts:16:31
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: None })(%5) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a200-using-nullable-async.ts", line: 16, col: 31 } }, Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 16, col: 31 } }] @ a200-using-nullable-async.ts:16:31
+    -> Branch(BlockTarget { block: BlockId(4), arguments: [] })
+  b3 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(4), arguments: [] })
+  b4 Some("if.join"):
+    %6: Data(Bool) = Binary(Ne)(%8, Null:Null) @ a200-using-nullable-async.ts:16:9
+    -> ConditionalBranch { condition: Value(ValueId(6)), then_target: BlockTarget { block: BlockId(5), arguments: [] }, else_target: BlockTarget { block: BlockId(6), arguments: [] } }
+  b5 Some("if.then"):
+    %7: Data(Class(ClassId(0))) = Coerce(%8) @ a200-using-nullable-async.ts:16:9
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: None })(%7) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a200-using-nullable-async.ts", line: 16, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 16, col: 9 } }] @ a200-using-nullable-async.ts:16:9
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [] })
+  b6 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [] })
+  b7 Some("if.join"):
+    -> Return { value: None, pos: Pos { file: "a200-using-nullable-async.ts", line: 15, col: 16 } }
+fn f4 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a200-using-nullable-async.ts:21:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 21, col: 23 } }]
+  value %0: Data(AsyncHandle(Void)) name=None
+  value %1: Data(Str) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(AsyncHandle(Void)) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(Void)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 22, col: 19 } }] @ a200-using-nullable-async.ts:22:19
+    %1: Data(Str) = StringLiteral("collect:before")() traps=[Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 23, col: 9 } }] @ a200-using-nullable-async.ts:23:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%1) @ a200-using-nullable-async.ts:23:3
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() @ a200-using-nullable-async.ts:24:3
+    %2: Data(Str) = StringLiteral("collect:after")() traps=[Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 25, col: 9 } }] @ a200-using-nullable-async.ts:25:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%2) @ a200-using-nullable-async.ts:25:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0) }, pos: Pos { file: "a200-using-nullable-async.ts", line: 26, col: 3 }, successor: BlockId(1), resume_value: None, arguments: [Value(ValueId(0))], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a200-using-nullable-async.ts", line: 26, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 26, col: 3 } }] }
+  b1(%4: Data(AsyncHandle(Void))) Some("async-handle.resume"):
+    %3: Data(Str) = StringLiteral("main:after")() traps=[Trap { kind: Allocation, pos: Pos { file: "a200-using-nullable-async.ts", line: 27, col: 9 } }] @ a200-using-nullable-async.ts:27:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a200-using-nullable-async.ts:27:3
+    AsyncHandleRelease(%4) @ a200-using-nullable-async.ts:21:23
+    -> Return { value: None, pos: Pos { file: "a200-using-nullable-async.ts", line: 21, col: 23 } }
 ===== a79-for-of-generator =====
 module initializer=None
 intrinsic Ambient.0 "Print"

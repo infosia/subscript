@@ -654,7 +654,11 @@ impl<'p> Checker<'p> {
                 },
             };
             if dispose && !matches!(ty, Type::Error) {
-                let valid = match &ty {
+                let resource_type = match &ty {
+                    Type::Nullable(inner) => inner.as_ref(),
+                    other => other,
+                };
+                let valid = match resource_type {
                     Type::Class(id) => {
                         !self.classes[id.0].is_value
                             && !self.classes[id.0].is_descriptor
@@ -665,17 +669,14 @@ impl<'p> Checker<'p> {
                     _ => false,
                 };
                 if !valid {
-                    let message = "a `using` initializer must be a non-null reference class that declares `[Symbol.dispose](): void`; narrow nullable values first";
-                    if matches!(init.ty, Type::Nullable(_)) {
-                        self.error_diverging(
-                            RuleCode::S100,
-                            message,
-                            pos.clone(),
-                            Divergence::UsingDeclaration,
-                        );
+                    let message = if matches!(resource_type, Type::Class(id)
+                        if !self.classes[id.0].is_value && !self.classes[id.0].is_descriptor)
+                    {
+                        "the class of a `using` binding must declare `[Symbol.dispose](): void`"
                     } else {
-                        self.error(RuleCode::S100, message, pos.clone());
-                    }
+                        "a `using` binding must be a reference class with a disposal hook, or that class or null"
+                    };
+                    self.error(RuleCode::S100, message, pos.clone());
                 }
             }
             let holds_capturing = self.is_capturing_value(&init, fx);
