@@ -123,7 +123,7 @@ Every section, with its status:
 | §86 | C emission is linear in the function it emits | active |
 | §87 | A synthetic owner is one scoped operation | active |
 | §88 | The corpus index is the inventory | active |
-| §89 | R40 — a long string constant is adjacent C literals | active |
+| §89 | R40 — a long string constant is adjacent C literals | active; rule 3 superseded by §99 |
 | §90 | No public entry point panics or faults on any input | active |
 | §91 | The tutorials' programs run in the gate | active |
 | §92 | An async call starts its body at the call | active |
@@ -12358,7 +12358,16 @@ translation minimum, which clang and gcc do not enforce.
 2. **Every call site.** The rule is inside `c_string_literal`, so a
    source name, a class name, a position file, and a string literal
    all split the same way; no caller decides.
-3. **Above 65,000 bytes: the checker rejects.** *(Owner decision
+3. **Superseded by §99, 2026-09-09.** The limit and `RuleCode::S019`
+   are removed, and the ship tier emits a constant above 65,000
+   decoded bytes as a file-scope byte array. §99.1 records the
+   measurement: both supported compilers build a 1 MiB constant, and
+   the 65,535-byte figure this rule rested on was documentation
+   rather than a measurement. Rules 1 and 2 stand; they describe the
+   literal form the emitter still writes at or below the threshold.
+   The rest of this rule is history.
+
+   ~~**Above 65,000 bytes: the checker rejects.**~~ *(Owner decision
    2026-09-06, item 2 of the request: a diagnostic, not the array
    form.)* A string literal, or **one static part** of a template
    literal, whose decoded UTF-8 length exceeds 65,000 bytes is **S019**
@@ -12383,7 +12392,8 @@ translation minimum, which clang and gcc do not enforce.
 ### 89.2 Sites
 
 - `compiler/src/check/expr.rs` (string and template literal
-  checking): the S019 report; `compiler/src/diag.rs`: the code;
+  checking): the S019 report *(both removed by §99)*;
+  `compiler/src/diag.rs`: the code *(removed by §99)*;
   `compiler/src/language_reference.rs` if it lists codes;
   `specs/blocks/collisions.md`: the row (orchestrator).
 - `codegen/src/cemit.rs` `c_string_literal`, and one unit test
@@ -13625,6 +13635,28 @@ recorded on this host with their exit codes.
    program that reaches each or a statement that none does. This
    makes the check more accurate; do not weaken it, and do not change
    the corpus to avoid the shape.
+
+8a. *(Added 2026-09-09 by the Phase Review; item 8's report was not
+   produced, and the missing half is a live defect.)* **A `switch`
+   stops a sequence when it has a `default` arm and every arm stops.**
+   Measured: a function whose `switch` returns from every arm, with a
+   statement after it, reports two dropped facts at that statement,
+   because the walk treats the `switch` as falling through. In the
+   §97 shape — a `using` binding whose scope ends in an exhaustive
+   `switch` — the walk demands three trap sites where the LIR carries
+   two. The gate is green only because no accept entry combines the
+   two; an entry that does fails
+   `every_hir_execution_fact_is_carried_by_lir`.
+
+   **A loop needs nothing**, measured: `while (true) { … }` and a
+   `for` with no condition each keep the trailing statement in the
+   LIR, so the walk and the LIR already agree.
+
+   This is the second instance of the class item 8 named. The fix is
+   the class: every statement kind answers the question, and the
+   answer is derived from the kind's own arms rather than added one
+   kind at a time. A corpus entry combining a `using` binding with an
+   exhaustive `switch` lands with it.
 9. Gates: `tools/gate.sh full` green in both profiles; clippy at the
    7/18/13 baseline; `cargo fmt --check`; the `tsc` gate; every
    pre-existing golden byte-identical except the one item 7 names.
@@ -13978,6 +14010,24 @@ that §11c requires. No test writes that guard itself.
 3. A build-time check reports every remaining site at once. It reads
    the test sources and it fails when a host body reaches a C compiler
    without the helper. A per-site fix does not converge (CLAUDE.md).
+
+3a. *(Corrected 2026-09-09 by the Phase Review.)* The check as first
+   written was not total. It matched the exact byte string
+   `int main(void)` and it read two directories. Measured bypasses,
+   each of which compiles as C and each of which the check and the
+   helper both miss: `int  main(void)` with two spaces, and
+   `int main( void )`. `benchmarks/src/bin/bound-call.rs` already
+   holds four hand-written host bodies that reach `host_c_compiler`
+   and no check reads them, and `examples/` carries the crate as a
+   dev-dependency, so a host body there is unread too.
+
+   The check matches a C function definition of `main`, not one
+   spelling of it, and it reads every Rust source in the workspace.
+
+   A type cannot make this class unreachable, because a test can
+   write any bytes to any file. §11c constraint 3's type is not
+   available here. This is the total check the form admits, and the
+   rule says so rather than claiming more.
 4. This is §11c constraint 3's rule in a new place: a guard that a test
    must copy is a guard that a test forgets. §11c carried it into the
    native-library helper; §100 carries it into the host entry.
