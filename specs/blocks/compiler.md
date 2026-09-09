@@ -136,6 +136,7 @@ Every section, with its status:
 | §99 | A long string constant is static C byte data | active |
 | §100 | The Windows host runs the standing gate | active |
 | §101 | A disposal is not placed where control cannot arrive | active |
+| §102 | A test waits on a fact, not on a clock | active |
 
 ## 1. Architecture
 
@@ -14243,3 +14244,67 @@ recorded with their exit codes.
    7/18/13 baseline; `cargo fmt --check`; the `tsc` gate; every
    pre-existing golden byte-identical. The new entries are
    synchronous, so the aggregate LIR snapshot must not move.
+
+## 102. A test waits on a fact, not on a clock
+
+*(Owner decision 2026-09-09.)* Origin: `gate quick` gave three
+verdicts on one clean tree, and the owner asked whether a test needs a
+deadline at all.
+
+### 102.1 What the investigation found
+
+`cli/tests/watch.rs` `wait_for_count` bounds its wait with
+`Instant::now() + Duration::from_secs(20)`.
+
+**The constant has no recorded basis.** It entered with `27e64bd`, the
+commit that added `run --watch`, which records the 150 ms polling
+interval and states no deadline. `specs/blocks/cli.md` §12 states no
+timeout, latency or budget. The number appears in that one line and
+nowhere else. A failure at 20 seconds therefore cannot be read: it
+says "stuck, or merely busy" and the reader cannot tell which.
+Measured, the test passes alone in about 1.2 seconds and consumed the
+whole deadline twice under gate load.
+
+**A bound is nonetheless necessary, for a reason the constant does not
+serve.** `tools/gate.sh` has no timeout, so nothing above the test
+stops a hang. And the capture's reader thread breaks on end of input
+without notifying its condition variable, so a watch process that dies
+leaves the waiter blocked with nothing left to wake it. The deadline
+is the only thing that turns a dead child into a diagnosable failure.
+
+### 102.2 Rule
+
+1. A test that waits for output from a spawned process waits on a
+   fact the test already has. End of input is such a fact: the reader
+   records it and notifies, and the waiter returns an error naming
+   what it wanted and what it received. That error is derived, so it
+   needs no number.
+2. A wall-clock deadline is not a substitute for rule 1 and does not
+   express a latency the product owes. A test states no performance
+   bound unless a contract gives it one to state.
+3. A clock remains admissible for one case only: a child that stays
+   alive and silent. That case is a hang, and a hang belongs to the
+   harness that runs the suite, not to the assertion. If a test keeps
+   a clock for it, the value is derived from something stated — the
+   150 ms poll of `cli.md` §12, with the multiple written down — and
+   the failure message says it is a hang guard.
+4. This rule is about waiting, not about timing. A benchmark that
+   measures duration is unaffected.
+
+### 102.3 Corpus and gate (pre-registered exit criteria)
+
+Red first: `wait_for_count` blocks forever when its child dies before
+producing the needle. Demonstrate it with a spawned process that exits
+early, and record that the test hangs rather than failing.
+
+1. The reader notifies on end of input and records that it happened.
+   `wait_for_count` returns an error that names the needle, the count
+   it wanted, and everything captured.
+2. A test that reaches rule 1's error is a firing control: a child
+   that exits before producing the needle fails with that message
+   rather than hanging or timing out.
+3. Whatever remains of the clock satisfies rule 3, and the tracking
+   note records what it is derived from.
+4. Gates: `tools/gate.sh full` green in both profiles. Run
+   `tools/gate.sh quick` three times and report all three verdict
+   lines; the flake this section came from must not reappear.
