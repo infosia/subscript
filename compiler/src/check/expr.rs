@@ -404,21 +404,6 @@ fn synthesized_int_range(ty: &Type) -> Option<(i64, i64)> {
     Some((lo.max(-EXACT) as i64, hi.min(EXACT) as i64))
 }
 
-/// Reinterprets HIR integer bits according to the expression's sized type.
-fn int_value_at_type(bits: i64, ty: &Type) -> Option<i128> {
-    Some(match ty {
-        Type::I8 => i128::from(bits as i8),
-        Type::U8 => i128::from(bits as u8),
-        Type::I16 => i128::from(bits as i16),
-        Type::U16 => i128::from(bits as u16),
-        Type::I32 => i128::from(bits as i32),
-        Type::U32 => i128::from(bits as u32),
-        Type::I64 => i128::from(bits),
-        Type::U64 => i128::from(bits as u64),
-        _ => return None,
-    })
-}
-
 impl<'p> Checker<'p> {
     fn ambient_visible(&self, name: &str, fx: &FnCtx) -> bool {
         !fx.owns_local_name(name) && self.scope_item(name).is_none()
@@ -2600,38 +2585,6 @@ impl<'p> Checker<'p> {
             }
             _ => (BinOp::Add, Type::Error, suppress_error),
         };
-        let literal_shift_amount = match &right.kind {
-            ExprKind::Int(bits) => int_value_at_type(*bits, &right.ty),
-            _ => None,
-        };
-        if ok
-            && matches!(op, B::LShift | B::RShift | B::ZeroFillRShift)
-            && literal_shift_amount
-                .is_some_and(|amount| amount >= i128::from(lt.bit_width().unwrap_or(u32::MAX)))
-        {
-            let amount = literal_shift_amount.unwrap_or(0);
-            let width = lt.bit_width().unwrap_or(0);
-            let name = self.type_name(&lt);
-            self.error_diverging(
-                RuleCode::S008,
-                format!(
-                    "literal shift amount {} is out of range for `{}` width {}",
-                    amount, name, width
-                ),
-                right.pos.clone(),
-                Divergence::IntegerLiteralRange,
-            );
-            if use_kind == BinUse::CompoundAssignment {
-                return BinResult {
-                    expr: mk(hop, if operand_error { Type::Error } else { ty }),
-                    terminal: false,
-                };
-            }
-            return BinResult {
-                expr: self.err_expr(pos),
-                terminal: true,
-            };
-        }
         if ok || suppress_error {
             return BinResult {
                 expr: mk(hop, if operand_error { Type::Error } else { ty }),
@@ -8440,14 +8393,45 @@ mod tests {
     }
 
     #[test]
-    fn compound_shift_keeps_the_literal_width_diagnostic() {
-        let source = "export function main(): void {\n  let value: u8 = 1;\n  value <<= 8;\n}\n";
-        let diagnostics = check_program(&[SourceFile::new("test.ts", source)])
-            .expect_err("wide literal compound shift must fail");
-        assert_eq!(diagnostics.len(), 1);
-        assert_eq!(
-            diagnostics[0].message,
-            "literal shift amount 8 is out of range for `u8` width 8"
-        );
+    fn compound_shift_preserves_the_count_and_operand_type() {
+        let source = "export function main(): void { let value: u8 = 1; value <<= 8; }";
+        let expression = normalized_main_expression(source);
+        assert_eq!(expression.ty, crate::Type::U8);
+        let hir::ExprKind::Assign { op, target, value } = expression.kind else {
+            panic!("compound assignment");
+        };
+        assert_eq!(op, Some(hir::BinOp::Shl));
+        assert_eq!(target.ty, crate::Type::U8);
+        assert_eq!(value.ty, crate::Type::U8);
+        assert!(matches!(value.kind, hir::ExprKind::Int(8)));
+    }
+
+    #[test]
+    fn shift_operand_rules_keep_positive_controls() {
+        for (bad, good, code) in [
+            (
+                "const x: u8 = 1; const y: u8 = x << 300;",
+                "const x: u8 = 1; const y: u8 = x << 8;",
+                RuleCode::S008,
+            ),
+            (
+                "const x: u8 = 1; const k: i32 = 8; const y: u8 = x << k;",
+                "const x: u8 = 1; const k: i32 = 8; const y: u8 = x << (k as u8);",
+                RuleCode::S007,
+            ),
+            (
+                "const x: f64 = 1.0; const y: f64 = x << 1;",
+                "const x: i32 = 1; const y: i32 = x << 32;",
+                RuleCode::S100,
+            ),
+        ] {
+            let diagnostics = check_program(&[SourceFile::new("test.ts", bad)])
+                .expect_err("invalid shift operand");
+            assert!(
+                diagnostics.iter().any(|diagnostic| diagnostic.code == code),
+                "{diagnostics:?}"
+            );
+            check_program(&[SourceFile::new("test.ts", good)]).expect("valid shift operand");
+        }
     }
 }

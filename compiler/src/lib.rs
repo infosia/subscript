@@ -2331,14 +2331,11 @@ mod tests {
     }
 
     #[test]
-    fn literal_overshift_is_s008_but_nonliteral_is_accepted() {
-        let err = check_one(
+    fn literal_and_nonliteral_shift_counts_are_accepted() {
+        check_one(
             "export function main(): void {\n  const one: u8 = 1;\n  const x: u8 = one << 8;\n  print(`${x}`);\n}\n",
         )
-        .unwrap_err();
-        assert_eq!(err[0].code, RuleCode::S008);
-        assert!(err[0].message.contains("shift amount 8"));
-        assert!(err[0].message.contains("`u8` width 8"));
+        .expect("literal shift amounts are masked at runtime");
 
         check_one(
             "export function main(): void {\n  const one: u8 = 1;\n  const amount: u8 = 8;\n  const x: u8 = one << amount;\n  print(`${x}`);\n}\n",

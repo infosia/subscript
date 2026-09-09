@@ -49,7 +49,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r34-narrow-mixed-arithmetic.ts", RuleCode::S007, 9),
     ("r35-narrow-mixed-bitwise.ts", RuleCode::S007, 9),
     ("r36-f16-arithmetic.ts", RuleCode::S014, 9),
-    ("r37-literal-overshift.ts", RuleCode::S008, 8),
     ("r38-map-f16-key.ts", RuleCode::S014, 8),
     ("r39-map-array-key.ts", RuleCode::S014, 8),
     ("r40-map-cstruct-key.ts", RuleCode::S014, 16),
@@ -834,17 +833,12 @@ fn q30_rejections_name_the_actual_missing_prerequisite() {
 }
 
 #[test]
-fn r26_u64_max_shift_amount_is_rejected_at_its_unsigned_value() {
-    let diagnostics = check_program(&[SourceFile::new(
+fn u64_max_shift_amount_is_accepted() {
+    check_program(&[SourceFile::new(
         "shift.ts",
-        "export function main(): void {\n  const one: u64 = 1;\n  const bad: u64 = one << 0xFFFFFFFFFFFFFFFF;\n  print(`${bad}`);\n}\n",
+        "export function main(): void {\n  const one: u64 = 1;\n  const value: u64 = one << 0xFFFFFFFFFFFFFFFF;\n  print(`${value}`);\n}\n",
     )])
-    .expect_err("u64 max shift amount must be rejected");
-    assert_eq!(diagnostics[0].code, RuleCode::S008);
-    assert_eq!(
-        diagnostics[0].message,
-        "literal shift amount 18446744073709551615 is out of range for `u64` width 64"
-    );
+    .expect("a representable u64 shift count must be accepted");
 }
 
 #[test]

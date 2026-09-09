@@ -14,7 +14,7 @@ const GENERATED_BY: &str = "cargo run --offline -p subscript-compiler --bin gene
 
 const SURFACE_SUMMARY: &str = "subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. Exported functions are host entry points. Types are explicit and nominal; exceptions, dynamic evaluation, `any`, general unions, ordinary `undefined` values, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.";
 
-const SIZED_NUMERICS: &str = "Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, and `f64`; bare `number` is rejected. Literals are checked against their contextual sized type. `f16` is storage-only: convert to `f32` or `f64` before arithmetic.";
+const SIZED_NUMERICS: &str = "Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, and `f64`; bare `number` is rejected. Literals are checked against their contextual sized type. Integer shifts use `count & (width - 1)` for every count spelling, including compound assignments. Literal counts must fit their contextual type. Mixed-width operands require an explicit `as`. `>>` preserves signedness; `>>>` fills with zero bits. `f16` is storage-only: convert to `f32` or `f64` before arithmetic.";
 
 const VALUE_REFERENCE_CLASSES: &str = "`@CStruct class` declares a nominal C-layout value class, copied on assignment and argument passing. The `@CStruct({ align: N })` form raises alignment to 2, 4, 8, or 16 bytes and rounds size without changing field offsets. A plain `class` declares a nominal heap reference class: `new` allocates it in the active `Context`, and assignments copy the reference. Value classes do not inherit, and same-shaped nominal types do not substitute for one another.";
 
@@ -66,6 +66,8 @@ const FEATURES: &[Feature] = &[
         corpus: &[
             "corpus/accept/a02-integer-types.ts",
             "corpus/accept/a03-integer-literals.ts",
+            "corpus/accept/a202-shift-count-spellings.ts",
+            "corpus/accept/a203-shift-count-widths.ts",
             "corpus/accept/a46-narrow-numerics.ts",
             "corpus/accept/a49-f16-conversions.ts",
             "corpus/reject/r08-bare-number.ts",

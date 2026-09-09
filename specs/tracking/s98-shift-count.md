@@ -70,3 +70,40 @@ Measured on the dev tier with variable counts:
 
 The removal is a checker-only change: one branch in
 `compiler/src/check/expr.rs`.
+
+## Landed, 2026-09-09
+
+Gate verdict:
+
+```
+gate full ddd696ebb41639df457b1ad6c49166ed25f4f018 dirty:11 debug 1359/0/2 release 1357/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+No golden moved, and the aggregate LIR snapshot did not grow: both new
+entries are synchronous.
+
+### The round's findings, all correct
+
+1. **Q18 carries no Accept or Reject list.** §98.2 said the retired
+   name stays in an existing list. There is none, so the retirement is
+   new text. The round raised it before implementing, as asked.
+2. **Two obsolete tests the first handoff missed**: the
+   literal-overshift assertion in `compiler/src/lib.rs` and the u64
+   maximum-count row in `compiler/tests/corpus_reject.rs`. The first
+   full gate failed on the second one, exit 1, `1358/1/2`. Both retire
+   with the rule, and the helper the removed branch used goes with
+   them.
+
+### Verified here after the change
+
+| Expression | before | after | node |
+|---|---|---|---|
+| `x << 32`, `x: i32` | S008 | `1` | `1` |
+| `x <<= 32` | S008 | `1` | `1` |
+| `x << (16 + 16)` | `1` | `1` | `1` |
+| `x << K`, `const K: i32 = 32` | `1` | `1` | `1` |
+| `x << -1` | `-2147483648` | `-2147483648` | same |
+| `x << 300`, `x: u8` | S008 | S008 | control, unchanged |
+
+The control keeps the genuine C4 diagnostic, "integer literal 300 out
+of range for `u8`". a202 and a203 match their goldens.

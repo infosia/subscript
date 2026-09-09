@@ -473,9 +473,9 @@ Corpus: [`corpus/accept/a199-using-nullable.ts`](../corpus/accept/a199-using-nul
 
 ### Sized numerics
 
-Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, and `f64`; bare `number` is rejected. Literals are checked against their contextual sized type. `f16` is storage-only: convert to `f32` or `f64` before arithmetic.
+Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, and `f64`; bare `number` is rejected. Literals are checked against their contextual sized type. Integer shifts use `count & (width - 1)` for every count spelling, including compound assignments. Literal counts must fit their contextual type. Mixed-width operands require an explicit `as`. `>>` preserves signedness; `>>>` fills with zero bits. `f16` is storage-only: convert to `f32` or `f64` before arithmetic.
 
-Corpus: [`corpus/accept/a02-integer-types.ts`](../corpus/accept/a02-integer-types.ts), [`corpus/accept/a03-integer-literals.ts`](../corpus/accept/a03-integer-literals.ts), [`corpus/accept/a46-narrow-numerics.ts`](../corpus/accept/a46-narrow-numerics.ts), [`corpus/accept/a49-f16-conversions.ts`](../corpus/accept/a49-f16-conversions.ts), [`corpus/reject/r08-bare-number.ts`](../corpus/reject/r08-bare-number.ts), [`corpus/reject/r09-int-literal-overflow.ts`](../corpus/reject/r09-int-literal-overflow.ts), [`corpus/reject/r36-f16-arithmetic.ts`](../corpus/reject/r36-f16-arithmetic.ts).
+Corpus: [`corpus/accept/a02-integer-types.ts`](../corpus/accept/a02-integer-types.ts), [`corpus/accept/a03-integer-literals.ts`](../corpus/accept/a03-integer-literals.ts), [`corpus/accept/a202-shift-count-spellings.ts`](../corpus/accept/a202-shift-count-spellings.ts), [`corpus/accept/a203-shift-count-widths.ts`](../corpus/accept/a203-shift-count-widths.ts), [`corpus/accept/a46-narrow-numerics.ts`](../corpus/accept/a46-narrow-numerics.ts), [`corpus/accept/a49-f16-conversions.ts`](../corpus/accept/a49-f16-conversions.ts), [`corpus/reject/r08-bare-number.ts`](../corpus/reject/r08-bare-number.ts), [`corpus/reject/r09-int-literal-overflow.ts`](../corpus/reject/r09-int-literal-overflow.ts), [`corpus/reject/r36-f16-arithmetic.ts`](../corpus/reject/r36-f16-arithmetic.ts).
 
 ### Value and reference classes
 
