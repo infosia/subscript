@@ -25,7 +25,7 @@ export function main(): void {
     `utc=${instant.getUTCFullYear()},${instant.getUTCMonth()},${instant.getUTCDate()},${instant.getUTCHours()}`,
   );
 
-  // Section three: number text. number=1234.5678|1234.57|-0 shows the shortest
+  // Section three: number text. number=1234.5678|1234.57|0 shows the shortest
   // round-trip form, a two-digit fixed form, and negative zero.
   // Q14/Q25: interpolation and toFixed use the shared runtime formatter,
   // so neither execution tier delegates these bytes to a host libc.

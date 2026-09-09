@@ -8,8 +8,7 @@
 //! trimming uses ECMA's explicit WhiteSpace + LineTerminator set.
 //!
 //! These functions are pure and total — no panics, no traps. The Q21
-//! argument errors (`repeat(-1)`, `split("")`, `replaceAll("", …)`,
-//! empty-pad padding) trap in [`crate::ffi`] *before* these are
+//! argument errors (`repeat(-1)`) trap in [`crate::ffi`] *before* these are
 //! called; where a guard would still be violated, each function
 //! documents a harmless total fallback instead of a panic (CLAUDE.md
 //! core principle 5).
@@ -162,13 +161,19 @@ pub fn substr_range(len: usize, start: i32, length: i32) -> (usize, usize) {
 
 /// `split(sep)`: the byte pieces between non-overlapping left-to-right
 /// matches of `sep` — no match → `[hay]`; adjacent/leading/trailing
-/// separators produce empty pieces (JS semantics). `sep` must be
-/// non-empty (the caller traps on `split("")`); an empty `sep` falls
-/// back to `[hay]` rather than panicking.
+/// separators produce empty pieces. An empty separator splits UTF-8
+/// code points; an empty receiver gives no pieces. Invalid UTF-8
+/// returns the receiver unchanged as a total fallback.
 #[must_use]
 pub fn split<'a>(hay: &'a [u8], sep: &[u8]) -> Vec<&'a [u8]> {
     if sep.is_empty() {
-        return vec![hay];
+        return match std::str::from_utf8(hay) {
+            Ok(text) => text
+                .char_indices()
+                .map(|(at, ch)| &hay[at..at + ch.len_utf8()])
+                .collect(),
+            Err(_) => vec![hay],
+        };
     }
     let mut out = Vec::new();
     let mut at = 0usize;
@@ -221,8 +226,7 @@ pub fn repeat(s: &[u8], n: i32) -> Vec<u8> {
 /// bytes ("ab".padStart(5, "xy") → "xyxab"). A receiver already at
 /// least `target` bytes long — or a `target` ≤ 0 — returns the
 /// receiver's bytes unchanged (the caller allocates a fresh copy). An
-/// empty `pad` that would need to fill returns the receiver unchanged
-/// here; the caller traps on that case before calling.
+/// empty `pad` returns the receiver unchanged at every target.
 #[must_use]
 pub fn pad(s: &[u8], target: i32, pad: &[u8], at_start: bool) -> Vec<u8> {
     let target = usize::try_from(target.max(0)).unwrap_or(0);
@@ -244,8 +248,8 @@ pub fn pad(s: &[u8], target: i32, pad: &[u8], at_start: bool) -> Vec<u8> {
 
 /// Writes the `padStart` or `padEnd` result into an exact-size buffer.
 ///
-/// The caller supplies the normalized result length and rejects an empty
-/// pad when filler bytes are necessary. A contract mismatch returns zero.
+/// The caller supplies the normalized result length: the receiver length
+/// for an empty pad. A contract mismatch returns zero.
 pub(crate) fn pad_into(s: &[u8], pad: &[u8], at_start: bool, out: &mut [u8]) -> usize {
     if out.len() < s.len() {
         return 0;
@@ -429,13 +433,27 @@ pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
 /// left-to-right pass over the original — a `pat` that reappears
 /// inside a replacement is **not** rescanned (JS semantics:
 /// `"aa".replaceAll("a", "aa")` is `"aaaa"`). Each replacement uses
-/// ECMA's string-pattern `$` substitutions. `pat` must be non-empty
-/// (the caller traps on `replaceAll("", …)`); an empty `pat` falls
-/// back to the unchanged bytes rather than looping.
+/// ECMA's string-pattern `$` substitutions. An empty pattern matches
+/// every UTF-8 code-point boundary, including both ends. Invalid UTF-8
+/// returns the receiver unchanged as a total fallback.
 #[must_use]
 pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
     if pat.is_empty() {
-        return s.to_vec();
+        let Ok(text) = std::str::from_utf8(s) else {
+            return s.to_vec();
+        };
+        let mut out = Vec::new();
+        let mut previous = 0;
+        for at in text
+            .char_indices()
+            .map(|(at, _)| at)
+            .chain(std::iter::once(s.len()))
+        {
+            out.extend_from_slice(&s[previous..at]);
+            append_replacement(&mut out, s, at, at, repl, 0, false, |_| None, |_| None);
+            previous = at;
+        }
+        return out;
     }
     let mut out = Vec::new();
     let mut at = 0usize;
@@ -461,6 +479,33 @@ pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_patterns_use_utf8_boundaries_and_both_ends() {
+        for (text, pieces, replaced) in [
+            ("", vec![], "-"),
+            ("a", vec!["a"], "-a-"),
+            ("aé", vec!["a", "é"], "-a-é-"),
+            ("😀a", vec!["😀", "a"], "-😀-a-"),
+        ] {
+            let actual = split(text.as_bytes(), b"");
+            let expected: Vec<&[u8]> = pieces.iter().map(|piece| piece.as_bytes()).collect();
+            assert_eq!(actual, expected);
+            assert!(actual
+                .iter()
+                .all(|piece| std::str::from_utf8(piece).is_ok()));
+            assert_eq!(replace_all(text.as_bytes(), b"", b"-"), replaced.as_bytes());
+        }
+        assert_eq!(replace_first(b"", b"", b"-"), b"-");
+        assert_eq!(replace_first("aé".as_bytes(), b"", b"-"), "-aé".as_bytes());
+        assert_eq!(
+            replace_all("aé".as_bytes(), b"", b"<$`|$&|$'>"),
+            "<||aé>a<a||é>é<aé||>".as_bytes()
+        );
+        assert_eq!(replace_all(b"", b"", b"<$`|$&|$'>"), b"<||>");
+        assert_eq!(split("aé".as_bytes(), "é".as_bytes()), vec![&b"a"[..], b""]);
+        assert_eq!(replace_all(b"ab", b"b", b"-"), b"a-");
+    }
 
     #[test]
     fn index_of_hits_misses_and_clamps() {
@@ -528,8 +573,8 @@ mod tests {
         assert_eq!(split(b"", b","), vec![&b""[..]]);
         // Multi-byte separator.
         assert_eq!(split(b"xabyab", b"ab"), vec![&b"x"[..], b"y", b""]);
-        // The documented empty-separator fallback (the FFI traps first).
-        assert_eq!(split(b"ab", b""), vec![&b"ab"[..]]);
+        // An empty separator splits code points.
+        assert_eq!(split(b"ab", b""), vec![&b"a"[..], b"b"]);
     }
 
     #[test]
@@ -583,7 +628,7 @@ mod tests {
         assert_eq!(pad(b"abc", 3, b"x", true), b"abc");
         assert_eq!(pad(b"abcd", 2, b"x", true), b"abcd");
         assert_eq!(pad(b"ab", -1, b"x", true), b"ab");
-        // The documented empty-pad fallback (the FFI traps first).
+        // An empty pad leaves the receiver unchanged.
         assert_eq!(pad(b"ab", 5, b"", true), b"ab");
     }
 
@@ -627,8 +672,8 @@ mod tests {
             b"a<a|-|b-c>b<a-b|-|c>c"
         );
         assert_eq!(replace_all(b"a-b", b"-", b"[$1]"), b"a[$1]b");
-        // The documented empty-pattern fallback (the FFI traps first).
-        assert_eq!(replace_all(b"ab", b"", b"X"), b"ab");
+        // An empty pattern matches both ends and each code-point boundary.
+        assert_eq!(replace_all(b"ab", b"", b"X"), b"XaXbX");
     }
 
     #[test]

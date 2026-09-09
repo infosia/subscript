@@ -1551,8 +1551,7 @@ pub unsafe extern "C" fn subscript_rt_str_code_point_at(
 
 /// `split(sep)`: a fresh `string[]` of the pieces between separator
 /// matches (JS piece order; no match → `[whole]`). An empty separator
-/// traps (Q21: byte-splitting would fracture UTF-8 code points) and
-/// returns null. The elements are string handles stored as 8-byte
+/// splits at UTF-8 code-point boundaries. The elements are string handles stored as 8-byte
 /// values, exactly as a `string[]` literal stores them.
 ///
 /// # Safety
@@ -1575,14 +1574,6 @@ pub unsafe extern "C" fn subscript_rt_str_split(
     let hay = unsafe { ctx.str_view(s) };
     // SAFETY: live string handles.
     let sep = unsafe { ctx.str_view(sep) };
-    if sep.is_empty() {
-        ctx.trap(
-            TrapKind::StrRange,
-            "split(\"\"): an empty separator is not accepted",
-            pos_id,
-        );
-        return std::ptr::null_mut();
-    }
     let arr = ctx.array_new(8, pos_id);
     if arr.is_null() {
         return std::ptr::null_mut();
@@ -1709,9 +1700,8 @@ pub unsafe extern "C" fn subscript_rt_str_repeat(
 /// cyclic copies of `pad`, the final repeat truncated to the target
 /// length. An already-long-enough receiver returns a **fresh copy**
 /// with unchanged bytes (§8: documented choice — every §8 string
-/// result is a fresh Context allocation). An empty `pad` with
-/// `target > length` traps (Q21; JS silently returns the string
-/// unchanged, which hides bugs) and returns null.
+/// result is a fresh Context allocation). An empty `pad` returns
+/// a fresh copy with the receiver length at every target.
 ///
 /// # Safety
 ///
@@ -1722,7 +1712,6 @@ unsafe fn str_pad(
     target: i32,
     pad: *const u8,
     at_start: bool,
-    name: &str,
     pos_id: u32,
 ) -> *mut u8 {
     if s.is_null() || pad.is_null() {
@@ -1742,19 +1731,11 @@ unsafe fn str_pad(
         (bytes.as_ptr(), bytes.len())
     };
     let target = usize::try_from(target.max(0)).unwrap_or(0);
-    if pad_len == 0 && target > bytes_len {
-        ctx.trap(
-            TrapKind::StrRange,
-            format!(
-                "{name}({target}): an empty pad cannot reach the target length \
-                 (string length {})",
-                bytes_len
-            ),
-            pos_id,
-        );
-        return std::ptr::null_mut();
-    }
-    let result_len = target.max(bytes_len);
+    let result_len = if pad_len == 0 {
+        bytes_len
+    } else {
+        target.max(bytes_len)
+    };
     ctx.alloc_str_with(result_len, pos_id, |destination| {
         // SAFETY: both input ranges stay live during this synchronous
         // writer. Neither range overlaps the fresh destination.
@@ -1780,7 +1761,7 @@ pub unsafe extern "C" fn subscript_rt_str_pad_start(
     pos_id: u32,
 ) -> *mut u8 {
     // SAFETY: shared contract (forwarded).
-    unsafe { str_pad(ctx, s, target, pad, true, "padStart", pos_id) }
+    unsafe { str_pad(ctx, s, target, pad, true, pos_id) }
 }
 
 /// `padEnd(len, pad)` — see [`str_pad`]. The checker supplies the
@@ -1798,7 +1779,7 @@ pub unsafe extern "C" fn subscript_rt_str_pad_end(
     pos_id: u32,
 ) -> *mut u8 {
     // SAFETY: shared contract (forwarded).
-    unsafe { str_pad(ctx, s, target, pad, false, "padEnd", pos_id) }
+    unsafe { str_pad(ctx, s, target, pad, false, pos_id) }
 }
 
 /// Shared body of the case mappings: maps via `map`, allocates the
@@ -1885,8 +1866,8 @@ pub unsafe extern "C" fn subscript_rt_str_replace(
 
 /// `replaceAll(pat, repl)`: every occurrence in one left-to-right pass
 /// (a replacement is never rescanned), with ECMA string-pattern `$`
-/// substitutions (Q27). An empty `pat` traps (JS inserts between every
-/// unit) and returns null.
+/// substitutions (Q27). An empty `pat` matches at every UTF-8
+/// code-point boundary, including both ends.
 ///
 /// # Safety
 ///
@@ -1911,14 +1892,6 @@ pub unsafe extern "C" fn subscript_rt_str_replace_all(
     let pat = unsafe { ctx.str_view(pat) };
     // SAFETY: live string handles.
     let repl = unsafe { ctx.str_view(repl) };
-    if pat.is_empty() {
-        ctx.trap(
-            TrapKind::StrRange,
-            "replaceAll(\"\", ...): an empty pattern is not accepted",
-            pos_id,
-        );
-        return std::ptr::null_mut();
-    }
     ctx.alloc_str(&crate::strops::replace_all(bytes, pat, repl), pos_id)
 }
 
@@ -6035,18 +6008,21 @@ mod tests {
     }
 
     #[test]
-    fn ffi_str_split_empty_separator_traps() {
+    fn ffi_str_split_empty_separator_uses_code_points() {
         let mut ctx = Context::new();
         let p: *mut Context = &mut *ctx;
         // SAFETY: valid context; literal data is 'static.
         unsafe {
             let s = subscript_rt_str_lit(p, b"ab".as_ptr(), 2, 0);
             let empty = subscript_rt_str_lit(p, b"".as_ptr(), 0, 0);
-            assert!(subscript_rt_str_split(p, s, empty, 23).is_null());
+            let arr = subscript_rt_str_split(p, s, empty, 23);
+            assert!(!arr.is_null());
+            assert_eq!(subscript_rt_array_len(p, arr), 2);
+            let data = subscript_rt_array_data(p, arr) as *const u64;
+            assert_eq!(ctx.str_bytes(data.read() as *const u8), b"a");
+            assert_eq!(ctx.str_bytes(data.add(1).read() as *const u8), b"b");
         }
-        let r = ctx.trap_record().expect("trap");
-        assert_eq!(r.kind, TrapKind::StrRange);
-        assert_eq!(r.pos_id, 23);
+        assert!(ctx.trap_record().is_none());
     }
 
     #[test]
@@ -6101,7 +6077,7 @@ mod tests {
     }
 
     #[test]
-    fn ffi_str_pad_truncation_no_op_copy_and_empty_pad_trap() {
+    fn ffi_str_pad_truncation_and_empty_pad_copy() {
         let mut ctx = Context::new();
         let p: *mut Context = &mut *ctx;
         // SAFETY: valid context; handles are live.
@@ -6117,18 +6093,19 @@ mod tests {
             let same = subscript_rt_str_pad_start(p, s, 2, xy, 0);
             assert_eq!(ctx.str_bytes(same), b"ab");
             assert_ne!(same, s as *mut u8);
-            // Empty pad with no fill needed is the documented no-op.
             let empty = subscript_rt_str_lit(p, b"".as_ptr(), 0, 0);
-            let noop = subscript_rt_str_pad_end(p, s, 2, empty, 0);
-            assert_eq!(ctx.str_bytes(noop), b"ab");
-            assert!(ctx.trap_record().is_none());
-            // Empty pad that must fill traps (Q21).
-            assert!(subscript_rt_str_pad_start(p, s, 5, empty, 37).is_null());
+            for target in [-1, 1, 2, 4] {
+                for result in [
+                    subscript_rt_str_pad_start(p, s, target, empty, 0),
+                    subscript_rt_str_pad_end(p, s, target, empty, 0),
+                ] {
+                    assert!(!result.is_null());
+                    assert_eq!(ctx.str_bytes(result), b"ab");
+                    assert_ne!(result, s as *mut u8);
+                }
+            }
         }
-        let r = ctx.trap_record().expect("trap");
-        assert_eq!(r.kind, TrapKind::StrRange);
-        assert_eq!(r.pos_id, 37);
-        assert!(r.message.contains("padStart"));
+        assert!(ctx.trap_record().is_none());
     }
 
     fn assert_direct_pad_matches_vec_reference(at_start: bool) {
@@ -6168,7 +6145,7 @@ mod tests {
     }
 
     #[test]
-    fn ffi_str_replace_first_all_and_empty_pattern_trap() {
+    fn ffi_str_replace_first_all_and_empty_pattern() {
         let mut ctx = Context::new();
         let p: *mut Context = &mut *ctx;
         // SAFETY: valid context; handles are live.
@@ -6186,12 +6163,10 @@ mod tests {
             let prefixed = subscript_rt_str_replace(p, s, empty, x, 0);
             assert_eq!(ctx.str_bytes(prefixed), b"Xabcabc");
             assert!(ctx.trap_record().is_none());
-            // ...replaceAll traps on it (Q21).
-            assert!(subscript_rt_str_replace_all(p, s, empty, x, 41).is_null());
+            let inserted = subscript_rt_str_replace_all(p, s, empty, x, 41);
+            assert_eq!(ctx.str_bytes(inserted), b"XaXbXcXaXbXcX");
         }
-        let r = ctx.trap_record().expect("trap");
-        assert_eq!(r.kind, TrapKind::StrRange);
-        assert_eq!(r.pos_id, 41);
+        assert!(ctx.trap_record().is_none());
     }
 
     #[test]

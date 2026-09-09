@@ -39,13 +39,13 @@ max 7
 min 2.5
 round(-2.5) -2
 round(2.5) 3
-round(-0.4) -0
-sign(-0) -0
+round(-0.4) 0
+sign(-0) 0
 sign(0) 0
 max(NaN,1) NaN
 min(1,NaN) NaN
 max(0,-0) 0
-min(0,-0) -0
+min(0,-0) 0
 pow(NaN,0) 1
 pow(1,Inf) NaN
 pow(1,NaN) NaN

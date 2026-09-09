@@ -5,11 +5,10 @@
 //! with ECMA's exponent thresholds (exponential outside
 //! `[1e-6, 1e21)`); integral values in the ordinary range print
 //! without a decimal point (`7`, never `7.0`); specials are spelled
-//! `-0`, `NaN`, `Infinity`, `-Infinity`.
+//! `0`, `NaN`, `Infinity`, `-Infinity`.
 //!
 //! `ryu-js` provides the ECMA shortest-round-trip digits, notation
-//! thresholds, and special-value spellings. Q14 deliberately preserves
-//! the sign of negative zero on top. Both execution tiers share this
+//! thresholds, and special-value spellings. Both execution tiers share this
 //! implementation.
 
 /// The largest decimal representation of one supported integer.
@@ -54,7 +53,7 @@ pub(crate) fn fmt_u64_into(v: u64, storage: &mut [u8; INTEGER_BUFFER_SIZE]) -> &
 
 pub(crate) fn fmt_f32_into(v: f32, storage: &mut ryu_js::Buffer) -> &str {
     if v == 0.0 && v.is_sign_negative() {
-        "-0"
+        "0"
     } else {
         storage.format(v)
     }
@@ -62,7 +61,7 @@ pub(crate) fn fmt_f32_into(v: f32, storage: &mut ryu_js::Buffer) -> &str {
 
 pub(crate) fn fmt_f64_into(v: f64, storage: &mut ryu_js::Buffer) -> &str {
     if v == 0.0 && v.is_sign_negative() {
-        "-0"
+        "0"
     } else {
         storage.format(v)
     }
@@ -176,10 +175,11 @@ mod tests {
     }
 
     #[test]
-    fn negative_zero_keeps_its_sign() {
-        assert_eq!(fmt_f64(-0.0), "-0");
-        assert_eq!(fmt_f32(-0.0), "-0");
+    fn both_zeros_format_as_zero() {
+        assert_eq!(fmt_f64(-0.0), "0");
+        assert_eq!(fmt_f32(-0.0), "0");
         assert_eq!(fmt_f64(0.0), "0");
+        assert_eq!(fmt_f32(0.0), "0");
     }
 
     #[test]

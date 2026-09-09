@@ -50,10 +50,8 @@ pub enum TrapKind {
     /// outside 0000–9999. There is no Invalid-Date value.
     DateRange = 13,
     /// A `String` method range or argument error (stdlib.md §8, Q21):
-    /// `charCodeAt` out of range, a negative `repeat` count, an empty
-    /// `split` separator, an empty `replaceAll` pattern, or an empty
-    /// pad that cannot reach the target length. JS returns NaN or a
-    /// silent no-op in these cases; the language traps.
+    /// `charCodeAt` out of range, a negative `repeat` count, or an
+    /// offset that is not on a UTF-8 boundary.
     StrRange = 14,
     /// A `Number` operation received a programmer-error range
     /// (stdlib.md §11, Q25): a `parseInt` radix outside 2–36 or a

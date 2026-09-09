@@ -2163,7 +2163,7 @@ mod tests {
 
             let f = arr_f64(&mut c, &[0.5, -0.0, 7.0]);
             let out = join(p, f, sep, FmtKind::F64, 0);
-            assert_eq!(c.str_bytes(out), b"0.5, -0, 7");
+            assert_eq!(c.str_bytes(out), b"0.5, 0, 7");
 
             let i8s = c.array_new(1, 0);
             for v in [-128i8, 127i8] {
@@ -2185,7 +2185,7 @@ mod tests {
                 c.array_push(halves, (&bits as *const u16).cast(), 0);
             }
             let out = join(p, halves, sep, FmtKind::F16, 0);
-            assert_eq!(c.str_bytes(out), b"1.5, -0");
+            assert_eq!(c.str_bytes(out), b"1.5, 0");
 
             let s = arr_str(&mut c, &["a", "b"]);
             let out = join(p, s, sep, FmtKind::Str, 0);

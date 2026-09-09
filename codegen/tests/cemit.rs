@@ -524,26 +524,26 @@ fn string_repeat_negative_count_traps_identically() {
 }
 
 #[test]
-fn string_split_empty_separator_traps_identically() {
-    assert_str_range_trap_identical(
+fn string_split_empty_separator_matches_section95() {
+    assert_tiers_print(
         "export function main(): void {\n  const parts: string[] = \"ab\".split(\"\");\n  print(`${parts.length}`);\n}\n",
-        2,
+        "2\n",
     );
 }
 
 #[test]
-fn string_replace_all_empty_pattern_traps_identically() {
-    assert_str_range_trap_identical(
+fn string_replace_all_empty_pattern_matches_section95() {
+    assert_tiers_print(
         "export function main(): void {\n  print(\"ab\".replaceAll(\"\", \"x\"));\n}\n",
-        2,
+        "xaxbx\n",
     );
 }
 
 #[test]
-fn string_empty_pad_that_must_fill_traps_identically() {
-    assert_str_range_trap_identical(
+fn string_empty_pad_that_must_fill_matches_section95() {
+    assert_tiers_print(
         "export function main(): void {\n  print(\"ab\".padEnd(5, \"\"));\n}\n",
-        2,
+        "ab\n",
     );
 }
 
@@ -1898,13 +1898,10 @@ fn fill_reverse_and_sort_return_the_receiver_not_a_copy() {
 
 #[test]
 fn join_prints_negative_zero_as_the_q14_rules_require() {
-    // Q14 formatting, not the host's: `-0` keeps its sign in `join`
-    // exactly as in interpolation. Node 24.18.0 prints `0.1,2.5,0` for
-    // the same array — a recorded divergence that no committed golden
-    // pins.
+    // Section 95 uses the same zero spelling in join and interpolation.
     assert_tiers_print(
         "export function main(): void {\n  const xs: f64[] = [0.1, 2.5, -0];\n  print(xs.join(\",\"));\n}\n",
-        "0.1,2.5,-0\n",
+        "0.1,2.5,0\n",
     );
 }
 

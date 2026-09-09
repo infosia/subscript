@@ -662,7 +662,7 @@ export function main(): void {
         let out = run_ok(
             "export function main(): void {\n  const zero: f64 = 0.0;\n  const one: f64 = 1.0;\n  print(`${zero / zero},${one / zero},${-one / zero},${-zero}`);\n}\n",
         );
-        assert_eq!(out, "NaN,Infinity,-Infinity,-0\n");
+        assert_eq!(out, "NaN,Infinity,-Infinity,0\n");
     }
 
     // ----- bounds-check elimination: safety net (compiler.md §10) -----

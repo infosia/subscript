@@ -62,21 +62,20 @@ pub const DIVERGENCE_SWEEP_DATE: &str = "2026-07-26";
 /// two traps agree, and a trap never agrees with a value.
 pub const DIVERGENCE_WITNESSES: &[DivergenceWitness] = &[
     DivergenceWitness {
-        id: "q14-negative-zero",
-        surface: "template interpolation, `T[].join`, `f32/f64.toString(10)`",
-        q_rule: "Q14 (the method is accepted by Q26)",
-        summary: "The shared decimal formatter preserves negative zero; JS renders it as zero.",
+        id: "q5-split-supplementary",
+        surface: "`string.split(\"\")`",
+        q_rule: "Q5",
+        summary: "An empty separator splits UTF-8 code points; JS splits UTF-16 units.",
         subscript: r#"export function main(): void {
-  const single: f32 = -0.0;
-  const values: f64[] = [-0.0];
-  print(`${-0.0}|${values.join(",")}|${single.toString(10)}|${(-0.0).toString(10)}`);
+  print(JSON.stringify("😀a".split("")));
 }
 "#,
-        javascript: r#"console.log(`${-0}|${[-0].join(",")}|${Math.fround(-0).toString(10)}|${(-0).toString(10)}`);
+        javascript: r#"console.log(JSON.stringify("😀a".split("")));
 "#,
-        subscript_outcome: WitnessOutcome::Value("-0|-0|-0|-0\n"),
-        javascript_outcome: WitnessOutcome::Value("0|0|0|0\n"),
+        subscript_outcome: WitnessOutcome::Value("[\"😀\",\"a\"]\n"),
+        javascript_outcome: WitnessOutcome::Value("[\"\\ud83d\",\"\\ude00\",\"a\"]\n"),
     },
+
     DivergenceWitness {
         id: "q28-json-nan",
         surface: "`JSON.stringify(NaN)`",
@@ -227,49 +226,9 @@ console.log(`${value.charCodeAt(0)}|${value.charAt(2)}|${String(value.codePointA
         subscript_outcome: WitnessOutcome::Value("éx\n"),
         javascript_outcome: WitnessOutcome::Value("éxx\n"),
     },
-    DivergenceWitness {
-        id: "q21-pad-start-empty",
-        surface: "`string.padStart` with an empty pad",
-        q_rule: "Q21",
-        summary: "subscript traps while JS returns the unchanged string.",
-        subscript: r#"export function main(): void {
-  print("x".padStart(3, ""));
-}
-"#,
-        javascript: r#"console.log("x".padStart(3, ""));
-"#,
-        subscript_outcome: WitnessOutcome::Trap,
-        javascript_outcome: WitnessOutcome::Value("x\n"),
-    },
-    DivergenceWitness {
-        id: "q21-pad-end-empty",
-        surface: "`string.padEnd` with an empty pad",
-        q_rule: "Q21",
-        summary: "subscript traps while JS returns the unchanged string.",
-        subscript: r#"export function main(): void {
-  print("x".padEnd(3, ""));
-}
-"#,
-        javascript: r#"console.log("x".padEnd(3, ""));
-"#,
-        subscript_outcome: WitnessOutcome::Trap,
-        javascript_outcome: WitnessOutcome::Value("x\n"),
-    },
-    DivergenceWitness {
-        id: "q21-split-empty",
-        surface: "`string.split(\"\")`",
-        q_rule: "Q21",
-        summary: "subscript traps while JS splits into UTF-16 units.",
-        subscript: r#"export function main(): void {
-  const pieces: string[] = "ab".split("");
-  print(`${pieces.length}`);
-}
-"#,
-        javascript: r#"console.log(`${"ab".split("").length}`);
-"#,
-        subscript_outcome: WitnessOutcome::Trap,
-        javascript_outcome: WitnessOutcome::Value("2\n"),
-    },
+
+
+
     DivergenceWitness {
         id: "q21-char-code-oob",
         surface: "`string.charCodeAt` out of range",
@@ -298,20 +257,7 @@ console.log(`${value.charCodeAt(0)}|${value.charAt(2)}|${String(value.codePointA
         subscript_outcome: WitnessOutcome::Trap,
         javascript_outcome: WitnessOutcome::Value("undefined\n"),
     },
-    DivergenceWitness {
-        id: "q21-replace-all-empty",
-        surface: "`string.replaceAll` with an empty pattern",
-        q_rule: "Q21",
-        summary: "subscript traps while JS inserts the replacement at every boundary.",
-        subscript: r#"export function main(): void {
-  print("ab".replaceAll("", "-"));
-}
-"#,
-        javascript: r#"console.log("ab".replaceAll("", "-"));
-"#,
-        subscript_outcome: WitnessOutcome::Trap,
-        javascript_outcome: WitnessOutcome::Value("-a-b-\n"),
-    },
+
     DivergenceWitness {
         id: "q19-context-random",
         surface: "`Math.random`",

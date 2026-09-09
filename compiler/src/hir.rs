@@ -1832,7 +1832,7 @@ pub enum StrFn {
     EndsWith,
     /// `charCodeAt(i)` — the byte value 0–255; out of range traps.
     CharCodeAt,
-    /// `split(sep)` — `string[]`; an empty separator traps.
+    /// `split(sep)` — `string[]`; an empty separator splits UTF-8 code points.
     Split,
     /// `trim()` — ECMA WhiteSpace + LineTerminator code points.
     Trim,
@@ -1842,9 +1842,9 @@ pub enum StrFn {
     TrimEnd,
     /// `repeat(n)` — `n < 0` traps; `repeat(0)` is `""`.
     Repeat,
-    /// `padStart(len, pad)` — an empty `pad` with `len > length` traps.
+    /// `padStart(len, pad)` — an empty `pad` returns unchanged bytes.
     PadStart,
-    /// `padEnd(len, pad)` — same trap rule as `padStart`.
+    /// `padEnd(len, pad)` — same empty-pad rule as `padStart`.
     PadEnd,
     /// `toUpperCase()` — Unicode Default Case Conversion.
     ToUpperCase,
@@ -1854,7 +1854,7 @@ pub enum StrFn {
     /// `$` substitutions (Q27).
     Replace,
     /// `replaceAll(pat, repl)` — all occurrences with ECMA
-    /// string-pattern `$` substitutions; an empty `pat` traps.
+    /// string-pattern `$` substitutions; an empty `pat` matches each code-point boundary.
     ReplaceAll,
     /// `substring(start, end)` — negative offsets clamp to zero and a
     /// reversed pair is swapped; byte boundaries are required.
@@ -2199,18 +2199,18 @@ impl StrFn {
             StrFn::StartsWith => "Tests for a prefix at an optional byte position.",
             StrFn::EndsWith => "Tests for a suffix ending at an optional byte position.",
             StrFn::CharCodeAt => "Returns one UTF-8 byte value; out of range traps.",
-            StrFn::Split => "Splits on a literal non-empty string separator.",
+            StrFn::Split => "Splits on a literal separator; an empty separator splits UTF-8 code points.",
             StrFn::Trim => "Removes ECMA whitespace from both ends.",
             StrFn::TrimStart => "Removes ECMA whitespace from the start.",
             StrFn::TrimEnd => "Removes ECMA whitespace from the end.",
             StrFn::Repeat => "Repeats the UTF-8 byte string.",
-            StrFn::PadStart => "Pads to a byte length on the left.",
-            StrFn::PadEnd => "Pads to a byte length on the right.",
+            StrFn::PadStart => "Pads to a byte length on the left; an empty pad returns unchanged bytes.",
+            StrFn::PadEnd => "Pads to a byte length on the right; an empty pad returns unchanged bytes.",
             StrFn::ToUpperCase => "Applies Unicode Default Case Conversion.",
             StrFn::ToLowerCase => "Applies Unicode Default Case Conversion.",
             StrFn::Replace => "Replaces the first literal match with ECMA `$` substitutions.",
             StrFn::ReplaceAll => {
-                "Replaces every literal match with ECMA `$` substitutions; an empty pattern traps."
+                "Replaces every literal match with ECMA `$` substitutions; an empty pattern matches each code-point boundary."
             }
             StrFn::Substring => "Slices by clamped UTF-8 byte offsets, swapping a reversed pair.",
             StrFn::Substr => {

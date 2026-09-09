@@ -153,17 +153,17 @@
 | `startsWith(needle: string, position?: i32): boolean` | Tests for a prefix at an optional byte position. |
 | `endsWith(needle: string, endPosition?: i32): boolean` | Tests for a suffix ending at an optional byte position. |
 | `charCodeAt(index: i32): i32` | Returns one UTF-8 byte value; out of range traps. |
-| `split(separator: string): string[]` | Splits on a literal non-empty string separator. |
+| `split(separator: string): string[]` | Splits on a literal separator; an empty separator splits UTF-8 code points. |
 | `trim(): string` | Removes ECMA whitespace from both ends. |
 | `trimStart(): string` | Removes ECMA whitespace from the start. |
 | `trimEnd(): string` | Removes ECMA whitespace from the end. |
 | `repeat(count: i32): string` | Repeats the UTF-8 byte string. |
-| `padStart(length: i32, pad?: string): string` | Pads to a byte length on the left. |
-| `padEnd(length: i32, pad?: string): string` | Pads to a byte length on the right. |
+| `padStart(length: i32, pad?: string): string` | Pads to a byte length on the left; an empty pad returns unchanged bytes. |
+| `padEnd(length: i32, pad?: string): string` | Pads to a byte length on the right; an empty pad returns unchanged bytes. |
 | `toUpperCase(): string` | Applies Unicode Default Case Conversion. |
 | `toLowerCase(): string` | Applies Unicode Default Case Conversion. |
 | `replace(pattern: string, replacement: string): string` | Replaces the first literal match with ECMA `$` substitutions. |
-| `replaceAll(pattern: string, replacement: string): string` | Replaces every literal match with ECMA `$` substitutions; an empty pattern traps. |
+| `replaceAll(pattern: string, replacement: string): string` | Replaces every literal match with ECMA `$` substitutions; an empty pattern matches each code-point boundary. |
 | `substring(start: i32, end?: i32): string` | Slices by clamped UTF-8 byte offsets, swapping a reversed pair. |
 | `substr(start: i32, length?: i32): string` | Slices by UTF-8 byte start and length; a negative start counts from the end. |
 | `charAt(index: i32): string` | Returns the code point starting at a UTF-8 byte index, or an empty string. |
@@ -393,28 +393,26 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 
 Last adversarial sweep of the listed checker-owned built-in surfaces against Node: **2026-07-26**. Each entry below is executed by the test suite. An outcome is either `Value(stdout bytes)` or `Trap`; two values agree only byte-for-byte, two traps agree, and `Trap` never agrees with a value.
 
-### template interpolation, `T[].join`, `f32/f64.toString(10)` — Q14 (the method is accepted by Q26)
+### `string.split("")` — Q5
 
-The shared decimal formatter preserves negative zero; JS renders it as zero.
+An empty separator splits UTF-8 code points; JS splits UTF-16 units.
 
 subscript:
 
 ```ts
 export function main(): void {
-  const single: f32 = -0.0;
-  const values: f64[] = [-0.0];
-  print(`${-0.0}|${values.join(",")}|${single.toString(10)}|${(-0.0).toString(10)}`);
+  print(JSON.stringify("😀a".split("")));
 }
 ```
 
 Node:
 
 ```js
-console.log(`${-0}|${[-0].join(",")}|${Math.fround(-0).toString(10)}|${(-0).toString(10)}`);
+console.log(JSON.stringify("😀a".split("")));
 ```
 
-- subscript result: `-0|-0|-0|-0\n`
-- Node result: `0|0|0|0\n`
+- subscript result: `["😀","a"]\n`
+- Node result: `["\\ud83d","\\ude00","a"]\n`
 
 ### `JSON.stringify(NaN)` — Q28
 
@@ -636,70 +634,6 @@ console.log("é".padEnd(3, "x"));
 - subscript result: `éx\n`
 - Node result: `éxx\n`
 
-### `string.padStart` with an empty pad — Q21
-
-subscript traps while JS returns the unchanged string.
-
-subscript:
-
-```ts
-export function main(): void {
-  print("x".padStart(3, ""));
-}
-```
-
-Node:
-
-```js
-console.log("x".padStart(3, ""));
-```
-
-- subscript result: `Trap`
-- Node result: `x\n`
-
-### `string.padEnd` with an empty pad — Q21
-
-subscript traps while JS returns the unchanged string.
-
-subscript:
-
-```ts
-export function main(): void {
-  print("x".padEnd(3, ""));
-}
-```
-
-Node:
-
-```js
-console.log("x".padEnd(3, ""));
-```
-
-- subscript result: `Trap`
-- Node result: `x\n`
-
-### `string.split("")` — Q21
-
-subscript traps while JS splits into UTF-16 units.
-
-subscript:
-
-```ts
-export function main(): void {
-  const pieces: string[] = "ab".split("");
-  print(`${pieces.length}`);
-}
-```
-
-Node:
-
-```js
-console.log(`${"ab".split("").length}`);
-```
-
-- subscript result: `Trap`
-- Node result: `2\n`
-
 ### `string.charCodeAt` out of range — Q21
 
 subscript traps while JS returns NaN.
@@ -741,27 +675,6 @@ console.log(String("a".codePointAt(1)));
 
 - subscript result: `Trap`
 - Node result: `undefined\n`
-
-### `string.replaceAll` with an empty pattern — Q21
-
-subscript traps while JS inserts the replacement at every boundary.
-
-subscript:
-
-```ts
-export function main(): void {
-  print("ab".replaceAll("", "-"));
-}
-```
-
-Node:
-
-```js
-console.log("ab".replaceAll("", "-"));
-```
-
-- subscript result: `Trap`
-- Node result: `-a-b-\n`
 
 ### `Math.random` — Q19
 

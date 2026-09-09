@@ -3,4 +3,4 @@ rounded 1.0009765625
 overflow Infinity
 subnormal 5.960464477539063e-8
 nan NaN
-negative-zero -0
+negative-zero 0
