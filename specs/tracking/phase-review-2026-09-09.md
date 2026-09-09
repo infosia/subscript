@@ -347,3 +347,32 @@ neither.
 
 The finding cost two fork commits and an owner push each, and it
 found a second defect on the way: rule 2a's positional diagnostic.
+
+## The counts, derived from the records
+
+Three Phase Reviews ran in this arc. Their findings, read from the
+commits and notes that recorded them rather than from memory:
+
+| Review | CRITICAL | MAJOR | MINOR | Closed at |
+|---|---:|---:|---:|---|
+| §94 | 2 | 3 | 12 | `611f7fd`, `4dcbd98` |
+| §95 | 3 | 2 | 9 | `a3d4ba7`; the third CRITICAL became §96 |
+| §96 to §100 | 0 | 4 | 13 | `0eac01e`, `612d170`, `6fe802e` |
+| total | 5 | 9 | 34 | |
+
+*(Added 2026-09-10 after the owner caught a false summary.)* I
+reported "CRITICAL 2, MAJOR 7 closed" while MAJOR 4 was open. The 7
+was §94's three plus the last review's four, counting all four of the
+last as closed and dropping §95's two entirely — over-counting and
+under-counting at once.
+
+The line I contradicted was my own. `612d170` recorded "MAJOR 4. Open;
+it needs a parser fork change", and it stood in this file until
+`6fe802e`.
+
+The cause is not the arithmetic. Every technical claim in this arc
+carried a measurement or a gate verdict line, and rounds were told to
+stop when a measurement disagreed with a table. A progress summary
+carried neither, and nothing in the process pairs a summary with the
+record. A count is a claim. It needs the same evidence as any other,
+and the evidence is this file.
