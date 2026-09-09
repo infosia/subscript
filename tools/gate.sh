@@ -124,13 +124,27 @@ run_bounded() {
     rm -f "$scratch/step-timeout"
     "$@" >"$scratch/stdout" 2>"$scratch/stderr" &
     bounded_pid=$!
+    # The watchdog holds no inherited descriptor, and it sleeps in one
+    # second steps. A long sleep would outlive the step it guards, and
+    # an orphan holding the caller's pipe keeps that caller waiting for
+    # the whole bound.
     (
-        sleep "$gate_step_timeout"
+        waited=0
+        while [ "$waited" -lt "$gate_step_timeout" ]; do
+            sleep 1
+            waited=$(( waited + 1 ))
+            kill -0 "$bounded_pid" 2>/dev/null || exit 0
+        done
         printf '%s\n' "$gate_step_timeout" >"$scratch/step-timeout"
         kill -TERM "$bounded_pid" 2>/dev/null || :
-        sleep 5
+        waited=0
+        while [ "$waited" -lt 5 ]; do
+            sleep 1
+            waited=$(( waited + 1 ))
+            kill -0 "$bounded_pid" 2>/dev/null || exit 0
+        done
         kill -KILL "$bounded_pid" 2>/dev/null || :
-    ) &
+    ) </dev/null >/dev/null 2>&1 &
     watchdog_pid=$!
     bounded_status=0
     wait "$bounded_pid" || bounded_status=$?

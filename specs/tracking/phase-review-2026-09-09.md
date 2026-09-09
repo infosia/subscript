@@ -255,3 +255,41 @@ A child that stays alive and silent still hangs, and `tools/gate.sh`
 sets no timeout. Rule 3a puts that where it belongs: a per-suite bound
 is one decision for every test, and a test that invents its own is
 what rule 2 forbids.
+
+## The step bound, and a defect my own verification missed
+
+`tools/gate.sh` bounds each step under §102.2 rules 3b and 3c. Two
+errors in it were caught by others before it landed.
+
+**The owner asked whether the mechanism works on Windows.** It does
+not, and `specs/tracking/windows-portability.md` already recorded why:
+a native parent starts the script, so MSYS `kill` cannot map that
+process id. The first draft wrote its timeout marker before the kill,
+so on Windows a step would run on and the record would claim a stop
+that never happened. The marker now records only that the bound
+elapsed, and the step's own exit decides between `gate-timeout`, which
+fails, and `gate-timeout-unenforced`, which does not.
+
+The same question found the value. 1800 seconds was three times this
+host's longest step of 561, and the Windows release step is 1,257 — a
+bound of 1.4 times a real run. It is 3600 now.
+
+**The round measured a defect my verification could not see.** The
+watchdog slept for the whole bound in one call. Killing the subshell
+after the step finished left that `sleep` orphaned, holding the
+descriptors it inherited, so anything reading the gate's output waited
+for the full bound. Measured by the round: a step that exits in 3
+seconds took 10.18 seconds under a 10 second bound.
+
+My own check ran with a 2 second bound and no pipe, which is exactly
+the shape that hides it. Under the real 3600 second default, every
+`tools/gate.sh quick | tail` would have hung for an hour.
+
+The watchdog now inherits no descriptor and sleeps in one second steps,
+so the longest orphan is one second. Re-measured through a pipe: a 3
+second step under a 600 second bound takes 3.5 seconds, and a 60
+second step under a 3 second bound is stopped at 3.4 with exit 143.
+
+A verification chosen for speed can pick the conditions that hide the
+defect. The round's bound was ten seconds and mine was two, and only
+one of them was slow enough to notice.
