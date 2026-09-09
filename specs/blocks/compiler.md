@@ -14344,11 +14344,36 @@ is the only thing that turns a dead child into a diagnosable failure.
    number is right here and wrong there.
 
    The number needs one property, and it is not a source: it must sit
-   far above any healthy run. Measured on this host at `a31e593`, the
-   longest gate step is 561 wall seconds and the longest single test
-   binary is 144. `tools/gate.sh` bounds each step at 1800 seconds,
-   about three times the longest step, overridable with
-   `GATE_STEP_TIMEOUT` for a slower host.
+   far above any healthy run **on every host**. Measured on aarch64
+   macOS at `a31e593`, the longest step is 561 wall seconds and the
+   longest single test binary is 144. Measured on windows-msvc on
+   2026-09-06 (`specs/tracking/windows-portability.md`), the release
+   step is 1,257 and debug is 875. `tools/gate.sh` bounds each step at
+   3600 seconds, just under three times the slowest step on any host,
+   overridable with `GATE_STEP_TIMEOUT`.
+
+   *(Corrected 2026-09-10 before it landed. The bound was first 1800,
+   chosen against this host's 561 alone, which is 1.4 times the
+   Windows release step. The owner asked whether the mechanism works
+   on Windows, and the same check found the value.)*
+
+3c. **On a host with no signal delivery path, the bound reports rather
+   than pretends.** `windows-portability.md` records it: a native
+   parent starts the script, so MSYS `kill` cannot map that process
+   id. `kill -TERM` gives `No such process`; `kill -W -f -TERM` ends
+   the process through the Win32 interface and runs no trap. §85.3
+   item 1 case (i) is already scoped to a POSIX host for this reason.
+
+   So the marker records only that the bound elapsed. The step's own
+   exit says whether anything stopped. A step that outran the bound
+   and still succeeded emits `gate-timeout-unenforced` and does not
+   fail: nothing stopped it, and a record that claimed otherwise would
+   be false. A step that outran the bound and failed emits
+   `gate-timeout` and fails.
+
+   A hang on a host without delivery therefore stays a hang. That is
+   the honest state, and §85's signal rules already carry the same
+   limit.
 
    A step the bound stops is a gate failure with its own line in the
    record, naming the step and the bound. The record says the step

@@ -105,6 +105,40 @@ command_text() {
     printf '\n'
 }
 
+# compiler.md section 102 rule 3b: a hang guard, not a latency bound.
+# The value is generous rather than derived. The longest step measured
+# on any host is the Windows release suite at 1,257 wall seconds
+# (specs/tracking/windows-portability.md, 2026-09-06), so the bound is
+# just under three times that.
+gate_step_timeout=${GATE_STEP_TIMEOUT:-3600}
+
+# Runs one step under that bound.
+#
+# The marker records only that the bound elapsed. Whether the signal
+# ended the step is a separate question, because a Windows host has no
+# delivery path for a POSIX signal to a native child: MSYS `kill`
+# cannot map that process id (windows-portability.md, the 2026-09-06
+# gate run). The caller therefore reads the marker together with the
+# step's own exit, and never reports a stop that did not happen.
+run_bounded() {
+    rm -f "$scratch/step-timeout"
+    "$@" >"$scratch/stdout" 2>"$scratch/stderr" &
+    bounded_pid=$!
+    (
+        sleep "$gate_step_timeout"
+        printf '%s\n' "$gate_step_timeout" >"$scratch/step-timeout"
+        kill -TERM "$bounded_pid" 2>/dev/null || :
+        sleep 5
+        kill -KILL "$bounded_pid" 2>/dev/null || :
+    ) &
+    watchdog_pid=$!
+    bounded_status=0
+    wait "$bounded_pid" || bounded_status=$?
+    kill "$watchdog_pid" 2>/dev/null || :
+    wait "$watchdog_pid" 2>/dev/null || :
+    return "$bounded_status"
+}
+
 run() {
     step=$1
     shift
@@ -114,10 +148,21 @@ run() {
     if [ "$step" = release ]; then
         release_ran=1
         step_env=SUBSCRIPT_FULL_INTERPRETER_SWEEP=1
-        SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 "$@" >"$scratch/stdout" 2>"$scratch/stderr" || command_status=$?
+        SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 run_bounded "$@" || command_status=$?
     else
         if [ "$step" = clippy ]; then clippy_ran=1; fi
-        "$@" >"$scratch/stdout" 2>"$scratch/stderr" || command_status=$?
+        run_bounded "$@" || command_status=$?
+    fi
+    # The bound elapsed and the step still succeeded: the signal did not
+    # reach it. Record that, and do not fail a step nothing stopped.
+    step_timed_out=0
+    step_bound_unenforced=0
+    if [ -f "$scratch/step-timeout" ]; then
+        if [ "$command_status" -eq 0 ]; then
+            step_bound_unenforced=1
+        else
+            step_timed_out=1
+        fi
     fi
     seconds=$(( $(date +%s) - start ))
     totals=$(awk '/^test result:/ {
@@ -131,6 +176,7 @@ run() {
     skip_count=$(awk 'END { print NR+0 }' "$scratch/skips")
     step_failed=0
     if [ "$command_status" -ne 0 ]; then step_failed=1; fi
+    if [ "$step_timed_out" -eq 1 ]; then step_failed=1; fi
     case "$step" in
         build)
             if grep -Eq '^[[:space:]]*warning(\[|:)' "$scratch/stdout" "$scratch/stderr"; then
@@ -168,6 +214,14 @@ run() {
         printf '\n## %s\ncommand: ' "$step"
         command_text "$@"
         printf 'environment: %s\nwall seconds: %s\nexit status: %s\n' "$step_env" "$seconds" "$command_status"
+        if [ "$step_timed_out" -eq 1 ]; then
+            printf 'gate-timeout: step %s stopped at the %s second bound (compiler.md 102 rule 3b)\n' \
+                "$step" "$gate_step_timeout"
+        fi
+        if [ "$step_bound_unenforced" -eq 1 ]; then
+            printf 'gate-timeout-unenforced: step %s ran past the %s second bound and the signal did not reach it\n' \
+                "$step" "$gate_step_timeout"
+        fi
         printf 'tests: %s\ngate-skip count: %s\n```text\n' "$totals" "$skip_count"
         cat "$scratch/skips"
         printf '```\nstdout:\n```text\n'
