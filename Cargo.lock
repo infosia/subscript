@@ -1118,7 +1118,7 @@ dependencies = [
 [[package]]
 name = "swc_ecma_parser"
 version = "6.0.2"
-source = "git+https://github.com/infosia/swc_ecma_parser?branch=subscript-eof-bump#5428cb6d35235ae59e8c9d6a7d203e419075b0f6"
+source = "git+https://github.com/infosia/swc_ecma_parser?branch=subscript-eof-bump#c603b41538fc55f2119f71e6164d7811b0a3954e"
 dependencies = [
  "either",
  "new_debug_unreachable",
