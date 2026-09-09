@@ -13381,10 +13381,31 @@ string.
 
 ### 96.1 Rule
 
-1. A **surrogate pair** — a high surrogate escape `\uD800` to
-   `\uDBFF` immediately followed by a low surrogate escape `\uDC00`
-   to `\uDFFF` — denotes the one code point that pair encodes. The
+1. A **surrogate pair** — an escape whose value is `\uD800` to
+   `\uDBFF` followed by an escape whose value is `\uDC00` to
+   `\uDFFF` — denotes the one code point that pair encodes. The
    compiler decodes it to that code point's UTF-8 bytes.
+
+   *(Corrected 2026-09-09 by the Phase Review.)* **The pair is made of
+   values, not of spellings.** Either half is written `\uXXXX` or
+   `\u{XXXX}`, and a line continuation between them joins nothing,
+   because it produces no character. The rule first said "a high
+   surrogate escape … immediately followed by a low surrogate
+   escape", and the implementation read that as one spelling and no
+   separator. Measured against node v24.18.0, which reads all four as
+   `👍`:
+
+   | Source | before | node |
+   |---|---|---|
+   | `"\ud83d\udc4dZ"` | accepted | `👍Z` |
+   | `"\ud83d\u{dc4d}"` | rejected | `👍` |
+   | `"\u{d83d}\udc4d"` | rejected | `👍` |
+   | a line continuation between the halves | rejected | `👍` |
+
+   For the last three the diagnostic said the escape "has no UTF-8
+   encoding", which is false: they denote U+1F44D, and its encoding is
+   F0 9F 91 8D. The remedy it named, "write the paired escape", is
+   what the author had written.
    `"\ud83d\udc4dZ"` is `👍Z`, five bytes, and equals the
    source spelling `"👍Z"` byte for byte.
 2. A **lone surrogate escape**, high or low, is rejected: S100 "a lone
@@ -13395,10 +13416,13 @@ string.
    `LoneSurrogateEscape`.
 3. Rules 1 and 2 hold in a string literal and in every static part of
    a template literal.
-4. A pair is recognized only across two adjacent escapes. A high
-   surrogate escape followed by a literal low surrogate character
-   cannot occur, because a lone surrogate is not valid UTF-8 source.
-   A high surrogate escape followed by any other character is rule 2.
+4. A pair is recognized across two escapes with nothing between them
+   but line continuations. A high surrogate escape followed by a
+   literal low surrogate character cannot occur, because a lone
+   surrogate is not valid UTF-8 source. A high surrogate escape
+   followed by anything else is rule 2. *(Corrected 2026-09-09 with
+   rule 1; this rule said "adjacent" and "any other character", which
+   excluded a line continuation and a brace spelling.)*
 5. The measured length stays Q5's byte count.
    `"\ud83d\udc4dZ".length` is 5 here and 3 under node, which is
    Q5's recorded divergence and not a new one.
