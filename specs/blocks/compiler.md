@@ -131,6 +131,7 @@ Every section, with its status:
 | §94 | Host-driven async continuation queue | active |
 | §95 | Three unearned divergences from TypeScript | active |
 | §96 | A surrogate escape denotes its code point | active |
+| §97 | A `using` binding can be null | active |
 
 ## 1. Architecture
 
@@ -6768,8 +6769,10 @@ Measurements at the pin, on this host:
    head fail with S100. A `using` statement can declare several
    bindings; their disposal order is the reverse binding order.
 3. The initializer's static type must be a reference class that
-   declares the hook. Any other type — nullable types included —
-   fails with S100. Narrow first, then bind (owner decision).
+   declares the hook. Any other type fails with S100. *(§97,
+   2026-09-09: the nullable case is accepted, and the guard runs at
+   each exit. The hook requirement in the first sentence stands; the
+   rest of this rule retires.)*
 4. Dispose runs at every exit of the owning scope: the natural
    end, `return`, `break`, `continue` that leaves the scope, and
    the end of each loop iteration. Order: reverse declaration
@@ -13465,5 +13468,135 @@ recorded on this host with their exit codes.
    escape; a template part reports at the escape; a positive control
    in each shape that decodes and runs.
 4. Gates: `tools/gate.sh full` green in both profiles; clippy at the
+   7/18/13 baseline; `cargo fmt --check`; the `tsc` gate; every
+   pre-existing golden byte-identical. No golden is expected to move.
+
+## 97. A `using` binding can be null
+
+*(Owner decision 2026-09-09.)* Origin: the owner asked for three
+decided restrictions to be reconsidered on their merits. This is the
+first.
+
+§60.1 rule 3 rejects a nullable initializer and says "narrow first,
+then bind". C11 records the same as a divergence. Neither states a
+type-safety problem, because there is none: disposal is guarded, and a
+guard is what JavaScript already does.
+
+The workaround the rule forces is worse than the rule admits. An outer
+`if` is not a null test alone; it is a new block, and the resource
+dies at that block's end rather than at the end of the scope the
+programmer meant. The rule shortens a lifetime to express a check.
+
+Measured at `de26008` on this host, and under node v24.18.0:
+
+| Program | subscript | node |
+|---|---|---|
+| `using r = make(false)` returning `Res \| null` | S100 at the initializer | body runs, no disposal |
+| `using r: Res \| null = null` | the same S100 | body runs, no disposal |
+| `using r = maybeNoHook()`, no hook on the class | the same S100 | disposal fails at runtime |
+| `using a = make(true); using b = make(false);` | S100 | `open:r open:none body dispose:r` |
+
+One diagnostic covers three different problems today, and it names
+the fix for only one of them.
+
+### 97.1 Rule
+
+1. `using x = e` is accepted when the binding's type is a reference
+   class `R` that declares `[Symbol.dispose](): void`, or `R | null`,
+   or a nullable whose class satisfies the same hook requirement.
+2. A class that declares no hook stays rejected, nullable or not. The
+   diagnostic names the missing hook. It no longer tells the reader
+   to narrow, because narrowing is no longer the fix.
+3. The binding keeps its source-visible nullable type and stays
+   immutable. Member access through it needs ordinary null narrowing,
+   as any other nullable local does. §97 adds no narrowing form.
+4. At each exit that §60.1 rule 4 already names, a nullable binding
+   disposes only when it holds a value. A null binding disposes
+   nothing and changes nothing else: it does not skip the body, the
+   other bindings, or the exit.
+5. Order is unchanged. Reverse declaration order within a scope, the
+   innermost scope first, and the return expression before the
+   disposals.
+6. The initializer evaluates exactly once, in declaration order,
+   whether or not it yields null. An initializer with effects keeps
+   them.
+7. A `switch` binding tests its active flag before it reads its
+   storage, and tests the stored value for null after that. A
+   declaration that never executed reads no storage and disposes
+   nothing.
+8. Everything else in §60 stands: one evaluation, per-iteration
+   disposal in a loop, a suspension is not an exit, a trap runs no
+   disposal, `await using` is rejected, and a value class or a
+   descriptor class that declares the hook is rejected.
+9. §60.1 rule 8 stands, and it is the constraint on the
+   implementation. The rewrite stays checker-complete: the guard is
+   an `If` over a null comparison that the HIR already has, with the
+   receiver narrowed through the established representation. No new
+   HIR node, no codegen change, no runtime change. A tier-specific
+   null check would break rule 8 and is forbidden.
+10. `using x = null` without an annotation stays rejected, by the
+   language's existing rule that a bare `null` initializer infers no
+   type ("cannot infer a type from `null`; annotate the
+   declaration"). `using x: R | null = null` is the accepted
+   spelling. That is not §97's rule and §97 does not change it.
+
+### 97.2 What this supersedes
+
+§60.1 rule 3's second and third sentences retire. The first sentence
+stands for the hook requirement.
+
+C11's first listed divergence retires. JavaScript skips disposal for a
+null binding and so does this language now. C11's second divergence,
+that a trap runs no disposal, stands.
+
+`corpus/reject/r131-using-nullable-init.ts` retires, and its harness
+row is removed. `Divergence::UsingDeclaration` keeps its variant for
+`await using`; its text drops the nullable claim.
+
+### 97.3 Sites
+
+- `compiler/src/check/stmt.rs` `check_bindings`: the `dispose` arm
+  accepts `Type::Nullable(Class)` when the class satisfies the hook
+  requirement, and splits the diagnostic so a missing hook names the
+  hook.
+- `compiler/src/check/mod.rs`: `UsingBinding` records whether the
+  binding is nullable; `make_disposal_statements` wraps a nullable
+  binding's hook call in the null guard; the switch-storage path
+  applies rule 7's two tests in that order.
+- `compiler/src/divergence.rs`: the `UsingDeclaration` text.
+- `compiler/src/language_reference.rs` and `generated-docs/`.
+
+### 97.4 Corpus and gate (pre-registered exit criteria)
+
+Red first, at the contract pin: the four measured rows above,
+recorded on this host with their exit codes.
+
+1. One accept entry, `js-comparable: yes`, ASCII: a factory that
+   returns null and one that returns a value, with a counter proving
+   one evaluation each; `using x: R | null = null` with a body
+   marker; a null and a live binding in one declaration, proving
+   reverse order across the null; nested scopes; a natural end, an
+   early return, a `break`, and a `continue`; a return expression
+   whose marker precedes the disposal markers; and a narrowed member
+   read through a nullable binding.
+2. One accept entry for the async shape, `js-comparable: no C8`: a
+   null and a live binding held across a suspension, disposed at
+   completion, with an explicit `Context.collect()` while the live
+   one waits. The pending disposal keeps its receiver reachable.
+3. One accept entry for the `switch` shape: an entry that skips a
+   declaration, then falls through into an executed one. The skipped
+   declaration disposes nothing and reads no storage.
+4. Rejections that stay, each with a positive control: a class with
+   no hook, nullable and not; `await using`; a value class and a
+   descriptor class that declare the hook; a member read through a
+   nullable binding without narrowing.
+5. `corpus/reject/r131-using-nullable-init.ts` is deleted and its
+   harness row removed, as r104 was in §64 rule 7.
+6. Unit tests in the same commit: the HIR of a nullable binding holds
+   an `If` whose condition is a null comparison and whose call
+   receiver carries the non-null class type; the HIR of a non-nullable
+   binding holds the bare call, unchanged; a declaration that never
+   executed produces no storage read.
+7. Gates: `tools/gate.sh full` green in both profiles; clippy at the
    7/18/13 baseline; `cargo fmt --check`; the `tsc` gate; every
    pre-existing golden byte-identical. No golden is expected to move.

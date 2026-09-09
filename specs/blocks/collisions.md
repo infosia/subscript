@@ -270,9 +270,12 @@ expression evaluates first, a loop disposes per iteration, and an
 
 Two divergences from JS, both narrowings or subtractions:
 
-- JS skips disposal for a `null` or `undefined` binding. subscript
-  rejects a nullable initializer at check time (owner decision,
-  2026-08-16): narrow first, then bind.
+- *(Retired 2026-09-09 by `compiler.md` §97.)* JS skips disposal for
+  a `null` binding and so does this language: a nullable `using`
+  binding is accepted, and its hook runs only when it holds a value.
+  The entry rejected a nullable initializer from 2026-08-16 to that
+  date. `undefined` is absent from the language for its own reasons
+  (C1), not this one.
 - JS runs disposal during throw-unwind. subscript has no
   exceptions (C6), and a trap does not run dispose (§18.1b, no
   rollback; owner decision, 2026-08-16).
