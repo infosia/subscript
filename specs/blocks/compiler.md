@@ -14617,9 +14617,12 @@ reader must not read this list as a rejection.
 3. **`new Map(otherMap)`.** It needs no user-visible tuple and is the
    same class as 103.1's `Set` form. 103.1 keeps it rejected because
    the owner approved the `Set` form only.
-4. **`a217` does not run on the reference interpreter.** Both
-   production tiers run it and agree with the golden. The
-   interpreter answers "expected runtime handle, found Coroutine"
+4. **`a217` did not run on the reference interpreter.** *(Closed
+   2026-09-10 by §106, which found the defect wider than this item
+   states and repaired every packed location. `a217` now has three
+   witnesses and carries no exclusion.)* Both
+   production tiers ran it and agreed with the golden. The
+   interpreter answered "expected runtime handle, found Coroutine"
    when the program stores a `Generator<T>` in a class field: it
    holds a generator as a coroutine value and has no
    `Type::Generator(_)` pack and unpack pair, where an async handle
@@ -14690,9 +14693,10 @@ reader must not read this list as a rejection.
   pins those forms today.
 - A `Generator<T>` stored in a class field, in its **own** entry.
   *(Split from the entry above on 2026-09-10.)* The reference
-  interpreter cannot run the storage form (103.5's `a217` item), so
-  this entry carries the exclusion and the entry above keeps three
-  witnesses.
+  interpreter could not run the storage form, so this entry carried
+  an exclusion and the entry above kept three witnesses. **§106
+  repaired the interpreter the same day**, and the exclusion is gone;
+  the split stays, because the two entries pin different forms.
 
 **Reject**, each at a pinned position with its rule code:
 `new Set(map)` naming invariant 5 and TS2769; `new Set(gen())`
@@ -15167,6 +15171,15 @@ the interpreter must reproduce; none of them is new.
    `Ref | null`". A program cannot declare nullable generator storage,
    so §106.3 rule 4's null case is unreachable from a corpus program.
    That is why §106.6 routes it to a unit test.
+
+   A consequence, measured: `Map<K, Generator<V>>.get(key)` is
+   rejected, correctly, because its result would need that union.
+   **Its stated reason does not fit the form** — it says "A scalar
+   value type has no null miss value", and a `Generator<V>` is not a
+   scalar. `getOr` is the total spelling and it **works**:
+   `m.getOr(1, one()).next().value` runs on both tiers. This is §103's
+   class in a message §103 did not reach. Recorded, open, and not
+   part of §106.
 5. **`g1 === g2` is rejected at the language surface**, S100 "operator
    not defined". So the interpreter's `as_handle()` equality arm for a
    generator is unreachable from a program. **No rule decides
