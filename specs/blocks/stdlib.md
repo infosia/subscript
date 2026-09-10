@@ -1331,9 +1331,11 @@ and, separately, by hand with `.next()`, printing the same sequence; an
 entry showing `for…of` and `forEach` producing byte-identical output on
 the same container; a mutation-during-iteration entry matching §10.7;
 and a spread battery — `[...xs]`, prefix/suffix elements, two spreads,
-spread of a `Map`/`Set`/`string`.
+spread of a `Set`/`string`.
 
 Reject: `for…of` over a user class, over `object`, over a number;
+**over a bare `Map`, and a bare `Map` as a spread operand**
+(`compiler.md` §104.1, added 2026-09-10);
 `entries()` anywhere; `keys()` assigned to a variable, returned, or
 passed as an argument; `f(...xs)`; `new Map([[k, v]])`. Each S014 at a
 pinned position, and the variadic and tuple rejections must **name the

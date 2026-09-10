@@ -10550,6 +10550,25 @@ whose header says `tsc: rejects` must render none. The test reports
 every violating entry at once (CLAUDE.md workflow: a total check,
 not named sites).
 
+**Rule 6 — a site can serve both `tsc` classes.** *(Added 2026-09-10
+by §104's implementation round, which measured the conflict.)* Rule 2
+is written per **site**, and a site can reject a program `tsc` accepts
+and a program `tsc` rejects, when the acceptance depends on the
+program and not on the construct. `[...m]` and
+`const ks: i32[] = [...m]` reach one site.
+
+The site's variant is therefore fixed for both. Two consequences
+follow from rule 4, and a contract that pre-registers a reject entry
+must respect them:
+
+- **A site that carries a variant cannot host a `tsc: rejects` reject
+  entry**, because the block always renders.
+- **A site that carries none cannot host a `tsc: accepts` one.**
+
+Choose the variant so the **user-facing** rejection explains itself,
+which is the case the block exists for, and pin the other class with a
+unit test that records the `tsc` code it measured.
+
 **Rule 5 — the table is checked against the record.** A unit test
 reads `specs/blocks/collisions.md` (`include_str!`) and asserts that
 every `collision` id in the table names an existing `### C<n>` heading,
@@ -14828,6 +14847,35 @@ diagnostics state the current obstacle, or they state none and point
 at the rule. A user-facing message that gives a retired reason is the
 defect §103 exists to remove.
 
+**A rejection states one reason.** *(Amended 2026-09-10, after the
+round fixed the six messages and the review found a seventh string.)*
+A site with both a message and a `Divergence` `why` has **two**
+user-facing reason strings, and nothing checks that they agree.
+`Divergence::IteratorTemporary`'s `why` still read "A held iterator is
+a stateful value that outlives its call" while the message beside it,
+in the same diagnostic, gave the view-type obstacle.
+
+Closing named sites does not converge, so this needs a **total
+check**: a test holds the retired phrases this contract names, and
+asserts that no user-facing string in the compiler contains one. It
+reports every remaining site at once. The first entry is "outlives its
+call".
+
+### 104.4a Make the bare-`Map` path unreachable, not guarded
+
+*(Added 2026-09-10, from the round's own report.)* CLAUDE.md: a fix
+that closes named sites does not converge; make the class unreachable,
+or make a total check report every remaining site at once.
+
+`Type::iteration_element` still answers `MapKeys` for a `Map`. Three
+call sites reject a `Map` before they call it, so the guard is at the
+callers. **A fourth consumer reopens the invariant-5 hole and nothing
+reports it.** Remove the arm, so no consumer can obtain it.
+
+`SpreadKind::MapKeys` and `IterKind::MapKeys` then have no producer.
+Three tiers keep an arm each for a shape the checker can no longer
+build. Remove those with the producer.
+
 ### 104.5 Sites
 
 - `compiler/src/check/stmt.rs`, the `for…of` subject check.
@@ -14848,11 +14896,20 @@ own. The round reassesses both `js-comparable` headers, because the
 
 **Reject**, each at a pinned position with its rule code: a bare `Map`
 as a `for…of` subject, and a bare `Map` as an array-literal spread
-operand. Each entry's header states, measured, what `tsc` does with
-it. At least one entry carries the **typed** use that TypeScript
-rejects, and its header records that `tsc` code; at least one carries
-the **unannotated** form that `tsc` accepts, and renders the §79
-divergence block that form requires.
+operand. **Both entries are the unannotated form**, both are
+`tsc: accepts`, and **both sites carry a divergence variant**, so both
+render the §79 block.
+
+*(Amended 2026-09-10. This paragraph asked for one **typed** entry as
+well. §79 rule 6 now records why that cannot be: one site serves both
+`tsc` classes, its variant is fixed, and a `tsc: rejects` entry at a
+site with a variant breaks §79 rule 4. Taking the variant off a site
+to host that entry leaves the user-facing rejection with no
+explanation, which is worse. The typed form's `TS2322` is pinned by a
+unit test instead.)*
+
+A unit test records the `tsc` code measured for
+`const ks: i32[] = [...m]` and for the typed `for…of` use.
 
 **Gate.**
 
