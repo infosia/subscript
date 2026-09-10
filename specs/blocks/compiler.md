@@ -14893,9 +14893,11 @@ boundary.)* It does not reach `prelude/lang.d.ts`, `docs/`,
 contract, its tracking note, and the test. A round that widens the
 boundary states what it added.
 
-**Each half of the sweep carries its own non-empty guard.** A half
+**Each part of the sweep carries its own non-empty guard.** A part
 that reads nothing passes silently otherwise, which is the
-firing-control defect two earlier reviews already raised.
+firing-control defect two earlier reviews already raised. *(The sweep
+has three parts — the diagnostic tables, the rendered reject corpus,
+and the source literals. An earlier draft said "half".)*
 
 ### 104.4a Make the bare-`Map` path unreachable, not guarded
 
@@ -14944,14 +14946,19 @@ to host that entry leaves the user-facing rejection with no
 explanation, which is worse. The typed form's `TS2322` is pinned by a
 unit test instead.)*
 
-**A test runs `tsc` on the typed form and compares its code.** It
-does not hold the code as a literal beside the assertion. *(Amended
+**A test runs `tsc` on the typed form and compares its code**, beside
+the corpus gate that already runs it. It does not hold the code as a
+literal beside the assertion, and it is not a unit test — the two
+words named different test kinds for one fact until 2026-09-10. *(Amended
 2026-09-10. This paragraph said a unit test "records" the code, and a
 round wrote `let tsc_code = "TS2322"; … assert_eq!(tsc_code,
 "TS2322")`, which cannot fail. §79 rule 6 routes the typed form's fact
 here, so this is the only pin it has, and core principle 9 governs
-it.)* `compiler/tests/tsc_corpus.rs` already runs `tsc` in process;
-the check belongs where a real comparison is available.
+it.)* `compiler/tests/tsc_corpus.rs` already runs `tsc` **as a
+subprocess** over every corpus header; the check belongs there,
+because that is where a real comparison is available. *(Corrected
+2026-09-10: this sentence said "in process", and there is no
+in-process TypeScript.)*
 
 **Gate.**
 
@@ -15038,6 +15045,14 @@ point per element, as §14.1 already does.
 **"A candidate" is not a rejection reason.** Each of the first two
 rows names the measurement that decides it. Neither is refused.
 
+**This table's wording is contract language, not diagnostic
+language.** A row says "a round decides it after it inspects the
+runtime classification", because a contract addresses this project. A
+shipped message names the **measurement**, never this project's
+schedule: a script author reading `generated-docs/api-reference.md`
+has no rounds. *(Recorded 2026-09-10 after a round copied three of
+these sentences into shipped messages.)*
+
 ### 105.4 Sites
 
 - `compiler/src/ambient.rs`, the namespace and the member rejections.
@@ -15069,8 +15084,8 @@ header** (§103.8 rule 2). One is known to serve both classes:
 `const a: i32[] = Array.from(m)` is `TS2322`, because `tsc` reads the
 result as `[K, V][]`. **§79 rule 6 governs it** — the entry is the
 unannotated form and the site carries a variant. The annotated form's
-`tsc` code is pinned by a test that **runs `tsc` and compares**, per
-§104.6.
+`tsc` code is pinned beside the corpus gate, by a test that **runs
+`tsc` and compares**, per §104.6.
 
 Each entry that is `tsc`-accepted renders the §79 block, and its
 `collision` id names the record that **owns the reason**.
