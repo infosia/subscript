@@ -15246,8 +15246,11 @@ forbids that.
 ### 107.1 Accepted
 
 1. **An array binding pattern over a `T[]` or a `FixedArray<T, N>`**,
-   in a `const`/`let` declaration, in a function parameter, and in a
+   in a `const`/`let` declaration, in a **parameter**, and in a
    **`for…of` binding** whose element type is one of those two.
+   "Parameter" is three positions: a free function, a method, and a
+   lambda. Each has its own checker path, and each is measured
+   rejected today.
 2. **A named-field pattern over a reference or value class**, in the
    same three positions, with and without renaming
    (`const { x: renamed } = p`).
@@ -15314,6 +15317,8 @@ the round fixes the cascade rather than one site:
 | `const [a, b] = xs` | 3 |
 | `const { x } = p` | 2 |
 | `function take([a, b]: i32[])` | 5 |
+| `const f = ([a, b]: i32[]): i32 => …` | 3 |
+| `class Box { sum([a, b]: i32[]): i32 }` | 3 |
 | `for (const [a, b] of xss)` | 1 |
 
 Only the last is already correct. A rejected pattern in any position
@@ -15322,8 +15327,11 @@ reports once.
 ### 107.5 Sites
 
 - `compiler/src/check/mod.rs` and `compiler/src/check/stmt.rs`: every
-  existing pattern rejection site. A fix at the declaration does not
-  reach a parameter or a loop binding; the round enumerates them.
+  existing pattern rejection site. **The round enumerates them before
+  it changes one.** Six positions are measured rejected today — a
+  declaration, a free-function parameter, a method parameter, a lambda
+  parameter, a `for…of` binding, and a field pattern in each of those
+  — and a fix at the declaration reaches none of the others.
 - The lowering, for the accepted forms.
 - `specs/blocks/collisions.md`: a new `### C<n>` record, which §79
   rule 5 needs for the reject entries.
