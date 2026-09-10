@@ -15081,3 +15081,125 @@ storage.
    (§103.8 rule 2). Every new entry declares a generator, so
    `codegen/tests/lir-goldens/corpus.txt` moves.
 7. `tools/gate.sh full` green in both profiles.
+
+## 107. Binding patterns, by source type and position
+
+Origin: `REPORT.md` item B. Every pattern form answers S100
+"destructuring is not in the decided surface", the word
+`destructuring` appears in no file under `specs/blocks/`, and §79
+rule 4 therefore has no id for a reject entry. A rejection with no
+record is what §103 exists to remove.
+
+**One record for all patterns does not survive this project's own
+rule**, because the forms have different blockers. An array pattern
+over a `T[]` needs no tuple type and no object type. A pair pattern
+over a `Map` needs a tuple. An anonymous object source needs an object
+type. §107 decides them apart.
+
+Measured 2026-09-10 at `3d03f80`, TypeScript 5.9.2, node v24.18.0.
+Every form below is `tsc`-clean: `const [a, b] = xs`, `const [, b] =
+xs`, `const { x } = p`, `const { x: renamed } = p`,
+`function take([a, b]: i32[])`, `function field({ x }: P)`.
+
+**Each one also emits a cascade today**: S100 at the pattern, then one
+S016 `unknown name` per name the pattern would have bound. §107.4
+forbids that.
+
+### 107.1 Accepted
+
+1. **An array binding pattern over a `T[]` or a `FixedArray<T, N>`**,
+   in a `const`/`let` declaration and in a function parameter.
+2. **A named-field pattern over a reference or value class**, in the
+   same two positions, with and without renaming
+   (`const { x: renamed } = p`).
+
+`C1` is not a blocker for rule 2. It records that this compiler
+rejects **structural substitution**, and that an object literal has no
+standalone type. Reading a named field from a valid class instance is
+an ordinary field read.
+
+### 107.2 Semantics
+
+| area | rule |
+|---|---|
+| source | Evaluate it **once**. Bind in source order. |
+| short array | An absent required element takes the **existing `index-out-of-bounds` trap**. JS binds `undefined`; this language has none. A recorded divergence. |
+| extra elements | Ignored. |
+| empty pattern | The source still evaluates. |
+| skipped element | `const [, b] = xs` advances the position and binds no name. A skipped position past the end does **not** trap, because nothing reads it. |
+| parameters | The declared parameter type decides the pattern. Extraction runs at entry, in parameter order. |
+| mutability | `const` and `let` keep their existing meaning per bound name. |
+| copy and ownership | Ordinary element reads, field reads, value copies, and reference ownership. This section adds none. |
+| field access | Access checks hold, and a getter runs. Do not read through storage where a getter must execute. |
+
+The short-array rule uses the **ordinary checked read**, not an eager
+whole-pattern length test. An eager test moves the trap ahead of the
+earlier bindings' effects, which changes what a program observes.
+
+### 107.3 Rejected, each with its own reason
+
+| form | reason |
+|---|---|
+| `for (const [k, v] of map)` | a bare `Map` is not an iteration source (§104.1). The pair form additionally needs a tuple type |
+| a pattern over `entries()`, or over any tuple-typed source | no tuple type |
+| a pattern over an anonymous object source | no object type |
+| a default value, `const [a = 1] = xs` | it needs a rule for a missing element and for `undefined`. `null` is not an equivalent trigger, and the language has no `undefined` |
+| array rest, `const [a, ...rest] = xs` | allocation and copy semantics for the rest array |
+| object rest | a result shape, and property-selection rules |
+| a nested pattern | recursive type checks and ordered effects |
+| an assignment pattern, `[a, b] = xs` | target evaluation and write order, which a declaration-only contract does not cover |
+
+**Each row names work, not scope.** "Not in v1" is not a reason here,
+and a round that implements any row states the cost it measured.
+
+### 107.4 A rejected pattern reports once
+
+A pattern this section rejects emits **one** diagnostic, at the
+pattern. It does not then emit an S016 for each name the pattern would
+have bound. Measured today: `const [a, b] = xs` gives three errors,
+and two of them are noise the first one caused.
+
+### 107.5 Sites
+
+- `compiler/src/check/mod.rs` and `compiler/src/check/stmt.rs`: every
+  existing pattern rejection site. A fix at the declaration does not
+  reach a parameter or a loop binding; the round enumerates them.
+- The lowering, for the accepted forms.
+- `specs/blocks/collisions.md`: a new `### C<n>` record, which §79
+  rule 5 needs for the reject entries.
+- `specs/blocks/stdlib.md` §9 and §14, where a pattern meets a
+  container.
+- `compiler/tests/corpus_reject.rs`.
+
+### 107.6 Corpus and gate (pre-registered exit criteria)
+
+**Accept**, covering both positions: an array pattern and a field
+pattern in a declaration and in a parameter; a renamed field; a
+skipped element; an empty pattern whose source has an observable
+effect, proving the source still evaluates; a source evaluated once,
+proved by an effect that would repeat; a value-type element and a
+reference-type element; `let` rebinding after a pattern.
+
+**Trap**: a short array source, at the `index-out-of-bounds` trap
+§107.2 names.
+
+**Reject**: one entry per §107.3 row, each at a pinned position with
+its rule code, each rendering the §79 divergence block, and each block
+naming the record §107.5 adds. One entry pins §107.4 — a rejected
+pattern reporting exactly one diagnostic — and it is Red today,
+because the same program now reports three.
+
+**Gate.**
+
+1. The differential gate is byte-exact on both tiers for every new
+   accept entry, against a golden generated from the dev tier.
+2. `tsc` reports zero errors over the accept corpus, configuration
+   unchanged. Every accepted form in §107.1 is `tsc`-clean, measured
+   above; the gate is what keeps that true.
+3. `node` runs the accept entries and agrees, except where a header
+   names the short-array divergence.
+4. Each new accept entry, and the §107.4 entry, is Red at this
+   section's pin, and the round records the diagnostic it gave there.
+5. The round reports which goldens and counted totals moved, and why
+   (§103.8 rule 2).
+6. `tools/gate.sh full` green in both profiles.
