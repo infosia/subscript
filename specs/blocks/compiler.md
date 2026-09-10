@@ -10556,6 +10556,22 @@ whose header says `tsc: rejects` must render none. The test reports
 every violating entry at once (CLAUDE.md workflow: a total check,
 not named sites).
 
+**Rule 5a — a `subscript` fragment is never compiled. Open.**
+*(Recorded 2026-09-11 by §107's round, which wrote a fragment that
+does not compile and watched every §79 test pass on it.)* Rule 5's
+tests check that a `collision` id names a heading, that every heading
+has a variant, that the two fragments differ, that `why` is 25 words
+or fewer, and that no fragment is empty. **None of the five compiles
+anything.**
+
+A `subscript` fragment is the advice a user acts on — "write this
+instead" — so a fragment this compiler rejects is worse than no
+fragment. The check is small and total: compile every `subscript`
+fragment and require it to be accepted. A round that closes it
+measures how many fragments fail **before** it proposes the check,
+because that count is the work, and it decides then whether the `ts`
+fragment gets the same treatment through the `tsc` harness.
+
 **Rule 6a — an `ambient` rejection row is not reached by rule 4.**
 *(Recorded 2026-09-10 by the §104/§105 Phase Review. Open; no round
 is scheduled.)* Rule 4's total gate reads the **reject corpus**, so a
@@ -15356,11 +15372,15 @@ forbids that.
 ### 107.1 Accepted
 
 1. **An array binding pattern over a `T[]` or a `FixedArray<T, N>`**,
-   in a `const`/`let` declaration, in a **parameter**, and in a
-   **`for…of` binding** whose element type is one of those two.
-   "Parameter" is three positions: a free function, a method, and a
-   lambda. Each has its own checker path, and each is measured
-   rejected today.
+   in a **local** `const`/`let` declaration, in a **parameter**, and
+   in a **`for…of` binding** whose element type is one of those two.
+   "Parameter" is four positions: a free function, a method, a
+   **constructor**, and a lambda. Each has its own checker path.
+   *(Corrected 2026-09-11 by the implementation round, which
+   enumerated the sites: the word "local" was missing, and the
+   constructor parameter was unnamed. §107.1 accepts "a parameter"
+   and §107.3 holds no reason to refuse the constructor, so it is
+   accepted.)*
 2. **A named-field pattern over a reference or value class**, in the
    same three positions, with and without renaming
    (`const { x: renamed } = p`).
@@ -15409,6 +15429,8 @@ earlier bindings' effects, which changes what a program observes.
 | object rest | a result shape, and property-selection rules |
 | a nested pattern | recursive type checks and ordered effects |
 | an assignment pattern, `[a, b] = xs` | target evaluation and write order, which a declaration-only contract does not cover |
+| a **module-level** declaration, and a **mirror `declare const`** | *(Added 2026-09-11, measured, and a cost rather than a scope statement.)* A module-level name's type resolves from its annotation alone, one pass before the checker reads an index or a member, so a pattern there needs a **second derivation** of each bound name's type beside the one `check_index` and `member_on` already give. Core principle 8 forbids that. `hir::Global` also holds one initializer and no prologue, so the source temporary would become a permanent root, which §107.2's evaluate-once rule forbids |
+| a **non-array, non-class** source, and a **computed field name** | The complement of §107.1. Neither is a shape §107.1 admits, and each needs its own diagnostic rather than the general one |
 
 **Each row names work, not scope.** "Not in v1" is not a reason here,
 and a round that implements any row states the cost it measured.
@@ -15426,7 +15448,7 @@ the round fixes the cascade rather than one site:
 |---|---|
 | `const [a, b] = xs` | 3 |
 | `const { x } = p` | 2 |
-| `function take([a, b]: i32[])` | 5 |
+| `function take([a, b]: i32[])` | 3 |
 | `const f = ([a, b]: i32[]): i32 => …` | 3 |
 | `class Box { sum([a, b]: i32[]): i32 }` | 3 |
 | `for (const [a, b] of xss)` | 1 |
@@ -15434,14 +15456,24 @@ the round fixes the cascade rather than one site:
 Only the last is already correct. A rejected pattern in any position
 reports once.
 
+*(The free-function row read 5 until 2026-09-11. The probe behind it
+held an array pattern and a field pattern in one file, so the count
+was 3 plus 2. Every other row reproduced exactly. A measurement that
+mixes two forms is not a measurement of either.)*
+
 ### 107.5 Sites
 
 - `compiler/src/check/mod.rs` and `compiler/src/check/stmt.rs`: every
   existing pattern rejection site. **The round enumerates them before
-  it changes one.** Six positions are measured rejected today — a
-  declaration, a free-function parameter, a method parameter, a lambda
-  parameter, a `for…of` binding, and a field pattern in each of those
-  — and a fix at the declaration reaches none of the others.
+  it changes one.** *(Corrected 2026-09-11: this rule said six
+  positions and the enumeration found **nine**, behind five
+  `self.error` call sites, one of which serves four checker paths. The
+  three it missed are a **module-level** declaration, a **mirror
+  `declare const`**, and a **constructor** parameter.)* The nine are a
+  local declaration, a `for…of` binding, a module-level declaration, a
+  mirror `declare const`, four parameter paths — free function, method
+  and static, constructor, lambda — and an assignment target. A fix at
+  the declaration reaches none of the others.
 - The lowering, for the accepted forms.
 - `specs/blocks/collisions.md`: a new `### C<n>` record, which §79
   rule 5 needs for the reject entries.
