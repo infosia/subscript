@@ -1152,10 +1152,25 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   parameters, which the language does not have (the same missing
   prerequisite that keeps `Math.max` at two arguments, Q19).
 
-  **Construction from an iterable stays rejected**, and not for an
-  iterator reason: `new Map([[k, v]])` needs a **tuple type**, and this
-  language has none. That is a type-system gap independent of Q30 and
-  is recorded as such rather than folded in.
+  **Construction from an iterable is accepted for `Set` and rejected
+  for `Map`.** *(Revised 2026-09-10 by `compiler.md` §103.1. This
+  entry said construction from an iterable "stays rejected", and one
+  rejection row gave `new Map([[k, v]])`'s tuple gap as the reason for
+  both constructors. `new Set<i32>([1, 2, 3])` has no pair element, so
+  that reason never fit it.)* `new Set<K>(source)` takes `K[]`,
+  `FixedArray<K, N>`, `Set<K>`, or a `string`, per `stdlib.md` §10.4.
+  A `Map` source is excluded by **invariant 5** — stock `tsc` answers
+  TS2769 — and a `Generator<K>` source by §14.4's single-use rule.
+  `new Map([[k, v]])` still needs a **tuple type**, which this
+  language has none of: a type-system gap independent of Q30.
+  `new Map(otherMap)` needs no user-visible tuple and is **open**,
+  not refused (`compiler.md` §103.5).
+
+  **The view rules read the receiver type.** *(Added 2026-09-10 by
+  `compiler.md` §103.2.)* The subject-only restriction and the
+  `entries()` rejection apply to `T[]`, `FixedArray<T, N>`,
+  `Map<K, V>`, and `Set<K>`. On a user class, `keys`, `values`, and
+  `entries` are ordinary member names.
 
   **Mutation during iteration** follows the rule the runtime already
   applies to `forEach` (`stdlib.md` §10.7): appends after entry do not
@@ -1207,10 +1222,18 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   meaning and a doubled gate.
 
   **`exec`, `match`, `matchAll`, `lastIndex` and `groups` are rejected
-  for language gaps, not engine ones**, and `match` is the sharpest:
-  it **fails stock `tsc` under `strict`**, because
-  `RegExpMatchArray.index` is `index?: number`. Invariant 5 excludes
-  it; no design choice was involved.
+  for language gaps, not engine ones.** `exec`, `match` and `matchAll`
+  share **one** missing shape: an array with named extra fields. That
+  result type is **open, and deferred by the owner on 2026-09-10**
+  (`compiler.md` §103.5) — it is not refused.
+
+  *(Corrected 2026-09-10 by `compiler.md` §103.3. This entry called
+  `match` "the sharpest", because it "**fails stock `tsc` under
+  `strict`**" and "Invariant 5 excludes it; no design choice was
+  involved". Measured with TypeScript 5.9.2: the call is `tsc`-clean.
+  Only `const i: i32 = m.index` is `TS2322`, because
+  `RegExpMatchArray.index` is `index?: number`. `exec` and `matchAll`
+  carry a required `index`, so the argument never reached them.)*
 
 - **Q32 (string-literal unions)** — *(Owner, 2026-07-31; requested by
   the downstream WebGPU binding project, whose JS-shaped API needs

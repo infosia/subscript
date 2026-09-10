@@ -79,8 +79,8 @@ corrected form:
 | `String` | `charAt` | total — out of range is `""`, not `undefined`, so no miss value is needed |
 | `String` | `concat` | duplicate of `+` |
 | `String` | `codePointAt` | out of range should trap, as `charCodeAt` already does |
-| `String` | the position argument of `startsWith`/`endsWith` | currently rejected as "optional arguments not accepted" |
-| `String` | `$$`/`$&` substitution in `replace`/`replaceAll` | needs no regex engine; currently a recorded Q21 divergence |
+| `String` | the position argument of `startsWith`/`endsWith` | was rejected as "optional arguments not accepted"; implemented. Measured 2026-09-10: `"abc".startsWith("b", 1)` and `"abc".endsWith("b", 2)` are both `true`, as on node |
+| `String` | `$$`/`$&` substitution in `replace`/`replaceAll` | needs no regex engine; implemented under Q27, and §15.3 extends it to `$1`–`$99` and `$<name>` for a regex pattern. *(Q21 recorded it as a divergence until 2026-09-09; the runtime always substituted.)* |
 | `Array` | `reduceRight` with a required `init` | passes the same arity rule that `reduce` passes |
 | `Array` | `splice` (delete-only), `shift` (traps when empty, as `pop` does), `unshift` (one element, as `push`), `copyWithin` | JS makes `splice`/`unshift` variadic; the language has no variadic parameters, so these are a recorded subset |
 | `Array` | **the index parameter on callbacks** | `map((v, i) => …)`; the largest item here by real-world use, and the one that touches the checker's arity machinery. The third `array` parameter stays **rejected** — see below |
@@ -121,30 +121,143 @@ prerequisite, which is a separate decision from this rule.
 | locale data | every `toLocale*`, `localeCompare` |
 | timezone database | `Date` local-time accessors, `getTimezoneOffset`, `Date.parse`, the `toString` family, the multi-argument `Date` constructor, `Date` in a template literal |
 | Unicode normalization tables | `normalize` (Boa needs `icu_normalizer` for the same reason) |
-| **a regular-expression engine** | `match`, `matchAll`, `search`, the regex forms of `split` and `replace` |
-| **an iterator protocol** | `keys`/`values`/`entries`, `for…of`, spread, construction from an iterable |
 | **tagged template machinery** | `String.raw` |
-| **variadic parameters** | `Math.max`/`min`/`hypot` beyond two arguments |
+| **variadic parameters** | `Math.max`/`min`/`hypot` beyond two arguments, `f(...xs)`, `new C(...xs)`, insertion through `splice`, multi-element `unshift` |
 
-The last four are **language features, not library gaps**. Adding any
-of them is a phase of its own and is outside this rule; recorded here
-so that "why is `for…of` rejected" has one answer.
+**Two rows left this table on 2026-09-10. Do not restore them.** The
+sweep of 2026-07-25 also listed **a regular-expression engine**
+(`match`, `matchAll`, `search`, regex `split`, regex `replace`) and
+**an iterator protocol** (`keys`/`values`/`entries`, `for…of`,
+spread, construction from an iterable). The project acquired both on
+2026-07-27: P23 shipped the engine (`stdlib.md` §15, Q31) and P22
+shipped `for…of` with array-literal spread (`stdlib.md` §14, Q30).
 
-### Wanted: a regex engine and an iterator protocol
+**The rows stayed here for six weeks after that.** The delay is the
+defect this section records. Parts of both rows run today. Each part
+that stays rejected carries a different reason, and the next section
+names that reason per form.
 
-**Owner, 2026-07-25: both are wanted, at high priority, to be designed
-later.** Not scheduled; recorded here with what the sweep already
-found, so the later design does not start from zero.
+The two bold rows that remain are **language features, not library
+gaps**. Each one is a phase of its own and is outside this rule;
+recorded here so that "why is `f(...xs)` rejected" has one answer.
 
-**Iterator protocol — most of the machinery is already built.** The
-standing note that "the language has no iterator protocol" (Q24) is
-imprecise. The language has generator functions and the iterator
-*result shape* today: `corpus/accept/a20-coroutine-generator.ts`
-declares `function* sequence(limit: i32)` with `yield`, and drives it
-with `generator.next()`, reading `step.done` and `step.value`. The C
-tier lowers generators through CPS (`compiler.md` §11 coverage list).
-So suspendable functions, the `{done, value}` step shape, and both
-tiers' lowering of them exist. What is missing is the **binding**:
+## Regex and iteration — the status of every form
+
+*(Measured 2026-09-10 at `be15ee3` on macOS 26.6.2 arm64, with the
+release `subscript` binary, TypeScript 5.9.2 and node v24.18.0. This
+section replaces the two retired prerequisite rows. The history
+section below it states the position of 2026-07-25 and is not
+current guidance.)*
+
+Read this section before you quote a regex or an iteration rejection
+as current. A supported subset is not parity with JavaScript: each
+row states the context, the receiver, and the result shape that the
+language accepts. "Probe" names a temporary program from the round
+that produced this section; the corpus entries are the permanent
+witnesses.
+
+### Regex, per form
+
+| form | behaviour | witness | remaining obstacle |
+|---|---|---|---|
+| `/pat/flags`, `new RegExp(p, f)` | supported | §15.3; `a82`, `a83` | none |
+| `re.test`, `re.source`, `re.flags` | supported | §15.3; `a82`, `a83` | none |
+| `re.matchStart(g)`, `re.matchEnd(g)` | supported; an ambient name, not a JS one | `prelude/lang.d.ts`; `a82` | none |
+| `s.search(re)` | supported; the result is a **byte** offset | §15.3; `a82`; probe on both tiers | none. `"añb".search(/b/)` is `3` here and `2` on node, which is the Q5 divergence and not a gap |
+| `s.split(re)` | supported, with capture reinjection | §15.3; `a82`; probe on both tiers, node agrees | none |
+| `s.replace(re, r)`, `s.replaceAll(re, r)` | supported; `$$`, `$&`, `` $` ``, `$'`, `$1`–`$99`, `$<name>` | §15.3; `a82`; probe on both tiers, node agrees | none |
+| `s.match(re)` | rejected, S014 | `r27`; probe | **no array-with-extra-fields result type.** Stock `tsc` accepts the bare call. Only `const i: i32 = m.index` fails, with TS2322, because `RegExpMatchArray.index` is `index?: number`. This blocks parity. A reduced form without `index` and `input` is undecided; line 85's `splice` subset is the precedent |
+| `/x/.exec(s)` | rejected, S014 | `r80`; probe | the same missing result type. `RegExpExecArray` extends `Array<string>` with a required `index` and `input`. It is **not** a tuple, and `tsc` accepts the whole probe, the `index` read included |
+| `s.matchAll(re)` | rejected, S014 | `r81`; probe | the same missing result type. `RegExpExecArray.index` is required, so the optional-index argument that reaches `match` does not reach `matchAll`. The fusion decision §15.3 names stays **open**: §14.3 fuses an index loop over a container's own storage, and `matchAll` has none |
+| `re.lastIndex`, the sticky flag `y` | rejected, S014 | `r82`, `r84`; probe | `lastIndex` drives `exec`, and the `exec` result type is the missing one. The sticky flag steers matching through `lastIndex`. **Not** a value-type restriction: §15.5a makes a `RegExp` an ordinary Context allocation, and `matchStart`/`matchEnd` already expose the handle's match state |
+| `m.groups` | rejected, S014 | `r83` | no object with dynamic string keys |
+
+### Iteration, per form
+
+| form | behaviour | witness | remaining obstacle |
+|---|---|---|---|
+| `for…of` over `T[]`, `FixedArray<T, N>`, `Map`, `Set`, `string`, `Generator<T>` | supported | §14.1; `a77`, `a79`, `a84`–`a87`, `a180`; probe on both tiers | none |
+| `map.keys()`, `map.values()`, `set.values()`, array `keys()`/`values()` as the direct `for…of` subject | supported | §14.1; `a78` | none |
+| a `Generator<T>` held as a value — passed, returned, stored in a class field, driven by `.next()` | **supported** | C8; probe on both tiers. **No corpus entry pins these forms**: `a20` binds a generator to a local and drives `.next()`; `a180` uses one as a `for…of` subject only | none. The missing accept entry is an open proposal |
+| a user class iterated through a method that returns a `Generator<T>` | **supported**, and `tsc`-clean | probe on both tiers | none. The method name must not be `keys`, `values`, or `entries`; the user-receiver row below states why |
+| array-literal spread over `T[]`, `FixedArray<T, N>`, `Map`, `Set`, `string` | supported | §14.4; `a81` | none |
+| `for (const x of userClass)` | rejected | `r72`; probe | `Symbol.iterator` is the one binding that stock `tsc` accepts, and `Symbol` is a permanent stdlib non-goal (§7). The language also rejects a computed method name (S100). **Invariant 5 does not force this row**: `class Bag { *[Symbol.iterator]() {…} }` is `tsc`-clean. Invariant 5 forbids the substitutes, because an `iterator()` method or a decorator leaves the class not iterable under `tsc` |
+| `keys()`/`values()` assigned, returned, or passed | rejected, S014 | `r42`, `r76`, `r77`; probe | **two concrete requirements.** (1) A language type for the view. `tsc` names it `IterableIterator<T>`, and that spelling is `tsc`-clean, but the language answers S016 for the name. (2) An owner for the escaping value. `compiler.md` §70 landed a reference-counted handle on 2026-08-27, and §70.1 decision 1 keeps it on coroutine frame handles and defers the general form until evidence arrives |
+| `entries()` anywhere, on any receiver | rejected, S014 | `r75`, `r79`; probe | no tuple type |
+| `keys()`, `values()`, `entries()` on a **user** receiver | **accepted** by `compiler.md` §103.2 (owner, 2026-09-10); rejected at `be15ee3` | probe | none. The rules now read the receiver type, and the three names are ordinary members on a user class |
+| array-literal spread of a `Generator<T>` | rejected, S014 | probe | a generator is single-use, and §14.4 keeps that mutation out of a value expression |
+| `f(...xs)`, `new C(...xs)` | rejected, S014 | `r78` pins `f(...xs)`; the `new` form has no entry, and a probe covers it | variadic parameters. `tsc` rejects both forms too, with TS2556 |
+| `{...a}` | rejected, S100 | probe | object literals are not in the decided surface. This is not an iteration gap |
+| `new Map(iterable)` | rejected, S014 | `r43`; probe | no tuple type |
+| `new Set(source)` | **accepted** by `compiler.md` §103.1 (owner, 2026-09-10); rejected at `be15ee3` with `Map`'s tuple reason | probe | none, for `K[]`, `FixedArray`, `Set<K>`, and `string`. A `Map` source stays rejected under invariant 5: `tsc` answers TS2769. A `Generator` source stays rejected by §14.4 |
+| `for (const [k, v] of map)` | rejected, S100 | probe | destructuring is not in the decided surface. This is not an `entries()` gap |
+| `Array.from(xs)` | rejected, S016 | probe | the name `Array` binds to no declaration. This is not an iteration gap |
+
+### The reasons that did not survive the measurement
+
+Each line below states a reason this file, a contract, or a
+diagnostic gave, and what replaced it.
+
+- **"The language has no iterator protocol."** It has one for
+  `Generator<T>`. That generator is a stateful value, and it outlives
+  the call that made it: the probes return one from a function and
+  store one in a class field, on both tiers. No corpus entry pins
+  those forms yet.
+- **"An iterator held as a value is the first escaping temporary in
+  the language, and a memory-model change."** The mechanism exists.
+  `compiler.md` §70 landed a reference-counted handle, and §70.1
+  decision 1 scopes it to coroutine frame handles. Name that scope,
+  and name the missing view type; do not name the memory model.
+- **"`match` fails stock `tsc`."** The call type-checks. Only the
+  read of the optional `index` fails, with TS2322. The same argument
+  does not reach `matchAll` or `exec`, whose `index` is required.
+- **"`new Map/Set(iterable)` needs a tuple type."** `Map` needs one.
+  `Set` does not.
+
+**One reason survived a challenge to it.** `stdlib.md` §15.3 says
+`matchAll` needs a fusion decision under Q30/§14.3. That decision is
+open. §14.3 fuses an index loop over a container's own storage, and
+`matchAll` has none, so §14.3 decides nothing for it.
+
+### Where the retired reasons stood, and where they went
+
+Four normative lines held a reason this measurement retired. A
+contract outranks a tracking file, so each one was corrected in place
+by `compiler.md` §103.3 and §103.4 (owner, 2026-09-10).
+
+| site | what it held | what replaced it |
+|---|---|---|
+| `stdlib.md` §14.3 | "the first escaping temporary in the language, and a memory-model change (invariant 2)" | a missing view type, and §70.1 decision 1's scope for the reference-counted handle |
+| `stdlib.md` §15.3, the `match` bullet | "**fails stock `tsc` under `strict`** … Invariant 5 excludes it, not a design choice" | the call type-checks; invariant 5 narrows to the `index` read |
+| `collisions.md` Q31 | the same `match` claim, in the register | the same |
+| `stdlib.md` §8 | "`match`/`matchAll`/`search` (a regex engine) — each a missing prerequisite" | `search` shipped in P23; `match` and `matchAll` cite the result type |
+
+`stdlib.md` §15.3 also called `lastIndex` "mutable state on a
+**value**" while §15.5a called a `RegExp` handle "an ordinary Context
+allocation". §103.4 settled it: a `RegExp` is a handle, and
+`lastIndex` is rejected because it drives `exec`.
+
+## History — the "Wanted" investigation of 2026-07-25 (superseded)
+
+**This section states the position of 2026-07-25 and 2026-07-27. The
+section above holds the current status.** The investigation is kept
+because it records why the project chose `regress` and why the fork
+adds a budget, which are current tradeoffs.
+
+**Owner, 2026-07-25: both were wanted, at high priority, to be
+designed later.** Recorded with what the sweep already found, so the
+later design did not start from zero.
+
+**Iterator protocol — most of the machinery was already built.** The
+standing note that "the language has no iterator protocol" (Q24) was
+imprecise. The language had generator functions and the iterator
+*result shape*: `corpus/accept/a20-coroutine-generator.ts` declares
+`function* sequence(limit: i32)` with `yield`, and drives it with
+`generator.next()`, reading `step.done` and `step.value`. The C tier
+lowers generators through CPS (`compiler.md` §11 coverage list). So
+suspendable functions, the `{done, value}` step shape, and both
+tiers' lowering of them existed. What was missing was the
+**binding**:
 
 - a way to say "this type is iterable" (JS uses `Symbol.iterator`;
   symbols are not in the language, so this needs its own spelling)
@@ -152,13 +265,17 @@ tiers' lowering of them exist. What is missing is the **binding**:
 - `keys`/`values`/`entries` on `Array`/`Map`/`Set` returning iterators
 - spread, and construction from an iterable (`new Map([[k, v]])`)
 
-Two constraints the design must answer, both already decided
+Two constraints the design had to answer, both already decided
 elsewhere: iteration order for `Map`/`Set` is **normative** insertion
 order (Q24), so the protocol inherits a fixed order rather than
-choosing one; and callbacks today are **non-escaping by construction**
+choosing one; and callbacks are **non-escaping by construction**
 (C5), whereas an iterator is a stateful object that outlives the call
 that made it — which is a memory-model question (invariant 2, no
-implicit GC), not a syntax question.
+implicit GC), not a syntax question. *(Superseded. §70's
+reference-counted handle answered the memory-model half on
+2026-08-27, and `Generator<T>` already escapes its creating call. The
+current obstacle is §70.1 decision 1's scope and the missing view
+type — see the status section above.)*
 
 **Regex — Boa's engine is a reusable Rust crate.** Boa does not
 hand-roll one: `core/engine/Cargo.toml` depends on **`regress`**
@@ -170,12 +287,12 @@ as the `ryu-js` finding: the expensive part is an existing crate, so
 the cost question is "does it fit the constraints", not "can we write
 one".
 
-Two constraints to check before adopting it, neither yet checked:
-`regress`'s `utf16` feature is aimed at JS's UTF-16 strings while this
-language stores UTF-8 (Q5), so the index domain has to be settled; and
-§0.2 requires one implementation behind an opaque `subscript_rt_*` symbol on
-both tiers, which a crate satisfies as long as the ship tier links it
-rather than emitting anything.
+Two constraints to check before adopting it, neither checked at the
+time: `regress`'s `utf16` feature is aimed at JS's UTF-16 strings
+while this language stores UTF-8 (Q5), so the index domain had to be
+settled; and §0.2 requires one implementation behind an opaque
+`subscript_rt_*` symbol on both tiers, which a crate satisfies as
+long as the ship tier links it rather than emitting anything.
 
 **Both checked and resolved in favour of adoption; shipped as P23
 (`stdlib.md` §15, Q31, `specs/tracking/p23-regex.md`, 2026-07-27).**
@@ -185,15 +302,6 @@ natively and returns byte offsets, which is Q5's domain, and the
 anticipate turned out to be the real one: `regress` has no execution
 budget at any version, and an unbounded match is a hang the host cannot
 interrupt, so the engine is a fork that adds one.
-
-**Regex is therefore no longer "wanted, unscheduled".** The iterator
-protocol below still is, in part: P22 delivered `for…of` over the
-built-in containers and array-literal spread (Q30, §14), so what
-remains is the *binding* — a spelling for "this type is iterable",
-`keys`/`values`/`entries` returning iterators, and construction from an
-iterable (`new Map([[k, v]])`). The memory-model question this section
-raises — a stateful iterator outliving the call that made it, against
-C5's non-escaping callbacks — is untouched and is still the hard part.
 
 ## Undecided — the two that are not simple
 
@@ -211,3 +319,8 @@ C5's non-escaping callbacks — is untouched and is still the hard part.
 Every rejection carries one of the reasons above. A rejection recorded
 with any other reason — "not in v1", "redundant", "JS-number op" — has
 not been checked against the rule and should be.
+
+A prerequisite row that the project later acquired moves to the
+status section, with the obstacle that stays named per form. The two
+rows that P22 and P23 made obsolete on 2026-07-27, and that this file
+carried until 2026-09-10, are the worked example.

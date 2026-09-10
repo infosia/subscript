@@ -340,9 +340,13 @@ Rejected (S014, Q21/Q27): `at` — out of range is `undefined` in JS and
 there is no miss value for it (`string | null` is itself rejected by
 S011); use `charAt`, which is total. `normalize` (Unicode
 normalization tables), `localeCompare`,
-`toLocaleUpperCase`/`LowerCase` (locale data),
-`match`/`matchAll`/`search` (a regex engine) — each a missing
-prerequisite rather than a cost. `String.fromCharCode`/`raw` and
+`toLocaleUpperCase`/`LowerCase` (locale data) — each a missing
+prerequisite rather than a cost. `match` and `matchAll` are rejected
+for the **result type** §15.3 names, not for a missing engine.
+*(Corrected 2026-09-10 by `compiler.md` §103.3. This paragraph listed
+`match`/`matchAll`/`search` together as needing "a regex engine".
+P23 shipped the engine on 2026-07-27, and `search` is accepted
+(§15.3) and runs on both tiers.)* `String.fromCharCode`/`raw` and
 `String` as a value or constructor are rejected through the standing
 unknown-name paths (S100; behavior pinned by unit test — a dedicated
 S014 is a follow-up if the diagnostic proves confusing).
@@ -537,6 +541,21 @@ accepted, as Q22 fixes callback arities).
 `Set<K>`: `new Set<K>()`, `size: i32`, `add(k): Set<K>`,
 `has(k): boolean`, `delete(k): boolean`, `clear(): void`,
 `forEach(f: (k: K) => void): void`.
+
+**`new Set<K>(source)`** *(added 2026-09-10 by `compiler.md`
+§103.1)*, where `source` is `K[]`, `FixedArray<K, N>`, `Set<K>`, or —
+for `Set<string>` — a `string`, which yields one code point per
+element. The result is a fresh `Set<K>` in first-occurrence order.
+Duplicates collapse under SameValueZero and `-0` normalizes to `+0`,
+both by the rules `add` already applies. `compiler.md` §103.1 rule 4
+owns the lowering, and no iterator object is created on any tier.
+
+A **`Map` source is rejected**: stock `tsc` answers TS2769, because
+`Map<K, V>` is `Iterable<[K, V]>` and not `Iterable<K>`, so
+invariant 5 excludes it. A **`Generator<K>` source is rejected** by
+§14.4's rule — a generator is single-use, and construction is a value
+expression. **`new Map(source)` stays rejected in every form**: a
+pair element needs a tuple type.
 
 Added by Q27 (2026-07-25):
 
@@ -1185,6 +1204,15 @@ Anywhere else they are S014.
 yields a pair, and the language has no tuple type. This is the same
 gap that keeps `new Map([[k, v]])` out, not an iterator decision.
 
+**Both rules read the receiver type.** *(Added 2026-09-10 by
+`compiler.md` §103.2.)* They apply when the receiver is `T[]`,
+`FixedArray<T, N>`, `Map<K, V>`, or `Set<K>`. On any other receiver
+`keys`, `values`, and `entries` are ordinary member names, and the
+ordinary member rules decide them. A user class with a method
+`each(): Generator<i32>` already runs on both tiers; the same class
+with that method named `values()` was rejected, and the name is not
+the language's to reserve.
+
 **`string` iterates code points, not bytes** — the one place the
 language's byte-measure convention (Q5) does not carry over, because
 JS's `for…of` over a string yields code points and a byte-yielding
@@ -1239,11 +1267,23 @@ static address at a cost of **4.19 MB in every shipped binary**
 (`compiler.md` §22.1).
 
 This is why §14.1 restricts `keys()`/`values()` to the `for…of`
-subject position. C5 makes callbacks non-escaping **by construction**;
-an iterator held as a value would be stateful and outlive the call that
-produced it — the first escaping temporary in the language, and a
-memory-model change (invariant 2) rather than a syntax addition. Fusing
-removes the object instead of introducing a rule about it.
+subject position. Fusing removes the object instead of introducing a
+rule about it.
+
+**Two things are missing, and the memory model is not one of them.**
+*(Corrected 2026-09-10 by `compiler.md` §103.3.)* A held view needs a
+**language type**: stock `tsc` names it `IterableIterator<T>` and
+accepts that spelling, and the language answers S016 for the name. It
+also needs an **owner**: `compiler.md` §70 landed a reference-counted
+handle on 2026-08-27, and §70.1 decision 1 keeps it on coroutine frame
+handles until evidence arrives for the general form.
+
+This paragraph read "the first escaping temporary in the language, and
+a memory-model change (invariant 2) rather than a syntax addition".
+That is false, and it was already false when it was written:
+`Generator<T>` is a stateful value that a program returns from a
+function and stores in a class field, on both tiers. C5 keeps
+**callbacks** non-escaping; it never governed generator frames.
 
 Cost is therefore the same as the `forEach` Q24 made the traversal, and
 `a<NN>` pins that the two spellings produce identical output.
@@ -1512,15 +1552,32 @@ string result, not a new category, but the blanket claim was false.)*
 **Rejected, and blocked by the language rather than by the engine** —
 the diagnostics must say which:
 
-- `exec` — returns an array-with-extra-fields; there is no such shape
-  and no tuple type (the gap that already excludes `entries()` and
-  `new Map([[k, v]])`)
-- `match` — **fails stock `tsc` under `strict`**: `RegExpMatchArray.index`
-  is `index?: number`, so `const i: i32 = m.index` is `TS2322`.
-  Invariant 5 excludes it, not a design choice.
-- `matchAll` — would need a fusion decision under Q30/§14.3, and each
-  step still yields an object
-- `lastIndex` with `g` — mutable state on a value driving `exec`
+- `exec` — returns an **array with named extra fields**, and the
+  language has no such shape. *(Corrected 2026-09-10 by
+  `compiler.md` §103.3: this bullet also said "and no tuple type".
+  `RegExpExecArray` extends `Array<string>` with a required `index`
+  and `input`, and its captures are variable-length, so no tuple is
+  needed.)*
+- `match` — the same missing result type. Stock `tsc` **accepts the
+  call**; only the index read fails, because
+  `RegExpMatchArray.index` is `index?: number`, so
+  `const i: i32 = m.index` is `TS2322`. *(Corrected 2026-09-10 by
+  `compiler.md` §103.3: this bullet said `match` "**fails stock
+  `tsc` under `strict`**" and that "Invariant 5 excludes it, not a
+  design choice". Measured with TypeScript 5.9.2:
+  `const m = "hello".match(/l/);` alone is `tsc`-clean. Invariant 5
+  narrows to the index read.)*
+- `matchAll` — the same missing result type, and a fusion decision
+  under Q30/§14.3 that stays open. §14.3 fuses an index loop over a
+  container's own storage, and `matchAll` has none. Each step still
+  yields an object. Its `index` is required, so the `match` index
+  argument does not reach it.
+- `lastIndex` with `g` — it exists to drive `exec`, whose result type
+  the language does not have. *(Corrected 2026-09-10 by
+  `compiler.md` §103.4: this bullet said "mutable state on a
+  **value**". §15.5a makes a `RegExp` handle an ordinary Context
+  allocation, and `matchStart`/`matchEnd` already expose that
+  handle's match state. A `RegExp` is a handle.)*
 - `m.groups` — an object with dynamic keys
 - **the sticky flag `y`** — it steers matching by reading and writing
   `lastIndex`, which the line above rejects. The diagnostic names

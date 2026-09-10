@@ -105,6 +105,14 @@ on a defect, and Q26's rule applied strictly would take it. Contrast
 `keys`/`values`/`entries`/`for…of`/spread — is not a rejected API but
 an absent language feature. Neither of the above reasons applies.
 
+*(Superseded 2026-09-10. P22 shipped `for…of` over the built-in
+containers, subject-position `keys()`/`values()`, and array-literal
+spread on 2026-07-27 (`stdlib.md` §14, Q30). The machinery exists.
+What stays rejected — `entries()`, a held view, construction from an
+iterable, call spread — carries a different reason per form, measured
+and recorded in `js-api-sweep.md`. Do not quote this paragraph as
+current status.)*
+
 **Determinism divergences** (seeded `Math.random`, `Date` trapping
 instead of Invalid-Date) — deliberate, and Boa's unseeded behaviour is
 what we are avoiding.
@@ -190,6 +198,15 @@ Nothing open. Every divergence and every rejection recorded at the time
 of the audit has been either closed, confirmed as a genuine missing
 prerequisite, confirmed as language design that costs no capability, or
 decided by the owner.
+
+*(Amended 2026-09-10. "Nothing open" states the position of
+2026-07-25. Two prerequisites this file confirmed as genuine — a
+regex engine and iterator machinery — the project acquired on
+2026-07-27, in P23 and P22. Two items are open again as of
+2026-09-10: `new Set(iterable)` carries `Map`'s rejection reason, and
+`keys`/`values`/`entries` are reserved method names on a user
+receiver. `js-api-sweep.md` holds both, with the per-form status of
+regex and iteration.)*
 
 ## How to keep this current
 
