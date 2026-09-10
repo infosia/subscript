@@ -14667,8 +14667,8 @@ reader must not read this list as a rejection.
   pins those forms today.
 - A `Generator<T>` stored in a class field, in its **own** entry.
   *(Split from the entry above on 2026-09-10.)* The reference
-  interpreter cannot run the storage form (103.5 item 4), so this
-  entry carries the exclusion and the entry above keeps three
+  interpreter cannot run the storage form (103.5's `a217` item), so
+  this entry carries the exclusion and the entry above keeps three
   witnesses.
 
 **Reject**, each at a pinned position with its rule code:
@@ -15014,9 +15014,21 @@ result is shown to be independent of it by mutating one afterwards; a
 **Reject**, each at a pinned position with its rule code:
 `Array.from(map)`; `Array.from(gen())`; `Array.from(m.keys())`;
 `Array.from(xs, f)`; `Array.isArray(xs)`; `Array.of<i32>(1, 2)`;
-`new Array<i32>(3)`. Every one of these is `tsc`-accepted, so every
-entry renders the §79 divergence block, and each block's id names the
-record its row above gives.
+`new Array<i32>(3)`.
+
+**The round measures each entry's `tsc` class and writes it in the
+header** (§103.8 rule 2). One is known to serve both classes:
+`Array.from(map)` unannotated is `tsc`-accepted, and
+`const a: i32[] = Array.from(m)` is `TS2322`, because `tsc` reads the
+result as `[K, V][]`. **§79 rule 6 governs it** — the entry is the
+unannotated form, the site carries a variant, and a unit test records
+the annotated form's `tsc` code.
+
+Each entry that is `tsc`-accepted renders the §79 block. Its
+`collision` id names a record: `compiler.md` §105.2 for the rejected
+sources and the mapper overload, and `compiler.md` §105.3 for the
+three other members. §79 rule 1 permits a `compiler.md` section id
+where `collisions.md` has no heading.
 
 **Gate.**
 
@@ -15024,9 +15036,9 @@ record its row above gives.
    accept entry, against a golden generated from the dev tier.
 2. `tsc` reports zero errors over the accept corpus, configuration
    unchanged.
-3. `node` runs the accept entry and agrees, where its header says
-   `js-comparable`. `Array.from` over an array, a `Set` and a
-   `string` is comparable; record what is not, and why.
+3. `node` runs each accept entry whose header says `js-comparable`,
+   and agrees. **The round decides which entries are comparable and
+   records why each other one is not** (§103.8 rule 2).
 4. Each new accept entry is Red at this section's pin, and the round
    records the diagnostic it gave there.
 5. The round reports which goldens and counted totals moved, and why.
@@ -15135,8 +15147,11 @@ storage.
 5. The interpreter sweep reports the exclusion count, and the round
    states it before and after.
 6. The round reports which goldens and counted totals moved, and why
-   (§103.8 rule 2). Every new entry declares a generator, so
-   `codegen/tests/lir-goldens/corpus.txt` moves.
+   (§103.8 rule 2). *(An earlier draft of this rule added "every new
+   entry declares a generator, so `corpus.txt` moves". That predicts
+   the answer, which rule 2 forbids, in the section written right
+   after the rule. The round reads the selection test and reports
+   what it measured.)*
 7. `tools/gate.sh full` green in both profiles.
 
 ## 107. Binding patterns, by source type and position
@@ -15241,8 +15256,12 @@ reference-type element; `let` rebinding after a pattern.
 §107.2 names.
 
 **Reject**: one entry per §107.3 row, each at a pinned position with
-its rule code, each rendering the §79 divergence block, and each block
-naming the record §107.5 adds. One entry pins §107.4 — a rejected
+its rule code. **The round measures each row's `tsc` class** and
+applies §79 rule 6 where one site serves both. §79 rule 1 gives one
+variant per **topic**, and §107.3's rows are separate topics, so the
+round decides how many variants the rows need rather than assuming
+one. A `collision` id may name `compiler.md` §107.3 where
+`collisions.md` has no heading. One entry pins §107.4 — a rejected
 pattern reporting exactly one diagnostic — and it is Red today,
 because the same program now reports three.
 
