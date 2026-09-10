@@ -15145,8 +15145,14 @@ the interpreter must reproduce; none of them is new.
    Identity, not a copy of the frame.
 2. **Replacing a field replaces the generator.** The new one starts at
    its own beginning, and the old one is unaffected.
-3. **A generator is storable in an array**, not only in a class field.
-4. **`g1 === g2` is rejected at the language surface**, S100 "operator
+3. **A generator is storable in an array, and as a `Map` value**, not
+   only in a class field. `Map<i32, Generator<i32>>` checks clean, and
+   each of the three is a distinct packed location.
+4. **`Generator<T> | null` is rejected**, S011 "unions are limited to
+   `Ref | null`". A program cannot declare nullable generator storage,
+   so §106.3 rule 4's null case is unreachable from a corpus program.
+   That is why §106.6 routes it to a unit test.
+5. **`g1 === g2` is rejected at the language surface**, S100 "operator
    not defined". So the interpreter's `as_handle()` equality arm for a
    generator is unreachable from a program. **No rule decides
    generator equality here**, and a later round must not read one into
@@ -15196,8 +15202,8 @@ inventing one.
 generator, alternating `.next()` through both; two distinct
 generators, each keeping its own suspended state; a field replaced
 after partial consumption; a generator in an **array** element,
-driven from the array; and an exhausted generator read again from
-storage.
+driven from the array; a generator as a **`Map` value**, driven from
+the map; and an exhausted generator read again from storage.
 
 **Gate.**
 
