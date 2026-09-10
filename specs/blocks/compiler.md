@@ -15246,10 +15246,20 @@ forbids that.
 ### 107.1 Accepted
 
 1. **An array binding pattern over a `T[]` or a `FixedArray<T, N>`**,
-   in a `const`/`let` declaration and in a function parameter.
+   in a `const`/`let` declaration, in a function parameter, and in a
+   **`for…of` binding** whose element type is one of those two.
 2. **A named-field pattern over a reference or value class**, in the
-   same two positions, with and without renaming
+   same three positions, with and without renaming
    (`const { x: renamed } = p`).
+
+*(The `for…of` binding was added 2026-09-10, before implementation.
+The first draft named the declaration and the parameter only, so
+`for (const [a, b] of xss)` had no rule at all — neither accepted here
+nor rejected in §107.3. Measured: both loop forms are `tsc`-clean and
+answer S100 today.)* The element type decides the pattern, exactly as
+the declared type decides it elsewhere. A `for…of` whose **subject**
+is rejected stays rejected by the subject's own rule; §104.1 governs a
+bare `Map`, and the pattern rule never reaches it.
 
 `C1` is not a blocker for rule 2. It records that this compiler
 rejects **structural substitution**, and that an object literal has no
@@ -15294,8 +15304,20 @@ and a round that implements any row states the cost it measured.
 
 A pattern this section rejects emits **one** diagnostic, at the
 pattern. It does not then emit an S016 for each name the pattern would
-have bound. Measured today: `const [a, b] = xs` gives three errors,
-and two of them are noise the first one caused.
+have bound.
+
+Measured 2026-09-10, and the count differs by position, which is why
+the round fixes the cascade rather than one site:
+
+| form | diagnostics today |
+|---|---|
+| `const [a, b] = xs` | 3 |
+| `const { x } = p` | 2 |
+| `function take([a, b]: i32[])` | 5 |
+| `for (const [a, b] of xss)` | 1 |
+
+Only the last is already correct. A rejected pattern in any position
+reports once.
 
 ### 107.5 Sites
 
@@ -15311,8 +15333,9 @@ and two of them are noise the first one caused.
 
 ### 107.6 Corpus and gate (pre-registered exit criteria)
 
-**Accept**, covering both positions: an array pattern and a field
-pattern in a declaration and in a parameter; a renamed field; a
+**Accept**, covering all three positions: an array pattern and a
+field pattern in a declaration, in a parameter, and in a `for…of`
+binding; a renamed field; a
 skipped element; an empty pattern whose source has an observable
 effect, proving the source still evaluates; a source evaluated once,
 proved by an effect that would repeat; a value-type element and a
