@@ -3298,6 +3298,37 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(result)
     }
 
+    /// Lowers `new Set<K>(source)` as one instruction over the
+    /// array-literal spread traversal (compiler.md §103.1 rule 4). The
+    /// runtime walks the source's own storage behind a shared sink, so
+    /// no iterator object and no synthesized call exist on any tier.
+    fn lower_set_from_source(
+        &mut self,
+        args: &[hir::Expr],
+        expr: &hir::Expr,
+    ) -> Result<Option<l::Operand>, LowerError> {
+        let [source] = args else {
+            return Err(self.error(&expr.pos, "`new Set(source)` takes one source operand"));
+        };
+        if !matches!(&expr.ty, Type::Set(_)) {
+            return Err(self.error(&expr.pos, "`new Set(source)` result is not a Set"));
+        }
+        let Some((traversal, _)) = source.ty.iteration_element() else {
+            return Err(self.error(&source.pos, "`new Set(source)` source is not a container"));
+        };
+        let spread = convert_spread(hir::SpreadKind::from(traversal));
+        let source_value = self.require_expr(source)?;
+        let traps = convert_traps(&expr.trap_sites(self.lowering.hir));
+        self.emit(
+            l::InstructionKind::SetFromSource(spread),
+            vec![source_value],
+            Some(l::ValueType::Data(expr.ty.clone())),
+            false,
+            traps,
+            expr.pos.clone(),
+        )
+    }
+
     fn lower_for_each(
         &mut self,
         callee: &hir::Callee,
@@ -4355,6 +4386,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             hir::Callee::Map(hir::MapFn::ForEach) | hir::Callee::Set(hir::SetFn::ForEach)
         ) {
             return self.lower_for_each(callee, args, expr);
+        }
+        if matches!(callee, hir::Callee::Set(hir::SetFn::New)) && !args.is_empty() {
+            return self.lower_set_from_source(args, expr);
         }
         if matches!(callee, hir::Callee::Ambient(hir::AmbientFn::Unreachable)) {
             let trap = convert_traps(&expr.trap_sites(self.lowering.hir))
@@ -7988,6 +8022,23 @@ fn verify_instruction_contract(
             };
             if !valid {
                 bad("spread-array literal signature is invalid", errors);
+            }
+        }
+        l::InstructionKind::SetFromSource(spread) => {
+            let valid = match (result_type.as_ref(), operand_types.as_slice()) {
+                (Some(l::ValueType::Data(Type::Set(key))), [l::ValueType::Data(source)]) => {
+                    match (spread, source) {
+                        (l::SpreadKind::Array, Type::Array(element))
+                        | (l::SpreadKind::FixedArray, Type::FixedArray(element, _))
+                        | (l::SpreadKind::SetValues, Type::Set(element)) => element == key,
+                        (l::SpreadKind::StringCodePoints, Type::Str) => **key == Type::Str,
+                        _ => false,
+                    }
+                }
+                _ => false,
+            };
+            if !valid {
+                bad("Set source-construction signature is invalid", errors);
             }
         }
         l::InstructionKind::Template(parts) => {

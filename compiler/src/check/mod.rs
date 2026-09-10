@@ -791,10 +791,9 @@ pub(crate) struct Checker<'p> {
     /// `object` assertion long enough for the Q28 call to issue its
     /// required S014 instead of an unrelated general-type diagnostic.
     pub in_json_argument: bool,
-    /// True only while checking the expression to the right of
-    /// `for…of`. It preserves a direct `as object` assertion long
-    /// enough for the closed-list S014 of stdlib.md §14, instead of the
-    /// general boundary-only-type diagnostic.
+    /// True while the checker checks a `for…of` subject expression. It
+    /// stays true for every expression in that subject, a closure body
+    /// included. `compiler.md` §103.2 rule 4 owns this behaviour.
     pub in_for_of_subject: bool,
     /// The divergence for an aggregate type in the current declaration.
     pub aggregate_type_divergence: Option<Divergence>,
@@ -5573,5 +5572,181 @@ mod tests {
         assert_eq!(diagnostics[0].message, "`missing` is not exported by `./m`");
         assert_eq!(diagnostics[0].pos.file, "main.ts");
         assert_eq!(diagnostics[0].pos.line, 1);
+    }
+
+    /// compiler.md §103.1: `new Set<K>(source)` takes each accepted
+    /// source kind, and one HIR call carries the source operand.
+    #[test]
+    fn set_source_construction_accepts_each_source_kind() {
+        use crate::hir::{Callee, ExprKind, SetFn};
+        use crate::types::Type;
+
+        let module = check_program(&[SourceFile::new(
+            "main.ts",
+            "export function main(): void {\n\
+               const values: i32[] = [1, 2];\n\
+               const fixed: FixedArray<i32, 2> = [1, 2];\n\
+               const text: string = \"ab\";\n\
+               const a: Set<i32> = new Set<i32>(values);\n\
+               const b: Set<i32> = new Set<i32>(fixed);\n\
+               const c: Set<i32> = new Set<i32>(a);\n\
+               const d: Set<string> = new Set<string>(text);\n\
+               print(`${a.size}${b.size}${c.size}${d.size}`);\n\
+             }\n",
+        )])
+        .expect("every accepted source kind checks clean");
+
+        let body = &module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main")
+            .body;
+        let mut sources = Vec::new();
+        for statement in body {
+            let crate::hir::Stmt::Let { init, .. } = statement else {
+                continue;
+            };
+            let ExprKind::Call {
+                callee: Callee::Set(SetFn::New),
+                args,
+            } = &init.kind
+            else {
+                continue;
+            };
+            sources.push(args.first().map(|argument| argument.ty.clone()));
+        }
+        assert_eq!(
+            sources,
+            vec![
+                Some(Type::Array(Box::new(Type::I32))),
+                Some(Type::FixedArray(Box::new(Type::I32), 2)),
+                Some(Type::Set(Box::new(Type::I32))),
+                Some(Type::Str),
+            ]
+        );
+    }
+
+    /// compiler.md §103.1 rules 1, 5, and 6: each rejected source
+    /// names its own reason.
+    #[test]
+    fn set_source_construction_rejects_a_map_and_a_generator() {
+        for (source, needle) in [
+            (
+                "const m: Map<i32, string> = new Map<i32, string>();\n\
+                 export function main(): void { const s: Set<i32> = new Set<i32>(m); }\n",
+                "TS2769",
+            ),
+            (
+                "function* one(): Generator<i32> { yield 1; }\n\
+                 export function main(): void { const s: Set<i32> = new Set<i32>(one()); }\n",
+                "single-use",
+            ),
+            (
+                "export function main(): void { const s: Set<i32> = new Set<i32>(1); }\n",
+                "accepts T[], FixedArray<T, N>, Set<T>, or string",
+            ),
+        ] {
+            let diagnostics = check_program(&[SourceFile::new("main.ts", source)])
+                .expect_err("the rejected source must fail");
+            assert_eq!(diagnostics[0].code, RuleCode::S014);
+            assert!(
+                diagnostics[0].message.contains(needle),
+                "diagnostic does not name `{needle}`: {}",
+                diagnostics[0].message
+            );
+        }
+    }
+
+    /// compiler.md §103.2: the view rules read the receiver type, so a
+    /// user class keeps `keys`, `values`, and `entries` as members.
+    #[test]
+    fn a_user_receiver_keeps_the_three_view_names_as_members() {
+        check_program(&[SourceFile::new(
+            "main.ts",
+            "function* one(): Generator<i32> { yield 1; }\n\
+             class Bag {\n\
+               keys(): Generator<i32> { return one(); }\n\
+               values(): Generator<i32> { return one(); }\n\
+               entries(): Generator<i32> { return one(); }\n\
+             }\n\
+             export function main(): void {\n\
+               const bag: Bag = new Bag();\n\
+               for (const key of bag.keys()) { print(`${key}`); }\n\
+               for (const value of bag.values()) { print(`${value}`); }\n\
+               for (const entry of bag.entries()) { print(`${entry}`); }\n\
+             }\n",
+        )])
+        .expect("a user receiver keeps the three names");
+
+        // The control: the same three names on a §14.1 container stay
+        // subject-only, and `entries()` stays rejected.
+        for (source, needle) in [
+            (
+                "export function main(): void {\n\
+                   const values: i32[] = [1];\n\
+                   const view = values.keys();\n\
+                   print(`${view}`);\n\
+                 }\n",
+                "direct subject",
+            ),
+            (
+                "export function main(): void {\n\
+                   const values: Map<i32, i32> = new Map<i32, i32>();\n\
+                   for (const entry of values.entries()) { print(`${entry}`); }\n\
+                 }\n",
+                "no tuple type",
+            ),
+            (
+                "export function main(): void {\n\
+                   const values: FixedArray<i32, 1> = [1];\n\
+                   for (const value of values.values()) { print(`${value}`); }\n\
+                 }\n",
+                "subject-only fused view",
+            ),
+        ] {
+            let diagnostics = check_program(&[SourceFile::new("main.ts", source)])
+                .expect_err("a container receiver keeps the view rules");
+            assert!(
+                diagnostics[0].message.contains(needle),
+                "diagnostic does not name `{needle}`: {}",
+                diagnostics[0].message
+            );
+        }
+    }
+
+    /// compiler.md §103.2 rule 4: the `for…of` subject environment does
+    /// not depend on the member name. One program under two spellings
+    /// gives one outcome.
+    #[test]
+    fn the_for_of_subject_environment_does_not_depend_on_the_member_name() {
+        const PROGRAM: &str = "function* one(): Generator<i32> { yield 1; }\n\
+             class Bag {\n\
+               MEMBER<T>(): Generator<i32> { return one(); }\n\
+             }\n\
+             export function main(): void {\n\
+               const bag: Bag = new Bag();\n\
+               for (const value of bag.MEMBER<object>()) { print(`${value}`); }\n\
+             }\n";
+        let outcome = |member: &str| -> Vec<String> {
+            let source = PROGRAM.replace("MEMBER", member);
+            match check_program(&[SourceFile::new("main.ts", &source)]) {
+                Ok(_) => Vec::new(),
+                Err(diagnostics) => diagnostics
+                    .iter()
+                    .map(|diagnostic| format!("{:?} {}", diagnostic.code, diagnostic.message))
+                    .collect(),
+            }
+        };
+        let ordinary = outcome("each");
+        assert!(
+            ordinary.is_empty(),
+            "an ordinary member name must check clean: {ordinary:?}"
+        );
+        assert_eq!(
+            outcome("values"),
+            ordinary,
+            "the subject environment reads the member name"
+        );
     }
 }

@@ -157,6 +157,10 @@ pub(crate) struct RtFns {
     pub array_spread_fixed: FuncId,
     pub array_spread_assoc: FuncId,
     pub array_spread_string: FuncId,
+    pub set_from_array: FuncId,
+    pub set_from_fixed: FuncId,
+    pub set_from_assoc: FuncId,
+    pub set_from_string: FuncId,
     pub cb_bind: FuncId,
     pub cb_trampoline: FuncId,
     /// `subscript_rt_math_*` imports (stdlib.md §1), indexed by
@@ -985,6 +989,26 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             "subscript_rt_array_spread_string",
             &[I64, I64, I64, I32],
             None,
+        )?,
+        set_from_array: mk(
+            "subscript_rt_set_from_array",
+            &[I64, I64, I64, I32, I32],
+            Some(I64),
+        )?,
+        set_from_fixed: mk(
+            "subscript_rt_set_from_fixed",
+            &[I64, I64, I64, I64, I32, I32],
+            Some(I64),
+        )?,
+        set_from_assoc: mk(
+            "subscript_rt_set_from_assoc",
+            &[I64, I64, I64, I32, I32],
+            Some(I64),
+        )?,
+        set_from_string: mk(
+            "subscript_rt_set_from_string",
+            &[I64, I64, I64, I32, I32],
+            Some(I64),
         )?,
         // (ctx, code, env, userdata1, userdata2) → binding pointer (§14.4:
         // two userdata slots).

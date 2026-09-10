@@ -3449,18 +3449,60 @@ pub unsafe extern "C" fn subscript_rt_array_push(
     unsafe { runtime.array_push(a, src, pos_id) }
 }
 
-/// Appends a snapshot of a dynamic array to a fresh array literal.
+/// The destination of one fused spread traversal (stdlib.md §14.3).
+///
+/// One walker exists per source kind. The sink decides where its
+/// elements go, so a Set construction and an array literal share the
+/// walk.
+#[derive(Clone, Copy)]
+enum SpreadSink {
+    /// A fresh array literal; elements append in traversal order.
+    Array(*mut u8),
+    /// A fresh Set; elements insert under SameValueZero (Q24).
+    Set(*mut u8),
+}
+
+impl SpreadSink {
+    /// Accepts `count` consecutive elements starting at `data`.
+    ///
+    /// Returns false when the sink stops the traversal.
+    ///
+    /// # Safety
+    ///
+    /// `data` is readable for `count` elements of the sink's element
+    /// width, and the sink handle is live.
+    unsafe fn extend(self, ctx: *mut Context, data: *const u8, count: usize, pos_id: u32) -> bool {
+        match self {
+            // SAFETY: the arrays have equal element widths.
+            SpreadSink::Array(out) => unsafe { (*ctx).array_extend(out, data, count, pos_id) },
+            SpreadSink::Set(out) => {
+                // SAFETY: validated Set receiver.
+                let width = unsafe { crate::assocops::key_size(out) };
+                if width == 0 {
+                    return false;
+                }
+                for index in 0..count {
+                    // SAFETY: `data` covers `count` keys of `width` bytes.
+                    let key = unsafe { data.add(index * width) };
+                    // SAFETY: a set has zero-width values.
+                    unsafe { crate::assocops::insert(ctx, out, key, std::ptr::null(), pos_id) };
+                    // SAFETY: shared contract.
+                    if unsafe { (*ctx).trapped() } {
+                        return false;
+                    }
+                }
+                true
+            }
+        }
+    }
+}
+
+/// Walks a dynamic array into `sink`.
 ///
 /// # Safety
 ///
-/// `out` and `source` are live arrays with identical element width.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_array_spread_array(
-    ctx: *mut Context,
-    out: *mut u8,
-    source: *mut u8,
-    pos_id: u32,
-) {
+/// `source` is a live array whose element width matches the sink's.
+unsafe fn spread_from_array(ctx: *mut Context, sink: SpreadSink, source: *mut u8, pos_id: u32) {
     let runtime = unsafe { &mut *ctx };
     if !runtime.require_live_handle(source as usize, pos_id) {
         return;
@@ -3469,19 +3511,18 @@ pub unsafe extern "C" fn subscript_rt_array_spread_array(
     let count = unsafe { runtime.array_len(source) }.max(0) as usize;
     // SAFETY: source storage contains `count` initialized elements.
     let data = unsafe { runtime.array_data(source) };
-    // SAFETY: the arrays have equal element widths.
-    let _ = unsafe { runtime.array_extend(out, data, count, pos_id) };
+    // SAFETY: the source and the sink have equal element widths.
+    let _ = unsafe { sink.extend(ctx, data, count, pos_id) };
 }
 
-/// Appends a fixed-array buffer to a fresh array literal.
+/// Walks a fixed-array buffer into `sink`.
 ///
 /// # Safety
 ///
-/// `data` holds `count` elements of the output array's element width.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_array_spread_fixed(
+/// `data` holds `count` elements of the sink's element width.
+unsafe fn spread_from_fixed(
     ctx: *mut Context,
-    out: *mut u8,
+    sink: SpreadSink,
     data: *const u8,
     count: u64,
     pos_id: u32,
@@ -3489,25 +3530,18 @@ pub unsafe extern "C" fn subscript_rt_array_spread_fixed(
     if data.is_null() && count != 0 {
         return;
     }
-    let runtime = unsafe { &mut *ctx };
-    // SAFETY: caller supplies the fixed buffer and matching output width.
-    let _ = unsafe { runtime.array_extend(out, data, count as usize, pos_id) };
+    // SAFETY: caller supplies the fixed buffer and a matching width.
+    let _ = unsafe { sink.extend(ctx, data, count as usize, pos_id) };
 }
 
-/// Appends the insertion-ordered keys of a Map/Set to a fresh array
-/// literal, using the same fixed traversal bound as `forEach`/`for…of`.
+/// Walks the insertion-ordered keys of a Map/Set into `sink`, using the
+/// same fixed traversal bound as `forEach`/`for…of`.
 ///
 /// # Safety
 ///
-/// `out` is a live array and `source` a live Map/Set whose key width
-/// matches the output element width.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_array_spread_assoc(
-    ctx: *mut Context,
-    out: *mut u8,
-    source: *mut u8,
-    pos_id: u32,
-) {
+/// `source` is a live Map/Set whose key width matches the sink's
+/// element width.
+unsafe fn spread_from_assoc(ctx: *mut Context, sink: SpreadSink, source: *mut u8, pos_id: u32) {
     let runtime = unsafe { &mut *ctx };
     if !assoc_receiver_is_live(runtime, source, pos_id) {
         return;
@@ -3519,7 +3553,7 @@ pub unsafe extern "C" fn subscript_rt_array_spread_assoc(
     for index in 0..bound {
         // SAFETY: scratch covers every accepted key width.
         if unsafe { crate::assocops::iteration_copy(source, index, false, scratch.as_mut_ptr()) }
-            && !unsafe { runtime.array_extend(out, scratch.as_ptr(), 1, pos_id) }
+            && !unsafe { sink.extend(ctx, scratch.as_ptr(), 1, pos_id) }
         {
             break;
         }
@@ -3528,19 +3562,12 @@ pub unsafe extern "C" fn subscript_rt_array_spread_assoc(
     unsafe { crate::assocops::iteration_end(ctx, source) };
 }
 
-/// Appends one string handle per UTF-8 code point to a fresh array
-/// literal.
+/// Walks one string handle per UTF-8 code point into `sink`.
 ///
 /// # Safety
 ///
-/// `out` is a live `string[]` and `source` a live string.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_array_spread_string(
-    ctx: *mut Context,
-    out: *mut u8,
-    source: *const u8,
-    pos_id: u32,
-) {
+/// `source` is a live string and the sink holds string handles.
+unsafe fn spread_from_string(ctx: *mut Context, sink: SpreadSink, source: *const u8, pos_id: u32) {
     let runtime = unsafe { &mut *ctx };
     if !runtime.require_live_handle(source as usize, pos_id) {
         return;
@@ -3557,12 +3584,177 @@ pub unsafe extern "C" fn subscript_rt_array_spread_string(
             break;
         }
         let stored = value;
-        // SAFETY: output element is one string handle.
-        if !unsafe { (&mut *ctx).array_extend(out, (&raw const stored).cast::<u8>(), 1, pos_id) } {
+        // SAFETY: one element is one string handle.
+        if !unsafe { sink.extend(ctx, (&raw const stored).cast::<u8>(), 1, pos_id) } {
             break;
         }
         index = next;
     }
+}
+
+/// Appends a snapshot of a dynamic array to a fresh array literal.
+///
+/// # Safety
+///
+/// `out` and `source` are live arrays with identical element width.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_spread_array(
+    ctx: *mut Context,
+    out: *mut u8,
+    source: *mut u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    unsafe { spread_from_array(ctx, SpreadSink::Array(out), source, pos_id) };
+}
+
+/// Appends a fixed-array buffer to a fresh array literal.
+///
+/// # Safety
+///
+/// `data` holds `count` elements of the output array's element width.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_spread_fixed(
+    ctx: *mut Context,
+    out: *mut u8,
+    data: *const u8,
+    count: u64,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    unsafe { spread_from_fixed(ctx, SpreadSink::Array(out), data, count, pos_id) };
+}
+
+/// Appends the insertion-ordered keys of a Map/Set to a fresh array
+/// literal, using the same fixed traversal bound as `forEach`/`for…of`.
+///
+/// # Safety
+///
+/// `out` is a live array and `source` a live Map/Set whose key width
+/// matches the output element width.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_spread_assoc(
+    ctx: *mut Context,
+    out: *mut u8,
+    source: *mut u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    unsafe { spread_from_assoc(ctx, SpreadSink::Array(out), source, pos_id) };
+}
+
+/// Appends one string handle per UTF-8 code point to a fresh array
+/// literal.
+///
+/// # Safety
+///
+/// `out` is a live `string[]` and `source` a live string.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_spread_string(
+    ctx: *mut Context,
+    out: *mut u8,
+    source: *const u8,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    unsafe { spread_from_string(ctx, SpreadSink::Array(out), source, pos_id) };
+}
+
+/// Constructs a `Set<K>` from a dynamic array (compiler.md §103.1).
+///
+/// # Safety
+///
+/// Shared contract; `source` is a live array whose element width is
+/// `key_size`.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_set_from_array(
+    ctx: *mut Context,
+    source: *mut u8,
+    key_size: u64,
+    key_kind: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let set = unsafe { subscript_rt_set_new(ctx, key_size, key_kind, pos_id) };
+    if set.is_null() {
+        return set;
+    }
+    // SAFETY: validated set and shared source contract.
+    unsafe { spread_from_array(ctx, SpreadSink::Set(set), source, pos_id) };
+    set
+}
+
+/// Constructs a `Set<K>` from a fixed-array buffer (compiler.md §103.1).
+///
+/// # Safety
+///
+/// Shared contract; `data` holds `count` elements of `key_size` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_set_from_fixed(
+    ctx: *mut Context,
+    data: *const u8,
+    count: u64,
+    key_size: u64,
+    key_kind: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let set = unsafe { subscript_rt_set_new(ctx, key_size, key_kind, pos_id) };
+    if set.is_null() {
+        return set;
+    }
+    // SAFETY: validated set and shared buffer contract.
+    unsafe { spread_from_fixed(ctx, SpreadSink::Set(set), data, count, pos_id) };
+    set
+}
+
+/// Constructs a `Set<K>` from a Map/Set's keys (compiler.md §103.1).
+///
+/// # Safety
+///
+/// Shared contract; `source` is a live Map/Set whose key width is
+/// `key_size`.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_set_from_assoc(
+    ctx: *mut Context,
+    source: *mut u8,
+    key_size: u64,
+    key_kind: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let set = unsafe { subscript_rt_set_new(ctx, key_size, key_kind, pos_id) };
+    if set.is_null() {
+        return set;
+    }
+    // SAFETY: validated set and shared receiver contract.
+    unsafe { spread_from_assoc(ctx, SpreadSink::Set(set), source, pos_id) };
+    set
+}
+
+/// Constructs a `Set<string>` from one code point per element
+/// (compiler.md §103.1).
+///
+/// # Safety
+///
+/// Shared contract; `source` is a live string and `key_size` is the
+/// string-handle width.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_set_from_string(
+    ctx: *mut Context,
+    source: *const u8,
+    key_size: u64,
+    key_kind: u32,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let set = unsafe { subscript_rt_set_new(ctx, key_size, key_kind, pos_id) };
+    if set.is_null() {
+        return set;
+    }
+    // SAFETY: validated set and shared source contract.
+    unsafe { spread_from_string(ctx, SpreadSink::Set(set), source, pos_id) };
+    set
 }
 
 /// `pop()`: removes the last element into `dst`; traps when empty.
@@ -6487,6 +6679,128 @@ mod tests {
                 .message,
             runtime_deleted
         );
+    }
+
+    /// Reads a Set's keys back in insertion order.
+    ///
+    /// # Safety
+    ///
+    /// `set` is a live Set whose key width is `width`.
+    unsafe fn set_keys(ctx: *mut Context, set: *mut u8, width: usize) -> Vec<[u8; 8]> {
+        let mut out = Vec::new();
+        // SAFETY: live receiver.
+        let bound = unsafe { subscript_rt_assoc_iter_begin(ctx, set, 0) };
+        for index in 0..bound {
+            let mut scratch = [0u8; 8];
+            // SAFETY: scratch covers every accepted key width.
+            if unsafe { subscript_rt_assoc_iter_copy(ctx, set, index, 0, scratch.as_mut_ptr(), 0) }
+                != 0
+            {
+                scratch[width..].fill(0);
+                out.push(scratch);
+            }
+        }
+        // SAFETY: matching traversal end.
+        unsafe { subscript_rt_assoc_iter_end(ctx, set) };
+        out
+    }
+
+    #[test]
+    fn ffi_set_from_array_collapses_duplicates_in_first_occurrence_order() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let array = ctx.array_new(4, 1);
+        for value in [3i32, 1, 3, 2] {
+            // SAFETY: the array is live and the source holds one i32.
+            unsafe { subscript_rt_array_push(p, array, (&raw const value).cast(), 2) };
+        }
+        // SAFETY: live array of i32 keys.
+        let set = unsafe { subscript_rt_set_from_array(p, array, 4, 0, 3) };
+        assert!(!set.is_null());
+        // SAFETY: the construction returned a live Set.
+        assert_eq!(unsafe { subscript_rt_assoc_size(p, set) }, 3);
+        // SAFETY: live Set with four-byte keys.
+        let keys = unsafe { set_keys(p, set, 4) };
+        let keys: Vec<i32> = keys
+            .iter()
+            .map(|bytes| i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+            .collect();
+        assert_eq!(keys, vec![3, 1, 2]);
+        assert!(ctx.trap_record().is_none());
+    }
+
+    #[test]
+    fn ffi_set_from_fixed_reads_every_buffer_element() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let mut buffer = Vec::new();
+        for value in [5i32, 4, 5, 6] {
+            buffer.extend_from_slice(&value.to_le_bytes());
+        }
+        // SAFETY: the buffer holds four i32 keys.
+        let set = unsafe { subscript_rt_set_from_fixed(p, buffer.as_ptr(), 4, 4, 0, 7) };
+        assert!(!set.is_null());
+        // SAFETY: the construction returned a live Set.
+        assert_eq!(unsafe { subscript_rt_assoc_size(p, set) }, 3);
+        // SAFETY: live Set with four-byte keys.
+        let keys = unsafe { set_keys(p, set, 4) };
+        let keys: Vec<i32> = keys
+            .iter()
+            .map(|bytes| i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+            .collect();
+        assert_eq!(keys, vec![5, 4, 6]);
+        assert!(ctx.trap_record().is_none());
+    }
+
+    #[test]
+    fn ffi_set_from_assoc_copies_the_source_keys() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        // SAFETY: monomorphized i32 key shape.
+        let source = unsafe { subscript_rt_set_new(p, 4, 0, 1) };
+        for value in [8i32, 9] {
+            // SAFETY: live Set receiver and one i32 key.
+            unsafe { subscript_rt_set_add(p, source, (&raw const value).cast(), 2) };
+        }
+        // SAFETY: live Set of i32 keys.
+        let copy = unsafe { subscript_rt_set_from_assoc(p, source, 4, 0, 3) };
+        assert!(!copy.is_null());
+        assert_ne!(copy, source);
+        // SAFETY: the construction returned a live Set.
+        assert_eq!(unsafe { subscript_rt_assoc_size(p, copy) }, 2);
+        // SAFETY: live Set with four-byte keys.
+        let keys = unsafe { set_keys(p, copy, 4) };
+        let keys: Vec<i32> = keys
+            .iter()
+            .map(|bytes| i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+            .collect();
+        assert_eq!(keys, vec![8, 9]);
+        assert!(ctx.trap_record().is_none());
+    }
+
+    #[test]
+    fn ffi_set_from_string_yields_one_code_point_per_element() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let text = ctx.alloc_str("ba漢a漢".as_bytes(), 1);
+        // SAFETY: live string source and the string-handle key width.
+        let set = unsafe { subscript_rt_set_from_string(p, text, 8, 3, 2) };
+        assert!(!set.is_null());
+        // SAFETY: the construction returned a live Set.
+        assert_eq!(unsafe { subscript_rt_assoc_size(p, set) }, 3);
+        // SAFETY: live Set with eight-byte string-handle keys.
+        let keys = unsafe { set_keys(p, set, 8) };
+        let text: Vec<String> = keys
+            .iter()
+            .map(|bytes| {
+                let handle = usize::from_le_bytes(*bytes) as *const u8;
+                // SAFETY: every key is a live string handle.
+                String::from_utf8(unsafe { ctx.str_bytes(handle) }.to_vec())
+                    .expect("code point is UTF-8")
+            })
+            .collect();
+        assert_eq!(text, vec!["b", "a", "漢"]);
+        assert!(ctx.trap_record().is_none());
     }
 
     #[test]

@@ -3374,6 +3374,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::InstructionKind::ArraySpreadLiteral(spreads) => {
                 self.emit_spread_array(out, instruction, spreads, &operands, &operand_types, result)
             }
+            l::InstructionKind::SetFromSource(spread) => self.emit_set_from_source(
+                out,
+                instruction,
+                *spread,
+                &operands,
+                &operand_types,
+                result,
+            ),
             l::InstructionKind::Template(parts) => {
                 self.emit_template(out, instruction, parts, &operands, result)
             }
@@ -7584,6 +7592,104 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             other => return Err(internal(format!("unknown Map intrinsic {other}"))),
         }
+        self.consume_runtime_traps(out, &instruction.traps, true, true)
+    }
+
+    /// Emits `new Set<K>(source)` as one fused runtime traversal
+    /// (compiler.md §103.1 rule 4).
+    fn emit_set_from_source(
+        &mut self,
+        out: &mut String,
+        instruction: &l::Instruction,
+        spread: l::SpreadKind,
+        operands: &[String],
+        operand_types: &[l::ValueType],
+        result: Option<String>,
+    ) -> Result<(), String> {
+        let result_id = instruction
+            .result
+            .ok_or_else(|| internal("Set source construction has no result"))?;
+        let Type::Set(key) = data_type(self.value_type(result_id)?)?.clone() else {
+            return Err(internal("Set source construction result is not a Set"));
+        };
+        let source = operands
+            .first()
+            .ok_or_else(|| internal("Set source construction has no operand"))?;
+        let position = self.emitter.pos_id(&instruction.pos);
+        let key_size = format!("(uint64_t)sizeof({})", self.emitter.ctype(&key)?);
+        let key_kind = format!("{}u", association_key_kind(self.emitter.module, &key)?);
+        let position = format!("{position}u");
+        let call = match spread {
+            l::SpreadKind::Array => self.emitter.runtime_call(
+                "void*",
+                "subscript_rt_set_from_array",
+                &[
+                    "void*".into(),
+                    "void*".into(),
+                    "uint64_t".into(),
+                    "uint32_t".into(),
+                    "uint32_t".into(),
+                ],
+                &["ctx".into(), source.clone(), key_size, key_kind, position],
+            ),
+            l::SpreadKind::FixedArray => {
+                let Some(l::ValueType::Data(Type::FixedArray(_, count))) = operand_types.first()
+                else {
+                    return Err(internal("Set fixed source type is invalid"));
+                };
+                self.emitter.runtime_call(
+                    "void*",
+                    "subscript_rt_set_from_fixed",
+                    &[
+                        "void*".into(),
+                        "const void*".into(),
+                        "uint64_t".into(),
+                        "uint64_t".into(),
+                        "uint32_t".into(),
+                        "uint32_t".into(),
+                    ],
+                    &[
+                        "ctx".into(),
+                        format!("&({source})"),
+                        format!("{count}ull"),
+                        key_size,
+                        key_kind,
+                        position,
+                    ],
+                )
+            }
+            l::SpreadKind::SetValues => self.emitter.runtime_call(
+                "void*",
+                "subscript_rt_set_from_assoc",
+                &[
+                    "void*".into(),
+                    "void*".into(),
+                    "uint64_t".into(),
+                    "uint32_t".into(),
+                    "uint32_t".into(),
+                ],
+                &["ctx".into(), source.clone(), key_size, key_kind, position],
+            ),
+            // The verifier rejects a Map source in every case, because
+            // the checker rejects `new Set(map)` (compiler.md §103.1
+            // rule 5).
+            l::SpreadKind::MapKeys => {
+                return Err(internal("Set source construction has a Map source"));
+            }
+            l::SpreadKind::StringCodePoints => self.emitter.runtime_call(
+                "void*",
+                "subscript_rt_set_from_string",
+                &[
+                    "void*".into(),
+                    "const void*".into(),
+                    "uint64_t".into(),
+                    "uint32_t".into(),
+                    "uint32_t".into(),
+                ],
+                &["ctx".into(), source.clone(), key_size, key_kind, position],
+            ),
+        };
+        self.assign(out, result, &call)?;
         self.consume_runtime_traps(out, &instruction.traps, true, true)
     }
 

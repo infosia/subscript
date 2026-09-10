@@ -511,6 +511,7 @@ impl<'p> Checker<'p> {
             Some("r43-map-iterable-constructor.ts" | "r79-assign-entries.ts") => {
                 Some(Divergence::NoTupleType)
             }
+            Some("r199-set-source-generator.ts") => Some(Divergence::GeneratorSingleUse),
             Some(
                 "r46-number-global-isnan.ts"
                 | "r47-number-coercion.ts"
@@ -636,10 +637,13 @@ impl<'p> Checker<'p> {
                     self.err_expr(pos)
                 }
                 _ => {
-                    self.error(
+                    // C1: the literal has no standalone type, so only a
+                    // `@Descriptor` context constructs from one.
+                    self.error_diverging(
                         RuleCode::S100,
                         "object literals are not in the decided surface",
                         pos.clone(),
+                        Divergence::ObjectLiteralConstruction,
                     );
                     self.err_expr(pos)
                 }
@@ -3102,11 +3106,12 @@ impl<'p> Checker<'p> {
                     .map(|(kind, element)| (hir::SpreadKind::from(kind), element))
                     .or_else(|| match &expr.ty {
                         Type::Generator(_) => {
-                            self.error(
+                            self.error_diverging(
                                 RuleCode::S014,
                                 "Generator<T> is single-use; array-literal spread would consume \
                              a value expression",
                                 self.pos(slot.spread.unwrap_or(a.span)),
+                                Divergence::GeneratorSingleUse,
                             );
                             None
                         }
@@ -7465,7 +7470,8 @@ impl<'p> Checker<'p> {
         self.instantiate_method(class, name, &resolved, is_static, pos)
     }
 
-    fn check_method_call_on(
+    /// Checks `receiver.name(...)` from an already-checked receiver.
+    pub(super) fn check_method_call_on(
         &mut self,
         recv: hir::Expr,
         property: &ast::IdentName,
@@ -7822,6 +7828,64 @@ impl<'p> Checker<'p> {
         out
     }
 
+    /// Checks the one source operand of `new Set<K>(source)`
+    /// (compiler.md §103.1). `source` is `K[]`, `FixedArray<K, N>`,
+    /// `Set<K>`, or, for `Set<string>`, a `string` that yields one code
+    /// point per element. Returns `None` when the form is rejected.
+    fn check_set_source(
+        &mut self,
+        argument: &ast::ExprOrSpread,
+        key: &Type,
+        fx: &mut FnCtx,
+    ) -> Option<hir::Expr> {
+        if let Some(spread) = argument.spread {
+            let spread_pos = self.pos(spread);
+            self.error_diverging(
+                RuleCode::S014,
+                "spread arguments require variadic parameters, which the language does not have",
+                spread_pos,
+                Divergence::VariadicArguments,
+            );
+            return None;
+        }
+        let source = self.check_expr(&argument.expr, None, fx);
+        let element = match &source.ty {
+            Type::Error => return None,
+            // Stock `tsc` answers TS2769 here, because `Map<K, V>` is
+            // `Iterable<[K, V]>` and not `Iterable<K>`.
+            Type::Map(..) => {
+                self.reject_api_form("Set", "new Set(Map)", "new Set(map)", source.pos.clone());
+                return None;
+            }
+            Type::Generator(_) => {
+                self.reject_api_form(
+                    "Set",
+                    "new Set(Generator<T>)",
+                    "new Set(generator)",
+                    source.pos.clone(),
+                );
+                return None;
+            }
+            other => match other.iteration_element() {
+                Some((_, element)) => element,
+                None => {
+                    let actual = self.type_name(other);
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "`new Set(source)` accepts T[], FixedArray<T, N>, Set<T>, or \
+                             string; got `{actual}`"
+                        ),
+                        source.pos.clone(),
+                    );
+                    return None;
+                }
+            },
+        };
+        self.require_assignable(&element, key, source.pos.clone(), "the Set element");
+        Some(source)
+    }
+
     fn check_new(&mut self, n: &ast::NewExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
         let mut callee: &ast::Expr = &n.callee;
         while let ast::Expr::Paren(p) = callee {
@@ -7912,13 +7976,11 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(pos);
             }
-            if n.args.as_ref().is_some_and(|args| !args.is_empty()) {
-                self.reject_api_form(
-                    "Map / Set",
-                    "new Map/Set(iterable)",
-                    &format!("new {name}(iterable)"),
-                    pos.clone(),
-                );
+            let arguments: &[ast::ExprOrSpread] = n.args.as_deref().unwrap_or(&[]);
+            // `new Map(source)` stays rejected in every form: a pair
+            // element needs a tuple type (compiler.md §103.1 rule 7).
+            if name == "Map" && !arguments.is_empty() {
+                self.reject_api_form("Map", "new Map(iterable)", "new Map(iterable)", pos.clone());
                 return self.err_expr(pos);
             }
             let saved = self.in_assoc_key;
@@ -7946,11 +8008,28 @@ impl<'p> Checker<'p> {
                     pos,
                 };
             }
-            let ty = Type::Set(Box::new(key));
+            let ty = Type::Set(Box::new(key.clone()));
+            // The arity guard and the source index are one match, so no
+            // caller holds an emptiness precondition for the other.
+            let args = match arguments {
+                [] => Vec::new(),
+                [argument] => match self.check_set_source(argument, &key, fx) {
+                    Some(source) => vec![source],
+                    None => return self.err_expr(pos),
+                },
+                _ => {
+                    self.error(
+                        RuleCode::S100,
+                        "`new Set` takes at most one source argument",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
+            };
             return hir::Expr {
                 kind: ExprKind::Call {
                     callee: Callee::Set(SetFn::New),
-                    args: Vec::new(),
+                    args,
                 },
                 ty,
                 pos,

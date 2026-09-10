@@ -752,8 +752,16 @@ mod tests {
                 "export function main(): void {\n  const value: FixedArray<i32, 1> = [1];\n  print(`${value.indexOf(1)}`);\n}\n"
                     .to_string()
             }
-            ("Map / Set", "new Map/Set(iterable)") => {
+            ("Map", "new Map(iterable)") => {
                 "export function main(): void {\n  const value: Map<i32, i32> = new Map<i32, i32>([[1, 2]]);\n}\n"
+                    .to_string()
+            }
+            ("Set", "new Set(Map)") => {
+                "export function main(): void {\n  const source: Map<i32, i32> = new Map<i32, i32>();\n  const value: Set<i32> = new Set<i32>(source);\n}\n"
+                    .to_string()
+            }
+            ("Set", "new Set(Generator<T>)") => {
+                "function* one(): Generator<i32> {\n  yield 1;\n}\nexport function main(): void {\n  const value: Set<i32> = new Set<i32>(one());\n}\n"
                     .to_string()
             }
             ("Object", "groupBy") => {

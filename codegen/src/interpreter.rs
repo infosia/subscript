@@ -1346,6 +1346,19 @@ impl<'m> Interpreter<'m> {
                 let ty = self.data_result_type(result_ty, instruction)?;
                 Some(self.array_spread_literal(ty, parts, &operands, &instruction.pos)?)
             }
+            l::InstructionKind::SetFromSource(spread) => {
+                let ty = self.data_result_type(result_ty, instruction)?.clone();
+                Some(
+                    self.set_from_source(
+                        &ty,
+                        *spread,
+                        operands
+                            .first()
+                            .ok_or_else(|| self.missing_operand(instruction, 0))?,
+                        &instruction.pos,
+                    )?,
+                )
+            }
             l::InstructionKind::Template(parts) => Some(Value::Handle(self.template(
                 parts,
                 &operands,
@@ -5222,6 +5235,90 @@ impl<'m> Interpreter<'m> {
             self.check_runtime(pos)?;
         }
         Ok(Value::Handle(out))
+    }
+
+    /// Runs `new Set<K>(source)` as one fused runtime traversal
+    /// (compiler.md §103.1 rule 4).
+    fn set_from_source(
+        &mut self,
+        ty: &Type,
+        spread: l::SpreadKind,
+        operand: &Value,
+        pos: &Pos,
+    ) -> Result<Value, InterpretError> {
+        let Type::Set(key_ty) = ty else {
+            return Err(self.invalid(
+                Some(pos.clone()),
+                "Set source construction result is not a Set",
+            ));
+        };
+        let key_size = self
+            .layout_cached(key_ty)
+            .ok_or_else(|| self.invalid(Some(pos.clone()), "Set key has no layout"))?
+            .size as u64;
+        let key_kind = assoc_key_kind(key_ty, self.module);
+        let context = &mut *self.context as *mut Context;
+        let set = match spread {
+            // SAFETY: verified array handle with the Set's element width.
+            l::SpreadKind::Array => unsafe {
+                ffi::subscript_rt_set_from_array(
+                    context,
+                    operand.as_handle()?,
+                    key_size,
+                    key_kind,
+                    0,
+                )
+            },
+            l::SpreadKind::FixedArray => {
+                let Value::Blob(bytes) = operand else {
+                    return Err(type_error("fixed array", operand));
+                };
+                let count = (bytes.len() as u64).checked_div(key_size).unwrap_or(0);
+                // SAFETY: the fixed blob consists of whole elements.
+                unsafe {
+                    ffi::subscript_rt_set_from_fixed(
+                        context,
+                        bytes.as_ptr(),
+                        count,
+                        key_size,
+                        key_kind,
+                        0,
+                    )
+                }
+            }
+            // SAFETY: runtime association traversal owns order and bound.
+            l::SpreadKind::SetValues => unsafe {
+                ffi::subscript_rt_set_from_assoc(
+                    context,
+                    operand.as_handle()?,
+                    key_size,
+                    key_kind,
+                    0,
+                )
+            },
+            // The verifier rejects a Map source in every case, because
+            // the checker rejects `new Set(map)` (compiler.md §103.1
+            // rule 5).
+            l::SpreadKind::MapKeys => {
+                return Err(self.invalid(
+                    Some(pos.clone()),
+                    "Set source construction has a Map source",
+                ));
+            }
+            // SAFETY: runtime string code-point traversal.
+            l::SpreadKind::StringCodePoints => unsafe {
+                ffi::subscript_rt_set_from_string(
+                    context,
+                    operand.as_handle()?,
+                    key_size,
+                    key_kind,
+                    0,
+                )
+            },
+        };
+        self.check_runtime(pos)?;
+        self.root_handle(set);
+        Ok(Value::Handle(set))
     }
 
     fn template(

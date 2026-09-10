@@ -225,6 +225,12 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         8,
     ),
     ("r197-high-surrogate-before-high.ts", RuleCode::S100, 8),
+    ("r198-set-source-map.ts", RuleCode::S014, 9),
+    ("r199-set-source-generator.ts", RuleCode::S014, 11),
+    ("r200-map-source-map.ts", RuleCode::S014, 9),
+    ("r201-new-class-spread-variadic.ts", RuleCode::S014, 17),
+    ("r202-array-spread-generator.ts", RuleCode::S014, 11),
+    ("r203-object-spread.ts", RuleCode::S100, 15),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -822,6 +828,14 @@ fn q30_rejections_name_the_actual_missing_prerequisite() {
             &["direct subject", "stateful iterator", "outlives"][..],
         ),
         ("r78-call-spread-variadic.ts", &["variadic parameters"][..]),
+        ("r198-set-source-map.ts", &["invariant 5", "TS2769"][..]),
+        ("r199-set-source-generator.ts", &["single-use"][..]),
+        ("r200-map-source-map.ts", &["pair", "no tuple type"][..]),
+        (
+            "r201-new-class-spread-variadic.ts",
+            &["variadic parameters"][..],
+        ),
+        ("r202-array-spread-generator.ts", &["single-use"][..]),
     ] {
         let source =
             fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));

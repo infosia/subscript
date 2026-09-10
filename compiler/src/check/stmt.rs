@@ -1242,7 +1242,25 @@ impl<'p> Checker<'p> {
 
     /// Returns the stabilized receiver expression, fused traversal kind,
     /// bound type, and whether the subject is a C8 generator.
+    ///
+    /// The subject environment does not depend on the member name
+    /// (compiler.md §103.2 rule 4), so the flag covers every path
+    /// through the subject, the fused views included.
     fn check_for_of_subject(
+        &mut self,
+        expression: &ast::Expr,
+        fx: &mut FnCtx,
+    ) -> (hir::Expr, Option<hir::ForOfKind>, Type, bool) {
+        let saved_for_of_subject = self.in_for_of_subject;
+        self.in_for_of_subject = true;
+        let subject = self.check_for_of_subject_under_flag(expression, fx);
+        self.in_for_of_subject = saved_for_of_subject;
+        subject
+    }
+
+    /// The body of [`Self::check_for_of_subject`], which runs with
+    /// `in_for_of_subject` set on every path.
+    fn check_for_of_subject_under_flag(
         &mut self,
         expression: &ast::Expr,
         fx: &mut FnCtx,
@@ -1254,6 +1272,15 @@ impl<'p> Checker<'p> {
                         let name = prop.sym.as_ref();
                         if matches!(name, "keys" | "values" | "entries") {
                             let recv = self.check_expr(&member.obj, None, fx);
+                            // The view rules reach the §14.1 containers
+                            // only. On any other receiver the three names
+                            // are ordinary members (compiler.md §103.2).
+                            if !Self::is_fused_view_receiver(&recv.ty) {
+                                let call_pos = self.pos(call.span);
+                                let subject =
+                                    self.check_method_call_on(recv, prop, call, None, fx, call_pos);
+                                return self.for_of_subject_from(subject);
+                            }
                             let prop_pos = self.pos(prop.span);
                             if name == "entries" {
                                 self.error_diverging(
@@ -1309,10 +1336,25 @@ impl<'p> Checker<'p> {
             }
         }
 
-        let saved_for_of_subject = self.in_for_of_subject;
-        self.in_for_of_subject = true;
         let subject = self.check_expr(expression, None, fx);
-        self.in_for_of_subject = saved_for_of_subject;
+        self.for_of_subject_from(subject)
+    }
+
+    /// True when the `keys`/`values`/`entries` view rules of stdlib.md
+    /// §14.1 reach this receiver type (compiler.md §103.2 rule 1).
+    fn is_fused_view_receiver(ty: &Type) -> bool {
+        matches!(
+            ty,
+            Type::Array(_) | Type::FixedArray(..) | Type::Map(..) | Type::Set(_)
+        )
+    }
+
+    /// Selects the fused traversal for a checked `for…of` subject that
+    /// is not a container view.
+    fn for_of_subject_from(
+        &mut self,
+        subject: hir::Expr,
+    ) -> (hir::Expr, Option<hir::ForOfKind>, Type, bool) {
         let selected = subject
             .ty
             .iteration_element()

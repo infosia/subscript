@@ -173,6 +173,20 @@ pub(crate) unsafe fn len(handle: *const u8) -> i32 {
     unsafe { (*handle.cast::<AssocHeader>()).len as i32 }
 }
 
+/// Returns the monomorphized key width of a live container.
+///
+/// # Safety
+///
+/// `handle` is null or a live `AssocHeader` owned by the caller's
+/// Context.
+pub(crate) unsafe fn key_size(handle: *const u8) -> usize {
+    if handle.is_null() {
+        return 0;
+    }
+    // SAFETY: caller contract.
+    unsafe { (*handle.cast::<AssocHeader>()).key_size as usize }
+}
+
 unsafe fn header<'a>(handle: *mut u8) -> Option<&'a mut AssocHeader> {
     if handle.is_null() {
         None

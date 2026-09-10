@@ -229,6 +229,10 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         subscript_rt_array_spread_fixed,
         subscript_rt_array_spread_assoc,
         subscript_rt_array_spread_string,
+        subscript_rt_set_from_array,
+        subscript_rt_set_from_fixed,
+        subscript_rt_set_from_assoc,
+        subscript_rt_set_from_string,
         subscript_rt_str_data,
         subscript_rt_array_data,
         subscript_rt_cb_bind,
@@ -1613,6 +1617,97 @@ mod tests {
         assert_eq!(
             after, before,
             "array/Map/BMP-string for…of introduced a live Context allocation"
+        );
+
+        // SAFETY: every generated entry returned and no code pointer
+        // survives the test.
+        unsafe { module.free_memory() };
+    }
+
+    #[test]
+    fn set_source_construction_allocates_only_the_set_storage() {
+        // compiler.md §103.1 rule 4 and the §103.7 gate: the fused
+        // traversal costs no allocation beyond the Set's own storage.
+        // The control is the loop the construction stands for, written
+        // out; the two live-allocation deltas must agree.
+        let program = sources(
+            "const values: i32[] = [1, 2, 3, 2];\n\
+             const text: string = \"Aé漢é\";\n\
+             let fused: i32 = 0;\n\
+             let manual: i32 = 0;\n\
+             export function build_fused(): void {\n\
+               const numbers: Set<i32> = new Set<i32>(values);\n\
+               const points: Set<string> = new Set<string>(text);\n\
+               fused += numbers.size + points.size;\n\
+             }\n\
+             export function build_manual(): void {\n\
+               const numbers: Set<i32> = new Set<i32>();\n\
+               for (const value of values) { numbers.add(value); }\n\
+               const points: Set<string> = new Set<string>();\n\
+               for (const codePoint of text) { points.add(codePoint); }\n\
+               manual += numbers.size + points.size;\n\
+             }\n\
+             export function build_with_one_extra_array(): void {\n\
+               const numbers: Set<i32> = new Set<i32>();\n\
+               const staging: i32[] = [...values];\n\
+               for (const value of staging) { numbers.add(value); }\n\
+               const points: Set<string> = new Set<string>();\n\
+               for (const codePoint of text) { points.add(codePoint); }\n\
+               manual += numbers.size + points.size + staging.length;\n\
+             }\n\
+             export function main(): void {}\n",
+        );
+        let (module, lowered) = compile_jit(&program, &[]).expect("compile allocation probe");
+        let init = module.get_finalized_function(lowered.init);
+        let entry = |name: &str| {
+            lowered
+                .entries
+                .iter()
+                .find(|entry| entry.name == name)
+                .map(|entry| module.get_finalized_function(entry.id))
+                .expect("probe entry")
+        };
+        let fused = entry("build_fused");
+        let manual = entry("build_manual");
+        let staged = entry("build_with_one_extra_array");
+        let mut ctx = Context::new();
+        let p: *const Context = &*ctx;
+        // SAFETY: the finalized init entry and the module stay alive.
+        unsafe { call_entry(init, &mut ctx) };
+        assert!(
+            !ctx.trapped(),
+            "probe setup trapped: {:?}",
+            ctx.trap_record()
+        );
+        // SAFETY: shared access after the setup entry returned.
+        let before_fused = unsafe { ffi::subscript_rt_ctx_live_allocations(p) };
+        // SAFETY: finalized allocation-probe entry.
+        unsafe { call_entry(fused, &mut ctx) };
+        // SAFETY: shared access after the probe entry returned.
+        let after_fused = unsafe { ffi::subscript_rt_ctx_live_allocations(p) };
+        // SAFETY: finalized allocation-probe entry.
+        unsafe { call_entry(manual, &mut ctx) };
+        // SAFETY: shared access after the probe entry returned.
+        let after_manual = unsafe { ffi::subscript_rt_ctx_live_allocations(p) };
+        // SAFETY: finalized allocation-probe entry.
+        unsafe { call_entry(staged, &mut ctx) };
+        // SAFETY: shared access after the probe entry returned.
+        let after_staged = unsafe { ffi::subscript_rt_ctx_live_allocations(p) };
+        assert!(
+            !ctx.trapped(),
+            "allocation probe trapped: {:?}",
+            ctx.trap_record()
+        );
+        assert_eq!(
+            after_fused - before_fused,
+            after_manual - after_fused,
+            "`new Set(source)` allocated more than the loop it stands for"
+        );
+        // The control: one staging array is one more live allocation, so
+        // the comparison above reports a materialized source.
+        assert!(
+            after_staged - after_manual > after_fused - before_fused,
+            "the probe does not see an added allocation"
         );
 
         // SAFETY: every generated entry returned and no code pointer

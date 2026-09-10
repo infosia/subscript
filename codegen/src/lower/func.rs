@@ -2514,6 +2514,82 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(RV::Scalar(handle))
     }
 
+    /// Lowers `new Set<K>(source)` as one fused runtime traversal
+    /// (compiler.md §103.1 rule 4).
+    fn set_from_source(
+        &mut self,
+        result_ty: &Type,
+        spread: l::SpreadKind,
+        operands: &[RV],
+        operand_types: &[l::ValueType],
+        traps: &[l::Trap],
+        pos: &Pos,
+    ) -> Result<RV, String> {
+        let Type::Set(key) = result_ty else {
+            return Err(internal("Set source construction result is not a Set"));
+        };
+        let (key_size, _) = self.ml.layouts.size_align(key)?;
+        let kind = association_key_kind(self.ml.lir, key)?;
+        let position = traps.first().map_or(pos, |trap| &trap.pos);
+        let position = self.position_id(position);
+        let key_size = self.iconst(types::I64, i64::from(key_size));
+        let kind = self.iconst(types::I32, i64::from(kind));
+        let position = self.iconst(types::I32, position);
+        let value = *operands
+            .first()
+            .ok_or_else(|| internal("Set source construction has no operand"))?;
+        let (function, arguments) = match spread {
+            l::SpreadKind::Array => {
+                let source = self.expect_scalar(value)?;
+                (
+                    self.ml.rt.set_from_array,
+                    vec![self.ctx, source, key_size, kind, position],
+                )
+            }
+            l::SpreadKind::FixedArray => {
+                let source = self.expect_aggregate(value)?;
+                let l::ValueType::Data(Type::FixedArray(_, count)) = operand_types
+                    .first()
+                    .ok_or_else(|| internal("Set fixed source has no type"))?
+                else {
+                    return Err(internal("Set fixed source has invalid source type"));
+                };
+                let count = self.iconst(types::I64, i64::from(*count));
+                (
+                    self.ml.rt.set_from_fixed,
+                    vec![self.ctx, source, count, key_size, kind, position],
+                )
+            }
+            l::SpreadKind::SetValues => {
+                let source = self.expect_scalar(value)?;
+                (
+                    self.ml.rt.set_from_assoc,
+                    vec![self.ctx, source, key_size, kind, position],
+                )
+            }
+            // The verifier rejects a Map source in every case, because
+            // the checker rejects `new Set(map)` (compiler.md §103.1
+            // rule 5).
+            l::SpreadKind::MapKeys => {
+                return Err(internal("Set source construction has a Map source"));
+            }
+            l::SpreadKind::StringCodePoints => {
+                let source = self.expect_scalar(value)?;
+                (
+                    self.ml.rt.set_from_string,
+                    vec![self.ctx, source, key_size, kind, position],
+                )
+            }
+        };
+        let handle = self
+            .call_runtime(function, &arguments, false)?
+            .ok_or_else(|| internal("Set source construction has no result"))?;
+        for trap in traps {
+            self.emit_trap(trap, TrapOperand::Pending)?;
+        }
+        Ok(RV::Scalar(handle))
+    }
+
     fn spread_array_literal(
         &mut self,
         result_ty: &Type,
@@ -6343,6 +6419,20 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     *operands
                         .first()
                         .ok_or_else(|| internal("capacity array bound is missing"))?,
+                    &instruction.traps,
+                    &instruction.pos,
+                )?,
+            ),
+            l::InstructionKind::SetFromSource(spread) => Some(
+                self.set_from_source(
+                    data_type(
+                        result_ty
+                            .as_ref()
+                            .ok_or_else(|| internal("Set source result type is missing"))?,
+                    )?,
+                    *spread,
+                    &operands,
+                    &operand_types,
                     &instruction.traps,
                     &instruction.pos,
                 )?,

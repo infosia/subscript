@@ -1,0 +1,8 @@
+array 3,1,2,size=3
+fixed 5,4,6,size=3
+set 3,1,2,size=3
+empty size=0
+string b,a,n,漢,字,size=5
+floats 0,NaN,1.5,size=3
+has-zero true has-nan true
+neg-zero-first Infinity,size=1

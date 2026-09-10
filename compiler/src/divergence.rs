@@ -141,6 +141,8 @@ pub enum Divergence {
     BodilessDeclareGenericMethod,
     /// A generic method declared on a generic class.
     GenericMethodOnGenericClass,
+    /// A `Generator<T>` consumed by a spread or by a Set construction.
+    GeneratorSingleUse,
 }
 
 /// The four facts that a divergence diagnostic shows.
@@ -221,6 +223,7 @@ impl Divergence {
         Divergence::GenericMethodTypeArguments,
         Divergence::BodilessDeclareGenericMethod,
         Divergence::GenericMethodOnGenericClass,
+        Divergence::GeneratorSingleUse,
     ];
 
     /// The four facts for this topic.
@@ -755,6 +758,16 @@ impl Divergence {
                 why: "The checker holds one substitution, so a class parameter and a \
                       method parameter cannot bind at the same time.",
                 collision: "compiler.md §64",
+            },
+            Divergence::GeneratorSingleUse => DivergenceEntry {
+                ts: "function* one(): Generator<i32> { yield 1; }\n\
+                     const values: i32[] = [...one()];",
+                subscript: "function* one(): Generator<i32> { yield 1; }\n\
+                            const values: i32[] = [];\n\
+                            for (const value of one()) { values.push(value); }",
+                why: "A generator is single-use, so consuming it reads as a value \
+                      expression while it mutates the generator.",
+                collision: "stdlib.md §14.4",
             },
         }
     }

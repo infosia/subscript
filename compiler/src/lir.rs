@@ -506,6 +506,8 @@ pub enum InstructionKind {
     ArrayWithCapacity,
     /// Construct an array literal with per-operand spread modes.
     ArraySpreadLiteral(Vec<Option<SpreadKind>>),
+    /// Construct a `Set` from one fused source traversal.
+    SetFromSource(SpreadKind),
     /// Format and concatenate a template literal.
     Template(Vec<TemplatePart>),
     /// Construct a function value and its capture environment.
@@ -1298,6 +1300,9 @@ mod tests {
         assert!(InstructionKind::Call(async_target()).produces_fresh_async_owner());
         assert!(InstructionKind::AsyncHandleCreate(async_target()).produces_fresh_async_owner());
         assert!(!InstructionKind::Copy.produces_fresh_async_owner());
+        // A `Set` key is a Q24 key kind, so a set construction never
+        // produces an async owner.
+        assert!(!InstructionKind::SetFromSource(SpreadKind::Array).produces_fresh_async_owner());
     }
 
     #[test]

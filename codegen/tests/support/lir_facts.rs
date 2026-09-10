@@ -1593,9 +1593,15 @@ fn compare_call_operands(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<
     for function in &lir.functions {
         for block in &function.blocks {
             for instruction in &block.instructions {
+                // `new Set<K>(source)` lowers to one instruction over
+                // the array-literal spread traversal rather than a call
+                // (compiler.md §103.1 rule 4); its source operand is the
+                // call's operand.
                 if matches!(
                     &instruction.kind,
-                    l::InstructionKind::Call(_) | l::InstructionKind::AsyncHandleCreate(_)
+                    l::InstructionKind::Call(_)
+                        | l::InstructionKind::AsyncHandleCreate(_)
+                        | l::InstructionKind::SetFromSource(_)
                 ) {
                     *actual
                         .entry((
@@ -1801,6 +1807,7 @@ fn instruction_arity(
         | K::Length
         | K::ForeignArrayData
         | K::ArrayWithCapacity
+        | K::SetFromSource(_)
         | K::IteratorCreate { .. }
         | K::IteratorBound => Arity::Exact(1),
         K::StringLiteral(_)

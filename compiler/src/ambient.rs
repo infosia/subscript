@@ -585,7 +585,9 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("T[]", "unshift(value, ...values)", "Q27", None, "Variadic parameters are the missing prerequisite for prepending multiple elements.", Some("r51-array-unshift-variadic.ts")),
     rejection("FixedArray<T, N>", "non-callback T[] methods", "Q22/Q27", None, "Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only.", None),
     rejection("Map<K, scalar V>", "get(key)", "Q24", Some("getOr"), "A scalar value type has no null miss value.", Some("r41-map-scalar-get.ts")),
-    rejection("Map / Set", "new Map/Set(iterable)", "Q30", Some("construct empty, then add/set"), "`new Map([[k, v]])` requires a pair element, but the language has no tuple type.", Some("r43-map-iterable-constructor.ts")),
+    rejection("Map", "new Map(iterable)", "Q30", Some("construct empty, then set"), "`new Map([[k, v]])` requires a pair element, but the language has no tuple type.", Some("r43-map-iterable-constructor.ts")),
+    rejection("Set", "new Set(Map)", "Q30", Some("pass a T[], FixedArray<T, N>, Set<T>, or string"), "A Map yields a pair, so invariant 5 excludes it: stock `tsc` answers TS2769 for a Map source.", Some("r198-set-source-map.ts")),
+    rejection("Set", "new Set(Generator<T>)", "Q30", Some("collect the generator with for…of, then add"), "A generator is single-use, and construction is a value expression (stdlib.md §14.4).", Some("r199-set-source-generator.ts")),
     rejection("Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", Some("r52-object-groupby.ts")),
     rejection("Set<K>", "algebra(non-Set)", "Q27", Some("pass a Set<K>"), "The language has no set-like protocol.", Some("r53-set-algebra-nonset.ts")),
 ];
@@ -872,6 +874,17 @@ pub(crate) fn set_method(name: &str) -> Option<SetMethod> {
         .find(|method| method.operation().name() == name)
 }
 
+/// The `new Set<K>(source)` surface (compiler.md §103.1). It is not a
+/// [`SetFn`] variant, because the lowering is one instruction over the
+/// array-literal spread traversal, not a Set method call.
+const SET_SOURCE_SIGNATURE: &str =
+    "new Set<K>(source: K[] | FixedArray<K, N> | Set<K> | string): Set<K>";
+
+/// The behaviour rendered beside [`SET_SOURCE_SIGNATURE`].
+const SET_SOURCE_SUMMARY: &str = "Constructs a set from one source in first-occurrence order; \
+     duplicates collapse under SameValueZero, as `add` does. A `string` source yields one code \
+     point per element.";
+
 /// Checker-owned accepted API projection used by the Markdown
 /// generator.
 pub(crate) fn accepted_api() -> Vec<ApiItem> {
@@ -1078,6 +1091,13 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             signature: f.api_signature().to_string(),
             summary: f.api_summary(),
         });
+        if f == SetFn::New {
+            out.push(ApiItem {
+                group: "Set constructor",
+                signature: SET_SOURCE_SIGNATURE.to_string(),
+                summary: SET_SOURCE_SUMMARY,
+            });
+        }
     }
     out.push(ApiItem {
         group: "JSON",
@@ -1529,6 +1549,7 @@ mod tests {
             ("Generator<T>", "next(): IteratorResult<T>"),
             ("IteratorResult<T>", "done: boolean"),
             ("IteratorResult<T>", "value: T"),
+            ("Set constructor", SET_SOURCE_SIGNATURE),
         ] {
             assert!(has(group, signature), "{group} {signature}");
         }
@@ -1556,6 +1577,8 @@ mod tests {
                 .count()
             + MapFn::ALL.len()
             + SetFn::ALL.len()
+            // The `new Set<K>(source)` row (compiler.md §103.1).
+            + 1
             + regex_rows
             + 7;
         assert_eq!(

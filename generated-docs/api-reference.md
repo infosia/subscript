@@ -259,6 +259,7 @@
 | subscript signature | Behavior |
 |---|---|
 | `new Set<K>(): Set<K>` | Constructs an empty insertion-ordered set. |
+| `new Set<K>(source: K[] \| FixedArray<K, N> \| Set<K> \| string): Set<K>` | Constructs a set from one source in first-occurrence order; duplicates collapse under SameValueZero, as `add` does. A `string` source yields one code point per element. |
 
 ### Set<K>
 
@@ -382,7 +383,9 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | T[] | `unshift(value, ...values)` | S014 | Q27 | — | Variadic parameters are the missing prerequisite for prepending multiple elements. | `r51-array-unshift-variadic.ts` |
 | FixedArray<T, N> | `non-callback T[] methods` | S014 | Q22/Q27 | — | Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only. | — |
 | Map<K, scalar V> | `get(key)` | S014 | Q24 | `getOr` | A scalar value type has no null miss value. | `r41-map-scalar-get.ts` |
-| Map / Set | `new Map/Set(iterable)` | S014 | Q30 | `construct empty, then add/set` | `new Map([[k, v]])` requires a pair element, but the language has no tuple type. | `r43-map-iterable-constructor.ts` |
+| Map | `new Map(iterable)` | S014 | Q30 | `construct empty, then set` | `new Map([[k, v]])` requires a pair element, but the language has no tuple type. | `r43-map-iterable-constructor.ts` |
+| Set | `new Set(Map)` | S014 | Q30 | `pass a T[], FixedArray<T, N>, Set<T>, or string` | A Map yields a pair, so invariant 5 excludes it: stock `tsc` answers TS2769 for a Map source. | `r198-set-source-map.ts` |
+| Set | `new Set(Generator<T>)` | S014 | Q30 | `collect the generator with for…of, then add` | A generator is single-use, and construction is a value expression (stdlib.md §14.4). | `r199-set-source-generator.ts` |
 | Object | `groupBy` | S014 | Q27 | — | It returns a null-prototype object, and the language has no such type. | `r52-object-groupby.ts` |
 | Set<K> | `algebra(non-Set)` | S014 | Q27 | `pass a Set<K>` | The language has no set-like protocol. | `r53-set-algebra-nonset.ts` |
 | RegExp | `exec` | S014 | Q31 | — | Its result needs an array with extra fields and a tuple type, neither of which the language has. | `r80-regex-exec.ts` |
