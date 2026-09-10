@@ -14949,7 +14949,12 @@ point per element, as §14.1 already does.
 ### 105.1 The namespace resolves
 
 1. **`Array` binds to a builtin namespace through ordinary name
-   resolution.** User shadowing follows the ordinary rules.
+   resolution.** User shadowing follows the ordinary rules in **value**
+   position. *(Recorded 2026-09-10, measured by the implementation
+   round: in **type** position `Array<T>` is a builtin that
+   `tyres.rs` maps to `T[]` before it consults declarations, so a user
+   `class Array` does not shadow it. That predates §105 and this
+   section does not change it.)*
 2. **`r174-unknown-name` keeps its meaning.** No `Array`-specific
    divergence attaches to S016. Each member carries its own
    rejection and its own record.
@@ -15024,11 +15029,29 @@ result as `[K, V][]`. **§79 rule 6 governs it** — the entry is the
 unannotated form, the site carries a variant, and a unit test records
 the annotated form's `tsc` code.
 
-Each entry that is `tsc`-accepted renders the §79 block. Its
-`collision` id names a record: `compiler.md` §105.2 for the rejected
-sources and the mapper overload, and `compiler.md` §105.3 for the
-three other members. §79 rule 1 permits a `compiler.md` section id
-where `collisions.md` has no heading.
+Each entry that is `tsc`-accepted renders the §79 block, and its
+`collision` id names the record that **owns the reason**.
+
+- **The three rejected sources reuse the variant their reason already
+  owns**: a bare `Map`, a single-use `Generator`, and a held view.
+  *(Corrected 2026-09-10, after the round reported the conflict. This
+  paragraph said `compiler.md` §105.2 owned all three. §79 rule 1
+  gives one variant per **topic**, and each of the three is a topic
+  §104 or §14.4 or §14.1 already owns. A `§105.2` variant beside them
+  would state `stdlib.md` §14.4's single-use rule in a second table
+  row, which is the defect §103.8 rule 1 forbids. The view source
+  cannot follow the letter at all: the existing `keys()` member check
+  rejects `Array.from(map.keys())` before any `Array.from` rule sees
+  a type.)*
+- **The mapper overload and the three other members** take
+  `compiler.md` §105.2 and §105.3, which own their reasons. §79
+  rule 1 permits a `compiler.md` section id where `collisions.md` has
+  no heading.
+
+**A diagnostic names the rule that rejects, not the call the user
+wrote.** `Array.from(map.keys())` reports on `keys`, because the view
+rule fires first. That follows §103.8 rule 1, and this rule records it
+so a reader of rule 6 does not expect otherwise.
 
 **Gate.**
 
