@@ -11794,6 +11794,24 @@ and names no command either.
    baseline is three integers at the top of the script, and it moves
    only by an owner decision that the tracking note records;
    `node_modules/.bin/tsc -p tsconfig.json`;
+
+   **The count reads three `(lib)` lines and nothing else. Open.**
+   *(Recorded 2026-09-11 by §106's round, which added a warning the
+   gate could not see and then found two more already there.)* The
+   command runs `--workspace --all-targets`, so clippy reports every
+   target, and the `awk` filter keeps `subscript-compiler`,
+   `subscript-runtime` and `subscript-codegen` `(lib)` only. A
+   `(lib test)` warning, a `(test "…")` binary, a `(bin … test)`
+   target, and every other crate — `subscript-cli`,
+   `subscript-bindgen`, the benchmarks — pass unread. Measured at
+   `495bb44`: `subscript-codegen (lib test)` carried 15 warnings and
+   `subscript-cli` was never counted.
+
+   Naming the missed targets does not converge as the workspace
+   grows. The total form is a ceiling per target, or one ceiling over
+   `--all-targets`, taken from the output the gate already has. A
+   round that closes it measures every target's count first, because
+   the baseline it proposes is that measurement and not a guess.
    `tools/hygiene.sh`.
    `full` does not stop at the first failure of a test command,
    because the record must hold every failing suite; it stops at a
