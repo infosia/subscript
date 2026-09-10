@@ -764,6 +764,32 @@ mod tests {
                 "function* one(): Generator<i32> {\n  yield 1;\n}\nexport function main(): void {\n  const value: Set<i32> = new Set<i32>(one());\n}\n"
                     .to_string()
             }
+            ("Array", "Array used as a value") => {
+                "export function main(): void {\n  const held = Array;\n  print(`${held}`);\n}\n"
+                    .to_string()
+            }
+            ("Array", "Array.from(source, mapFn)") => {
+                "export function main(): void {\n  const values: i32[] = [1];\n  Array.from(values, (value: i32): i32 => value);\n}\n"
+                    .to_string()
+            }
+            ("Array", "Array.from(Map)") => {
+                "export function main(): void {\n  const source: Map<i32, i32> = new Map<i32, i32>();\n  Array.from(source);\n}\n"
+                    .to_string()
+            }
+            ("Array", "Array.from(Generator<T>)") => {
+                "function* one(): Generator<i32> {\n  yield 1;\n}\nexport function main(): void {\n  Array.from(one());\n}\n"
+                    .to_string()
+            }
+            ("Array", "isArray(value)") => {
+                "export function main(): void {\n  const values: i32[] = [1];\n  Array.isArray(values);\n}\n"
+                    .to_string()
+            }
+            ("Array", "of(value, …)") => {
+                "export function main(): void {\n  Array.of<i32>(1, 2);\n}\n".to_string()
+            }
+            ("Array", "new Array(length)") => {
+                "export function main(): void {\n  new Array<i32>(3);\n}\n".to_string()
+            }
             ("Object", "groupBy") => {
                 "export function main(): void {\n  Object.groupBy([1], (value: i32): string => `${value}`);\n}\n"
                     .to_string()

@@ -711,7 +711,7 @@ pub enum ForOfKind {
     ArrayKeys,
     /// Fixed-array values in index order.
     FixedArrayValues,
-    /// Map keys in insertion order (bare `Map` and `map.keys()`).
+    /// Map keys in insertion order (`map.keys()`).
     MapKeys,
     /// Map values in insertion order (`map.values()`).
     MapValues,
@@ -3492,8 +3492,6 @@ pub enum SpreadKind {
     Array,
     /// Fixed-array values.
     FixedArray,
-    /// Map keys (the language's bare-Map iteration value).
-    MapKeys,
     /// Set values.
     SetValues,
     /// String code points.
@@ -3505,7 +3503,6 @@ impl From<IterKind> for SpreadKind {
         match kind {
             IterKind::Array => Self::Array,
             IterKind::FixedArray => Self::FixedArray,
-            IterKind::MapKeys => Self::MapKeys,
             IterKind::SetValues => Self::SetValues,
             IterKind::StringCodePoints => Self::StringCodePoints,
         }
@@ -3517,7 +3514,6 @@ impl From<IterKind> for ForOfKind {
         match kind {
             IterKind::Array => Self::ArrayValues,
             IterKind::FixedArray => Self::FixedArrayValues,
-            IterKind::MapKeys => Self::MapKeys,
             IterKind::SetValues => Self::SetValues,
             IterKind::StringCodePoints => Self::StringCodePoints,
         }

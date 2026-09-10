@@ -5198,24 +5198,22 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         ],
                     )
                 }
-                Some(l::SpreadKind::MapKeys | l::SpreadKind::SetValues) => {
-                    self.emitter.runtime_call(
-                        "void",
-                        "subscript_rt_array_spread_assoc",
-                        &[
-                            "void*".into(),
-                            "void*".into(),
-                            "void*".into(),
-                            "uint32_t".into(),
-                        ],
-                        &[
-                            "ctx".into(),
-                            destination.clone(),
-                            operand.clone(),
-                            format!("{pos}u"),
-                        ],
-                    )
-                }
+                Some(l::SpreadKind::SetValues) => self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_array_spread_assoc",
+                    &[
+                        "void*".into(),
+                        "void*".into(),
+                        "void*".into(),
+                        "uint32_t".into(),
+                    ],
+                    &[
+                        "ctx".into(),
+                        destination.clone(),
+                        operand.clone(),
+                        format!("{pos}u"),
+                    ],
+                ),
                 Some(l::SpreadKind::StringCodePoints) => self.emitter.runtime_call(
                     "void",
                     "subscript_rt_array_spread_string",
@@ -7670,12 +7668,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 ],
                 &["ctx".into(), source.clone(), key_size, key_kind, position],
             ),
-            // The verifier rejects a Map source in every case, because
-            // the checker rejects `new Set(map)` (compiler.md §103.1
-            // rule 5).
-            l::SpreadKind::MapKeys => {
-                return Err(internal("Set source construction has a Map source"));
-            }
             l::SpreadKind::StringCodePoints => self.emitter.runtime_call(
                 "void*",
                 "subscript_rt_set_from_string",

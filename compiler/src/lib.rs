@@ -2173,7 +2173,7 @@ mod tests {
             "export function main(): void {\n\
                const map: Map<i32, i32> = new Map<i32, i32>();\n\
                const set: Set<i32> = new Set<i32>();\n\
-               for (const key of map) { print(`${key}`); }\n\
+               for (const key of map.keys()) { print(`${key}`); }\n\
                for (const value of map.values()) { print(`${value}`); }\n\
                const values: i32[] = [...set];\n\
                print(`${values.length}`);\n\
@@ -2190,6 +2190,327 @@ mod tests {
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S014);
         assert!(err[0].message.contains("direct subject"));
+    }
+
+    /// compiler.md §104.1 rules 1 and 2: both positions reject a bare
+    /// `Map`, and neither reads how the bound value is used.
+    #[test]
+    fn a_bare_map_is_rejected_in_both_iteration_positions() {
+        let forms = [
+            "for (const key of map) { print(`${key}`); }",
+            "for (const key of map) { const value: i32 = key; print(`${value}`); }",
+            "const keys = [...map]; print(`${keys.length}`);",
+            "const keys: i32[] = [...map]; print(`${keys.length}`);",
+        ];
+        for form in forms {
+            let source = format!(
+                "export function main(): void {{\n\
+                   const map: Map<i32, i32> = new Map<i32, i32>();\n\
+                   {form}\n\
+                 }}\n"
+            );
+            let Err(err) = check_one(&source) else {
+                panic!("a bare Map must be rejected in `{form}`");
+            };
+            assert_eq!(err[0].code, RuleCode::S014, "{form}");
+            assert!(
+                err[0].message.contains("bare `Map`")
+                    && err[0].message.contains("`[K, V]` pair")
+                    && err[0].message.contains("`tsc` gate"),
+                "{form}: {}",
+                err[0].message
+            );
+        }
+    }
+
+    /// compiler.md §105.1 rule 1: `Array` resolves through ordinary name
+    /// resolution, so an ordinary declaration shadows it.
+    #[test]
+    fn a_user_declaration_shadows_the_array_namespace() {
+        check_one(
+            "export function main(): void {\n\
+               const Array: i32 = 3;\n\
+               print(`${Array}`);\n\
+             }\n",
+        )
+        .expect("a local binding named Array shadows the builtin namespace");
+
+        // The shadow owns the member path too: `from` here is the
+        // user's method, not §105.2's builtin.
+        check_one(
+            "class Source {\n\
+               from(value: i32): i32 { return value; }\n\
+             }\n\
+             export function main(): void {\n\
+               const Array: Source = new Source();\n\
+               print(`${Array.from(3)}`);\n\
+             }\n",
+        )
+        .expect("a local binding named Array owns `Array.from`");
+    }
+
+    /// compiler.md §105.1 rule 2: the general unknown-name diagnostic
+    /// keeps its meaning, and no `Array` divergence attaches to it.
+    #[test]
+    fn the_array_namespace_leaves_the_unknown_name_diagnostic_alone() {
+        let err = check_one("const n: i32 = zz;\n").expect_err("an unknown name is rejected");
+        assert_eq!(err[0].code, RuleCode::S016);
+        assert!(err[0].message.contains("unknown name `zz`"), "{err:#?}");
+        assert!(err[0].divergence.is_none(), "{err:#?}");
+    }
+
+    /// compiler.md §105.2 rule 1: the four accepted sources, and rule 5's
+    /// explicit type argument.
+    #[test]
+    fn array_from_accepts_every_recorded_source() {
+        check_one(
+            "export function main(): void {\n\
+               const xs: i32[] = [1, 2];\n\
+               const fixed: FixedArray<i32, 2> = [3, 4];\n\
+               const set: Set<i32> = new Set<i32>();\n\
+               const a: i32[] = Array.from(xs);\n\
+               const b: i32[] = Array.from(fixed);\n\
+               const c: i32[] = Array.from(set);\n\
+               const d: string[] = Array.from(\"ab\");\n\
+               const e: i32[] = Array.from<i32>([]);\n\
+               print(`${a.length}${b.length}${c.length}${d.length}${e.length}`);\n\
+             }\n",
+        )
+        .expect("§105.2 rule 1 accepts every source");
+
+        // Rule 5's other half: with no type argument the empty literal
+        // is checked with no contextual type.
+        let err = check_one(
+            "export function main(): void {\n\
+               const xs: i32[] = Array.from([]);\n\
+               print(`${xs.length}`);\n\
+             }\n",
+        )
+        .expect_err("an untyped empty source keeps the empty-literal rejection");
+        assert_eq!(err[0].code, RuleCode::S100);
+        assert!(err[0].message.contains("empty array literal"), "{err:#?}");
+    }
+
+    /// compiler.md §105.5: `Array.from(map)` serves both `tsc` classes.
+    /// §79 rule 6 puts the unannotated form in the corpus, and this
+    /// test pins the annotated one.
+    ///
+    /// This half is the rejection here. `compiler/tests/tsc_corpus.rs`
+    /// is the `tsc` half. It runs the pinned TypeScript compiler on the
+    /// same form and compares the code it measures.
+    #[test]
+    fn the_annotated_array_from_map_is_rejected_here() {
+        let err = check_one(
+            "export function main(): void {\n\
+               const map: Map<i32, string> = new Map<i32, string>();\n\
+               map.set(1, \"one\");\n\
+               const keys: i32[] = Array.from(map);\n\
+               print(`${keys.length}`);\n\
+             }\n",
+        )
+        .expect_err("the annotated form is rejected here too");
+        assert_eq!(err[0].code, RuleCode::S014);
+        assert!(err[0].message.contains("`[K, V]` pair"), "{err:#?}");
+    }
+
+    /// compiler.md §105.2 rule 6: three rejected sources, three reasons.
+    /// One shared message names a prerequisite that two of them do not
+    /// have.
+    #[test]
+    fn each_rejected_array_from_source_states_its_own_reason() {
+        let cases = [
+            (
+                "const map: Map<i32, i32> = new Map<i32, i32>();\n                   const out = Array.from(map);",
+                "`[K, V]` pair",
+            ),
+            (
+                "const out = Array.from(gen());",
+                "single-use",
+            ),
+            (
+                "const map: Map<i32, i32> = new Map<i32, i32>();\n                   const out = Array.from(map.keys());",
+                "direct subject",
+            ),
+        ];
+        for (body, needle) in cases {
+            let source = format!(
+                "function* gen(): Generator<i32> {{ yield 1; }}\n\
+                 export function main(): void {{\n                   {body}\n                   print(`${{out.length}}`);\n\
+                 }}\n"
+            );
+            let err = check_one(&source).unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{body}");
+            assert!(
+                err[0].message.contains(needle),
+                "{body}: {}",
+                err[0].message
+            );
+        }
+    }
+
+    /// compiler.md §105.3: the other three members are rejected, each
+    /// with its own record, and none of them is a candidate refusal.
+    #[test]
+    fn the_other_array_members_carry_their_own_rejection() {
+        let cases = [
+            ("const flag: boolean = Array.isArray(xs);", "statically"),
+            (
+                "const made: i32[] = Array.of<i32>(1, 2);",
+                "variadic-parameter prerequisite",
+            ),
+            ("const sized: i32[] = new Array<i32>(3);", "array hole"),
+        ];
+        for (body, needle) in cases {
+            let source = format!(
+                "export function main(): void {{\n\
+                 \x20 const xs: i32[] = [1, 2];\n\
+                 \x20 {body}\n\
+                 \x20 print(`${{xs.length}}`);\n\
+                 }}\n"
+            );
+            let err = check_one(&source).unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{body}");
+            assert!(
+                err[0].message.contains(needle),
+                "{body}: {}",
+                err[0].message
+            );
+            assert!(
+                err[0].divergence.is_some(),
+                "{body}: a tsc-accepted form must carry a §79 variant"
+            );
+        }
+    }
+
+    /// compiler.md §103.8 rule 1: a rejected call still walks its
+    /// arguments, so an unknown name inside one reaches the user beside
+    /// the rejection. Every early return of the `Array.from` check
+    /// walks the argument list.
+    #[test]
+    fn a_rejected_array_call_still_reports_an_unknown_argument_name() {
+        for body in [
+            "const xs: i32[] = Array.from(...nope);",
+            "const xs: i32[] = Array.from(nope, nope);",
+            "const xs: i32[] = Array.from(nope, nope, nope, nope);",
+            "const flag: boolean = Array.isArray(nope);",
+        ] {
+            let source =
+                format!("export function main(): void {{\n\x20 {body}\n\x20 print(`x`);\n}}\n");
+            let err = check_one(&source).unwrap_err();
+            assert!(
+                err.iter()
+                    .any(|diagnostic| diagnostic.code == RuleCode::S016
+                        && diagnostic.message.contains("unknown name `nope`")),
+                "{body}: {err:#?}"
+            );
+        }
+    }
+
+    /// compiler.md §105.4: `Array` is a namespace, so it is not a value
+    /// and a member read is not a value.
+    #[test]
+    fn the_array_namespace_is_not_a_value() {
+        for body in [
+            "const held = Array;",
+            "const held = Array.from;",
+            "const held = Array.isArray;",
+        ] {
+            let source =
+                format!("export function main(): void {{\n\x20 {body}\n\x20 print(`x`);\n}}\n");
+            let err = check_one(&source).unwrap_err();
+            assert_eq!(err[0].code, RuleCode::S014, "{body}");
+        }
+    }
+
+    /// compiler.md §104.4: one rejection states one reason. A spread
+    /// literal whose only operand is rejected carries that diagnostic
+    /// alone. The empty-literal reason names a shape this literal does
+    /// not have, so this literal does not carry it.
+    #[test]
+    fn a_rejected_spread_operand_reports_one_reason() {
+        let err = check_one(
+            "export function main(): void {\n\
+               const map: Map<i32, i32> = new Map<i32, i32>();\n\
+               const keys = [...map];\n\
+               print(`${keys.length}`);\n\
+             }\n",
+        )
+        .expect_err("a bare Map operand is rejected");
+        assert_eq!(err.len(), 1, "{err:#?}");
+        assert_eq!(err[0].code, RuleCode::S014);
+
+        // The control: the empty-literal reason still fires where the
+        // literal really is empty.
+        let empty = check_one(
+            "export function main(): void {\n\
+               const values = [];\n\
+               print(`${values.length}`);\n\
+             }\n",
+        )
+        .expect_err("an empty array literal with no context is rejected");
+        assert_eq!(empty[0].code, RuleCode::S100);
+        assert!(
+            empty[0].message.contains("empty array literal"),
+            "{}",
+            empty[0].message
+        );
+    }
+
+    /// compiler.md §104.6: the typed forms cannot become reject corpus
+    /// entries, because §79 rule 6 fixes each site's variant and §79
+    /// rule 4 then forbids a `tsc: rejects` entry there. This test is
+    /// the pin instead.
+    ///
+    /// This half is the rejection here. `compiler/tests/tsc_corpus.rs`
+    /// is the `tsc` half. It runs the pinned TypeScript compiler on the
+    /// same forms and compares the codes it measures.
+    #[test]
+    fn the_typed_bare_map_forms_are_rejected_here() {
+        let forms = [
+            "  const keys: i32[] = [...map];\n  print(`${keys.length}`);",
+            "  for (const key of map) {\n    const n: i32 = key;\n    print(`${n}`);\n  }",
+        ];
+        for form in forms {
+            let source = format!(
+                "export function main(): void {{\n\
+                 \x20 const map: Map<i32, string> = new Map<i32, string>();\n\
+                 \x20 map.set(1, \"one\");\n\
+                 {form}\n\
+                 }}\n"
+            );
+            let Err(err) = check_one(&source) else {
+                panic!("the typed form must be rejected here: {form}");
+            };
+            assert_eq!(err[0].code, RuleCode::S014, "{form}");
+            assert!(
+                err[0].message.contains("bare `Map`"),
+                "{form}: {}",
+                err[0].message
+            );
+        }
+    }
+
+    /// The narrowing of §104.1 rule 3 reaches no other subject or
+    /// operand type.
+    #[test]
+    fn the_bare_map_rejection_leaves_every_other_container_accepted() {
+        check_one(
+            "function* one(): Generator<i32> { yield 1; }\n\
+             export function main(): void {\n\
+               const map: Map<i32, i32> = new Map<i32, i32>();\n\
+               const set: Set<i32> = new Set<i32>();\n\
+               const fixed: FixedArray<i32, 2> = [1, 2];\n\
+               for (const key of map.keys()) { print(`${key}`); }\n\
+               for (const value of map.values()) { print(`${value}`); }\n\
+               for (const value of set) { print(`${value}`); }\n\
+               for (const value of fixed) { print(`${value}`); }\n\
+               for (const point of \"ab\") { print(point); }\n\
+               for (const value of one()) { print(`${value}`); }\n\
+               const values: i32[] = [...set, ...fixed];\n\
+               print(`${values.length}`);\n\
+             }\n",
+        )
+        .expect("§104.1 rule 3 leaves the other containers accepted");
     }
 
     #[test]

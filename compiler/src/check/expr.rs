@@ -411,6 +411,7 @@ impl<'p> Checker<'p> {
             return None;
         };
         let name = match id.sym.as_ref() {
+            "Array" => "Array",
             "Context" => "Context",
             "Math" => "Math",
             "Number" => "Number",
@@ -511,7 +512,14 @@ impl<'p> Checker<'p> {
             Some("r43-map-iterable-constructor.ts" | "r79-assign-entries.ts") => {
                 Some(Divergence::NoTupleType)
             }
-            Some("r199-set-source-generator.ts") => Some(Divergence::GeneratorSingleUse),
+            Some("r199-set-source-generator.ts" | "r207-array-from-generator.ts") => {
+                Some(Divergence::GeneratorSingleUse)
+            }
+            Some("r206-array-from-bare-map.ts") => Some(Divergence::BareMapToArray),
+            Some("r209-array-from-mapper.ts") => Some(Divergence::ArrayFromMapper),
+            Some("r210-array-is-array.ts") => Some(Divergence::ArrayIsArray),
+            Some("r211-array-of-variadic.ts") => Some(Divergence::ArrayOfArity),
+            Some("r212-new-array-length.ts") => Some(Divergence::ArrayHoleConstruction),
             Some(
                 "r46-number-global-isnan.ts"
                 | "r47-number-coercion.ts"
@@ -1426,6 +1434,17 @@ impl<'p> Checker<'p> {
                         "`Context` is an ambient namespace, not a value; use \
                          `Context.collect()`, `Context.free(value)`, or await \
                          `Context.suspend()` (Q6/Q7/Q34)",
+                        pos.clone(),
+                    );
+                    self.err_expr(pos)
+                } else if name == "Array" {
+                    // compiler.md §105.1 rule 1: the builtin namespace
+                    // resolves like any other name, and a namespace is
+                    // not a value.
+                    self.reject_api_form(
+                        "Array",
+                        "Array used as a value",
+                        "Array used as a value",
                         pos.clone(),
                     );
                     self.err_expr(pos)
@@ -3100,35 +3119,51 @@ impl<'p> Checker<'p> {
                 fx,
             );
             let (spread, element_ty) = if is_spread {
-                let selected = expr
-                    .ty
-                    .iteration_element()
-                    .map(|(kind, element)| (hir::SpreadKind::from(kind), element))
-                    .or_else(|| match &expr.ty {
-                        Type::Generator(_) => {
-                            self.error_diverging(
-                                RuleCode::S014,
-                                "Generator<T> is single-use; array-literal spread would consume \
+                let spread_pos = self.pos(slot.spread.unwrap_or(a.span));
+                let selected = match &expr.ty {
+                    // compiler.md §104.1 rules 1 and 4: the operand is
+                    // rejected on its resolved type. §79 rule 6: the site
+                    // serves both `tsc` classes, and its variant explains
+                    // the unannotated form that stock `tsc` accepts.
+                    Type::Map(..) => {
+                        self.error_diverging(
+                            RuleCode::S014,
+                            "a bare `Map` is not an array-literal spread operand: this \
+                             language binds `K` and TypeScript binds a `[K, V]` pair, so an \
+                             accepted program fails the `tsc` gate; push `map.keys()` or \
+                             `map.values()` into the array with a `for…of` loop",
+                            spread_pos,
+                            Divergence::BareMapToArray,
+                        );
+                        None
+                    }
+                    Type::Generator(_) => {
+                        self.error_diverging(
+                            RuleCode::S014,
+                            "Generator<T> is single-use; array-literal spread would consume \
                              a value expression",
-                                self.pos(slot.spread.unwrap_or(a.span)),
-                                Divergence::GeneratorSingleUse,
-                            );
-                            None
-                        }
-                        Type::Error => None,
-                        other => {
+                            spread_pos,
+                            Divergence::GeneratorSingleUse,
+                        );
+                        None
+                    }
+                    Type::Error => None,
+                    other => match other.iteration_element() {
+                        Some((kind, element)) => Some((hir::SpreadKind::from(kind), element)),
+                        None => {
                             let actual = self.type_name(other);
                             self.error(
                                 RuleCode::S014,
                                 format!(
-                                    "array-literal spread accepts T[], FixedArray<T, N>, Map, \
-                                 Set, or string; got `{actual}`"
+                                    "array-literal spread accepts T[], FixedArray<T, N>, Set, \
+                                     or string; got `{actual}`"
                                 ),
-                                self.pos(slot.spread.unwrap_or(a.span)),
+                                spread_pos,
                             );
                             None
                         }
-                    });
+                    },
+                };
                 match selected {
                     Some((kind, ty)) => (Some(kind), ty),
                     None => (None, Type::Error),
@@ -3156,12 +3191,12 @@ impl<'p> Checker<'p> {
             }
             checked.push(hir::ArrayLitElem { expr, spread });
         }
+        // A spread literal holds at least one element, so the element
+        // type is absent only after a hole or a rejected element, and
+        // each of those already carries its own diagnostic. A second
+        // message here names a shape this literal does not have
+        // (compiler.md §103: a reason must fit the form it rejects).
         let Some(elem_ty) = inferred else {
-            self.error(
-                RuleCode::S100,
-                "cannot infer the type of an empty array literal without context",
-                pos.clone(),
-            );
             return self.err_expr(pos);
         };
         if Self::is_context_affine_type(&elem_ty) {
@@ -3265,6 +3300,24 @@ impl<'p> Checker<'p> {
         // this point; here every member read is a rejection.
         if name == "Date" && self.ambient_visible(&name, fx) {
             return Some(self.check_date_member(prop, prop_pos, for_write));
+        }
+        // `Array.<member>` (compiler.md §105): the accepted `from` is
+        // intercepted in call position, so a read here is a rejection.
+        if name == "Array" && self.ambient_visible(&name, fx) {
+            if matches!(prop, "from" | "isArray" | "of") {
+                self.error(
+                    RuleCode::S014,
+                    format!("`Array.{prop}` may only be called, not read as a value (Q22)"),
+                    prop_pos.clone(),
+                );
+            } else {
+                self.error(
+                    RuleCode::S014,
+                    format!("`Array.{prop}` is outside the accepted Array namespace (Q22)"),
+                    prop_pos.clone(),
+                );
+            }
+            return Some(self.err_expr(prop_pos));
         }
         if (name == "Map" || name == "Set") && self.ambient_visible(&name, fx) {
             if name == "Map" && prop == "groupBy" {
@@ -5102,6 +5155,182 @@ impl<'p> Checker<'p> {
                 args: vec![items, callback],
             },
             ty: Type::Map(Box::new(key), Box::new(Type::Array(Box::new(elem)))),
+            pos,
+        }
+    }
+
+    /// Checks a call on the `Array` builtin namespace (compiler.md §105).
+    ///
+    /// `from` is the accepted member (§105.2). Every other member has a
+    /// recorded rejection of its own (§105.3), so none of them answers
+    /// the general unknown-name diagnostic any more.
+    fn check_array_static_call(
+        &mut self,
+        name: &str,
+        call: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        prop_pos: Pos,
+    ) -> hir::Expr {
+        match name {
+            "from" => self.check_array_from(call, fx, pos, prop_pos),
+            "isArray" => {
+                self.reject_api_form("Array", "isArray(value)", "Array.isArray", prop_pos.clone());
+                self.check_poisoned_arguments(&call.args, fx);
+                self.err_expr(pos)
+            }
+            "of" => {
+                self.reject_api_form("Array", "of(value, …)", "Array.of", prop_pos.clone());
+                self.check_poisoned_arguments(&call.args, fx);
+                self.err_expr(pos)
+            }
+            other => {
+                self.error(
+                    RuleCode::S014,
+                    format!("`Array.{other}` is outside the accepted Array namespace (Q22)"),
+                    prop_pos,
+                );
+                self.check_poisoned_arguments(&call.args, fx);
+                self.err_expr(pos)
+            }
+        }
+    }
+
+    /// Checks `Array.from(source)` (compiler.md §105.2).
+    ///
+    /// The result is a fresh `T[]` over the traversal that array-literal
+    /// spread uses (§105.2 rules 2, 3 and 4), so the source rules and the
+    /// element rules are the ones stdlib.md §14.3 and §14.4 already own.
+    fn check_array_from(
+        &mut self,
+        call: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        prop_pos: Pos,
+    ) -> hir::Expr {
+        // §105.2 rule 5: an explicit type argument supplies the element
+        // type; with none the source is checked with no contextual type.
+        let declared = match &call.type_args {
+            Some(type_args) if type_args.params.len() == 1 => {
+                let resolved = self.resolve_type(&type_args.params[0]);
+                if resolved == Type::Error {
+                    self.check_poisoned_arguments(&call.args, fx);
+                    return self.err_expr(pos);
+                }
+                Some(resolved)
+            }
+            Some(_) => {
+                self.error(
+                    RuleCode::S014,
+                    "`Array.from<T>` takes exactly one type argument",
+                    prop_pos,
+                );
+                self.check_poisoned_arguments(&call.args, fx);
+                return self.err_expr(pos);
+            }
+            None => None,
+        };
+        // §105.2 rule 7: the mapper overload is rejected for the work it
+        // needs. TypeScript spells it `from(source, mapfn, thisArg?)`,
+        // so two arguments select it and three do too.
+        if (2..=3).contains(&call.args.len()) {
+            self.reject_api_form(
+                "Array",
+                "Array.from(source, mapFn)",
+                "Array.from(source, mapFn)",
+                prop_pos,
+            );
+            self.check_poisoned_arguments(&call.args, fx);
+            return self.err_expr(pos);
+        }
+        let [argument] = &call.args[..] else {
+            self.error(
+                RuleCode::S014,
+                format!(
+                    "`Array.from(source)` takes one source argument, got {}",
+                    call.args.len()
+                ),
+                prop_pos,
+            );
+            self.check_poisoned_arguments(&call.args, fx);
+            return self.err_expr(pos);
+        };
+        if let Some(spread) = argument.spread {
+            let spread_pos = self.pos(spread);
+            self.error_diverging(
+                RuleCode::S014,
+                "spread arguments require variadic parameters, which the language does not have",
+                spread_pos,
+                Divergence::VariadicArguments,
+            );
+            self.check_poisoned_arguments(&call.args, fx);
+            return self.err_expr(pos);
+        }
+        let context = declared.clone().map(|elem| Type::Array(Box::new(elem)));
+        let source = self.check_expr(&argument.expr, context.as_ref(), fx);
+        let selected = match &source.ty {
+            Type::Error => None,
+            // compiler.md §104.1: the source is rejected on its resolved
+            // type, in this position as in the other two.
+            Type::Map(..) => {
+                self.reject_api_form(
+                    "Array",
+                    "Array.from(Map)",
+                    "Array.from(map)",
+                    source.pos.clone(),
+                );
+                None
+            }
+            Type::Generator(_) => {
+                self.reject_api_form(
+                    "Array",
+                    "Array.from(Generator<T>)",
+                    "Array.from(generator)",
+                    source.pos.clone(),
+                );
+                None
+            }
+            other => match other.iteration_element() {
+                Some((kind, element)) => Some((hir::SpreadKind::from(kind), element)),
+                None => {
+                    let actual = self.type_name(other);
+                    self.error(
+                        RuleCode::S014,
+                        format!(
+                            "`Array.from(source)` accepts T[], FixedArray<T, N>, Set<T>, \
+                             or string; got `{actual}`"
+                        ),
+                        source.pos.clone(),
+                    );
+                    None
+                }
+            },
+        };
+        let Some((spread, element)) = selected else {
+            return self.err_expr(pos);
+        };
+        if let Some(declared) = &declared {
+            self.require_assignable(
+                &element,
+                declared,
+                source.pos.clone(),
+                "the Array.from element",
+            );
+        }
+        let element = declared.unwrap_or(element);
+        if Self::is_context_affine_type(&element) {
+            self.error(
+                RuleCode::S100,
+                "Worker, Inbox, and Outbox values may not be array elements",
+                pos.clone(),
+            );
+        }
+        hir::Expr {
+            kind: ExprKind::ArraySpreadLit(vec![hir::ArrayLitElem {
+                expr: source,
+                spread: Some(spread),
+            }]),
+            ty: Type::Array(Box::new(element)),
             pos,
         }
     }
@@ -7427,6 +7656,11 @@ impl<'p> Checker<'p> {
         {
             return self.check_map_group_by(c, fx, pos);
         }
+        // `Array.<member>(…)` (compiler.md §105): `from` is the accepted
+        // member; the others carry their own recorded rejection.
+        if self.ambient_namespace(&m.obj, fx) == Some("Array") {
+            return self.check_array_static_call(&name, c, fx, pos, prop_pos);
+        }
         if let Some(handled) =
             self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)
         {
@@ -7936,6 +8170,17 @@ impl<'p> Checker<'p> {
                 format!(
                     "`new {name}` is rejected; Q35 worker handles and endpoints are runtime-created"
                 ),
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        // compiler.md §105.3: the length constructor needs an array hole
+        // and a missing-element value, and the language has neither.
+        if name == "Array" && self.ambient_visible(&name, fx) {
+            self.reject_api_form(
+                "Array",
+                "new Array(length)",
+                "new Array(length)",
                 pos.clone(),
             );
             return self.err_expr(pos);

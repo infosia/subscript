@@ -1355,6 +1355,20 @@ impl<'p> Checker<'p> {
         &mut self,
         subject: hir::Expr,
     ) -> (hir::Expr, Option<hir::ForOfKind>, Type, bool) {
+        // compiler.md §104.1 rules 1, 2 and 4: the check reads the
+        // resolved subject type, and it does not read how the bound
+        // value is used.
+        if matches!(subject.ty, Type::Map(..)) {
+            self.error_diverging(
+                RuleCode::S014,
+                "a bare `Map` is not a `for…of` subject: this language binds `K` and \
+                 TypeScript binds a `[K, V]` pair, so an accepted program fails the \
+                 `tsc` gate; iterate `map.keys()` or `map.values()`",
+                subject.pos.clone(),
+                Divergence::BareMapSubject,
+            );
+            return (subject, None, Type::Error, false);
+        }
         let selected = subject
             .ty
             .iteration_element()
@@ -1385,7 +1399,7 @@ impl<'p> Checker<'p> {
             self.error(
                 RuleCode::S014,
                 format!(
-                    "`for…of` accepts only T[], FixedArray<T, N>, Map, Set, string, \
+                    "`for…of` accepts only T[], FixedArray<T, N>, Set, string, \
                      or Generator<T>; got `{actual}`"
                 ),
                 subject.pos.clone(),

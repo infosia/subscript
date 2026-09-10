@@ -1,9 +1,9 @@
 // corpus: accept/a81-array-literal-spread
 // purpose: P22 array-literal spread battery over every spreadable container.
 // observable: fresh arrays preserve prefix/suffix and fused traversal order.
-// exercises: array-spread, multi-spread, fixed-array, map-keys, set, unicode-string
+// exercises: array-spread, multi-spread, fixed-array, set, unicode-string
 // questions: Q30
-// tsc: accepts; js-comparable: no Q30: Map iteration produces different output.
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   const xs: i32[] = [1, 2];
   const ys: i32[] = [3, 4];
@@ -24,14 +24,6 @@ export function main(): void {
   const fixedCopy: i32[] = [...fixed];
   for (const value of fixedCopy) {
     print(`fixed:${value}`);
-  }
-
-  const map: Map<i32, string> = new Map<i32, string>();
-  map.set(7, "seven");
-  map.set(8, "eight");
-  const mapKeys = [...map];
-  for (const key of mapKeys) {
-    print(`map:${key}`);
   }
 
   const set: Set<i32> = new Set<i32>();

@@ -182,6 +182,39 @@ fn json_string(text: &str) -> String {
     escaped
 }
 
+/// Builds a project that measures `files` with `tsconfig.json`'s
+/// options. One text, so every gate in this file measures the
+/// configuration the repository ships.
+fn tsconfig(files: &[PathBuf]) -> String {
+    let listed = files
+        .iter()
+        .map(|path| json_string(path.to_string_lossy().as_ref()))
+        .collect::<Vec<_>>()
+        .join(",\n    ");
+    format!(
+        "{{\n  \"compilerOptions\": {{\n    \"strict\": true,\n    \"noEmit\": true,\n    \"target\": \"ES2022\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"Bundler\",\n    \"lib\": [\"ES2022\", \"ESNext.Disposable\"],\n    \"types\": [],\n    \"forceConsistentCasingInFileNames\": true\n  }},\n  \"files\": [\n    {listed}\n  ]\n}}\n"
+    )
+}
+
+/// Answers the pinned TypeScript compiler.
+///
+/// `node_modules/.bin/tsc` is a POSIX shell script. Windows cannot
+/// execute it (`os error 193`); npm writes `tsc.cmd` beside it for that
+/// host.
+fn tsc_binary(root: &Path) -> PathBuf {
+    let tsc = root.join(if cfg!(windows) {
+        "node_modules/.bin/tsc.cmd"
+    } else {
+        "node_modules/.bin/tsc"
+    });
+    assert!(
+        tsc.is_file(),
+        "the pinned TypeScript compiler is absent at {}",
+        tsc.display()
+    );
+    tsc
+}
+
 fn write_projects(
     root: &Path,
     entries: &[Entry],
@@ -213,16 +246,12 @@ fn write_projects(
         .enumerate()
         .map(|(index, entry_files)| {
             let config_path = temporary.join(format!("entry-batch-{index:03}.json"));
-            let files = entry_files
+            let files: Vec<PathBuf> = entry_files
                 .into_iter()
                 .chain(ambient.iter())
-                .map(|path| json_string(path.to_string_lossy().as_ref()))
-                .collect::<Vec<_>>()
-                .join(",\n    ");
-            let config = format!(
-                "{{\n  \"compilerOptions\": {{\n    \"strict\": true,\n    \"noEmit\": true,\n    \"target\": \"ES2022\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"Bundler\",\n    \"lib\": [\"ES2022\", \"ESNext.Disposable\"],\n    \"types\": [],\n    \"forceConsistentCasingInFileNames\": true\n  }},\n  \"files\": [\n    {files}\n  ]\n}}\n"
-            );
-            fs::write(&config_path, config)
+                .cloned()
+                .collect();
+            fs::write(&config_path, tsconfig(&files))
                 .map_err(|error| format!("write {}: {error}", config_path.display()))?;
             Ok(config_path)
         })
@@ -288,19 +317,7 @@ fn every_corpus_tsc_header_matches_measured_tsc() {
     let temporary = TempProjectDirectory::create();
     let projects =
         write_projects(&root, &entries, &temporary.0).unwrap_or_else(|error| panic!("{error}"));
-    // `node_modules/.bin/tsc` is a POSIX shell script. Windows cannot
-    // execute it (`os error 193`); npm writes `tsc.cmd` beside it for that
-    // host.
-    let tsc = root.join(if cfg!(windows) {
-        "node_modules/.bin/tsc.cmd"
-    } else {
-        "node_modules/.bin/tsc"
-    });
-    assert!(
-        tsc.is_file(),
-        "the pinned TypeScript compiler is absent at {}",
-        tsc.display()
-    );
+    let tsc = tsc_binary(&root);
 
     let started = Instant::now();
     let output = Command::new(&tsc)
@@ -356,6 +373,151 @@ fn every_corpus_tsc_header_matches_measured_tsc() {
     assert!(
         disagreements.is_empty(),
         "tsc corpus header disagreement(s):\n{}",
+        disagreements.join("\n")
+    );
+}
+
+/// One form that §79 rule 6 keeps out of the reject corpus, and the
+/// `tsc` class this repository records for it.
+struct RecordedForm {
+    stem: &'static str,
+    body: &'static str,
+    claim: &'static str,
+}
+
+/// compiler.md §104.6 and §105.5: §79 rule 6 keeps a `tsc: rejects`
+/// entry off a checker site that carries a divergence variant. The
+/// annotated bare-`Map` forms therefore reach no corpus entry, and
+/// this test is their pin. It runs the pinned TypeScript compiler over
+/// them and compares the codes it measures against the recorded class.
+///
+/// The unannotated forms run in the same batch. Each one differs from
+/// the annotated form beside it by the annotation alone, and each one
+/// measures clean. A batch that reported one code everywhere fails
+/// here.
+#[test]
+fn the_annotated_bare_map_forms_measure_their_recorded_tsc_class() {
+    let forms = [
+        RecordedForm {
+            stem: "annotated-spread",
+            body: "  const keys: i32[] = [...map];\n  print(`${keys.length}`);",
+            claim: "rejects TS2322",
+        },
+        RecordedForm {
+            stem: "unannotated-spread",
+            body: "  const keys = [...map];\n  print(`${keys.length}`);",
+            claim: "accepts",
+        },
+        RecordedForm {
+            stem: "annotated-for-of",
+            body: "  for (const key of map) {\n    const n: i32 = key;\n    print(`${n}`);\n  }",
+            claim: "rejects TS2322",
+        },
+        RecordedForm {
+            stem: "unannotated-for-of",
+            body: "  for (const key of map) {\n    print(`${key}`);\n  }",
+            claim: "accepts",
+        },
+        RecordedForm {
+            stem: "annotated-array-from",
+            body: "  const keys: i32[] = Array.from(map);\n  print(`${keys.length}`);",
+            claim: "rejects TS2322",
+        },
+        RecordedForm {
+            stem: "unannotated-array-from",
+            body: "  const keys = Array.from(map);\n  print(`${keys.length}`);",
+            claim: "accepts",
+        },
+    ];
+
+    let root = project_root();
+    let temporary = TempProjectDirectory::create();
+    let mut files: Vec<PathBuf> = Vec::new();
+    for form in &forms {
+        let path = temporary.0.join(format!("{}.ts", form.stem));
+        let source = format!(
+            "export function main(): void {{\n\
+             \x20 const map: Map<i32, string> = new Map<i32, string>();\n\
+             \x20 map.set(1, \"one\");\n\
+             {}\n\
+             }}\n",
+            form.body
+        );
+        fs::write(&path, source)
+            .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+        files.push(path);
+    }
+    files.push(root.join("prelude/lang.d.ts"));
+    let config_path = temporary.0.join("bare-map-forms.json");
+    fs::write(&config_path, tsconfig(&files))
+        .unwrap_or_else(|error| panic!("write {}: {error}", config_path.display()));
+
+    let tsc = tsc_binary(&root);
+    let output = Command::new(&tsc)
+        .arg("--build")
+        .arg("--pretty")
+        .arg("false")
+        .arg(&config_path)
+        .current_dir(&root)
+        .output()
+        .unwrap_or_else(|error| panic!("run {}: {error}", tsc.display()));
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut measured: BTreeMap<&str, BTreeSet<String>> = forms
+        .iter()
+        .map(|form| (form.stem, BTreeSet::new()))
+        .collect();
+    let mut unowned = Vec::new();
+    for line in combined.lines().filter(|line| line.contains("error TS")) {
+        let owner = line.find("): error TS").and_then(|marker| {
+            let file = &line[..line[..marker].rfind('(')?];
+            let code = line[marker + "): error ".len()..].split(':').next()?;
+            let form = forms
+                .iter()
+                .find(|form| file.ends_with(&format!("{}.ts", form.stem)))?;
+            is_diagnostic_code(code).then(|| (form.stem, code.to_owned()))
+        });
+        match owner {
+            Some((stem, code)) => {
+                measured
+                    .get_mut(stem)
+                    .expect("every stem has an entry")
+                    .insert(code);
+            }
+            None => unowned.push(line.to_owned()),
+        }
+    }
+    assert!(
+        unowned.is_empty(),
+        "tsc emitted diagnostics that belong to no measured form:\n{}",
+        unowned.join("\n")
+    );
+
+    let mut disagreements = Vec::new();
+    for form in &forms {
+        let recorded = TscClaim::parse(form.claim)
+            .unwrap_or_else(|error| panic!("{}: invalid recorded claim: {error}", form.stem));
+        let actual = TscClaim::measured(measured[form.stem].clone());
+        if recorded != actual {
+            disagreements.push(format!(
+                "{}: this repository records `{}`; tsc said `{}`",
+                form.stem,
+                recorded.display(),
+                actual.display()
+            ));
+        }
+    }
+    eprintln!(
+        "bare-Map tsc pin: {} form(s) measured under the pinned TypeScript compiler",
+        forms.len()
+    );
+    assert!(
+        disagreements.is_empty(),
+        "recorded tsc class disagreement(s):\n{}\ntsc said:\n{combined}",
         disagreements.join("\n")
     );
 }

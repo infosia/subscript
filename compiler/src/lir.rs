@@ -909,8 +909,6 @@ pub enum SpreadKind {
     Array,
     /// Fixed-array values.
     FixedArray,
-    /// Map keys.
-    MapKeys,
     /// Set values.
     SetValues,
     /// String code points.

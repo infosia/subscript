@@ -3,7 +3,7 @@
 // observable: each accepted subject prints its values in the contracted order.
 // exercises: for-of, arrays, fixed-arrays, map-keys, set-order, unicode-code-points
 // questions: Q30
-// tsc: accepts; js-comparable: no Q30: Map iteration produces different output.
+// tsc: accepts; js-comparable: yes
 export function main(): void {
   const array: i32[] = [1, 2, 3];
   for (const value of array) {
@@ -18,7 +18,7 @@ export function main(): void {
   const map: Map<i32, string> = new Map<i32, string>();
   map.set(7, "seven");
   map.set(8, "eight");
-  for (const key of map) {
+  for (const key of map.keys()) {
     print(`map:${key}`);
   }
 

@@ -5209,7 +5209,7 @@ impl<'m> Interpreter<'m> {
                         )
                     };
                 }
-                Some(l::SpreadKind::MapKeys | l::SpreadKind::SetValues) => {
+                Some(l::SpreadKind::SetValues) => {
                     // SAFETY: runtime association traversal owns order/bound.
                     unsafe {
                         ffi::subscript_rt_array_spread_assoc(
@@ -5296,15 +5296,6 @@ impl<'m> Interpreter<'m> {
                     0,
                 )
             },
-            // The verifier rejects a Map source in every case, because
-            // the checker rejects `new Set(map)` (compiler.md §103.1
-            // rule 5).
-            l::SpreadKind::MapKeys => {
-                return Err(self.invalid(
-                    Some(pos.clone()),
-                    "Set source construction has a Map source",
-                ));
-            }
             // SAFETY: runtime string code-point traversal.
             l::SpreadKind::StringCodePoints => unsafe {
                 ffi::subscript_rt_set_from_string(

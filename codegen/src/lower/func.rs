@@ -2567,12 +2567,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     vec![self.ctx, source, key_size, kind, position],
                 )
             }
-            // The verifier rejects a Map source in every case, because
-            // the checker rejects `new Set(map)` (compiler.md §103.1
-            // rule 5).
-            l::SpreadKind::MapKeys => {
-                return Err(internal("Set source construction has a Map source"));
-            }
             l::SpreadKind::StringCodePoints => {
                 let source = self.expect_scalar(value)?;
                 (
@@ -2649,7 +2643,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         false,
                     )?;
                 }
-                Some(l::SpreadKind::MapKeys | l::SpreadKind::SetValues) => {
+                Some(l::SpreadKind::SetValues) => {
                     let source = self.expect_scalar(*value)?;
                     self.call_runtime(
                         self.ml.rt.array_spread_assoc,

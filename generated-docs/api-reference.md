@@ -279,6 +279,12 @@
 | `isSupersetOf(other: Set<K>): boolean` | Tests whether every argument key is in the receiver. |
 | `isDisjointFrom(other: Set<K>): boolean` | Tests whether the sets have no common key. |
 
+### Array namespace
+
+| subscript signature | Behavior |
+|---|---|
+| `from<T>(source: T[] \| FixedArray<T, N> \| Set<T> \| string): T[]` | Collects a source over the array-literal spread traversal into a fresh T[]; a string source yields one code point per element. |
+
 ### JSON
 
 | subscript signature | Behavior |
@@ -324,8 +330,8 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | T[] | `flat` | S014 | Q22 | — | Runtime flattening depth cannot determine a static result type. | — |
 | T[] | `flatMap` | S014 | Q22 | — | Runtime flattening depth cannot determine a static result type. | — |
 | T[] | `entries` | S014 | Q30 | — | `entries()` yields a pair, but the language has no tuple type. | — |
-| T[] | `keys` | S014 | Q30 | — | `keys()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | — |
-| T[] | `values` | S014 | Q30 | — | `values()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | — |
+| T[] | `keys` | S014 | Q30 | — | `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). | — |
+| T[] | `values` | S014 | Q30 | — | `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). | — |
 | Date | `getFullYear` | S014 | Q20 | `getUTCFullYear` | Local-time accessors are unavailable. | `r19-date-local-accessor.ts` |
 | Date | `getMonth` | S014 | Q20 | `getUTCMonth` | Local-time accessors are unavailable. | — |
 | Date | `getDate` | S014 | Q20 | `getUTCDate` | Local-time accessors are unavailable. | — |
@@ -345,11 +351,11 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Date | `toUTCString` | S014 | Q20 | `toISOString` | Outside the checker-owned Date formatting subset. | — |
 | Date | `toJSON` | S014 | Q20 | `toISOString` | Outside the checker-owned Date formatting subset. | — |
 | Date | `valueOf` | S014 | Q20 | `getTime` | Implicit Date numeric conversion is unavailable. | — |
-| Map<K, V> | `keys` | S014 | Q30 | `use directly as a for…of subject` | `keys()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | `r42-map-iterator-member.ts` |
-| Map<K, V> | `values` | S014 | Q30 | `use directly as a for…of subject` | `values()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | — |
+| Map<K, V> | `keys` | S014 | Q30 | `use directly as a for…of subject` | `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). | `r42-map-iterator-member.ts` |
+| Map<K, V> | `values` | S014 | Q30 | `use directly as a for…of subject` | `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). | — |
 | Map<K, V> | `entries` | S014 | Q30 | — | `entries()` yields a pair, but the language has no tuple type. | `r79-assign-entries.ts` |
-| Set<K> | `keys` | S014 | Q30 | `use directly as a for…of subject` | `keys()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | — |
-| Set<K> | `values` | S014 | Q30 | `use directly as a for…of subject` | `values()` is accepted only as the direct subject of `for…of`; elsewhere it would create a stateful iterator value that outlives its call. | — |
+| Set<K> | `keys` | S014 | Q30 | `use directly as a for…of subject` | `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). | — |
+| Set<K> | `values` | S014 | Q30 | `use directly as a for…of subject` | `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). | — |
 | Set<K> | `entries` | S014 | Q30 | — | `entries()` yields a pair, but the language has no tuple type. | — |
 | JSON | `stringify(Map<K, V>)` | S014 | Q28 | — | Map is rejected rather than silently serialized as an empty object. | `r56-json-stringify-map.ts` |
 | JSON | `stringify(Set<K>)` | S014 | Q28 | — | Set is rejected rather than silently serialized as an empty object. | `r57-json-stringify-set.ts` |
@@ -386,6 +392,13 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Map | `new Map(iterable)` | S014 | Q30 | `construct empty, then set` | `new Map([[k, v]])` requires a pair element, but the language has no tuple type. | `r43-map-iterable-constructor.ts` |
 | Set | `new Set(Map)` | S014 | Q30 | `pass a T[], FixedArray<T, N>, Set<T>, or string` | A Map yields a pair, so invariant 5 excludes it: stock `tsc` answers TS2769 for a Map source. | `r198-set-source-map.ts` |
 | Set | `new Set(Generator<T>)` | S014 | Q30 | `collect the generator with for…of, then add` | A generator is single-use, and construction is a value expression (stdlib.md §14.4). | `r199-set-source-generator.ts` |
+| Array | `Array used as a value` | S014 | Q22 | `Array.from(source)` | Array is a compiler-owned namespace. | — |
+| Array | `Array.from(source, mapFn)` | S014 | Q22 | `Array.from(source), then a for…of loop that pushes the mapped value` | The mapper overload needs callback typing and traversal work, and that cost is not measured (compiler.md §105.2). | `r209-array-from-mapper.ts` |
+| Array | `Array.from(Map)` | S014 | Q22 | `push map.keys() or map.values() into an array with a for…of loop` | TypeScript reads a Map element as a `[K, V]` pair and this language reads `K`, so an accepted program fails the `tsc` gate (compiler.md §104.1). | `r206-array-from-bare-map.ts` |
+| Array | `Array.from(Generator<T>)` | S014 | Q22 | `collect the generator with for…of, then push` | A generator is single-use, and `Array.from` is a value expression (stdlib.md §14.4). | `r207-array-from-generator.ts` |
+| Array | `isArray(value)` | S014 | Q22 | — | A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3). | `r210-array-is-array.ts` |
+| Array | `of(value, …)` | S014 | Q22 | `an array literal` | Variable arity needs the variadic-parameter prerequisite, and a fixed-arity form needs the measured cost of dispatch and inference (compiler.md §105.3). | `r211-array-of-variadic.ts` |
+| Array | `new Array(length)` | S014 | Q22 | `an array literal, or push in a loop` | The language has no array hole and no missing-element value (compiler.md §105.3). | `r212-new-array-length.ts` |
 | Object | `groupBy` | S014 | Q27 | — | It returns a null-prototype object, and the language has no such type. | `r52-object-groupby.ts` |
 | Set<K> | `algebra(non-Set)` | S014 | Q27 | `pass a Set<K>` | The language has no set-like protocol. | `r53-set-algebra-nonset.ts` |
 | RegExp | `exec` | S014 | Q31 | — | Its result needs an array with extra fields and a tuple type, neither of which the language has. | `r80-regex-exec.ts` |

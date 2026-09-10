@@ -6422,7 +6422,6 @@ fn convert_spread(value: hir::SpreadKind) -> l::SpreadKind {
     match value {
         hir::SpreadKind::Array => l::SpreadKind::Array,
         hir::SpreadKind::FixedArray => l::SpreadKind::FixedArray,
-        hir::SpreadKind::MapKeys => l::SpreadKind::MapKeys,
         hir::SpreadKind::SetValues => l::SpreadKind::SetValues,
         hir::SpreadKind::StringCodePoints => l::SpreadKind::StringCodePoints,
         _ => unreachable!("unknown checked spread kind"),

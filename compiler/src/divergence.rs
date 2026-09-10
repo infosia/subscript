@@ -143,6 +143,18 @@ pub enum Divergence {
     GenericMethodOnGenericClass,
     /// A `Generator<T>` consumed by a spread or by a Set construction.
     GeneratorSingleUse,
+    /// A bare `Map` used as a `for…of` subject.
+    BareMapSubject,
+    /// A bare `Map` collected into an array, by spread or `Array.from`.
+    BareMapToArray,
+    /// The `Array.from` mapper overload.
+    ArrayFromMapper,
+    /// `Array.isArray`.
+    ArrayIsArray,
+    /// `Array.of` at variable arity.
+    ArrayOfArity,
+    /// `new Array<T>(length)`.
+    ArrayHoleConstruction,
 }
 
 /// The four facts that a divergence diagnostic shows.
@@ -224,6 +236,12 @@ impl Divergence {
         Divergence::BodilessDeclareGenericMethod,
         Divergence::GenericMethodOnGenericClass,
         Divergence::GeneratorSingleUse,
+        Divergence::BareMapSubject,
+        Divergence::BareMapToArray,
+        Divergence::ArrayFromMapper,
+        Divergence::ArrayIsArray,
+        Divergence::ArrayOfArity,
+        Divergence::ArrayHoleConstruction,
     ];
 
     /// The four facts for this topic.
@@ -509,8 +527,8 @@ impl Divergence {
                      const keys = map.keys();",
                 subscript: "const map: Map<i32, string> = new Map<i32, string>();\n\
                             for (const key of map.keys()) { print(`${key}`); }",
-                why: "A held iterator is a stateful value that outlives its call, so a view \
-                      is a `for...of` subject only.",
+                why: "A held view needs a view type the language does not have \
+                      (stdlib.md §14.3).",
                 collision: "C13",
             },
             Divergence::DeclarationScope => DivergenceEntry {
@@ -768,6 +786,59 @@ impl Divergence {
                 why: "A generator is single-use, so consuming it reads as a value \
                       expression while it mutates the generator.",
                 collision: "stdlib.md §14.4",
+            },
+            Divergence::BareMapSubject => DivergenceEntry {
+                ts: "const map: Map<i32, string> = new Map<i32, string>();\n\
+                     for (const entry of map) { print(`${entry}`); }",
+                subscript: "const map: Map<i32, string> = new Map<i32, string>();\n\
+                            for (const key of map.keys()) { print(`${key}`); }",
+                why: "TypeScript binds a `[K, V]` pair here and this language binds `K`, \
+                      so an accepted program fails the `tsc` gate.",
+                collision: "compiler.md §104",
+            },
+            Divergence::BareMapToArray => DivergenceEntry {
+                ts: "const map: Map<i32, string> = new Map<i32, string>();\n\
+                     const entries = [...map];",
+                subscript: "const map: Map<i32, string> = new Map<i32, string>();\n\
+                            const keys: i32[] = [];\n\
+                            for (const key of map.keys()) { keys.push(key); }",
+                why: "TypeScript reads a `Map` element as a `[K, V]` pair and this language \
+                      reads `K`, so an accepted program fails the `tsc` gate.",
+                collision: "compiler.md §104",
+            },
+            Divergence::ArrayFromMapper => DivergenceEntry {
+                ts: "const xs: i32[] = [1, 2];\n\
+                     const doubled = Array.from(xs, (value: i32): i32 => value * 2);",
+                subscript: "const xs: i32[] = [1, 2];\n\
+                            const doubled: i32[] = [];\n\
+                            for (const value of xs) { doubled.push(value * 2); }",
+                why: "The mapper overload needs callback typing and traversal work, and that \
+                      cost is not measured.",
+                collision: "compiler.md §105.2",
+            },
+            Divergence::ArrayIsArray => DivergenceEntry {
+                ts: "const xs: i32[] = [1, 2];\n\
+                     const flag: boolean = Array.isArray(xs);",
+                subscript: "no equivalent; a declared type already answers it",
+                why: "A declared type answers this statically, and the runtime classification \
+                      a boundary-opaque value needs is not inspected.",
+                collision: "compiler.md §105.3",
+            },
+            Divergence::ArrayOfArity => DivergenceEntry {
+                ts: "const xs: i32[] = Array.of<i32>(1, 2);",
+                subscript: "const xs: i32[] = [1, 2];",
+                why: "Variable arity needs the variadic-parameter prerequisite, and the \
+                      fixed-arity form needs measured dispatch and inference cost.",
+                collision: "compiler.md §105.3",
+            },
+            Divergence::ArrayHoleConstruction => DivergenceEntry {
+                ts: "const xs: i32[] = new Array<i32>(3);",
+                subscript: "const xs: i32[] = [];\n\
+                            for (let index: i32 = 0; index < 3; index = index + 1) { \
+                            xs.push(0); }",
+                why: "The language has no array hole and no missing-element value, so a \
+                      filled array changes what a read means.",
+                collision: "compiler.md §105.3",
             },
         }
     }

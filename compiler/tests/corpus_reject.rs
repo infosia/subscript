@@ -231,6 +231,15 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r201-new-class-spread-variadic.ts", RuleCode::S014, 17),
     ("r202-array-spread-generator.ts", RuleCode::S014, 11),
     ("r203-object-spread.ts", RuleCode::S100, 15),
+    ("r204-for-of-bare-map.ts", RuleCode::S014, 10),
+    ("r205-array-spread-bare-map.ts", RuleCode::S014, 10),
+    ("r206-array-from-bare-map.ts", RuleCode::S014, 10),
+    ("r207-array-from-generator.ts", RuleCode::S014, 11),
+    ("r208-array-from-keys-view.ts", RuleCode::S014, 10),
+    ("r209-array-from-mapper.ts", RuleCode::S014, 9),
+    ("r210-array-is-array.ts", RuleCode::S014, 9),
+    ("r211-array-of-variadic.ts", RuleCode::S014, 8),
+    ("r212-new-array-length.ts", RuleCode::S014, 8),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -817,15 +826,15 @@ fn q30_rejections_name_the_actual_missing_prerequisite() {
         ("r79-assign-entries.ts", &["pair", "no tuple type"][..]),
         (
             "r42-map-iterator-member.ts",
-            &["direct subject", "stateful iterator", "outlives"][..],
+            &["direct subject", "view type", "stdlib.md §14.3"][..],
         ),
         (
             "r76-return-keys-view.ts",
-            &["direct subject", "stateful iterator", "outlives"][..],
+            &["direct subject", "view type", "stdlib.md §14.3"][..],
         ),
         (
             "r77-pass-keys-view.ts",
-            &["direct subject", "stateful iterator", "outlives"][..],
+            &["direct subject", "view type", "stdlib.md §14.3"][..],
         ),
         ("r78-call-spread-variadic.ts", &["variadic parameters"][..]),
         ("r198-set-source-map.ts", &["invariant 5", "TS2769"][..]),
@@ -836,12 +845,71 @@ fn q30_rejections_name_the_actual_missing_prerequisite() {
             &["variadic parameters"][..],
         ),
         ("r202-array-spread-generator.ts", &["single-use"][..]),
+        (
+            "r204-for-of-bare-map.ts",
+            &["bare `Map`", "`[K, V]` pair", "`tsc` gate"][..],
+        ),
+        (
+            "r205-array-spread-bare-map.ts",
+            &["bare `Map`", "`[K, V]` pair", "`tsc` gate"][..],
+        ),
     ] {
         let source =
             fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
         let diagnostics =
             check_program(&[SourceFile::new(file, source)]).expect_err("Q30 rejection must fail");
         let message = &diagnostics[0].message;
+        for needle in required {
+            assert!(
+                message.contains(needle),
+                "{file}: diagnostic does not name {needle:?}: {message}"
+            );
+        }
+    }
+}
+
+/// compiler.md §105: every `Array` member carries its own rejection and
+/// its own reason. The general S016 "unknown name `Array`" names no
+/// record, so this test also asserts that no message states it.
+#[test]
+fn q22_array_namespace_rejections_each_name_their_own_record() {
+    let dir = corpus_dir().join("reject");
+    for (file, required) in [
+        (
+            "r206-array-from-bare-map.ts",
+            &["`[K, V]` pair", "`tsc` gate"][..],
+        ),
+        ("r207-array-from-generator.ts", &["single-use"][..]),
+        (
+            "r208-array-from-keys-view.ts",
+            &["direct subject", "view type", "stdlib.md §14.3"][..],
+        ),
+        (
+            "r209-array-from-mapper.ts",
+            &["callback typing", "traversal work"][..],
+        ),
+        (
+            "r210-array-is-array.ts",
+            &["statically", "runtime classification"][..],
+        ),
+        (
+            "r211-array-of-variadic.ts",
+            &["variadic-parameter prerequisite", "fixed-arity"][..],
+        ),
+        (
+            "r212-new-array-length.ts",
+            &["array hole", "missing-element value"][..],
+        ),
+    ] {
+        let source =
+            fs::read_to_string(dir.join(file)).unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let diagnostics = check_program(&[SourceFile::new(file, source)])
+            .expect_err("an Array namespace rejection must fail");
+        let message = &diagnostics[0].message;
+        assert!(
+            !message.contains("unknown name"),
+            "{file}: still answers the general unknown-name diagnostic: {message}"
+        );
         for needle in required {
             assert!(
                 message.contains(needle),

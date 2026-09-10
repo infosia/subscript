@@ -269,8 +269,8 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         "keys",
         "Q30",
         None,
-        "`keys()` is accepted only as the direct subject of `for…of`; elsewhere \
-         it would create a stateful iterator value that outlives its call.",
+        "`keys()` is accepted only as the direct subject of `for…of`; a held view \
+         needs a view type the language does not have (stdlib.md §14.3).",
         None,
     ),
     rejection(
@@ -278,8 +278,8 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         "values",
         "Q30",
         None,
-        "`values()` is accepted only as the direct subject of `for…of`; elsewhere \
-         it would create a stateful iterator value that outlives its call.",
+        "`values()` is accepted only as the direct subject of `for…of`; a held view \
+         needs a view type the language does not have (stdlib.md §14.3).",
         None,
     ),
 ];
@@ -448,8 +448,8 @@ const MAP_REJECTIONS: &[ApiRejection] = &[
         "keys",
         "Q30",
         Some("use directly as a for…of subject"),
-        "`keys()` is accepted only as the direct subject of `for…of`; elsewhere it \
-         would create a stateful iterator value that outlives its call.",
+        "`keys()` is accepted only as the direct subject of `for…of`; a held view \
+         needs a view type the language does not have (stdlib.md §14.3).",
         Some("r42-map-iterator-member.ts"),
     ),
     rejection(
@@ -457,8 +457,8 @@ const MAP_REJECTIONS: &[ApiRejection] = &[
         "values",
         "Q30",
         Some("use directly as a for…of subject"),
-        "`values()` is accepted only as the direct subject of `for…of`; elsewhere it \
-         would create a stateful iterator value that outlives its call.",
+        "`values()` is accepted only as the direct subject of `for…of`; a held view \
+         needs a view type the language does not have (stdlib.md §14.3).",
         None,
     ),
     rejection(
@@ -477,8 +477,8 @@ const SET_REJECTIONS: &[ApiRejection] = &[
         "keys",
         "Q30",
         Some("use directly as a for…of subject"),
-        "`keys()` is accepted only as the direct subject of `for…of`; elsewhere it \
-         would create a stateful iterator value that outlives its call.",
+        "`keys()` is accepted only as the direct subject of `for…of`; a held view \
+         needs a view type the language does not have (stdlib.md §14.3).",
         None,
     ),
     rejection(
@@ -486,8 +486,8 @@ const SET_REJECTIONS: &[ApiRejection] = &[
         "values",
         "Q30",
         Some("use directly as a for…of subject"),
-        "`values()` is accepted only as the direct subject of `for…of`; elsewhere it \
-         would create a stateful iterator value that outlives its call.",
+        "`values()` is accepted only as the direct subject of `for…of`; a held view \
+         needs a view type the language does not have (stdlib.md §14.3).",
         None,
     ),
     rejection(
@@ -588,6 +588,13 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("Map", "new Map(iterable)", "Q30", Some("construct empty, then set"), "`new Map([[k, v]])` requires a pair element, but the language has no tuple type.", Some("r43-map-iterable-constructor.ts")),
     rejection("Set", "new Set(Map)", "Q30", Some("pass a T[], FixedArray<T, N>, Set<T>, or string"), "A Map yields a pair, so invariant 5 excludes it: stock `tsc` answers TS2769 for a Map source.", Some("r198-set-source-map.ts")),
     rejection("Set", "new Set(Generator<T>)", "Q30", Some("collect the generator with for…of, then add"), "A generator is single-use, and construction is a value expression (stdlib.md §14.4).", Some("r199-set-source-generator.ts")),
+    rejection("Array", "Array used as a value", "Q22", Some("Array.from(source)"), "Array is a compiler-owned namespace.", None),
+    rejection("Array", "Array.from(source, mapFn)", "Q22", Some("Array.from(source), then a for…of loop that pushes the mapped value"), "The mapper overload needs callback typing and traversal work, and that cost is not measured (compiler.md §105.2).", Some("r209-array-from-mapper.ts")),
+    rejection("Array", "Array.from(Map)", "Q22", Some("push map.keys() or map.values() into an array with a for…of loop"), "TypeScript reads a Map element as a `[K, V]` pair and this language reads `K`, so an accepted program fails the `tsc` gate (compiler.md §104.1).", Some("r206-array-from-bare-map.ts")),
+    rejection("Array", "Array.from(Generator<T>)", "Q22", Some("collect the generator with for…of, then push"), "A generator is single-use, and `Array.from` is a value expression (stdlib.md §14.4).", Some("r207-array-from-generator.ts")),
+    rejection("Array", "isArray(value)", "Q22", None, "A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3).", Some("r210-array-is-array.ts")),
+    rejection("Array", "of(value, …)", "Q22", Some("an array literal"), "Variable arity needs the variadic-parameter prerequisite, and a fixed-arity form needs the measured cost of dispatch and inference (compiler.md §105.3).", Some("r211-array-of-variadic.ts")),
+    rejection("Array", "new Array(length)", "Q22", Some("an array literal, or push in a loop"), "The language has no array hole and no missing-element value (compiler.md §105.3).", Some("r212-new-array-length.ts")),
     rejection("Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", Some("r52-object-groupby.ts")),
     rejection("Set<K>", "algebra(non-Set)", "Q27", Some("pass a Set<K>"), "The language has no set-like protocol.", Some("r53-set-algebra-nonset.ts")),
 ];
@@ -1100,6 +1107,11 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
         }
     }
     out.push(ApiItem {
+        group: "Array namespace",
+        signature: "from<T>(source: T[] | FixedArray<T, N> | Set<T> | string): T[]".to_string(),
+        summary: "Collects a source over the array-literal spread traversal into a fresh T[]; a string source yields one code point per element.",
+    });
+    out.push(ApiItem {
         group: "JSON",
         signature: "stringify<T>(value: T): string".to_string(),
         summary: "Serializes one statically known P13 type; cycle tracking is emitted only when its reference-class field graph can cycle.",
@@ -1244,9 +1256,12 @@ pub(crate) fn form_rejection(group: &str, surface: &str) -> Option<ApiRejection>
 /// generated API-reference row.
 pub(crate) fn rejection_message(rejection: ApiRejection, actual: &str) -> String {
     match rejection.replacement {
+        // The summary is a sentence, and the replacement clause
+        // continues it, so the sentence's final stop goes.
         Some(replacement) => format!(
             "`{actual}` is rejected: {}; use `{replacement}` ({})",
-            rejection.summary, rejection.q_rule
+            rejection.summary.trim_end_matches('.'),
+            rejection.q_rule
         ),
         None => format!(
             "`{actual}` is rejected: {} ({})",
@@ -1550,6 +1565,10 @@ mod tests {
             ("IteratorResult<T>", "done: boolean"),
             ("IteratorResult<T>", "value: T"),
             ("Set constructor", SET_SOURCE_SIGNATURE),
+            (
+                "Array namespace",
+                "from<T>(source: T[] | FixedArray<T, N> | Set<T> | string): T[]",
+            ),
         ] {
             assert!(has(group, signature), "{group} {signature}");
         }
@@ -1578,6 +1597,8 @@ mod tests {
             + MapFn::ALL.len()
             + SetFn::ALL.len()
             // The `new Set<K>(source)` row (compiler.md §103.1).
+            + 1
+            // The `Array.from(source)` row (compiler.md §105.2).
             + 1
             + regex_rows
             + 7;

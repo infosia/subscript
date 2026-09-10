@@ -281,8 +281,6 @@ pub enum IterKind {
     Array,
     /// Fixed-array values.
     FixedArray,
-    /// Map keys.
-    MapKeys,
     /// Set values.
     SetValues,
     /// String code points.
@@ -366,12 +364,15 @@ impl Type {
     }
 
     /// Returns the element and traversal for a directly iterable container.
+    ///
+    /// A `Map<K, V>` is not one (`compiler.md` §104.1 rule 1): TypeScript
+    /// binds a `[K, V]` pair where this language binds `K`, so no
+    /// consumer can obtain a bare-`Map` traversal.
     #[must_use]
     pub fn iteration_element(&self) -> Option<(IterKind, Type)> {
         Some(match self {
             Type::Array(element) => (IterKind::Array, (**element).clone()),
             Type::FixedArray(element, _) => (IterKind::FixedArray, (**element).clone()),
-            Type::Map(key, _) => (IterKind::MapKeys, (**key).clone()),
             Type::Set(key) => (IterKind::SetValues, (**key).clone()),
             Type::Str => (IterKind::StringCodePoints, Type::Str),
             _ => return None,
@@ -655,10 +656,7 @@ mod tests {
                 Type::FixedArray(Box::new(Type::U8), 3),
                 Some((IterKind::FixedArray, Type::U8)),
             ),
-            (
-                Type::Map(Box::new(Type::Str), Box::new(Type::Bool)),
-                Some((IterKind::MapKeys, Type::Str)),
-            ),
+            (Type::Map(Box::new(Type::Str), Box::new(Type::Bool)), None),
             (
                 Type::Set(Box::new(Type::I64)),
                 Some((IterKind::SetValues, Type::I64)),
