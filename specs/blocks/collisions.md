@@ -769,7 +769,13 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   Q27 reinstated on 2026-07-25. *(Corrected 2026-09-09. Q21 said they
   do not, and the runtime always did: `"a-b".replaceAll("-", "[$&]")`
   is `a[-]b` here and under node.)* Rejected members: `stdlib.md` §8.
-- **Q22 (`Array` methods)** — the checker accepts the `stdlib.md` §9
+- **Q22 (`Array` methods)** — *(Revised 2026-09-10 by `compiler.md`
+  §105: the **`Array` namespace** resolves, and `Array.from(source)`
+  is accepted over §14.4's operand list, returning a fresh `T[]` from
+  a source evaluated once. `isArray` and `of` are rejected candidates
+  that name their deciding measurement; `new Array(n)` is rejected
+  because the language has no array hole. `stdlib.md` §9.0 holds the
+  surface.)* The checker accepts the `stdlib.md` §9
   subset on `T[]`. Element equality follows JS `===` per element
   kind (scalars by value, strings by content, `Date` by millis,
   reference classes by identity) for `indexOf`/`lastIndexOf` — which is

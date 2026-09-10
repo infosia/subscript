@@ -137,6 +137,11 @@ Every section, with its status:
 | §100 | The Windows host runs the standing gate | active |
 | §101 | A disposal is not placed where control cannot arrive | active |
 | §102 | A test waits on a fact, not on a clock | active |
+| §103 | A rejection reason must fit the form it rejects | active |
+| §104 | A bare `Map` is not an iteration source | active |
+| §105 | The `Array` namespace, and `Array.from` | active |
+| §106 | The reference interpreter stores a generator | active |
+| §107 | Binding patterns, by source type and position | active |
 
 ## 1. Architecture
 
@@ -10550,6 +10555,24 @@ whose header says `tsc: rejects` must render none. The test reports
 every violating entry at once (CLAUDE.md workflow: a total check,
 not named sites).
 
+**Rule 6a — an `ambient` rejection row is not reached by rule 4.**
+*(Recorded 2026-09-10 by the §104/§105 Phase Review. Open; no round
+is scheduled.)* Rule 4's total gate reads the **reject corpus**, so a
+row in `compiler/src/ambient.rs` that no entry pins carries no
+variant and nothing reports it. Measured `tsc`-accepted and rejected
+here with no block: `const held = Array;`, `const f = Array.from;`,
+`const p = Array.prototype;`, `const j = JSON;`, `const n = Number;`,
+`const v = m.values();`, `const v = s.keys();`, and the `corpus:
+None` rows for `isFinite(value)`, `new Number(value)`,
+`toLocaleString`, `Date.parse`, `reduceRight(callback)`.
+
+This is a **form gap in rule 4**, not a defect of any one row, so a
+named-site fix does not converge. The total check belongs where
+`compiler/src/api_reference.rs` already walks every generated
+rejection: assert each row's variant against its measured `tsc`
+class. A round that closes it measures the class of every row first,
+and reports how many need a variant.
+
 **Rule 6 — a site can serve both `tsc` classes.** *(Added 2026-09-10
 by §104's implementation round, which measured the conflict.)* Rule 2
 is written per **site**, and a site can reject a program `tsc` accepts
@@ -14861,6 +14884,19 @@ asserts that no user-facing string in the compiler contains one. It
 reports every remaining site at once. The first entry is "outlives its
 call".
 
+**"In the compiler" is the `src` tree of each compiler crate**, plus
+the rendered diagnostics of the reject corpus and every diagnostic
+table value. *(Stated 2026-09-10 after the Phase Review measured the
+boundary.)* It does not reach `prelude/lang.d.ts`, `docs/`,
+`README.md`, or a `build.rs`. Measured on the day it landed:
+`git ls-files | xargs grep -l "outlives its call"` names only this
+contract, its tracking note, and the test. A round that widens the
+boundary states what it added.
+
+**Each half of the sweep carries its own non-empty guard.** A half
+that reads nothing passes silently otherwise, which is the
+firing-control defect two earlier reviews already raised.
+
 ### 104.4a Make the bare-`Map` path unreachable, not guarded
 
 *(Added 2026-09-10, from the round's own report.)* CLAUDE.md: a fix
@@ -14908,8 +14944,14 @@ to host that entry leaves the user-facing rejection with no
 explanation, which is worse. The typed form's `TS2322` is pinned by a
 unit test instead.)*
 
-A unit test records the `tsc` code measured for
-`const ks: i32[] = [...m]` and for the typed `for…of` use.
+**A test runs `tsc` on the typed form and compares its code.** It
+does not hold the code as a literal beside the assertion. *(Amended
+2026-09-10. This paragraph said a unit test "records" the code, and a
+round wrote `let tsc_code = "TS2322"; … assert_eq!(tsc_code,
+"TS2322")`, which cannot fail. §79 rule 6 routes the typed form's fact
+here, so this is the only pin it has, and core principle 9 governs
+it.)* `compiler/tests/tsc_corpus.rs` already runs `tsc` in process;
+the check belongs where a real comparison is available.
 
 **Gate.**
 
@@ -15026,8 +15068,9 @@ header** (§103.8 rule 2). One is known to serve both classes:
 `Array.from(map)` unannotated is `tsc`-accepted, and
 `const a: i32[] = Array.from(m)` is `TS2322`, because `tsc` reads the
 result as `[K, V][]`. **§79 rule 6 governs it** — the entry is the
-unannotated form, the site carries a variant, and a unit test records
-the annotated form's `tsc` code.
+unannotated form and the site carries a variant. The annotated form's
+`tsc` code is pinned by a test that **runs `tsc` and compares**, per
+§104.6.
 
 Each entry that is `tsc`-accepted renders the §79 block, and its
 `collision` id names the record that **owns the reason**.

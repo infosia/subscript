@@ -192,7 +192,7 @@ witnesses.
 | `new Map(iterable)` | rejected, S014 | `r43`; probe | no tuple type |
 | `new Set(source)` | **accepted** by `compiler.md` §103.1 (owner, 2026-09-10); rejected at `be15ee3` with `Map`'s tuple reason | probe | none, for `K[]`, `FixedArray`, `Set<K>`, and `string`. A `Map` source stays rejected under invariant 5: `tsc` answers TS2769. A `Generator` source stays rejected by §14.4 |
 | `for (const [k, v] of map)` | rejected, S100 | probe | destructuring is not in the decided surface. This is not an `entries()` gap |
-| `Array.from(xs)` | rejected, S016 | probe | the name `Array` binds to no declaration. This is not an iteration gap |
+| `Array.from(xs)` | **accepted** by `compiler.md` §105.2 (2026-09-10); S016 at `3d03f80`, when the name `Array` bound to no declaration | probe on both tiers | none, for `T[]`, `FixedArray`, `Set<T>`, and `string`. A bare `Map`, a `Generator`, and a view stay rejected, each by the rule that owns it |
 
 ### The reasons that did not survive the measurement
 

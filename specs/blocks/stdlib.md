@@ -377,6 +377,25 @@ identity across tiers for the four trap paths; §5 item 5 benchmarks
 
 ## 9. P11 — `Array` methods (Q22)
 
+### 9.0 The `Array` namespace
+
+*(Added 2026-09-10 by `compiler.md` §105.)* `Array` binds to a builtin
+namespace through ordinary name resolution, in **value** position.
+`Array<T>` in type position stays a builtin that no declaration
+shadows.
+
+**`Array.from(source)`** takes `T[]`, `FixedArray<T, N>`, `Set<T>`, or
+a `string`, which yields one code point per element. The result is a
+fresh `T[]`, for every source, and the source is evaluated once.
+`compiler.md` §105.2 owns the rule and §14.3 owns the traversal.
+
+A bare `Map` source is rejected (§104.1), a `Generator<T>` source by
+§14.4's single-use rule, and a `keys()`/`values()` view by §14.1.
+`Array.isArray` and `Array.of` are rejected and are **candidates**,
+each naming the measurement that decides it (`compiler.md` §105.3).
+`new Array<T>(n)` is rejected: the language has no array hole.
+
+
 **New machinery: runtime→script closure invocation.** A language
 closure is a `(code, env)` pair (C5, non-escaping). Array methods
 pass it to the runtime, which calls it synchronously per element
