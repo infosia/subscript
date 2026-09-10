@@ -14407,8 +14407,8 @@ fn f4 "main" kind=Free exported=true generator=false async=false -> Void entry=b
     -> Return { value: None, pos: Pos { file: "a216-generator-escapes-its-call.ts", line: 32, col: 17 } }
 ===== a217-generator-in-a-class-field =====
 module initializer=None
-class c0 "Holder" value=false descriptor=false boundary=false align=None @ a217-generator-in-a-class-field.ts:13:7
-  field d0 "source": Generator(I32) defaulted=false absence=false foreign=None @ a217-generator-in-a-class-field.ts:14:3
+class c0 "Holder" value=false descriptor=false boundary=false align=None @ a217-generator-in-a-class-field.ts:12:7
+  field d0 "source": Generator(I32) defaulted=false absence=false foreign=None @ a217-generator-in-a-class-field.ts:13:3
   method m0 "constructor" -> f0
   method m1 "step" -> f1
 intrinsic Ambient.0 "Print"
@@ -14592,18 +14592,18 @@ intrinsic Worker.4 "Join"
 intrinsic Worker.5 "InboxWait"
 intrinsic Worker.6 "InboxPoll"
 intrinsic Worker.7 "OutboxPost"
-fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a217-generator-in-a-class-field.ts:15:3
-  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a217-generator-in-a-class-field.ts:15:3
-  param %1 "source": Data(Generator(I32)) kind=Explicit storage=None @ a217-generator-in-a-class-field.ts:15:15
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a217-generator-in-a-class-field.ts:14:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a217-generator-in-a-class-field.ts:14:3
+  param %1 "source": Data(Generator(I32)) kind=Explicit storage=None @ a217-generator-in-a-class-field.ts:14:15
   value %0: Data(Class(ClassId(0))) name=Some("this")
   value %1: Data(Generator(I32)) name=Some("source")
   value %2: Address(AddressType { pointee: Generator(I32), array_base: None }) name=None
   b0 Some("entry"):
-    %2: Address(AddressType { pointee: Generator(I32), array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 16, col: 5 } }] @ a217-generator-in-a-class-field.ts:16:10
-    StoreAddress(%2, %1) @ a217-generator-in-a-class-field.ts:16:10
-    -> Return { value: None, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 15, col: 3 } }
-fn f1 "step" kind=Method { class: ClassId(0), method: MethodId(1) } exported=false generator=false async=false -> I32 entry=b0 @ a217-generator-in-a-class-field.ts:18:3
-  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a217-generator-in-a-class-field.ts:18:3
+    %2: Address(AddressType { pointee: Generator(I32), array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 15, col: 5 } }] @ a217-generator-in-a-class-field.ts:15:10
+    StoreAddress(%2, %1) @ a217-generator-in-a-class-field.ts:15:10
+    -> Return { value: None, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 14, col: 3 } }
+fn f1 "step" kind=Method { class: ClassId(0), method: MethodId(1) } exported=false generator=false async=false -> I32 entry=b0 @ a217-generator-in-a-class-field.ts:17:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a217-generator-in-a-class-field.ts:17:3
   value %0: Data(Class(ClassId(0))) name=Some("this")
   value %1: Data(Generator(I32)) name=None
   value %2: Data(IterResult(I32)) name=None
@@ -14611,21 +14611,21 @@ fn f1 "step" kind=Method { class: ClassId(0), method: MethodId(1) } exported=fal
   value %4: Data(Class(ClassId(0))) name=None
   value %5: Data(I32) name=None
   b0 Some("entry"):
-    %1: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 19, col: 20 } }] @ a217-generator-in-a-class-field.ts:19:25
-    %2: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 19, col: 25 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 19, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 19, col: 20 } }] @ a217-generator-in-a-class-field.ts:19:20
-    %3: Data(Bool) = LoadField(IterDone)(%2) @ a217-generator-in-a-class-field.ts:20:16
+    %1: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 18, col: 20 } }] @ a217-generator-in-a-class-field.ts:18:25
+    %2: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 18, col: 25 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 18, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 18, col: 20 } }] @ a217-generator-in-a-class-field.ts:18:20
+    %3: Data(Bool) = LoadField(IterDone)(%2) @ a217-generator-in-a-class-field.ts:19:16
     -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
   b1 Some("if.then"):
-    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(-1) })), pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 21, col: 7 } }
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(-1) })), pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 20, col: 7 } }
   b2 Some("if.else"):
     -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))] })
   b3(%4: Data(Class(ClassId(0)))) Some("if.join"):
-    %5: Data(I32) = LoadField(IterValue)(%2) @ a217-generator-in-a-class-field.ts:23:19
-    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 23, col: 5 } }
-fn f2 "upTo" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a217-generator-in-a-class-field.ts:7:11
-  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 7, col: 11 } }]
-  param %0 "first": Data(I32) kind=Explicit storage=None @ a217-generator-in-a-class-field.ts:7:16
-  param %1 "last": Data(I32) kind=Explicit storage=None @ a217-generator-in-a-class-field.ts:7:28
+    %5: Data(I32) = LoadField(IterValue)(%2) @ a217-generator-in-a-class-field.ts:22:19
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 22, col: 5 } }
+fn f2 "upTo" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a217-generator-in-a-class-field.ts:6:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 6, col: 11 } }]
+  param %0 "first": Data(I32) kind=Explicit storage=None @ a217-generator-in-a-class-field.ts:6:16
+  param %1 "last": Data(I32) kind=Explicit storage=None @ a217-generator-in-a-class-field.ts:6:28
   value %0: Data(I32) name=Some("first")
   value %1: Data(I32) name=Some("last")
   value %2: Data(I32) name=None
@@ -14645,18 +14645,18 @@ fn f2 "upTo" kind=Free exported=false generator=true async=false -> Generator(I3
   b0 Some("entry"):
     -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(0))] })
   b1(%2: Data(I32), %3: Data(I32), %4: Data(I32)) Some("for.cond"):
-    %11: Data(Bool) = Binary(Le)(%4, %3) @ a217-generator-in-a-class-field.ts:8:32
+    %11: Data(Bool) = Binary(Le)(%4, %3) @ a217-generator-in-a-class-field.ts:7:32
     -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] } }
   b2 Some("for.body"):
-    -> Suspend { kind: Yield(Some(ValueId(4))), pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 9, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))], invalidates: [], traps: [] }
+    -> Suspend { kind: Yield(Some(ValueId(4))), pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 8, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))], invalidates: [], traps: [] }
   b3(%5: Data(I32), %6: Data(I32), %7: Data(I32)) Some("for.step"):
-    %12: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a217-generator-in-a-class-field.ts:8:47
+    %12: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a217-generator-in-a-class-field.ts:7:47
     -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(12))] })
   b4(%8: Data(I32), %9: Data(I32), %10: Data(I32)) Some("for.exit"):
-    -> Return { value: None, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 7, col: 11 } }
+    -> Return { value: None, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 6, col: 11 } }
   b5(%13: Data(I32), %14: Data(I32), %15: Data(I32)) Some("yield.resume"):
     -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))] })
-fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a217-generator-in-a-class-field.ts:27:17
+fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a217-generator-in-a-class-field.ts:26:17
   value %0: Data(Class(ClassId(0))) name=None
   value %1: Data(Generator(I32)) name=None
   value %2: Data(I32) name=None
@@ -14677,39 +14677,1847 @@ fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b
   value %17: Data(Str) name=None
   value %18: Data(Str) name=None
   b0 Some("entry"):
-    %0: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 26 } }] @ a217-generator-in-a-class-field.ts:28:26
-    %1: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(1):I32, Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 37 } }] @ a217-generator-in-a-class-field.ts:28:37
-    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Generator(I32))], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 26 } }] @ a217-generator-in-a-class-field.ts:28:26
-    %2: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 19 } }] @ a217-generator-in-a-class-field.ts:29:19
-    %3: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 36 } }, Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 36 } }] @ a217-generator-in-a-class-field.ts:29:36
-    %4: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 53 } }, Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 53 } }] @ a217-generator-in-a-class-field.ts:29:53
-    %5: Data(Str) = Template([Text("stored "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }, Text(" "), Operand { index: 2, format: I32 }])(%2, %3, %4) traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 53 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 29, col: 9 } }] @ a217-generator-in-a-class-field.ts:29:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a217-generator-in-a-class-field.ts:29:3
-    %6: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 31, col: 25 } }] @ a217-generator-in-a-class-field.ts:31:25
-    %7: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(3):I32, Integer(5):I32) traps=[Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 31, col: 36 } }] @ a217-generator-in-a-class-field.ts:31:36
-    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Generator(I32))], return_type: None })(%6, %7) traps=[Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 31, col: 25 } }] @ a217-generator-in-a-class-field.ts:31:25
-    %8: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 32, col: 21 } }] @ a217-generator-in-a-class-field.ts:32:21
-    %9: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%6) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 33, col: 23 } }] @ a217-generator-in-a-class-field.ts:33:29
+    %0: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 27, col: 26 } }] @ a217-generator-in-a-class-field.ts:27:26
+    %1: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(1):I32, Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 27, col: 37 } }] @ a217-generator-in-a-class-field.ts:27:37
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Generator(I32))], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 27, col: 26 } }] @ a217-generator-in-a-class-field.ts:27:26
+    %2: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 19 } }] @ a217-generator-in-a-class-field.ts:28:19
+    %3: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 36 } }, Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 36 } }] @ a217-generator-in-a-class-field.ts:28:36
+    %4: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 53 } }, Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 53 } }] @ a217-generator-in-a-class-field.ts:28:53
+    %5: Data(Str) = Template([Text("stored "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }, Text(" "), Operand { index: 2, format: I32 }])(%2, %3, %4) traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 53 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 28, col: 9 } }] @ a217-generator-in-a-class-field.ts:28:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a217-generator-in-a-class-field.ts:28:3
+    %6: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 30, col: 25 } }] @ a217-generator-in-a-class-field.ts:30:25
+    %7: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(3):I32, Integer(5):I32) traps=[Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 30, col: 36 } }] @ a217-generator-in-a-class-field.ts:30:36
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Generator(I32))], return_type: None })(%6, %7) traps=[Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 30, col: 25 } }] @ a217-generator-in-a-class-field.ts:30:25
+    %8: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 31, col: 21 } }] @ a217-generator-in-a-class-field.ts:31:21
+    %9: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%6) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 32, col: 23 } }] @ a217-generator-in-a-class-field.ts:32:29
     -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(8))] })
   b1(%10: Data(Str)) Some("while.cond"):
     -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(10))] } }
   b2 Some("while.body"):
-    %12: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%9) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 33, col: 29 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 33, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 33, col: 3 } }] @ a217-generator-in-a-class-field.ts:33:3
-    %13: Data(Bool) = LoadField(IterDone)(%12) @ a217-generator-in-a-class-field.ts:33:3
+    %12: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%9) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 32, col: 29 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 32, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 32, col: 3 } }] @ a217-generator-in-a-class-field.ts:32:3
+    %13: Data(Bool) = LoadField(IterDone)(%12) @ a217-generator-in-a-class-field.ts:32:3
     -> ConditionalBranch { condition: Value(ValueId(13)), then_target: BlockTarget { block: BlockId(4), arguments: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [] } }
   b3(%11: Data(Str)) Some("while.exit"):
-    %18: Data(Str) = Template([Text("field "), Operand { index: 0, format: Str }])(%11) traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 36, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 36, col: 9 } }] @ a217-generator-in-a-class-field.ts:36:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%18) @ a217-generator-in-a-class-field.ts:36:3
-    -> Return { value: None, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 27, col: 17 } }
+    %18: Data(Str) = Template([Text("field "), Operand { index: 0, format: Str }])(%11) traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 35, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 35, col: 9 } }] @ a217-generator-in-a-class-field.ts:35:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%18) @ a217-generator-in-a-class-field.ts:35:3
+    -> Return { value: None, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 26, col: 17 } }
   b4 Some("if.then"):
     -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(10))] })
   b5 Some("if.else"):
     -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(10))] })
   b6(%14: Data(Str)) Some("if.join"):
-    %15: Data(I32) = LoadField(IterValue)(%12) @ a217-generator-in-a-class-field.ts:33:14
-    %16: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(",")])(%15) traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 34, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 34, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 34, col: 12 } }] @ a217-generator-in-a-class-field.ts:34:12
-    %17: Data(Str) = Binary(Add)(%14, %16) traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 34, col: 5 } }] @ a217-generator-in-a-class-field.ts:34:5
+    %15: Data(I32) = LoadField(IterValue)(%12) @ a217-generator-in-a-class-field.ts:32:14
+    %16: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(",")])(%15) traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 33, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 33, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 33, col: 12 } }] @ a217-generator-in-a-class-field.ts:33:12
+    %17: Data(Str) = Binary(Add)(%14, %16) traps=[Trap { kind: Allocation, pos: Pos { file: "a217-generator-in-a-class-field.ts", line: 33, col: 5 } }] @ a217-generator-in-a-class-field.ts:33:5
     -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(17))] })
+===== a220-generator-two-references =====
+module initializer=None
+class c0 "Holder" value=false descriptor=false boundary=false align=None @ a220-generator-two-references.ts:13:7
+  field d0 "source": Generator(I32) defaulted=false absence=false foreign=None @ a220-generator-two-references.ts:14:3
+  method m0 "constructor" -> f0
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a220-generator-two-references.ts:15:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a220-generator-two-references.ts:15:3
+  param %1 "source": Data(Generator(I32)) kind=Explicit storage=None @ a220-generator-two-references.ts:15:15
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Generator(I32)) name=Some("source")
+  value %2: Address(AddressType { pointee: Generator(I32), array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Generator(I32), array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a220-generator-two-references.ts", line: 16, col: 5 } }] @ a220-generator-two-references.ts:16:10
+    StoreAddress(%2, %1) @ a220-generator-two-references.ts:16:10
+    -> Return { value: None, pos: Pos { file: "a220-generator-two-references.ts", line: 15, col: 3 } }
+fn f1 "upTo" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a220-generator-two-references.ts:7:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 7, col: 11 } }]
+  param %0 "first": Data(I32) kind=Explicit storage=None @ a220-generator-two-references.ts:7:16
+  param %1 "last": Data(I32) kind=Explicit storage=None @ a220-generator-two-references.ts:7:28
+  value %0: Data(I32) name=Some("first")
+  value %1: Data(I32) name=Some("last")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(0))] })
+  b1(%2: Data(I32), %3: Data(I32), %4: Data(I32)) Some("for.cond"):
+    %11: Data(Bool) = Binary(Le)(%4, %3) @ a220-generator-two-references.ts:8:32
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] } }
+  b2 Some("for.body"):
+    -> Suspend { kind: Yield(Some(ValueId(4))), pos: Pos { file: "a220-generator-two-references.ts", line: 9, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))], invalidates: [], traps: [] }
+  b3(%5: Data(I32), %6: Data(I32), %7: Data(I32)) Some("for.step"):
+    %12: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a220-generator-two-references.ts:8:47
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(12))] })
+  b4(%8: Data(I32), %9: Data(I32), %10: Data(I32)) Some("for.exit"):
+    -> Return { value: None, pos: Pos { file: "a220-generator-two-references.ts", line: 7, col: 11 } }
+  b5(%13: Data(I32), %14: Data(I32), %15: Data(I32)) Some("yield.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))] })
+fn f2 "step" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a220-generator-two-references.ts:20:10
+  param %0 "source": Data(Generator(I32)) kind=Explicit storage=None @ a220-generator-two-references.ts:20:15
+  value %0: Data(Generator(I32)) name=Some("source")
+  value %1: Data(IterResult(I32)) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(Generator(I32)) name=None
+  value %4: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a220-generator-two-references.ts", line: 21, col: 18 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a220-generator-two-references.ts", line: 21, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a220-generator-two-references.ts", line: 21, col: 18 } }] @ a220-generator-two-references.ts:21:18
+    %2: Data(Bool) = LoadField(IterDone)(%1) @ a220-generator-two-references.ts:22:14
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("if.then"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(-1) })), pos: Pos { file: "a220-generator-two-references.ts", line: 23, col: 5 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))] })
+  b3(%3: Data(Generator(I32))) Some("if.join"):
+    %4: Data(I32) = LoadField(IterValue)(%1) @ a220-generator-two-references.ts:25:17
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a220-generator-two-references.ts", line: 25, col: 3 } }
+fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a220-generator-two-references.ts:28:17
+  value %0: Data(Generator(I32)) name=None
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Str) name=None
+  value %4: Data(Generator(I32)) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(Generator(I32)) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Str) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(1):I32, Integer(4):I32) traps=[Trap { kind: Call, pos: Pos { file: "a220-generator-two-references.ts", line: 29, col: 33 } }] @ a220-generator-two-references.ts:29:33
+    %1: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 30, col: 26 } }] @ a220-generator-two-references.ts:30:26
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Generator(I32))], return_type: None })(%1, %0) traps=[Trap { kind: Call, pos: Pos { file: "a220-generator-two-references.ts", line: 30, col: 26 } }] @ a220-generator-two-references.ts:30:26
+    %2: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a220-generator-two-references.ts", line: 31, col: 18 } }] @ a220-generator-two-references.ts:31:18
+    %3: Data(Str) = Template([Text("local "), Operand { index: 0, format: I32 }])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 31, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 31, col: 9 } }] @ a220-generator-two-references.ts:31:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%3) @ a220-generator-two-references.ts:31:3
+    %4: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a220-generator-two-references.ts", line: 32, col: 23 } }] @ a220-generator-two-references.ts:32:30
+    %5: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "a220-generator-two-references.ts", line: 32, col: 18 } }] @ a220-generator-two-references.ts:32:18
+    %6: Data(Str) = Template([Text("field "), Operand { index: 0, format: I32 }])(%5) traps=[Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 32, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 32, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 32, col: 9 } }] @ a220-generator-two-references.ts:32:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a220-generator-two-references.ts:32:3
+    %7: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a220-generator-two-references.ts", line: 33, col: 18 } }] @ a220-generator-two-references.ts:33:18
+    %8: Data(Str) = Template([Text("local "), Operand { index: 0, format: I32 }])(%7) traps=[Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 33, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 33, col: 9 } }] @ a220-generator-two-references.ts:33:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a220-generator-two-references.ts:33:3
+    %9: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a220-generator-two-references.ts", line: 34, col: 23 } }] @ a220-generator-two-references.ts:34:30
+    %10: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%9) traps=[Trap { kind: Call, pos: Pos { file: "a220-generator-two-references.ts", line: 34, col: 18 } }] @ a220-generator-two-references.ts:34:18
+    %11: Data(Str) = Template([Text("field "), Operand { index: 0, format: I32 }])(%10) traps=[Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 34, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 34, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 34, col: 9 } }] @ a220-generator-two-references.ts:34:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%11) @ a220-generator-two-references.ts:34:3
+    %12: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a220-generator-two-references.ts", line: 35, col: 18 } }] @ a220-generator-two-references.ts:35:18
+    %13: Data(Str) = Template([Text("local "), Operand { index: 0, format: I32 }])(%12) traps=[Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 35, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 35, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a220-generator-two-references.ts", line: 35, col: 9 } }] @ a220-generator-two-references.ts:35:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%13) @ a220-generator-two-references.ts:35:3
+    -> Return { value: None, pos: Pos { file: "a220-generator-two-references.ts", line: 28, col: 17 } }
+===== a221-generator-two-distinct =====
+module initializer=None
+class c0 "Holder" value=false descriptor=false boundary=false align=None @ a221-generator-two-distinct.ts:13:7
+  field d0 "source": Generator(I32) defaulted=false absence=false foreign=None @ a221-generator-two-distinct.ts:14:3
+  method m0 "constructor" -> f0
+  method m1 "step" -> f1
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a221-generator-two-distinct.ts:15:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a221-generator-two-distinct.ts:15:3
+  param %1 "source": Data(Generator(I32)) kind=Explicit storage=None @ a221-generator-two-distinct.ts:15:15
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Generator(I32)) name=Some("source")
+  value %2: Address(AddressType { pointee: Generator(I32), array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Generator(I32), array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 16, col: 5 } }] @ a221-generator-two-distinct.ts:16:10
+    StoreAddress(%2, %1) @ a221-generator-two-distinct.ts:16:10
+    -> Return { value: None, pos: Pos { file: "a221-generator-two-distinct.ts", line: 15, col: 3 } }
+fn f1 "step" kind=Method { class: ClassId(0), method: MethodId(1) } exported=false generator=false async=false -> I32 entry=b0 @ a221-generator-two-distinct.ts:18:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a221-generator-two-distinct.ts:18:3
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Generator(I32)) name=None
+  value %2: Data(IterResult(I32)) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Class(ClassId(0))) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 19, col: 20 } }] @ a221-generator-two-distinct.ts:19:25
+    %2: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 19, col: 25 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a221-generator-two-distinct.ts", line: 19, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 19, col: 20 } }] @ a221-generator-two-distinct.ts:19:20
+    %3: Data(Bool) = LoadField(IterDone)(%2) @ a221-generator-two-distinct.ts:20:16
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("if.then"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(-1) })), pos: Pos { file: "a221-generator-two-distinct.ts", line: 21, col: 7 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))] })
+  b3(%4: Data(Class(ClassId(0)))) Some("if.join"):
+    %5: Data(I32) = LoadField(IterValue)(%2) @ a221-generator-two-distinct.ts:23:19
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a221-generator-two-distinct.ts", line: 23, col: 5 } }
+fn f2 "upTo" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a221-generator-two-distinct.ts:7:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 7, col: 11 } }]
+  param %0 "first": Data(I32) kind=Explicit storage=None @ a221-generator-two-distinct.ts:7:16
+  param %1 "last": Data(I32) kind=Explicit storage=None @ a221-generator-two-distinct.ts:7:28
+  value %0: Data(I32) name=Some("first")
+  value %1: Data(I32) name=Some("last")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(0))] })
+  b1(%2: Data(I32), %3: Data(I32), %4: Data(I32)) Some("for.cond"):
+    %11: Data(Bool) = Binary(Le)(%4, %3) @ a221-generator-two-distinct.ts:8:32
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] } }
+  b2 Some("for.body"):
+    -> Suspend { kind: Yield(Some(ValueId(4))), pos: Pos { file: "a221-generator-two-distinct.ts", line: 9, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))], invalidates: [], traps: [] }
+  b3(%5: Data(I32), %6: Data(I32), %7: Data(I32)) Some("for.step"):
+    %12: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a221-generator-two-distinct.ts:8:47
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(12))] })
+  b4(%8: Data(I32), %9: Data(I32), %10: Data(I32)) Some("for.exit"):
+    -> Return { value: None, pos: Pos { file: "a221-generator-two-distinct.ts", line: 7, col: 11 } }
+  b5(%13: Data(I32), %14: Data(I32), %15: Data(I32)) Some("yield.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))] })
+fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a221-generator-two-distinct.ts:27:17
+  value %0: Data(Class(ClassId(0))) name=None
+  value %1: Data(Generator(I32)) name=None
+  value %2: Data(Class(ClassId(0))) name=None
+  value %3: Data(Generator(I32)) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 28, col: 23 } }] @ a221-generator-two-distinct.ts:28:23
+    %1: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(1):I32, Integer(3):I32) traps=[Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 28, col: 34 } }] @ a221-generator-two-distinct.ts:28:34
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Generator(I32))], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 28, col: 23 } }] @ a221-generator-two-distinct.ts:28:23
+    %2: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 29, col: 24 } }] @ a221-generator-two-distinct.ts:29:24
+    %3: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(10):I32, Integer(12):I32) traps=[Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 29, col: 35 } }] @ a221-generator-two-distinct.ts:29:35
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Generator(I32))], return_type: None })(%2, %3) traps=[Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 29, col: 24 } }] @ a221-generator-two-distinct.ts:29:24
+    %4: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 16 } }] @ a221-generator-two-distinct.ts:30:16
+    %5: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%2) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 35 } }, Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 35 } }] @ a221-generator-two-distinct.ts:30:35
+    %6: Data(Str) = Template([Text("low "), Operand { index: 0, format: I32 }, Text(" high "), Operand { index: 1, format: I32 }])(%4, %5) traps=[Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 30, col: 9 } }] @ a221-generator-two-distinct.ts:30:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a221-generator-two-distinct.ts:30:3
+    %7: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 16 } }] @ a221-generator-two-distinct.ts:31:16
+    %8: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%2) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 35 } }, Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 35 } }] @ a221-generator-two-distinct.ts:31:35
+    %9: Data(Str) = Template([Text("low "), Operand { index: 0, format: I32 }, Text(" high "), Operand { index: 1, format: I32 }])(%7, %8) traps=[Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 31, col: 9 } }] @ a221-generator-two-distinct.ts:31:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) @ a221-generator-two-distinct.ts:31:3
+    %10: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%2) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 17 } }] @ a221-generator-two-distinct.ts:32:17
+    %11: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 36 } }, Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 36 } }] @ a221-generator-two-distinct.ts:32:36
+    %12: Data(Str) = Template([Text("high "), Operand { index: 0, format: I32 }, Text(" low "), Operand { index: 1, format: I32 }])(%10, %11) traps=[Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 36 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 32, col: 9 } }] @ a221-generator-two-distinct.ts:32:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%12) @ a221-generator-two-distinct.ts:32:3
+    %13: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 16 } }] @ a221-generator-two-distinct.ts:33:16
+    %14: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%2) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 35 } }, Trap { kind: Call, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 35 } }] @ a221-generator-two-distinct.ts:33:35
+    %15: Data(Str) = Template([Text("low "), Operand { index: 0, format: I32 }, Text(" high "), Operand { index: 1, format: I32 }])(%13, %14) traps=[Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a221-generator-two-distinct.ts", line: 33, col: 9 } }] @ a221-generator-two-distinct.ts:33:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%15) @ a221-generator-two-distinct.ts:33:3
+    -> Return { value: None, pos: Pos { file: "a221-generator-two-distinct.ts", line: 27, col: 17 } }
+===== a222-generator-field-replaced =====
+module initializer=None
+class c0 "Holder" value=false descriptor=false boundary=false align=None @ a222-generator-field-replaced.ts:13:7
+  field d0 "source": Generator(I32) defaulted=false absence=false foreign=None @ a222-generator-field-replaced.ts:14:3
+  method m0 "constructor" -> f0
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a222-generator-field-replaced.ts:15:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a222-generator-field-replaced.ts:15:3
+  param %1 "source": Data(Generator(I32)) kind=Explicit storage=None @ a222-generator-field-replaced.ts:15:15
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Generator(I32)) name=Some("source")
+  value %2: Address(AddressType { pointee: Generator(I32), array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Generator(I32), array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a222-generator-field-replaced.ts", line: 16, col: 5 } }] @ a222-generator-field-replaced.ts:16:10
+    StoreAddress(%2, %1) @ a222-generator-field-replaced.ts:16:10
+    -> Return { value: None, pos: Pos { file: "a222-generator-field-replaced.ts", line: 15, col: 3 } }
+fn f1 "upTo" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a222-generator-field-replaced.ts:7:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 7, col: 11 } }]
+  param %0 "first": Data(I32) kind=Explicit storage=None @ a222-generator-field-replaced.ts:7:16
+  param %1 "last": Data(I32) kind=Explicit storage=None @ a222-generator-field-replaced.ts:7:28
+  value %0: Data(I32) name=Some("first")
+  value %1: Data(I32) name=Some("last")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(0))] })
+  b1(%2: Data(I32), %3: Data(I32), %4: Data(I32)) Some("for.cond"):
+    %11: Data(Bool) = Binary(Le)(%4, %3) @ a222-generator-field-replaced.ts:8:32
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] } }
+  b2 Some("for.body"):
+    -> Suspend { kind: Yield(Some(ValueId(4))), pos: Pos { file: "a222-generator-field-replaced.ts", line: 9, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))], invalidates: [], traps: [] }
+  b3(%5: Data(I32), %6: Data(I32), %7: Data(I32)) Some("for.step"):
+    %12: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a222-generator-field-replaced.ts:8:47
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(12))] })
+  b4(%8: Data(I32), %9: Data(I32), %10: Data(I32)) Some("for.exit"):
+    -> Return { value: None, pos: Pos { file: "a222-generator-field-replaced.ts", line: 7, col: 11 } }
+  b5(%13: Data(I32), %14: Data(I32), %15: Data(I32)) Some("yield.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))] })
+fn f2 "step" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a222-generator-field-replaced.ts:20:10
+  param %0 "source": Data(Generator(I32)) kind=Explicit storage=None @ a222-generator-field-replaced.ts:20:15
+  value %0: Data(Generator(I32)) name=Some("source")
+  value %1: Data(IterResult(I32)) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(Generator(I32)) name=None
+  value %4: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a222-generator-field-replaced.ts", line: 21, col: 18 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a222-generator-field-replaced.ts", line: 21, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a222-generator-field-replaced.ts", line: 21, col: 18 } }] @ a222-generator-field-replaced.ts:21:18
+    %2: Data(Bool) = LoadField(IterDone)(%1) @ a222-generator-field-replaced.ts:22:14
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("if.then"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(-1) })), pos: Pos { file: "a222-generator-field-replaced.ts", line: 23, col: 5 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))] })
+  b3(%3: Data(Generator(I32))) Some("if.join"):
+    %4: Data(I32) = LoadField(IterValue)(%1) @ a222-generator-field-replaced.ts:25:17
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a222-generator-field-replaced.ts", line: 25, col: 3 } }
+fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a222-generator-field-replaced.ts:28:17
+  value %0: Data(Generator(I32)) name=None
+  value %1: Data(Class(ClassId(0))) name=None
+  value %2: Data(Generator(I32)) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Generator(I32)) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(Generator(I32)) name=None
+  value %8: Address(AddressType { pointee: Generator(I32), array_base: None }) name=None
+  value %9: Data(Generator(I32)) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Generator(I32)) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(1):I32, Integer(5):I32) traps=[Trap { kind: Call, pos: Pos { file: "a222-generator-field-replaced.ts", line: 29, col: 33 } }] @ a222-generator-field-replaced.ts:29:33
+    %1: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 30, col: 26 } }] @ a222-generator-field-replaced.ts:30:26
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Generator(I32))], return_type: None })(%1, %0) traps=[Trap { kind: Call, pos: Pos { file: "a222-generator-field-replaced.ts", line: 30, col: 26 } }] @ a222-generator-field-replaced.ts:30:26
+    %2: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 24 } }] @ a222-generator-field-replaced.ts:31:31
+    %3: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%2) traps=[Trap { kind: Call, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 19 } }] @ a222-generator-field-replaced.ts:31:19
+    %4: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 47 } }] @ a222-generator-field-replaced.ts:31:54
+    %5: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 42 } }] @ a222-generator-field-replaced.ts:31:42
+    %6: Data(Str) = Template([Text("before "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%3, %5) traps=[Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 42 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 31, col: 9 } }] @ a222-generator-field-replaced.ts:31:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a222-generator-field-replaced.ts:31:3
+    %7: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(20):I32, Integer(22):I32) traps=[Trap { kind: Call, pos: Pos { file: "a222-generator-field-replaced.ts", line: 33, col: 19 } }] @ a222-generator-field-replaced.ts:33:19
+    %8: Address(AddressType { pointee: Generator(I32), array_base: None }) = AddressOfField(Class(FieldId(0)))(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a222-generator-field-replaced.ts", line: 33, col: 3 } }] @ a222-generator-field-replaced.ts:33:10
+    StoreAddress(%8, %7) @ a222-generator-field-replaced.ts:33:10
+    %9: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 23 } }] @ a222-generator-field-replaced.ts:34:30
+    %10: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%9) traps=[Trap { kind: Call, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 18 } }] @ a222-generator-field-replaced.ts:34:18
+    %11: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 46 } }] @ a222-generator-field-replaced.ts:34:53
+    %12: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%11) traps=[Trap { kind: Call, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 41 } }] @ a222-generator-field-replaced.ts:34:41
+    %13: Data(Str) = Template([Text("after "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%10, %12) traps=[Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 41 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 34, col: 9 } }] @ a222-generator-field-replaced.ts:34:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%13) @ a222-generator-field-replaced.ts:34:3
+    %14: Data(I32) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a222-generator-field-replaced.ts", line: 35, col: 16 } }] @ a222-generator-field-replaced.ts:35:16
+    %15: Data(Str) = Template([Text("old "), Operand { index: 0, format: I32 }])(%14) traps=[Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 35, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 35, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a222-generator-field-replaced.ts", line: 35, col: 9 } }] @ a222-generator-field-replaced.ts:35:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%15) @ a222-generator-field-replaced.ts:35:3
+    -> Return { value: None, pos: Pos { file: "a222-generator-field-replaced.ts", line: 28, col: 17 } }
+===== a223-generator-in-an-array =====
+module initializer=None
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "upTo" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a223-generator-in-an-array.ts:7:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 7, col: 11 } }]
+  param %0 "first": Data(I32) kind=Explicit storage=None @ a223-generator-in-an-array.ts:7:16
+  param %1 "last": Data(I32) kind=Explicit storage=None @ a223-generator-in-an-array.ts:7:28
+  value %0: Data(I32) name=Some("first")
+  value %1: Data(I32) name=Some("last")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(0))] })
+  b1(%2: Data(I32), %3: Data(I32), %4: Data(I32)) Some("for.cond"):
+    %11: Data(Bool) = Binary(Le)(%4, %3) @ a223-generator-in-an-array.ts:8:32
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] } }
+  b2 Some("for.body"):
+    -> Suspend { kind: Yield(Some(ValueId(4))), pos: Pos { file: "a223-generator-in-an-array.ts", line: 9, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))], invalidates: [], traps: [] }
+  b3(%5: Data(I32), %6: Data(I32), %7: Data(I32)) Some("for.step"):
+    %12: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a223-generator-in-an-array.ts:8:47
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(12))] })
+  b4(%8: Data(I32), %9: Data(I32), %10: Data(I32)) Some("for.exit"):
+    -> Return { value: None, pos: Pos { file: "a223-generator-in-an-array.ts", line: 7, col: 11 } }
+  b5(%13: Data(I32), %14: Data(I32), %15: Data(I32)) Some("yield.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))] })
+fn f1 "step" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a223-generator-in-an-array.ts:13:10
+  param %0 "source": Data(Generator(I32)) kind=Explicit storage=None @ a223-generator-in-an-array.ts:13:15
+  value %0: Data(Generator(I32)) name=Some("source")
+  value %1: Data(IterResult(I32)) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(Generator(I32)) name=None
+  value %4: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a223-generator-in-an-array.ts", line: 14, col: 18 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a223-generator-in-an-array.ts", line: 14, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a223-generator-in-an-array.ts", line: 14, col: 18 } }] @ a223-generator-in-an-array.ts:14:18
+    %2: Data(Bool) = LoadField(IterDone)(%1) @ a223-generator-in-an-array.ts:15:14
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("if.then"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(-1) })), pos: Pos { file: "a223-generator-in-an-array.ts", line: 16, col: 5 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))] })
+  b3(%3: Data(Generator(I32))) Some("if.join"):
+    %4: Data(I32) = LoadField(IterValue)(%1) @ a223-generator-in-an-array.ts:18:17
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a223-generator-in-an-array.ts", line: 18, col: 3 } }
+fn f2 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a223-generator-in-an-array.ts:21:17
+  value %0: Data(Generator(I32)) name=None
+  value %1: Data(Generator(I32)) name=None
+  value %2: Data(Array(Generator(I32))) name=None
+  value %3: Address(AddressType { pointee: Generator(I32), array_base: Some(ValueId(2)) }) name=None
+  value %4: Data(Generator(I32)) name=None
+  value %5: Data(I32) name=None
+  value %6: Address(AddressType { pointee: Generator(I32), array_base: Some(ValueId(2)) }) name=None
+  value %7: Data(Generator(I32)) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(Str) name=None
+  value %10: Address(AddressType { pointee: Generator(I32), array_base: Some(ValueId(2)) }) name=None
+  value %11: Data(Generator(I32)) name=None
+  value %12: Data(I32) name=None
+  value %13: Address(AddressType { pointee: Generator(I32), array_base: Some(ValueId(2)) }) name=None
+  value %14: Data(Generator(I32)) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(Str) name=None
+  value %18: Address(AddressType { pointee: Generator(I32), array_base: Some(ValueId(2)) }) name=None
+  value %19: Data(Generator(I32)) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(Str) name=None
+  value %22: Data(IterResult(I32)) name=None
+  value %23: Data(Bool) name=None
+  value %24: Data(Str) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(Str) name=None
+  value %27: Data(Str) name=None
+  value %28: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(1):I32, Integer(3):I32) traps=[Trap { kind: Call, pos: Pos { file: "a223-generator-in-an-array.ts", line: 22, col: 38 } }] @ a223-generator-in-an-array.ts:22:38
+    %1: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(10):I32, Integer(12):I32) traps=[Trap { kind: Call, pos: Pos { file: "a223-generator-in-an-array.ts", line: 22, col: 50 } }] @ a223-generator-in-an-array.ts:22:50
+    %2: Data(Array(Generator(I32))) = ArrayLiteral(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 22, col: 37 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 22, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 22, col: 50 } }] @ a223-generator-in-an-array.ts:22:37
+    %3: Address(AddressType { pointee: Generator(I32), array_base: Some(ValueId(2)) }) = AddressOfIndex { checked: true }(%2, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 23 } }, Trap { kind: IndexRead, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 23 } }] @ a223-generator-in-an-array.ts:23:23
+    %4: Data(Generator(I32)) = LoadAddress(%3) @ a223-generator-in-an-array.ts:23:23
+    %5: Data(I32) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%4) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 18 } }] @ a223-generator-in-an-array.ts:23:18
+    %6: Address(AddressType { pointee: Generator(I32), array_base: Some(ValueId(2)) }) = AddressOfIndex { checked: true }(%2, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 50 } }, Trap { kind: IndexRead, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 50 } }] @ a223-generator-in-an-array.ts:23:50
+    %7: Data(Generator(I32)) = LoadAddress(%6) @ a223-generator-in-an-array.ts:23:50
+    %8: Data(I32) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%7) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 45 } }] @ a223-generator-in-an-array.ts:23:45
+    %9: Data(Str) = Template([Text("first "), Operand { index: 0, format: I32 }, Text(" second "), Operand { index: 1, format: I32 }])(%5, %8) traps=[Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 45 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 23, col: 9 } }] @ a223-generator-in-an-array.ts:23:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%9) invalidates=[ValueId(2)] @ a223-generator-in-an-array.ts:23:3
+    %10: Address(AddressType { pointee: Generator(I32), array_base: Some(ValueId(2)) }) = AddressOfIndex { checked: true }(%2, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 23 } }, Trap { kind: IndexRead, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 23 } }] @ a223-generator-in-an-array.ts:24:23
+    %11: Data(Generator(I32)) = LoadAddress(%10) @ a223-generator-in-an-array.ts:24:23
+    %12: Data(I32) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%11) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 18 } }] @ a223-generator-in-an-array.ts:24:18
+    %13: Address(AddressType { pointee: Generator(I32), array_base: Some(ValueId(2)) }) = AddressOfIndex { checked: true }(%2, Integer(1):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 50 } }, Trap { kind: IndexRead, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 50 } }] @ a223-generator-in-an-array.ts:24:50
+    %14: Data(Generator(I32)) = LoadAddress(%13) @ a223-generator-in-an-array.ts:24:50
+    %15: Data(I32) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%14) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 45 } }] @ a223-generator-in-an-array.ts:24:45
+    %16: Data(Str) = Template([Text("first "), Operand { index: 0, format: I32 }, Text(" second "), Operand { index: 1, format: I32 }])(%12, %15) traps=[Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 45 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 24, col: 9 } }] @ a223-generator-in-an-array.ts:24:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%16) invalidates=[ValueId(2)] @ a223-generator-in-an-array.ts:24:3
+    %17: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 26, col: 21 } }] @ a223-generator-in-an-array.ts:26:21
+    %18: Address(AddressType { pointee: Generator(I32), array_base: Some(ValueId(2)) }) = AddressOfIndex { checked: true }(%2, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a223-generator-in-an-array.ts", line: 27, col: 23 } }, Trap { kind: IndexRead, pos: Pos { file: "a223-generator-in-an-array.ts", line: 27, col: 23 } }] @ a223-generator-in-an-array.ts:27:23
+    %19: Data(Generator(I32)) = LoadAddress(%18) @ a223-generator-in-an-array.ts:27:23
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(17))] })
+  b1(%20: Data(Str)) Some("while.cond"):
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(20))] } }
+  b2 Some("while.body"):
+    %22: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%19) invalidates=[ValueId(2)] traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a223-generator-in-an-array.ts", line: 27, col: 23 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a223-generator-in-an-array.ts", line: 27, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a223-generator-in-an-array.ts", line: 27, col: 3 } }] @ a223-generator-in-an-array.ts:27:3
+    %23: Data(Bool) = LoadField(IterDone)(%22) @ a223-generator-in-an-array.ts:27:3
+    -> ConditionalBranch { condition: Value(ValueId(23)), then_target: BlockTarget { block: BlockId(4), arguments: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [] } }
+  b3(%21: Data(Str)) Some("while.exit"):
+    %28: Data(Str) = Template([Text("rest "), Operand { index: 0, format: Str }])(%21) traps=[Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 30, col: 9 } }] @ a223-generator-in-an-array.ts:30:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%28) invalidates=[ValueId(2)] @ a223-generator-in-an-array.ts:30:3
+    -> Return { value: None, pos: Pos { file: "a223-generator-in-an-array.ts", line: 21, col: 17 } }
+  b4 Some("if.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(20))] })
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(20))] })
+  b6(%24: Data(Str)) Some("if.join"):
+    %25: Data(I32) = LoadField(IterValue)(%22) @ a223-generator-in-an-array.ts:27:14
+    %26: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(",")])(%25) traps=[Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 28, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 28, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 28, col: 12 } }] @ a223-generator-in-an-array.ts:28:12
+    %27: Data(Str) = Binary(Add)(%24, %26) traps=[Trap { kind: Allocation, pos: Pos { file: "a223-generator-in-an-array.ts", line: 28, col: 5 } }] @ a223-generator-in-an-array.ts:28:5
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(27))] })
+===== a224-generator-as-a-map-value =====
+module initializer=None
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "upTo" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a224-generator-as-a-map-value.ts:7:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 7, col: 11 } }]
+  param %0 "first": Data(I32) kind=Explicit storage=None @ a224-generator-as-a-map-value.ts:7:16
+  param %1 "last": Data(I32) kind=Explicit storage=None @ a224-generator-as-a-map-value.ts:7:28
+  value %0: Data(I32) name=Some("first")
+  value %1: Data(I32) name=Some("last")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(0))] })
+  b1(%2: Data(I32), %3: Data(I32), %4: Data(I32)) Some("for.cond"):
+    %11: Data(Bool) = Binary(Le)(%4, %3) @ a224-generator-as-a-map-value.ts:8:32
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] } }
+  b2 Some("for.body"):
+    -> Suspend { kind: Yield(Some(ValueId(4))), pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 9, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))], invalidates: [], traps: [] }
+  b3(%5: Data(I32), %6: Data(I32), %7: Data(I32)) Some("for.step"):
+    %12: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a224-generator-as-a-map-value.ts:8:47
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(12))] })
+  b4(%8: Data(I32), %9: Data(I32), %10: Data(I32)) Some("for.exit"):
+    -> Return { value: None, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 7, col: 11 } }
+  b5(%13: Data(I32), %14: Data(I32), %15: Data(I32)) Some("yield.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))] })
+fn f1 "step" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a224-generator-as-a-map-value.ts:13:10
+  param %0 "source": Data(Generator(I32)) kind=Explicit storage=None @ a224-generator-as-a-map-value.ts:13:15
+  value %0: Data(Generator(I32)) name=Some("source")
+  value %1: Data(IterResult(I32)) name=None
+  value %2: Data(Bool) name=None
+  value %3: Data(Generator(I32)) name=None
+  value %4: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 14, col: 18 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 14, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 14, col: 18 } }] @ a224-generator-as-a-map-value.ts:14:18
+    %2: Data(Bool) = LoadField(IterDone)(%1) @ a224-generator-as-a-map-value.ts:15:14
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("if.then"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(-1) })), pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 16, col: 5 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))] })
+  b3(%3: Data(Generator(I32))) Some("if.join"):
+    %4: Data(I32) = LoadField(IterValue)(%1) @ a224-generator-as-a-map-value.ts:18:17
+    -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 18, col: 3 } }
+fn f2 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a224-generator-as-a-map-value.ts:21:17
+  value %0: Data(Map(I32, Generator(I32))) name=None
+  value %1: Data(Generator(I32)) name=None
+  value %2: Data(Map(I32, Generator(I32))) name=None
+  value %3: Data(Generator(I32)) name=None
+  value %4: Data(Map(I32, Generator(I32))) name=None
+  value %5: Data(Str) name=None
+  value %6: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Str) name=None
+  value %9: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(I32) name=None
+  value %12: Data(Str) name=None
+  value %13: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(Bool) name=None
+  value %18: Data(Generator(I32)) name=None
+  value %19: Data(I32) name=None
+  value %20: Data(Str) name=None
+  value %21: Data(Str) name=None
+  value %22: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) name=None
+  value %23: Data(I32) name=None
+  value %24: Data(Str) name=None
+  value %25: Data(Str) name=None
+  value %26: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) name=None
+  value %27: Data(I32) name=None
+  value %28: Data(Str) name=None
+  value %29: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) name=None
+  value %30: Data(I32) name=None
+  value %31: Data(I32) name=None
+  value %32: Data(Str) name=None
+  value %33: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) name=None
+  value %34: Data(I32) name=None
+  value %35: Data(I32) name=None
+  value %36: Data(Str) name=None
+  value %37: Data(Bool) name=None
+  value %38: Data(Generator(I32)) name=None
+  value %39: Data(I32) name=None
+  value %40: Data(Str) name=None
+  value %41: Data(Str) name=None
+  value %42: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) name=None
+  value %43: Data(I32) name=None
+  value %44: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Map(I32, Generator(I32))) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [], return_type: Some(Data(Map(I32, Generator(I32)))) })() traps=[Trap { kind: Call, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 22, col: 45 } }] @ a224-generator-as-a-map-value.ts:22:45
+    %1: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(1):I32, Integer(3):I32) traps=[Trap { kind: Call, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 23, col: 18 } }] @ a224-generator-as-a-map-value.ts:23:18
+    %2: Data(Map(I32, Generator(I32))) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(I32, Generator(I32))), Data(I32), Data(Generator(I32))], return_type: Some(Data(Map(I32, Generator(I32)))) })(%0, Integer(1):I32, %1) traps=[Trap { kind: Call, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 23, col: 3 } }] @ a224-generator-as-a-map-value.ts:23:3
+    %3: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(0)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(10):I32, Integer(12):I32) traps=[Trap { kind: Call, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 24, col: 18 } }] @ a224-generator-as-a-map-value.ts:24:18
+    %4: Data(Map(I32, Generator(I32))) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Map, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Map(I32, Generator(I32))), Data(I32), Data(Generator(I32))], return_type: Some(Data(Map(I32, Generator(I32)))) })(%0, Integer(2):I32, %3) traps=[Trap { kind: Call, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 24, col: 3 } }] @ a224-generator-as-a-map-value.ts:24:3
+    %5: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 26, col: 23 } }] @ a224-generator-as-a-map-value.ts:26:23
+    %6: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) = IteratorCreate { kind: MapValues, bound: Live }(%0) @ a224-generator-as-a-map-value.ts:27:3
+    %7: Data(I32) = IteratorBound(%6) @ a224-generator-as-a-map-value.ts:27:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(7))] })
+  b1(%8: Data(Str), %9: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }), %10: Data(I32), %11: Data(I32)) Some("for-of.cond"):
+    %17: Data(Bool) = IteratorHasNext(%9, %10, %11) @ a224-generator-as-a-map-value.ts:27:3
+    -> ConditionalBranch { condition: Value(ValueId(17)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(8))] } }
+  b2 Some("for-of.body"):
+    %18: Data(Generator(I32)) = IteratorValue(%9, %10, %11) @ a224-generator-as-a-map-value.ts:27:3
+    %19: Data(I32) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%18) traps=[Trap { kind: Call, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 28, col: 17 } }] @ a224-generator-as-a-map-value.ts:28:17
+    %20: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(",")])(%19) traps=[Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 28, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 28, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 28, col: 14 } }] @ a224-generator-as-a-map-value.ts:28:14
+    %21: Data(Str) = Binary(Add)(%8, %20) traps=[Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 28, col: 5 } }] @ a224-generator-as-a-map-value.ts:28:5
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(21)), Value(ValueId(9)), Value(ValueId(10)), Value(ValueId(11))] })
+  b3(%12: Data(Str), %13: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }), %14: Data(I32), %15: Data(I32)) Some("for-of.step"):
+    %22: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) = IteratorAdvance(%13, %14, %15) @ a224-generator-as-a-map-value.ts:27:3
+    %23: Data(I32) = Binary(Add)(%14, Integer(1):I32) @ a224-generator-as-a-map-value.ts:27:3
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(12)), Value(ValueId(22)), Value(ValueId(23)), Value(ValueId(15))] })
+  b4(%16: Data(Str)) Some("for-of.exit"):
+    %24: Data(Str) = Template([Text("first "), Operand { index: 0, format: Str }])(%16) traps=[Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 30, col: 9 } }] @ a224-generator-as-a-map-value.ts:30:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%24) @ a224-generator-as-a-map-value.ts:30:3
+    %25: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 32, col: 11 } }] @ a224-generator-as-a-map-value.ts:32:11
+    %26: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) = IteratorCreate { kind: MapValues, bound: Live }(%0) @ a224-generator-as-a-map-value.ts:33:3
+    %27: Data(I32) = IteratorBound(%26) @ a224-generator-as-a-map-value.ts:33:3
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(25)), Value(ValueId(26)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(27))] })
+  b5(%28: Data(Str), %29: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }), %30: Data(I32), %31: Data(I32)) Some("for-of.cond"):
+    %37: Data(Bool) = IteratorHasNext(%29, %30, %31) @ a224-generator-as-a-map-value.ts:33:3
+    -> ConditionalBranch { condition: Value(ValueId(37)), then_target: BlockTarget { block: BlockId(6), arguments: [] }, else_target: BlockTarget { block: BlockId(8), arguments: [Value(ValueId(28))] } }
+  b6 Some("for-of.body"):
+    %38: Data(Generator(I32)) = IteratorValue(%29, %30, %31) @ a224-generator-as-a-map-value.ts:33:3
+    %39: Data(I32) = Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [Data(Generator(I32))], return_type: Some(Data(I32)) })(%38) traps=[Trap { kind: Call, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 34, col: 17 } }] @ a224-generator-as-a-map-value.ts:34:17
+    %40: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(",")])(%39) traps=[Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 34, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 34, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 34, col: 14 } }] @ a224-generator-as-a-map-value.ts:34:14
+    %41: Data(Str) = Binary(Add)(%28, %40) traps=[Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 34, col: 5 } }] @ a224-generator-as-a-map-value.ts:34:5
+    -> Branch(BlockTarget { block: BlockId(7), arguments: [Value(ValueId(41)), Value(ValueId(29)), Value(ValueId(30)), Value(ValueId(31))] })
+  b7(%32: Data(Str), %33: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }), %34: Data(I32), %35: Data(I32)) Some("for-of.step"):
+    %42: Iterator(IteratorType { kind: MapValues, element: Generator(I32) }) = IteratorAdvance(%33, %34, %35) @ a224-generator-as-a-map-value.ts:33:3
+    %43: Data(I32) = Binary(Add)(%34, Integer(1):I32) @ a224-generator-as-a-map-value.ts:33:3
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(32)), Value(ValueId(42)), Value(ValueId(43)), Value(ValueId(35))] })
+  b8(%36: Data(Str)) Some("for-of.exit"):
+    %44: Data(Str) = Template([Text("second "), Operand { index: 0, format: Str }])(%36) traps=[Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 36, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 36, col: 9 } }] @ a224-generator-as-a-map-value.ts:36:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%44) @ a224-generator-as-a-map-value.ts:36:3
+    -> Return { value: None, pos: Pos { file: "a224-generator-as-a-map-value.ts", line: 21, col: 17 } }
+===== a225-generator-exhausted-in-storage =====
+module initializer=None
+class c0 "Holder" value=false descriptor=false boundary=false align=None @ a225-generator-exhausted-in-storage.ts:13:7
+  field d0 "source": Generator(I32) defaulted=false absence=false foreign=None @ a225-generator-exhausted-in-storage.ts:14:3
+  method m0 "constructor" -> f0
+  method m1 "step" -> f1
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ a225-generator-exhausted-in-storage.ts:15:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a225-generator-exhausted-in-storage.ts:15:3
+  param %1 "source": Data(Generator(I32)) kind=Explicit storage=None @ a225-generator-exhausted-in-storage.ts:15:15
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Generator(I32)) name=Some("source")
+  value %2: Address(AddressType { pointee: Generator(I32), array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Address(AddressType { pointee: Generator(I32), array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 16, col: 5 } }] @ a225-generator-exhausted-in-storage.ts:16:10
+    StoreAddress(%2, %1) @ a225-generator-exhausted-in-storage.ts:16:10
+    -> Return { value: None, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 15, col: 3 } }
+fn f1 "step" kind=Method { class: ClassId(0), method: MethodId(1) } exported=false generator=false async=false -> I32 entry=b0 @ a225-generator-exhausted-in-storage.ts:18:3
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ a225-generator-exhausted-in-storage.ts:18:3
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(Generator(I32)) name=None
+  value %2: Data(IterResult(I32)) name=None
+  value %3: Data(Bool) name=None
+  value %4: Data(Class(ClassId(0))) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 19, col: 20 } }] @ a225-generator-exhausted-in-storage.ts:19:25
+    %2: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%1) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 19, col: 25 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 19, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 19, col: 20 } }] @ a225-generator-exhausted-in-storage.ts:19:20
+    %3: Data(Bool) = LoadField(IterDone)(%2) @ a225-generator-exhausted-in-storage.ts:20:16
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(1), arguments: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [] } }
+  b1 Some("if.then"):
+    -> Return { value: Some(Constant(Constant { ty: I32, kind: Integer(-1) })), pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 21, col: 7 } }
+  b2 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(0))] })
+  b3(%4: Data(Class(ClassId(0)))) Some("if.join"):
+    %5: Data(I32) = LoadField(IterValue)(%2) @ a225-generator-exhausted-in-storage.ts:23:19
+    -> Return { value: Some(Value(ValueId(5))), pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 23, col: 5 } }
+fn f2 "upTo" kind=Free exported=false generator=true async=false -> Generator(I32) entry=b0 @ a225-generator-exhausted-in-storage.ts:7:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 7, col: 11 } }]
+  param %0 "first": Data(I32) kind=Explicit storage=None @ a225-generator-exhausted-in-storage.ts:7:16
+  param %1 "last": Data(I32) kind=Explicit storage=None @ a225-generator-exhausted-in-storage.ts:7:28
+  value %0: Data(I32) name=Some("first")
+  value %1: Data(I32) name=Some("last")
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(I32) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(I32) name=None
+  value %11: Data(Bool) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(I32) name=None
+  value %14: Data(I32) name=None
+  value %15: Data(I32) name=None
+  b0 Some("entry"):
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(0))] })
+  b1(%2: Data(I32), %3: Data(I32), %4: Data(I32)) Some("for.cond"):
+    %11: Data(Bool) = Binary(Le)(%4, %3) @ a225-generator-exhausted-in-storage.ts:8:32
+    -> ConditionalBranch { condition: Value(ValueId(11)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))] } }
+  b2 Some("for.body"):
+    -> Suspend { kind: Yield(Some(ValueId(4))), pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 9, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(2)), Value(ValueId(3)), Value(ValueId(4))], invalidates: [], traps: [] }
+  b3(%5: Data(I32), %6: Data(I32), %7: Data(I32)) Some("for.step"):
+    %12: Data(I32) = Binary(Add)(%7, Integer(1):I32) @ a225-generator-exhausted-in-storage.ts:8:47
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(5)), Value(ValueId(6)), Value(ValueId(12))] })
+  b4(%8: Data(I32), %9: Data(I32), %10: Data(I32)) Some("for.exit"):
+    -> Return { value: None, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 7, col: 11 } }
+  b5(%13: Data(I32), %14: Data(I32), %15: Data(I32)) Some("yield.resume"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(13)), Value(ValueId(14)), Value(ValueId(15))] })
+fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a225-generator-exhausted-in-storage.ts:27:17
+  value %0: Data(Class(ClassId(0))) name=None
+  value %1: Data(Generator(I32)) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(I32) name=None
+  value %5: Data(Str) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(I32) name=None
+  value %8: Data(Str) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(Generator(I32)) name=None
+  value %11: Data(Str) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(IterResult(I32)) name=None
+  value %14: Data(Bool) name=None
+  value %15: Data(Str) name=None
+  value %16: Data(I32) name=None
+  value %17: Data(Str) name=None
+  value %18: Data(Str) name=None
+  value %19: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(0))) = AllocateClass(ClassId(0))() traps=[Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 28, col: 26 } }] @ a225-generator-exhausted-in-storage.ts:28:26
+    %1: Data(Generator(I32)) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [Data(I32), Data(I32)], return_type: Some(Data(Generator(I32))) })(Integer(1):I32, Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 28, col: 37 } }] @ a225-generator-exhausted-in-storage.ts:28:37
+    Call(CallTarget { kind: Method(MethodId(0)), parameter_types: [Data(Class(ClassId(0))), Data(Generator(I32))], return_type: None })(%0, %1) traps=[Trap { kind: Call, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 28, col: 26 } }] @ a225-generator-exhausted-in-storage.ts:28:26
+    %2: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 18 } }] @ a225-generator-exhausted-in-storage.ts:29:18
+    %3: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 35 } }, Trap { kind: Call, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 35 } }] @ a225-generator-exhausted-in-storage.ts:29:35
+    %4: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 52 } }] @ a225-generator-exhausted-in-storage.ts:29:52
+    %5: Data(Str) = Template([Text("drive "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }, Text(" "), Operand { index: 2, format: I32 }])(%2, %3, %4) traps=[Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 52 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 29, col: 9 } }] @ a225-generator-exhausted-in-storage.ts:29:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a225-generator-exhausted-in-storage.ts:29:3
+    %6: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 18 } }, Trap { kind: Call, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 18 } }] @ a225-generator-exhausted-in-storage.ts:30:18
+    %7: Data(I32) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(0)))], return_type: Some(Data(I32)) })(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 35 } }, Trap { kind: Call, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 35 } }] @ a225-generator-exhausted-in-storage.ts:30:35
+    %8: Data(Str) = Template([Text("again "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%6, %7) traps=[Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 30, col: 9 } }] @ a225-generator-exhausted-in-storage.ts:30:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a225-generator-exhausted-in-storage.ts:30:3
+    %9: Data(Str) = StringLiteral("")() traps=[Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 32, col: 21 } }] @ a225-generator-exhausted-in-storage.ts:32:21
+    %10: Data(Generator(I32)) = LoadField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 33, col: 23 } }] @ a225-generator-exhausted-in-storage.ts:33:30
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(9))] })
+  b1(%11: Data(Str)) Some("while.cond"):
+    -> ConditionalBranch { condition: Constant(Constant { ty: Bool, kind: Boolean(true) }), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(11))] } }
+  b2 Some("while.body"):
+    %13: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%10) traps=[Trap { kind: DevOnlyLifetime, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 33, col: 30 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 33, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 33, col: 3 } }] @ a225-generator-exhausted-in-storage.ts:33:3
+    %14: Data(Bool) = LoadField(IterDone)(%13) @ a225-generator-exhausted-in-storage.ts:33:3
+    -> ConditionalBranch { condition: Value(ValueId(14)), then_target: BlockTarget { block: BlockId(4), arguments: [] }, else_target: BlockTarget { block: BlockId(5), arguments: [] } }
+  b3(%12: Data(Str)) Some("while.exit"):
+    %19: Data(Str) = Template([Text("for-of \""), Operand { index: 0, format: Str }, Text("\"")])(%12) traps=[Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 36, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 36, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 36, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 36, col: 9 } }] @ a225-generator-exhausted-in-storage.ts:36:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%19) @ a225-generator-exhausted-in-storage.ts:36:3
+    -> Return { value: None, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 27, col: 17 } }
+  b4 Some("if.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(11))] })
+  b5 Some("if.else"):
+    -> Branch(BlockTarget { block: BlockId(6), arguments: [Value(ValueId(11))] })
+  b6(%15: Data(Str)) Some("if.join"):
+    %16: Data(I32) = LoadField(IterValue)(%13) @ a225-generator-exhausted-in-storage.ts:33:14
+    %17: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(",")])(%16) traps=[Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 34, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 34, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 34, col: 12 } }] @ a225-generator-exhausted-in-storage.ts:34:12
+    %18: Data(Str) = Binary(Add)(%15, %17) traps=[Trap { kind: Allocation, pos: Pos { file: "a225-generator-exhausted-in-storage.ts", line: 34, col: 5 } }] @ a225-generator-exhausted-in-storage.ts:34:5
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(18))] })
 ===== a79-for-of-generator =====
 module initializer=None
 intrinsic Ambient.0 "Print"

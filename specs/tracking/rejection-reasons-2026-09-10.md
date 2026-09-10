@@ -136,3 +136,34 @@ the user-class `for…of` diagnostic says "stock `tsc` rejects this
 subject too". The counterexample carried `[Symbol.iterator]`, which
 S100 rejects first, so that diagnostic never fires on it. On `r72`,
 the subject that reaches it, `tsc` answers TS2488.
+
+## The arc after §103
+
+§103 asked what a rejection reason must fit. The sections that follow
+came from applying that question to the forms §103 measured.
+
+| section | what it decided | landed |
+|---|---|---|
+| §104 | a bare `Map` is not an iteration source | 2026-09-10 |
+| §105 | the `Array` namespace, and `Array.from` | 2026-09-10 |
+| §106 | the reference interpreter stores a generator | 2026-09-11 |
+| §107 | binding patterns, by source type and position | contract only |
+| §108 | a field carries a value before a constructor returns | contract only |
+
+Three invariant-5 holes came out of it, none of them looked for:
+`for…of` and `[...]` over a bare `Map` (§104), and a field with no
+initializer (§108). Each accepted a program stock `tsc` rejects, and
+the second dereferences a null through a non-nullable reference field.
+
+**§106 paid for itself on its first round.** It restored the
+independent witness core principle 12 asks for, and the witness
+immediately found that a re-entrant `.next()` on a stored generator
+kills both production tiers with a signal — a shape no witness could
+see while the interpreter refused the program earlier. §106.5 holds
+the measurement.
+
+Two form gaps are recorded open, each because naming sites does not
+converge: §79 rule 6a, where the divergence gate reads the reject
+corpus and cannot see an `ambient` row that no entry pins; and §85's
+clippy count, which reads three `(lib)` lines of a `--all-targets`
+run.

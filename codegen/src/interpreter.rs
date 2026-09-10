@@ -333,6 +333,8 @@ struct Interpreter<'m> {
     padding_cache: HashMap<String, Vec<Range<usize>>>,
     poison_registry: HashMap<l::ValueId, Vec<Weak<RefCell<Option<Invalidation>>>>>,
     async_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
+    // The generator registry. §106.3 rules 1 and 5 own it.
+    generator_handles: RefCell<HashMap<usize, Rc<RefCell<Coroutine>>>>,
     // §94 scheduler state: runnable continuations in FIFO order, and the
     // frames that wait for the next host checkpoint.
     async_ready: std::collections::VecDeque<Rc<RefCell<Coroutine>>>,
@@ -358,6 +360,7 @@ impl<'m> Interpreter<'m> {
             padding_cache: HashMap::new(),
             poison_registry: HashMap::new(),
             async_handles: RefCell::new(HashMap::new()),
+            generator_handles: RefCell::new(HashMap::new()),
             async_ready: std::collections::VecDeque::new(),
             async_parked: std::collections::VecDeque::new(),
             async_trapping: None,
@@ -499,6 +502,12 @@ impl<'m> Interpreter<'m> {
                     .borrow_mut()
                     .insert(Rc::as_ptr(&coroutine) as usize, Rc::clone(&coroutine));
             }
+            if function.is_generator {
+                // §106.3 rule 1 owns this registration.
+                self.generator_handles
+                    .borrow_mut()
+                    .insert(Rc::as_ptr(&coroutine) as usize, Rc::clone(&coroutine));
+            }
             return Ok(Value::Coroutine(coroutine));
         }
         let mut frame = frame;
@@ -524,15 +533,23 @@ impl<'m> Interpreter<'m> {
     /// leaves behind at quiescence. The production runtime frees such a ring
     /// with its Context arena; here the walk below breaks it instead.
     ///
-    /// The walk starts at every scheduler state and follows the two owning
-    /// edges, so it also reaches a frame the handle table has already
-    /// released. It runs no continuation and invokes no collector.
+    /// The walk starts at every scheduler state and at the generator registry
+    /// (§106.3 rule 5), and follows the two owning edges, so it also reaches a
+    /// frame the handle table has already released. It runs no continuation
+    /// and invokes no collector.
     fn release_scheduler_storage(&mut self) {
         let mut work: Vec<Rc<RefCell<Coroutine>>> = self.async_ready.drain(..).collect();
         work.extend(self.async_parked.drain(..));
         work.append(&mut self.async_stopped);
         work.extend(
             self.async_handles
+                .borrow_mut()
+                .drain()
+                .map(|(_, frame)| frame),
+        );
+        // §106.3 rule 5 owns the release point.
+        work.extend(
+            self.generator_handles
                 .borrow_mut()
                 .drain()
                 .map(|(_, frame)| frame),
@@ -4624,6 +4641,15 @@ impl<'m> Interpreter<'m> {
                 let key = Rc::as_ptr(handle) as usize as u64;
                 out[..8].copy_from_slice(&key.to_ne_bytes());
             }
+            // §106.3 rules 2 and 4 own this arm.
+            Type::Generator(_) => {
+                let key = match value {
+                    Value::Coroutine(handle) => Rc::as_ptr(handle) as usize as u64,
+                    Value::Null => 0,
+                    other => return Err(type_error("generator", other)),
+                };
+                out[..8].copy_from_slice(&key.to_ne_bytes());
+            }
             Type::Str
             | Type::RegExp
             | Type::Object
@@ -4632,7 +4658,6 @@ impl<'m> Interpreter<'m> {
             | Type::Map(_, _)
             | Type::Set(_)
             | Type::Nullable(_)
-            | Type::Generator(_)
             | Type::Worker(_, _)
             | Type::Inbox(_)
             | Type::Outbox(_)
@@ -4710,6 +4735,21 @@ impl<'m> Interpreter<'m> {
                     Value::Coroutine(handle)
                 }
             }
+            // §106.3 rules 2, 3 and 4 own this arm.
+            Type::Generator(_) => {
+                let key = u64::from_ne_bytes(bytes[..8].try_into().unwrap_or([0; 8])) as usize;
+                if key == 0 {
+                    Value::Null
+                } else {
+                    let handle = self
+                        .generator_handles
+                        .borrow()
+                        .get(&key)
+                        .cloned()
+                        .ok_or_else(|| self.invalid(None, "unknown packed generator"))?;
+                    Value::Coroutine(handle)
+                }
+            }
             Type::Str
             | Type::RegExp
             | Type::Object
@@ -4718,7 +4758,6 @@ impl<'m> Interpreter<'m> {
             | Type::Map(_, _)
             | Type::Set(_)
             | Type::Nullable(_)
-            | Type::Generator(_)
             | Type::Worker(_, _)
             | Type::Inbox(_)
             | Type::Outbox(_)
@@ -6469,6 +6508,240 @@ export async function main(): Promise<void> {
                 .count(),
             0,
             "frames retained after interpreter teardown"
+        );
+    }
+
+    // ----- §106.3: a generator packs and unpacks through its own registry -----
+
+    /// One generator function and one class field that holds a generator, so
+    /// the module carries the `Generator<i32>` layout the pack path needs.
+    const GENERATOR_STORAGE: &str = "function* upTo(first: i32, last: i32): Generator<i32> {\n\
+                                     \x20 for (let value: i32 = first; value <= last; value += 1) {\n\
+                                     \x20   yield value;\n\
+                                     \x20 }\n\
+                                     }\n\
+                                     class Holder {\n\
+                                     \x20 source: Generator<i32>;\n\
+                                     \x20 constructor(source: Generator<i32>) {\n\
+                                     \x20   this.source = source;\n\
+                                     \x20 }\n\
+                                     }\n\
+                                     export function main(): void {\n\
+                                     \x20 const holder: Holder = new Holder(upTo(1, 2));\n\
+                                     \x20 const result = holder.source.next();\n\
+                                     \x20 print(`${result.value}`);\n\
+                                     }\n";
+
+    /// The id of the one generator function in `GENERATOR_STORAGE`.
+    fn generator_function(module: &l::Module) -> l::FunctionId {
+        let generators: Vec<l::FunctionId> = module
+            .functions
+            .iter()
+            .filter(|function| function.is_generator)
+            .map(|function| function.id)
+            .collect();
+        assert_eq!(generators.len(), 1, "the program declares one generator");
+        generators[0]
+    }
+
+    /// A `Generator<i32>` frame from `GENERATOR_STORAGE`, bounded by `last`
+    /// so that two calls give two frames with different progress.
+    fn generator_frame(
+        interpreter: &mut Interpreter<'_>,
+        id: l::FunctionId,
+        last: i64,
+    ) -> Rc<RefCell<Coroutine>> {
+        let value = interpreter
+            .call_function(id, vec![Value::I(1), Value::I(last)])
+            .expect("the generator call creates a frame");
+        let Value::Coroutine(frame) = value else {
+            panic!("a generator call produces a coroutine");
+        };
+        frame
+    }
+
+    fn generator_type() -> Type {
+        Type::Generator(Box::new(Type::I32))
+    }
+
+    /// A generator that reads its own handle back out of storage and keeps it
+    /// in a local across a suspend. The frame then owns itself.
+    const SELF_NAMING_GENERATOR: &str =
+        "function* selfish(box: Generator<i32>[]): Generator<i32> {\n\
+         \x20 yield 1;\n\
+         \x20 const mine: Generator<i32> = box[0];\n\
+         \x20 yield 2;\n\
+         \x20 box.push(mine);\n\
+         \x20 yield 3;\n\
+         }\n\
+         export function main(): void {\n\
+         \x20 const box: Generator<i32>[] = [];\n\
+         \x20 const source: Generator<i32> = selfish(box);\n\
+         \x20 box.push(source);\n\
+         \x20 const first = source.next();\n\
+         \x20 const second = source.next();\n\
+         \x20 print(`${first.value},${second.value}`);\n\
+         }\n";
+
+    /// Every frame a suspended frame's own saved state names.
+    fn frames_named_by(frame: &Rc<RefCell<Coroutine>>) -> Vec<Rc<RefCell<Coroutine>>> {
+        let mut out = Vec::new();
+        let state = frame.borrow();
+        let saved = state.state.borrow();
+        for value in saved.values.iter().flatten() {
+            collect_coroutines(value, &mut out);
+        }
+        for local in &saved.locals {
+            collect_coroutines(&local.slot.borrow(), &mut out);
+        }
+        out
+    }
+
+    /// Pins §106.3 rules 2 and 3. The loop is the control, and it is total:
+    /// an unpack that answers a registered frame the key does not name passes
+    /// for at most one of the three, whatever order the registry iterates.
+    #[test]
+    fn a_packed_generator_unpacks_to_the_same_frame() {
+        let (module, ()) = interpreter_for(GENERATOR_STORAGE);
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        let id = generator_function(&module);
+        let frames: Vec<Rc<RefCell<Coroutine>>> = (2..5)
+            .map(|last| generator_frame(&mut interpreter, id, last))
+            .collect();
+        assert_eq!(
+            interpreter.generator_handles.borrow().len(),
+            frames.len(),
+            "each call registers its own frame"
+        );
+
+        let ty = generator_type();
+        let mut keys: Vec<Vec<u8>> = Vec::new();
+        for (index, frame) in frames.iter().enumerate() {
+            let packed = interpreter
+                .pack(&ty, &Value::Coroutine(Rc::clone(frame)))
+                .expect("the generator packs");
+            let Value::Coroutine(restored) =
+                interpreter.unpack(&ty, &packed).expect("the key unpacks")
+            else {
+                panic!("a generator key unpacks to a coroutine");
+            };
+            assert!(
+                Rc::ptr_eq(frame, &restored),
+                "frame {index} unpacks to another frame"
+            );
+            keys.push(packed);
+        }
+        let distinct: std::collections::HashSet<&Vec<u8>> = keys.iter().collect();
+        assert_eq!(distinct.len(), frames.len(), "each frame packs to one key");
+    }
+
+    /// Pins §106.3 rule 4's null case, in both directions. The registered
+    /// key is the control: the same call answers a coroutine for it.
+    #[test]
+    fn a_zero_generator_key_unpacks_to_null() {
+        let (module, ()) = interpreter_for(GENERATOR_STORAGE);
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        let id = generator_function(&module);
+        let frame = generator_frame(&mut interpreter, id, 2);
+        let ty = generator_type();
+
+        let zero = [0u8; 8];
+        assert!(
+            matches!(
+                interpreter.unpack(&ty, &zero).expect("a zero key unpacks"),
+                Value::Null
+            ),
+            "a zero key gives null"
+        );
+        assert_eq!(
+            interpreter.pack(&ty, &Value::Null).expect("null packs"),
+            zero.to_vec(),
+            "null packs to a zero key"
+        );
+
+        let packed = interpreter
+            .pack(&ty, &Value::Coroutine(frame))
+            .expect("the generator packs");
+        assert_ne!(packed, zero.to_vec(), "a live frame has a non-zero key");
+        assert!(
+            matches!(
+                interpreter
+                    .unpack(&ty, &packed)
+                    .expect("a registered key unpacks"),
+                Value::Coroutine(_)
+            ),
+            "a registered key gives the frame, so the null answer is the zero key's"
+        );
+    }
+
+    /// Pins §106.3 rule 4's unknown key. The registered key is the control:
+    /// the same call still answers a coroutine for it.
+    #[test]
+    fn an_unknown_generator_key_reports_invalid_lir() {
+        let (module, ()) = interpreter_for(GENERATOR_STORAGE);
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        let id = generator_function(&module);
+        let frame = generator_frame(&mut interpreter, id, 2);
+        let ty = generator_type();
+        let packed = interpreter
+            .pack(&ty, &Value::Coroutine(frame))
+            .expect("the generator packs");
+
+        let key = u64::from_ne_bytes(packed.clone().try_into().expect("a key is eight bytes"));
+        let stray = key.wrapping_add(0x1000);
+        assert!(
+            !interpreter
+                .generator_handles
+                .borrow()
+                .contains_key(&(stray as usize)),
+            "the probe key names no registered generator"
+        );
+        let error = interpreter
+            .unpack(&ty, &stray.to_ne_bytes())
+            .expect_err("an unknown key is invalid LIR");
+        assert_eq!(
+            error,
+            InterpretError::InvalidLir {
+                message: "unknown packed generator".to_string(),
+                pos: None,
+            }
+        );
+        assert!(
+            interpreter.unpack(&ty, &packed).is_ok(),
+            "the registered key still unpacks, so the error is the stray key's"
+        );
+    }
+
+    /// Pins §106.7 gate item 3's drain, which §106.3 rule 5 owns. The test
+    /// builds a frame that the registry names and that also names itself.
+    /// `Weak` is the lifetime evidence, because no Context payload counter
+    /// sees a leaked Rust allocation.
+    #[test]
+    fn teardown_releases_a_generator_that_names_itself() {
+        let (module, ()) = interpreter_for(SELF_NAMING_GENERATOR);
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        assert_eq!(interpreter.run().expect("the program runs"), b"1,2\n");
+
+        let registered: Vec<Rc<RefCell<Coroutine>>> = interpreter
+            .generator_handles
+            .borrow()
+            .values()
+            .cloned()
+            .collect();
+        assert_eq!(registered.len(), 1, "the program creates one generator");
+        assert!(
+            frames_named_by(&registered[0])
+                .iter()
+                .any(|named| Rc::ptr_eq(named, &registered[0])),
+            "the frame's own state names it, so the cycle is present"
+        );
+
+        let weak: Vec<Weak<RefCell<Coroutine>>> = registered.iter().map(Rc::downgrade).collect();
+        drop(registered);
+        drop(interpreter);
+        assert!(
+            weak.iter().all(|frame| frame.upgrade().is_none()),
+            "a generator frame outlived the interpreter"
         );
     }
 
