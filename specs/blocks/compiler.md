@@ -14602,7 +14602,10 @@ reader must not read this list as a rejection.
    operand is checked with no contextual type, because §103.1 rule 1
    accepts four type shapes. No rule requires the contextual form.
    Measured 2026-09-10; recorded, not decided.
-8. **`[...map]` disagrees with stock `tsc` about the element type.**
+8. **`[...map]` disagreed with stock `tsc` about the element type.**
+   *(Closed 2026-09-10 by §104. The measurement that opened this item
+   named the spread; §104 found the same hole in `for…of` and rejects
+   both forms.)*
    Measured 2026-09-10: `const ks: i32[] = [...m]` checks clean here
    and prints the keys on both tiers, while `tsc` answers TS2322,
    because it reads the spread as `[i32, string][]`. Invariant 5 says
@@ -14724,3 +14727,143 @@ here replace the named-site fixes.
    amendments inserted items into 103.5, and two citations of "item
    4" then named a different item while still reading as true. An
    ordinal is a position; the subject is the fact.
+
+## 104. A bare `Map` is not an iteration source
+
+Origin: §103.5's `[...map]` item. The measurement that produced it
+named the spread. The same hole is in `for…of`, which is the form
+programs actually use.
+
+Measured 2026-09-10 at `3d03f80`, both production tiers, against
+TypeScript 5.9.2:
+
+| form | this language | stock `tsc` |
+|---|---|---|
+| `for (const k of m)`, with `const n: i32 = k` | binds `K`, runs | `TS2322`, `[number, string]` is not `number` |
+| `const ks: i32[] = [...m]` | `K[]`, prints the keys | `TS2322`, `[number, string][]` is not `number[]` |
+| `for (const k of m.keys())`, with `const n: i32 = k` | binds `K` | accepts |
+| `const xs: i32[] = [...set]` | `K[]` | accepts |
+
+**Invariant 5 says every accepted program type-checks under stock
+`tsc`.** These two forms accept programs that do not. That is not a
+divergence: a divergence describes different behaviour on a program
+both systems accept, and `collisions.md` cannot record a form `tsc`
+refuses to compile.
+
+Q30 chose "bare `Map` iterates keys, as `keys()` does". The choice is
+internally consistent, and it is the choice that breaks the invariant,
+because TypeScript defines a `Map` as `Iterable<[K, V]>`.
+
+**The corpus did not catch it, because neither entry types the bound
+value.** `a77` interpolates `key`, which `tsc` accepts for a pair too.
+`a81` binds `[...map]` with no annotation, so `tsc` infers
+`[i32, string][]`, the language infers `i32[]`, and neither reports.
+Both entries are `tsc`-clean by accident, and an accident is not a
+gate.
+
+**The rule change is forced.** Three answers exist. Yielding pairs
+needs a tuple type, which is the gap that keeps `entries()` and
+`new Map([[k, v]])` out. Weakening invariant 5 contradicts a permanent
+invariant, and editor tooling is what invariant 5 buys. Rejecting the
+bare `Map` is the remaining answer, and it needs no new machinery.
+
+### 104.1 The rule
+
+1. **`Map<K, V>` is rejected as a `for…of` subject and as an
+   array-literal spread operand**, at S014.
+2. **The rejection does not read how the bound value is used.** The
+   annotated and the unannotated forms are both rejected. A rule that
+   accepted `for (const k of m) { print(...) }` and rejected the same
+   loop with `const n: i32 = k` would make acceptance depend on a
+   later statement, and `a77` proves a program can avoid the
+   annotation by accident.
+3. **`m.keys()` and `m.values()` as a direct `for…of` subject are
+   unchanged**, and `Set`, `T[]`, `FixedArray<T, N>`, `string`, and
+   `Generator<T>` are unchanged in both positions.
+4. The check reads the resolved subject type, as §103.2 rule 1
+   requires of the view rules.
+5. `new Set<K>(map)` stays rejected. §103.1 rule 5 already rejects it
+   under invariant 5, and this section does not change its reason.
+
+### 104.2 What this retires, and the path back
+
+**This retires a capability**: the one-expression spelling for the
+keys of a `Map`. The supported replacement is a loop:
+
+    const keys: i32[] = [];
+    for (const key of map.keys()) {
+      keys.push(key);
+    }
+
+`[...m.keys()]` is **not** the replacement. Measured: it is S014,
+because §14.1 accepts a view only as a direct `for…of` subject.
+
+A view in spread-operand position fuses exactly as a view in subject
+position fuses, and creates no escaping value, so restoring the
+one-expression spelling is a small separate contract. **It is not in
+this section**, and this section does not establish its cost. Recorded
+so that the capability has a named path back rather than a silent
+loss.
+
+### 104.3 The diagnostic states the right fact
+
+The diagnostic must say that this language binds `K` where TypeScript
+binds `[K, V]`, so an accepted program would fail the `tsc` gate.
+
+**It must not say that `tsc` rejects a `Map` loop.** Stock `tsc`
+accepts `for (const entry of m)`. The incompatible element type is
+the failure, not the loop.
+
+### 104.4 Six diagnostics still carry a reason §103.3 retired
+
+`compiler/src/ambient.rs` states, at six sites, that a view elsewhere
+"would create a stateful iterator value that outlives its call".
+§103.3 retired that reason: `compiler.md` §70 landed a
+reference-counted handle, and a `Generator<T>` already outlives the
+call that made it. The obstacle is a missing view type plus §70.1
+decision 1's scope.
+
+Under §103.8 rule 1 the owning rule is `stdlib.md` §14.3. The
+diagnostics state the current obstacle, or they state none and point
+at the rule. A user-facing message that gives a retired reason is the
+defect §103 exists to remove.
+
+### 104.5 Sites
+
+- `compiler/src/check/stmt.rs`, the `for…of` subject check.
+- `compiler/src/check/expr.rs`, the array-literal spread check.
+- `compiler/src/ambient.rs`, §104.4's six messages.
+- `specs/blocks/stdlib.md` §14.1, §14.4, §14.5.
+- `specs/blocks/collisions.md` Q30.
+- `specs/tracking/js-api-sweep.md`, the iteration table.
+- `compiler/tests/corpus_reject.rs`, one line per new reject entry.
+- `corpus/accept/a77` and `corpus/accept/a81`, and their goldens.
+
+### 104.6 Corpus and gate (pre-registered exit criteria)
+
+**Accept.** `a77` and `a81` move to the supported spellings. `a81`'s
+`Map` segment becomes the §104.2 loop, in that entry or in one of its
+own. The round reassesses both `js-comparable` headers, because the
+`Map` divergence they name disappears with the form.
+
+**Reject**, each at a pinned position with its rule code: a bare `Map`
+as a `for…of` subject, and a bare `Map` as an array-literal spread
+operand. Each entry's header states, measured, what `tsc` does with
+it. At least one entry carries the **typed** use that TypeScript
+rejects, and its header records that `tsc` code; at least one carries
+the **unannotated** form that `tsc` accepts, and renders the §79
+divergence block that form requires.
+
+**Gate.**
+
+1. The standing differential gate is byte-exact on both tiers for
+   every moved accept entry, against a golden generated from the dev
+   tier.
+2. `tsc` reports zero errors over the accept corpus, configuration
+   unchanged.
+3. **The round demonstrates that each new reject entry fails against a
+   binary built from this section's pin**, and records the diagnostic
+   it gave there.
+4. The round reports which goldens and counted totals moved, and why.
+   It does not predict them (§103.8 rule 2).
+5. `tools/gate.sh full` green in both profiles.

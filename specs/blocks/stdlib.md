@@ -1191,7 +1191,7 @@ else** — §14.2 explains why the list cannot be opened up:
 |---|---|---|
 | `T[]` | `T` | index order |
 | `FixedArray<T, N>` | `T` | index order |
-| `Map<K, V>` | `K` (bare `Map` iterates keys, as `keys()` does) | insertion (Q24) |
+| `Map<K, V>` | **rejected** — `compiler.md` §104.1 | — |
 | `Set<K>` | `K` | insertion (Q24) |
 | `string` | `string`, one **code point** per step | byte order |
 | `Generator<T>` | `T` | the coroutine's |
@@ -1212,6 +1212,13 @@ ordinary member rules decide them. A user class with a method
 `each(): Generator<i32>` already runs on both tiers; the same class
 with that method named `values()` was rejected, and the name is not
 the language's to reserve.
+
+**A bare `Map` is rejected in both positions** *(added 2026-09-10 by
+`compiler.md` §104.1)*. This row bound `K`. TypeScript defines a `Map`
+as `Iterable<[K, V]>` and binds a pair, so an accepted program failed
+the `tsc` gate and invariant 5 with it. Use `m.keys()` or `m.values()`
+as the subject. §104.2 holds the replacement for the spread and the
+capability it retires.
 
 **`string` iterates code points, not bytes** — the one place the
 language's byte-measure convention (Q5) does not carry over, because
@@ -1307,9 +1314,11 @@ the language does not have — the same missing prerequisite that keeps
 `Math.max` at two arguments (Q19). The diagnostic says so, rather than
 naming spread, because the spread is not the part that is missing.
 
-Spreadable operands are §14.1's list minus `Generator<T>`: a generator
-is single-use and spreading it would consume it, which reads as a value
-expression while being a mutation.
+Spreadable operands are §14.1's list minus `Generator<T>` and minus a
+bare `Map<K, V>`: a generator is single-use and spreading it would
+consume it, which reads as a value expression while being a mutation,
+and a bare `Map` binds an element `tsc` types differently
+(`compiler.md` §104.1).
 
 ### 14.5 Corpus and gate (pre-registered)
 

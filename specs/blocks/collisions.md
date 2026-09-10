@@ -1118,8 +1118,13 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   `iterator()` method, a decorator — leaves the class **not iterable
   under stock `tsc`**, so `for (const x of mine)` would not type-check
   and invariant 5 would be broken. `for…of` is therefore over **built-in
-  containers only**: `T[]`, `FixedArray<T, N>`, `Map`, `Set`, `string`,
-  and a `Generator<T>` from a `function*`.
+  containers only**: `T[]`, `FixedArray<T, N>`, `Set`, `string`,
+  and a `Generator<T>` from a `function*`. *(Revised 2026-09-10 by
+  `compiler.md` §104.1. This list held a bare `Map`, which bound `K`.
+  TypeScript types a `Map` as `Iterable<[K, V]>`, so a program that
+  gave the bound value a type was accepted here and rejected by stock
+  `tsc` — a failure of invariant 5, not a divergence. Use `keys()` or
+  `values()`.)*
 
   This is the rare case where the TS-subset invariant *removes* a design
   question instead of constraining one.
@@ -1144,7 +1149,8 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   frame-allocated by the coroutine machinery rather than by iteration.
 
   Iteration order is **Q24's insertion order** for `Map`/`Set`, which
-  `for…of` inherits rather than re-decides.
+  `for…of` inherits rather than re-decides, through `keys()` and
+  `values()` for a `Map`.
 
   **Spread is accepted in an array literal only** — `[...xs]`,
   `[0, ...xs, 9]` — where the element count is a runtime value the

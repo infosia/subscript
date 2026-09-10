@@ -176,11 +176,12 @@ witnesses.
 
 | form | behaviour | witness | remaining obstacle |
 |---|---|---|---|
-| `for…of` over `T[]`, `FixedArray<T, N>`, `Map`, `Set`, `string`, `Generator<T>` | supported | §14.1; `a77`, `a79`, `a84`–`a87`, `a180`; probe on both tiers | none |
+| `for…of` over `T[]`, `FixedArray<T, N>`, `Set`, `string`, `Generator<T>` | supported | §14.1; `a77`, `a79`, `a84`–`a87`, `a180`; probe on both tiers | none |
+| `for…of` over a bare `Map`, and `[...map]` | **rejected** by `compiler.md` §104.1 (2026-09-10); both accepted at `3d03f80` | probe on both tiers | none. Each accepted a program stock `tsc` rejects with TS2322, because TypeScript types a `Map` as `Iterable<[K, V]>`. Use `keys()` or `values()` |
 | `map.keys()`, `map.values()`, `set.values()`, array `keys()`/`values()` as the direct `for…of` subject | supported | §14.1; `a78` | none |
 | a `Generator<T>` held as a value — passed, returned, stored in a class field, driven by `.next()` | **supported** | C8; probe on both tiers. **No corpus entry pins these forms**: `a20` binds a generator to a local and drives `.next()`; `a180` uses one as a `for…of` subject only | none. The missing accept entry is an open proposal |
 | a user class iterated through a method that returns a `Generator<T>` | **supported**, and `tsc`-clean | probe on both tiers | none. The method name must not be `keys`, `values`, or `entries`; the user-receiver row below states why |
-| array-literal spread over `T[]`, `FixedArray<T, N>`, `Map`, `Set`, `string` | supported | §14.4; `a81` | none |
+| array-literal spread over `T[]`, `FixedArray<T, N>`, `Set`, `string` | supported | §14.4; `a81` | none. A bare `Map` operand is rejected — see the row above |
 | `for (const x of userClass)` | rejected | `r72`; probe | `Symbol.iterator` is the one binding that stock `tsc` accepts, and `Symbol` is a permanent stdlib non-goal (§7). The language also rejects a computed method name (S100). **Invariant 5 does not force this row**: `class Bag { *[Symbol.iterator]() {…} }` is `tsc`-clean. Invariant 5 forbids the substitutes, because an `iterator()` method or a decorator leaves the class not iterable under `tsc` |
 | `keys()`/`values()` assigned, returned, or passed | rejected, S014 | `r42`, `r76`, `r77`; probe | **two concrete requirements.** (1) A language type for the view. `tsc` names it `IterableIterator<T>`, and that spelling is `tsc`-clean, but the language answers S016 for the name. (2) An owner for the escaping value. `compiler.md` §70 landed a reference-counted handle on 2026-08-27, and §70.1 decision 1 keeps it on coroutine frame handles and defers the general form until evidence arrives |
 | `entries()` anywhere, on any receiver | rejected, S014 | `r75`, `r79`; probe | no tuple type |
