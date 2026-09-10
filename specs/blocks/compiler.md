@@ -142,6 +142,7 @@ Every section, with its status:
 | §105 | The `Array` namespace, and `Array.from` | active |
 | §106 | The reference interpreter stores a generator | active |
 | §107 | Binding patterns, by source type and position | active |
+| §108 | A field carries a value before a constructor returns | active |
 
 ## 1. Architecture
 
@@ -15170,7 +15171,7 @@ the interpreter must reproduce; none of them is new.
 4. **`Generator<T> | null` is rejected**, S011 "unions are limited to
    `Ref | null`". A program cannot declare nullable generator storage,
    so §106.3 rule 4's null case is unreachable from a corpus program.
-   That is why §106.6 routes it to a unit test.
+   That is why §106.7 routes it to a unit test.
 
    A consequence, measured: `Map<K, Generator<V>>.get(key)` is
    rejected, correctly, because its result would need that union.
@@ -15194,8 +15195,11 @@ the interpreter must reproduce; none of them is new.
    write and read that key. They do not fall into the handle arm.
 3. **Unpack restores the same coroutine**, so §106.2 rule 1 holds
    through every packed location.
-4. A zero key unpacks to null, as the async arm does. An unknown key
-   is an invalid-LIR error, as the async arm gives.
+4. A zero key unpacks to null and a null packs to a zero key, as the
+   handle arm already did through `as_handle`. An unknown key is an
+   invalid-LIR error, as the async arm gives. *(The pack direction was
+   added 2026-09-10: the rule named only unpack, and a test pinned
+   both.)*
 5. **The registry retains a generator until the interpreter tears
    down.** This is an interpreter resource choice, not a language
    rule, and it is stated because the alternative is unsound: a
@@ -15215,7 +15219,58 @@ any accept entry does**, and reports the result. If one does, this
 section gains a release path, and the round reports that instead of
 inventing one.
 
-### 106.5 Sites
+**Measured 2026-09-10: none does.** `subscript_rt_ctx_live_allocations`
+has no language-surface spelling, and no entry that names
+`Generator<` calls `Context.collect()`.
+
+**The cost is measured and open.** The registry retains about 1.3 to
+1.5 KiB for **every generator ever created**: 200,000 generators hold
+290 MiB against 43 MiB for the same program with none, and 1,000,000
+hold 1,498 MiB. Rule 1 registers at **creation**, and rule 5's
+soundness argument needs only generators that were **packed** — a
+`for (const v of gen())` is retained and can never be unpacked.
+**Registering at pack time bounds the cost and keeps the argument.**
+Nothing observes the retention today, and the 168-entry sweep is green
+in 204 s. Recorded as open; it constrains what a generator-heavy entry
+can be.
+
+### 106.5 Found by the repaired witness
+
+*(Added 2026-09-10 by §106's Phase Review, which measured it.)* This
+section exists because an exclusion that hides a whole value kind
+costs more than the repair. The repaired witness found a defect on its
+first round, and the record belongs here.
+
+**A re-entrant `.next()` on a stored generator kills both production
+tiers with a signal.** A `tsc`-clean program the checker accepts
+reaches itself through storage: a generator holds a reference to its
+own handle and steps it.
+
+| form | measured 2026-09-10 |
+|---|---|
+| reference interpreter | prints `a 1`, then `invalid LIR: coroutine frame is already executing` |
+| dev tier | prints nothing, `program terminated abnormally (dev-JIT child signal 4)` |
+| ship tier | prints `a 1`, then exits 1 |
+| node v24.18.0 | prints `a 1`, then `TypeError: Generator is already running` |
+
+The emitted C carries no re-entry guard: `frame->state` is a
+resume-point index, so the second entry re-enters one frame and
+overwrites its locals. node raises a **catchable** error; this
+language crashes.
+
+**At `19fa6fe` no witness could see it**, because the interpreter
+answered "expected runtime handle, found Coroutine" for the same
+program. The repair exposed it.
+
+Three facts belong with the record. The divergence has no id —
+`collisions.md` names no re-entrancy rule. The interpreter reports
+"invalid LIR" for valid LIR, which is §103's class. And the two tiers
+disagree with each other in how they die.
+
+**This section does not fix it.** A re-entry guard is a change to both
+tiers and is a section of its own. §106 records the measurement.
+
+### 106.6 Sites
 
 - `codegen/src/interpreter.rs`: the registry, the two `Generator`
   arms, and the creation site that registers only async functions.
@@ -15223,7 +15278,7 @@ inventing one.
   header goes when all three forms agree.
 - `specs/blocks/compiler.md` §103.5, the `a217` item.
 
-### 106.6 Corpus and gate (pre-registered exit criteria)
+### 106.7 Corpus and gate (pre-registered exit criteria)
 
 **Accept.** `a217` loses `// interpreter: no`. New entries pin what
 §106.2 states and no entry pins today: two references to one
@@ -15240,8 +15295,11 @@ the map; and an exhausted generator read again from storage.
    included.
 2. `a216` keeps its three witnesses throughout.
 3. Direct pack and unpack unit tests cover identity preservation, a
-   zero key, and an unknown key, because no corpus program can
-   express the last two.
+   zero key, an unknown key, and **the registry's drain**, because no
+   corpus program can express any of the last three. *(The drain was
+   added 2026-09-10: deleting rule 5's branch failed no test, because
+   the map drops with the interpreter anyway and the branch matters
+   only for a cycle through a generator frame's own locals.)*
 4. The async lifecycle tests run, because the adjacent machinery
    shares the coroutine value.
 5. The interpreter sweep reports the exclusion count, and the round
@@ -15410,3 +15468,83 @@ because the same program now reports three.
 5. The round reports which goldens and counted totals moved, and why
    (§103.8 rule 2).
 6. `tools/gate.sh full` green in both profiles.
+
+## 108. A field carries a value before a constructor returns
+
+Origin: §106's Phase Review, which measured a program the checker
+accepts and stock `tsc` rejects. Invariant 5 says every accepted
+program type-checks under stock `tsc`. This one does not, and it also
+reads a reference that is null in a language whose only null is
+`Ref | null`.
+
+Measured 2026-09-10 at `a7c4977`, TypeScript 5.9.2 with the repository
+`tsconfig.json` and `prelude/lang.d.ts`:
+
+| program | this language | stock `tsc` |
+|---|---|---|
+| `class H { x: i32; }` then `h.x` | accepted; prints `0` | `TS2564` |
+| `class H { inner: Inner; }` then `h.inner.v` | accepted; **dev tier dies with signal 11** | `TS2564` |
+| `class H { g: Generator<i32>; }` then `h.g.next()` | accepted; dev tier exits 2 | `TS2564` |
+
+`strictPropertyInitialization` is part of `strict`, which
+`tsconfig.json` sets, so `tsc` requires a field to have an
+initializer, to be definitely assigned in the constructor, to be
+optional, or to carry a `!` assertion.
+
+**Two defects, one cause.** The program fails the `tsc` gate that
+invariant 5 requires, and the second row dereferences a null through a
+field whose type is not nullable. A segmentation fault is not a trap:
+the language's failure channel is a trap with a kind, and C5's memory
+model has no null reference outside `Ref | null`.
+
+**Nothing in the corpus breaks.** The accept corpus is `tsc`-clean by
+gate, so no entry can hold this shape. The fix retires no working
+program, and that is why it is cheap.
+
+### 108.1 The rule
+
+1. **A declared field has an initializer, or the constructor assigns
+   it.** Otherwise the class is rejected, at the field.
+2. **The assignment must be unconditional at the constructor's top
+   level.** `tsc` accepts a definite assignment through both arms of a
+   conditional; this rule does not. **Stricter than `tsc` is
+   permitted** — invariant 5 asks that everything this language
+   accepts, `tsc` accepts, not the reverse — and a definite-assignment
+   analysis is a larger change that this section does not need.
+3. **An optional field and a `!` assertion stay outside this
+   section.** `tsc` accepts both; whether this language wants either
+   is a separate decision, and R16's absence-capable members already
+   cover part of that ground.
+4. The diagnostic names the field, says that `tsc` answers `TS2564`,
+   and names the two spellings that satisfy the rule.
+
+### 108.2 Sites
+
+- The checker's class declaration pass.
+- `specs/blocks/collisions.md` C9, which contracts field initializers
+  and says nothing about a field without one.
+- `specs/blocks/compiler.md` §57, R27's field-initializer section.
+
+### 108.3 Corpus and gate (pre-registered exit criteria)
+
+**Reject**, each at a pinned position with its rule code: a scalar
+field with no initializer; a reference field with no initializer; a
+field assigned only inside a conditional in the constructor. Every one
+is `tsc: rejects TS2564`, measured, so none renders a §79 block
+(§79 rule 4).
+
+**Accept**: a class whose fields are all initialized; a class whose
+constructor assigns every field at its top level; and both together.
+
+**Gate.**
+
+1. Each new reject entry is Red at this section's pin — that is, the
+   pin **accepts** it — and the round records what it printed there.
+2. The round reports every corpus entry, example, benchmark, and test
+   that stops compiling. The prediction is that none does, and
+   §103.8 rule 2 makes that the round's measurement, not this
+   section's claim.
+3. `tsc` reports zero errors over the accept corpus, configuration
+   unchanged.
+4. The round reports which goldens and counted totals moved, and why.
+5. `tools/gate.sh full` green in both profiles.
