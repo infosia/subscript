@@ -769,7 +769,8 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   Q27 reinstated on 2026-07-25. *(Corrected 2026-09-09. Q21 said they
   do not, and the runtime always did: `"a-b".replaceAll("-", "[$&]")`
   is `a[-]b` here and under node.)* Rejected members: `stdlib.md` §8.
-- **Q22 (`Array` methods)** — *(Revised 2026-09-10 by `compiler.md`
+- **Q22 (`Array` methods)** — *(Binding patterns over a `T[]`:
+  `compiler.md` §107, 2026-09-11.)* *(Revised 2026-09-10 by `compiler.md`
   §105: the **`Array` namespace** resolves, and `Array.from(source)`
   is accepted over §14.4's operand list, returning a fresh `T[]` from
   a source evaluated once. `isArray` and `of` are rejected candidates
@@ -1177,6 +1178,9 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   language has none of: a type-system gap independent of Q30.
   `new Map(otherMap)` needs no user-visible tuple and is **open**,
   not refused (`compiler.md` §103.5).
+
+  **A loop binding can be a pattern** over an array or class element
+  (`compiler.md` §107.1, 2026-09-11); a bare `Map` is rejected first.
 
   **The view rules read the receiver type.** *(Added 2026-09-10 by
   `compiler.md` §103.2.)* The subject-only restriction and the

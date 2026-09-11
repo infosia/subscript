@@ -379,6 +379,12 @@ identity across tiers for the four trap paths; §5 item 5 benchmarks
 
 ### 9.0 The `Array` namespace
 
+*(Added 2026-09-11 by `compiler.md` §107.)* An array binding pattern —
+`const [a, b] = xs` — reads a `T[]` through the ordinary checked
+index, so a short source takes `index-out-of-bounds` where JS binds
+`undefined`. §107.2 owns the semantics.
+
+
 *(Added 2026-09-10 by `compiler.md` §105.)* `Array` binds to a builtin
 namespace through ordinary name resolution, in **value** position.
 `Array<T>` in type position stays a builtin that no declaration
@@ -1202,6 +1208,13 @@ exercises them. A pre-registration is not evidence.
 ## 14. P22 — `for…of`, container iteration, array-literal spread (Q30)
 
 ### 14.1 What `for…of` accepts
+
+*(Added 2026-09-11 by `compiler.md` §107.1.)* The loop **binding** can
+be an array pattern when the element type is `T[]` or
+`FixedArray<T, N>`, and a named-field pattern when it is a class. A
+bare `Map` stays out by §104.1, so `for (const [k, v] of map)` is
+rejected there, before any pattern rule runs.
+
 
 `for (const x of e)` where `e` has one of these types, and **nothing
 else** — §14.2 explains why the list cannot be opened up:

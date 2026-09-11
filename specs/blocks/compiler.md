@@ -10583,6 +10583,11 @@ here with no block: `const held = Array;`, `const f = Array.from;`,
 None` rows for `isFinite(value)`, `new Number(value)`,
 `toLocaleString`, `Date.parse`, `reduceRight(callback)`.
 
+*(Second instance, 2026-09-11, from §107's review: a mirror `declare
+function` with a pattern parameter is `tsc`-accepted and rejected here
+with no block, because the `resolve_param_pat` arm outside the
+boundary guard passes no variant.)*
+
 This is a **form gap in rule 4**, not a defect of any one row, so a
 named-site fix does not converge. The total check belongs where
 `compiler/src/api_reference.rs` already walks every generated
@@ -15437,9 +15442,13 @@ and a round that implements any row states the cost it measured.
 
 ### 107.4 A rejected pattern reports once
 
-A pattern this section rejects emits **one** diagnostic, at the
-pattern. It does not then emit an S016 for each name the pattern would
-have bound.
+A pattern this section rejects emits **one** diagnostic, at the part
+of the pattern that carries the reason — the `...rest`, the default,
+the nested pattern — and at the pattern's start where no one part
+does. It does not then emit an S016 for each name the pattern would
+have bound. *(The position was "at the pattern" until 2026-09-11; the
+implementation points at the offending part, which is the better
+place, and the contract follows it.)*
 
 Measured 2026-09-10, and the count differs by position, which is why
 the round fixes the cascade rather than one site:
@@ -15465,20 +15474,24 @@ mixes two forms is not a measurement of either.)*
 
 - `compiler/src/check/mod.rs` and `compiler/src/check/stmt.rs`: every
   existing pattern rejection site. **The round enumerates them before
-  it changes one.** *(Corrected 2026-09-11: this rule said six
-  positions and the enumeration found **nine**, behind five
-  `self.error` call sites, one of which serves four checker paths. The
-  three it missed are a **module-level** declaration, a **mirror
-  `declare const`**, and a **constructor** parameter.)* The nine are a
-  local declaration, a `for…of` binding, a module-level declaration, a
-  mirror `declare const`, four parameter paths — free function, method
-  and static, constructor, lambda — and an assignment target. A fix at
+  it changes one.** *(Corrected 2026-09-11. This rule said six
+  positions. The enumeration found **nine**, behind five `self.error`
+  call sites. One site serves four checker paths. The three the rule
+  missed: a **module-level** declaration, a **mirror `declare
+  const`**, and a **constructor** parameter.)* The nine: a local
+  declaration; a `for…of` binding; a module-level declaration; a
+  mirror `declare const`; four parameter paths — free function, method
+  and static, constructor, lambda; and an assignment target. A fix at
   the declaration reaches none of the others.
 - The lowering, for the accepted forms.
-- `specs/blocks/collisions.md`: a new `### C<n>` record, which §79
-  rule 5 needs for the reject entries.
+- `specs/blocks/collisions.md`: the record §79 rule 5 needs for the
+  reject entries. *(The round cited `compiler.md` §107.1 and §107.3
+  as the ids, which §107.6 permits; no `### C<n>` heading was added.
+  Q22 and Q30 gain a pointer instead — the planner's edit, since a
+  round may not touch `specs/`.)*
 - `specs/blocks/stdlib.md` §9 and §14, where a pattern meets a
-  container.
+  container. *(Also the planner's edit, made 2026-09-11 after the
+  review found both unchanged.)*
 - `compiler/tests/corpus_reject.rs`.
 
 ### 107.6 Corpus and gate (pre-registered exit criteria)
