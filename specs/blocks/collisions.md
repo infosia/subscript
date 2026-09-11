@@ -231,7 +231,10 @@ assignment prefix ends, are rejected since 2026-09-12: §108.4.)*
 initializer runs on every construction, in declaration order, with
 or without a declared constructor. Constructor arguments evaluate
 before the initializers; the constructor body runs after them.
-This is the TS order (measured under `node`, exit 0).
+This is the TS order (measured under `node`, exit 0). A parameter
+default of an absent argument evaluates after the initializers,
+with `this` bound to the instance (`compiler.md` §57.1 step 4;
+measured under `node` 2026-09-12: `5 5`).
 
 A field initializer must not read `this`. Stock `tsc` accepts
 `this` there, so this is a narrowing: the checker rejects it with

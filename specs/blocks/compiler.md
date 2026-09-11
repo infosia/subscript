@@ -6444,11 +6444,17 @@ tiers observe this order:
 2. The construction zero-initializes the instance.
 3. The declared field initializers run in declaration order, once
    per construction, with or without a declared constructor.
-4. The declared constructor body runs after the initializers.
+4. The parameter defaults of the absent arguments evaluate left to
+   right, with `this` bound to the instance. *(Added 2026-09-12 by
+   the §108.4 Phase Review. Both tiers evaluated a default before
+   step 3, so `constructor(n: i32 = this.count)` with `count: i32 =
+   5` read `0`; `node` prints `5`: ECMA runs the field initializers
+   before the parameter defaults.)*
+5. The declared constructor body runs after the defaults.
 
-Steps 2–4 are ordered against step 1 only where observable: no
-argument side effect interleaves with an initializer or with the
-constructor body.
+Steps 2–5 are ordered against step 1 only where observable: no
+argument side effect interleaves with an initializer, a parameter
+default, or the constructor body.
 
 A field initializer must not read `this`. The checker checks each
 field initializer in a context with no `this` binding, so `this`
@@ -15604,7 +15610,11 @@ program, and that is why it is cheap.
      constructor: the host, or the declaration's own author, populates
      it. `tsc` exempts an ambient declaration from `TS2564`, and it
      answers **`TS1039`** for an initializer inside one, so **neither
-     spelling rule 1 offers is legal there**. Rule 1 does not reach an
+     spelling rule 1 offers is legal there**. A program-file ambient
+     class has no producer in a program file: §108.4 rule 5 rejects
+     `new`, and a program-file `declare function` is S100 "function
+     bodies are required". It names a type only. *(Added 2026-09-12
+     by the Phase Review.)* Rule 1 does not reach an
      ambient declaration, **generic or not** — a generic template's
      instances inherit its ambient status. *(Corrected 2026-09-12: the
      first draft named "a declaration checked under the boundary
@@ -15734,8 +15744,8 @@ with `this.inner = new Inner();` at the constructor's top level.
 
 **Rule 5 — `new` on an ambient class that is not a mirror is
 rejected, at the `new`.** A mirror class, one a `.d.ts` file
-declares, is outside the rule: `lower_new` (`codegen/src/lir.rs`)
-stores every argument into the field at the same position, which is
+declares, is outside the rule. `lower_new` (`codegen/src/lir.rs`)
+stores every argument into the field at the same position. That is
 the mirror constructor's contract. A program-file `declare class`
 has no constructor body and no positional store, so no argument
 reaches a field; the table's second row prints `0` for `new P(5)`.
@@ -15747,14 +15757,23 @@ so the site carries a variant, `collision: "compiler.md §108"`. A
 generic `new Ext<i32>()` on `declare class Ext<T>` reaches the same
 site through its instance.
 
-**Rule 6 — `this` before the assignment prefix ends.** The
-*assignment prefix* of a constructor is its parameter defaults,
-followed by its top-level statements up to and including the last
-top-level statement that assigns a field rule 1 reaches. A field
-*holds a value* at a statement when it has an initializer, or when a
-top-level statement earlier in the prefix assigns it. That is rule
-2's notion: a nested assignment does not count, and the statement's
-own target does not count.
+**Rule 6 — `this` before the assignment prefix ends.** *(Rewritten
+2026-09-12 by the Phase Review; the first form was positional.)*
+
+Definitions:
+
+- A *rule-1 field* is a field with no initializer that rule 1
+  reaches.
+- A field *holds a value* at a statement when it has an initializer,
+  or when a top-level statement earlier in the prefix assigns it.
+  That is rule 2's notion. A nested assignment does not count. The
+  statement's own target does not count.
+- The *assignment prefix* of a constructor starts with its parameter
+  defaults. It continues with the top-level statements, up to and
+  including the first one after which every rule-1 field holds a
+  value. If no such statement exists, the prefix is the whole
+  constructor. Rule 1 rejects that class as well, and both report.
+- A class with no rule-1 field has an empty prefix.
 
 Inside the prefix, at any statement or expression depth, `this`
 appears in two forms only:
@@ -15765,27 +15784,37 @@ appears in two forms only:
   `this.g.x = …`, a compound assignment `this.g += …`, an increment,
   an argument, and the receiver `this.g.m()`.
 
-Every other appearance is rejected at the `this`, with the field
-names that hold no value there:
+Every other appearance is rejected at the `this`:
 
-- **Site A**: a read `this.g` where `g` does not hold a value. `tsc`
-  answers TS2565 for each measured form, so the site carries no
-  variant. One `tsc`-accepted form reaches it — a read after a
-  conditional whose both arms assign the field, before the top-level
-  assignment — and a test that runs `tsc` pins that form and its
-  site (§79 rule 6).
+- **Site A**: a read `this.g` where `g` does not hold a value. The
+  message names `g`. `tsc` answers TS2565 for a read that no
+  assignment precedes, so the site carries no variant. One class of
+  `tsc`-accepted programs reaches it: a read after a nested
+  assignment of the field and before its top-level assignment. `tsc`
+  follows the nested assignment; rule 2 does not. A test that runs
+  `tsc` pins one form per statement shape and asserts the site (§79
+  rule 6). The shapes: both arms of a conditional, the same arm, a
+  loop body, and a chained assignment `this.a = this.b = …`.
 - **Site B**: a method or accessor call on `this`, or `this` as a
   value — an argument, an initializer, an assignment source, a return
-  value. `tsc` accepts these (the table's rows 7 and 8): its
+  value. The message names every rule-1 field that holds no value
+  there. `tsc` accepts these (the table's rows 7 and 8): its
   definite-assignment analysis does not follow a call. The site
   carries a variant, `collision: "compiler.md §108"`, and its `why`
   states that the callee can read a field that holds no value.
 
-A lambda body cannot mention `this` (§57.1, C9), so rule 6 does not
-reach one. A constructor whose class has no rule-1 field has an
-empty prefix. After the prefix every rule-1 field holds a value, and
+A parameter default evaluates after the field initializers (§57.1
+step 4), so an initialized field holds a value inside a default. A
+lambda body cannot mention `this` (§57.1, C9), so rule 6 does not
+reach one. After the prefix every rule-1 field holds a value, and
 the rule ends. Rule 1 and rule 6 are independent: a class that
 violates both reports both.
+
+Each rule 6 diagnostic names two spellings: move the use after the
+assignment of the named field or fields, or give each named field an
+initializer. Site A names the read field. Site B names every rule-1
+field that holds no value at the use, and the prefix definition
+makes that list non-empty.
 
 **Corpus.** Reject, four entries, each S100 at a pinned position:
 
@@ -15800,16 +15829,26 @@ violates both reports both.
 
 Test-pinned forms, in the `RecordedForm` shape (§79 rule 6): each
 runs `tsc`, compares its code, and asserts the `Divergence` variant
-or its absence. `new P(5)` with a declared bodiless constructor
-(`tsc` accepts; rule 5 site); `this.inner = this.inner` (TS2565;
-site A); the nested read (TS2565; site A); the parameter-default
-read (TS2565; site A); the both-arms-then-read form (`tsc` accepts;
-site A, no block); `new Ext<i32>()` on `declare class Ext<T>` (`tsc`
-accepts; rule 5 site).
+or its absence.
 
-Accept, one entry, `js-comparable: yes`, row 10's shape: an
-initialized field read and reassigned, an earlier-assigned field
-read, then a method call and `this` as an argument after the prefix.
+- `new P(5)` with a declared bodiless constructor: `tsc` accepts;
+  rule 5 site.
+- `new Ext<i32>()` on `declare class Ext<T>`: `tsc` accepts; rule 5
+  site.
+- `this.inner = this.inner`: TS2565; site A.
+- The nested read: TS2565; site A.
+- The parameter-default read of a rule-1 field: TS2565; site A.
+- The four nested-assignment forms above: `tsc` accepts; site A, no
+  block.
+
+Accept, two entries, `js-comparable: yes`:
+
+- Row 10's shape: an initialized field read and reassigned, an
+  earlier-assigned field read, then a method call and `this` as an
+  argument after the prefix.
+- A parameter default that reads an initialized field, `count: i32 =
+  5` and `constructor(n: i32 = this.count)`, with the golden `5 5`
+  (§57.1 step 4). *(Added 2026-09-12 by the Phase Review.)*
 
 **Gate.**
 
@@ -15818,10 +15857,10 @@ read, then a method call and `this` as an argument after the prefix.
    The table above is the measurement at `4148eab`.
 2. The round reports every corpus entry, example, benchmark, doc
    block, test, and interop mirror that stops compiling. A regex
-   pass over 140 constructors with a rule-1 field, in
+   pass (2026-09-12) read 140 constructors with a rule-1 field in
    `corpus/accept`, `corpus/warn`, `corpus/trap`, `examples`, and
-   `benchmarks`, found no `this` inside a prefix beyond forms (a)
-   and (b) (2026-09-12). The round's build is the measurement.
+   `benchmarks`. It found no `this` inside a prefix beyond forms (a)
+   and (b). The round's build is the measurement.
 3. `tsc` reports zero errors over the accept corpus, configuration
    unchanged.
 4. The round reports which goldens and counted totals moved, and
@@ -15829,20 +15868,40 @@ read, then a method call and `this` as an argument after the prefix.
 5. `tools/gate.sh full` green in both profiles.
 
 **After the implementation round.** *(Recorded 2026-09-12 from
-`REPORT-113`.)* Three answers the round took, each a consequence of
-the rule as written:
+`REPORT-113`.)* The site A message names no `tsc` code: a
+`tsc`-accepted class reaches the site, and §108.1 rule 4 forbids the
+claim where `tsc` does not answer it. Blast radius, measured: one
+test built `new Box()` on a program-file `declare class Box` for a
+receiver, and now takes the receiver as a parameter. No corpus
+entry, example, benchmark, doc block, or interop mirror stopped
+compiling.
 
-- When a class has a rule-1 field and no top-level statement assigns
-  it, the prefix holds no statement. Rule 1 reports alone.
-- The prefix is positional. A site B use inside the last statement
-  of the prefix is rejected when every rule-1 field already holds a
-  value there, which a second top-level assignment of one field
-  produces. The message then names no field.
-- The site A message names no `tsc` code. A `tsc`-accepted form
-  reaches the site, and §108.1 rule 4 forbids the claim where `tsc`
-  does not answer it.
+**Phase Review, 2026-09-12.** One CRITICAL, two MAJOR, seven MINOR.
 
-Blast radius, measured: one test built `new Box()` on a program-file
-`declare class Box` for a receiver, and now takes the receiver as a
-parameter. No corpus entry, example, benchmark, doc block, or interop
-mirror stopped compiling.
+- CRITICAL: form (b) said an initialized field holds a value inside
+  a parameter default, and both tiers evaluated the default before
+  the initializers. Measured: `count: i32 = 5`, `constructor(n: i32
+  = this.count)` printed `0 5` on both tiers; `node` prints `5 5`. A
+  reference field in the same position died with signal 11. Fixed
+  in §57.1 step 4: the tiers move the default evaluation after the
+  initializers. Both tiers agreed, so no golden saw it (core
+  principle 12); the new accept entry is the record.
+- MAJOR: site A was reached by four `tsc`-accepted forms and the
+  text named one. Fixed above: the class is named, and one form per
+  statement shape is pinned.
+- MAJOR: the prefix ended at the last rule-1 assignment. A site B
+  use after every field held a value was rejected, the message named
+  no field, and the advice changed the program. Fixed above: the
+  prefix ends at the first statement after which every rule-1 field
+  holds a value.
+- MINOR, fixed, six: the after-round note said rule 1 reports alone
+  when no top-level statement assigns the field. A parameter default
+  that reads the field also reports site A, and `tsc` answers TS2564
+  and TS2565 there. Eight sentences were over 25 words. Rule 3 named
+  a producer that a program-file ambient class does not have. No test
+  pinned the receiver form `this.g.m()` at site A. The text did not
+  say which site names which fields. The text did not say how many
+  spellings the diagnostic names.
+- MINOR, open: a generic class reports rule 6 once per instance at
+  the template position, as rule 1 does. A class-level rule reports
+  once. Recorded, not fixed here.
