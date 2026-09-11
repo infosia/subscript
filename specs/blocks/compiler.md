@@ -6391,6 +6391,9 @@ bindgen unit test for the guard becomes an acceptance test.
 
 ## 57. R27 — field initializers run on every construction
 
+*(A field with **no** initializer and no unconditional constructor
+assignment is rejected since 2026-09-12: `compiler.md` §108.)*
+
 A downstream report (R27, 2026-08-15): a `@CStruct` class with no
 constructor and a field initializer `value: i32 = 37` prints
 `field:37` on the dev tier and `field:0` on the ship tier. Both
@@ -15579,8 +15582,14 @@ program, and that is why it is cheap.
    reference field left unassigned behind `!` is the signal-11 row of
    the table above with a different spelling.)*
 2. **The assignment must be unconditional at the constructor's top
-   level.** `tsc` accepts a definite assignment through both arms of a
-   conditional; this rule does not. **Stricter than `tsc` is
+   level, and no statement before it can leave the constructor.** A
+   top-level `this.f = …` counts only if every statement before it
+   contains no `return` at any depth. *(Corrected 2026-09-12: the
+   first implementation read "top level" as "is a top-level
+   statement", so `if (flag) { return; } this.inner = new Inner();`
+   was accepted — `tsc` answers `TS2564`, and the run dies with
+   signal 11.)* `tsc` accepts a definite assignment through both arms
+   of a conditional; this rule does not. **Stricter than `tsc` is
    permitted** — invariant 5 asks that everything this language
    accepts, `tsc` accepts, not the reverse — and a definite-assignment
    analysis is a larger change that this section does not need.
@@ -15594,11 +15603,14 @@ program, and that is why it is cheap.
      it. `tsc` exempts an ambient declaration from `TS2564`, and it
      answers **`TS1039`** for an initializer inside one, so **neither
      spelling rule 1 offers is legal there**. Rule 1 does not reach an
-     ambient declaration. *(Corrected 2026-09-12: the first draft
-     named "a declaration checked under the boundary flag", which
-     covers the 89 `corpus/interop` mirrors — all 89 carry such a
-     field, 259 fields in all — and misses a program-file `declare
-     class`.)*
+     ambient declaration, **generic or not** — a generic template's
+     instances inherit its ambient status. *(Corrected 2026-09-12: the
+     first draft named "a declaration checked under the boundary
+     flag", which covers the 89 `corpus/interop` mirrors — all 89
+     carry such a field, 259 fields in all — and misses a program-file
+     `declare class`. The first implementation then reached
+     `declare class Ext<T> { value: T; }` through its instances, which
+     the pin accepted and `tsc` accepts.)*
    - **An R16 absence-capable member** — `name?: A` inside a
      `@Descriptor` class — is accepted by R16 and by `tsc`. Outside a
      `@Descriptor` class an optional field is already S012 ("optional
@@ -15632,12 +15644,25 @@ inside one, so the field stays null and `new` hands it out. The
 decision this needs — reject `new` on a program-file `declare class`,
 or make the read trap — is not taken here.
 
+**Reads before the assignment, same root.** *(Recorded 2026-09-12 by
+the Phase Review.)* Rule 1 is satisfied by a top-level assignment,
+and a read that comes **before** it still sees null: a `print` of the
+field, `this.inner = this.inner`, or a method call that reads the
+field. `tsc` answers `TS2565` for the first two and **accepts** the
+method-call form; all three check clean here and die with signal 11,
+on both tiers, at the pin and now. The method-call form is a core
+principle 12 record with no golden. Ordering the reads after the
+assignment is a definite-assignment analysis, which rule 2 declined;
+this section records the gap and takes no decision.
+
 ### 108.2 Sites
 
 - The checker's class declaration pass.
 - `specs/blocks/collisions.md` C9, which contracts field initializers
-  and says nothing about a field without one.
+  and says nothing about a field without one. *(Pointer added
+  2026-09-12.)*
 - `specs/blocks/compiler.md` §57, R27's field-initializer section.
+  *(Pointer added 2026-09-12.)*
 
 ### 108.3 Corpus and gate (pre-registered exit criteria)
 

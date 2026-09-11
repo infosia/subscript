@@ -220,6 +220,11 @@ call. Measured before the revision: `node` printed
 
 ### C9. Field initializers — every construction, no `this`
 
+*(A field with no initializer and no unconditional constructor
+assignment is rejected since 2026-09-12: `compiler.md` §108. An
+ambient `declare class`, an R16/R17 Descriptor member, and a static
+field are outside that rule, each for its own reason.)*
+
 *(R27, 2026-08-15; `compiler.md` §57.)* A declared field
 initializer runs on every construction, in declaration order, with
 or without a declared constructor. Constructor arguments evaluate
