@@ -15588,20 +15588,49 @@ program, and that is why it is cheap.
    reason.** *(Rewritten 2026-09-11; the first draft said "an optional
    field and a `!` assertion stay outside", which a round can read as
    "reject" or as "accept".)*
-   - **A mirror field.** A `declare class` in a `.d.ts` mirror has no
-     initializer and no constructor: the host populates it. `tsc`
-     exempts an ambient declaration from `TS2564`, and
-     `corpus/interop` holds 89 such classes. Rule 1 does not reach a
-     declaration checked under the boundary flag.
+   - **An ambient declaration.** A `declare class` — in a `.d.ts`
+     mirror, or in a program file — has no initializer and no
+     constructor: the host, or the declaration's own author, populates
+     it. `tsc` exempts an ambient declaration from `TS2564`, and it
+     answers **`TS1039`** for an initializer inside one, so **neither
+     spelling rule 1 offers is legal there**. Rule 1 does not reach an
+     ambient declaration. *(Corrected 2026-09-12: the first draft
+     named "a declaration checked under the boundary flag", which
+     covers the 89 `corpus/interop` mirrors — all 89 carry such a
+     field, 259 fields in all — and misses a program-file `declare
+     class`.)*
    - **An R16 absence-capable member** — `name?: A` inside a
      `@Descriptor` class — is accepted by R16 and by `tsc`. Outside a
      `@Descriptor` class an optional field is already S012 ("optional
      properties imply `undefined`"), so rule 1 never sees one.
+   - **An R17 required Descriptor member** — `name!: T` inside a
+     `@Descriptor` class — is the spelling R17 contracts for a member
+     the literal must supply. `tsc` accepts it, and `a92`, `a117` and
+     `a149` hold it. Rule 1's `!` clause reaches an ordinary class
+     only. *(Added 2026-09-12 after the implementation round measured
+     the three entries.)*
    - **A static field** without an initializer is already S100
      ("static fields require an initializer"), which is stricter than
      `tsc` and predates this section. Rule 1 leaves it to that rule.
-4. The diagnostic names the field, says that `tsc` answers `TS2564`,
-   and names the two spellings that satisfy the rule.
+4. The diagnostic names the field and names the two spellings that
+   satisfy the rule. **It says that `tsc` answers `TS2564` only where
+   `tsc` does** — a bare field. For the `!` form and for a field
+   assigned in both arms of a conditional, `tsc` accepts the program,
+   the diagnostic renders the §79 block instead, and the block's
+   `why` carries the reason. *(Corrected 2026-09-12: the first draft
+   claimed `TS2564` for every form.)*
+
+### 108.1a Found by the round, open
+
+*(Recorded 2026-09-12 from the implementation round's report.)* A
+program-file `declare class Ext { inner: Inner; }`, constructed with
+`new Ext()` and read as `e.inner.v`, is `tsc`-clean, checks clean, and
+**dies with signal 11** — identical at the pin and now. It is this
+section's own table row in a spelling rule 1 cannot reach: rule 3
+exempts the ambient declaration because `tsc` allows no initializer
+inside one, so the field stays null and `new` hands it out. The
+decision this needs — reject `new` on a program-file `declare class`,
+or make the read trap — is not taken here.
 
 ### 108.2 Sites
 
@@ -15614,14 +15643,19 @@ program, and that is why it is cheap.
 
 **Reject**, each at a pinned position with its rule code: a scalar
 field with no initializer; a reference field with no initializer; a
-`!` field with no initializer and no assignment; a field assigned in
-**one** branch of a constructor conditional; and a field assigned in
-**both** branches.
+`!` field with no initializer and no assignment; and a field assigned
+in **both** branches of a constructor conditional. **Four entries.**
+*(Corrected 2026-09-12. The first draft asked for a fifth, the
+**one**-branch form. It shares a checker site with the both-branch
+form; §79 rule 6 fixes that site's variant, and a `tsc: rejects`
+entry cannot sit at a site that carries one. The one-branch form is
+pinned by the `RecordedForm` test that runs `tsc`, as rule 6
+prescribes.)*
 
 **The round measures each entry's `tsc` class** (§103.8 rule 2).
-Measured 2026-09-11 for two of them, so the shape is known: the
-one-branch form is `TS2564` and renders no block; the both-branch form
-is **`tsc`-accepted** — `tsc` follows definite assignment through both
+Measured 2026-09-11 for two forms, so the shape is known: the
+one-branch form is `TS2564`, and it lives in the `RecordedForm` test
+rather than the corpus; the both-branch form is **`tsc`-accepted** — `tsc` follows definite assignment through both
 arms and rule 2 does not — so that entry renders the §79 block, and
 its `collision` id names this section. That entry is the one place
 rule 2 retires a program `tsc` accepts, and it is safe: both arms
