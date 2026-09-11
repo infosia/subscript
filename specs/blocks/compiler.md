@@ -15554,17 +15554,36 @@ program, and that is why it is cheap.
 ### 108.1 The rule
 
 1. **A declared field has an initializer, or the constructor assigns
-   it.** Otherwise the class is rejected, at the field.
+   it.** Otherwise the class is rejected, at the field. **A `!`
+   assertion does not satisfy the rule.** *(Added 2026-09-11,
+   measured: `class H { x!: i32; }` is accepted today and `tsc`
+   accepts it, so invariant 5 does not force this — C5's memory model
+   does. The assertion tells `tsc` to trust the author; this language
+   has no runtime null check on a non-nullable reference, so a
+   reference field left unassigned behind `!` is the signal-11 row of
+   the table above with a different spelling.)*
 2. **The assignment must be unconditional at the constructor's top
    level.** `tsc` accepts a definite assignment through both arms of a
    conditional; this rule does not. **Stricter than `tsc` is
    permitted** — invariant 5 asks that everything this language
    accepts, `tsc` accepts, not the reverse — and a definite-assignment
    analysis is a larger change that this section does not need.
-3. **An optional field and a `!` assertion stay outside this
-   section.** `tsc` accepts both; whether this language wants either
-   is a separate decision, and R16's absence-capable members already
-   cover part of that ground.
+3. **Three field kinds are outside rule 1, each for a measured
+   reason.** *(Rewritten 2026-09-11; the first draft said "an optional
+   field and a `!` assertion stay outside", which a round can read as
+   "reject" or as "accept".)*
+   - **A mirror field.** A `declare class` in a `.d.ts` mirror has no
+     initializer and no constructor: the host populates it. `tsc`
+     exempts an ambient declaration from `TS2564`, and
+     `corpus/interop` holds 89 such classes. Rule 1 does not reach a
+     declaration checked under the boundary flag.
+   - **An R16 absence-capable member** — `name?: A` inside a
+     `@Descriptor` class — is accepted by R16 and by `tsc`. Outside a
+     `@Descriptor` class an optional field is already S012 ("optional
+     properties imply `undefined`"), so rule 1 never sees one.
+   - **A static field** without an initializer is already S100
+     ("static fields require an initializer"), which is stricter than
+     `tsc` and predates this section. Rule 1 leaves it to that rule.
 4. The diagnostic names the field, says that `tsc` answers `TS2564`,
    and names the two spellings that satisfy the rule.
 
@@ -15579,9 +15598,21 @@ program, and that is why it is cheap.
 
 **Reject**, each at a pinned position with its rule code: a scalar
 field with no initializer; a reference field with no initializer; a
-field assigned only inside a conditional in the constructor. Every one
-is `tsc: rejects TS2564`, measured, so none renders a §79 block
-(§79 rule 4).
+`!` field with no initializer and no assignment; a field assigned in
+**one** branch of a constructor conditional; and a field assigned in
+**both** branches.
+
+**The round measures each entry's `tsc` class** (§103.8 rule 2).
+Measured 2026-09-11 for two of them, so the shape is known: the
+one-branch form is `TS2564` and renders no block; the both-branch form
+is **`tsc`-accepted** — `tsc` follows definite assignment through both
+arms and rule 2 does not — so that entry renders the §79 block, and
+its `collision` id names this section. That entry is the one place
+rule 2 retires a program `tsc` accepts, and it is safe: both arms
+assign. The record says so, and names a definite-assignment analysis
+as the path back. *(The first draft said every reject entry is
+`tsc: rejects`. It predicted a measurement, and the prediction was
+wrong for the both-branch form.)*
 
 **Accept**: a class whose fields are all initialized; a class whose
 constructor assigns every field at its top level; and both together.
@@ -15590,10 +15621,11 @@ constructor assigns every field at its top level; and both together.
 
 1. Each new reject entry is Red at this section's pin — that is, the
    pin **accepts** it — and the round records what it printed there.
-2. The round reports every corpus entry, example, benchmark, and test
-   that stops compiling. The prediction is that none does, and
-   §103.8 rule 2 makes that the round's measurement, not this
-   section's claim.
+2. The round reports every corpus entry, example, benchmark, test,
+   and **interop mirror** that stops compiling. Rule 2 can reach a
+   constructor that assigns inside a conditional, and rule 3's mirror
+   exemption is what keeps the 89 `corpus/interop` classes compiling;
+   both are the round's measurement, not this section's claim.
 3. `tsc` reports zero errors over the accept corpus, configuration
    unchanged.
 4. The round reports which goldens and counted totals moved, and why.
