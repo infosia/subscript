@@ -8350,6 +8350,24 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
+        // compiler.md §108.4 rule 5: a `declare class` in a program file
+        // has no constructor body and no positional store, so no argument
+        // reaches a field. A mirror class keeps `new`: `lower_new` stores
+        // every argument into the field at the same position, which is the
+        // mirror constructor's contract. An instance of an ambient generic
+        // template reaches this site through the template's status.
+        if self.declared_classes.contains(&class_id) && !self.classes[class_id.0].is_boundary {
+            self.error_diverging(
+                RuleCode::S100,
+                format!(
+                    "ambient class `{name}` is obtained from the host, not constructed, because \
+                     a `declare class` has no constructor body"
+                ),
+                pos.clone(),
+                Divergence::AmbientClassConstruction,
+            );
+            return self.err_expr(pos);
+        }
         if self.classes[class_id.0].is_descriptor {
             self.error_diverging(
                 RuleCode::S100,

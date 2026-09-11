@@ -517,6 +517,112 @@ fn collect_this_field_assignments(node: hir::HirChild<'_>, names: &mut HashSet<S
     }
 }
 
+/// One `this` that compiler.md §108.4 rule 6 rejects.
+#[derive(Debug)]
+enum PrefixThis {
+    /// Site A: a read `this.g` of a field that holds no value.
+    Read(String),
+    /// Site B: a method or an accessor call on `this`.
+    Call,
+    /// Site B: `this` as a value.
+    Value,
+}
+
+/// Collects every `this` that compiler.md §108.4 rule 6 rejects below
+/// `node`, at every statement and expression depth. `held` names the
+/// fields that hold a value at the statement that carries `node`.
+///
+/// Two forms are legal. Form (a) is the target of `this.f = …`, so the
+/// walk reads the value of such an assignment and leaves the target.
+/// Form (b) is a read `this.g` of a field in `held`: an operand, a
+/// member write `this.g.x = …`, a compound assignment, an increment, an
+/// argument, and the receiver of `this.g.m()` all lower to that shape.
+/// A lambda body cannot mention `this`, so the walk finds none there.
+fn prefix_this_violations(
+    node: hir::HirChild<'_>,
+    held: &HashSet<String>,
+    out: &mut Vec<(Pos, PrefixThis)>,
+) {
+    let expression = match node {
+        hir::HirChild::Stmt(statement) => {
+            for child in statement.children() {
+                prefix_this_violations(child, held, out);
+            }
+            return;
+        }
+        hir::HirChild::Expr(expression) => expression,
+    };
+    match &expression.kind {
+        hir::ExprKind::Assign {
+            op: None,
+            target,
+            value,
+        } if matches!(&target.kind, hir::ExprKind::Field { obj, .. }
+            if matches!(obj.kind, hir::ExprKind::This)) =>
+        {
+            prefix_this_violations(hir::HirChild::Expr(value), held, out);
+        }
+        hir::ExprKind::Field { obj, name } if matches!(obj.kind, hir::ExprKind::This) => {
+            if !held.contains(name.as_str()) {
+                out.push((obj.pos.clone(), PrefixThis::Read(name.clone())));
+            }
+        }
+        hir::ExprKind::Call {
+            callee: hir::Callee::Method { recv, .. },
+            args,
+        } if matches!(recv.kind, hir::ExprKind::This) => {
+            out.push((recv.pos.clone(), PrefixThis::Call));
+            for argument in args {
+                prefix_this_violations(hir::HirChild::Expr(argument), held, out);
+            }
+        }
+        hir::ExprKind::This => out.push((expression.pos.clone(), PrefixThis::Value)),
+        _ => {
+            for child in expression.children() {
+                prefix_this_violations(child, held, out);
+            }
+        }
+    }
+}
+
+/// Moves every `this` that one statement of the prefix carries into
+/// `collected`, beside the fields that hold no value at that statement.
+fn record_prefix_violations(
+    found: Vec<(Pos, PrefixThis)>,
+    rule_one_fields: &[String],
+    held: &HashSet<String>,
+    collected: &mut Vec<(Pos, PrefixThis, Vec<String>)>,
+) {
+    if found.is_empty() {
+        return;
+    }
+    let missing: Vec<String> = rule_one_fields
+        .iter()
+        .filter(|name| !held.contains(name.as_str()))
+        .cloned()
+        .collect();
+    for (pos, kind) in found {
+        collected.push((pos, kind, missing.clone()));
+    }
+}
+
+/// Names the fields of a compiler.md §108.4 site B diagnostic, with the
+/// verb that agrees with the count.
+fn field_list(names: &[String]) -> Option<(String, &'static str)> {
+    match names {
+        [] => None,
+        [only] => Some((format!("field `{only}`"), "holds")),
+        many => {
+            let listed = many
+                .iter()
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some((format!("fields {listed}"), "hold"))
+        }
+    }
+}
+
 /// One function (or lambda) frame.
 #[derive(Debug)]
 pub(crate) struct Frame {
@@ -846,6 +952,10 @@ pub(crate) struct Checker<'p> {
     pub foreign_mirror_ids: HashMap<usize, hir::ForeignMirrorId>,
     /// Class ids that are opaque handles (empty branded nominal types).
     pub handle_classes: HashSet<ClassId>,
+    /// Class ids that an ambient `declare class` declares, in a mirror or
+    /// in a program file. compiler.md §108.4 rule 5 rejects `new` on the
+    /// program-file half; §108.1 rule 3 keeps every field outside rule 1.
+    pub declared_classes: HashSet<ClassId>,
     /// Runtime handle classification for each entry in `classes`.
     pub type_handle_classes: Vec<crate::types::HandleClass>,
     /// Class ids that are boundary structs: value-layout structs whose
@@ -1092,6 +1202,7 @@ pub(crate) fn run(
         foreign_mirrors: Vec::new(),
         foreign_mirror_ids: HashMap::new(),
         handle_classes: HashSet::new(),
+        declared_classes: HashSet::new(),
         type_handle_classes: Vec::new(),
         boundary_classes: HashSet::new(),
         type_aliases: HashMap::new(),
@@ -3931,6 +4042,9 @@ impl<'p> Checker<'p> {
     /// Resolves a class's fields and callable signatures (pass B), and
     /// enforces C2 (no inheritance for value classes; field whitelist).
     pub(crate) fn resolve_class_shape(&mut self, id: ClassId, class: &ast::Class, declared: bool) {
+        if declared {
+            self.declared_classes.insert(id);
+        }
         let is_value = self.classes[id.0].is_value;
         let is_descriptor = self.classes[id.0].is_descriptor;
         let mut index_signature_pos = None;
@@ -5578,6 +5692,105 @@ impl<'p> Checker<'p> {
                     pos,
                 );
             }
+        }
+        self.check_this_in_assignment_prefix(id, &spellings);
+    }
+
+    /// compiler.md §108.4 rule 6: `this` inside the constructor's
+    /// assignment prefix appears in two forms only. Form (a) is the
+    /// target of `this.f = …`, at any depth. Form (b) is a read `this.g`
+    /// of a field that holds a value at that statement.
+    ///
+    /// The assignment prefix is the constructor's parameter defaults,
+    /// followed by its top-level statements up to and including the last
+    /// top-level statement that assigns a field rule 1 reaches. A field
+    /// holds a value when it has an initializer, or when a top-level
+    /// statement earlier in the prefix assigns it. That is rule 2's
+    /// notion: a nested assignment does not count, and the statement's
+    /// own target does not count. A class with no rule-1 field has an
+    /// empty prefix, and after the prefix every rule-1 field holds a
+    /// value.
+    ///
+    /// Site A is a read of a field that holds no value. Stock `tsc`
+    /// answers TS2565 for the measured forms, so the site carries no
+    /// variant. Site B is a method or an accessor call on `this`, or
+    /// `this` as a value; `tsc` accepts those, because its
+    /// definite-assignment analysis does not follow a call.
+    fn check_this_in_assignment_prefix(
+        &mut self,
+        id: ClassId,
+        spellings: &HashMap<String, FieldSpelling>,
+    ) {
+        let rule_one_fields: Vec<String> = self.classes[id.0]
+            .fields
+            .iter()
+            .filter(|field| field.init.is_none() && field.ty != Type::Error)
+            .filter(|field| !spellings.get(&field.name).is_some_and(|s| s.optional))
+            .map(|field| field.name.clone())
+            .collect();
+        if rule_one_fields.is_empty() {
+            return;
+        }
+        let mut held: HashSet<String> = self.classes[id.0]
+            .fields
+            .iter()
+            .map(|field| field.name.clone())
+            .filter(|name| !rule_one_fields.contains(name))
+            .collect();
+        let Some(ctor) = self.classes[id.0].ctor.as_ref() else {
+            return;
+        };
+        let mut collected: Vec<(Pos, PrefixThis, Vec<String>)> = Vec::new();
+        let mut found = Vec::new();
+        for parameter in &ctor.params {
+            if let Some(default) = &parameter.default {
+                prefix_this_violations(hir::HirChild::Expr(default), &held, &mut found);
+            }
+        }
+        record_prefix_violations(found, &rule_one_fields, &held, &mut collected);
+        let end = ctor.body.iter().rposition(|statement| {
+            this_field_assignment(statement)
+                .is_some_and(|name| rule_one_fields.iter().any(|field| field == name))
+        });
+        let prefix = end.map_or(&[][..], |end| &ctor.body[..=end]);
+        for statement in prefix {
+            let mut found = Vec::new();
+            prefix_this_violations(hir::HirChild::Stmt(statement), &held, &mut found);
+            record_prefix_violations(found, &rule_one_fields, &held, &mut collected);
+            if let Some(name) = this_field_assignment(statement) {
+                held.insert(name.to_string());
+            }
+        }
+        let class_name = self.classes[id.0].name.clone();
+        for (pos, kind, missing) in collected {
+            let (use_site, advice) = match kind {
+                PrefixThis::Read(name) => {
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "`this.{name}` reads field `{name}` of `{class_name}` before the \
+                             constructor assigns it at its top level; move the read after \
+                             `this.{name} = …`"
+                        ),
+                        pos,
+                    );
+                    continue;
+                }
+                PrefixThis::Call => ("calls a member of `this`", "move the call"),
+                PrefixThis::Value => ("uses `this` as a value", "move the use"),
+            };
+            let before = field_list(&missing).map_or_else(String::new, |(names, verb)| {
+                format!(" before {names} {verb} a value")
+            });
+            self.error_diverging(
+                RuleCode::S100,
+                format!(
+                    "the constructor of `{class_name}` {use_site}{before}; {advice} after the \
+                     last top-level field assignment"
+                ),
+                pos,
+                Divergence::ThisBeforeFieldValues,
+            );
         }
     }
 

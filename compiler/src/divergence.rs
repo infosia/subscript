@@ -175,6 +175,10 @@ pub enum Divergence {
     DefiniteAssignmentAssertion,
     /// A field assigned only inside a nested statement of the constructor.
     NestedFieldAssignment,
+    /// `new` on a `declare class` that a program file declares.
+    AmbientClassConstruction,
+    /// `this` that escapes a constructor before every field holds a value.
+    ThisBeforeFieldValues,
 }
 
 /// The four facts that a divergence diagnostic shows.
@@ -272,6 +276,8 @@ impl Divergence {
         Divergence::ModuleLevelPattern,
         Divergence::DefiniteAssignmentAssertion,
         Divergence::NestedFieldAssignment,
+        Divergence::AmbientClassConstruction,
+        Divergence::ThisBeforeFieldValues,
     ];
 
     /// The four facts for this topic.
@@ -985,6 +991,34 @@ impl Divergence {
                             }",
                 why: "The rule reads the constructor's top level only; a definite-assignment \
                       analysis is a larger change than a field needs.",
+                collision: "compiler.md §108",
+            },
+            Divergence::AmbientClassConstruction => DivergenceEntry {
+                ts: "declare class Ext { value: i32; }\n\
+                     const ext: Ext = new Ext();",
+                subscript: "no equivalent; declare the class in a `.d.ts` mirror, and take \
+                            the instance from a `declare function` there",
+                why: "A `declare class` has no constructor body, so `new` stores no argument \
+                      and every field of the instance holds no value.",
+                collision: "compiler.md §108",
+            },
+            Divergence::ThisBeforeFieldValues => DivergenceEntry {
+                ts: "class Holder {\n\
+                     \x20 inner: Inner;\n\
+                     \x20 constructor() {\n\
+                     \x20   this.show();\n\
+                     \x20   this.inner = new Inner();\n\
+                     \x20 }\n\
+                     }",
+                subscript: "class Holder {\n\
+                            \x20 inner: Inner;\n\
+                            \x20 constructor() {\n\
+                            \x20   this.inner = new Inner();\n\
+                            \x20   this.show();\n\
+                            \x20 }\n\
+                            }",
+                why: "The callee can read a field that holds no value, and the \
+                      definite-assignment analysis of `tsc` does not follow a call.",
                 collision: "compiler.md §108",
             },
         }

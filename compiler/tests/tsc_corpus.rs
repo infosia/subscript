@@ -693,6 +693,88 @@ fn the_one_branch_field_assignment_form_measures_its_recorded_tsc_class() {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
+/// compiler.md §108.4's six test-pinned forms, in the §79 rule 6 shape:
+/// each one is rejected here at the recorded site, and the pinned
+/// TypeScript compiler measures the class recorded beside it.
+///
+/// Site A carries no variant, so the one `tsc`-accepted form that
+/// reaches it — a read after a conditional whose both arms assign the
+/// field, before the top-level assignment — cannot be a reject corpus
+/// entry, and this test is its pin. The three `tsc`-rejected forms and
+/// the two rule 5 spellings are the shapes the four corpus entries do
+/// not hold, and the test keeps each at its own site.
+#[test]
+fn the_prefix_this_forms_measure_their_recorded_tsc_class() {
+    use subscript_compiler::divergence::Divergence;
+
+    let forms = [
+        RecordedForm {
+            stem: "new-declared-constructor",
+            body: "declare class P {\n  x: i32;\n  constructor(x: i32);\n}\nexport function main(): void {\n  const p: P = new P(5);\n  print(`${p.x}`);\n}\n",
+            claim: "accepts",
+        },
+        RecordedForm {
+            stem: "new-generic-declare-class",
+            body: "declare class Ext<T> {\n  value: T;\n}\nexport function main(): void {\n  const ext: Ext<i32> = new Ext<i32>();\n  print(`${ext.value}`);\n}\n",
+            claim: "accepts",
+        },
+        RecordedForm {
+            stem: "self-assignment",
+            body: "class Inner {\n  value: i32 = 3;\n}\nclass Holder {\n  inner: Inner;\n  constructor() {\n    this.inner = this.inner;\n  }\n}\nexport function main(): void {\n  const holder: Holder = new Holder();\n  print(`${holder.inner.value}`);\n}\n",
+            claim: "rejects TS2565",
+        },
+        RecordedForm {
+            stem: "nested-read",
+            body: "class Inner {\n  value: i32 = 3;\n}\nclass Holder {\n  inner: Inner;\n  constructor(flag: boolean) {\n    if (flag) {\n      print(`${this.inner.value}`);\n    }\n    this.inner = new Inner();\n  }\n}\nexport function main(): void {\n  const holder: Holder = new Holder(true);\n  print(`${holder.inner.value}`);\n}\n",
+            claim: "rejects TS2565",
+        },
+        RecordedForm {
+            stem: "parameter-default-read",
+            body: "class Inner {\n  value: i32 = 3;\n}\nclass Holder {\n  inner: Inner;\n  count: i32;\n  constructor(n: i32 = this.inner.value) {\n    this.count = n;\n    this.inner = new Inner();\n  }\n}\nexport function main(): void {\n  const holder: Holder = new Holder();\n  print(`${holder.count}`);\n}\n",
+            claim: "rejects TS2565",
+        },
+        RecordedForm {
+            stem: "both-arms-then-read",
+            body: "class Holder {\n  value: i32;\n  total: i32;\n  constructor(flag: boolean) {\n    if (flag) {\n      this.value = 1;\n    } else {\n      this.value = 2;\n    }\n    this.total = this.value;\n    this.value = 3;\n  }\n}\nexport function main(): void {\n  const holder: Holder = new Holder(true);\n  print(`${holder.total} ${holder.value}`);\n}\n",
+            claim: "accepts",
+        },
+    ];
+    let sites = [
+        Some(Divergence::AmbientClassConstruction),
+        Some(Divergence::AmbientClassConstruction),
+        None,
+        None,
+        None,
+        None,
+    ];
+
+    let mut wrong_site = Vec::new();
+    for (form, site) in forms.iter().zip(sites) {
+        let file = format!("{}.ts", form.stem);
+        let diagnostics =
+            subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
+                &file,
+                form.body.to_string(),
+            )])
+            .expect_err("every recorded form is rejected here");
+        let measured: Vec<_> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.divergence)
+            .collect();
+        if measured != [site] {
+            wrong_site.push(format!("{}: {measured:?}, wants [{site:?}]", form.stem));
+        }
+    }
+    assert!(
+        wrong_site.is_empty(),
+        "a form reaches another site than the one it pins:\n{}",
+        wrong_site.join("\n")
+    );
+
+    let result = recorded_form_disagreements("prefix-this-forms", &forms, str::to_string);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
 #[test]
 fn tsc_claim_parser_requires_an_outcome_and_valid_diagnostic_codes() {
     assert_eq!(TscClaim::parse("accepts"), Ok(TscClaim::Accepts));

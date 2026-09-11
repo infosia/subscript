@@ -135,13 +135,17 @@ fn bodiless_declared_async_template_reports_the_body_rule() {
             "box.load<i32>(1);",
         ),
     ] {
+        // compiler.md §108.4 rule 5 rejects `new` on a program-file
+        // `declare class`, so the receiver arrives as a parameter.
         let source = format!(
             "declare class Box {{
   {modifier}load<T>(value: T): {ret};
 }}
-export async function main(): Promise<void> {{
-  const box: Box = new Box();
+async function run(box: Box): Promise<void> {{
   {call}
+}}
+export async function main(): Promise<void> {{
+  await Context.suspend();
 }}
 "
         );

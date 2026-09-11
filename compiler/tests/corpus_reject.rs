@@ -264,6 +264,22 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         12,
     ),
+    ("r229-new-on-a-program-declare-class.ts", RuleCode::S100, 16),
+    (
+        "r230-field-read-before-its-assignment.ts",
+        RuleCode::S100,
+        15,
+    ),
+    (
+        "r231-this-method-call-before-the-assignment.ts",
+        RuleCode::S100,
+        15,
+    ),
+    (
+        "r232-this-argument-before-the-assignment.ts",
+        RuleCode::S100,
+        15,
+    ),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,

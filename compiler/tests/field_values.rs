@@ -5,6 +5,11 @@
 //! assertion does not satisfy the rule. Rule 3 keeps a mirror field, an
 //! ambient declaration, a `@Descriptor` member, and a static field
 //! outside.
+//!
+//! compiler.md §108.4 adds two rules. Rule 5 rejects `new` on an
+//! ambient class that is not a mirror. Rule 6 rejects every `this`
+//! inside the constructor's assignment prefix except the target of
+//! `this.f = …` and a read of a field that holds a value.
 
 use subscript_compiler::divergence::Divergence;
 use subscript_compiler::{check_program, Diagnostic, RuleCode, SourceFile};
@@ -283,4 +288,237 @@ fn a_generic_declare_class_inherits_the_template_ambient_status() {
         .map(|d| (d.pos.line, d.pos.col))
         .collect();
     assert_eq!(sites, [(2, 3)], "{diagnostics:?}");
+}
+
+#[test]
+fn new_on_a_program_file_declare_class_reports_the_ambient_variant() {
+    // compiler.md §108.4 rule 5: a `declare class` in a program file has
+    // no constructor body and no positional store, so no argument
+    // reaches a field.
+    let source = "declare class Ext {\n  value: i32;\n}\nexport function main(): void {\n  const ext: Ext = new Ext();\n  print(`${ext.value}`);\n}\n";
+    let reported = diagnostics(source);
+    assert_eq!(reported.len(), 1, "{reported:?}");
+    let first = &reported[0];
+    assert_eq!(first.code, RuleCode::S100);
+    assert_eq!(
+        (first.pos.line, first.pos.col),
+        (5, 20),
+        "{}",
+        first.message
+    );
+    assert_eq!(
+        first.divergence,
+        Some(Divergence::AmbientClassConstruction),
+        "{}",
+        first.message
+    );
+    for needle in [
+        "ambient class `Ext`",
+        "obtained from the host, not constructed",
+        "no constructor body",
+    ] {
+        assert!(
+            first.message.contains(needle),
+            "missing {needle:?}: {}",
+            first.message
+        );
+    }
+    // A generic instance reaches the same site through its template.
+    let generic = diagnostics(
+        "declare class Ext<T> {\n  value: T;\n}\nexport function main(): void {\n  const ext: Ext<i32> = new Ext<i32>();\n  print(`${ext.value}`);\n}\n",
+    );
+    assert_eq!(generic.len(), 1, "{generic:?}");
+    assert_eq!(
+        generic[0].divergence,
+        Some(Divergence::AmbientClassConstruction)
+    );
+    // Firing control: a mirror class stays constructible, because
+    // `lower_new` stores every argument into the field at its position.
+    let mirror = "declare class Device {\n  handle: i32;\n}\n";
+    let program =
+        "export function main(): void {\n  const d: Device = new Device();\n  print(`${d.handle}`);\n}\n";
+    if let Err(diagnostics) = check_program(&[
+        SourceFile::ambient("device.d.ts", mirror),
+        SourceFile::new("main.ts", program),
+    ]) {
+        panic!("a mirror class is constructed positionally: {diagnostics:?}");
+    }
+}
+
+#[test]
+fn a_read_before_the_assignment_reports_the_this_without_a_variant() {
+    // compiler.md §108.4 rule 6 site A. Stock `tsc` answers TS2565 for
+    // this form, so the site carries no variant.
+    let source = format!(
+        "class Inner {{\n  value: i32 = 3;\n}}\nclass Holder {{\n  inner: Inner;\n  constructor() {{\n    print(`${{this.inner.value}}`);\n    this.inner = new Inner();\n  }}\n}}\n{MAIN}"
+    );
+    let diagnostics = diagnostics(&source);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    let first = &diagnostics[0];
+    assert_eq!(first.code, RuleCode::S100);
+    assert_eq!(
+        (first.pos.line, first.pos.col),
+        (7, 14),
+        "{}",
+        first.message
+    );
+    assert_eq!(first.divergence, None, "{}", first.message);
+    for needle in [
+        "`this.inner` reads field `inner` of `Holder`",
+        "before the constructor assigns it at its top level",
+    ] {
+        assert!(
+            first.message.contains(needle),
+            "missing {needle:?}: {}",
+            first.message
+        );
+    }
+}
+
+#[test]
+fn a_method_call_on_this_before_the_assignment_reports_its_variant() {
+    // compiler.md §108.4 rule 6 site B: `tsc` accepts, because its
+    // definite-assignment analysis does not follow a call.
+    let source = format!(
+        "class Inner {{\n  value: i32 = 3;\n}}\nclass Holder {{\n  inner: Inner;\n  constructor() {{\n    this.show();\n    this.inner = new Inner();\n  }}\n  show(): void {{\n    print(`${{this.inner.value}}`);\n  }}\n}}\n{MAIN}"
+    );
+    let diagnostics = diagnostics(&source);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    let first = &diagnostics[0];
+    assert_eq!(first.code, RuleCode::S100);
+    assert_eq!((first.pos.line, first.pos.col), (7, 5), "{}", first.message);
+    assert_eq!(
+        first.divergence,
+        Some(Divergence::ThisBeforeFieldValues),
+        "{}",
+        first.message
+    );
+    for needle in [
+        "the constructor of `Holder` calls a member of `this`",
+        "before field `inner` holds a value",
+    ] {
+        assert!(
+            first.message.contains(needle),
+            "missing {needle:?}: {}",
+            first.message
+        );
+    }
+}
+
+#[test]
+fn this_as_an_argument_before_the_assignment_reports_its_variant() {
+    // compiler.md §108.4 rule 6 site B, the value half of the site.
+    let source = format!(
+        "class Inner {{\n  value: i32 = 3;\n}}\nclass Holder {{\n  inner: Inner;\n  constructor() {{\n    show(this);\n    this.inner = new Inner();\n  }}\n}}\nfunction show(holder: Holder): void {{\n  print(`${{holder.inner.value}}`);\n}}\n{MAIN}"
+    );
+    let diagnostics = diagnostics(&source);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    let first = &diagnostics[0];
+    assert_eq!(first.code, RuleCode::S100);
+    assert_eq!(
+        (first.pos.line, first.pos.col),
+        (7, 10),
+        "{}",
+        first.message
+    );
+    assert_eq!(
+        first.divergence,
+        Some(Divergence::ThisBeforeFieldValues),
+        "{}",
+        first.message
+    );
+    for needle in [
+        "the constructor of `Holder` uses `this` as a value",
+        "before field `inner` holds a value",
+    ] {
+        assert!(
+            first.message.contains(needle),
+            "missing {needle:?}: {}",
+            first.message
+        );
+    }
+}
+
+#[test]
+fn two_fields_that_hold_no_value_are_both_named() {
+    let source = format!(
+        "class Inner {{\n  value: i32 = 3;\n}}\nclass Holder {{\n  first: Inner;\n  second: Inner;\n  constructor() {{\n    this.show();\n    this.first = new Inner();\n    this.second = new Inner();\n  }}\n  show(): void {{\n    print(`${{this.first.value}}`);\n  }}\n}}\n{MAIN}"
+    );
+    let diagnostics = diagnostics(&source);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert!(
+        diagnostics[0]
+            .message
+            .contains("before fields `first`, `second` hold a value"),
+        "{}",
+        diagnostics[0].message
+    );
+}
+
+#[test]
+fn every_read_shape_reads_the_field_and_the_prefix_ends_at_the_last_assignment() {
+    // compiler.md §108.4 rule 6 form (b): a read is every use that is
+    // not the target of `this.f = …`. Each body below reads `count`,
+    // which holds no value until the last statement assigns it.
+    for (stem, read, column) in [
+        ("compound-assignment", "this.count += 1;", 5),
+        ("increment", "this.count++;", 5),
+        ("member-write", "this.holder.value = 1;", 5),
+        ("operand", "const doubled: i32 = this.count * 2;", 26),
+    ] {
+        let source = format!(
+            "class Inner {{\n  value: i32 = 3;\n}}\nclass Holder {{\n  count: i32;\n  holder: Inner;\n  constructor() {{\n    {read}\n    this.count = 1;\n    this.holder = new Inner();\n  }}\n}}\n{MAIN}"
+        );
+        let diagnostics = diagnostics(&source);
+        assert_eq!(diagnostics.len(), 1, "{stem}: {diagnostics:?}");
+        let first = &diagnostics[0];
+        assert_eq!((first.pos.line, first.pos.col), (8, column), "{stem}");
+        assert_eq!(first.divergence, None, "{stem}: {}", first.message);
+        assert!(
+            first.message.contains("reads field"),
+            "{stem}: {}",
+            first.message
+        );
+    }
+    // An accessor read on `this` lowers to a method call, so it reaches
+    // site B rather than site A.
+    let source = format!(
+        "class Holder {{\n  count: i32;\n  get doubled(): i32 {{\n    return this.count * 2;\n  }}\n  constructor() {{\n    print(`${{this.doubled}}`);\n    this.count = 1;\n  }}\n}}\n{MAIN}"
+    );
+    let diagnostics = diagnostics(&source);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(
+        diagnostics[0].divergence,
+        Some(Divergence::ThisBeforeFieldValues),
+        "{}",
+        diagnostics[0].message
+    );
+}
+
+#[test]
+fn the_accepted_prefix_forms_stay_accepted_and_an_early_call_is_rejected() {
+    // The firing control of the two silent cases: every `this` of the
+    // accept entry's constructor is form (a) or form (b), and the call
+    // and the argument stand after the prefix.
+    let accepted_source = "class Inner {\n  value: i32 = 3;\n}\nclass Holder {\n  count: i32 = 1;\n  first: Inner;\n  inner: Inner;\n  constructor() {\n    this.count = this.count + 1;\n    this.first = new Inner();\n    this.inner = this.first;\n    this.show();\n    describe(this);\n  }\n  show(): void {\n    print(`${this.inner.value} ${this.count}`);\n  }\n}\nfunction describe(holder: Holder): void {\n  print(`${holder.first.value}`);\n}\nexport function main(): void {\n  const holder: Holder = new Holder();\n  holder.show();\n}\n";
+    accepted(accepted_source);
+    // The same program with the method call before the last assignment.
+    let moved = accepted_source.replace(
+        "    this.inner = this.first;\n    this.show();",
+        "    this.show();\n    this.inner = this.first;",
+    );
+    assert_ne!(moved, accepted_source, "the control must change the source");
+    let diagnostics = diagnostics(&moved);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(
+        diagnostics[0].divergence,
+        Some(Divergence::ThisBeforeFieldValues),
+        "{}",
+        diagnostics[0].message
+    );
+    // A constructor with no rule-1 field has an empty prefix, so every
+    // `this` form is accepted there.
+    accepted(&format!(
+        "class Holder {{\n  count: i32 = 1;\n  constructor() {{\n    this.show();\n  }}\n  show(): void {{\n    print(`${{this.count}}`);\n  }}\n}}\n{MAIN}"
+    ));
 }
