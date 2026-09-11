@@ -15827,3 +15827,22 @@ read, then a method call and `this` as an argument after the prefix.
 4. The round reports which goldens and counted totals moved, and
    why. The reject count and the divergence table size move.
 5. `tools/gate.sh full` green in both profiles.
+
+**After the implementation round.** *(Recorded 2026-09-12 from
+`REPORT-113`.)* Three answers the round took, each a consequence of
+the rule as written:
+
+- When a class has a rule-1 field and no top-level statement assigns
+  it, the prefix holds no statement. Rule 1 reports alone.
+- The prefix is positional. A site B use inside the last statement
+  of the prefix is rejected when every rule-1 field already holds a
+  value there, which a second top-level assignment of one field
+  produces. The message then names no field.
+- The site A message names no `tsc` code. A `tsc`-accepted form
+  reaches the site, and §108.1 rule 4 forbids the claim where `tsc`
+  does not answer it.
+
+Blast radius, measured: one test built `new Box()` on a program-file
+`declare class Box` for a receiver, and now takes the receiver as a
+parameter. No corpus entry, example, benchmark, doc block, or interop
+mirror stopped compiling.
