@@ -2,10 +2,10 @@
 // purpose: Rejects for-of over the opaque object type.
 // exercises: for-of-closed-list
 // questions: Q30
-// tsc: rejects TS2488, TS2564
+// tsc: rejects TS2488
 // expected-error: object is not one of the built-in iterable containers
 class Box {
-  value: i32;
+  value: i32 = 0;
 }
 
 export function visit(source: Box): void {

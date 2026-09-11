@@ -1282,7 +1282,7 @@ mod tests {
     #[test]
     fn object_literal_for_unmarked_class_remains_nominally_rejected() {
         let diagnostics = check_one(
-            "class Options { count!: i32; }\n\
+            "class Options { count: i32 = 1; }\n\
              export function main(): void {\n\
                const options: Options = { count: 1 };\n\
              }\n",
@@ -3224,7 +3224,7 @@ mod tests {
 
     #[test]
     fn q35_transferability_diagnostic_names_the_innermost_field() {
-        let source = "enum Kind { First }\n@CStruct class Stamp { kind: Kind; }\nclass BoxedCount { value: i32 = 0; }\nclass BadMessage { stamps: FixedArray<Stamp, 2>; boxed: BoxedCount; }\nfunction entry(inbox: Inbox<BadMessage>, outbox: Outbox<BadMessage>): void {}\nexport function main(): void { const worker = Worker.spawn(entry); }\n";
+        let source = "enum Kind { First }\n@CStruct class Stamp { kind: Kind = Kind.First; }\nclass BoxedCount { value: i32 = 0; }\nclass BadMessage { stamps: FixedArray<Stamp, 2> = [new Stamp(), new Stamp()]; boxed: BoxedCount = new BoxedCount(); }\nfunction entry(inbox: Inbox<BadMessage>, outbox: Outbox<BadMessage>): void {}\nexport function main(): void { const worker = Worker.spawn(entry); }\n";
         let diagnostics = check_one(source).expect_err("reference message field");
         assert_eq!(diagnostics[0].code, RuleCode::S100);
         assert_eq!(diagnostics[0].pos.line, 4);

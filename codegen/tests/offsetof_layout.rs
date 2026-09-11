@@ -54,57 +54,57 @@ enum SubChainKind {
 
 @CStruct
 class SubChainHeader {
-  sType: SubChainKind;
-  next: u64;
+  sType: SubChainKind = SubChainKind.Base;
+  next: u64 = 0;
 }
 
 @CStruct
 class SubChainExtA {
-  header: SubChainHeader;
-  intensity: f32;
-  flags: u32;
+  header: SubChainHeader = new SubChainHeader();
+  intensity: f32 = 0.0;
+  flags: u32 = 0;
 }
 
 @CStruct
 class SubChainExtB {
-  header: SubChainHeader;
-  scale: f64;
-  level: i32;
+  header: SubChainHeader = new SubChainHeader();
+  scale: f64 = 0.0;
+  level: i32 = 0;
 }
 
 @CStruct
 class SubBufferView {
-  items: u64;
-  count: u64;
+  items: u64 = 0;
+  count: u64 = 0;
 }
 
 @CStruct
 class SubStringView {
-  data: u64;
-  len: u64;
+  data: u64 = 0;
+  len: u64 = 0;
 }
 
 @CStruct
 class SubCallbackInfo {
-  callback: u64;
-  userdata: u64;
-  userparam: u64;
+  callback: u64 = 0;
+  userdata: u64 = 0;
+  userparam: u64 = 0;
 }
 
 @CStruct
 class SubTransform {
-  basis: FixedArray<f32, 16>;
-  bone: i32;
-  weight: f64;
-  visible: boolean;
+  basis: FixedArray<f32, 16> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+  bone: i32 = 0;
+  weight: f64 = 0.0;
+  visible: boolean = false;
 }
 
 @CStruct
 class SubSample {
-  a: boolean;
-  b: f64;
-  c: i32;
-  d: f32;
+  a: boolean = false;
+  b: f64 = 0.0;
+  c: i32 = 0;
+  d: f32 = 0.0;
 }
 
 // ---- Production-scale additions (compiler.md §13.4) ------------------
@@ -119,241 +119,241 @@ class SubSample {
 // Typed (pointer, count) slice descriptors (a31): each a 16-byte pair.
 @CStruct
 class SubSliceF32 {
-  items: u64;
-  count: u64;
+  items: u64 = 0;
+  count: u64 = 0;
 }
 
 @CStruct
 class SubSliceI32 {
-  items: u64;
-  count: u64;
+  items: u64 = 0;
+  count: u64 = 0;
 }
 
 @CStruct
 class SubSliceF64 {
-  items: u64;
-  count: u64;
+  items: u64 = 0;
+  count: u64 = 0;
 }
 
 @CStruct
 class SubSliceI64 {
-  items: u64;
-  count: u64;
+  items: u64 = 0;
+  count: u64 = 0;
 }
 
 @CStruct
 class SubSliceU8 {
-  items: u64;
-  count: u64;
+  items: u64 = 0;
+  count: u64 = 0;
 }
 
 @CStruct
 class SubSliceI8 {
-  items: u64;
-  count: u64;
+  items: u64 = 0;
+  count: u64 = 0;
 }
 
 @CStruct
 class SubSliceU16 {
-  items: u64;
-  count: u64;
+  items: u64 = 0;
+  count: u64 = 0;
 }
 
 @CStruct
 class SubSliceI16 {
-  items: u64;
-  count: u64;
+  items: u64 = 0;
+  count: u64 = 0;
 }
 
 @CStruct
 class SubSliceF16 {
-  items: u64;
-  count: u64;
+  items: u64 = 0;
+  count: u64 = 0;
 }
 
 // Varied scalar / padding layouts.
 @CStruct
 class SubVec2 {
-  x: f32;
-  y: f32;
+  x: f32 = 0.0;
+  y: f32 = 0.0;
 }
 
 @CStruct
 class SubVec3 {
-  x: f32;
-  y: f32;
-  z: f32;
+  x: f32 = 0.0;
+  y: f32 = 0.0;
+  z: f32 = 0.0;
 }
 
 @CStruct
 class SubVec4 {
-  x: f32;
-  y: f32;
-  z: f32;
-  w: f32;
+  x: f32 = 0.0;
+  y: f32 = 0.0;
+  z: f32 = 0.0;
+  w: f32 = 0.0;
 }
 
 @CStruct
 class SubRect {
-  x: i32;
-  y: i32;
-  width: u32;
-  height: u32;
+  x: i32 = 0;
+  y: i32 = 0;
+  width: u32 = 0;
+  height: u32 = 0;
 }
 
 @CStruct
 class SubRange {
-  offset: u64;
-  size: u64;
+  offset: u64 = 0;
+  size: u64 = 0;
 }
 
 @CStruct
 class SubColor {
-  r: f32;
-  g: f32;
-  b: f32;
-  a: f32;
+  r: f32 = 0.0;
+  g: f32 = 0.0;
+  b: f32 = 0.0;
+  a: f32 = 0.0;
 }
 
 @CStruct
 class SubTimings {
-  cpu: f64;
-  gpu: f64;
-  frame: i32;
+  cpu: f64 = 0.0;
+  gpu: f64 = 0.0;
+  frame: i32 = 0;
 }
 
 @CStruct
 class SubMixed {
-  enabled: boolean;
-  id: i64;
-  visible: boolean;
-  ratio: f32;
+  enabled: boolean = false;
+  id: i64 = 0;
+  visible: boolean = false;
+  ratio: f32 = 0.0;
 }
 
 @CStruct
 class SubPadB {
-  head: i32;
-  mid: boolean;
-  tail: f64;
+  head: i32 = 0;
+  mid: boolean = false;
+  tail: f64 = 0.0;
 }
 
 @CStruct
 class SubNarrowPacket {
-  kind: u8;
-  delta: i16;
-  weight: f16;
-  serial: u64;
-  bias: i8;
-  count: u16;
-  scale: f32;
+  kind: u8 = 0;
+  delta: i16 = 0;
+  weight: f16 = 0.0;
+  serial: u64 = 0;
+  bias: i8 = 0;
+  count: u16 = 0;
+  scale: f32 = 0.0;
 }
 
 // Nested by-value structs.
 @CStruct
 class SubExtent {
-  width: u32;
-  height: u32;
-  depth: u32;
+  width: u32 = 0;
+  height: u32 = 0;
+  depth: u32 = 0;
 }
 
 @CStruct
 class SubImageInfo {
-  extent: SubExtent;
-  mipLevels: u32;
-  usage: u64;
+  extent: SubExtent = new SubExtent();
+  mipLevels: u32 = 0;
+  usage: u64 = 0;
 }
 
 @CStruct
 class SubBounds {
-  min: SubVec3;
-  max: SubVec3;
+  min: SubVec3 = new SubVec3();
+  max: SubVec3 = new SubVec3();
 }
 
 @CStruct
 class SubViewport {
-  rect: SubRect;
-  depth: SubRange;
+  rect: SubRect = new SubRect();
+  depth: SubRange = new SubRange();
 }
 
 @CStruct
 class SubNodeInfo {
-  bounds: SubBounds;
-  id: u32;
-  tint: SubColor;
+  bounds: SubBounds = new SubBounds();
+  id: u32 = 0;
+  tint: SubColor = new SubColor();
 }
 
 // Intrusive chains: the common header embedded first.
 @CStruct
 class SubChainExtC {
-  header: SubChainHeader;
-  offset: SubVec3;
-  flags: u32;
+  header: SubChainHeader = new SubChainHeader();
+  offset: SubVec3 = new SubVec3();
+  flags: u32 = 0;
 }
 
 @CStruct
 class SubChainExtD {
-  header: SubChainHeader;
-  scale: f64;
-  level: i64;
-  active: boolean;
+  header: SubChainHeader = new SubChainHeader();
+  scale: f64 = 0.0;
+  level: i64 = 0;
+  active: boolean = false;
 }
 
 @CStruct
 class SubEventHeader {
-  kind: i32;
-  next: u64;
+  kind: i32 = 0;
+  next: u64 = 0;
 }
 
 @CStruct
 class SubEventKey {
-  header: SubEventHeader;
-  code: u32;
-  pressed: boolean;
+  header: SubEventHeader = new SubEventHeader();
+  code: u32 = 0;
+  pressed: boolean = false;
 }
 
 @CStruct
 class SubEventMove {
-  header: SubEventHeader;
-  dx: f32;
-  dy: f32;
+  header: SubEventHeader = new SubEventHeader();
+  dx: f32 = 0.0;
+  dy: f32 = 0.0;
 }
 
 // Flag-typedef fields (SubAccess -> u64).
 @CStruct
 class SubPassInfo {
-  access: u64;
-  width: u32;
-  height: u32;
+  access: u64 = 0;
+  width: u32 = 0;
+  height: u32 = 0;
 }
 
 @CStruct
 class SubResourceDesc {
-  usage: u64;
-  range: SubRange;
-  count: u32;
+  usage: u64 = 0;
+  range: SubRange = new SubRange();
+  count: u32 = 0;
 }
 
 // Descriptor-embedded (count, pointer) arrays — modeled by their raw C pair
 // layout (the mirror collapses them to `T[]`, but both tiers marshal this).
 @CStruct
 class SubDrawList {
-  layer: u32;
-  drawsCount: u64;
-  draws: u64;
+  layer: u32 = 0;
+  drawsCount: u64 = 0;
+  draws: u64 = 0;
 }
 
 @CStruct
 class SubCommandBuffer {
-  queue: u32;
-  commandsCount: u64;
-  commands: u64;
+  queue: u32 = 0;
+  commandsCount: u64 = 0;
+  commands: u64 = 0;
 }
 
 // Callback-info (fn pointer + userdata) — two 8-byte pointer slots.
 @CStruct
 class SubCompletionInfo {
-  callback: u64;
-  userdata: u64;
+  callback: u64 = 0;
+  userdata: u64 = 0;
 }
 
 // ---- Async/Future shapes (compiler.md §14) ---------------------------
@@ -362,20 +362,20 @@ class SubCompletionInfo {
 // out-field record a callee writes by reference.
 @CStruct
 class SubFuture {
-  id: u64;
+  id: u64 = 0;
 }
 
 @CStruct
 class SubStats {
-  submitted: u64;
-  completed: u64;
-  pending: u64;
+  submitted: u64 = 0;
+  completed: u64 = 0;
+  pending: u64 = 0;
 }
 
 @CStruct
 class SubQueryStatus {
-  future: u64;
-  completed: i32;
+  future: u64 = 0;
+  completed: i32 = 0;
 }
 
 // ---- By-value argument packing (compiler.md §47) --------------------
@@ -383,74 +383,74 @@ class SubQueryStatus {
 // eightbyte register images (or kept as HFA float components / indirect).
 @CStruct
 class SubByValueI32One {
-  a: i32;
+  a: i32 = 0;
 }
 
 @CStruct
 class SubByValueI32Pair {
-  x: i32;
-  y: i32;
+  x: i32 = 0;
+  y: i32 = 0;
 }
 
 @CStruct
 class SubByValueI32Triple {
-  a: i32;
-  b: i32;
-  c: i32;
+  a: i32 = 0;
+  b: i32 = 0;
+  c: i32 = 0;
 }
 
 @CStruct
 class SubByValueI16I16I32 {
-  a: i16;
-  b: i16;
-  c: i32;
+  a: i16 = 0;
+  b: i16 = 0;
+  c: i32 = 0;
 }
 
 @CStruct
 class SubByValueU8Four {
-  a: u8;
-  b: u8;
-  c: u8;
-  d: u8;
+  a: u8 = 0;
+  b: u8 = 0;
+  c: u8 = 0;
+  d: u8 = 0;
 }
 
 @CStruct
 class SubByValueI64Pair {
-  a: i64;
-  b: i64;
+  a: i64 = 0;
+  b: i64 = 0;
 }
 
 @CStruct
 class SubByValueF32Hfa2 {
-  a: f32;
-  b: f32;
+  a: f32 = 0.0;
+  b: f32 = 0.0;
 }
 
 @CStruct
 class SubByValueF32Hfa4 {
-  a: f32;
-  b: f32;
-  c: f32;
-  d: f32;
+  a: f32 = 0.0;
+  b: f32 = 0.0;
+  c: f32 = 0.0;
+  d: f32 = 0.0;
 }
 
 @CStruct
 class SubByValueI32F32 {
-  a: i32;
-  b: f32;
+  a: i32 = 0;
+  b: f32 = 0.0;
 }
 
 @CStruct
 class SubByValueI32I64 {
-  a: i32;
-  b: i64;
+  a: i32 = 0;
+  b: i64 = 0;
 }
 
 @CStruct
 class SubByValueI64Triple {
-  a: i64;
-  b: i64;
-  c: i64;
+  a: i64 = 0;
+  b: i64 = 0;
+  c: i64 = 0;
 }
 
 // ---- Composed async capstone (compiler.md §14.4/§14.5) ---------------
@@ -460,14 +460,14 @@ class SubByValueI64Triple {
 // since the mirror absorbs it into `SubWaitEntry[]`.
 @CStruct
 class SubWaitEntry {
-  future: SubFuture;
-  completed: i32;
+  future: SubFuture = new SubFuture();
+  completed: i32 = 0;
 }
 
 @CStruct
 class SubWaitList {
-  entries: u64;
-  count: u64;
+  entries: u64 = 0;
+  count: u64 = 0;
 }
 
 // §44.6: the downstream target layout is a four-byte C enum, a hole
@@ -480,35 +480,35 @@ enum SGPUProbeUnmarkedTextureFormat {
 
 @CStruct
 class SGPUProbeUnmarkedColorTargetState {
-  format: SGPUProbeUnmarkedTextureFormat;
-  blend: u64;
-  writeMask: u64;
+  format: SGPUProbeUnmarkedTextureFormat = SGPUProbeUnmarkedTextureFormat.Rgba8;
+  blend: u64 = 0;
+  writeMask: u64 = 0;
 }
 
 @CStruct({ align: 16 })
 class Vec3f {
-  x: f32;
-  y: f32;
-  z: f32;
+  x: f32 = 0.0;
+  y: f32 = 0.0;
+  z: f32 = 0.0;
 }
 
 @CStruct
 class Mixed {
-  a: f32;
-  p: Vec3f;
+  a: f32 = 0.0;
+  p: Vec3f = new Vec3f();
 }
 
 @CStruct
 class Mat3x3f {
-  c0: Vec3f;
-  c1: Vec3f;
-  c2: Vec3f;
+  c0: Vec3f = new Vec3f();
+  c1: Vec3f = new Vec3f();
+  c2: Vec3f = new Vec3f();
 }
 
 @CStruct({ align: 8 })
 class Vec2f {
-  x: f32;
-  y: f32;
+  x: f32 = 0.0;
+  y: f32 = 0.0;
 }
 
 export function main(): void {}

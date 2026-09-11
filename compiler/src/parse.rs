@@ -39,6 +39,14 @@ impl ParsedProgram {
         self.pos_at(span.lo)
     }
 
+    /// The source text that `span` covers. Returns `None` when the span
+    /// maps into no parsed file, which a synthesized span does.
+    pub fn snippet(&self, span: Span) -> Option<String> {
+        self.source_map
+            .with_snippet_of_span(span, str::to_string)
+            .ok()
+    }
+
     /// Converts a byte position to a TS position (1-based line/col).
     pub fn pos_at(&self, at: BytePos) -> Pos {
         // BytePos(0) is SWC's dummy position; map it to the first file.

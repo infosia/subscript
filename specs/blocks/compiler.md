@@ -15584,7 +15584,9 @@ program, and that is why it is cheap.
 2. **The assignment must be unconditional at the constructor's top
    level, and no statement before it can leave the constructor.** A
    top-level `this.f = …` counts only if every statement before it
-   contains no `return` at any depth. *(Corrected 2026-09-12: the
+   contains no `return` from the constructor, at any statement depth.
+   A lambda body is a separate function; its `return` does not count.
+   *(Corrected 2026-09-12: the
    first implementation read "top level" as "is a top-level
    statement", so `if (flag) { return; } this.inner = new Inner();`
    was accepted — `tsc` answers `TS2564`, and the run dies with
@@ -15626,7 +15628,9 @@ program, and that is why it is cheap.
      `tsc` and predates this section. Rule 1 leaves it to that rule.
 4. The diagnostic names the field and names the two spellings that
    satisfy the rule. **It says that `tsc` answers `TS2564` only where
-   `tsc` does** — a bare field. For the `!` form and for a field
+   `tsc` does** — a bare field with no assignment, or a field whose
+   top-level assignment follows a statement that can return from the
+   constructor. For the `!` form and for a field
    assigned in both arms of a conditional, `tsc` accepts the program,
    the diagnostic renders the §79 block instead, and the block's
    `why` carries the reason. *(Corrected 2026-09-12: the first draft

@@ -186,17 +186,26 @@ mod tests {
 
     #[test]
     fn oversized_accumulated_frame_is_rejected_before_cranelift() {
+        // The constructor carries the field value, so the frame limit is
+        // the only rule the source reaches (compiler.md §108.1 rule 1).
         let source = "\
 @CStruct
-class Accumulated { prefix: FixedArray<u8, 2147483640>; }
-export function main(): void {
-  const a: Accumulated = new Accumulated();
+class Accumulated {
+  prefix: FixedArray<u8, 2147483640>;
+  constructor(prefix: FixedArray<u8, 2147483640>) {
+    this.prefix = prefix;
+  }
+}
+function build(source: FixedArray<u8, 2147483640>): void {
+  const a: Accumulated = new Accumulated(source);
   print(`${a.prefix.length}`);
 }
+export function main(): void {}
 ";
         let files = [SourceFile::new("frame.ts", source)];
         match run_jit(&files) {
             Err(RunError::Rejected(diagnostics)) => {
+                assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
                 assert!(
                     diagnostics.iter().any(|diagnostic| {
                         diagnostic.code == subscript_compiler::RuleCode::S100

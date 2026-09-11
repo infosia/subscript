@@ -203,8 +203,8 @@ fn the_declared_name_owns_the_member_namespace() {
 fn a_value_class_receiver_carries_a_generic_method() {
     let source = "@CStruct\n\
                   class Vec2 {\n\
-                  \x20 x: f32;\n\
-                  \x20 y: f32;\n\
+                  \x20 x: f32 = 0;\n\
+                  \x20 y: f32 = 0;\n\
                   \x20 pick<T>(value: T): T { return value; }\n\
                   }\n\
                   export function main(): void {\n\

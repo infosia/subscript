@@ -637,6 +637,62 @@ fn the_rejected_pattern_forms_measure_their_recorded_tsc_class() {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
+/// compiler.md §108.1 rule 2 and §79 rule 6: the nested-assignment site
+/// carries `Divergence::NestedFieldAssignment`, because a constructor
+/// that assigns a field in both arms of a conditional is `tsc`-accepted
+/// (`r227`). The same site rejects a constructor that assigns in one arm,
+/// which `tsc` rejects, so that form reaches no corpus entry. This test is
+/// its pin: the form is rejected here at the named variant, and the pinned
+/// TypeScript compiler measures the class recorded beside it. The
+/// both-arm form runs in the same batch as the firing control; the two
+/// differ by the `else` arm alone.
+#[test]
+fn the_one_branch_field_assignment_form_measures_its_recorded_tsc_class() {
+    use subscript_compiler::divergence::Divergence;
+
+    let forms = [
+        RecordedForm {
+            stem: "one-branch-field-assignment",
+            body: "class Holder {\n  value: i32;\n  constructor(flag: boolean) {\n    if (flag) {\n      this.value = 1;\n    }\n  }\n}\nexport function main(): void {\n  print(`${new Holder(true).value}`);\n}\n",
+            claim: "rejects TS2564",
+        },
+        RecordedForm {
+            stem: "both-branch-field-assignment",
+            body: "class Holder {\n  value: i32;\n  constructor(flag: boolean) {\n    if (flag) {\n      this.value = 1;\n    } else {\n      this.value = 2;\n    }\n  }\n}\nexport function main(): void {\n  print(`${new Holder(true).value}`);\n}\n",
+            claim: "accepts",
+        },
+    ];
+
+    let mut wrong_site = Vec::new();
+    for form in &forms {
+        let file = format!("{}.ts", form.stem);
+        let diagnostics =
+            subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
+                &file,
+                form.body.to_string(),
+            )])
+            .expect_err("both recorded forms are rejected here");
+        let sites: Vec<_> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.divergence)
+            .collect();
+        if sites != [Some(Divergence::NestedFieldAssignment)] {
+            wrong_site.push(format!(
+                "{}: {sites:?}, wants [Some(NestedFieldAssignment)]",
+                form.stem
+            ));
+        }
+    }
+    assert!(
+        wrong_site.is_empty(),
+        "a form reaches another site than the one it pins:\n{}",
+        wrong_site.join("\n")
+    );
+
+    let result = recorded_form_disagreements("field-assignment-forms", &forms, str::to_string);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
 #[test]
 fn tsc_claim_parser_requires_an_outcome_and_valid_diagnostic_codes() {
     assert_eq!(TscClaim::parse("accepts"), Ok(TscClaim::Accepts));

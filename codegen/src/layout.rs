@@ -1010,7 +1010,7 @@ mod tests {
     #[test]
     fn value_class_layouts_report_alignment_overrides() {
         let module = module_of(
-            "@CStruct({ align: 16 })\nclass Vec3f { x: f32; y: f32; z: f32; }\n@CStruct\nclass Mixed { a: f32; p: Vec3f; }\n@CStruct\nclass Mat3x3f { c0: Vec3f; c1: Vec3f; c2: Vec3f; }\nexport function main(): void {}\n",
+            "@CStruct({ align: 16 })\nclass Vec3f { x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0; }\n@CStruct\nclass Mixed { a: f32 = 0.0; p: Vec3f = new Vec3f(); }\n@CStruct\nclass Mat3x3f { c0: Vec3f = new Vec3f(); c1: Vec3f = new Vec3f(); c2: Vec3f = new Vec3f(); }\nexport function main(): void {}\n",
         );
         let layouts = value_class_layouts(&module).expect("layouts");
         assert_eq!(layouts.len(), 3);

@@ -251,6 +251,19 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r221-pattern-source-shape.ts", RuleCode::S100, 9),
     ("r222-pattern-computed-field-name.ts", RuleCode::S100, 13),
     ("r223-module-level-pattern.ts", RuleCode::S100, 8),
+    ("r224-field-without-initializer.ts", RuleCode::S100, 8),
+    (
+        "r225-reference-field-without-initializer.ts",
+        RuleCode::S100,
+        12,
+    ),
+    ("r226-field-definite-assertion.ts", RuleCode::S100, 12),
+    ("r227-field-assigned-in-both-branches.ts", RuleCode::S100, 8),
+    (
+        "r228-field-assigned-after-early-return.ts",
+        RuleCode::S100,
+        12,
+    ),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -258,7 +271,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ),
     ("r66-coroutine-step-layout-too-large.ts", RuleCode::S100, 12),
     ("r67-frame-local-boundary-too-large.ts", RuleCode::S100, 8),
-    ("r68-cstruct-stack-frame-too-large.ts", RuleCode::S100, 13),
+    ("r68-cstruct-stack-frame-too-large.ts", RuleCode::S100, 17),
     (
         "r69-closure-environment-layout-too-large.ts",
         RuleCode::S100,
@@ -737,7 +750,7 @@ fn frame_and_synthesized_aggregate_rejections_are_checker_diagnostics() {
         ),
         (
             "r68-cstruct-stack-frame-too-large.ts",
-            13,
+            17,
             9,
             "2147483632 bytes",
         ),
@@ -792,7 +805,10 @@ export function main(): void {}
     let heap_only = "\
 class RefBig {
   prefix: FixedArray<u8, 2147483640>;
-  tag: i32;
+  tag: i32 = 0;
+  constructor(prefix: FixedArray<u8, 2147483640>) {
+    this.prefix = prefix;
+  }
 }
 export function main(): void {}
 ";

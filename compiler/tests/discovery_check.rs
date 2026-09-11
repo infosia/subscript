@@ -7,7 +7,7 @@ import { A_SIZE, B_WGSL } from "./p.typegpu";
 
 @CStruct
 class Header {
-  value: i32;
+  value: i32 = 0;
 }
 
 export function main(): void {

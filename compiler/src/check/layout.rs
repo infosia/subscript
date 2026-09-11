@@ -301,7 +301,7 @@ impl<'a> Validator<'a> {
     }
 
     fn class_too_large(&mut self, class: &hir::ClassDef, field: &hir::Field) {
-        self.diagnostics.push(Diagnostic::new(
+        let mut diagnostic = Diagnostic::new(
             RuleCode::S100,
             format!(
                 "`{}` layout exceeds the supported aggregate limit of {} bytes \
@@ -309,7 +309,9 @@ impl<'a> Validator<'a> {
                 class.name, MAX_AGGREGATE_BYTES, field.name
             ),
             field.pos.clone(),
-        ));
+        );
+        diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
+        self.diagnostics.push(diagnostic);
     }
 
     fn is_aggregate(&self, ty: &Type) -> bool {
@@ -582,10 +584,7 @@ impl<'a> Validator<'a> {
         if let Outcome::Layout(layout) = self.type_layout(ty) {
             let before = self.diagnostics.len();
             self.add_frame_slot(frame, layout, description, pos);
-            if self.diagnostics.len() != before
-                && description == "local aggregate storage"
-                && matches!(ty, Type::FixedArray(..))
-            {
+            if self.diagnostics.len() != before && description == "local aggregate storage" {
                 if let Some(diagnostic) = self.diagnostics.last_mut() {
                     diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
                 }

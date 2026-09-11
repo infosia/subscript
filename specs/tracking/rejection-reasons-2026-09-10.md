@@ -185,3 +185,41 @@ system's behaviour requires running that system.
 
     gate full 79a39d7 dirty:32 debug 1429/0/2 release 1427/0/2
               skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+
+## §108's implementation round, and the perf gate
+
+Two coding-agent rounds: one stopped by the owner mid-gate, one that
+took its tree over. The takeover changed one inherited file
+(`codegen/src/lib.rs`, a test that passed on two diagnostics through
+`.any`) and verified the rest. Narrowing reached four reject entries
+(`r65`, `r68`, `r73`, `r92`), all repaired by an initializer or a
+constructor assignment at their own pins; 532 `.ts` files, 76 doc
+fences, and 4,166 Rust string literals swept. All 89 mirrors compile.
+
+**The full gate ran six times, 02:37 to 05:44, on one criterion.**
+That was a wrong process, and the owner said so: a failed full gate is
+a stop-and-report, never a retry; a benchmark miss is never re-run.
+The orchestrator's 20-minute watch did not run either. Both are now
+standing rules.
+
+**The criterion: `a22 dev-JIT`, limit 25.00x of C.** Measured under
+`cargo test` against the repository `target/`: 27.64x, 31.84x,
+31.88x, 27.52x, 31.90x — deterministic, 0.2–0.5% spread within a run.
+The same binary standalone: 19.37x–20.09x, six runs. The pin binary
+19.58x against the current 19.60x. The complete §108 diff on a clean
+`9cff0d1` checkout passes; the same checkout without the diff passes.
+`target/debug` moved aside: still red. `target/release` deleted and
+rebuilt: still red. Under `CARGO_TARGET_DIR` outside the repository:
+green, 2/2. **The ratio tracks the target-directory path, not the
+code.** What in the launch context does it is not identified; a
+2026-09 note records 707,606 stray `.rcgu.o` as an earlier cause of
+slow first launches, and 2,648 remain today with `target/debug` at
+35 GB. No location change is proposed.
+
+    gate full 9cff0d1 dirty:28 debug 1442/0/2 release 1439/1/2
+              skips 2/0 clippy 7/18/13 goldens-moved 0 exit 1   (target/)
+    gate full 9cff0d1 dirty:28 debug 1442/0/2 release 1440/0/2
+              skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0   (CARGO_TARGET_DIR outside)
+
+Red at the pin: `r224` prints `0`; `r225` and `r226` die with signal
+11; `r227` prints `2`. The pin accepts all four.

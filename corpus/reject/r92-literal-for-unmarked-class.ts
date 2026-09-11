@@ -6,7 +6,7 @@
 // expected-error: S005 at the object literal
 
 class UnmarkedDescriptorShape {
-  value!: i32;
+  value: i32 = 1;
 }
 
 export function main(): void {

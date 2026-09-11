@@ -171,6 +171,10 @@ pub enum Divergence {
     AssignmentPattern,
     /// A binding pattern in a declaration outside a function body.
     ModuleLevelPattern,
+    /// A `!` field that nothing assigns at the constructor's top level.
+    DefiniteAssignmentAssertion,
+    /// A field assigned only inside a nested statement of the constructor.
+    NestedFieldAssignment,
 }
 
 /// The four facts that a divergence diagnostic shows.
@@ -266,6 +270,8 @@ impl Divergence {
         Divergence::PatternSourceShape,
         Divergence::AssignmentPattern,
         Divergence::ModuleLevelPattern,
+        Divergence::DefiniteAssignmentAssertion,
+        Divergence::NestedFieldAssignment,
     ];
 
     /// The four facts for this topic.
@@ -951,6 +957,35 @@ impl Divergence {
                 why: "A module-level name carries a declared type, and a pattern gives each \
                       name the type its read answers.",
                 collision: "compiler.md §107.1",
+            },
+            Divergence::DefiniteAssignmentAssertion => DivergenceEntry {
+                ts: "class Inner { v: i32 = 3; }\n\
+                     class Holder { inner!: Inner; }",
+                subscript: "class Inner { v: i32 = 3; }\n\
+                            class Holder {\n\
+                            \x20 inner: Inner;\n\
+                            \x20 constructor(inner: Inner) { this.inner = inner; }\n\
+                            }",
+                why: "The assertion asks `tsc` to trust the author; this language has no null \
+                      check on a non-nullable reference.",
+                collision: "compiler.md §108",
+            },
+            Divergence::NestedFieldAssignment => DivergenceEntry {
+                ts: "class Holder {\n\
+                     \x20 x: i32;\n\
+                     \x20 constructor(flag: boolean) {\n\
+                     \x20   if (flag) { this.x = 1; } else { this.x = 2; }\n\
+                     \x20 }\n\
+                     }",
+                subscript: "class Holder {\n\
+                            \x20 x: i32 = 2;\n\
+                            \x20 constructor(flag: boolean) {\n\
+                            \x20   if (flag) { this.x = 1; }\n\
+                            \x20 }\n\
+                            }",
+                why: "The rule reads the constructor's top level only; a definite-assignment \
+                      analysis is a larger change than a field needs.",
+                collision: "compiler.md §108",
             },
         }
     }

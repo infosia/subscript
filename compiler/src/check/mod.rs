@@ -353,6 +353,9 @@ pub(crate) struct GenericClass {
     pub file: usize,
     pub is_value: bool,
     pub is_descriptor: bool,
+    /// The template's `declare` keyword. compiler.md §108.1 rule 3: an
+    /// instance inherits the template's ambient status.
+    pub declared: bool,
     pub alignment_override: Option<hir::AlignmentOverride>,
     pub type_params: Vec<String>,
     pub has_static_member: bool,
@@ -434,6 +437,84 @@ fn has_dispose_binding(statements: &[hir::Stmt]) -> bool {
     }
 
     statements.iter().any(statement_has_dispose)
+}
+
+/// The field name when `statement` is a plain `this.<name> = value`
+/// (compiler.md §108.1 rule 2: the assignment that satisfies the rule).
+fn this_field_assignment(statement: &hir::Stmt) -> Option<&str> {
+    let hir::Stmt::Expr(expression) = statement else {
+        return None;
+    };
+    let hir::ExprKind::Assign {
+        op: None, target, ..
+    } = &expression.kind
+    else {
+        return None;
+    };
+    let hir::ExprKind::Field { obj, name } = &target.kind else {
+        return None;
+    };
+    matches!(obj.kind, hir::ExprKind::This).then_some(name.as_str())
+}
+
+/// How one class field is spelled in the source (compiler.md §108.1).
+#[derive(Debug, Clone, Default)]
+struct FieldSpelling {
+    /// The `!` definite-assignment assertion.
+    definite: bool,
+    /// The `?` optional marker.
+    optional: bool,
+    /// The declared type as the source writes it, `None` for a field
+    /// with no type annotation.
+    declared_type: Option<String>,
+}
+
+/// True when `statement` holds a `return` at any statement depth below
+/// it (compiler.md §108.1 rule 2: such a statement can leave the
+/// constructor). A lambda body is a separate function, so a `return`
+/// inside one returns from the lambda and the walk stops there.
+fn leaves_the_function(statement: &hir::Stmt) -> bool {
+    fn child_leaves(node: hir::HirChild<'_>) -> bool {
+        match node {
+            hir::HirChild::Stmt(hir::Stmt::Return { .. }) => true,
+            hir::HirChild::Stmt(statement) => statement.children().into_iter().any(child_leaves),
+            hir::HirChild::Expr(expression) => {
+                !matches!(expression.kind, hir::ExprKind::Lambda { .. })
+                    && expression.children().into_iter().any(child_leaves)
+            }
+        }
+    }
+
+    child_leaves(hir::HirChild::Stmt(statement))
+}
+
+/// Collects every field name that a plain `this.<name> = value` writes
+/// anywhere below `node`, at any nesting.
+fn collect_this_field_assignments(node: hir::HirChild<'_>, names: &mut HashSet<String>) {
+    let children = match node {
+        hir::HirChild::Stmt(statement) => {
+            if let Some(name) = this_field_assignment(statement) {
+                names.insert(name.to_string());
+            }
+            statement.children()
+        }
+        hir::HirChild::Expr(expression) => {
+            if let hir::ExprKind::Assign {
+                op: None, target, ..
+            } = &expression.kind
+            {
+                if let hir::ExprKind::Field { obj, name } = &target.kind {
+                    if matches!(obj.kind, hir::ExprKind::This) {
+                        names.insert(name.clone());
+                    }
+                }
+            }
+            expression.children()
+        }
+    };
+    for child in children {
+        collect_this_field_assignments(child, names);
+    }
 }
 
 /// One function (or lambda) frame.
@@ -2336,6 +2417,7 @@ impl<'p> Checker<'p> {
                     file,
                     is_value,
                     is_descriptor,
+                    declared: c.declare,
                     alignment_override,
                     type_params,
                     has_static_member,
@@ -4481,7 +4563,7 @@ impl<'p> Checker<'p> {
             ast::Decl::Class(c) if c.class.type_params.is_none() => {
                 let name = c.ident.sym.to_string();
                 if let Some(&id) = self.class_ids.get(&name) {
-                    self.check_class_body(id, &c.class);
+                    self.check_class_body(id, &c.class, c.declare);
                 }
             }
             ast::Decl::Var(v) => {
@@ -5105,7 +5187,7 @@ impl<'p> Checker<'p> {
     }
 
     /// Checks field initializers, the constructor, and methods (pass C).
-    pub(crate) fn check_class_body(&mut self, id: ClassId, class: &ast::Class) {
+    pub(crate) fn check_class_body(&mut self, id: ClassId, class: &ast::Class, declared: bool) {
         if self.classes[id.0].is_descriptor {
             return;
         }
@@ -5359,6 +5441,144 @@ impl<'p> Checker<'p> {
                 _ => {}
             }
         }
+        self.require_field_values(id, class, declared);
+    }
+
+    /// compiler.md §108.1: a declared field carries a value before the
+    /// constructor returns. A field with no initializer is assigned at
+    /// the constructor's top level, or the class is rejected at the
+    /// field. A `!` assertion does not satisfy the rule. Rule 3 keeps a
+    /// mirror field, a `@Descriptor` member, and a static field outside:
+    /// a mirror class and a `declare class` have no constructor body, a
+    /// `@Descriptor` class never reaches this pass, and a static field
+    /// is a global with S100's own initializer rule. An instance of a
+    /// generic template inherits the template's ambient status, so an
+    /// ambient template stays outside the rule.
+    ///
+    /// The rule reads the constructor's top level only, and a top-level
+    /// assignment counts only when no statement before it holds a
+    /// `return` (rule 2). The diagnostic distinguishes four shapes,
+    /// because §79 rule 4 pairs each with its measured `tsc` class: a
+    /// field that no statement assigns (`tsc` answers TS2564), a `!`
+    /// field (`tsc` accepts), a field assigned only inside a nested
+    /// statement (`tsc` follows definite assignment; this rule does
+    /// not), and a field whose top-level assignment stands after a
+    /// statement that holds a `return` (`tsc` answers TS2564).
+    fn require_field_values(&mut self, id: ClassId, class: &ast::Class, declared: bool) {
+        if declared || self.classes[id.0].is_boundary {
+            return;
+        }
+        let mut spellings: HashMap<String, FieldSpelling> = HashMap::new();
+        for member in &class.body {
+            let ast::ClassMember::ClassProp(prop) = member else {
+                continue;
+            };
+            let ast::PropName::Ident(key) = &prop.key else {
+                continue;
+            };
+            if !prop.is_static {
+                spellings.insert(
+                    key.sym.to_string(),
+                    FieldSpelling {
+                        definite: prop.definite,
+                        optional: prop.is_optional,
+                        // The declared text, not the resolved type: a
+                        // generic template declares `T`, and the advice
+                        // is written into the template.
+                        declared_type: prop
+                            .type_ann
+                            .as_ref()
+                            .and_then(|annotation| self.prog.snippet(annotation.type_ann.span())),
+                    },
+                );
+            }
+        }
+        let (top_level, anywhere, after_return) = match &self.classes[id.0].ctor {
+            Some(ctor) => {
+                let mut top_level = HashSet::new();
+                let mut after_return = HashSet::new();
+                let mut left = false;
+                for statement in &ctor.body {
+                    if let Some(name) = this_field_assignment(statement) {
+                        if left {
+                            after_return.insert(name.to_string());
+                        } else {
+                            top_level.insert(name.to_string());
+                        }
+                    }
+                    left = left || leaves_the_function(statement);
+                }
+                let mut anywhere = HashSet::new();
+                for statement in &ctor.body {
+                    collect_this_field_assignments(hir::HirChild::Stmt(statement), &mut anywhere);
+                }
+                (top_level, anywhere, after_return)
+            }
+            None => (HashSet::new(), HashSet::new(), HashSet::new()),
+        };
+        let class_name = self.classes[id.0].name.clone();
+        let unassigned: Vec<(String, Type, Pos)> = self.classes[id.0]
+            .fields
+            .iter()
+            .filter(|field| field.init.is_none() && field.ty != Type::Error)
+            .map(|field| (field.name.clone(), field.ty.clone(), field.pos.clone()))
+            .collect();
+        for (name, ty, pos) in unassigned {
+            let spelling = spellings.get(&name).cloned().unwrap_or_default();
+            if spelling.optional || top_level.contains(&name) {
+                continue;
+            }
+            // `…` names no field, so the advice never reads as an
+            // assignment of the field to itself.
+            let declared = spelling
+                .declared_type
+                .unwrap_or_else(|| self.type_name(&ty));
+            let spellings = format!(
+                "write `{name}: {declared} = …`, or assign `this.{name} = …` at the top level \
+                 of the constructor"
+            );
+            if spelling.definite {
+                self.error_diverging(
+                    RuleCode::S100,
+                    format!(
+                        "field `{name}` of `{class_name}` asserts with `!` a value that nothing \
+                         assigns at the constructor's top level; {spellings}"
+                    ),
+                    pos,
+                    Divergence::DefiniteAssignmentAssertion,
+                );
+            } else if after_return.contains(&name) {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "field `{name}` of `{class_name}` is assigned at the constructor's top \
+                         level after a statement that holds a `return`, so the constructor can \
+                         return before the assignment (stock `tsc` answers TS2564); {spellings}, \
+                         before every statement that holds a `return`"
+                    ),
+                    pos,
+                );
+            } else if anywhere.contains(&name) {
+                self.error_diverging(
+                    RuleCode::S100,
+                    format!(
+                        "field `{name}` of `{class_name}` is assigned inside a nested statement \
+                         of the constructor, not at its top level; {spellings}"
+                    ),
+                    pos,
+                    Divergence::NestedFieldAssignment,
+                );
+            } else {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "field `{name}` of `{class_name}` has no initializer, and no constructor \
+                         statement assigns it (stock `tsc` answers TS2564); {spellings}"
+                    ),
+                    pos,
+                );
+            }
+        }
     }
 
     // ----- generic monomorphization (in HIR: templates never survive) -----
@@ -5545,11 +5765,11 @@ impl<'p> Checker<'p> {
             template.alignment_override,
             template.pos.clone(),
         );
-        self.resolve_class_shape(id, &template.class, false);
+        self.resolve_class_shape(id, &template.class, template.declared);
         if template.is_descriptor {
             self.check_descriptor_defaults(id, &template.class);
         } else {
-            self.check_class_body(id, &template.class);
+            self.check_class_body(id, &template.class, template.declared);
         }
         self.cur_file = saved_file;
         self.subst = saved_subst;
