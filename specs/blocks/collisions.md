@@ -223,7 +223,9 @@ call. Measured before the revision: `node` printed
 *(A field with no initializer and no unconditional constructor
 assignment is rejected since 2026-09-12: `compiler.md` §108. An
 ambient `declare class`, an R16/R17 Descriptor member, and a static
-field are outside that rule, each for its own reason.)*
+field are outside that rule, each for its own reason. `new` on a
+program-file `declare class`, and `this` before the constructor's
+assignment prefix ends, are rejected since 2026-09-12: §108.4.)*
 
 *(R27, 2026-08-15; `compiler.md` §57.)* A declared field
 initializer runs on every construction, in declaration order, with

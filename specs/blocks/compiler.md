@@ -15636,32 +15636,32 @@ program, and that is why it is cheap.
    `why` carries the reason. *(Corrected 2026-09-12: the first draft
    claimed `TS2564` for every form.)*
 
-### 108.1a Found by the round, open
+### 108.1a Found by the round, decided in §108.4
 
-*(Recorded 2026-09-12 from the implementation round's report.)* A
-program-file `declare class Ext { inner: Inner; }`, constructed with
-`new Ext()` and read as `e.inner.v`, is `tsc`-clean, checks clean, and
-**dies with signal 11** — identical at the pin and now. It is this
-section's own table row in a spelling rule 1 cannot reach: rule 3
-exempts the ambient declaration because `tsc` allows no initializer
-inside one, so the field stays null and `new` hands it out. The
-decision this needs — reject `new` on a program-file `declare class`,
-or make the read trap — is not taken here.
+*(Recorded 2026-09-12 from the implementation round's report and
+from the Phase Review. Decided 2026-09-12 by §108.4.)* Two spellings
+of this section's table row stayed open after rules 1–4:
 
-**Reads before the assignment, same root.** *(Recorded 2026-09-12 by
-the Phase Review.)* Rule 1 is satisfied by a top-level assignment,
-and a read that comes **before** it still sees null: a `print` of the
-field, `this.inner = this.inner`, or a method call that reads the
-field. `tsc` answers `TS2565` for the first two and **accepts** the
-method-call form; all three check clean here and die with signal 11,
-on both tiers, at the pin and now. The method-call form is a core
-principle 12 record with no golden. Ordering the reads after the
-assignment is a definite-assignment analysis, which rule 2 declined;
-this section records the gap and takes no decision.
+- A program-file `declare class Ext { inner: Inner; }`, constructed
+  with `new Ext()` and read as `e.inner.v`. Rule 3 exempts the
+  declaration, so the field stays null and `new` hands it out.
+- A read of a field before the top-level statement that assigns it:
+  a `print` of the field, `this.inner = this.inner`, a method call
+  that reads the field, or a parameter default that reads it.
+
+Each form checks clean at `4148eab` and dies with signal 11 on both
+tiers. §108.4 measures every form and takes the two decisions.
 
 ### 108.2 Sites
 
 - The checker's class declaration pass.
+- `check_new` (`compiler/src/check/expr.rs`), rule 5, beside the
+  opaque-handle rejection. *(Added 2026-09-12.)*
+- The constructor pass (`check_class_body`,
+  `compiler/src/check/mod.rs`), rule 6, over the HIR constructor
+  body and the parameter defaults. *(Added 2026-09-12.)*
+- `compiler/src/divergence.rs`, two variants for §108.4's two
+  `tsc`-accepted sites. *(Added 2026-09-12.)*
 - `specs/blocks/collisions.md` C9, which contracts field initializers
   and says nothing about a field without one. *(Pointer added
   2026-09-12.)*
@@ -15708,4 +15708,122 @@ constructor assigns every field at its top level; and both together.
 3. `tsc` reports zero errors over the accept corpus, configuration
    unchanged.
 4. The round reports which goldens and counted totals moved, and why.
+5. `tools/gate.sh full` green in both profiles.
+
+### 108.4 Rules 5 and 6 — `new` on an ambient class, and `this` before the assignment
+
+*(Added 2026-09-12. Closes §108.1a.)*
+
+**Measured at `4148eab`**, with the repository `tsc`, its
+`compilerOptions`, and `prelude/lang.d.ts`; `check` and the dev-JIT
+`run`. `Inner` has `value: i32 = 3`, and `Holder` has `inner: Inner`
+with `this.inner = new Inner();` at the constructor's top level.
+
+| program | `tsc` | `check` | `run` |
+|---|---|---|---|
+| program-file `declare class Ext { inner: Inner; }`, `new Ext()`, read `e.inner.value` | clean | clean | signal 11 |
+| program-file `declare class P { x: i32; constructor(x: i32); }`, `new P(5)`, print `p.x` | clean | clean | prints `0` |
+| `print(...)` of `this.inner.value` before the assignment | TS2565 | clean | signal 11 |
+| `this.inner = this.inner` as the assignment | TS2565 | clean | signal 11 |
+| the `print` inside `if (flag) { … }` before the assignment | TS2565 | clean | signal 11 |
+| `constructor(n: i32 = this.inner.value)` | TS2565 | clean | signal 11 |
+| `this.show()` before the assignment; `show` reads the field | clean | clean | signal 11 |
+| `show(this)` before the assignment; `show` reads the field | clean | clean | signal 11 |
+| a lambda that reads `this.inner`, stored before the assignment | not run | S100 "`this` is only available in constructors and methods" | not run |
+| `this.count = this.count + 1` (initialized), `this.first = new Inner()`, `this.inner = this.first`, then `this.show()` | clean | clean | `3 2` then `3` |
+
+**Rule 5 — `new` on an ambient class that is not a mirror is
+rejected, at the `new`.** A mirror class, one a `.d.ts` file
+declares, is outside the rule: `lower_new` (`codegen/src/lir.rs`)
+stores every argument into the field at the same position, which is
+the mirror constructor's contract. A program-file `declare class`
+has no constructor body and no positional store, so no argument
+reaches a field; the table's second row prints `0` for `new P(5)`.
+The host populates a program-file ambient class through a `declare
+function`, or nothing does. The diagnostic follows the opaque-handle
+one: the class is obtained from the host, not constructed, because a
+`declare class` has no constructor body. `tsc` accepts every form,
+so the site carries a variant, `collision: "compiler.md §108"`. A
+generic `new Ext<i32>()` on `declare class Ext<T>` reaches the same
+site through its instance.
+
+**Rule 6 — `this` before the assignment prefix ends.** The
+*assignment prefix* of a constructor is its parameter defaults,
+followed by its top-level statements up to and including the last
+top-level statement that assigns a field rule 1 reaches. A field
+*holds a value* at a statement when it has an initializer, or when a
+top-level statement earlier in the prefix assigns it. That is rule
+2's notion: a nested assignment does not count, and the statement's
+own target does not count.
+
+Inside the prefix, at any statement or expression depth, `this`
+appears in two forms only:
+
+- (a) the target of an assignment `this.f = …`, top-level or nested;
+- (b) a read `this.g` where `g` holds a value at that statement. A
+  read is every use that is not form (a): an operand, a member write
+  `this.g.x = …`, a compound assignment `this.g += …`, an increment,
+  an argument, and the receiver `this.g.m()`.
+
+Every other appearance is rejected at the `this`, with the field
+names that hold no value there:
+
+- **Site A**: a read `this.g` where `g` does not hold a value. `tsc`
+  answers TS2565 for each measured form, so the site carries no
+  variant. One `tsc`-accepted form reaches it — a read after a
+  conditional whose both arms assign the field, before the top-level
+  assignment — and a test that runs `tsc` pins that form and its
+  site (§79 rule 6).
+- **Site B**: a method or accessor call on `this`, or `this` as a
+  value — an argument, an initializer, an assignment source, a return
+  value. `tsc` accepts these (the table's rows 7 and 8): its
+  definite-assignment analysis does not follow a call. The site
+  carries a variant, `collision: "compiler.md §108"`, and its `why`
+  states that the callee can read a field that holds no value.
+
+A lambda body cannot mention `this` (§57.1, C9), so rule 6 does not
+reach one. A constructor whose class has no rule-1 field has an
+empty prefix. After the prefix every rule-1 field holds a value, and
+the rule ends. Rule 1 and rule 6 are independent: a class that
+violates both reports both.
+
+**Corpus.** Reject, four entries, each S100 at a pinned position:
+
+1. `new` on a program-file `declare class` (row 1): `tsc: accepts`,
+   block, at the `new`.
+2. A `print` of the field before its assignment (row 3):
+   `tsc: rejects TS2565`, no block, at the `this`.
+3. A method call before the assignment (row 7): `tsc: accepts`,
+   block, at the `this`.
+4. `this` as an argument before the assignment (row 8):
+   `tsc: accepts`, block, at the `this`, same site as entry 3.
+
+Test-pinned forms, in the `RecordedForm` shape (§79 rule 6): each
+runs `tsc`, compares its code, and asserts the `Divergence` variant
+or its absence. `new P(5)` with a declared bodiless constructor
+(`tsc` accepts; rule 5 site); `this.inner = this.inner` (TS2565;
+site A); the nested read (TS2565; site A); the parameter-default
+read (TS2565; site A); the both-arms-then-read form (`tsc` accepts;
+site A, no block); `new Ext<i32>()` on `declare class Ext<T>` (`tsc`
+accepts; rule 5 site).
+
+Accept, one entry, `js-comparable: yes`, row 10's shape: an
+initialized field read and reassigned, an earlier-assigned field
+read, then a method call and `this` as an argument after the prefix.
+
+**Gate.**
+
+1. Each reject entry is Red at this section's pin: the pin accepts
+   it, and the round records what `check` and `run` printed there.
+   The table above is the measurement at `4148eab`.
+2. The round reports every corpus entry, example, benchmark, doc
+   block, test, and interop mirror that stops compiling. A regex
+   pass over 140 constructors with a rule-1 field, in
+   `corpus/accept`, `corpus/warn`, `corpus/trap`, `examples`, and
+   `benchmarks`, found no `this` inside a prefix beyond forms (a)
+   and (b) (2026-09-12). The round's build is the measurement.
+3. `tsc` reports zero errors over the accept corpus, configuration
+   unchanged.
+4. The round reports which goldens and counted totals moved, and
+   why. The reject count and the divergence table size move.
 5. `tools/gate.sh full` green in both profiles.
