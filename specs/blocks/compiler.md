@@ -10612,7 +10612,10 @@ must respect them:
 
 Choose the variant so the **user-facing** rejection explains itself,
 which is the case the block exists for, and pin the other class with a
-unit test that records the `tsc` code it measured.
+test that runs `tsc` and compares its code. **That test also pins the
+site** — the `Divergence` variant the form reaches — because a form
+that drifts to another site would keep passing a code-only check.
+*(The site half was added 2026-09-11 by §107's round.)*
 
 **Rule 5 — the table is checked against the record.** A unit test
 reads `specs/blocks/collisions.md` (`include_str!`) and asserts that

@@ -124,7 +124,16 @@ form fact (compiler.md §68 does not give locals an identity).
 call renders as its callee with `(…)` for the arguments
 (`scores.values(…)`); any other non-place subject renders as `…`.
 A checker-synthesized local (a name that starts with `[[`) is never a
-copy binding and never a shadowing site.
+copy binding and never a shadowing site, **and never appears in a
+message**. *(Added 2026-09-11 by `compiler.md` §107.)* A binding
+pattern stores its source in a synthesized local, and W004 renders
+that local as the user's expression: a declaration source renders as
+its initializer (`state.point`, `make(…).point`); a `for…of` element
+renders as the subject plus `[…]` (`states[…].point`,
+`states.values(…).point`); a name bound out of a parameter pattern is
+a parameter copy, and the message says so, because a pattern
+parameter has no expression to name. Any synthesized name the
+renderer does not know renders as `…`.
 
 Why: `tsc` sees a shared object and cannot report this; C2 makes the
 write land in a copy and the effect vanishes. Downstream request R38

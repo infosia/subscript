@@ -167,3 +167,21 @@ converge: §79 rule 6a, where the divergence gate reads the reject
 corpus and cannot see an `ambient` row that no entry pins; and §85's
 clippy count, which reads three `(lib)` lines of a `--all-targets`
 run.
+
+## §107, landed 2026-09-11
+
+Binding patterns: array patterns over `T[]`/`FixedArray` and
+named-field patterns over a class, in six accepted positions. One
+Phase Review (0 CRITICAL, 1 MAJOR, 7 MINOR) and one fix round. The
+MAJOR: W004 printed checker-internal storage names; the fix gives the
+renderer one origin map for every synthesized local, and
+`warnings.md` §2 now records the rendering.
+
+A planner's claim measured false: the fix-round handoff said
+`function take([a, b]: string)` is `tsc`-rejected. `tsc` accepts it —
+a `string` iterates. The sentence was copied from a review finding
+without running `tsc`, against the rule that a claim about another
+system's behaviour requires running that system.
+
+    gate full 79a39d7 dirty:32 debug 1429/0/2 release 1427/0/2
+              skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
