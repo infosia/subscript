@@ -14,6 +14,16 @@ use crate::types::Type;
 use super::expr::path_key;
 use super::{Checker, FnCtx, Local};
 
+/// The type annotation a declaration writes on its whole pattern.
+fn pattern_type_ann(pat: &ast::Pat) -> Option<&ast::TsTypeAnn> {
+    match pat {
+        ast::Pat::Ident(binding) => binding.type_ann.as_deref(),
+        ast::Pat::Array(array) => array.type_ann.as_deref(),
+        ast::Pat::Object(object) => object.type_ann.as_deref(),
+        _ => None,
+    }
+}
+
 /// Narrowing facts derived from a checked condition: paths known non-null
 /// or known present when the condition is true / false.
 pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
@@ -589,24 +599,20 @@ impl<'p> Checker<'p> {
         out: &mut Vec<hir::Stmt>,
     ) {
         for d in declarations {
-            let ast::Pat::Ident(binding) = &d.name else {
-                let pos = self.pos(d.span);
-                self.error(
-                    RuleCode::S100,
-                    "destructuring is not in the decided surface",
-                    pos,
-                );
+            let pattern = super::pattern::classify(&d.name);
+            if let super::pattern::Pattern::Rejected(rejection) = &pattern {
+                self.reject_pattern(rejection, fx);
                 continue;
+            }
+            let name = match &pattern {
+                super::pattern::Pattern::Name(binding) => binding.id.sym.to_string(),
+                _ => String::new(),
             };
-            let name = binding.id.sym.to_string();
-            let pos = self.pos(binding.id.span);
+            let pos = self.pos(pattern.span());
             let saved_divergence = self
                 .aggregate_type_divergence
                 .replace(Divergence::AggregateLayoutLimit);
-            let ann = binding
-                .type_ann
-                .as_ref()
-                .map(|ann| self.resolve_type(&ann.type_ann));
+            let ann = pattern_type_ann(&d.name).map(|ann| self.resolve_type(&ann.type_ann));
             self.aggregate_type_divergence = saved_divergence;
             let Some(init_ast) = &d.init else {
                 self.error(
@@ -614,7 +620,9 @@ impl<'p> Checker<'p> {
                     "local declarations require an initializer",
                     pos.clone(),
                 );
-                fx.discard_pending(&name);
+                for binding in super::pattern::collect_names(&d.name) {
+                    fx.discard_pending(binding.id.sym.as_ref());
+                }
                 continue;
             };
             let init = if declarations.len() > 1 {
@@ -678,6 +686,15 @@ impl<'p> Checker<'p> {
                     };
                     self.error(RuleCode::S100, message, pos.clone());
                 }
+            }
+            if pattern.is_destructuring() {
+                let source = hir::Expr {
+                    kind: init.kind,
+                    ty,
+                    pos: init.pos,
+                };
+                self.bind_pattern(&pattern, source, mutable, fx, out);
+                continue;
             }
             let holds_capturing = self.is_capturing_value(&init, fx);
             let async_origins = self.expr_async_origins(&init, fx);
@@ -1016,10 +1033,19 @@ impl<'p> Checker<'p> {
             return;
         }
 
-        let Some((name, mutable, binding_pos, annotation)) = self.for_of_binding(&f.left) else {
+        let Some((pattern, mutable, binding_pos, annotation)) = self.for_of_binding(&f.left) else {
             return;
         };
+        // §107.1: a rejected subject keeps its own rule, so the subject
+        // runs before the pattern reports.
         let (subject, kind, elem_ty, generator) = self.check_for_of_subject(&f.right, fx);
+        if let super::pattern::Pattern::Rejected(rejection) = &pattern {
+            // The names bind inside the loop, which this rejection skips.
+            fx.scopes.push(Default::default());
+            self.reject_pattern(rejection, fx);
+            fx.scopes.pop();
+            return;
+        }
         if matches!(subject.ty, Type::Error) || matches!(elem_ty, Type::Error) {
             return;
         }
@@ -1045,17 +1071,37 @@ impl<'p> Checker<'p> {
 
         let binding_async_origins = self.expr_async_origins(&subject, fx);
         fx.scopes.push(Default::default());
-        self.declare_local(
-            &name,
-            Local {
+        // A pattern binds the element into checker-generated storage and
+        // reads its names out of that (§107.2).
+        let name = match &pattern {
+            super::pattern::Pattern::Name(binding) => binding.id.sym.to_string(),
+            _ => {
+                let id = self.next_pattern_id;
+                self.next_pattern_id += 1;
+                format!("[[pattern#{id}.element]]")
+            }
+        };
+        let mut prologue = Vec::new();
+        if pattern.is_destructuring() {
+            let element = hir::Expr {
+                kind: ExprKind::Local(name.clone()),
                 ty: elem_ty.clone(),
-                mutable,
-                holds_capturing: false,
-                async_origins: binding_async_origins,
-            },
-            binding_pos.clone(),
-            fx,
-        );
+                pos: binding_pos.clone(),
+            };
+            self.bind_pattern_from(&pattern, &element, mutable, fx, &mut prologue);
+        } else {
+            self.declare_local(
+                &name,
+                Local {
+                    ty: elem_ty.clone(),
+                    mutable,
+                    holds_capturing: false,
+                    async_origins: binding_async_origins,
+                },
+                binding_pos.clone(),
+                fx,
+            );
+        }
         let prefix = format!("{name}.");
         fx.narrowed
             .retain(|key| key != &name && !key.starts_with(&prefix));
@@ -1063,6 +1109,12 @@ impl<'p> Checker<'p> {
         let (body, _) = self.check_branch(&f.body, fx);
         fx.loop_depth -= 1;
         fx.scopes.pop();
+        let body = if prologue.is_empty() {
+            body
+        } else {
+            prologue.extend(body);
+            prologue
+        };
 
         let id = self.next_for_of_id;
         self.next_for_of_id += 1;
@@ -1164,10 +1216,15 @@ impl<'p> Checker<'p> {
 
     /// Resolves the single declaration accepted on the left of
     /// `for…of`.
-    fn for_of_binding(
+    fn for_of_binding<'a>(
         &mut self,
-        head: &ast::ForHead,
-    ) -> Option<(String, bool, crate::diag::Pos, Option<Type>)> {
+        head: &'a ast::ForHead,
+    ) -> Option<(
+        super::pattern::Pattern<'a>,
+        bool,
+        crate::diag::Pos,
+        Option<Type>,
+    )> {
         let (declarations, mutable, declaration_pos) = match head {
             ast::ForHead::VarDecl(decl) => {
                 if decl.kind == ast::VarDeclKind::Var {
@@ -1220,24 +1277,11 @@ impl<'p> Checker<'p> {
                 self.pos(binding.span),
             );
         }
-        let ast::Pat::Ident(ident) = &binding.name else {
-            self.error(
-                RuleCode::S100,
-                "destructuring is not in the decided surface",
-                self.pos(binding.name.span()),
-            );
-            return None;
-        };
-        let annotation = ident
-            .type_ann
-            .as_ref()
-            .map(|ann| self.resolve_type(&ann.type_ann));
-        Some((
-            ident.id.sym.to_string(),
-            mutable,
-            self.pos(ident.id.span),
-            annotation,
-        ))
+        let pattern = super::pattern::classify(&binding.name);
+        let pos = self.pos(pattern.span());
+        let annotation =
+            pattern_type_ann(&binding.name).map(|ann| self.resolve_type(&ann.type_ann));
+        Some((pattern, mutable, pos, annotation))
     }
 
     /// Returns the stabilized receiver expression, fused traversal kind,

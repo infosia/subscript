@@ -11,6 +11,7 @@ mod expr;
 mod fallthrough;
 mod json;
 mod layout;
+pub(crate) mod pattern;
 mod stmt;
 mod tyres;
 
@@ -821,6 +822,9 @@ pub(crate) struct Checker<'p> {
     pub next_using_switch_id: usize,
     /// This suffix keeps compound-write operand locals unique.
     pub next_compound_local_id: usize,
+    /// Monotonic suffix for the storage that holds a binding pattern's
+    /// source, which every pattern evaluates one time (§107.2).
+    pub next_pattern_id: usize,
 }
 
 fn normalize_operation_parameter_types(
@@ -1024,6 +1028,7 @@ pub(crate) fn run(
         next_using_return_id: 0,
         next_using_switch_id: 0,
         next_compound_local_id: 0,
+        next_pattern_id: 0,
     };
 
     // Parse-time provenance has a fixed shape; this pass binds each record
@@ -1503,7 +1508,9 @@ impl<'p> Checker<'p> {
                 _ => continue,
             };
             for declarator in declarators {
-                if let ast::Pat::Ident(binding) = &declarator.name {
+                // A binding pattern reserves every name it binds, so a
+                // read before it names the order, not the binding (C14).
+                for binding in pattern::collect_names(&declarator.name) {
                     let name = binding.id.sym.to_string();
                     if !scope.vars.contains_key(&name) {
                         scope.pending.insert(name);
@@ -1527,6 +1534,165 @@ impl<'p> Checker<'p> {
             };
             self.error(RuleCode::S017, message, pos);
         }
+    }
+
+    /// Reports a rejected binding pattern one time, and binds every name
+    /// in the pattern with the error type, so no `unknown name` follows
+    /// it (§107.4).
+    pub(crate) fn reject_pattern(
+        &mut self,
+        rejection: &pattern::PatternRejection<'_>,
+        fx: &mut FnCtx,
+    ) {
+        let pos = self.pos(rejection.span);
+        self.error_diverging(RuleCode::S100, rejection.message, pos, rejection.divergence);
+        self.bind_error_names(&rejection.names, fx);
+    }
+
+    /// Binds each name with the error type. A read of one adds no
+    /// diagnostic.
+    pub(crate) fn bind_error_names(&mut self, names: &[&ast::BindingIdent], fx: &mut FnCtx) {
+        for binding in names {
+            let name = binding.id.sym.to_string();
+            fx.discard_pending(&name);
+            fx.declare(
+                &name,
+                Local {
+                    ty: Type::Error,
+                    mutable: true,
+                    holds_capturing: false,
+                    async_origins: HashSet::new(),
+                },
+            );
+        }
+    }
+
+    /// True when the source type carries the pattern's reads: an array
+    /// pattern reads by index, a field pattern reads by field name
+    /// (§107.1).
+    fn pattern_source_fits(&mut self, pattern: &pattern::Pattern<'_>, ty: &Type) -> bool {
+        if matches!(ty, Type::Error) {
+            return false;
+        }
+        let (fits, shape) = match pattern {
+            pattern::Pattern::Array { .. } => (
+                matches!(ty, Type::Array(_) | Type::FixedArray(_, _)),
+                "an array binding pattern reads a `T[]` or a `FixedArray<T, N>`",
+            ),
+            pattern::Pattern::Fields { .. } => (
+                matches!(ty, Type::Class(_)),
+                "a field binding pattern reads a reference or value class",
+            ),
+            _ => return true,
+        };
+        if !fits {
+            let name = self.type_name(ty);
+            let pos = self.pos(pattern.span());
+            self.error_diverging(
+                RuleCode::S100,
+                format!("{shape}; the source is `{name}`"),
+                pos,
+                Divergence::PatternSourceShape,
+            );
+        }
+        fits
+    }
+
+    /// Binds an accepted pattern's names out of `source`, which the
+    /// caller already evaluated into storage. Every read is the ordinary
+    /// checked element read or field read (§107.2).
+    pub(crate) fn bind_pattern_from(
+        &mut self,
+        pattern: &pattern::Pattern<'_>,
+        source: &hir::Expr,
+        mutable: bool,
+        fx: &mut FnCtx,
+        out: &mut Vec<hir::Stmt>,
+    ) {
+        let bindings = match pattern {
+            pattern::Pattern::Array { bindings, .. }
+            | pattern::Pattern::Fields { bindings, .. } => bindings,
+            _ => return,
+        };
+        if !self.pattern_source_fits(pattern, &source.ty) {
+            let names: Vec<&ast::BindingIdent> =
+                bindings.iter().map(|binding| binding.binding).collect();
+            self.bind_error_names(&names, fx);
+            return;
+        }
+        for binding in bindings {
+            let pos = self.pos(binding.binding.id.span);
+            let value = match &binding.source {
+                pattern::BindingSource::Element(index) => {
+                    let index = hir::Expr {
+                        kind: hir::ExprKind::Int(i64::from(*index)),
+                        ty: Type::I32,
+                        pos: pos.clone(),
+                    };
+                    self.check_index(source.clone(), index, pos.clone())
+                }
+                pattern::BindingSource::Field(field) => {
+                    self.member_on(source.clone(), field, pos.clone(), false)
+                }
+            };
+            let name = binding.binding.id.sym.to_string();
+            let ty = value.ty.clone();
+            let holds_capturing = self.is_capturing_value(&value, fx);
+            let async_origins = self.expr_async_origins(&value, fx);
+            self.declare_local(
+                &name,
+                Local {
+                    ty: ty.clone(),
+                    mutable,
+                    holds_capturing,
+                    async_origins,
+                },
+                pos.clone(),
+                fx,
+            );
+            let prefix = format!("{name}.");
+            fx.narrowed
+                .retain(|key| key != &name && !key.starts_with(&prefix));
+            out.push(hir::Stmt::Let {
+                name,
+                ty,
+                mutable,
+                dispose: false,
+                init: value,
+                pos,
+            });
+        }
+    }
+
+    /// Evaluates `source` one time into checker-generated storage, then
+    /// binds the pattern's names out of it (§107.2).
+    pub(crate) fn bind_pattern(
+        &mut self,
+        pattern: &pattern::Pattern<'_>,
+        source: hir::Expr,
+        mutable: bool,
+        fx: &mut FnCtx,
+        out: &mut Vec<hir::Stmt>,
+    ) {
+        let id = self.next_pattern_id;
+        self.next_pattern_id += 1;
+        let name = format!("[[pattern#{id}.source]]");
+        let ty = source.ty.clone();
+        let pos = source.pos.clone();
+        let place = hir::Expr {
+            kind: hir::ExprKind::Local(name.clone()),
+            ty: ty.clone(),
+            pos: pos.clone(),
+        };
+        out.push(hir::Stmt::Let {
+            name,
+            ty,
+            mutable: false,
+            dispose: false,
+            init: source,
+            pos,
+        });
+        self.bind_pattern_from(pattern, &place, mutable, fx, out);
     }
 
     pub(crate) fn error(&mut self, code: RuleCode, message: impl Into<String>, pos: Pos) {
@@ -2305,12 +2471,7 @@ impl<'p> Checker<'p> {
     fn collect_globals(&mut self, file: usize, v: &ast::VarDecl, exported: bool) {
         for d in &v.decls {
             let ast::Pat::Ident(binding) = &d.name else {
-                let pos = self.pos(d.span);
-                self.error(
-                    RuleCode::S100,
-                    "destructuring is not in the decided surface",
-                    pos,
-                );
+                self.reject_outer_pattern(file, &d.name);
                 continue;
             };
             let name = binding.id.sym.to_string();
@@ -2319,6 +2480,23 @@ impl<'p> Checker<'p> {
             if exported {
                 self.exports[file].insert(name);
             }
+        }
+    }
+
+    /// Reports a binding pattern in a declaration outside a function body
+    /// one time, and poisons every name in the pattern, so no
+    /// `unknown name` follows it (§107.4).
+    fn reject_outer_pattern(&mut self, file: usize, pat: &ast::Pat) {
+        self.error_diverging(
+            RuleCode::S100,
+            "a binding pattern binds inside a function body; a declaration outside one binds one name",
+            self.pos(pat.span()),
+            Divergence::ModuleLevelPattern,
+        );
+        for binding in pattern::collect_names(pat) {
+            let name = binding.id.sym.to_string();
+            let pos = self.pos(binding.id.span);
+            self.register_scope_item(file, &name, ScopeItem::Poisoned, pos);
         }
     }
 
@@ -2672,12 +2850,7 @@ impl<'p> Checker<'p> {
     fn collect_ambient_consts(&mut self, file: usize, v: &ast::VarDecl) {
         for d in &v.decls {
             let ast::Pat::Ident(binding) = &d.name else {
-                let pos = self.pos(d.span);
-                self.error(
-                    RuleCode::S100,
-                    "destructuring is not in the decided surface",
-                    pos,
-                );
+                self.reject_outer_pattern(file, &d.name);
                 continue;
             };
             let name = binding.id.sym.to_string();
@@ -3164,6 +3337,32 @@ impl<'p> Checker<'p> {
                 inner.has_default = true;
                 inner
             }
+            // A binding pattern parameter takes its type from the
+            // pattern's own annotation, and binds into checker-generated
+            // storage that the entry prologue reads (§107.2). A boundary
+            // signature has no body, so it holds no such prologue.
+            ast::Pat::Array(_) | ast::Pat::Object(_) if !self.in_boundary => {
+                let annotation = match pat {
+                    ast::Pat::Array(array) => array.type_ann.as_deref(),
+                    ast::Pat::Object(object) => object.type_ann.as_deref(),
+                    _ => None,
+                };
+                let ty = match annotation {
+                    Some(annotation) => self.resolve_type(&annotation.type_ann),
+                    None => {
+                        let pos = self.pos(pat.span());
+                        self.error(RuleCode::S100, "parameters require a type annotation", pos);
+                        Type::Error
+                    }
+                };
+                let id = self.next_pattern_id;
+                self.next_pattern_id += 1;
+                ParamSig {
+                    name: format!("[[pattern#{id}.parameter]]"),
+                    ty,
+                    has_default: false,
+                }
+            }
             other => {
                 let pos = self.pos(other.span());
                 self.error(
@@ -3178,6 +3377,36 @@ impl<'p> Checker<'p> {
                 }
             }
         }
+    }
+
+    /// Binds a parameter's pattern names at function entry, in parameter
+    /// order (§107.2). Answers with the statements the body starts with.
+    pub(super) fn bind_parameter_patterns(
+        &mut self,
+        params: Vec<(ParamSig, ast::Pat)>,
+        fx: &mut FnCtx,
+    ) -> Vec<hir::Stmt> {
+        let mut prologue = Vec::new();
+        for (signature, pat) in params {
+            let pat = match &pat {
+                ast::Pat::Assign(assign) => assign.left.as_ref(),
+                other => other,
+            };
+            let pattern = pattern::classify(pat);
+            match &pattern {
+                pattern::Pattern::Rejected(rejection) => self.reject_pattern(rejection, fx),
+                _ if pattern.is_destructuring() => {
+                    let source = hir::Expr {
+                        kind: hir::ExprKind::Local(signature.name.clone()),
+                        ty: signature.ty.clone(),
+                        pos: self.pos(pattern.span()),
+                    };
+                    self.bind_pattern_from(&pattern, &source, true, fx, &mut prologue);
+                }
+                _ => {}
+            }
+        }
+        prologue
     }
 
     fn claim_class_member_name(
@@ -4745,11 +4974,11 @@ impl<'p> Checker<'p> {
                 }
             }
         }
-        let params = self.bind_params(f, sig, &mut fx);
+        let (params, prologue) = self.bind_params(f, sig, &mut fx);
         let body = match &f.body {
             Some(block) => {
                 self.reserve_block_declarations(&block.stmts, &mut fx);
-                let mut out = Vec::new();
+                let mut out = prologue;
                 for s in &block.stmts {
                     self.check_stmt(s, &mut fx, &mut out);
                 }
@@ -4814,9 +5043,17 @@ impl<'p> Checker<'p> {
         })
     }
 
-    /// Declares parameters as locals and checks default values.
-    fn bind_params(&mut self, f: &ast::Function, sig: &FnSig, fx: &mut FnCtx) -> Vec<hir::Param> {
+    /// Declares parameters as locals and checks default values. Answers
+    /// with the parameters and the statements that bind every pattern
+    /// parameter at entry (§107.2).
+    fn bind_params(
+        &mut self,
+        f: &ast::Function,
+        sig: &FnSig,
+        fx: &mut FnCtx,
+    ) -> (Vec<hir::Param>, Vec<hir::Stmt>) {
         let mut out = Vec::new();
+        let mut patterns = Vec::new();
         for (i, p) in f.params.iter().enumerate() {
             let Some(ps) = sig.params.get(i) else { break };
             let pos = self.pos(p.span);
@@ -4861,8 +5098,10 @@ impl<'p> Checker<'p> {
                 foreign_provenance: None,
                 pos,
             });
+            patterns.push((ps.clone(), p.pat.clone()));
         }
-        out
+        let prologue = self.bind_parameter_patterns(patterns, fx);
+        (out, prologue)
     }
 
     /// Checks field initializers, the constructor, and methods (pass C).
@@ -4978,6 +5217,7 @@ impl<'p> Checker<'p> {
                     let mut fx =
                         FnCtx::new(Type::Void, false, Some(this_ty.clone()), self.diags.clone());
                     let mut hir_params = Vec::new();
+                    let mut patterns = Vec::new();
                     for (i, p) in ctor.params.iter().enumerate() {
                         let ast::ParamOrTsParamProp::Param(param) = p else {
                             continue;
@@ -5012,8 +5252,9 @@ impl<'p> Checker<'p> {
                             foreign_provenance: None,
                             pos: param_pos,
                         });
+                        patterns.push((ps.clone(), param.pat.clone()));
                     }
-                    let mut body = Vec::new();
+                    let mut body = self.bind_parameter_patterns(patterns, &mut fx);
                     if let Some(block) = &ctor.body {
                         self.reserve_block_declarations(&block.stmts, &mut fx);
                         for s in &block.stmts {

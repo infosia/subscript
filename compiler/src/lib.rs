@@ -3299,4 +3299,183 @@ mod tests {
         .unwrap_err();
         assert_eq!(err[0].code, RuleCode::S005);
     }
+
+    /// One rejected binding pattern in each position that accepts a
+    /// pattern (compiler.md §107.1), plus the three positions that
+    /// reject every pattern (§107.5): a module-level declaration, a
+    /// mirror `declare const`, and an assignment target.
+    const PATTERN_POSITIONS: &[(&str, &str)] = &[
+        (
+            "declaration",
+            "export function main(): void {\n  const xs: i32[] = [1, 2];\n  const [a, ...b] = xs;\n  print(`${a} ${b.length}`);\n}\n",
+        ),
+        (
+            "field declaration",
+            "class P { x: i32 = 1; }\nexport function main(): void {\n  const p: P = new P();\n  const { x, ...rest } = p;\n  print(`${x}`);\n}\n",
+        ),
+        (
+            "free-function parameter",
+            "function take([a, ...b]: i32[]): i32 { return a + b.length; }\nexport function main(): void {\n  print(`${take([1, 2])}`);\n}\n",
+        ),
+        (
+            "method parameter",
+            "class Box {\n  sum([a, ...b]: i32[]): i32 { return a + b.length; }\n}\nexport function main(): void {\n  print(`${new Box().sum([1, 2])}`);\n}\n",
+        ),
+        (
+            "static method parameter",
+            "class Box {\n  static sum([a, ...b]: i32[]): i32 { return a + b.length; }\n}\nexport function main(): void {\n  print(`${Box.sum([1, 2])}`);\n}\n",
+        ),
+        (
+            "lambda parameter",
+            "export function main(): void {\n  const f = ([a, ...b]: i32[]): i32 => a + b.length;\n  print(`${f([1, 2])}`);\n}\n",
+        ),
+        (
+            "constructor parameter",
+            "class Box {\n  total: i32;\n  constructor([a, ...b]: i32[]) { this.total = a + b.length; }\n}\nexport function main(): void {\n  print(`${new Box([1, 2]).total}`);\n}\n",
+        ),
+        (
+            "for-of binding",
+            "export function main(): void {\n  const xss: i32[][] = [[1, 2]];\n  for (const [a, ...b] of xss) {\n    print(`${a} ${b.length}`);\n  }\n}\n",
+        ),
+        (
+            "module-level declaration",
+            "const xs: i32[] = [1, 2];\nconst [a, b] = xs;\nexport function main(): void {\n  print(`${a} ${b}`);\n}\n",
+        ),
+        (
+            "ambient declaration",
+            "declare const [a, b]: i32[];\nexport function main(): void {\n  print(`${a} ${b}`);\n}\n",
+        ),
+        (
+            "assignment target",
+            "export function main(): void {\n  const xs: i32[] = [1, 2];\n  let a: i32 = 0;\n  let b: i32 = 0;\n  [a, b] = xs;\n  print(`${a} ${b}`);\n}\n",
+        ),
+    ];
+
+    #[test]
+    fn a_rejected_pattern_reports_one_diagnostic_in_every_position() {
+        let mut counts = Vec::new();
+        for (position, source) in PATTERN_POSITIONS {
+            let diagnostics =
+                check_one(source).expect_err("a rest element in a pattern stays rejected");
+            if diagnostics.len() != 1 {
+                let messages: Vec<&str> = diagnostics
+                    .iter()
+                    .map(|diagnostic| diagnostic.message.as_str())
+                    .collect();
+                counts.push(format!("{position}: {} — {messages:?}", diagnostics.len()));
+            }
+        }
+        assert!(
+            counts.is_empty(),
+            "a rejected pattern must report one time:\n{}",
+            counts.join("\n")
+        );
+    }
+
+    /// The count above is a real measurement: two rejected patterns in
+    /// one program report two times.
+    #[test]
+    fn two_rejected_patterns_report_two_diagnostics() {
+        let diagnostics = check_one(
+            "export function main(): void {\n  const xs: i32[] = [1, 2];\n  const [a, ...b] = xs;\n  const [c, ...d] = xs;\n  print(`${a} ${b.length} ${c} ${d.length}`);\n}\n",
+        )
+        .expect_err("both patterns stay rejected");
+        assert_eq!(diagnostics.len(), 2);
+    }
+
+    #[test]
+    fn a_binding_pattern_binds_in_every_accepted_position() {
+        for source in [
+            "export function main(): void {\n  const xs: i32[] = [1, 2];\n  const [a, b] = xs;\n  print(`${a} ${b}`);\n}\n",
+            "class P { x: i32 = 1; }\nexport function main(): void {\n  const { x } = new P();\n  print(`${x}`);\n}\n",
+            "function take([a, b]: i32[]): i32 { return a + b; }\nexport function main(): void {\n  print(`${take([1, 2])}`);\n}\n",
+            "class Box {\n  sum([a, b]: i32[]): i32 { return a + b; }\n}\nexport function main(): void {\n  print(`${new Box().sum([1, 2])}`);\n}\n",
+            "export function main(): void {\n  const f = ([a, b]: i32[]): i32 => a + b;\n  print(`${f([1, 2])}`);\n}\n",
+            "class Box {\n  total: i32;\n  constructor([a, b]: i32[]) { this.total = a + b; }\n}\nexport function main(): void {\n  print(`${new Box([1, 2]).total}`);\n}\n",
+            "export function main(): void {\n  const xss: i32[][] = [[1, 2]];\n  for (const [a, b] of xss) {\n    print(`${a} ${b}`);\n  }\n}\n",
+        ] {
+            check_one(source).unwrap_or_else(|diagnostics| {
+                panic!("{source}\nrejected: {:?}", diagnostics[0].message)
+            });
+        }
+    }
+
+    #[test]
+    fn a_pattern_source_of_another_shape_names_the_shape_it_reads() {
+        let diagnostics = check_one(
+            "export function main(): void {\n  const text: string = \"ab\";\n  const [first, second] = text;\n  print(`${first} ${second}`);\n}\n",
+        )
+        .expect_err("a string is not an array source");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("`T[]` or a `FixedArray<T, N>`")
+                && diagnostics[0].message.contains("`string`"),
+            "{}",
+            diagnostics[0].message
+        );
+    }
+
+    #[test]
+    fn a_boundary_signature_rejects_a_binding_pattern_parameter() {
+        let diagnostics = check_program(&[
+            SourceFile::ambient(
+                "boundary.d.ts",
+                "// @subscript-c-header include=\"host.h\"\n\
+                 declare function hostTake([first, second]: i32[]): void;\n",
+            ),
+            SourceFile::new(
+                "test.ts",
+                "export function main(): void { print(\"ok\"); }\n",
+            ),
+        ])
+        .expect_err("a boundary signature holds no entry prologue");
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(
+            diagnostics[0].message.contains("parameter pattern"),
+            "{}",
+            diagnostics[0].message
+        );
+    }
+
+    #[test]
+    fn a_read_before_a_pattern_declaration_names_the_order() {
+        let diagnostics = check_one(
+            "export function main(): void {\n  const xs: i32[] = [1, 2];\n  print(`${a}`);\n  const [a, b] = xs;\n  print(`${b}`);\n}\n",
+        )
+        .expect_err("a read before the pattern is rejected");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, RuleCode::S100);
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("read before its declaration"),
+            "{}",
+            diagnostics[0].message
+        );
+    }
+
+    #[test]
+    fn a_pattern_evaluates_its_source_one_time() {
+        let module = check_one(
+            "function made(): i32[] {\n  print(\"made\");\n  return [1, 2];\n}\nexport function main(): void {\n  const [a, b] = made();\n  print(`${a} ${b}`);\n}\n",
+        )
+        .expect("the pattern binds");
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        let calls = main
+            .body
+            .iter()
+            .filter(|statement| match statement {
+                hir::Stmt::Let { init, .. } => matches!(init.kind, hir::ExprKind::Call { .. }),
+                _ => false,
+            })
+            .count();
+        assert_eq!(calls, 1, "the source must be called one time");
+    }
 }

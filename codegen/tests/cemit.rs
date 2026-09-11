@@ -116,6 +116,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t52-static-map-callback-fault" | "t53-value-map-callback-fault" => {
             (TrapKind::IndexOutOfBounds, 9, 18)
         }
+        "t56-pattern-short-array" => (TrapKind::IndexOutOfBounds, 10, 17),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }

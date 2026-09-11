@@ -155,6 +155,22 @@ pub enum Divergence {
     ArrayOfArity,
     /// `new Array<T>(length)`.
     ArrayHoleConstruction,
+    /// A default value inside a binding pattern.
+    PatternDefaultValue,
+    /// A rest element in an array binding pattern.
+    ArrayRestPattern,
+    /// A rest element in a field binding pattern.
+    ObjectRestPattern,
+    /// A binding pattern inside a binding pattern.
+    NestedPattern,
+    /// A computed or numeric field name in a binding pattern.
+    PatternFieldName,
+    /// A binding pattern over a source that is neither an array nor a class.
+    PatternSourceShape,
+    /// A destructuring assignment to names that already exist.
+    AssignmentPattern,
+    /// A binding pattern in a declaration outside a function body.
+    ModuleLevelPattern,
 }
 
 /// The four facts that a divergence diagnostic shows.
@@ -242,6 +258,14 @@ impl Divergence {
         Divergence::ArrayIsArray,
         Divergence::ArrayOfArity,
         Divergence::ArrayHoleConstruction,
+        Divergence::PatternDefaultValue,
+        Divergence::ArrayRestPattern,
+        Divergence::ObjectRestPattern,
+        Divergence::NestedPattern,
+        Divergence::PatternFieldName,
+        Divergence::PatternSourceShape,
+        Divergence::AssignmentPattern,
+        Divergence::ModuleLevelPattern,
     ];
 
     /// The four facts for this topic.
@@ -839,6 +863,94 @@ impl Divergence {
                 why: "The language has no array hole and no missing-element value, so a \
                       filled array changes what a read means.",
                 collision: "compiler.md §105.3",
+            },
+            Divergence::PatternDefaultValue => DivergenceEntry {
+                ts: "const xs: i32[] = [];\n\
+                     const [first = 1] = xs;",
+                subscript: "const xs: i32[] = [];\n\
+                            const first: i32 = xs.length > 0 ? xs[0] : 1;",
+                why: "A default fires on a missing element, which TypeScript reads as \
+                      `undefined`; this language has no `undefined`.",
+                collision: "compiler.md §107.3",
+            },
+            Divergence::ArrayRestPattern => DivergenceEntry {
+                ts: "const xs: i32[] = [1, 2, 3];\n\
+                     const [head, ...rest] = xs;",
+                subscript: "const xs: i32[] = [1, 2, 3];\n\
+                            const head: i32 = xs[0];\n\
+                            const rest: i32[] = xs.slice(1);",
+                why: "A rest element needs allocation and copy semantics for a second array, \
+                      which this section does not decide.",
+                collision: "compiler.md §107.3",
+            },
+            Divergence::ObjectRestPattern => DivergenceEntry {
+                ts: "class Point { x: i32 = 1; y: i32 = 2; }\n\
+                     const { x, ...rest } = new Point();",
+                subscript: "class Point { x: i32 = 1; y: i32 = 2; }\n\
+                            function read(): i32 {\n\
+                            \x20 const point: Point = new Point();\n\
+                            \x20 const x: i32 = point.x;\n\
+                            \x20 return x;\n\
+                            }",
+                why: "A field rest needs a result shape and property-selection rules, and the \
+                      language has no object type.",
+                collision: "compiler.md §107.3",
+            },
+            Divergence::NestedPattern => DivergenceEntry {
+                ts: "const xss: i32[][] = [[1, 2]];\n\
+                     const [[first, second]] = xss;",
+                subscript: "function read(): i32 {\n\
+                            \x20 const xss: i32[][] = [[1, 2]];\n\
+                            \x20 const [inner] = xss;\n\
+                            \x20 const [first, second] = inner;\n\
+                            \x20 return first + second;\n\
+                            }",
+                why: "A pattern inside a pattern needs recursive type checks and an order for \
+                      its effects.",
+                collision: "compiler.md §107.3",
+            },
+            Divergence::PatternFieldName => DivergenceEntry {
+                ts: "class Point { x: i32 = 1; }\n\
+                     const key = \"x\" as const;\n\
+                     const { [key]: value } = new Point();",
+                subscript: "class Point { x: i32 = 1; }\n\
+                            function read(): i32 {\n\
+                            \x20 const { x: value } = new Point();\n\
+                            \x20 return value;\n\
+                            }",
+                why: "A field name is resolved at compile time, so a computed key names no \
+                      field.",
+                collision: "compiler.md §107.1",
+            },
+            Divergence::PatternSourceShape => DivergenceEntry {
+                ts: "const text = \"ab\";\n\
+                     const [first, second] = text;",
+                subscript: "no equivalent; a binding pattern reads a `T[]`, a \
+                            `FixedArray<T, N>`, or a class instance",
+                why: "A binding pattern reads an array by index or a class by field name, so \
+                      another source shape has no pattern.",
+                collision: "compiler.md §107.1",
+            },
+            Divergence::AssignmentPattern => DivergenceEntry {
+                ts: "const xs: i32[] = [1, 2];\n\
+                     let first: i32 = 0;\n\
+                     [first] = xs;",
+                subscript: "const xs: i32[] = [1, 2];\n\
+                            let first: i32 = 0;\n\
+                            first = xs[0];",
+                why: "A pattern binds new names; a pattern that writes existing targets needs \
+                      an evaluation and write order.",
+                collision: "compiler.md §107.3",
+            },
+            Divergence::ModuleLevelPattern => DivergenceEntry {
+                ts: "const xs: i32[] = [1, 2];\n\
+                     const [first, second] = xs;",
+                subscript: "const xs: i32[] = [1, 2];\n\
+                            const first: i32 = xs[0];\n\
+                            const second: i32 = xs[1];",
+                why: "A module-level name carries a declared type, and a pattern gives each \
+                      name the type its read answers.",
+                collision: "compiler.md §107.1",
             },
         }
     }

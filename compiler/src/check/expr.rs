@@ -5924,7 +5924,7 @@ impl<'p> Checker<'p> {
             .any(|field| field.name == name.as_str() && field.is_absence_capable)
     }
 
-    fn check_index(&mut self, obj: hir::Expr, index: hir::Expr, pos: Pos) -> hir::Expr {
+    pub(super) fn check_index(&mut self, obj: hir::Expr, index: hir::Expr, pos: Pos) -> hir::Expr {
         if let Type::Class(id) = &obj.ty {
             if let Some(signature) = self.classes[id.0].index_signature.clone() {
                 self.require_assignable(
@@ -6002,7 +6002,7 @@ impl<'p> Checker<'p> {
 
     /// Member lookup on a checked receiver. `for_write` selects the
     /// write-side diagnostics (S004 for undeclared class properties).
-    fn member_on(
+    pub(super) fn member_on(
         &mut self,
         obj: hir::Expr,
         name: &str,
@@ -6430,6 +6430,17 @@ impl<'p> Checker<'p> {
             }
             return self.err_expr(pos);
         };
+        // §107.3: a pattern binds new names. A pattern that writes
+        // existing targets carries its own reason.
+        if let ast::AssignTarget::Pat(target) = &a.left {
+            self.error_diverging(
+                RuleCode::S100,
+                "a destructuring assignment needs an evaluation and write order for its targets; a binding pattern declares its names",
+                self.pos(target.span()),
+                Divergence::AssignmentPattern,
+            );
+            return self.err_expr(pos);
+        }
         let source = match &a.left {
             ast::AssignTarget::Simple(ast::SimpleAssignTarget::Ident(binding)) => {
                 PlaceSource::Ident(&binding.id)
@@ -8502,6 +8513,12 @@ impl<'p> Checker<'p> {
                 pos: pos.clone(),
             });
         }
+        let parameter_patterns = params
+            .iter()
+            .cloned()
+            .zip(a.params.iter().cloned())
+            .collect::<Vec<_>>();
+        let entry = self.bind_parameter_patterns(parameter_patterns, fx);
         let body_pos = self.pos(a.body.span());
         let (body, prefix) = fx.with_synthetic_owner(
             super::SyntheticOwnerKind::ArrowBody(body_pos),
@@ -8556,7 +8573,8 @@ impl<'p> Checker<'p> {
                 }
             },
         );
-        let mut statements = prefix.into_statements();
+        let mut statements = entry;
+        statements.extend(prefix.into_statements());
         statements.extend(body);
         let body = statements;
         let body = if super::has_dispose_binding(&body) {

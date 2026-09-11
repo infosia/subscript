@@ -587,8 +587,8 @@ impl WarningChecker<'_> {
             count_bound_name(&mut bound_names, &param.name);
         }
         count_w004_bound_names(body, &mut bound_names);
-        let mut for_of_subjects = HashMap::new();
-        collect_for_of_subject_origins(body, &mut for_of_subjects);
+        let mut origins = HashMap::new();
+        collect_synthesized_origins(body, &mut origins);
 
         let mut bindings = params
             .iter()
@@ -602,13 +602,7 @@ impl WarningChecker<'_> {
                 read: false,
             })
             .collect::<Vec<_>>();
-        collect_w004_local_bindings(
-            self.module,
-            body,
-            &bound_names,
-            &for_of_subjects,
-            &mut bindings,
-        );
+        collect_w004_local_bindings(self.module, body, &bound_names, &origins, &mut bindings);
         scan_w004_stmts(body, &mut bindings);
 
         for binding in bindings {
@@ -727,32 +721,44 @@ fn count_w004_bound_names(stmts: &[Stmt], counts: &mut HashMap<String, usize>) {
     }
 }
 
-fn collect_for_of_subject_origins(stmts: &[Stmt], origins: &mut HashMap<String, String>) {
+/// Maps every checker-synthesized local that W004 can name back to the
+/// user's expression it holds: a `for…of` subject, a pattern source,
+/// and a pattern element (warnings.md §2, rendering).
+fn collect_synthesized_origins(stmts: &[Stmt], origins: &mut HashMap<String, String>) {
     for stmt in stmts {
-        if let Stmt::Let { name, init, .. } = stmt {
-            if name.starts_with("[[for.of#") && name.ends_with(".subject]]") {
-                origins.insert(name.clone(), render_source_expr(init));
+        match stmt {
+            Stmt::Let { name, init, .. } if is_synthesized_source(name) => {
+                origins.insert(name.clone(), render_source_expr(init, origins));
             }
+            Stmt::ForOf {
+                name,
+                subject,
+                kind,
+                ..
+            } if is_pattern_storage(name, ".element]]") => {
+                origins.insert(name.clone(), for_of_element_source(subject, *kind, origins));
+            }
+            _ => {}
         }
         match stmt {
             Stmt::If { then, els, .. } => {
-                collect_for_of_subject_origins(then, origins);
+                collect_synthesized_origins(then, origins);
                 if let Some(els) = els {
-                    collect_for_of_subject_origins(els, origins);
+                    collect_synthesized_origins(els, origins);
                 }
             }
             Stmt::While { body, .. } | Stmt::ForOf { body, .. } | Stmt::Block(body) => {
-                collect_for_of_subject_origins(body, origins)
+                collect_synthesized_origins(body, origins)
             }
             Stmt::For { init, body, .. } => {
                 if let Some(init) = init {
-                    collect_for_of_subject_origins(std::slice::from_ref(init.as_ref()), origins);
+                    collect_synthesized_origins(std::slice::from_ref(init.as_ref()), origins);
                 }
-                collect_for_of_subject_origins(body, origins);
+                collect_synthesized_origins(body, origins);
             }
             Stmt::Switch { cases, .. } => {
                 for case in cases {
-                    collect_for_of_subject_origins(&case.body, origins);
+                    collect_synthesized_origins(&case.body, origins);
                 }
             }
             Stmt::Let { .. }
@@ -764,11 +770,29 @@ fn collect_for_of_subject_origins(stmts: &[Stmt], origins: &mut HashMap<String, 
     }
 }
 
+fn is_synthesized_source(name: &str) -> bool {
+    (name.starts_with("[[for.of#") && name.ends_with(".subject]]"))
+        || is_pattern_storage(name, ".source]]")
+}
+
+fn is_pattern_storage(name: &str, suffix: &str) -> bool {
+    name.starts_with("[[pattern#") && name.ends_with(suffix)
+}
+
+/// The local a field or index chain roots in, when it roots in one.
+fn place_root_local(expr: &Expr) -> Option<&str> {
+    match &expr.kind {
+        ExprKind::Local(name) => Some(name),
+        ExprKind::Field { obj, .. } | ExprKind::Index { obj, .. } => place_root_local(obj),
+        _ => None,
+    }
+}
+
 fn collect_w004_local_bindings(
     module: &hir::Module,
     stmts: &[Stmt],
     bound_names: &HashMap<String, usize>,
-    for_of_subjects: &HashMap<String, String>,
+    origins: &HashMap<String, String>,
     bindings: &mut Vec<CopyBinding>,
 ) {
     for stmt in stmts {
@@ -777,12 +801,21 @@ fn collect_w004_local_bindings(
                 && bound_names.get(name) == Some(&1)
                 && is_value_type(module, ty)
             {
-                if let Some(place) = generator_for_of_subject_source(init, for_of_subjects)
-                    .or_else(|| copy_place_source(init))
+                // A name a parameter pattern binds is a copy the call made,
+                // exactly as a value-typed parameter is.
+                let origin = if place_root_local(init)
+                    .is_some_and(|root| is_pattern_storage(root, ".parameter]]"))
                 {
+                    Some(CopyOrigin::Parameter)
+                } else {
+                    generator_for_of_subject_source(init, origins)
+                        .or_else(|| copy_place_source(init, origins))
+                        .map(CopyOrigin::Place)
+                };
+                if let Some(origin) = origin {
                     bindings.push(CopyBinding {
                         name: name.clone(),
-                        origin: CopyOrigin::Place(place),
+                        origin,
                         field_writes: Vec::new(),
                         read: false,
                     });
@@ -803,11 +836,7 @@ fn collect_w004_local_bindings(
             {
                 bindings.push(CopyBinding {
                     name: name.clone(),
-                    origin: CopyOrigin::Place(for_of_subject_source(
-                        subject,
-                        *kind,
-                        for_of_subjects,
-                    )),
+                    origin: CopyOrigin::Place(for_of_subject_source(subject, *kind, origins)),
                     field_writes: Vec::new(),
                     read: false,
                 });
@@ -816,19 +845,13 @@ fn collect_w004_local_bindings(
 
         match stmt {
             Stmt::If { then, els, .. } => {
-                collect_w004_local_bindings(module, then, bound_names, for_of_subjects, bindings);
+                collect_w004_local_bindings(module, then, bound_names, origins, bindings);
                 if let Some(els) = els {
-                    collect_w004_local_bindings(
-                        module,
-                        els,
-                        bound_names,
-                        for_of_subjects,
-                        bindings,
-                    );
+                    collect_w004_local_bindings(module, els, bound_names, origins, bindings);
                 }
             }
             Stmt::While { body, .. } | Stmt::ForOf { body, .. } | Stmt::Block(body) => {
-                collect_w004_local_bindings(module, body, bound_names, for_of_subjects, bindings)
+                collect_w004_local_bindings(module, body, bound_names, origins, bindings)
             }
             Stmt::For { init, body, .. } => {
                 if let Some(init) = init {
@@ -836,21 +859,15 @@ fn collect_w004_local_bindings(
                         module,
                         std::slice::from_ref(init.as_ref()),
                         bound_names,
-                        for_of_subjects,
+                        origins,
                         bindings,
                     );
                 }
-                collect_w004_local_bindings(module, body, bound_names, for_of_subjects, bindings);
+                collect_w004_local_bindings(module, body, bound_names, origins, bindings);
             }
             Stmt::Switch { cases, .. } => {
                 for case in cases {
-                    collect_w004_local_bindings(
-                        module,
-                        &case.body,
-                        bound_names,
-                        for_of_subjects,
-                        bindings,
-                    );
+                    collect_w004_local_bindings(module, &case.body, bound_names, origins, bindings);
                 }
             }
             Stmt::Let { .. }
@@ -865,17 +882,9 @@ fn collect_w004_local_bindings(
 fn for_of_subject_source(
     subject: &Expr,
     kind: hir::ForOfKind,
-    for_of_subjects: &HashMap<String, String>,
+    origins: &HashMap<String, String>,
 ) -> String {
-    let source = if let ExprKind::Local(subject_name) = &subject.kind {
-        if let Some(origin) = for_of_subjects.get(subject_name) {
-            origin.clone()
-        } else {
-            render_source_expr(subject)
-        }
-    } else {
-        render_source_expr(subject)
-    };
+    let source = render_source_expr(subject, origins);
     match kind {
         hir::ForOfKind::MapValues => format!("{source}.values(…)"),
         hir::ForOfKind::ArrayKeys => format!("{source}.keys(…)"),
@@ -883,9 +892,23 @@ fn for_of_subject_source(
     }
 }
 
+/// The element a pattern reads: an indexed array element renders with
+/// the `…` index, and every other element renders as its subject.
+fn for_of_element_source(
+    subject: &Expr,
+    kind: hir::ForOfKind,
+    origins: &HashMap<String, String>,
+) -> String {
+    let source = for_of_subject_source(subject, kind, origins);
+    match kind {
+        hir::ForOfKind::ArrayValues | hir::ForOfKind::FixedArrayValues => format!("{source}[…]"),
+        _ => source,
+    }
+}
+
 fn generator_for_of_subject_source(
     init: &Expr,
-    for_of_subjects: &HashMap<String, String>,
+    origins: &HashMap<String, String>,
 ) -> Option<String> {
     let ExprKind::Field { obj, name } = &init.kind else {
         return None;
@@ -897,16 +920,16 @@ fn generator_for_of_subject_source(
         return None;
     };
     let subject_name = step_name.strip_suffix(".step]]")?;
-    for_of_subjects
-        .get(&format!("{subject_name}.subject]]"))
-        .cloned()
+    origins.get(&format!("{subject_name}.subject]]")).cloned()
 }
 
-fn copy_place_source(expr: &Expr) -> Option<String> {
+fn copy_place_source(expr: &Expr, origins: &HashMap<String, String>) -> Option<String> {
     match &expr.kind {
-        ExprKind::Local(name) | ExprKind::Global(name) => Some(name.clone()),
-        ExprKind::Field { .. } if field_chain_has_copy_root(expr) => render_place_expr(expr),
-        ExprKind::Index { .. } => render_place_expr(expr),
+        ExprKind::Local(_) | ExprKind::Global(_) => render_place_expr(expr, origins),
+        ExprKind::Field { .. } if field_chain_has_copy_root(expr) => {
+            render_place_expr(expr, origins)
+        }
+        ExprKind::Index { .. } => render_place_expr(expr, origins),
         _ => None,
     }
 }
@@ -919,45 +942,61 @@ fn field_chain_has_copy_root(expr: &Expr) -> bool {
     }
 }
 
-fn render_source_expr(expr: &Expr) -> String {
-    render_place_expr(expr)
-        .or_else(|| render_call_expr(expr))
+fn render_source_expr(expr: &Expr, origins: &HashMap<String, String>) -> String {
+    render_place_expr(expr, origins)
+        .or_else(|| render_call_expr(expr, origins))
         .unwrap_or_else(|| "…".to_string())
 }
 
-fn render_call_expr(expr: &Expr) -> Option<String> {
+fn render_call_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<String> {
     let ExprKind::Call { callee, .. } = &expr.kind else {
         return None;
     };
     let callee = match callee {
         Callee::Func(name) | Callee::Foreign(name) => name.clone(),
-        Callee::Value(value) => render_place_expr(value)?,
-        Callee::Method { recv, name } => format!("{}.{}", render_source_expr(recv), name),
+        Callee::Value(value) => render_place_expr(value, origins)?,
+        Callee::Method { recv, name } => {
+            format!("{}.{}", render_source_expr(recv, origins), name)
+        }
         _ => return None,
     };
     Some(format!("{callee}(…)"))
 }
 
-fn render_place_expr(expr: &Expr) -> Option<String> {
+/// A synthesized local renders as the expression it holds, and as `…`
+/// when no origin is recorded for it; its own name never renders.
+fn render_local(name: &str, origins: &HashMap<String, String>) -> String {
+    match origins.get(name) {
+        Some(origin) => origin.clone(),
+        None if name.starts_with("[[") => "…".to_string(),
+        None => name.to_string(),
+    }
+}
+
+fn render_place_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<String> {
     match &expr.kind {
-        ExprKind::Local(name) | ExprKind::Global(name) => Some(name.clone()),
+        ExprKind::Local(name) => Some(render_local(name, origins)),
+        ExprKind::Global(name) => Some(name.clone()),
         ExprKind::This => Some("this".to_string()),
-        ExprKind::Field { obj, name } => Some(format!("{}.{}", render_place_expr(obj)?, name)),
+        ExprKind::Field { obj, name } => {
+            Some(format!("{}.{}", render_place_expr(obj, origins)?, name))
+        }
         ExprKind::Index { obj, index, .. } => Some(format!(
             "{}[{}]",
-            render_place_expr(obj)?,
-            render_index_expr(index)
+            render_place_expr(obj, origins)?,
+            render_index_expr(index, origins)
         )),
         _ => None,
     }
 }
 
-fn render_index_expr(expr: &Expr) -> String {
+fn render_index_expr(expr: &Expr, origins: &HashMap<String, String>) -> String {
     match &expr.kind {
-        ExprKind::Local(name) | ExprKind::Global(name) => name.clone(),
+        ExprKind::Local(name) => render_local(name, origins),
+        ExprKind::Global(name) => name.clone(),
         ExprKind::This => "this".to_string(),
         ExprKind::Field { .. } | ExprKind::Index { .. } => {
-            render_place_expr(expr).unwrap_or_else(|| "…".to_string())
+            render_place_expr(expr, origins).unwrap_or_else(|| "…".to_string())
         }
         _ => "…".to_string(),
     }
@@ -1784,18 +1823,104 @@ class State {
         );
     }
 
+    /// A checker-synthesized local never reaches a W004 message: the
+    /// `for…of` subject storage and every pattern storage form resolve
+    /// to the user's expression. Each row names the binding and the
+    /// origin text the message carries.
     #[test]
-    fn fixed_array_for_of_synthetic_subject_is_not_a_binding() {
-        let result = w004_warnings(
-            "export function main(): void {\n\
-               const points: FixedArray<Point, 1> = [new Point(1.0)];\n\
-               for (const point of points) { point.x = 2.0; }\n\
-             }",
-        );
-        let warnings = only_w004(&result);
-        assert_eq!(warnings.len(), 1, "{result:?}");
-        assert!(warnings[0].message.contains("`point`"), "{result:?}");
-        assert!(!warnings[0].message.contains("[["), "{result:?}");
+    fn synthesized_storage_never_reaches_a_w004_message() {
+        let forms = [
+            (
+                "fixed-array for…of subject",
+                "export function main(): void {\n\
+                   const points: FixedArray<Point, 1> = [new Point(1.0)];\n\
+                   for (const point of points) { point.x = 2.0; }\n\
+                 }",
+                "`point` is copied from `points`",
+            ),
+            (
+                "pattern source, field",
+                "export function main(): void {\n\
+                   const state: State = new State(new Point(1.0));\n\
+                   const { point } = state;\n\
+                   point.x = 2.0;\n\
+                 }",
+                "`point` is copied from `state.point`",
+            ),
+            (
+                "pattern source, index",
+                "export function main(): void {\n\
+                   const points: Point[] = [new Point(1.0)];\n\
+                   const [first] = points;\n\
+                   first.x = 2.0;\n\
+                 }",
+                "`first` is copied from `points[…]`",
+            ),
+            (
+                "pattern source, call",
+                "function make(): State { return new State(new Point(1.0)); }\n\
+                 export function main(): void {\n\
+                   const { point } = make();\n\
+                   point.x = 2.0;\n\
+                 }",
+                "`point` is copied from `make(…).point`",
+            ),
+            (
+                "pattern parameter, free function",
+                "function move({ point }: State): void { point.x = 2.0; }\n\
+                 export function main(): void { move(new State(new Point(1.0))); }",
+                "`point` is a value-type parameter copy",
+            ),
+            (
+                "pattern parameter, lambda",
+                "export function main(): void {\n\
+                   const states: State[] = [new State(new Point(1.0))];\n\
+                   states.forEach(({ point }: State): void => { point.x = 2.0; });\n\
+                 }",
+                "`point` is a value-type parameter copy",
+            ),
+            (
+                "pattern element, array field",
+                "export function main(): void {\n\
+                   const states: State[] = [new State(new Point(1.0))];\n\
+                   for (const { point } of states) { point.x = 2.0; }\n\
+                 }",
+                "`point` is copied from `states[…].point`",
+            ),
+            (
+                "pattern element, array index",
+                "export function main(): void {\n\
+                   const pointss: Point[][] = [[new Point(1.0)]];\n\
+                   for (const [first] of pointss) { first.x = 2.0; }\n\
+                 }",
+                "`first` is copied from `pointss[…][…]`",
+            ),
+            (
+                "pattern element, map values",
+                "export function main(): void {\n\
+                   const states: Map<i32, State> = new Map<i32, State>();\n\
+                   states.set(1, new State(new Point(1.0)));\n\
+                   for (const { point } of states.values()) { point.x = 2.0; }\n\
+                 }",
+                "`point` is copied from `states.values(…).point`",
+            ),
+        ];
+        let mut violations = Vec::new();
+        for (form, source, origin) in forms {
+            let result = w004_warnings(source);
+            let warnings = only_w004(&result);
+            let message = match warnings.as_slice() {
+                [warning] => warning.message.as_str(),
+                _ => {
+                    violations.push(format!("{form}: {} W004 — {result:?}", warnings.len()));
+                    continue;
+                }
+            };
+            if message.contains("[[") || !message.contains(origin) {
+                violations.push(format!("{form}: printed `{message}`; wants `{origin}`"));
+            }
+        }
+        assert!(violations.is_empty(), "{}", violations.join("\n"));
     }
 
     #[test]

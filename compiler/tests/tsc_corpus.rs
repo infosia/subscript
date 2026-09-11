@@ -385,6 +385,103 @@ struct RecordedForm {
     claim: &'static str,
 }
 
+/// Runs the pinned TypeScript compiler over every form in one batch and
+/// answers each disagreement between the recorded class and the measured
+/// one, with the compiler's output. `source` turns a form's body into
+/// the file the batch holds.
+fn recorded_form_disagreements(
+    batch: &str,
+    forms: &[RecordedForm],
+    source: impl Fn(&str) -> String,
+) -> Result<(), String> {
+    let root = project_root();
+    let temporary = TempProjectDirectory::create();
+    let mut files: Vec<PathBuf> = Vec::new();
+    for form in forms {
+        let path = temporary.0.join(format!("{}.ts", form.stem));
+        fs::write(&path, source(form.body))
+            .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+        files.push(path);
+    }
+    files.push(root.join("prelude/lang.d.ts"));
+    let config_path = temporary.0.join(format!("{batch}.json"));
+    fs::write(&config_path, tsconfig(&files))
+        .unwrap_or_else(|error| panic!("write {}: {error}", config_path.display()));
+
+    let tsc = tsc_binary(&root);
+    let output = Command::new(&tsc)
+        .arg("--build")
+        .arg("--pretty")
+        .arg("false")
+        .arg(&config_path)
+        .current_dir(&root)
+        .output()
+        .unwrap_or_else(|error| panic!("run {}: {error}", tsc.display()));
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut measured: BTreeMap<&str, BTreeSet<String>> = forms
+        .iter()
+        .map(|form| (form.stem, BTreeSet::new()))
+        .collect();
+    let mut unowned = Vec::new();
+    for line in combined.lines().filter(|line| line.contains("error TS")) {
+        let owner = line.find("): error TS").and_then(|marker| {
+            let file = &line[..line[..marker].rfind('(')?];
+            let code = line[marker + "): error ".len()..].split(':').next()?;
+            let form = forms
+                .iter()
+                .find(|form| file.ends_with(&format!("{}.ts", form.stem)))?;
+            is_diagnostic_code(code).then(|| (form.stem, code.to_owned()))
+        });
+        match owner {
+            Some((stem, code)) => {
+                measured
+                    .get_mut(stem)
+                    .expect("every stem has an entry")
+                    .insert(code);
+            }
+            None => unowned.push(line.to_owned()),
+        }
+    }
+    if !unowned.is_empty() {
+        return Err(format!(
+            "tsc emitted diagnostics that belong to no measured form:\n{}",
+            unowned.join("\n")
+        ));
+    }
+
+    let mut disagreements = Vec::new();
+    for form in forms {
+        let recorded = TscClaim::parse(form.claim)
+            .unwrap_or_else(|error| panic!("{}: invalid recorded claim: {error}", form.stem));
+        let actual = TscClaim::measured(measured[form.stem].clone());
+        if recorded != actual {
+            disagreements.push(format!(
+                "{}: this repository records `{}`; tsc said `{}`",
+                form.stem,
+                recorded.display(),
+                actual.display()
+            ));
+        }
+    }
+    eprintln!(
+        "{batch} tsc pin: {} form(s) measured under the pinned TypeScript compiler",
+        forms.len()
+    );
+    if disagreements.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "recorded tsc class disagreement(s):\n{}\ntsc said:\n{combined}",
+            disagreements.join("\n")
+        ))
+    }
+}
+
 /// compiler.md §104.6 and §105.5: §79 rule 6 keeps a `tsc: rejects`
 /// entry off a checker site that carries a divergence variant. The
 /// annotated bare-`Map` forms therefore reach no corpus entry, and
@@ -429,97 +526,115 @@ fn the_annotated_bare_map_forms_measure_their_recorded_tsc_class() {
             claim: "accepts",
         },
     ];
-
-    let root = project_root();
-    let temporary = TempProjectDirectory::create();
-    let mut files: Vec<PathBuf> = Vec::new();
-    for form in &forms {
-        let path = temporary.0.join(format!("{}.ts", form.stem));
-        let source = format!(
+    let result = recorded_form_disagreements("bare-map-forms", &forms, |body| {
+        format!(
             "export function main(): void {{\n\
              \x20 const map: Map<i32, string> = new Map<i32, string>();\n\
              \x20 map.set(1, \"one\");\n\
-             {}\n\
-             }}\n",
-            form.body
-        );
-        fs::write(&path, source)
-            .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
-        files.push(path);
-    }
-    files.push(root.join("prelude/lang.d.ts"));
-    let config_path = temporary.0.join("bare-map-forms.json");
-    fs::write(&config_path, tsconfig(&files))
-        .unwrap_or_else(|error| panic!("write {}: {error}", config_path.display()));
+             {body}\n\
+             }}\n"
+        )
+    });
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
 
-    let tsc = tsc_binary(&root);
-    let output = Command::new(&tsc)
-        .arg("--build")
-        .arg("--pretty")
-        .arg("false")
-        .arg(&config_path)
-        .current_dir(&root)
-        .output()
-        .unwrap_or_else(|error| panic!("run {}: {error}", tsc.display()));
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+/// compiler.md §107.3 and §79 rule 6: the pattern rejection sites that
+/// carry a divergence variant each also reject a program `tsc`
+/// rejects, so that class reaches no corpus entry. This test is its
+/// pin: every form below is rejected here at the named variant, and the
+/// pinned TypeScript compiler measures the class recorded beside it.
+///
+/// The source-shape site serves both classes by the source alone: an
+/// array pattern over a `string` is `tsc`-clean, and so is a pattern
+/// parameter over a `string`, because a `string` iterates. A field
+/// pattern over a `string` and an array pattern over an `i32` are not.
+/// The rest, default, nested, and field-rest sites each serve both
+/// classes through one source of the wrong shape.
+#[test]
+fn the_rejected_pattern_forms_measure_their_recorded_tsc_class() {
+    use subscript_compiler::divergence::Divergence;
 
-    let mut measured: BTreeMap<&str, BTreeSet<String>> = forms
-        .iter()
-        .map(|form| (form.stem, BTreeSet::new()))
-        .collect();
-    let mut unowned = Vec::new();
-    for line in combined.lines().filter(|line| line.contains("error TS")) {
-        let owner = line.find("): error TS").and_then(|marker| {
-            let file = &line[..line[..marker].rfind('(')?];
-            let code = line[marker + "): error ".len()..].split(':').next()?;
-            let form = forms
-                .iter()
-                .find(|form| file.ends_with(&format!("{}.ts", form.stem)))?;
-            is_diagnostic_code(code).then(|| (form.stem, code.to_owned()))
-        });
-        match owner {
-            Some((stem, code)) => {
-                measured
-                    .get_mut(stem)
-                    .expect("every stem has an entry")
-                    .insert(code);
-            }
-            None => unowned.push(line.to_owned()),
-        }
-    }
-    assert!(
-        unowned.is_empty(),
-        "tsc emitted diagnostics that belong to no measured form:\n{}",
-        unowned.join("\n")
-    );
+    let forms = [
+        RecordedForm {
+            stem: "array-pattern-over-string",
+            body: "export function main(): void {\n  const text: string = \"ab\";\n  const [a, b] = text;\n  print(`${a}${b}`);\n}\n",
+            claim: "accepts",
+        },
+        RecordedForm {
+            stem: "field-pattern-over-string",
+            body: "export function main(): void {\n  const text: string = \"ab\";\n  const { x } = text;\n  print(`${x}`);\n}\n",
+            claim: "rejects TS2339",
+        },
+        RecordedForm {
+            stem: "function-parameter-over-string",
+            body: "function take([a, b]: string): string { return a + b; }\nexport function main(): void {\n  print(take(\"ab\"));\n}\n",
+            claim: "accepts",
+        },
+        RecordedForm {
+            stem: "method-parameter-over-i32",
+            body: "class Box {\n  m([a, b]: i32): i32 { return a + b; }\n}\nexport function main(): void {\n  print(`${new Box().m(1)}`);\n}\n",
+            claim: "rejects TS2488",
+        },
+        RecordedForm {
+            stem: "array-rest-over-i32",
+            body: "export function main(): void {\n  const [a, ...b] = 1;\n  print(`${a} ${b.length}`);\n}\n",
+            claim: "rejects TS2488",
+        },
+        RecordedForm {
+            stem: "nested-pattern-over-i32",
+            body: "export function main(): void {\n  const [[a]] = 1;\n  print(`${a}`);\n}\n",
+            claim: "rejects TS2488",
+        },
+        RecordedForm {
+            stem: "default-value-over-i32",
+            body: "export function main(): void {\n  const [a = 2] = 1;\n  print(`${a}`);\n}\n",
+            claim: "rejects TS2488",
+        },
+        RecordedForm {
+            stem: "field-rest-over-string",
+            body: "export function main(): void {\n  const text: string = \"ab\";\n  const { length, ...rest } = text;\n  print(`${length}`);\n}\n",
+            claim: "rejects TS2700",
+        },
+    ];
+    let variants = [
+        Divergence::PatternSourceShape,
+        Divergence::PatternSourceShape,
+        Divergence::PatternSourceShape,
+        Divergence::PatternSourceShape,
+        Divergence::ArrayRestPattern,
+        Divergence::NestedPattern,
+        Divergence::PatternDefaultValue,
+        Divergence::ObjectRestPattern,
+    ];
 
-    let mut disagreements = Vec::new();
-    for form in &forms {
-        let recorded = TscClaim::parse(form.claim)
-            .unwrap_or_else(|error| panic!("{}: invalid recorded claim: {error}", form.stem));
-        let actual = TscClaim::measured(measured[form.stem].clone());
-        if recorded != actual {
-            disagreements.push(format!(
-                "{}: this repository records `{}`; tsc said `{}`",
-                form.stem,
-                recorded.display(),
-                actual.display()
+    let mut wrong_site = Vec::new();
+    for (form, variant) in forms.iter().zip(variants) {
+        let file = format!("{}.ts", form.stem);
+        let diagnostics =
+            subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
+                &file,
+                form.body.to_string(),
+            )])
+            .expect_err("every recorded form is rejected here");
+        let sites: Vec<_> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.divergence)
+            .collect();
+        if sites != [Some(variant)] {
+            wrong_site.push(format!(
+                "{}: {sites:?}, wants [Some({variant:?})]",
+                form.stem
             ));
         }
     }
-    eprintln!(
-        "bare-Map tsc pin: {} form(s) measured under the pinned TypeScript compiler",
-        forms.len()
-    );
     assert!(
-        disagreements.is_empty(),
-        "recorded tsc class disagreement(s):\n{}\ntsc said:\n{combined}",
-        disagreements.join("\n")
+        wrong_site.is_empty(),
+        "a form reaches another site than the one it pins:\n{}",
+        wrong_site.join("\n")
     );
+
+    let result = recorded_form_disagreements("rejected-pattern-forms", &forms, str::to_string);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
 #[test]

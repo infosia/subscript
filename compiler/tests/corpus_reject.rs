@@ -240,6 +240,17 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r210-array-is-array.ts", RuleCode::S014, 9),
     ("r211-array-of-variadic.ts", RuleCode::S014, 8),
     ("r212-new-array-length.ts", RuleCode::S014, 8),
+    ("r213-for-of-bare-map-pair.ts", RuleCode::S014, 10),
+    ("r214-pattern-over-entries.ts", RuleCode::S014, 10),
+    ("r215-pattern-over-object-literal.ts", RuleCode::S100, 8),
+    ("r216-pattern-default-value.ts", RuleCode::S100, 9),
+    ("r217-pattern-array-rest.ts", RuleCode::S100, 9),
+    ("r218-pattern-object-rest.ts", RuleCode::S100, 13),
+    ("r219-nested-pattern.ts", RuleCode::S100, 9),
+    ("r220-assignment-pattern.ts", RuleCode::S100, 11),
+    ("r221-pattern-source-shape.ts", RuleCode::S100, 9),
+    ("r222-pattern-computed-field-name.ts", RuleCode::S100, 13),
+    ("r223-module-level-pattern.ts", RuleCode::S100, 8),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,
@@ -401,6 +412,37 @@ fn json_parse_date_rejection_explains_why_the_target_is_unreachable() {
         "diagnostic must explain the unreachable target: {}",
         diagnostics[0].message
     );
+}
+
+/// §107.4: a rejected binding pattern reports one diagnostic, at the
+/// pattern. No `unknown name` follows for the names in the pattern.
+#[test]
+fn every_binding_pattern_entry_reports_one_diagnostic() {
+    let dir = corpus_dir().join("reject");
+    let mut counted = 0usize;
+    let mut violations = Vec::new();
+    for (file, _, _) in expected_entries() {
+        let source = fs::read_to_string(dir.join(file))
+            .unwrap_or_else(|error| panic!("read {file}: {error}"));
+        if !source
+            .lines()
+            .any(|line| line.starts_with("// exercises:") && line.contains("binding-pattern"))
+        {
+            continue;
+        }
+        counted += 1;
+        let diagnostics = check_program(&[SourceFile::new(file, source)])
+            .expect_err("a binding-pattern reject entry must fail");
+        if diagnostics.len() != 1 {
+            let messages: Vec<&str> = diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.message.as_str())
+                .collect();
+            violations.push(format!("{file}: {} — {messages:?}", diagnostics.len()));
+        }
+    }
+    assert!(counted >= 11, "the reader found {counted} pattern entries");
+    assert!(violations.is_empty(), "{}", violations.join("\n"));
 }
 
 #[test]
