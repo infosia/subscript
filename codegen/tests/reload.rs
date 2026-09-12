@@ -16,6 +16,8 @@ mod corpus;
 #[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
+#[path = "support/pool.rs"]
+mod pool;
 #[allow(dead_code)]
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
@@ -603,100 +605,160 @@ export function main(): void {
 
 // ----- reload-mode lowering is the same language -----
 
+/// One golden entry of the reload sweep, with its position in corpus order.
+struct ReloadEntry {
+    index: usize,
+    id: String,
+    golden: Vec<u8>,
+    sources: Vec<SourceFile>,
+}
+
+/// Runs one entry in reload mode and compares the output with the golden.
+/// The caller asserts.
+fn run_reload_entry(entry: &ReloadEntry) -> Vec<String> {
+    let id = &entry.id;
+    let sources = &entry.sources;
+    let mut failures = Vec::new();
+    let uses_fixture = sources
+        .iter()
+        .any(|source| corpus::references_interop(&source.source));
+    #[cfg(not(all(windows, target_env = "msvc")))]
+    let libraries = uses_fixture
+        .then(native_fixture::library)
+        .into_iter()
+        .collect::<Vec<_>>();
+    #[cfg(all(windows, target_env = "msvc"))]
+    let libraries: Vec<subscript_codegen::NativeLibrary> = {
+        let _ = uses_fixture;
+        Vec::new()
+    };
+    let mut session = match ReloadSession::new_with_native_libraries(sources, &libraries) {
+        Ok(s) => s,
+        Err(e) => {
+            failures.push(format!("{id}: session failed: {e}"));
+            return failures;
+        }
+    };
+    let module = match check_program(sources) {
+        Ok(module) => module,
+        Err(diagnostics) => {
+            failures.push(format!("{id}: checker failed: {diagnostics:?}"));
+            return failures;
+        }
+    };
+    #[cfg(not(all(windows, target_env = "msvc")))]
+    let host_owned_state = matches!(
+        id.as_str(),
+        "a128-host-owned-state" | "a137-handle-entry-param"
+    );
+    #[cfg(not(all(windows, target_env = "msvc")))]
+    if host_owned_state {
+        native_fixture::host_owned_state_pre_entry();
+    }
+    #[cfg(not(all(windows, target_env = "msvc")))]
+    let parameter_entry = if id.as_str() == "a137-handle-entry-param" {
+        let state = native_fixture::host_owned_state_borrow_and_advance();
+        session.call_export_with("adopt", &[EntryArg::Handle(state), EntryArg::I32(7)])
+    } else if id.as_str() == "a140-wire-entry-param" {
+        session.call_export_with("configure", &[EntryArg::I32(23), EntryArg::I32(5)])
+    } else {
+        Ok(())
+    };
+    #[cfg(all(windows, target_env = "msvc"))]
+    let parameter_entry = Ok(());
+    let run = parameter_entry
+        .and_then(|()| session.call_main())
+        .and_then(|()| {
+            for function in &module.functions {
+                if function.exported && function.is_async && function.name != "main" {
+                    session.call_export(&function.name)?;
+                }
+            }
+            while session.async_pending() != 0 {
+                session.async_step()?;
+            }
+            Ok(())
+        });
+    #[cfg(not(all(windows, target_env = "msvc")))]
+    if host_owned_state {
+        native_fixture::host_owned_state_post_run();
+    }
+    match run {
+        Ok(()) => {
+            let bytes = session.take_output();
+            if bytes != entry.golden {
+                failures.push(format!(
+                    "{id}: reload-mode output {:?} != golden {:?}",
+                    String::from_utf8_lossy(&bytes),
+                    String::from_utf8_lossy(&entry.golden)
+                ));
+            }
+        }
+        Err(e) => failures.push(format!("{id}: run failed: {e}")),
+    }
+    failures
+}
+
 #[test]
 fn reload_mode_reproduces_every_committed_golden() {
     let accept = corpus::corpus_accept();
-    let mut failures = Vec::new();
     let ids = corpus::golden_ids(&accept);
     assert!(
         ids.len() >= 24,
         "expected at least the 24 committed goldens, found {}",
         ids.len()
     );
-    for id in &ids {
-        let golden = corpus::golden_bytes(&accept, id);
+    // An entry that drives the interop fixture's process-global C state
+    // (`codegen/tests/support/native_fixture.rs`) runs on this thread after
+    // the pool. Every other entry goes to the pool.
+    let mut pooled = Vec::new();
+    let mut hooked = Vec::new();
+    for (index, id) in ids.iter().enumerate() {
         let sources = corpus::entry_sources(&accept, id);
-        let uses_fixture = sources
-            .iter()
-            .any(|source| corpus::references_interop(&source.source));
         // On windows-msvc the interop fixture is excluded, so interop entries
         // are not run there; every other golden still is.
         #[cfg(all(windows, target_env = "msvc"))]
-        if uses_fixture {
+        if sources
+            .iter()
+            .any(|source| corpus::references_interop(&source.source))
+        {
             continue;
         }
-        #[cfg(not(all(windows, target_env = "msvc")))]
-        let libraries = uses_fixture
-            .then(native_fixture::library)
-            .into_iter()
-            .collect::<Vec<_>>();
-        #[cfg(all(windows, target_env = "msvc"))]
-        let libraries: Vec<subscript_codegen::NativeLibrary> = Vec::new();
-        let mut session = match ReloadSession::new_with_native_libraries(&sources, &libraries) {
-            Ok(s) => s,
-            Err(e) => {
-                failures.push(format!("{id}: session failed: {e}"));
-                continue;
-            }
-        };
-        let module = match check_program(&sources) {
-            Ok(module) => module,
-            Err(diagnostics) => {
-                failures.push(format!("{id}: checker failed: {diagnostics:?}"));
-                continue;
-            }
+        let entry = ReloadEntry {
+            index,
+            id: id.clone(),
+            golden: corpus::golden_bytes(&accept, id),
+            sources,
         };
         #[cfg(not(all(windows, target_env = "msvc")))]
         let host_owned_state = matches!(
             id.as_str(),
             "a128-host-owned-state" | "a137-handle-entry-param"
         );
-        #[cfg(not(all(windows, target_env = "msvc")))]
-        if host_owned_state {
-            native_fixture::host_owned_state_pre_entry();
-        }
-        #[cfg(not(all(windows, target_env = "msvc")))]
-        let parameter_entry = if id == "a137-handle-entry-param" {
-            let state = native_fixture::host_owned_state_borrow_and_advance();
-            session.call_export_with("adopt", &[EntryArg::Handle(state), EntryArg::I32(7)])
-        } else if id == "a140-wire-entry-param" {
-            session.call_export_with("configure", &[EntryArg::I32(23), EntryArg::I32(5)])
-        } else {
-            Ok(())
-        };
         #[cfg(all(windows, target_env = "msvc"))]
-        let parameter_entry = Ok(());
-        let run = parameter_entry
-            .and_then(|()| session.call_main())
-            .and_then(|()| {
-                for function in &module.functions {
-                    if function.exported && function.is_async && function.name != "main" {
-                        session.call_export(&function.name)?;
-                    }
-                }
-                while session.async_pending() != 0 {
-                    session.async_step()?;
-                }
-                Ok(())
-            });
-        #[cfg(not(all(windows, target_env = "msvc")))]
+        let host_owned_state = false;
         if host_owned_state {
-            native_fixture::host_owned_state_post_run();
-        }
-        match run {
-            Ok(()) => {
-                let bytes = session.take_output();
-                if bytes != golden {
-                    failures.push(format!(
-                        "{id}: reload-mode output {:?} != golden {:?}",
-                        String::from_utf8_lossy(&bytes),
-                        String::from_utf8_lossy(&golden)
-                    ));
-                }
-            }
-            Err(e) => failures.push(format!("{id}: run failed: {e}")),
+            hooked.push(entry);
+        } else {
+            pooled.push(entry);
         }
     }
+
+    let mut indexed: Vec<(usize, Vec<String>)> = pool::map_in_order(&pooled, run_reload_entry)
+        .into_iter()
+        .zip(pooled.iter().map(|entry| entry.index))
+        .map(|(entry_failures, index)| (index, entry_failures))
+        .collect();
+    indexed.extend(
+        hooked
+            .iter()
+            .map(|entry| (entry.index, run_reload_entry(entry))),
+    );
+    indexed.sort_by_key(|(index, _)| *index);
+    let failures = indexed
+        .into_iter()
+        .flat_map(|(_, entry_failures)| entry_failures)
+        .collect::<Vec<_>>();
     assert!(
         failures.is_empty(),
         "{} reload-mode failure(s):\n{}",

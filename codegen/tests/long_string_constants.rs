@@ -1,4 +1,7 @@
 //! §99: byte-data representation, ownership, and three execution witnesses.
+#[path = "support/pool.rs"]
+mod pool;
+
 use std::time::Instant;
 
 use subscript_codegen::{emit_c, interpreter::interpret, lir::lower_module, run_c_aot, run_jit};
@@ -46,7 +49,9 @@ enum StringForm {
     Alias,
 }
 
-fn check_case(bytes: usize, mixed: bool, form: StringForm) {
+/// Runs one case in all three witnesses and returns the line the caller
+/// prints. The caller prints the lines in case order.
+fn check_case(bytes: usize, mixed: bool, form: StringForm) -> String {
     let start = Instant::now();
     let (encoded, decoded) = payload(bytes, mixed);
     assert_eq!(decoded.len(), bytes);
@@ -114,22 +119,30 @@ fn check_case(bytes: usize, mixed: bool, form: StringForm) {
             "{tier}: bytes={bytes}, mixed={mixed}, form={form:?}"
         );
     }
-    eprintln!("s99 bytes={bytes} mixed={mixed} form={form:?} C={} elapsed={:.3}s output={bytes} {checksum} (twice)", c.len(), start.elapsed().as_secs_f64());
+    format!("s99 bytes={bytes} mixed={mixed} form={form:?} C={} elapsed={:.3}s output={bytes} {checksum} (twice)", c.len(), start.elapsed().as_secs_f64())
 }
 
 #[test]
 fn generated_lengths_run_in_all_three_witnesses() {
+    let mut cases = Vec::new();
     for bytes in [64_999, 65_000, 65_001, 65_535, 65_536, 1_048_576] {
-        check_case(bytes, false, StringForm::Literal);
-        check_case(bytes, true, StringForm::Literal);
+        cases.push((bytes, false, StringForm::Literal));
+        cases.push((bytes, true, StringForm::Literal));
     }
-    check_case(65_001, true, StringForm::Template);
+    cases.push((65_001, true, StringForm::Template));
+    // One case per work item; this thread prints the lines in case order.
+    let lines = pool::map_in_order(&cases, |(bytes, mixed, form)| {
+        check_case(*bytes, *mixed, *form)
+    });
+    for line in lines {
+        eprintln!("{line}");
+    }
 }
 
 #[test]
 fn alias_members_cross_the_representation_boundary_in_all_three_witnesses() {
-    check_case(65_000, true, StringForm::Alias);
-    check_case(65_001, true, StringForm::Alias);
+    eprintln!("{}", check_case(65_000, true, StringForm::Alias));
+    eprintln!("{}", check_case(65_001, true, StringForm::Alias));
 }
 
 #[test]

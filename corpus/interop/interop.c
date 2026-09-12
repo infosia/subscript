@@ -77,8 +77,8 @@ struct SubDevice_T {
 };
 
 /* Deterministic scratch used to synthesize a callback message of a given
- * length. Single-threaded; refilled on each use. */
-static char subscript_msgbuf[256];
+ * length. One buffer per thread; refilled on each use. */
+static _Thread_local char subscript_msgbuf[256];
 
 /* R21 host-owned state. The script receives only a borrowed opaque handle;
  * the host adapters below retain the owning pointer for the whole run. */

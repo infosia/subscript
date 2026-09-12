@@ -18,6 +18,8 @@ mod trap_corpus;
 #[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
+#[path = "support/pool.rs"]
+mod pool;
 
 use subscript_codegen::{interpreter::interpret, lir::lower_module};
 use subscript_codegen::{
@@ -646,11 +648,189 @@ fn json_stringify_cyclic_reference_graph_traps_identically() {
     );
 }
 
+/// One trap-corpus entry of the sweep, with the sources and the golden
+/// pre-trap stdout the comparison needs.
+struct TrapCase {
+    id: String,
+    files: Vec<SourceFile>,
+    expected: Vec<u8>,
+}
+
+/// What one trap entry contributes: the line the caller prints and the
+/// entry's failures.
+struct TrapCaseOutcome {
+    line: String,
+    failures: Vec<String>,
+}
+
+/// Runs one trap entry on both tiers and compares kind, message,
+/// position, and pre-trap stdout. The caller prints and asserts.
+fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
+    let id = &case.id;
+    let files = &case.files;
+    let expected = &case.expected;
+    let mut failures = Vec::new();
+    let expected_file = format!("{id}.ts");
+    let (expected_kind, expected_line, expected_column) = trap_expectation(id);
+    let freed_handle_diagnostic = matches!(
+        id.as_str(),
+        "t22-double-delete-q6" | "t23-use-after-delete-q6"
+    );
+    let callback_userdata_diagnostic = id.as_str() == "t46-callback-userdata-freed";
+    let (jit, ship) = if id.as_str() == "t50-wire-entry-unknown-value" {
+        #[cfg(not(all(windows, target_env = "msvc")))]
+        let libraries = [native_fixture::library()];
+        #[cfg(all(windows, target_env = "msvc"))]
+        let libraries: [subscript_codegen::NativeLibrary; 0] = [];
+        (
+            trap_corpus::run_wire_entry_unknown_dev(files, &libraries),
+            trap_corpus::run_wire_entry_unknown_ship(files, &libraries),
+        )
+    } else if let Some(n) = allocation_failure_count(id) {
+        (
+            run_jit_with_alloc_failure(files, n),
+            run_c_aot_with_alloc_failure(files, n),
+        )
+    } else if freed_handle_diagnostic {
+        (
+            run_jit_with_memory_accounting(files, true).map(|(stdout, _)| stdout),
+            run_c_aot(files),
+        )
+    } else if callback_userdata_diagnostic {
+        #[cfg(not(all(windows, target_env = "msvc")))]
+        let libraries = [native_fixture::library()];
+        #[cfg(all(windows, target_env = "msvc"))]
+        let libraries: [subscript_codegen::NativeLibrary; 0] = [];
+        (
+            run_jit_with_freed_handle_diagnostics_and_native_libraries(files, &libraries),
+            run_c_aot_with_freed_handle_diagnostics_and_native_libraries(files, &libraries),
+        )
+    } else {
+        #[cfg(not(all(windows, target_env = "msvc")))]
+        let libraries = [native_fixture::library()];
+        // No interop trap runs on windows-msvc, so the remaining entries
+        // need no native library.
+        #[cfg(all(windows, target_env = "msvc"))]
+        let libraries: [subscript_codegen::NativeLibrary; 0] = [];
+        (
+            run_jit_with_native_libraries(files, &libraries),
+            run_c_aot_with_native_libraries(files, &libraries),
+        )
+    };
+
+    match &jit {
+        Err(RunError::Trap(report)) => {
+            if report.rule != expected_kind
+                || report.pos.file != expected_file
+                || report.pos.line != expected_line
+                || report.pos.col != expected_column
+            {
+                failures.push(format!(
+                    "{id}: dev-JIT trap differs from the corpus intent\n  expected kind={expected_kind}, \
+                     position={expected_file}:{expected_line}:{expected_column}\n  actual   {}",
+                    render_run(&jit)
+                ));
+            }
+            if report.stdout != *expected {
+                failures.push(format!(
+                    "{id}: dev-JIT stdout differs from its JIT-generated .expected\n  dev-JIT = \
+                     {:?}\n  expected = {:?}",
+                    String::from_utf8_lossy(&report.stdout),
+                    String::from_utf8_lossy(expected)
+                ));
+            }
+            if let Some(message) = regex_error_message(id) {
+                if report.message != message {
+                    failures.push(format!(
+                        "{id}: dev-JIT regex message differs\n  expected = {message:?}\n  \
+                         actual   = {:?}",
+                        report.message
+                    ));
+                }
+            }
+            let freed_handle_message = match id.as_str() {
+                "t22-double-delete-q6" => Some("Context.free of an already-deleted allocation"),
+                "t23-use-after-delete-q6" => Some("use of a deleted allocation"),
+                "t46-callback-userdata-freed" => {
+                    Some("callback userdata points to a freed allocation")
+                }
+                "t48-wire-enum-unknown-value" => {
+                    Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
+                }
+                "t49-wire-enum-struct-unknown-member" => {
+                    Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
+                }
+                "t50-wire-entry-unknown-value" => {
+                    Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
+                }
+                "t51-bytes-into-range" => {
+                    Some("byte range at offset 5 with size 16 exceeds array length 20")
+                }
+                _ => None,
+            };
+            if let Some(message) = freed_handle_message {
+                if report.message != message {
+                    failures.push(format!(
+                        "{id}: dev-JIT freed-handle message differs\n  expected = \
+                         {message:?}\n  actual   = {:?}",
+                        report.message
+                    ));
+                }
+            }
+            if matches!(
+                id.as_str(),
+                "t35-allocation-failure-map-new"
+                    | "t36-allocation-failure-set-new"
+                    | "t37-allocation-failure-map-grow"
+                    | "t38-allocation-failure-set-grow"
+            ) && report.message != "injected allocation failure"
+            {
+                failures.push(format!(
+                    "{id}: Context::trap must preserve the first, injected message; got {:?}",
+                    report.message
+                ));
+            }
+        }
+        _ => failures.push(format!(
+            "{id}: dev-JIT did not produce the intended trap\n  {}",
+            render_run(&jit)
+        )),
+    }
+
+    let line = format!(
+        "{id}:\n  dev-JIT    {}\n  ship-C-AOT {}",
+        render_run(&jit),
+        render_run(&ship)
+    );
+
+    // Q6/§8.1b explicitly makes double-delete and use-after-delete
+    // undefined in the releasing ship runtime. Execute that column
+    // so its observed behavior stays visible, but contract only the
+    // dev-JIT trap and golden rather than asserting tier agreement.
+    if matches!(
+        id.as_str(),
+        "t22-double-delete-q6" | "t23-use-after-delete-q6"
+    ) {
+        return TrapCaseOutcome { line, failures };
+    }
+
+    match (&jit, &ship) {
+        (Err(RunError::Trap(dev)), Err(RunError::Trap(c))) if dev == c => {}
+        _ => failures.push(format!(
+            "{id}: tiers disagree on (kind, message, position, pre-fault stdout)\n  dev-JIT    \
+             {}\n  ship-C-AOT {}",
+            render_run(&jit),
+            render_run(&ship)
+        )),
+    }
+    TrapCaseOutcome { line, failures }
+}
+
 #[test]
 fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
     let trap = trap_corpus::corpus_trap();
     let ids = trap_corpus::trap_ids(&trap);
-    let mut failures = Vec::new();
+    let mut cases = Vec::new();
     for id in ids {
         // A stale coroutine exists only after two runs and a hot reload.
         // `reload.rs` drives this paired corpus source through that
@@ -674,159 +854,17 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
             continue;
         }
         let expected = trap_corpus::trap_expected(&trap, &id);
-        let expected_file = format!("{id}.ts");
-        let (expected_kind, expected_line, expected_column) = trap_expectation(&id);
-        let freed_handle_diagnostic = matches!(
-            id.as_str(),
-            "t22-double-delete-q6" | "t23-use-after-delete-q6"
-        );
-        let callback_userdata_diagnostic = id == "t46-callback-userdata-freed";
-        let (jit, ship) = if id == "t50-wire-entry-unknown-value" {
-            #[cfg(not(all(windows, target_env = "msvc")))]
-            let libraries = [native_fixture::library()];
-            #[cfg(all(windows, target_env = "msvc"))]
-            let libraries: [subscript_codegen::NativeLibrary; 0] = [];
-            (
-                trap_corpus::run_wire_entry_unknown_dev(&files, &libraries),
-                trap_corpus::run_wire_entry_unknown_ship(&files, &libraries),
-            )
-        } else if let Some(n) = allocation_failure_count(&id) {
-            (
-                run_jit_with_alloc_failure(&files, n),
-                run_c_aot_with_alloc_failure(&files, n),
-            )
-        } else if freed_handle_diagnostic {
-            (
-                run_jit_with_memory_accounting(&files, true).map(|(stdout, _)| stdout),
-                run_c_aot(&files),
-            )
-        } else if callback_userdata_diagnostic {
-            #[cfg(not(all(windows, target_env = "msvc")))]
-            let libraries = [native_fixture::library()];
-            #[cfg(all(windows, target_env = "msvc"))]
-            let libraries: [subscript_codegen::NativeLibrary; 0] = [];
-            (
-                run_jit_with_freed_handle_diagnostics_and_native_libraries(&files, &libraries),
-                run_c_aot_with_freed_handle_diagnostics_and_native_libraries(&files, &libraries),
-            )
-        } else {
-            #[cfg(not(all(windows, target_env = "msvc")))]
-            let libraries = [native_fixture::library()];
-            // No interop trap runs on windows-msvc, so the remaining entries
-            // need no native library.
-            #[cfg(all(windows, target_env = "msvc"))]
-            let libraries: [subscript_codegen::NativeLibrary; 0] = [];
-            (
-                run_jit_with_native_libraries(&files, &libraries),
-                run_c_aot_with_native_libraries(&files, &libraries),
-            )
-        };
+        cases.push(TrapCase {
+            id,
+            files,
+            expected,
+        });
+    }
 
-        match &jit {
-            Err(RunError::Trap(report)) => {
-                if report.rule != expected_kind
-                    || report.pos.file != expected_file
-                    || report.pos.line != expected_line
-                    || report.pos.col != expected_column
-                {
-                    failures.push(format!(
-                        "{id}: dev-JIT trap differs from the corpus intent\n  expected kind={expected_kind}, \
-                         position={expected_file}:{expected_line}:{expected_column}\n  actual   {}",
-                        render_run(&jit)
-                    ));
-                }
-                if report.stdout != expected {
-                    failures.push(format!(
-                        "{id}: dev-JIT stdout differs from its JIT-generated .expected\n  dev-JIT = \
-                         {:?}\n  expected = {:?}",
-                        String::from_utf8_lossy(&report.stdout),
-                        String::from_utf8_lossy(&expected)
-                    ));
-                }
-                if let Some(message) = regex_error_message(&id) {
-                    if report.message != message {
-                        failures.push(format!(
-                            "{id}: dev-JIT regex message differs\n  expected = {message:?}\n  \
-                             actual   = {:?}",
-                            report.message
-                        ));
-                    }
-                }
-                let freed_handle_message = match id.as_str() {
-                    "t22-double-delete-q6" => Some("Context.free of an already-deleted allocation"),
-                    "t23-use-after-delete-q6" => Some("use of a deleted allocation"),
-                    "t46-callback-userdata-freed" => {
-                        Some("callback userdata points to a freed allocation")
-                    }
-                    "t48-wire-enum-unknown-value" => {
-                        Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
-                    }
-                    "t49-wire-enum-struct-unknown-member" => {
-                        Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
-                    }
-                    "t50-wire-entry-unknown-value" => {
-                        Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
-                    }
-                    "t51-bytes-into-range" => {
-                        Some("byte range at offset 5 with size 16 exceeds array length 20")
-                    }
-                    _ => None,
-                };
-                if let Some(message) = freed_handle_message {
-                    if report.message != message {
-                        failures.push(format!(
-                            "{id}: dev-JIT freed-handle message differs\n  expected = \
-                             {message:?}\n  actual   = {:?}",
-                            report.message
-                        ));
-                    }
-                }
-                if matches!(
-                    id.as_str(),
-                    "t35-allocation-failure-map-new"
-                        | "t36-allocation-failure-set-new"
-                        | "t37-allocation-failure-map-grow"
-                        | "t38-allocation-failure-set-grow"
-                ) && report.message != "injected allocation failure"
-                {
-                    failures.push(format!(
-                        "{id}: Context::trap must preserve the first, injected message; got {:?}",
-                        report.message
-                    ));
-                }
-            }
-            _ => failures.push(format!(
-                "{id}: dev-JIT did not produce the intended trap\n  {}",
-                render_run(&jit)
-            )),
-        }
-
-        println!(
-            "{id}:\n  dev-JIT    {}\n  ship-C-AOT {}",
-            render_run(&jit),
-            render_run(&ship)
-        );
-
-        // Q6/§8.1b explicitly makes double-delete and use-after-delete
-        // undefined in the releasing ship runtime. Execute that column
-        // so its observed behavior stays visible, but contract only the
-        // dev-JIT trap and golden rather than asserting tier agreement.
-        if matches!(
-            id.as_str(),
-            "t22-double-delete-q6" | "t23-use-after-delete-q6"
-        ) {
-            continue;
-        }
-
-        match (&jit, &ship) {
-            (Err(RunError::Trap(dev)), Err(RunError::Trap(c))) if dev == c => {}
-            _ => failures.push(format!(
-                "{id}: tiers disagree on (kind, message, position, pre-fault stdout)\n  dev-JIT    \
-                 {}\n  ship-C-AOT {}",
-                render_run(&jit),
-                render_run(&ship)
-            )),
-        }
+    let mut failures = Vec::new();
+    for outcome in pool::map_in_order(&cases, check_trap_case) {
+        println!("{}", outcome.line);
+        failures.extend(outcome.failures);
     }
     assert!(
         failures.is_empty(),

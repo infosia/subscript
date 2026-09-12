@@ -20,6 +20,8 @@ mod corpus;
 #[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
+#[path = "support/pool.rs"]
+mod pool;
 
 use subscript_codegen::{
     run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
@@ -840,59 +842,128 @@ fn narrow_corpus_entries_match_across_tiers_before_golden_comparison() {
     }
 }
 
+/// One golden entry of the sweep, with its position in corpus order.
+struct SweepEntry {
+    index: usize,
+    id: String,
+    golden: Vec<u8>,
+    sources: Vec<subscript_compiler::SourceFile>,
+}
+
+/// What one entry contributes to the sweep's counts and failure list.
+struct SweepOutcome {
+    compared: bool,
+    failures: Vec<String>,
+}
+
+/// Runs one entry on both tiers and compares the two outputs and the
+/// golden. The caller prints and asserts.
+fn compare_sweep_entry(entry: &SweepEntry) -> SweepOutcome {
+    let id = &entry.id;
+    let golden = &entry.golden;
+    let libraries =
+        native_libraries(&entry.sources).expect("the selection step drops every excluded entry");
+    let mut failures = Vec::new();
+    let jit = match run_dev_corpus_entry(id, &entry.sources, &libraries) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            failures.push(format!("{id}: dev-JIT run failed: {e}"));
+            return SweepOutcome {
+                compared: false,
+                failures,
+            };
+        }
+    };
+    // The ship tier: emit C, compile at -O2 -ffp-contract=off, link
+    // with the runtime, run, capture stdout.
+    let ship = match run_ship_corpus_entry(id, &entry.sources, &libraries) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            failures.push(format!("{id}: ship-C-AOT run failed: {e}"));
+            return SweepOutcome {
+                compared: false,
+                failures,
+            };
+        }
+    };
+    if jit != ship {
+        failures.push(format!(
+            "{id}: dev-JIT output {:?} != ship-C-AOT output {:?}",
+            String::from_utf8_lossy(&jit),
+            String::from_utf8_lossy(&ship)
+        ));
+    }
+    if jit != *golden {
+        failures.push(format!(
+            "{id}: dev-JIT output {:?} != golden {:?}",
+            String::from_utf8_lossy(&jit),
+            String::from_utf8_lossy(golden)
+        ));
+    }
+    if ship != *golden {
+        failures.push(format!(
+            "{id}: ship-C-AOT output {:?} != golden {:?}",
+            String::from_utf8_lossy(&ship),
+            String::from_utf8_lossy(golden)
+        ));
+    }
+    SweepOutcome {
+        compared: true,
+        failures,
+    }
+}
+
 #[test]
 fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
     let accept = corpus::corpus_accept();
     let golden_ids = corpus::golden_ids(&accept);
-    let mut failures = Vec::new();
-    let mut compared = 0usize;
     let mut skipped = 0usize;
-    for id in &golden_ids {
+    // An entry with host hooks drives the interop fixture's process-global
+    // C state (`codegen/tests/support/native_fixture.rs`), so it runs on
+    // this thread after the pool. Every other entry takes the plain dev
+    // path and goes to the pool.
+    let mut pooled = Vec::new();
+    let mut hooked = Vec::new();
+    for (index, id) in golden_ids.iter().enumerate() {
         let golden = corpus::golden_bytes(&accept, id);
         let sources = corpus::entry_sources(&accept, id);
-        let Some(libraries) = native_libraries(&sources) else {
+        if native_libraries(&sources).is_none() {
             println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
             skipped += 1;
             continue;
-        };
-        let jit = match run_dev_corpus_entry(id, &sources, &libraries) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                failures.push(format!("{id}: dev-JIT run failed: {e}"));
-                continue;
-            }
-        };
-        // The ship tier: emit C, compile at -O2 -ffp-contract=off, link
-        // with the runtime, run, capture stdout.
-        let ship = match run_ship_corpus_entry(id, &sources, &libraries) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                failures.push(format!("{id}: ship-C-AOT run failed: {e}"));
-                continue;
-            }
-        };
-        compared += 1;
-        if jit != ship {
-            failures.push(format!(
-                "{id}: dev-JIT output {:?} != ship-C-AOT output {:?}",
-                String::from_utf8_lossy(&jit),
-                String::from_utf8_lossy(&ship)
-            ));
         }
-        if jit != golden {
-            failures.push(format!(
-                "{id}: dev-JIT output {:?} != golden {:?}",
-                String::from_utf8_lossy(&jit),
-                String::from_utf8_lossy(&golden)
-            ));
+        let entry = SweepEntry {
+            index,
+            id: id.clone(),
+            golden,
+            sources,
+        };
+        if matches!(host_hooks(id), (None, None)) {
+            pooled.push(entry);
+        } else {
+            hooked.push(entry);
         }
-        if ship != golden {
-            failures.push(format!(
-                "{id}: ship-C-AOT output {:?} != golden {:?}",
-                String::from_utf8_lossy(&ship),
-                String::from_utf8_lossy(&golden)
-            ));
+    }
+
+    let mut outcomes: Vec<(usize, SweepOutcome)> = pool::map_in_order(&pooled, compare_sweep_entry)
+        .into_iter()
+        .zip(pooled.iter().map(|entry| entry.index))
+        .map(|(outcome, index)| (index, outcome))
+        .collect();
+    outcomes.extend(
+        hooked
+            .iter()
+            .map(|entry| (entry.index, compare_sweep_entry(entry))),
+    );
+    outcomes.sort_by_key(|(index, _)| *index);
+
+    let mut compared = 0usize;
+    let mut failures = Vec::new();
+    for (_, outcome) in outcomes {
+        if outcome.compared {
+            compared += 1;
         }
+        failures.extend(outcome.failures);
     }
     println!("golden sweep: compared {compared} entries, skipped {skipped} entries");
     assert!(

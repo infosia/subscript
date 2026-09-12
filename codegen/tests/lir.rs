@@ -7,6 +7,8 @@ mod lir_facts;
 #[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
+#[path = "support/pool.rs"]
+mod pool;
 #[cfg(debug_assertions)]
 #[allow(dead_code)]
 #[path = "support/trap_corpus.rs"]
@@ -1427,27 +1429,29 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
         selected.len()
     );
 
-    let mut ran = 0usize;
-    let mut matched = 0usize;
-    let mut findings = Vec::new();
-    for id in selected {
-        ran += 1;
+    // One entry per work item. The worker returns the entry's finding, if
+    // it has one; this thread counts and asserts.
+    let results = pool::map_in_order(&selected, |id: &&str| {
+        let id = *id;
         let module = lower_entry(&accept, id);
         let golden = corpus::golden_bytes(&accept, id);
         match interpret(&module) {
-            Ok(output) if output == golden => matched += 1,
-            Ok(output) => findings.push(format!(
+            Ok(output) if output == golden => None,
+            Ok(output) => Some(format!(
                 "{id}: output mismatch\n  interpreter: {:?}\n  golden:      {:?}",
                 String::from_utf8_lossy(&output),
                 String::from_utf8_lossy(&golden)
             )),
-            Err(error) => findings.push(format!(
+            Err(error) => Some(format!(
                 "{id}: interpreter error: {error}\n  interpreter: {:?}\n  golden:      {:?}",
                 String::from_utf8_lossy(error.output()),
                 String::from_utf8_lossy(&golden)
             )),
         }
-    }
+    });
+    let ran = results.len();
+    let matched = results.iter().filter(|finding| finding.is_none()).count();
+    let findings = results.into_iter().flatten().collect::<Vec<_>>();
     assert!(
         findings.is_empty(),
         "interpreter {profile} corpus: {ran} run, {matched} matched, {} findings, {} declared exclusions\n{}",
