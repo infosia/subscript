@@ -49,6 +49,33 @@ behaviour. The gates that prove that: `cargo fmt --check`, the
 clippy baseline, and `tools/gate.sh quick`, with no golden and no
 LIR snapshot moved.
 
+Result, landed at `b5d66ca` and `b8b9739`:
+
+| File | Before | Root after | Children | Largest child | `pub(super)` | fn parity | clippy |
+|---|---|---|---|---|---|---|---|
+| `codegen/src/lir.rs` | 9,955 | 1,654 | 14 | 1,351 | 86 | 227 = 227 | 81 = 81 (workspace) |
+| `compiler/src/check/expr.rs` | 8,769 | 545 | 10 | 1,491 | 69 (+4 `pub(in crate::check)`) | 145 = 145 | 14 = 14 (crate) |
+| `codegen/src/cemit.rs` | 9,064 | 1,138 | 16 | 1,079 | 96 | 194 = 194 | 32 = 32 (crate) |
+| `codegen/src/lower/func.rs` | 8,344 | 1,539 | 13 | 1,176 | 78 | 185 = 185 | 32 = 32 (crate) |
+
+Each round measured the move as pure: a line- or character-multiset
+comparison of the base file against the new files left only the
+added `//!`, `use super::*;`, `mod`, and `impl` wrapper lines, the
+`pub(super)` prefixes, and the signatures rustfmt re-wrapped past 100
+columns. Two comments that named the former grouping were deleted.
+No golden, snapshot, or `Cargo.lock` moved. Each child module starts
+with one `//!` line and `use super::*;`. Two children needed
+`crate::check::X` where the base wrote `super::X`.
+
+The landing gate, run once over all four splits:
+
+```text
+gate full b8b973981d99386b4342185b2a8fd2c76fd87fbc clean debug 1457/0/2 release 1455/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+CLAUDE.md landed at `6c9efb0`: 17,279 → 15,817 bytes; the dated
+notes and their narrative are in `specs/rules-history.md`.
+
 Files over 2,000 lines at `403f8fc`, for the record: 17. The four
 above, then `runtime/src/ffi.rs` (7,154), `codegen/src/interpreter.rs`
 (6,930), `compiler/src/check/mod.rs` (6,476), `runtime/src/context.rs`
@@ -57,6 +84,7 @@ above, then `runtime/src/ffi.rs` (7,154), `codegen/src/interpreter.rs`
 `codegen/tests/lir.rs` (2,575), `codegen/tests/support/lir_facts.rs`
 (2,232), `bindgen/src/emit.rs` (2,225), `codegen/src/ship.rs` (2,184),
 `compiler/src/warn.rs` (2,155). The 13 that this round does not
-split stay listed here until a round splits them. A total check for
+split stay listed here until a round splits them. The four rounds
+took 10–12 minutes each, about 110,000 tokens each, two at a time. A total check for
 §5.y.2 does not exist yet; the baseline-list shape of the clippy
 check in `tools/gate.sh` fits it.
