@@ -225,6 +225,20 @@ struct StaticCallback {
     ty: Type,
 }
 
+/// The arguments of one call, between the explicit arguments and the
+/// parameter defaults. A construction runs the field initializers
+/// between the two steps (compiler.md §57.1).
+struct PendingArguments {
+    /// The coerced value of every parameter that is already lowered, in
+    /// parameter order. A default reads it for the substitutions.
+    values: Vec<l::Operand>,
+    /// The operands each parameter contributes to the call.
+    groups: Vec<Vec<l::Operand>>,
+    /// The foreign array parameters, which contribute their pointer and
+    /// their length after every argument is lowered.
+    delayed_array_snapshots: Vec<(usize, l::Operand, Type, Pos)>,
+}
+
 impl From<&hir::Param> for CallParam {
     fn from(parameter: &hir::Param) -> Self {
         Self {
@@ -4972,69 +4986,42 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         receiver: Option<&PreparedBase>,
         foreign: bool,
     ) -> Result<Vec<l::Operand>, LowerError> {
-        let mut operand_groups = Vec::with_capacity(params.len());
-        let mut delayed_array_snapshots = Vec::new();
-        let mut substitutions = HashMap::new();
+        let mut pending = self.lower_explicit_arguments(params, args, foreign)?;
+        self.lower_argument_defaults(params, args, receiver, foreign, &mut pending)?;
+        self.finish_call_arguments(pending)
+    }
+
+    /// Lowers the explicit arguments left to right (compiler.md §57.1
+    /// step 1). Every absent argument is trailing, so the parameters
+    /// this step leaves out are the ones a default supplies.
+    fn lower_explicit_arguments(
+        &mut self,
+        params: &[CallParam],
+        args: &[hir::Expr],
+        foreign: bool,
+    ) -> Result<PendingArguments, LowerError> {
+        let mut pending = PendingArguments {
+            values: Vec::with_capacity(params.len()),
+            groups: vec![Vec::new(); params.len()],
+            delayed_array_snapshots: Vec::new(),
+        };
         for (index, parameter) in params.iter().enumerate() {
-            let value = if let Some(argument) = args.get(index) {
-                if foreign {
-                    self.lower_foreign_argument_value(&parameter.ty, argument)?
-                } else {
-                    self.lower_argument_value(&parameter.ty, argument)?
-                }
-            } else {
-                let default = parameter.default.as_ref().ok_or_else(|| {
-                    self.error(
-                        &parameter.pos,
-                        format!("missing argument `{}` with no default", parameter.name),
-                    )
-                })?;
-                self.substitutions.push(substitutions.clone());
-                let saved_this = self.this_value.clone();
-                if let Some(receiver) = receiver {
-                    self.this_value = Some(match receiver {
-                        PreparedBase::Value(value) => value.clone(),
-                        PreparedBase::Place(place) => {
-                            let address =
-                                self.materialize_address_inner(place, &default.pos, false)?;
-                            self.emit(
-                                l::InstructionKind::LoadAddress,
-                                vec![address],
-                                Some(l::ValueType::Data(self.place_type(place).clone())),
-                                false,
-                                Vec::new(),
-                                default.pos.clone(),
-                            )?
-                            .expect("default receiver load")
-                        }
-                    });
-                }
-                let lowered = self.lower_stored_expr_at(&parameter.ty, default, &parameter.pos);
-                self.this_value = saved_this;
-                self.substitutions.pop();
-                lowered?
+            let Some(argument) = args.get(index) else {
+                break;
             };
-            let actual = self.operand_type(&value, &parameter.pos)?;
-            let expected = l::ValueType::Data(parameter.ty.clone());
-            let value = if actual == expected
-                || foreign && self.foreign_boundary_pointer_representation(&parameter.ty, &actual)
-            {
-                value
+            let value = if foreign {
+                self.lower_foreign_argument_value(&parameter.ty, argument)?
             } else {
-                self.coerce_operand(value, expected, &parameter.pos)?
+                self.lower_argument_value(&parameter.ty, argument)?
             };
-            substitutions.insert(parameter.name.clone(), value.clone());
-            if foreign {
-                if let Type::Array(element) = &parameter.ty {
-                    let pos = args
-                        .get(index)
-                        .map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone());
-                    delayed_array_snapshots.push((index, value, (**element).clone(), pos));
-                    operand_groups.push(Vec::new());
-                    continue;
-                }
-            }
-            operand_groups.push(vec![value]);
+            self.record_argument(
+                index,
+                parameter,
+                Some(argument),
+                value,
+                foreign,
+                &mut pending,
+            )?;
         }
         if args.len() > params.len() {
             return Err(self.error(
@@ -5046,10 +5033,106 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 ),
             ));
         }
-        for (index, value, element, pos) in delayed_array_snapshots {
-            operand_groups[index] = self.foreign_array_snapshot(value, &element, pos)?.to_vec();
+        Ok(pending)
+    }
+
+    /// Lowers the default of every absent argument left to right, with
+    /// `this` bound to `receiver` (compiler.md §57.1 step 4). A default
+    /// reads the parameters before it, so the substitutions carry the
+    /// values that are already lowered.
+    fn lower_argument_defaults(
+        &mut self,
+        params: &[CallParam],
+        args: &[hir::Expr],
+        receiver: Option<&PreparedBase>,
+        foreign: bool,
+        pending: &mut PendingArguments,
+    ) -> Result<(), LowerError> {
+        for (index, parameter) in params.iter().enumerate().skip(args.len()) {
+            let default = parameter.default.as_ref().ok_or_else(|| {
+                self.error(
+                    &parameter.pos,
+                    format!("missing argument `{}` with no default", parameter.name),
+                )
+            })?;
+            let substitutions = params
+                .iter()
+                .zip(&pending.values)
+                .map(|(parameter, value)| (parameter.name.clone(), value.clone()))
+                .collect();
+            self.substitutions.push(substitutions);
+            let saved_this = self.this_value.clone();
+            if let Some(receiver) = receiver {
+                self.this_value = Some(match receiver {
+                    PreparedBase::Value(value) => value.clone(),
+                    PreparedBase::Place(place) => {
+                        let address = self.materialize_address_inner(place, &default.pos, false)?;
+                        self.emit(
+                            l::InstructionKind::LoadAddress,
+                            vec![address],
+                            Some(l::ValueType::Data(self.place_type(place).clone())),
+                            false,
+                            Vec::new(),
+                            default.pos.clone(),
+                        )?
+                        .expect("default receiver load")
+                    }
+                });
+            }
+            let lowered = self.lower_stored_expr_at(&parameter.ty, default, &parameter.pos);
+            self.this_value = saved_this;
+            self.substitutions.pop();
+            let value = lowered?;
+            self.record_argument(index, parameter, None, value, foreign, pending)?;
         }
-        Ok(operand_groups.into_iter().flatten().collect())
+        Ok(())
+    }
+
+    /// Coerces one lowered argument to its parameter type and keeps it
+    /// at its parameter position.
+    fn record_argument(
+        &mut self,
+        index: usize,
+        parameter: &CallParam,
+        argument: Option<&hir::Expr>,
+        value: l::Operand,
+        foreign: bool,
+        pending: &mut PendingArguments,
+    ) -> Result<(), LowerError> {
+        let actual = self.operand_type(&value, &parameter.pos)?;
+        let expected = l::ValueType::Data(parameter.ty.clone());
+        let value = if actual == expected
+            || foreign && self.foreign_boundary_pointer_representation(&parameter.ty, &actual)
+        {
+            value
+        } else {
+            self.coerce_operand(value, expected, &parameter.pos)?
+        };
+        pending.values.push(value.clone());
+        if foreign {
+            if let Type::Array(element) = &parameter.ty {
+                let pos =
+                    argument.map_or_else(|| parameter.pos.clone(), |argument| argument.pos.clone());
+                pending
+                    .delayed_array_snapshots
+                    .push((index, value, (**element).clone(), pos));
+                return Ok(());
+            }
+        }
+        pending.groups[index] = vec![value];
+        Ok(())
+    }
+
+    /// Takes the snapshot of every foreign array argument and flattens
+    /// the parameters into the operands of the call.
+    fn finish_call_arguments(
+        &mut self,
+        mut pending: PendingArguments,
+    ) -> Result<Vec<l::Operand>, LowerError> {
+        for (index, value, element, pos) in std::mem::take(&mut pending.delayed_array_snapshots) {
+            pending.groups[index] = self.foreign_array_snapshot(value, &element, pos)?.to_vec();
+        }
+        Ok(pending.groups.into_iter().flatten().collect())
     }
 
     fn foreign_array_snapshot(
@@ -5112,15 +5195,20 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             )?
             .expect("class allocation");
 
+        // compiler.md §57.1 orders a construction: the explicit
+        // arguments, the field initializers, then the defaults of the
+        // absent arguments, which read `this`.
         let mut constructor_args = Vec::new();
-        if let Some(constructor) = &class.ctor {
-            let receiver = PreparedBase::Value(allocated.clone());
-            let params = constructor
+        let mut pending = None;
+        let params = class.ctor.as_ref().map(|constructor| {
+            constructor
                 .params
                 .iter()
                 .map(CallParam::from)
-                .collect::<Vec<_>>();
-            constructor_args = self.lower_call_arguments(&params, args, Some(&receiver), false)?;
+                .collect::<Vec<_>>()
+        });
+        if let Some(params) = &params {
+            pending = Some(self.lower_explicit_arguments(params, args, false)?);
         }
         for (index, field) in class.fields.iter().enumerate() {
             if let Some(initializer) = &field.init {
@@ -5130,6 +5218,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 let value = value?;
                 self.store_class_field(class_id, index, allocated.clone(), value, &field.pos)?;
             }
+        }
+        if let (Some(params), Some(mut pending)) = (params, pending) {
+            let receiver = PreparedBase::Value(allocated.clone());
+            self.lower_argument_defaults(&params, args, Some(&receiver), false, &mut pending)?;
+            constructor_args = self.finish_call_arguments(pending)?;
         }
         if class.is_boundary {
             if args.len() != class.fields.len() {

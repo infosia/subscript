@@ -585,13 +585,25 @@ fn prefix_this_violations(
     }
 }
 
+/// One `this` that compiler.md §108.4 rule 6 rejects, with the rule-1
+/// fields that hold no value at it.
+#[derive(Debug)]
+struct PrefixViolation {
+    pos: Pos,
+    kind: PrefixThis,
+    /// The first rule-1 field that holds no value there.
+    first_missing: String,
+    /// The other rule-1 fields that hold no value there.
+    other_missing: Vec<String>,
+}
+
 /// Moves every `this` that one statement of the prefix carries into
 /// `collected`, beside the fields that hold no value at that statement.
 fn record_prefix_violations(
     found: Vec<(Pos, PrefixThis)>,
     rule_one_fields: &[String],
     held: &HashSet<String>,
-    collected: &mut Vec<(Pos, PrefixThis, Vec<String>)>,
+    collected: &mut Vec<PrefixViolation>,
 ) {
     if found.is_empty() {
         return;
@@ -601,25 +613,56 @@ fn record_prefix_violations(
         .filter(|name| !held.contains(name.as_str()))
         .cloned()
         .collect();
+    // If every rule-1 field holds a value here, the prefix ended before
+    // this statement, and rule 6 does not reach the `this`.
+    let Some((first, rest)) = missing.split_first() else {
+        return;
+    };
     for (pos, kind) in found {
-        collected.push((pos, kind, missing.clone()));
+        collected.push(PrefixViolation {
+            pos,
+            kind,
+            first_missing: first.clone(),
+            other_missing: rest.to_vec(),
+        });
     }
 }
 
-/// Names the fields of a compiler.md §108.4 site B diagnostic, with the
-/// verb that agrees with the count.
-fn field_list(names: &[String]) -> Option<(String, &'static str)> {
-    match names {
-        [] => None,
-        [only] => Some((format!("field `{only}`"), "holds")),
-        many => {
-            let listed = many
-                .iter()
-                .map(|name| format!("`{name}`"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            Some((format!("fields {listed}"), "hold"))
-        }
+/// The parts of a compiler.md §108.4 site B message that agree with the
+/// count of the fields the message names.
+struct NamedFields {
+    /// The fields, as the subject of the clause.
+    subject: String,
+    /// The verb that agrees with the subject.
+    verb: &'static str,
+    /// The assignments the first spelling moves the use after.
+    assignments: String,
+    /// The second spelling, which gives each field an initializer.
+    initializers: String,
+}
+
+/// Names the fields of a compiler.md §108.4 site B diagnostic. The list
+/// is never empty: the prefix ends at the first statement after which
+/// every rule-1 field holds a value.
+fn field_list(first: &str, rest: &[String]) -> NamedFields {
+    if rest.is_empty() {
+        return NamedFields {
+            subject: format!("field `{first}`"),
+            verb: "holds",
+            assignments: format!("the assignment of `{first}`"),
+            initializers: format!("give `{first}` an initializer"),
+        };
+    }
+    let listed = std::iter::once(first)
+        .chain(rest.iter().map(String::as_str))
+        .map(|name| format!("`{name}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    NamedFields {
+        subject: format!("fields {listed}"),
+        verb: "hold",
+        assignments: format!("the assignments of {listed}"),
+        initializers: format!("give {listed} initializers"),
     }
 }
 
@@ -5740,7 +5783,7 @@ impl<'p> Checker<'p> {
         let Some(ctor) = self.classes[id.0].ctor.as_ref() else {
             return;
         };
-        let mut collected: Vec<(Pos, PrefixThis, Vec<String>)> = Vec::new();
+        let mut collected: Vec<PrefixViolation> = Vec::new();
         let mut found = Vec::new();
         for parameter in &ctor.params {
             if let Some(default) = &parameter.default {
@@ -5748,21 +5791,29 @@ impl<'p> Checker<'p> {
             }
         }
         record_prefix_violations(found, &rule_one_fields, &held, &mut collected);
-        let end = ctor.body.iter().rposition(|statement| {
-            this_field_assignment(statement)
-                .is_some_and(|name| rule_one_fields.iter().any(|field| field == name))
-        });
-        let prefix = end.map_or(&[][..], |end| &ctor.body[..=end]);
-        for statement in prefix {
+        // The prefix ends with the first top-level statement after which
+        // every rule-1 field holds a value. If no statement completes the
+        // set, the prefix is the whole constructor and rule 1 reports as
+        // well.
+        for statement in &ctor.body {
             let mut found = Vec::new();
             prefix_this_violations(hir::HirChild::Stmt(statement), &held, &mut found);
             record_prefix_violations(found, &rule_one_fields, &held, &mut collected);
             if let Some(name) = this_field_assignment(statement) {
                 held.insert(name.to_string());
             }
+            if rule_one_fields.iter().all(|field| held.contains(field)) {
+                break;
+            }
         }
         let class_name = self.classes[id.0].name.clone();
-        for (pos, kind, missing) in collected {
+        for violation in collected {
+            let PrefixViolation {
+                pos,
+                kind,
+                first_missing,
+                other_missing,
+            } = violation;
             let (use_site, advice) = match kind {
                 PrefixThis::Read(name) => {
                     self.error(
@@ -5770,23 +5821,22 @@ impl<'p> Checker<'p> {
                         format!(
                             "`this.{name}` reads field `{name}` of `{class_name}` before the \
                              constructor assigns it at its top level; move the read after \
-                             `this.{name} = …`"
+                             `this.{name} = …`, or give `{name}` an initializer"
                         ),
                         pos,
                     );
                     continue;
                 }
-                PrefixThis::Call => ("calls a member of `this`", "move the call"),
-                PrefixThis::Value => ("uses `this` as a value", "move the use"),
+                PrefixThis::Call => ("calls a member of `this`", "call"),
+                PrefixThis::Value => ("uses `this` as a value", "use"),
             };
-            let before = field_list(&missing).map_or_else(String::new, |(names, verb)| {
-                format!(" before {names} {verb} a value")
-            });
+            let named = field_list(&first_missing, &other_missing);
             self.error_diverging(
                 RuleCode::S100,
                 format!(
-                    "the constructor of `{class_name}` {use_site}{before}; {advice} after the \
-                     last top-level field assignment"
+                    "the constructor of `{class_name}` {use_site} before {} {} a value; move the \
+                     {advice} after {}, or {}",
+                    named.subject, named.verb, named.assignments, named.initializers
                 ),
                 pos,
                 Divergence::ThisBeforeFieldValues,

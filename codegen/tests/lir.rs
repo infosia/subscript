@@ -2555,3 +2555,21 @@ fn array_for_of_carries_and_advances_traversal_state() {
         .iter()
         .all(|local| local.source_name != "<for-of cursor>"));
 }
+
+#[test]
+fn a_parameter_default_evaluates_after_the_field_initializers() {
+    // compiler.md §57.1 orders a construction: the explicit arguments
+    // left to right, the field initializers in declaration order, then
+    // the defaults of the absent arguments, with `this` bound to the
+    // instance. One lowering serves every tier, so the interpreter
+    // reads the order every tier runs.
+    let module = lower_source(
+        "construction-order.ts",
+        "function argumentValue(): i32 {\n  print(\"arg\");\n  return 1;\n}\n\nfunction defaultValue(seen: i32): i32 {\n  print(\"default\");\n  return seen;\n}\n\nfunction initialValue(): i32 {\n  print(\"init\");\n  return 5;\n}\n\nclass Holder {\n  count: i32 = initialValue();\n  first: i32;\n  second: i32;\n\n  constructor(first: i32, second: i32 = defaultValue(this.count)) {\n    this.first = first;\n    this.second = second;\n  }\n}\n\nexport function main(): void {\n  const holder: Holder = new Holder(argumentValue());\n  print(`${holder.first} ${holder.second} ${holder.count}`);\n}\n",
+    );
+    verify_module(&module).expect("construction order LIR verifies");
+    assert_eq!(
+        interpret(&module).expect("construction order LIR interprets"),
+        b"arg\ninit\ndefault\n1 5 5\n"
+    );
+}

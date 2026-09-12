@@ -693,16 +693,22 @@ fn the_one_branch_field_assignment_form_measures_its_recorded_tsc_class() {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
-/// compiler.md §108.4's six test-pinned forms, in the §79 rule 6 shape:
+/// compiler.md §108.4's test-pinned forms, in the §79 rule 6 shape:
 /// each one is rejected here at the recorded site, and the pinned
 /// TypeScript compiler measures the class recorded beside it.
 ///
-/// Site A carries no variant, so the one `tsc`-accepted form that
-/// reaches it — a read after a conditional whose both arms assign the
-/// field, before the top-level assignment — cannot be a reject corpus
-/// entry, and this test is its pin. The three `tsc`-rejected forms and
-/// the two rule 5 spellings are the shapes the four corpus entries do
-/// not hold, and the test keeps each at its own site.
+/// Site A carries no variant, so a `tsc`-accepted form that reaches it
+/// cannot be a reject corpus entry, and this test is its pin. §108.4
+/// names one form per statement shape: both arms of a conditional, the
+/// same arm, a loop body, and a chained assignment. The `tsc`-rejected
+/// forms and the two rule 5 spellings are the shapes the four corpus
+/// entries do not hold, and the test keeps each at its own site.
+///
+/// Two forms report a second diagnostic, and the test asserts the full
+/// list. The chained assignment reports rule 1 for the field the nested
+/// assignment writes. The parameter default that no top-level statement
+/// follows reports rule 1 as well, and `tsc` answers TS2564 beside
+/// TS2565.
 #[test]
 fn the_prefix_this_forms_measure_their_recorded_tsc_class() {
     use subscript_compiler::divergence::Divergence;
@@ -738,18 +744,42 @@ fn the_prefix_this_forms_measure_their_recorded_tsc_class() {
             body: "class Holder {\n  value: i32;\n  total: i32;\n  constructor(flag: boolean) {\n    if (flag) {\n      this.value = 1;\n    } else {\n      this.value = 2;\n    }\n    this.total = this.value;\n    this.value = 3;\n  }\n}\nexport function main(): void {\n  const holder: Holder = new Holder(true);\n  print(`${holder.total} ${holder.value}`);\n}\n",
             claim: "accepts",
         },
+        RecordedForm {
+            stem: "same-arm-then-read",
+            body: "class Inner {\n  value: i32 = 3;\n}\nclass Holder {\n  inner: Inner;\n  constructor(flag: boolean) {\n    if (flag) {\n      this.inner = new Inner();\n      print(`${this.inner.value}`);\n    }\n    this.inner = new Inner();\n  }\n}\nexport function main(): void {\n  const holder: Holder = new Holder(true);\n  print(`${holder.inner.value}`);\n}\n",
+            claim: "accepts",
+        },
+        RecordedForm {
+            stem: "loop-body-then-read",
+            body: "class Holder {\n  count: i32;\n  constructor(n: i32) {\n    for (let i: i32 = 0; i < n; i++) {\n      this.count = i;\n      print(`${this.count}`);\n    }\n    this.count = n;\n  }\n}\nexport function main(): void {\n  const holder: Holder = new Holder(2);\n  print(`${holder.count}`);\n}\n",
+            claim: "accepts",
+        },
+        RecordedForm {
+            stem: "chained-assignment-then-read",
+            body: "class Inner {\n  value: i32 = 3;\n}\nclass Holder {\n  a: Inner;\n  b: Inner;\n  c: Inner;\n  constructor() {\n    this.a = this.b = new Inner();\n    this.c = this.b;\n  }\n}\nexport function main(): void {\n  const holder: Holder = new Holder();\n  print(`${holder.c.value}`);\n}\n",
+            claim: "accepts",
+        },
+        RecordedForm {
+            stem: "parameter-default-no-assignment",
+            body: "class Inner {\n  value: i32 = 3;\n}\nclass Holder {\n  inner: Inner;\n  constructor(n: i32 = this.inner.value) {\n    print(`${n}`);\n  }\n}\nexport function main(): void {\n  const holder: Holder = new Holder();\n  print(`${holder.inner.value}`);\n}\n",
+            claim: "rejects TS2564, TS2565",
+        },
     ];
-    let sites = [
-        Some(Divergence::AmbientClassConstruction),
-        Some(Divergence::AmbientClassConstruction),
-        None,
-        None,
-        None,
-        None,
+    let sites: [&[Option<Divergence>]; 10] = [
+        &[Some(Divergence::AmbientClassConstruction)],
+        &[Some(Divergence::AmbientClassConstruction)],
+        &[None],
+        &[None],
+        &[None],
+        &[None],
+        &[None],
+        &[None],
+        &[Some(Divergence::NestedFieldAssignment), None],
+        &[None, None],
     ];
 
     let mut wrong_site = Vec::new();
-    for (form, site) in forms.iter().zip(sites) {
+    for (form, wanted) in forms.iter().zip(sites) {
         let file = format!("{}.ts", form.stem);
         let diagnostics =
             subscript_compiler::check_program(&[subscript_compiler::SourceFile::new(
@@ -761,8 +791,8 @@ fn the_prefix_this_forms_measure_their_recorded_tsc_class() {
             .iter()
             .map(|diagnostic| diagnostic.divergence)
             .collect();
-        if measured != [site] {
-            wrong_site.push(format!("{}: {measured:?}, wants [{site:?}]", form.stem));
+        if measured != wanted {
+            wrong_site.push(format!("{}: {measured:?}, wants {wanted:?}", form.stem));
         }
     }
     assert!(

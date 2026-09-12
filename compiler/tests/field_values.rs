@@ -363,9 +363,12 @@ fn a_read_before_the_assignment_reports_the_this_without_a_variant() {
         first.message
     );
     assert_eq!(first.divergence, None, "{}", first.message);
+    // §108.4: the diagnostic names two spellings.
     for needle in [
         "`this.inner` reads field `inner` of `Holder`",
         "before the constructor assigns it at its top level",
+        "move the read after `this.inner = \u{2026}`",
+        "or give `inner` an initializer",
     ] {
         assert!(
             first.message.contains(needle),
@@ -393,9 +396,12 @@ fn a_method_call_on_this_before_the_assignment_reports_its_variant() {
         "{}",
         first.message
     );
+    // §108.4: the diagnostic names two spellings.
     for needle in [
         "the constructor of `Holder` calls a member of `this`",
         "before field `inner` holds a value",
+        "move the call after the assignment of `inner`",
+        "or give `inner` an initializer",
     ] {
         assert!(
             first.message.contains(needle),
@@ -427,9 +433,12 @@ fn this_as_an_argument_before_the_assignment_reports_its_variant() {
         "{}",
         first.message
     );
+    // §108.4: the diagnostic names two spellings.
     for needle in [
         "the constructor of `Holder` uses `this` as a value",
         "before field `inner` holds a value",
+        "move the use after the assignment of `inner`",
+        "or give `inner` an initializer",
     ] {
         assert!(
             first.message.contains(needle),
@@ -446,17 +455,23 @@ fn two_fields_that_hold_no_value_are_both_named() {
     );
     let diagnostics = diagnostics(&source);
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert!(
-        diagnostics[0]
-            .message
-            .contains("before fields `first`, `second` hold a value"),
-        "{}",
-        diagnostics[0].message
-    );
+    // §108.4: both spellings name both fields, and each agrees with the
+    // count.
+    for needle in [
+        "before fields `first`, `second` hold a value",
+        "move the call after the assignments of `first`, `second`",
+        "or give `first`, `second` initializers",
+    ] {
+        assert!(
+            diagnostics[0].message.contains(needle),
+            "missing {needle:?}: {}",
+            diagnostics[0].message
+        );
+    }
 }
 
 #[test]
-fn every_read_shape_reads_the_field_and_the_prefix_ends_at_the_last_assignment() {
+fn every_read_shape_reads_the_field_of_a_rule_one_field_that_holds_no_value() {
     // compiler.md §108.4 rule 6 form (b): a read is every use that is
     // not the target of `this.f = …`. Each body below reads `count`,
     // which holds no value until the last statement assigns it.
@@ -521,4 +536,111 @@ fn the_accepted_prefix_forms_stay_accepted_and_an_early_call_is_rejected() {
     accepted(&format!(
         "class Holder {{\n  count: i32 = 1;\n  constructor() {{\n    this.show();\n  }}\n  show(): void {{\n    print(`${{this.count}}`);\n  }}\n}}\n{MAIN}"
     ));
+}
+
+#[test]
+fn the_receiver_form_reaches_site_a_and_a_held_receiver_is_accepted() {
+    // compiler.md §108.4 rule 6 form (b): the receiver of `this.g.m()`
+    // is a read of `g`, so the form reaches site A and not site B.
+    let source = format!(
+        "class Inner {{\n  value: i32 = 3;\n  get(): i32 {{\n    return this.value;\n  }}\n}}\nclass Holder {{\n  first: Inner;\n  count: i32;\n  constructor() {{\n    this.count = this.first.get();\n    this.first = new Inner();\n  }}\n}}\n{MAIN}"
+    );
+    let diagnostics = diagnostics(&source);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    let first = &diagnostics[0];
+    assert_eq!(first.code, RuleCode::S100);
+    assert_eq!(
+        (first.pos.line, first.pos.col),
+        (11, 18),
+        "{}",
+        first.message
+    );
+    assert_eq!(first.divergence, None, "{}", first.message);
+    assert!(
+        first
+            .message
+            .contains("`this.first` reads field `first` of `Holder`"),
+        "{}",
+        first.message
+    );
+    // The held case: the same receiver after the assignment of `first`.
+    accepted(&format!(
+        "class Inner {{\n  value: i32 = 3;\n  get(): i32 {{\n    return this.value;\n  }}\n}}\nclass Holder {{\n  first: Inner;\n  count: i32;\n  constructor() {{\n    this.first = new Inner();\n    this.count = this.first.get();\n  }}\n}}\n{MAIN}"
+    ));
+}
+
+#[test]
+fn the_prefix_ends_when_every_rule_one_field_holds_a_value() {
+    // compiler.md §108.4 rule 6: the prefix ends with the first
+    // top-level statement after which every rule-1 field holds a value.
+    // A later assignment of a field that already holds one does not
+    // extend the prefix, so the call stands after it.
+    let accepted_source = "class Holder {\n  a: i32;\n  b: i32;\n  constructor() {\n    this.a = 1;\n    this.b = 2;\n    this.show();\n    this.a = 3;\n  }\n  show(): void {\n    print(`${this.a} ${this.b}`);\n  }\n}\nexport function main(): void {\n  const holder: Holder = new Holder();\n  holder.show();\n}\n";
+    accepted(accepted_source);
+    // Firing control: the same call before the assignment of `b`.
+    let moved = accepted_source.replace(
+        "    this.b = 2;\n    this.show();",
+        "    this.show();\n    this.b = 2;",
+    );
+    assert_ne!(moved, accepted_source, "the control must change the source");
+    let diagnostics = diagnostics(&moved);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    let first = &diagnostics[0];
+    assert_eq!(
+        first.divergence,
+        Some(Divergence::ThisBeforeFieldValues),
+        "{}",
+        first.message
+    );
+    // `a` holds a value at the call, so the message names `b` alone.
+    assert!(
+        first.message.contains("before field `b` holds a value"),
+        "{}",
+        first.message
+    );
+    assert!(!first.message.contains("`a`"), "{}", first.message);
+}
+
+#[test]
+fn a_parameter_default_reads_a_field_that_holds_a_value() {
+    // compiler.md §108.4 rule 6: the prefix starts with the parameter
+    // defaults, and a default evaluates after the field initializers
+    // (§57.1 step 4). An initialized field holds a value there.
+    accepted(&format!(
+        "class Holder {{\n  count: i32 = 5;\n  seen: i32;\n  constructor(n: i32 = this.count) {{\n    this.seen = n;\n  }}\n}}\n{MAIN}"
+    ));
+    // A rule-1 field holds no value in a default. No top-level
+    // statement assigns `inner` here, so rule 1 reports at the field and
+    // rule 6 reports at the `this`. Stock `tsc` answers TS2564 and
+    // TS2565 for this program, measured.
+    let source = format!(
+        "class Inner {{\n  value: i32 = 3;\n}}\nclass Holder {{\n  inner: Inner;\n  constructor(n: i32 = this.inner.value) {{\n    print(`${{n}}`);\n  }}\n}}\n{MAIN}"
+    );
+    let diagnostics = diagnostics(&source);
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
+    let rule_one = &diagnostics[0];
+    assert_eq!(rule_one.code, RuleCode::S100);
+    assert_eq!(
+        (rule_one.pos.line, rule_one.pos.col),
+        (5, 3),
+        "{}",
+        rule_one.message
+    );
+    assert!(rule_one.message.contains("TS2564"), "{}", rule_one.message);
+    let site_a = &diagnostics[1];
+    assert_eq!(site_a.code, RuleCode::S100);
+    assert_eq!(
+        (site_a.pos.line, site_a.pos.col),
+        (6, 24),
+        "{}",
+        site_a.message
+    );
+    assert_eq!(site_a.divergence, None, "{}", site_a.message);
+    assert!(
+        site_a
+            .message
+            .contains("`this.inner` reads field `inner` of `Holder`"),
+        "{}",
+        site_a.message
+    );
 }
