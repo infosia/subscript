@@ -4,8 +4,9 @@ This file holds the parts of `compiler.md` that no longer state a
 current rule: the revision log, a diagram a later revision replaced,
 and sections that a later section resolved or superseded. Section
 numbers are the numbers they had in `compiler.md`; a stub with the
-same number stays there and points here, so a citation of `§19` in a
-tracking note still resolves. Nothing here is edited; it is the text
+same number stays there (since 2026-09-12, as its own file under
+`specs/blocks/compiler/`) and points here, so a citation of `§19` in
+a tracking note still resolves. Nothing here is edited; it is the text
 as it stood when it moved.
 
 Rule for moving text *(2026-09-06)*: when a section of `compiler.md`
