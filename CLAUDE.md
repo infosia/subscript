@@ -2,8 +2,10 @@
 
 This file holds only what is *invariant* — roles, boundaries, and
 conventions. `specs/subscript-project-plan.md` holds design and phasing.
-When the plan and this file disagree, this file wins; when evidence
-disagrees with either, fix both.
+`specs/rules-history.md` holds the date and the evidence of every rule
+here that an owner decision added or changed. When the plan and this
+file disagree, this file wins; when evidence disagrees with either, fix
+both.
 
 ## What this project is
 
@@ -64,13 +66,10 @@ commit.
 - **JS semantics.** No `any`, no prototype mutation, no `eval`. The subset
   is defined by the collision table (`specs/blocks/collisions.md`), not by
   JS's spec.
-- **Upstreaming to external projects.** *(Owner, 2026-07-27 — a
-  principle, not a scheduling decision.)* When this project must change
-  a dependency, it forks and pins the fork. It does not open pull
-  requests, negotiate APIs, or carry patches toward acceptance
-  upstream. Acceptance and timing would be outside this project's
-  control, and a patch shaped for upstream's other users is a different
-  and larger patch than the one this project needs. A fork is expected
+- **Upstreaming to external projects.** This is a principle, not a
+  scheduling decision. When this project must change a dependency, it
+  forks and pins the fork. It does not open pull requests, negotiate
+  APIs, or carry patches toward acceptance upstream. A fork is expected
   to persist; "upstream it later" is not a plan this project makes.
   Forks are still cited by URL and pinned by commit — the rule against
   filesystem paths is unaffected.
@@ -78,12 +77,11 @@ commit.
   construction: the host owns the main loop and calls exported functions,
   and platform capabilities (files, sockets, devices) are the
   host's to expose through its C ABI, not the language's to provide.
-  *(Threads were removed from this list — Owner, 2026-08-02: the
-  standard library provides Workers (Q35), runtime-owned threads with
+  Threads are not on this list: the standard library provides Workers
+  (`specs/blocks/stdlib.md`, Q35), runtime-owned threads with
   per-Context isolation and copy-only messaging; the host still owns
-  its main loop.)* The
-  standard library grows in computation (`specs/blocks/stdlib.md`); reach
-  into the outside world does not. This is a division of responsibility,
+  its main loop. The standard library grows in computation; reach into
+  the outside world does not. This is a division of responsibility,
   not a capability ceiling — and not a statement about how broad the
   language's own surface may become.
 
@@ -91,43 +89,25 @@ commit.
 
 subscript builds its own compiler and runtime. **Dev tier:** Cranelift JIT
 with hot reload. **Ship tier:** C emission handed to the platform C
-compiler — adopted at P4 on measured evidence (Cranelift AOT was 23× a
-hand-written C baseline; emitted C was 1.05× on an emitter that did no
-trap checking, and measures 1.35× with the checks the language requires —
-`specs/tracking/p19-trap-parity.md`), superseding the original
-Cranelift-AOT ship tier (`specs/blocks/compiler.md` §11; plan §8 Rev 2).
-
-*(Owner, 2026-08-27: the Cranelift AOT tier is **deleted**.)* It was
-retained as a cross-check and it was not one: it shared `lower/func.rs`
-with the dev JIT, so it was one lowering with a second output sink and
-could not catch a defect that lowering held. No shipping path used it —
-`device-link.sh` uses emitted C with the platform clang, and no shipping
-target lacks a C compiler. §68's reference interpreter is the
-independent witness it was standing in for: written from the LIR
-contract alone, it shares no tier's assumption, which is what core
-principle 12 asks for. 350 lines were Cranelift-only; the 2018 lines of
-link and tool detection the C tier also needs stayed.
+compiler, adopted on measured evidence (`specs/blocks/compiler.md` §11;
+plan §8 Rev 2; `specs/tracking/p4-performance.md`,
+`specs/tracking/p19-trap-parity.md`). There is no Cranelift AOT tier.
 
 The two tiers are separate lowerings, so their agreement is established
 **by verification** — the standing gate is dev-JIT ≡ ship-C-AOT ≡
-interpreter ≡ golden, byte-exact, on every corpus entry. The oracle is the committed golden corpus outputs plus the
-`tsc`-clean gate. **No external implementation serves as oracle or
-baseline.**
+interpreter ≡ golden, byte-exact, on every corpus entry. The oracle is
+the committed golden corpus outputs plus the `tsc`-clean gate. **No
+external implementation serves as oracle or baseline.**
 
-*(Owner, 2026-08-26.)* An external implementation runs as a
-**divergence detector**, never as an oracle. `tsc` gates acceptance:
-every accept entry type-checks, and every reject entry's header states
-what `tsc` does, measured. `node` runs the accept entries that carry a
-`js-comparable` header. A disagreement with the golden is one of two
-things: a defect in this compiler, or a divergence that
-`specs/blocks/collisions.md` must name. **A disagreement never corrects
-a golden.** An entry that declares itself not comparable cites a
-collision id, so "not comparable" is not an escape hatch.
-
-The reason: `collisions.md` states in prose where this language differs
-from JavaScript, and nothing checks that the list is complete. A
-divergence this project did not decide is a defect that reads as a
-decision.
+An external implementation runs as a **divergence detector**, never as
+an oracle. `tsc` gates acceptance: every accept entry type-checks, and
+every reject entry's header states what `tsc` does, measured. `node`
+runs the accept entries that carry a `js-comparable` header. A
+disagreement with the golden is one of two things: a defect in this
+compiler, or a divergence that `specs/blocks/collisions.md` must name.
+**A disagreement never corrects a golden.** An entry that declares
+itself not comparable cites a collision id, so "not comparable" is not
+an escape hatch.
 
 ## Language
 
@@ -152,12 +132,17 @@ states what was wrong, the evidence, and the corrected claim.
 system.** Claims taken from documentation alone are marked *(docs)* where
 they appear.
 
+**A rule here carries no date and no origin.** The date, the evidence,
+and the case that produced a rule are in `specs/rules-history.md`; a
+contract section's are in `specs/tracking/` and
+`specs/blocks/compiler-history.md`.
+
 ### Simplified Technical English
 
-*(Owner, 2026-08-04.)* Write all English here in ASD-STE100 Simplified
-Technical English (<https://www.asd-ste100.org/>), pragmatic mode: apply
-the structural rules and keep the domain vocabulary. The rule set this
-project follows is the `simple-english` agent skill
+Write all English here in ASD-STE100 Simplified Technical English
+(<https://www.asd-ste100.org/>), pragmatic mode: apply the structural
+rules and keep the domain vocabulary. The rule set this project follows
+is the `simple-english` agent skill
 (<https://github.com/AminBlg/SimpleEnglish>).
 
 The rules that matter most here:
@@ -205,50 +190,42 @@ numbered rules do not apply to them.
 6. **Generated code is never hand-edited.** Fix the generator.
 7. **Exit criteria before implementation.** Every phase's spec names, in
    advance, the measurement that would kill or pass it.
-8. **A form carries every fact its consumers need.** *(Owner,
-   2026-08-26.)* A stage is a total function from its input form to
-   its output. If a consumer needs a fact the form does not carry,
-   the form is wrong. Report it and stop. That report is the wanted
-   outcome, not a failure of the round.
-9. **A check compares two facts that were derived separately.**
-   *(Owner, 2026-08-26.)* A check that reads a record against the
-   expression that wrote it cannot fail. Delete the record, or
-   compare it against the contract of the operation. A test builds
-   the violating form. A test never changes the record that the
-   check reads.
-10. **A corpus entry is Red at the contract pin.** *(Owner,
-   2026-08-26.)* Verify the failure against a binary built from that
-   pin. An entry that never failed before the fix proves nothing.
-11. **Move one consumer at a time.** *(Owner, 2026-08-26.)* During a
-   migration the differential gate guards the step, because the
-   consumer that did not move is the reference.
+8. **A form carries every fact its consumers need.** A stage is a total
+   function from its input form to its output. If a consumer needs a
+   fact the form does not carry, the form is wrong. Report it and stop.
+   That report is the wanted outcome, not a failure of the round.
+9. **A check compares two facts that were derived separately.** A check
+   that reads a record against the expression that wrote it cannot
+   fail. Delete the record, or compare it against the contract of the
+   operation. A test builds the violating form. A test never changes
+   the record that the check reads.
+10. **A corpus entry is Red at the contract pin.** Verify the failure
+   against a binary built from that pin. An entry that never failed
+   before the fix proves nothing.
+11. **Move one consumer at a time.** During a migration the differential
+   gate guards the step, because the consumer that did not move is the
+   reference.
 12. **The differential gate cannot see a defect that both tiers
-   share.** *(Owner, 2026-08-26.)* A shape where both tiers agree
-   needs a golden, or a hand-checked value. Record every such defect
-   with its measured output.
+   share.** A shape where both tiers agree needs a golden, or a
+   hand-checked value. Record every such defect with its measured
+   output.
 13. **A change needs a stated problem, and evidence that the problem
-   is real.** *(Owner, 2026-09-08.)* A downstream request with
-   measured sites is one source of that evidence. It is not a
-   requirement, and it is not the main one: of the 26 contract
-   sections after §65, three came from a downstream request. The
-   other sources carry the same weight — a measured divergence from
+   is real.** A downstream request with measured sites is one source of
+   that evidence. It is not a requirement, and it is not the main one.
+   The other sources carry the same weight — a measured divergence from
    the system this language is shaped after, a measured cost, a
    soundness gap, a review finding, and a hole that is arbitrary
    where the fix is mechanical. Refuse a proposal that states no
    problem, whoever writes it. The surface is the product: an
    accepted form stays in three witnesses and both corpora.
-14. **A record is not a reason.** *(Owner, 2026-09-09.)* "It is
-   recorded", "the contract says so", and "a golden pins it" are
-   never grounds to refuse a change. Each of them is the result of
-   someone asking what the right form is, so each is evidence of a
-   past answer, not of a correct one. Ask what the form must be
-   first. Then read the record, to learn what the change costs and
-   what else must move. A decided divergence still needs a reason
-   that holds today; when the reason does not survive measurement,
-   the divergence goes. §95 produced this rule: three divergences
-   from TypeScript were each an exception inside a rule that
-   otherwise followed ECMA, and the first review refused all three
-   by citing the record.
+14. **A record is not a reason.** "It is recorded", "the contract says
+   so", and "a golden pins it" are never grounds to refuse a change.
+   Each of them is the result of someone asking what the right form
+   is, so each is evidence of a past answer, not of a correct one. Ask
+   what the form must be first. Then read the record, to learn what
+   the change costs and what else must move. A decided divergence
+   still needs a reason that holds today; when the reason does not
+   survive measurement, the divergence goes.
 
 ## Code conventions
 
@@ -257,12 +234,12 @@ builders; `///` docs on every public item with `#![warn(missing_docs)]`;
 every `unsafe impl Send`/`Sync` carries a `// SAFETY:` comment; `#[allow]`
 on a correctness or soundness lint requires a justifying comment (blanket
 allows only on generated-bindings modules); C↔Rust conversions macro-driven
-in one module; colocate each area's code with its own module.
+in one module; colocate each area's code with its own module. A Rust
+source file has at most 2,000 lines (`specs/blocks/compiler.md` §5.y).
 
-**Formatting** *(Owner, 2026-08-09)*: the tree is rustfmt-canonical
-under the toolchain `rust-toolchain.toml` pins. `cargo fmt --check`
-is a standing gate. Do not run a formatter from any other toolchain
-version.
+**Formatting**: the tree is rustfmt-canonical under the toolchain
+`rust-toolchain.toml` pins. `cargo fmt --check` is a standing gate. Do
+not run a formatter from any other toolchain version.
 
 ## Workflow per area
 
@@ -273,18 +250,17 @@ version.
 5. Log evidence in `specs/tracking/<topic>.md`.
 
 **Step 0, when the question is whether a rule must change: measure
-first.** *(Owner, 2026-09-08.)* A measurement round builds a
-prototype, records what it measures, and reverts every production
-change. It lands nothing, so it may contradict a stated rule — that
-is what it is for. The handoff names the rule the prototype
-contradicts, and the tracking note records it beside the numbers. A
-round told to measure does not stop at the rule it was sent to test.
-Contract first still governs step 3: nothing lands before the rule
-changes.
+first.** A measurement round builds a prototype, records what it
+measures, and reverts every production change. It lands nothing, so it
+may contradict a stated rule — that is what it is for. The handoff
+names the rule the prototype contradicts, and the tracking note records
+it beside the numbers. A round told to measure does not stop at the
+rule it was sent to test. Contract first still governs step 3: nothing
+lands before the rule changes.
 
-**Two review rounds are the limit for a defect class.** *(Owner,
-2026-08-26.)* A review raises a class. A round fixes it. If the next
-review raises that class again, the class is a defect of the form.
+**Two review rounds are the limit for a defect class.** A review raises
+a class. A round fixes it. If the next review raises that class again,
+the class is a defect of the form.
 
 Do not fix a third instance. Report what the form must carry, or
 must forbid. Change the contract first, then the code.
@@ -304,9 +280,9 @@ phase cannot be COMPLETE with any open CRITICAL/MAJOR.
 - `.gitignore`: `target/`, `node_modules/`, `.claude/`, local test
   transcripts.
 
-**Run `tools/hygiene.sh` once, at the end of every Phase Review.**
-*(Owner, 2026-08-30.)* It scans the working tree for the rules below
-and exits 1 with every hit. A phase is not COMPLETE while it fails.
+**Run `tools/hygiene.sh` once, at the end of every Phase Review.** It
+scans the working tree for the rules below and exits 1 with every hit.
+A phase is not COMPLETE while it fails.
 
 ### No local or sibling paths in committed files
 
