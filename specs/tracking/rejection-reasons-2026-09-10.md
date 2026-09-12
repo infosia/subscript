@@ -223,3 +223,42 @@ slow first launches, and 2,648 remain today with `target/debug` at
 
 Red at the pin: `r224` prints `0`; `r225` and `r226` die with signal
 11; `r227` prints `2`. The pin accepts all four.
+
+## §108.4 — `new` on a program-file `declare class`, and `this` before the assignment prefix ends
+
+*(2026-09-12.)* Closes §108.1a. Contract `1814c61`, implementation
+`3c78983`, note `f9fb0e6`, Phase Review contract `8934aff`, fix
+`6004d20`.
+
+**Measured at `4148eab`.** Eight forms checked clean and died with
+signal 11 on both tiers: `new Ext()` on a program-file `declare
+class`, a read of the field before its assignment (four spellings,
+`tsc` TS2565), a method call on `this` and `this` as an argument
+before the assignment (`tsc` clean). `new P(5)` on a declared
+bodiless constructor printed `0`. A regex pass over 140 constructors
+in the corpus, examples, and benchmarks found no `this` inside a
+prefix beyond the two permitted forms; the build agreed.
+
+**Phase Review: CRITICAL 1, MAJOR 2, MINOR 7.** The CRITICAL was in
+the contract: form (b) said an initialized field holds a value inside
+a parameter default, and both tiers evaluated the default before the
+initializers. `count: i32 = 5`, `constructor(n: i32 = this.count)`
+printed `0 5` on both tiers; `node` prints `5 5`. Both tiers agreed,
+so no golden saw it. §57.1 step 4 now orders the defaults after the
+initializers, `lower_new` lowers explicit arguments, initializers,
+then defaults, and `a234` pins `5 5`. The two MAJORs were the prefix
+end (positional, now "every rule-1 field holds a value") and the
+site A `tsc`-accepted class (one form named, four pinned). Six
+MINORs closed; one open: a generic class reports rule 6 once per
+instance at the template position, as rule 1 does.
+
+Red at the pins: `r229`–`r232` are accepted at `1814c61`; `a234`
+prints `0 5` at `8934aff`; `p06` (a site B use after every field
+holds a value) is rejected at `8934aff` and accepted after.
+
+    gate full 1814c61 dirty:14 debug 1453/0/2 release 1451/0/2
+              skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+    gate full 8934aff dirty:8 debug 1457/0/2 release 1455/0/2
+              skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+
+`tools/hygiene.sh` exit 0 at `6004d20`.
