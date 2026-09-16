@@ -172,12 +172,17 @@ handles all cross the boundary with no conversion. No specific host header
 is privileged by the language; if host data must become script-visible,
 the host grows a C facade.
 
-### Workers, when the work divides
+### A sandbox profile for content you did not write
 
-`Worker.spawn` runs a named script function on an OS thread with a fresh
-Context. Nothing is shared: a message is copied into the receiving
-Context, so no reference crosses a thread. The host keeps its main loop
-and its own Context stays single-threaded.
+Mods, shared levels, and plugins compile under `--profile sandbox`. The
+profile is a compile profile, not a second tier: the same JIT and the
+same emitted C run it. It rejects `Context.free`, `Context.fromBytes`,
+workers, and over-limit source, each with a stable diagnostic code, and
+the compiler places a checkpoint at every function entry and loop edge.
+The host sets three limits through the C API — an interrupt that any
+thread can raise, an allocation quota, and a stack budget — and each
+one stops the script with an ordinary trap the host reads back. A
+program that does not select the profile pays nothing.
 
 ### No implicit GC
 
