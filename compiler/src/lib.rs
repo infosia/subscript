@@ -50,12 +50,65 @@ pub fn repository_relative(root: &std::path::Path, absolute: &std::path::Path) -
     )
 }
 
+/// The compile profile (`specs/blocks/compiler.md` §109.1).
+///
+/// The profile narrows the accepted language. It adds no form, so a
+/// program under a profile stays a program of the accepted language.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Profile {
+    /// The default profile. The script is trusted, and no §109.2 rule runs.
+    #[default]
+    Default,
+    /// The sandbox profile, for content the host did not write. Every
+    /// §109.2 rule runs.
+    Sandbox,
+}
+
+/// The name the CLI and the corpus header use to select a profile.
+///
+/// The default profile has no name (§109.1 rule 1), so only
+/// [`Profile::Sandbox`] answers a name.
+impl Profile {
+    /// The selector spelling of this profile, or `None` for the default.
+    #[must_use]
+    pub fn as_str(self) -> Option<&'static str> {
+        match self {
+            Profile::Default => None,
+            Profile::Sandbox => Some("sandbox"),
+        }
+    }
+
+    /// Parses a profile selector. Returns `None` for an unknown name.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "sandbox" => Some(Profile::Sandbox),
+            _ => None,
+        }
+    }
+}
+
 /// Options that control program checking.
 #[non_exhaustive]
 #[derive(Debug, Clone, Default)]
 pub struct CheckOptions {
     /// Import specifiers to bind as poisoned when absent.
     pub poison_missing_modules: Vec<String>,
+    /// The compile profile (§109.1). [`Profile::Default`] runs no §109.2
+    /// rule.
+    pub profile: Profile,
+}
+
+impl CheckOptions {
+    /// Builds the default options for one compile profile (§109.1).
+    #[must_use]
+    pub fn with_profile(profile: Profile) -> Self {
+        CheckOptions {
+            profile,
+            ..CheckOptions::default()
+        }
+    }
 }
 
 /// One source file of a program.
@@ -130,9 +183,66 @@ pub fn check_program_with(
             Pos::new(String::new(), 1, 1),
         )]);
     }
-    swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-        let parsed = parse::parse_program(files)?;
-        check::run(&parsed, options)
+    // §109.2 S026 runs before the parser, so a source past a limit never
+    // reaches it.
+    if options.profile == Profile::Sandbox {
+        let limits = check::profile::source_limit_diagnostics(files);
+        if !limits.is_empty() {
+            return Err(limits);
+        }
+    }
+    on_the_checker_thread(|| {
+        swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
+            let parsed = parse::parse_program(files)?;
+            check::run(&parsed, options)
+        })
+    })
+}
+
+/// The stack the checker thread gets, in bytes (`specs/blocks/compiler.md`
+/// §109.2).
+///
+/// The parser and the checker recurse once per nesting level, so the depth
+/// a program can reach is a property of this number and not of the thread
+/// the caller runs on. S026's limit of 256 is far under the capacity this
+/// stack gives.
+const CHECKER_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// Runs `work` on a thread with [`CHECKER_STACK_BYTES`] of stack and
+/// returns its result.
+///
+/// A panic on that thread resumes on the caller, so a caller that counts
+/// panics sees exactly what a direct call gives it.
+fn on_the_checker_thread<T, F>(work: F) -> T
+where
+    T: Send,
+    F: Send + FnOnce() -> T,
+{
+    std::thread::scope(|scope| {
+        let handle = std::thread::Builder::new()
+            .stack_size(CHECKER_STACK_BYTES)
+            .name("subscript-checker".to_owned())
+            .spawn_scoped(scope, || {
+                let value = work();
+                // The place record lives in thread-local storage, so it
+                // crosses the join with the value it describes.
+                #[cfg(test)]
+                let value = (value, check::take_classified_places());
+                value
+            })
+            .expect("spawn the checker thread");
+        match handle.join() {
+            Ok(value) => {
+                #[cfg(test)]
+                let value = {
+                    let (value, places) = value;
+                    check::absorb_classified_places(places);
+                    value
+                };
+                value
+            }
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
     })
 }
 

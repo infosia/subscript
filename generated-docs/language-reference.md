@@ -362,6 +362,89 @@ export function main(): void {
 }
 ```
 
+### S023
+
+The sandbox profile rejects `Context.free`; memory is allocate-only there.
+
+Pinned corpus: [`corpus/reject/r233-sandbox-free.ts`](../corpus/reject/r233-sandbox-free.ts), line 19.
+
+Header guidance:
+
+```text
+// tsc: accepts
+// expected-error: S023 at `Context.free`
+```
+
+```ts
+  const counter: Counter = new Counter(10);
+  print(`${counter.value}`);
+  Context.free(counter);
+}
+```
+
+### S024
+
+The sandbox profile rejects `Context.fromBytes`.
+
+Pinned corpus: [`corpus/reject/r234-sandbox-from-bytes.ts`](../corpus/reject/r234-sandbox-from-bytes.ts), line 16.
+
+Header guidance:
+
+```text
+// tsc: accepts
+// expected-error: S024 at `Context.fromBytes`
+```
+
+```ts
+export function main(): void {
+  const bytes: u8[] = [1, 0, 0, 0, 2, 0, 0, 0];
+  const point: Point = Context.fromBytes<Point>(bytes, 0);
+  print(`${point.x},${point.y}`);
+}
+```
+
+### S025
+
+The sandbox profile rejects `Worker.spawn`, `Inbox`, and `Outbox`.
+
+Pinned corpus: [`corpus/reject/r235-sandbox-worker.ts`](../corpus/reject/r235-sandbox-worker.ts), line 16.
+
+Header guidance:
+
+```text
+// tsc: accepts
+// expected-error: S025 at `Inbox`
+```
+
+```ts
+}
+
+function echo(inbox: Inbox<EchoMessage>, outbox: Outbox<EchoMessage>): void {
+  const message: EchoMessage | null = inbox.wait();
+  if (message !== null) {
+```
+
+### S026
+
+The sandbox profile rejects a source over its byte limit or its bracket-depth limit.
+
+Pinned corpus: [`corpus/reject/r236-sandbox-source-depth.ts`](../corpus/reject/r236-sandbox-source-depth.ts), line 9.
+
+Header guidance:
+
+```text
+// tsc: accepts
+// expected-error: S026 where the bracket depth reaches 257, at the 256th parenthesis
+```
+
+```ts
+// expected-error: S026 where the bracket depth reaches 257, at the 256th parenthesis
+export function main(): void {
+  const value: i32 = (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((7)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))));
+  print(`${value}`);
+}
+```
+
 ### S100
 
 Constructs outside the decided language surface are rejected.

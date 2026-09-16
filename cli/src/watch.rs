@@ -6,7 +6,9 @@
 //! `main` after a start or accepted swap.
 
 use subscript_codegen::{ReloadError, ReloadSession, RunError, TrapReport};
-use subscript_compiler::{check_program, check_warnings, Diagnostic, SourceFile, Warning};
+use subscript_compiler::{
+    check_program_with, check_warnings, CheckOptions, Diagnostic, Profile, SourceFile, Warning,
+};
 
 /// The output and optional trap from one watched program call.
 #[derive(Debug, Clone, PartialEq)]
@@ -86,16 +88,21 @@ pub struct WatchSession {
     session: Option<ReloadSession>,
     last_sources: Option<Vec<SourceFile>>,
     deny_warnings: bool,
+    profile: Profile,
 }
 
 impl WatchSession {
     /// Creates an empty watch state.
+    ///
+    /// `profile` is the compile profile (§109.1); every reload checks
+    /// under it.
     #[must_use]
-    pub fn new(deny_warnings: bool) -> Self {
+    pub fn new(deny_warnings: bool, profile: Profile) -> Self {
         Self {
             session: None,
             last_sources: None,
             deny_warnings,
+            profile,
         }
     }
 
@@ -118,7 +125,8 @@ impl WatchSession {
         }
         self.last_sources = Some(files.to_vec());
 
-        let module = match check_program(files) {
+        let options = CheckOptions::with_profile(self.profile);
+        let module = match check_program_with(files, &options) {
             Ok(module) => module,
             Err(diagnostics) => return WatchStep::diagnostics(diagnostics),
         };

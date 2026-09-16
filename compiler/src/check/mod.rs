@@ -12,11 +12,12 @@ mod fallthrough;
 mod json;
 mod layout;
 pub(crate) mod pattern;
+pub(crate) mod profile;
 mod stmt;
 mod tyres;
 
 #[cfg(test)]
-pub(crate) use expr::{take_classified_places, PlaceKind};
+pub(crate) use expr::{absorb_classified_places, take_classified_places, PlaceKind};
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -31,7 +32,7 @@ use crate::hir;
 use crate::parse::ParsedProgram;
 use crate::provenance;
 use crate::types::{ClassId, EnumId, StringAliasId, Type};
-use crate::CheckOptions;
+use crate::{CheckOptions, Profile};
 
 fn normalize_module_specifier(specifier: &str) -> String {
     specifier
@@ -960,6 +961,9 @@ impl FnCtx {
 /// The checker.
 pub(crate) struct Checker<'p> {
     pub prog: &'p ParsedProgram,
+    /// The compile profile (§109.1). Every §109.2 rule runs only under
+    /// [`Profile::Sandbox`].
+    pub profile: Profile,
     pub diags: DiagnosticSink,
     pub classes: Vec<hir::ClassDef>,
     pub class_sigs: Vec<ClassSig>,
@@ -1214,6 +1218,7 @@ pub(crate) fn run(
 ) -> Result<hir::Module, Vec<Diagnostic>> {
     let mut ck = Checker {
         prog,
+        profile: options.profile,
         diags: DiagnosticSink::default(),
         classes: Vec::new(),
         class_sigs: Vec::new(),

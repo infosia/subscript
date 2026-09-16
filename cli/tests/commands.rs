@@ -817,3 +817,100 @@ fn run_trap_keeps_exit_one_when_stdout_fails() {
         assert!(String::from_utf8_lossy(&stderr).contains("index-out-of-bounds"));
     }
 }
+
+/// §109.1 rule 1: `check`, `build`, and `run` accept `--profile sandbox`.
+/// The default profile has no name, so every other value is a usage error.
+#[test]
+fn profile_selects_the_sandbox_rules_and_rejects_every_other_name() -> Result<(), String> {
+    let dir = TestDir::new()?;
+    let source = dir.write(
+        "free.ts",
+        concat!(
+            "class Counter {\n",
+            "  value: i32 = 0;\n",
+            "}\n",
+            "export function main(): void {\n",
+            "  const counter: Counter = new Counter();\n",
+            "  Context.free(counter);\n",
+            "}\n",
+        )
+        .as_bytes(),
+    )?;
+
+    // The firing control: the default profile accepts the same source.
+    let clean = output(subscript().arg("check").arg(&source))?;
+    assert_code(&clean, 0);
+
+    let sandbox = output(
+        subscript()
+            .arg("check")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source),
+    )?;
+    assert_code(&sandbox, 1);
+    let rendered = String::from_utf8_lossy(&sandbox.stderr).into_owned();
+    assert!(
+        rendered.contains("error[S023]") && rendered.contains("sandbox profile"),
+        "{rendered}"
+    );
+
+    // `run` reads the same flag and stops at the same rejection.
+    let run = output(
+        subscript()
+            .arg("run")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source),
+    )?;
+    assert_code(&run, 1);
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains("error[S023]"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    // `build` reads it before it emits.
+    let build_output = dir.directory("build")?;
+    let build = output(
+        subscript()
+            .arg("build")
+            .arg("--source")
+            .arg(&source)
+            .arg("-o")
+            .arg(&build_output)
+            .arg("--profile")
+            .arg("sandbox"),
+    )?;
+    assert_code(&build, 1);
+
+    for command in ["check", "run"] {
+        let unknown = output(
+            subscript()
+                .arg(command)
+                .arg("--profile")
+                .arg("strict")
+                .arg(&source),
+        )?;
+        assert_code(&unknown, 2);
+        assert!(
+            String::from_utf8_lossy(&unknown.stderr).contains("unknown profile `strict`"),
+            "{command}: stderr:\n{}",
+            String::from_utf8_lossy(&unknown.stderr)
+        );
+        let missing = output(subscript().arg(command).arg("--profile"))?;
+        assert_code(&missing, 2);
+    }
+
+    let twice = output(
+        subscript()
+            .arg("check")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source),
+    )?;
+    assert_code(&twice, 2);
+    Ok(())
+}

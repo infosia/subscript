@@ -20,8 +20,8 @@ use subscript_codegen::{
     EmitCFilesError, RunError,
 };
 use subscript_compiler::{
-    check_program, check_warnings, render_diagnostics, render_warnings, Diagnostic, SourceFile,
-    Warning,
+    check_program_with, check_warnings, render_diagnostics, render_warnings, CheckOptions,
+    Diagnostic, Profile, SourceFile, Warning,
 };
 use watch::{WatchCall, WatchOutcome, WatchSession, WatchStep};
 
@@ -119,6 +119,7 @@ struct SourceArguments {
     source: Option<PathBuf>,
     mirrors: Vec<PathBuf>,
     deny_warnings: bool,
+    profile: Option<Profile>,
 }
 
 fn check_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failure> {
@@ -128,7 +129,7 @@ fn check_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Fail
         .as_ref()
         .ok_or_else(|| Failure::usage("check requires <file.ts>"))?;
     let files = load_program(source, &parsed.mirrors)?;
-    let warnings = accepted_warnings(&files)?;
+    let warnings = accepted_warnings(&files, parsed.profile.unwrap_or_default())?;
     if warnings.is_empty() {
         writeln!(stderr, "check: {}: no errors", source.to_string_lossy())
             .map_err(|error| Failure::usage(format!("write check result: {error}")))?;
@@ -157,6 +158,10 @@ fn parse_source_arguments(args: &[OsString]) -> Result<SourceArguments, Failure>
                 parsed
                     .mirrors
                     .push(path_value(args, &mut index, "--mirror")?);
+            }
+            Some("--profile") => {
+                let value = profile_value(args, &mut index)?;
+                set_once(&mut parsed.profile, value, "--profile")?;
             }
             Some(flag) if flag.starts_with('-') => {
                 return Err(Failure::usage(format!("unknown option `{flag}`")));
@@ -208,7 +213,7 @@ fn emit_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failu
     let source = source.ok_or_else(|| Failure::usage("emit requires <file.ts>"))?;
     let output = output.ok_or_else(|| Failure::usage("emit requires -o <dir>"))?;
     let files = load_program(&source, &mirrors)?;
-    let warnings = accepted_warnings(&files)?;
+    let warnings = accepted_warnings(&files, Profile::default())?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if deny_warnings {
@@ -365,6 +370,7 @@ struct BuildArguments {
     run: bool,
     deny_warnings: bool,
     runtime: RuntimeOverrides,
+    profile: Option<Profile>,
 }
 
 fn build_command<O: Write, E: Write>(
@@ -395,7 +401,7 @@ fn build_command<O: Write, E: Write>(
         |path| absolute(&path, &current),
     );
     let files = load_program(&source_given, &parsed.mirrors)?;
-    let warnings = accepted_warnings(&files)?;
+    let warnings = accepted_warnings(&files, parsed.profile.unwrap_or_default())?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if parsed.deny_warnings {
@@ -436,6 +442,10 @@ fn parse_build_arguments(args: &[OsString]) -> Result<BuildArguments, Failure> {
                 .mirrors
                 .push(path_value(args, &mut index, "--mirror")?),
             Some("--host") => parsed.hosts.push(path_value(args, &mut index, "--host")?),
+            Some("--profile") => {
+                let value = profile_value(args, &mut index)?;
+                set_once(&mut parsed.profile, value, "--profile")?;
+            }
             Some("-o") => {
                 let value = path_value(args, &mut index, "-o")?;
                 set_once(&mut parsed.output, value, "-o")?;
@@ -569,8 +579,10 @@ fn run_command<O: Write, E: Write>(
     let mut source = None;
     let mut deny_warnings = false;
     let mut watch = false;
-    for arg in args {
-        match arg.to_str() {
+    let mut profile = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].to_str() {
             Some("--deny-warnings") if !deny_warnings => deny_warnings = true,
             Some("--deny-warnings") => {
                 return Err(Failure::usage("--deny-warnings may be supplied only once"));
@@ -579,19 +591,25 @@ fn run_command<O: Write, E: Write>(
             Some("--watch") => {
                 return Err(Failure::usage("--watch may be supplied only once"));
             }
+            Some("--profile") => {
+                let value = profile_value(args, &mut index)?;
+                set_once(&mut profile, value, "--profile")?;
+            }
             Some(flag) if flag.starts_with('-') => {
                 return Err(Failure::usage(format!("unknown option `{flag}`")));
             }
-            _ if source.is_none() => source = Some(PathBuf::from(arg)),
+            _ if source.is_none() => source = Some(PathBuf::from(&args[index])),
             _ => return Err(Failure::usage("run requires exactly one <file.ts>")),
         }
+        index += 1;
     }
     let source = source.ok_or_else(|| Failure::usage("run requires exactly one <file.ts>"))?;
+    let profile = profile.unwrap_or_default();
     if watch {
-        return run_watch(&source, deny_warnings, stdout, stderr);
+        return run_watch(&source, deny_warnings, profile, stdout, stderr);
     }
     let files = load_program(&source, &[])?;
-    let warnings = accepted_warnings(&files)?;
+    let warnings = accepted_warnings(&files, profile)?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if deny_warnings {
@@ -688,10 +706,11 @@ fn loaded_file_paths(entry: &Path, files: &[SourceFile]) -> Result<Vec<PathBuf>,
 fn run_watch<O: Write, E: Write>(
     source: &Path,
     deny_warnings: bool,
+    profile: Profile,
     stdout: &mut O,
     stderr: &mut E,
 ) -> Result<u8, Failure> {
-    let mut session = WatchSession::new(deny_warnings);
+    let mut session = WatchSession::new(deny_warnings, profile);
     let mut watched = match load_program(source, &[]) {
         Ok(initial_files) => {
             let initial_paths = loaded_file_paths(source, &initial_files)?;
@@ -829,11 +848,22 @@ fn rejection(files: &[SourceFile], diagnostics: Vec<Diagnostic>) -> Failure {
     Failure::rejection(render_diagnostics(files, &diagnostics))
 }
 
-fn accepted_warnings(files: &[SourceFile]) -> Result<Vec<Warning>, Failure> {
-    match check_program(files) {
+fn accepted_warnings(files: &[SourceFile], profile: Profile) -> Result<Vec<Warning>, Failure> {
+    match check_program_with(files, &CheckOptions::with_profile(profile)) {
         Ok(module) => Ok(check_warnings(&module)),
         Err(diagnostics) => Err(rejection(files, diagnostics)),
     }
+}
+
+/// Reads `--profile <name>` (§109.1 rule 1). An unknown name is a usage
+/// error, and the default profile has no name.
+fn profile_value(args: &[OsString], index: &mut usize) -> Result<Profile, Failure> {
+    let value = string_value(args, index, "--profile")?;
+    Profile::parse(value).ok_or_else(|| {
+        Failure::usage(format!(
+            "unknown profile `{value}`; the one name is `sandbox`"
+        ))
+    })
 }
 
 fn write_warnings<E: Write>(

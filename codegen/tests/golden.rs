@@ -23,6 +23,11 @@ mod native_fixture;
 #[path = "support/pool.rs"]
 mod pool;
 
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use subscript_compiler::language_reference::parse_header;
+
 use subscript_codegen::{
     run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
     run_jit_with_native_libraries, NativeLibrary, RunError,
@@ -998,4 +1003,62 @@ fn every_corpus_entry_with_a_golden_ends_in_a_newline() {
             "{id}: golden has no final newline"
         );
     }
+}
+
+/// §109.1 rule 3: every harness that compiles an entry passes the entry's
+/// profile to the checker and the lowering.
+///
+/// The tier runners take source files and no options, so an accept entry
+/// with a `// profile:` header would run under the default profile with
+/// no report. This check names every such entry at once, so the gap is a
+/// failure and never a silent pass.
+///
+/// The reject corpus is the firing control: it holds profile entries, so a
+/// reader that finds nothing is wrong, not clean.
+#[test]
+fn no_accept_entry_selects_a_profile_the_tier_runners_cannot_pass() {
+    let accept = corpus::corpus_accept();
+    let reject = accept.with_file_name("reject");
+    assert!(
+        !profile_entry_ids(&reject).is_empty(),
+        "the reject corpus holds no profile entry; the header reader is wrong"
+    );
+    let selected = profile_entry_ids(&accept);
+    assert!(
+        selected.is_empty(),
+        "these accept entries select a profile the tier runners cannot pass: {}",
+        selected.join(", ")
+    );
+}
+
+/// Every entry id in `arm` whose header selects a compile profile
+/// (§109.1 rule 3), sorted. A multi-file entry reports the id when any of
+/// its files carries the header.
+fn profile_entry_ids(arm: &Path) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    for id in corpus::entry_ids(arm) {
+        let dir = arm.join(&id);
+        let paths: Vec<PathBuf> = if dir.is_dir() {
+            fs::read_dir(&dir)
+                .expect("read entry dir")
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .filter(|path| path.extension().is_some_and(|ext| ext == "ts"))
+                .collect()
+        } else {
+            vec![arm.join(format!("{id}.ts"))]
+        };
+        if paths.iter().any(|path| {
+            let text =
+                fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+            parse_header(path, &text)
+                .unwrap_or_else(|e| panic!("read the header of {}: {e}", path.display()))
+                .profile
+                .is_some()
+        }) {
+            ids.push(id);
+        }
+    }
+    ids.sort();
+    ids
 }

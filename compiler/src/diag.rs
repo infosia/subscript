@@ -50,13 +50,23 @@ pub enum RuleCode {
     S017,
     /// A receiver type must declare each accessed member.
     S018,
+    /// The sandbox profile rejects `Context.free` (§109.2).
+    S023,
+    /// The sandbox profile rejects `Context.fromBytes` (§109.2).
+    S024,
+    /// The sandbox profile rejects `Worker.spawn`, `Inbox`, and `Outbox`
+    /// (§109.2).
+    S025,
+    /// The sandbox profile rejects a source over its byte or bracket-depth
+    /// limit (§109.2).
+    S026,
     /// Catch-all: construct outside the decided language surface.
     S100,
 }
 
 impl RuleCode {
     /// Every stable rule code, in numeric order.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 22] = [
         Self::S001,
         Self::S002,
         Self::S003,
@@ -74,6 +84,10 @@ impl RuleCode {
         Self::S016,
         Self::S017,
         Self::S018,
+        Self::S023,
+        Self::S024,
+        Self::S025,
+        Self::S026,
         Self::S100,
     ];
 
@@ -98,6 +112,10 @@ impl RuleCode {
             RuleCode::S016 => "S016",
             RuleCode::S017 => "S017",
             RuleCode::S018 => "S018",
+            RuleCode::S023 => "S023",
+            RuleCode::S024 => "S024",
+            RuleCode::S025 => "S025",
+            RuleCode::S026 => "S026",
             RuleCode::S100 => "S100",
         }
     }
@@ -133,6 +151,16 @@ impl RuleCode {
                 "One namespace cannot contain two declarations of the same name."
             }
             RuleCode::S018 => "A receiver type must declare each accessed member.",
+            RuleCode::S023 => {
+                "The sandbox profile rejects `Context.free`; memory is allocate-only there."
+            }
+            RuleCode::S024 => "The sandbox profile rejects `Context.fromBytes`.",
+            RuleCode::S025 => {
+                "The sandbox profile rejects `Worker.spawn`, `Inbox`, and `Outbox`."
+            }
+            RuleCode::S026 => {
+                "The sandbox profile rejects a source over its byte limit or its bracket-depth limit."
+            }
             RuleCode::S100 => "Constructs outside the decided language surface are rejected.",
         }
     }
@@ -223,7 +251,8 @@ mod tests {
             RuleCode::ALL.map(RuleCode::as_str),
             [
                 "S001", "S002", "S003", "S004", "S005", "S006", "S007", "S008", "S009", "S010",
-                "S011", "S012", "S013", "S014", "S016", "S017", "S018", "S100",
+                "S011", "S012", "S013", "S014", "S016", "S017", "S018", "S023", "S024", "S025",
+                "S026", "S100",
             ]
         );
         for code in RuleCode::ALL {

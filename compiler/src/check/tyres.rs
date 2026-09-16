@@ -193,6 +193,17 @@ impl<'p> Checker<'p> {
         }
         match name {
             "Worker" | "Inbox" | "Outbox" if self.scope_item(name).is_none() => {
+                // §109.2 S025: the sandbox profile has no worker surface.
+                // `Worker.spawn` is the only source of a `Worker<In, Out>`
+                // value, so S025 at `Worker.spawn` covers that name.
+                if matches!(name, "Inbox" | "Outbox") && self.profile == crate::Profile::Sandbox {
+                    self.error(
+                        RuleCode::S025,
+                        format!("`{name}` is rejected under the sandbox profile"),
+                        pos,
+                    );
+                    return Type::Error;
+                }
                 let expected = if name == "Worker" { 2 } else { 1 };
                 let Some(args) = &r.type_params else {
                     self.error(

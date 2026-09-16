@@ -3,12 +3,39 @@
 //! entry's file at the line of the offending construct.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use subscript_compiler::{check_program, render_diagnostics, RuleCode, SourceFile};
+use subscript_compiler::language_reference::parse_header;
+use subscript_compiler::{
+    check_program, check_program_with, render_diagnostics, CheckOptions, Profile, RuleCode,
+    SourceFile,
+};
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus")
+}
+
+/// The compile profile an entry's `// profile:` header selects (§109.1
+/// rule 3). An entry with no such header uses the default profile.
+fn entry_profile(path: &Path, source: &str) -> Profile {
+    let header = parse_header(path, source)
+        .unwrap_or_else(|error| panic!("read the header of {}: {error}", path.display()));
+    header.profile.as_deref().map_or(Profile::Default, |name| {
+        Profile::parse(name)
+            .unwrap_or_else(|| panic!("{}: unknown profile `{name}`", path.display()))
+    })
+}
+
+/// Checks one reject entry under the profile its header selects.
+fn check_entry(
+    path: &Path,
+    files: &[SourceFile],
+    source: &str,
+) -> Vec<subscript_compiler::Diagnostic> {
+    let options = CheckOptions::with_profile(entry_profile(path, source));
+    check_program_with(files, &options)
+        .err()
+        .unwrap_or_default()
 }
 
 /// Expected (entry, rule code, 1-based line of the offending construct).
@@ -307,6 +334,12 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r77-pass-keys-view.ts", RuleCode::S014, 13),
     ("r78-call-spread-variadic.ts", RuleCode::S014, 13),
     ("r79-assign-entries.ts", RuleCode::S014, 9),
+    // §109.2: each sandbox-profile rule has one reject entry. The entry's
+    // `// profile: sandbox` header selects the profile.
+    ("r233-sandbox-free.ts", RuleCode::S023, 19),
+    ("r234-sandbox-from-bytes.ts", RuleCode::S024, 16),
+    ("r235-sandbox-worker.ts", RuleCode::S025, 16),
+    ("r236-sandbox-source-depth.ts", RuleCode::S026, 9),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -341,13 +374,14 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
                     .expect("read the interop mirror for r169");
             files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
         }
-        files.push(SourceFile::new(file, source));
-        let result = check_program(&files);
-        let diags = match result {
-            Err(diags) => diags,
-            Ok(_) => panic!("{} was accepted; expected {}", file, code),
-        };
-        assert!(!diags.is_empty(), "{}: empty diagnostic list", file);
+        files.push(SourceFile::new(file, source.clone()));
+        let diags = check_entry(&path, &files, &source);
+        assert!(
+            !diags.is_empty(),
+            "{} was accepted; expected {}",
+            file,
+            code
+        );
         let first = &diags[0];
         assert_eq!(
             first.code, code,
@@ -367,13 +401,25 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
     }
 }
 
+/// §79 rule 1 pairs a `tsc: accepts` reject entry with a divergence block.
+///
+/// §109.1 rule 4 keeps the surface unchanged under a profile: the default
+/// profile and `tsc` both accept a profile entry's source, so a profile
+/// rejection is not a divergence from TypeScript and carries no block.
+/// Its accept twin is the control that the source still runs.
 #[test]
 fn divergence_blocks_match_every_reject_entry_tsc_header() {
     let dir = corpus_dir().join("reject");
     let mut violations = Vec::new();
+    let mut profile_entries = 0usize;
     for (file, _, _) in expected_entries() {
-        let source = fs::read_to_string(dir.join(file))
-            .unwrap_or_else(|error| panic!("read {file}: {error}"));
+        let path = dir.join(file);
+        let source =
+            fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {file}: {error}"));
+        if entry_profile(&path, &source) != Profile::Default {
+            profile_entries += 1;
+            continue;
+        }
         let tsc_accepts = source.lines().any(|line| line == "// tsc: accepts");
         let tsc_rejects = source
             .lines()
@@ -403,6 +449,10 @@ fn divergence_blocks_match_every_reject_entry_tsc_header() {
         }
     }
     assert!(violations.is_empty(), "{}", violations.join("\n"));
+    assert!(
+        profile_entries > 0,
+        "no profile reject entry was skipped; the reader is wrong"
+    );
 }
 
 #[test]
