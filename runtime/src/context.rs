@@ -678,6 +678,10 @@ pub struct Context {
     // reload provenance, the fulfilled-value size the scheduler needs, the
     // cached completion, and the continuations registered on the frame.
     async_frames: HashMap<usize, AsyncFrameMeta>,
+    // §109.4 rule 2: live payload bytes in both memory modes. Every site
+    // that changes the live set moves it, so the quota check reads one
+    // field and costs the same at every live count.
+    live_bytes_counter: usize,
     // Exact-size live allocations. The dev tier uses this path; a ship
     // Context switches to it when freed-handle diagnostics are enabled.
     // Collection marks and sweeps only this map.
@@ -812,6 +816,7 @@ impl Context {
             async_stopped: Vec::new(),
             active_async_frames: Vec::new(),
             async_frames: HashMap::new(),
+            live_bytes_counter: 0,
             allocations: HashMap::new(),
             boundary_scratch: Vec::new(),
             dead_allocations: AddressSet::default(),
@@ -1961,7 +1966,8 @@ impl Context {
         }
         // §109.4 rule 2: over the quota, the request takes the same
         // fault path with `AllocationQuota` in place of
-        // `AllocationFailure`.
+        // `AllocationFailure`. `live_bytes` is the maintained counter, so
+        // this check costs the same at every live count.
         if self.alloc_quota != 0 {
             let live = self.live_bytes() as u64;
             if live.saturating_add(size as u64) > self.alloc_quota {
@@ -1991,6 +1997,7 @@ impl Context {
                 marked: false,
             },
         );
+        self.live_bytes_counter = self.live_bytes_counter.saturating_add(size);
         payload
     }
 
@@ -2083,6 +2090,9 @@ impl Context {
                 let base = payload.sub(HEADER_SIZE);
                 write_header(base, class_id, pos_id);
             }
+            self.live_bytes_counter = self
+                .live_bytes_counter
+                .saturating_add(block_size - HEADER_SIZE);
             return payload;
         }
 
@@ -2105,6 +2115,9 @@ impl Context {
             base.add(HEADER_SIZE)
         };
         chunk.bump += 1;
+        self.live_bytes_counter = self
+            .live_bytes_counter
+            .saturating_add(block_size - HEADER_SIZE);
         payload
     }
 
@@ -2166,6 +2179,7 @@ impl Context {
                 payload_size: size,
             },
         );
+        self.live_bytes_counter = self.live_bytes_counter.saturating_add(size);
         #[cfg(test)]
         self.stats
             .large
@@ -2273,6 +2287,9 @@ impl Context {
                 (payload as *mut usize).write(self.free_heads[class]);
                 self.free_heads[class] = payload;
             }
+            self.live_bytes_counter = self
+                .live_bytes_counter
+                .saturating_sub((SMALLEST_BLOCK << class) - HEADER_SIZE);
             return;
         }
         if let Some(a) = self.large.remove(&payload) {
@@ -2280,6 +2297,7 @@ impl Context {
             // heads an owned allocation whose class-id word is readable.
             let class_id = unsafe { header_class_id(a.base) };
             self.release_class_state(class_id, payload);
+            self.live_bytes_counter = self.live_bytes_counter.saturating_sub(a.payload_size);
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `arena_alloc_large`; the record was just removed so this
             // frees it exactly once. Container clearing only retired
@@ -2297,6 +2315,9 @@ impl Context {
     /// the new record fits; an individually over-budget layout is released.
     fn retire_dev_allocation(&mut self, payload: usize) -> Option<u32> {
         let allocation = self.allocations.remove(&payload)?;
+        self.live_bytes_counter = self
+            .live_bytes_counter
+            .saturating_sub(allocation.payload_size);
         // SAFETY: exact live-map membership proves the complete initialized
         // header remains owned by this Context.
         let class_id = allocation.class_id;
@@ -2369,6 +2390,9 @@ impl Context {
     /// Releases one exact-size allocation and removes its live record.
     fn release_dev_allocation(&mut self, payload: usize) -> Option<u32> {
         let allocation = self.allocations.remove(&payload)?;
+        self.live_bytes_counter = self
+            .live_bytes_counter
+            .saturating_sub(allocation.payload_size);
         // SAFETY: exact live-map membership proves the complete initialized
         // header remains owned by this Context.
         let class_id = allocation.class_id;
@@ -2532,8 +2556,22 @@ impl Context {
     /// The development tier reports exact requested payload sizes. The
     /// ship tier reports size-class payload capacity for arena blocks and
     /// exact payload size for large allocations.
+    ///
+    /// §109.4 rule 2: this is a counter the runtime maintains at every
+    /// change of the live set, in both memory modes. Collection compares
+    /// it against the walk over the live set.
     #[must_use]
     pub fn live_bytes(&self) -> usize {
+        self.live_bytes_counter
+    }
+
+    /// The same quantity as [`Context::live_bytes`], derived instead by a
+    /// walk over the live set.
+    ///
+    /// The two derivations are independent, so collection and the unit
+    /// tests compare them (§109.4 rule 2).
+    #[cfg(any(test, debug_assertions))]
+    fn live_bytes_by_walk(&self) -> usize {
         if self.uses_ship_arena() {
             let mut bytes = self
                 .large
@@ -2692,6 +2730,10 @@ impl Context {
             }
         }
         self.collect_with_trace(mark_trace_target());
+        // §109.4 rule 2: the maintained counter and the walk over the
+        // live set are two independent derivations of one quantity.
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(self.live_bytes_by_walk(), self.live_bytes());
     }
 
     /// Reports every live dynamic array whose unused data tail contains a
@@ -3082,6 +3124,7 @@ impl Context {
     /// never traversed here.
     fn sweep_dev_allocations(&mut self, retiring: usize) {
         if !self.freed_handle_diagnostics {
+            let live_bytes_counter = &mut self.live_bytes_counter;
             for (_, allocation) in self.allocations.extract_if(|_, allocation| {
                 if allocation.marked {
                     allocation.marked = false;
@@ -3090,6 +3133,7 @@ impl Context {
                     true
                 }
             }) {
+                *live_bytes_counter = live_bytes_counter.saturating_sub(allocation.payload_size);
                 // SAFETY: this allocation was live at sweep entry; its
                 // record was just removed, so this frees it exactly once.
                 unsafe { dealloc(allocation.base, allocation.layout) };
@@ -3120,6 +3164,7 @@ impl Context {
         let dead_allocations = &mut self.dead_allocations;
         let retained_allocations = &mut self.retained_allocations;
         let retained_bytes = &mut self.retained_bytes;
+        let live_bytes_counter = &mut self.live_bytes_counter;
         // `extract_if` retains the live map's bucket storage. Later bursts
         // reuse it; accumulated deletion tombstones can eventually force one
         // bounded rebuild, but dead-count growth does not repeat peak
@@ -3132,6 +3177,7 @@ impl Context {
                 true
             }
         }) {
+            *live_bytes_counter = live_bytes_counter.saturating_sub(allocation.payload_size);
             if allocation.payload_size < min_payload_bytes {
                 // SAFETY: this allocation was live at sweep entry; its
                 // record was just removed, so this frees it exactly once.
@@ -3232,6 +3278,9 @@ impl Context {
                             let payload = block.add(HEADER_SIZE);
                             (payload as *mut usize).write(self.free_heads[class]);
                             self.free_heads[class] = payload as usize;
+                            self.live_bytes_counter = self
+                                .live_bytes_counter
+                                .saturating_sub(block_size - HEADER_SIZE);
                         }
                         // DEAD_STATE: already on the free list.
                         _ => {}
@@ -3253,6 +3302,7 @@ impl Context {
         }
         for addr in freed {
             if let Some(a) = self.large.remove(&addr) {
+                self.live_bytes_counter = self.live_bytes_counter.saturating_sub(a.payload_size);
                 // SAFETY: `base`/`layout` came from `alloc_zeroed` in
                 // `arena_alloc_large`; the record was just removed so
                 // this frees it exactly once.
@@ -4205,6 +4255,13 @@ mod tests {
         fn test_stats(&self) -> std::sync::Arc<ArenaStats> {
             std::sync::Arc::clone(&self.stats)
         }
+
+        /// Moves the live-byte counter away from the live set, so one
+        /// test proves that the collection assertion of §109.4 rule 2
+        /// reports a drifted counter.
+        fn test_offset_live_bytes_counter(&mut self, delta: usize) {
+            self.live_bytes_counter = self.live_bytes_counter.saturating_add(delta);
+        }
     }
 
     // The emitted-C SsArrayHeader (codegen/src/cemit.rs, §10a) mirrors this
@@ -4778,7 +4835,7 @@ mod tests {
     }
 
     #[test]
-    fn memory_accounting_walks_live_blocks_without_running_counters() {
+    fn memory_accounting_reports_the_tier_dependent_bytes_of_one_program() {
         let mut measured = Vec::new();
         for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let first = ctx.alloc(1, 1, 0);
@@ -4824,6 +4881,143 @@ mod tests {
             measured[0].3, measured[1].3,
             "arena chunks make reserved bytes tier-dependent"
         );
+    }
+
+    #[test]
+    fn the_live_byte_counter_matches_the_walk_after_an_allocation() {
+        for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
+            let first = ctx.alloc(24, 1, 0);
+            let second = ctx.alloc(17, 1, 0);
+            assert!(!first.is_null() && !second.is_null(), "{mode}");
+            assert!(ctx.live_bytes() > 0, "{mode}: two allocations are live");
+            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+        }
+    }
+
+    #[test]
+    fn the_live_byte_counter_matches_the_walk_after_a_delete() {
+        for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
+            let kept = ctx.alloc(24, 1, 0);
+            let deleted = ctx.alloc(17, 1, 0);
+            let before = ctx.live_bytes();
+            ctx.delete(deleted as usize, 0);
+            assert!(
+                ctx.live_bytes() < before,
+                "{mode}: the delete leaves the live set"
+            );
+            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+            ctx.delete(kept as usize, 0);
+            assert_eq!(ctx.live_bytes(), 0, "{mode}: the live set is empty");
+            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+        }
+    }
+
+    #[test]
+    fn the_live_byte_counter_matches_the_walk_after_a_collection() {
+        for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
+            let kept = ctx.alloc(24, 1, 0);
+            let dropped = ctx.alloc(64, 1, 0);
+            let mut root = kept as usize;
+            ctx.root_add(&mut root as *mut usize as usize, 1);
+            let before = ctx.live_bytes();
+
+            ctx.collect();
+
+            assert!(ctx.is_live(kept as usize), "{mode}: the root survives");
+            assert!(
+                !ctx.is_live(dropped as usize),
+                "{mode}: the dead object is swept"
+            );
+            assert!(
+                ctx.live_bytes() < before,
+                "{mode}: the sweep leaves the live set"
+            );
+            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+        }
+    }
+
+    #[test]
+    fn the_live_byte_counter_matches_the_walk_after_a_large_allocation() {
+        // Above LARGEST_BLOCK, so the ship arena takes its large path.
+        const LARGE: usize = LARGEST_BLOCK + 904;
+        for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
+            let large = ctx.alloc(LARGE, 1, 0);
+            assert!(!large.is_null(), "{mode}");
+            assert!(
+                ctx.live_bytes() >= LARGE,
+                "{mode}: the large payload is live"
+            );
+            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+
+            ctx.delete(large as usize, 0);
+
+            assert_eq!(ctx.live_bytes(), 0, "{mode}: the live set is empty");
+            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+        }
+    }
+
+    #[test]
+    fn the_live_byte_counter_matches_the_walk_after_retention_and_eviction() {
+        // One retained layout (32 payload bytes plus the header) fits;
+        // two do not, so the second delete evicts the first record.
+        const BUDGET: usize = 72;
+        for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
+            assert!(ctx.set_freed_handle_diagnostics(true, 0, BUDGET), "{mode}");
+            let kept = ctx.alloc(32, 1, 0);
+            let oldest = ctx.alloc(32, 1, 0);
+            let newest = ctx.alloc(32, 1, 0);
+            assert_eq!(ctx.live_bytes(), 96, "{mode}: three live payloads");
+
+            ctx.delete(oldest as usize, 0);
+
+            assert_eq!(ctx.retained_allocations.len(), 1, "{mode}: retention");
+            assert_eq!(
+                ctx.live_bytes(),
+                64,
+                "{mode}: retention leaves the live set"
+            );
+            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+
+            ctx.delete(newest as usize, 0);
+
+            assert_eq!(ctx.retained_allocations.len(), 1, "{mode}: eviction");
+            assert!(
+                !ctx.dead_allocations.contains(&(oldest as usize)),
+                "{mode}: the oldest record is evicted"
+            );
+            assert_eq!(
+                ctx.live_bytes(),
+                32,
+                "{mode}: eviction does not change the live set"
+            );
+            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+            assert!(ctx.is_live(kept as usize), "{mode}");
+        }
+    }
+
+    // The firing control for the collection assertion of §109.4 rule 2.
+    // The assertion is a debug assertion, so the control runs only where
+    // the assertion is compiled.
+    #[test]
+    #[cfg(debug_assertions)]
+    fn collection_reports_a_live_byte_counter_that_left_the_live_set() {
+        for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
+            let kept = ctx.alloc(24, 1, 0);
+            let mut root = kept as usize;
+            ctx.root_add(&mut root as *mut usize as usize, 1);
+            ctx.collect();
+            ctx.test_offset_live_bytes_counter(1);
+
+            let previous = std::panic::take_hook();
+            std::panic::set_hook(Box::new(|_| {}));
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ctx.collect()));
+            std::panic::set_hook(previous);
+
+            assert!(
+                outcome.is_err(),
+                "{mode}: a counter away from the live set must fail collection"
+            );
+        }
     }
 
     #[test]
