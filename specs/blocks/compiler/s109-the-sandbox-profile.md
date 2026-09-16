@@ -68,16 +68,54 @@ that the default profile rejects every such layout at the
 declaration and at the call, so the clause had no program and is
 removed (core principle 9).
 
-**The checker runs on its own thread.** Round 1 measured that the
-parser and the checker recurse once per nesting level: a debug test
-thread of 2 MiB overflows at depth 66, and the release CLI on the
-main thread runs depth 257. `check_program_with` runs the parse and
-the check on a thread it spawns with a 64 MiB stack, and joins it.
-The depth capacity is then a compiler fact, not the caller's thread.
-S026's limit of 256 is under that capacity on every harness thread,
-so the depth entry is constructible and the §90 mutation sweep
-returns on every mutation of it. The default profile keeps no depth
-limit.
+**The compiler runs on its own thread, and the checker bounds the
+tree.** Round 1 measured that the parser and the checker recurse
+once per nesting level: a debug test thread of 2 MiB overflows at
+depth 66, and the release CLI on the main thread runs depth 257.
+`check_program_with` runs the parse and the check on a thread it
+spawns with a 64 MiB stack, and joins it. The depth capacity is then
+a compiler fact, not the caller's thread. S026's limit of 256 is
+under that capacity on every harness thread, so the depth entry is
+constructible and the §90 mutation sweep returns on every mutation
+of it. The default profile keeps no depth limit.
+
+*(Amended 2026-09-17, after the adversarial review.)* Brackets are
+not the only nesting. Measured at `5d288f5` with the release CLI
+under the profile: `Array<Array<…>>` at depth 2,000 (14 KB), a chain
+of 60,000 `!`, and a chain of 40,000 `? :` (480 KB) each abort the
+process with a main-thread stack overflow, in the stages that run
+after the checker thread returns. A chain of 30 `!` takes over 25 s
+in the checker, doubling per operator. Three rules close the class:
+
+1. **The checker visits each syntax node once.** A chain of n
+   operators costs O(n). The unary-chain cost is a checker defect,
+   fixed at its site, with a test that bounds the time of a 200-deep
+   chain.
+2. **S026's third limit is a nesting limit on the tree the checker
+   walks.** One depth guard type, entered at every recursive
+   descent in the checker (expressions, types, statements, patterns);
+   a depth over 256 is S026 at that node, under the profile only.
+   The HIR the checker emits is therefore bounded, and every later
+   stage (`check_warnings`, the LIR lowering, the emitters) inherits
+   the bound without a guard of its own. The bracket count over the
+   lexer's tokens stays, because it is the one limit that runs before
+   the parser.
+3. **The whole pipeline runs on the compile thread.** The 64 MiB
+   thread of `check_program_with` becomes the thread of the whole
+   compile: parse, check, warnings, lowering, and emission, in the
+   CLI and in every codegen runner. Nothing that recurses over the
+   tree runs on the caller's thread.
+
+The parser runs before rule 2 can reject, so its own tolerance is
+measured, not assumed: for each nesting construct the grammar has
+(type arguments, prefix operators, conditional expressions,
+conditional types, assignment and exponent chains, member and call
+chains, binary chains, template substitutions, unions, array-type
+suffixes), the deepest source under 1,048,576 bytes runs through the
+parser alone on the compile thread. A construct that overflows there
+gets a token-level proxy limit before the parser, recorded here with
+its number. The stack size of the compile thread is set from that
+measurement.
 
 The capability mirror is not a new rule. A script binds only the
 `--mirror` it is given (§7, Step 7 of the host tutorial), and the
