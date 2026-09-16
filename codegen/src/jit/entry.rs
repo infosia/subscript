@@ -3,6 +3,7 @@
 
 use std::ffi::c_void;
 use std::fs::File;
+#[cfg(unix)]
 use std::io::Write;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
@@ -11,16 +12,22 @@ use std::time::{Duration, Instant};
 
 use cranelift_jit::JITModule;
 use subscript_compiler::{Pos, Profile};
+#[cfg(unix)]
+use subscript_runtime::TrapKind;
 use subscript_runtime::{
-    ffi, Context, Interrupt, TrapKind, FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
+    ffi, Context, Interrupt, FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
 };
 
 use super::compile::call_script_entry;
-use super::output::{
-    capture_stdout_line, AbortingStdoutGuard, CapturedStdout, RetainedOutput, TemporaryFile,
-};
-use super::{AbnormalTermination, JitMemoryAccounting, RunError, TrapReport};
-use crate::lower::{internal, Lowered};
+#[cfg(unix)]
+use super::output::TemporaryFile;
+use super::output::{capture_stdout_line, AbortingStdoutGuard, CapturedStdout, RetainedOutput};
+#[cfg(unix)]
+use super::AbnormalTermination;
+use super::{JitMemoryAccounting, RunError, TrapReport};
+#[cfg(unix)]
+use crate::lower::internal;
+use crate::lower::Lowered;
 use crate::HostLimits;
 
 pub(super) struct CompletedRun {
