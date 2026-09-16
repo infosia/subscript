@@ -254,7 +254,15 @@ carries on.
 uint64_t subscript_rt_ctx_live_allocations(const subscript_rt_context*);
 uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context*);
 uint64_t subscript_rt_ctx_reserved_bytes(const subscript_rt_context*);
+void     subscript_rt_ctx_collect(subscript_rt_context*);
 ```
+
+*(Added 2026-09-17, §109.8a.)* `subscript_rt_ctx_collect` is the host's
+explicit collection (invariant 2): the same `Context::collect` that
+`Context.collect()` reaches from script, callable only at script depth
+0, between script calls. The script intrinsic keeps its own symbol,
+`subscript_rt_collect`, which the generated header does not declare
+because the header declares the `subscript_rt_ctx_` family only.
 
 Owner decision 2026-07-26, and this closes a larger gap than §18.2's.
 **Invariant 2 — no implicit GC — makes explicit lifetime management

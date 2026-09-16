@@ -226,8 +226,9 @@ documentation; neither adds a rule to the compiler or the runtime.
 1. **The host paces.** `subscript_rt_ctx_live_bytes` reads a counter
    (§18, §109.4 rule 2), so a host reads it at every frame boundary
    at no cost. If the value is above the fraction of the quota the
-   host chose, the host calls `subscript_rt_collect` there, outside
-   any script call. The host, not the script, decides when.
+   host chose, the host calls `subscript_rt_ctx_collect` there
+   (§18.2d), outside any script call. The host, not the script,
+   decides when.
 2. **The script collects at its own boundary.** `Context.collect()`
    stays callable under the profile. A script that calls it at the
    end of its frame function keeps its own live set bounded, and the

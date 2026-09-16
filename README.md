@@ -273,7 +273,7 @@ program under it:
 
 1. **The host paces.** `subscript_rt_ctx_live_bytes` is a counter, so
    the host reads it at every frame boundary for free and calls
-   `subscript_rt_collect` there when the value passes the fraction of
+   `subscript_rt_ctx_collect` there when the value passes the fraction of
    the quota it chose — outside any script call, at a moment it picked.
 2. **The script collects at its own boundary.** `Context.collect()`
    stays callable under the profile. A script that calls it at the end
