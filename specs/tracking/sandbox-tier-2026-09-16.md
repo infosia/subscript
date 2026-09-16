@@ -262,3 +262,35 @@ build step on an `xcrun` cache write denial; the coordinator's
 environment did not reproduce it. A dead-code warning in a shared
 test module that the coding agent's clippy run did not cover was the
 one real build failure; fixed by moving the helper to its caller.
+
+## P26 round 2 — run-time rules (landed)
+
+Contract pin `382de51`. Implementation commit: the one after
+`c6251df`.
+
+| Item | Result |
+|---|---|
+| Red | at the pin, `t57` printed `start` then `300` and exited 0; `t58` died on signal 4 with no stdout; `a238` printed its golden (no checkpoint existed) |
+| Runtime | `Interrupted` 25, `AllocationQuota` 26, `StackBudget` 27; `subscript_rt_ctx_interrupt`, `_set_alloc_quota`, `_set_stack_budget`, `subscript_rt_sandbox_enter`, `subscript_rt_sandbox_poll`; header regenerated |
+| LIR | `IntrinsicFamily::Sandbox` with `Enter` (every function body and every resume block) and `Poll` (every `while`, `for`, `for-of` header); nothing under the default profile, asserted by a two-profile diff |
+| Executors | dev JIT, ship C, interpreter each lower both as the runtime call; the interpreter now brackets its entries with `enter_script`/`exit_script` |
+| Runners | `RunConfig.profile`; every runner reads `hir.profile` and applies the defaults; the ship entry emits the two calls; `interpret_configured` |
+| Corpus | `a238` `2997,8` on three tiers; `t57` `allocation-quota` at 16:17; `t58` `stack-budget` at 8:10 (the callee's entry); goldens-moved 1 (the LIR intrinsic table, two rows) |
+| Interrupt latency | dev-JIT 22–43 µs; ship-C-AOT 32–36 µs; flag store to runner return, debug, arm64 macOS |
+| Gate | `gate quick 382de51 dirty:41 debug 1501/0/2 skips 2 goldens-moved 1 exit 0` |
+
+Two contract corrections after the round (`c6251df`): the
+stack-budget trap site is the callee's entry, because `Enter` is the
+first instruction of the body; and `live_bytes` must be a maintained
+counter, because the first quota check folded over the live set and
+measured quadratic (10,000 live: 1.09 s against 0.03 s; 20,000 live:
+4.25 s against 0.02 s, debug `subscript run`). The counter is round
+2b.
+
+The limits are the host's facts, not the program's (§109.4 rule 5),
+so LIR carries no limit and `interpret_configured` takes them from
+the harness. `subscript emit` takes no `--profile`; a host that emits
+C and links it sets the limits through the C API.
+
+Exit criterion 5 has no entry point yet: `jit_bench` takes no option
+record. Round 3.
