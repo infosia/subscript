@@ -20,8 +20,14 @@ check.
 
 1. The CLI accepts `--profile sandbox` on `check`, `build`, and
    `run`. The default profile has no name and no flag.
-2. `CheckOptions` and `LowerOptions` each carry the profile. The
-   checker reads it for 109.2. The lowering reads it for 109.3.
+2. `CheckOptions` carries the profile, and the checker reads it for
+   109.2. The checked HIR module carries the profile it was checked
+   under, so every consumer of HIR reads the same fact: the LIR
+   lowering for 109.3, and each tier runner for the 109.5 defaults.
+   No runner or lowering takes the profile as a second parameter.
+   *(Amended 2026-09-16, before round 2: the first text named
+   `LowerOptions` as a second carrier. One form carries the fact,
+   core principle 8.)*
 3. A corpus entry selects the profile with the header line
    `// profile: sandbox`. Every harness that compiles an entry reads
    the header and passes the profile to both options.
