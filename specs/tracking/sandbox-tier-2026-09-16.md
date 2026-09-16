@@ -294,3 +294,19 @@ C and links it sets the limits through the C API.
 
 Exit criterion 5 has no entry point yet: `jit_bench` takes no option
 record. Round 3.
+
+## P26 round 2b — `live_bytes` is a maintained counter (landed)
+
+Contract pin `c6251df`; §18 amended to agree (`0cd904a`).
+
+| Item | Result |
+|---|---|
+| Sites | 12 moves across the exact-size and arena modes; eviction from the retained-dead queue moves nothing because retention already left the live set |
+| Check | `debug_assert_eq!(live_bytes_by_walk(), live_bytes())` at the end of `collect()`; five tests compare the two after each kind of change; one firing control offsets the counter and asserts the unwind |
+| Red | removing one maintenance site turned 8 and 11 tests Red |
+| Measurement | debug `subscript run`, live allocations kept: 10,000 → default 0.01 s, sandbox 0.01 s (was 1.09 s); 20,000 → 0.01 s, 0.02 s (was 4.25 s); 100,000 → 0.06 s both; 200,000 → 0.11 s both |
+| Gate | see the verdict line below |
+
+`live_allocations` and `reserved_bytes` still walk. `context.rs` is
+6,567 lines, on the §5.y split list.
+Gate: `gate quick 28c8b538557895ea4a80da71e6e2ffb3e79daa28 dirty:1 debug 1507/0/2 skips 2 goldens-moved 0 exit 0`
