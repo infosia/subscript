@@ -54,9 +54,14 @@ commit.
    integer types, value types). Editor tooling (tsserver) comes for free
    and is a primary reason TS syntax was chosen — a syntax extension that
    breaks `tsc` acceptance defeats it. (AssemblyScript's proven approach.)
-6. **Scripts are trusted.** First-party application logic, not a sandbox.
+6. **Scripts are trusted, except under the sandbox profile.** By
+   default a script is first-party application logic, not a sandbox.
    Spend no effort on adversarial hardening; spend it on clear, early
-   errors for honest mistakes.
+   errors for honest mistakes. The **sandbox profile**
+   (`specs/blocks/compiler.md` §109) is a compile profile for content
+   the host did not write. It narrows the accepted language and adds
+   run-time limits that the host sets. Hardening lands only inside the
+   profile. A program that does not select the profile pays nothing.
 
 ## Non-goals (permanent unless the plan is revised with evidence)
 

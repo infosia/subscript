@@ -20,5 +20,6 @@ rule itself is not repeated here. Nothing here is a current rule.
 | Code conventions: formatting under the pinned toolchain | 2026-08-09 | Owner decision. |
 | Code conventions: 2,000 lines per Rust source file | 2026-09-12 | `specs/tracking/context-size-2026-09-12.md`; contract §5.y. |
 | Workflow: step 0, measure first | 2026-09-08 | Owner decision. |
+| Design invariant 6: scripts are trusted, except under the sandbox profile | 2026-09-16 | A host that runs user-authored content had no execution form. The measurement round (`specs/tracking/sandbox-tier-2026-09-16.md`) showed the reference interpreter at a median 437x the dev-JIT, an interrupt poll at no measurable cost, and the foreign-call gap absent on the JIT. The owner chose a profile on the existing tiers over a new tier. Contract §109. |
 | Workflow: two review rounds are the limit for a defect class | 2026-08-26 | Owner decision. |
 | Hygiene: run `tools/hygiene.sh` once at the end of every Phase Review | 2026-08-30 | Owner decision; the asked shape is one working-tree scan, not a history scan. |

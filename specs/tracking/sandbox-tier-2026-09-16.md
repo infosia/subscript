@@ -218,6 +218,10 @@ flag, the quota, the depth limit, and the capability mirror), on
 platforms where the JIT runs. A no-JIT sandbox waits for a host that
 needs it, with M1 as the number it must beat.
 
+**Owner decision, 2026-09-16.** The sandbox is a compile profile on
+the existing tiers (CLAUDE.md invariant 6, plan Rev 3, contract §109).
+The reference interpreter is not promoted.
+
 Two findings outside the proposal:
 
 - `Repr::Scalar` in `codegen/src/layout.rs` names a Cranelift type,

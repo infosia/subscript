@@ -64,7 +64,9 @@ Normative copies live in `CLAUDE.md`; the plan restates them for context.
    direct C++ binding. Decided at founding to prevent incremental C++
    coupling.
 5. **Valid-TS-subset syntax** — `tsc`-clean with the ambient prelude.
-6. **Scripts are trusted.**
+6. **Scripts are trusted, except under the sandbox profile** *(Rev 3)*.
+   The sandbox profile is a compile profile for content the host did
+   not write. Contract: compiler block §109.
 
 ## 4. C interop patterns
 
@@ -129,6 +131,14 @@ hosts `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`, and
   neutral synthetic C header exercising all five §4 patterns, `offsetof`
   assertion suite, a headless end-to-end slice on both forms, and the
   corpus entries for the five patterns.
+
+- **P26 — the sandbox profile** *(Rev 3)*. Contract §109. A compile
+  profile that rejects `Context.free`, `Context.fromBytes`, workers, and
+  over-limit source, and lowers an interrupt poll and a stack check that
+  every tier executes. The host sets an allocation quota, a stack
+  budget, and an interrupt flag through the runtime C API. Exit: every
+  §109.7 corpus entry Red at the contract pin and Green after; the
+  full gate green; the §109.8 measurements recorded; hygiene clean.
 
 Beyond P5 (unscheduled): language surface growth, host scene data through
 a C facade, editor debugging depth.
@@ -198,3 +208,24 @@ memory.
   device link; the P0.5/P3 `cranelift-object` path is retained only as
   an optional cross-check, its ship role ended). Invariant 3 (two tiers)
   is unaffected: dev = Cranelift JIT, ship = C/LLVM AOT.
+
+**Rev 3 (2026-09-16) — invariant 6 gains the sandbox profile.**
+
+- What changed: §3 item 6 reads "Scripts are trusted, except under the
+  sandbox profile". §6 gains P26. The two trusted tiers do not change.
+- Evidence: a host that runs user-authored content (mods, shared
+  levels, plugins) had no execution form under invariant 6. The
+  proposal of 2026-09-16 asked for a third tier on the reference
+  interpreter. The measurement round
+  (`specs/tracking/sandbox-tier-2026-09-16.md`) measured that
+  interpreter at a median 437x the dev-JIT on the benchmark matrix, an
+  interrupt poll at no cost above the noise, a foreign-call gap of 50
+  entries that the JIT does not have, and 3.08 MB of binary for
+  Cranelift plus the C emitter together. The safety argument rests on
+  profile rules, not on the interpreter.
+- Consequence: the sandbox is a compile profile on the existing tiers,
+  not a tier (compiler block §109). The reference interpreter keeps its
+  role as the third witness. A no-JIT sandbox waits for a host that
+  needs it, with the 437x figure as the number it must beat. The
+  run-time source-loading host API is deferred to its own evidence
+  (§109.6).

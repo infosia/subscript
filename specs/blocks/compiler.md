@@ -27,6 +27,7 @@ The stages of the current form and the sections that hold their rules:
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
 | reference interpreter | §68.7 |
+| the sandbox profile (compile rules, `Sandbox` intrinsics, host limits) | §109 |
 | runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
 | workers | §38–§40, §84 |
@@ -150,3 +151,4 @@ Every section, with its status:
 | §106 | The reference interpreter stores a generator | active | [`s106-the-reference-interpreter-stores-a-generator.md`](compiler/s106-the-reference-interpreter-stores-a-generator.md) |
 | §107 | Binding patterns, by source type and position | active | [`s107-binding-patterns-by-source-type-and-position.md`](compiler/s107-binding-patterns-by-source-type-and-position.md) |
 | §108 | A field carries a value before a constructor returns | active | [`s108-a-field-carries-a-value-before-a-constructor-returns.md`](compiler/s108-a-field-carries-a-value-before-a-constructor-returns.md) |
+| §109 | The sandbox profile | active | [`s109-the-sandbox-profile.md`](compiler/s109-the-sandbox-profile.md) |
