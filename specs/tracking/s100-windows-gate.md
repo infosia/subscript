@@ -200,3 +200,81 @@ Verified here: `cargo test --workspace --no-fail-fast` 1360 passed,
 
 The Windows count is 1360 against the reference host's 1378. The
 difference is §11c constraint 2's structural exclusions.
+
+## The P26 tree on this host, 2026-09-17
+
+Pin `f5e16ab`, the P26 COMPLETE commit. Host
+`x86_64-pc-windows-msvc`, Windows 11 Pro 10.0.26200. rustc 1.95.0
+(59807616e), cargo 1.95.0, node v24.16.0, tsc 5.9.2.
+
+`tools/gate.sh quick` stopped on two facts. Neither fact is in the
+compiler, the runtime, or the emitted C.
+
+### 1. Five unix-only imports are unconditional
+
+`cargo build --offline --locked --workspace --all-targets` gives five
+`unused_imports` warnings. §85 rule 2 makes one rustc warning a
+failure, so the gate cannot pass here.
+
+All five are in `codegen/src/jit/entry.rs`: `std::io::Write`,
+`TrapKind`, `TemporaryFile`, `AbnormalTermination`, and `internal`.
+
+Cause: the P26 Phase Review split of `jit.rs` moved the
+retained-output child into `entry.rs`. That code is inside
+`#[cfg(unix)]` items (lines 207-407). The five names have no use site
+outside those items. A build that is not unix imports them and uses
+none. The reference host is unix, so the round that landed the split
+measured no warning.
+
+Fix: each of the five imports carries `#[cfg(unix)]`. The grouped
+`use` statements split, so a name that both platforms use keeps its
+unconditional import. No other item changes.
+
+Rule: a file that holds `#[cfg(unix)]` items imports its unix-only
+names under the same attribute. The gate on the Windows host is the
+check (§100).
+
+### 2. The application control policy blocks the ship tier
+
+First run, with the fix of item 1 in the tree:
+
+```text
+gate quick f5e16ab dirty:1 debug 1498/6/2 skips 2 goldens-moved 0 exit 1
+```
+
+Record: `target/gate/20260916T212141Z-quick.md`. The six failures are
+`trap_corpus_entries_match_dev_stdout_on_both_tiers`,
+`jit_ship_c_aot_and_golden_agree_byte_for_byte`,
+`r13_async_method_entries_match_across_tiers_and_golden`,
+`r28_binary32_bit_access_matches_the_golden_across_tiers`,
+`r29_class_index_signature_matches_the_golden_across_tiers`, and
+`r31_using_disposal_matches_the_goldens_across_tiers`.
+
+Every one gives the same measured text, ten times in the record:
+
+```text
+ship-C-AOT run failed: internal lowering error: run linked program:
+アプリケーション制御ポリシーによってこのファイルがブロックされました。 (os error 4551)
+```
+
+The C tier compiles and links. Windows then refuses to start the
+linked program. Each failing test compares dev-JIT against
+ship-C-AOT, so a ship run that never starts fails the comparison.
+
+The owner turned the Windows feature off and the run repeated.
+
+### Green
+
+```text
+gate quick f5e16ab dirty:1 debug 1504/0/2 skips 2 goldens-moved 0 exit 0
+```
+
+Record: `target/gate/20260916T212729Z-quick.md`. 1504 passed, 0
+failed, 2 ignored, two declared skips, `fmt` exit 0, `build` exit 0
+with zero rustc warnings. `dirty:1` is the `entry.rs` fix, which this
+note's commit lands.
+
+Consequence for the host: a Windows host that runs the standing gate
+must permit the ship tier's linked program to start. A policy that
+blocks it fails every dev ≡ ship comparison, and the failure text
+names the policy, not the compiler.
