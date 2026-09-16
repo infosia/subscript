@@ -193,6 +193,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             &expr.pos,
         )?;
         self.current = Some(successor);
+        // §109.3 rule 4: a resume enters the body here, so the entry
+        // checkpoint runs here too.
+        self.emit_sandbox_checkpoint(SandboxCheckpoint::Enter, &expr.pos)?;
         Ok(resume_value.map(l::Operand::Value))
     }
 
@@ -247,6 +250,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             &expr.pos,
         )?;
         self.current = Some(successor);
+        // §109.3 rule 4: a resume enters the body here, so the entry
+        // checkpoint runs here too.
+        self.emit_sandbox_checkpoint(SandboxCheckpoint::Enter, &expr.pos)?;
         Ok(resume_value.map(l::Operand::Value))
     }
 }

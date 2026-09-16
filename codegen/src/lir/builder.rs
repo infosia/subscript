@@ -319,6 +319,34 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(operand)
     }
 
+    /// Emits one sandbox-profile checkpoint call (§109.3) into the
+    /// current block, followed by the pending-trap check every runtime
+    /// call gets.
+    ///
+    /// Emits nothing under the default profile, so a program that does
+    /// not select the profile gets no new instruction.
+    pub(super) fn emit_sandbox_checkpoint(
+        &mut self,
+        checkpoint: SandboxCheckpoint,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        if self.lowering.hir.profile != subscript_compiler::Profile::Sandbox {
+            return Ok(());
+        }
+        self.emit(
+            l::InstructionKind::Call(checkpoint.target()),
+            Vec::new(),
+            None,
+            false,
+            vec![l::Trap {
+                kind: l::TrapKind::Call,
+                pos: pos.clone(),
+            }],
+            pos.clone(),
+        )?;
+        Ok(())
+    }
+
     pub(super) fn emit(
         &mut self,
         kind: l::InstructionKind,

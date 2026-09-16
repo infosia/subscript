@@ -116,6 +116,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 }
                 other => return Err(internal(format!("unknown Ambient intrinsic {other}"))),
             },
+            l::IntrinsicFamily::Sandbox => {
+                let entry = match name.as_str() {
+                    "Enter" => self.ml.rt.sandbox_enter,
+                    "Poll" => self.ml.rt.sandbox_poll,
+                    other => {
+                        return Err(internal(format!("unknown Sandbox intrinsic {other}")));
+                    }
+                };
+                self.simple_runtime_intrinsic(entry, operands, Some(pos), checked, false)?
+            }
             l::IntrinsicFamily::Math => {
                 let function = *self
                     .ml

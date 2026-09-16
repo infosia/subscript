@@ -746,6 +746,9 @@ pub enum IntrinsicFamily {
     Set,
     /// Worker/channel operations.
     Worker,
+    /// Sandbox-profile checkpoints (`specs/blocks/compiler.md` §109.3).
+    /// The lowering emits them; no source construct names them.
+    Sandbox,
 }
 
 /// Built-in receiver operations represented by HIR method syntax.

@@ -23,11 +23,10 @@ mod pool;
 
 use subscript_codegen::{interpreter::interpret, lir::lower_module};
 use subscript_codegen::{
-    run_c_aot, run_c_aot_with_alloc_failure,
-    run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
-    run_jit, run_jit_with_alloc_failure,
-    run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_memory_accounting,
-    run_jit_with_native_libraries, RunError, TrapReport,
+    run_c_aot, run_c_aot_configured, run_c_aot_with_alloc_failure,
+    run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_jit, run_jit_configured,
+    run_jit_with_alloc_failure, run_jit_with_freed_handle_diagnostics_and_native_libraries,
+    run_jit_with_memory_accounting, RunConfig, RunError, TrapReport,
 };
 // The MSVC branch uses `cc::windows_registry` to find the compiler.
 #[cfg(not(all(windows, target_env = "msvc")))]
@@ -119,6 +118,14 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
             (TrapKind::IndexOutOfBounds, 9, 18)
         }
         "t56-pattern-short-array" => (TrapKind::IndexOutOfBounds, 10, 17),
+        // §109.7: the quota trap is at the allocation site. The iteration
+        // that passes the quota is tier-specific, so the entry prints
+        // nothing that depends on it.
+        "t57-sandbox-alloc-quota" => (TrapKind::AllocationQuota, 16, 17),
+        // §109.3 places `Sandbox.Enter` at the first instruction of the
+        // function body, so the budget trap carries the callee's
+        // declaration position, not the call site's.
+        "t58-sandbox-stack-budget" => (TrapKind::StackBudget, 8, 10),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -654,6 +661,7 @@ struct TrapCase {
     id: String,
     files: Vec<SourceFile>,
     expected: Vec<u8>,
+    profile: subscript_compiler::Profile,
 }
 
 /// What one trap entry contributes: the line the caller prints and the
@@ -677,6 +685,17 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
         "t22-double-delete-q6" | "t23-use-after-delete-q6"
     );
     let callback_userdata_diagnostic = id.as_str() == "t46-callback-userdata-freed";
+    // Only the last branch below carries the entry's profile. A profile
+    // entry that needs one of the others fails here rather than running
+    // under the default profile with no report.
+    assert!(
+        case.profile == subscript_compiler::Profile::Default
+            || !(id.as_str() == "t50-wire-entry-unknown-value"
+                || allocation_failure_count(id).is_some()
+                || freed_handle_diagnostic
+                || callback_userdata_diagnostic),
+        "{id}: a profile trap entry needs the profile in its own runner branch"
+    );
     let (jit, ship) = if id.as_str() == "t50-wire-entry-unknown-value" {
         #[cfg(not(all(windows, target_env = "msvc")))]
         let libraries = [native_fixture::library()];
@@ -712,9 +731,11 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
         // need no native library.
         #[cfg(all(windows, target_env = "msvc"))]
         let libraries: [subscript_codegen::NativeLibrary; 0] = [];
+        // §109.1 rule 3: the entry's header profile reaches both runners.
+        let config = RunConfig::with_profile(case.profile).with_native_libraries(&libraries);
         (
-            run_jit_with_native_libraries(files, &libraries),
-            run_c_aot_with_native_libraries(files, &libraries),
+            run_jit_configured(files, config).map(|output| output.stdout),
+            run_c_aot_configured(files, config).map(|output| output.stdout),
         )
     };
 
@@ -854,10 +875,12 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
             continue;
         }
         let expected = trap_corpus::trap_expected(&trap, &id);
+        let profile = trap_corpus::trap_profile(&trap, &id);
         cases.push(TrapCase {
             id,
             files,
             expected,
+            profile,
         });
     }
 

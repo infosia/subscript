@@ -326,6 +326,9 @@ impl<'a> Lowering<'a> {
                 }
             }
             row.signatures.extend(signatures);
+            // §109.3: the checkpoints are lowering-emitted, so the
+            // checker contributes no row for them.
+            row.signatures.extend(super::sandbox_call_signatures());
         }
         Ok(l::Module {
             entry,
@@ -568,6 +571,10 @@ impl<'a> Lowering<'a> {
         captures: Vec<hir::Capture>,
     ) -> Result<(), LowerError> {
         let mut builder = FunctionBuilder::new(self, id, function, kind, receiver, captures)?;
+        // §109.3: the checkpoint is the first instruction of the body,
+        // after the parameter binds.
+        let entry_pos = builder.function.pos.clone();
+        builder.emit_sandbox_checkpoint(SandboxCheckpoint::Enter, &entry_pos)?;
         builder.lower_statements(&builder.function.body.clone())?;
         let lowered = builder.finish()?;
         self.set_function(id, lowered)

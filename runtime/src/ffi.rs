@@ -5212,6 +5212,87 @@ pub unsafe extern "C" fn subscript_rt_ctx_exit_script(ctx: *mut Context) {
     unsafe { &mut *ctx }.exit_script();
 }
 
+/// Requests that the running script stop at its next sandbox-profile
+/// checkpoint (compiler.md 109.4).
+///
+/// Any thread can call this while the owning thread runs script code. It
+/// is the one Context call outside the exclusive contract: it sets one
+/// atomic flag and reads no other field. A script compiled under the
+/// sandbox profile reads the flag at every function entry and on every
+/// loop edge, and records the `interrupted` trap (kind 25) there. A
+/// script compiled under the default profile has no checkpoint, so the
+/// flag has no effect on it. `subscript_rt_ctx_clear_trap` clears the
+/// flag together with the trap.
+///
+/// # Safety
+///
+/// `ctx` addresses a live Context that outlives this call.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_interrupt(ctx: *const Context) {
+    // SAFETY: the caller supplies a live Context; the call touches one
+    // atomic, which is defined across threads.
+    unsafe { Context::set_interrupt(ctx) };
+}
+
+/// Sets the Context allocation quota in bytes (compiler.md 109.4).
+///
+/// An allocation request whose live payload bytes plus its own size pass
+/// `bytes` records the `allocation-quota` trap (kind 26) at the
+/// allocation site and returns no storage. Zero removes the quota, which
+/// is the default.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_set_alloc_quota(ctx: *mut Context, bytes: u64) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.set_alloc_quota(bytes);
+}
+
+/// Sets the script stack budget in bytes (compiler.md 109.4).
+///
+/// The entry call at script depth zero records the stack floor. A
+/// sandbox-profile function entry below the floor minus `bytes` records
+/// the `stack-budget` trap (kind 27). Set a budget below the stack size
+/// of the thread that calls the script. Zero removes the budget, which
+/// is the default.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_set_stack_budget(ctx: *mut Context, bytes: u64) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.set_stack_budget(bytes);
+}
+
+/// The sandbox-profile function-entry checkpoint (compiler.md 109.3).
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_sandbox_enter(ctx: *mut Context, pos_id: u32) {
+    // The address of this local is the probe: it sits in the frame of
+    // the script function that just started.
+    let probe = 0u8;
+    let probe = std::ptr::addr_of!(probe) as usize;
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.sandbox_enter(probe, pos_id);
+}
+
+/// The sandbox-profile loop-edge checkpoint (compiler.md 109.3).
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_sandbox_poll(ctx: *mut Context, pos_id: u32) {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.sandbox_poll(pos_id);
+}
+
 /// Clears the pending trap reporting state when no script call is live.
 ///
 /// Returns 1 after clearing. Returns 0, without changing the Context,
@@ -5329,6 +5410,60 @@ pub unsafe extern "C" fn subscript_rt_ctx_visit_live_allocations(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// §109.4: the three C calls reach the three Context limits, and the
+    /// two checkpoints record the traps the contract names.
+    #[test]
+    fn the_sandbox_c_api_sets_each_limit_and_both_checkpoints_trap() {
+        let mut ctx = Context::new();
+        let pointer: *mut Context = &mut *ctx;
+        // SAFETY: `pointer` addresses the live Context this test owns, and
+        // every call below runs on this one thread.
+        unsafe {
+            subscript_rt_ctx_enter_script(pointer);
+            subscript_rt_ctx_set_alloc_quota(pointer, 4096);
+            subscript_rt_ctx_set_stack_budget(pointer, 524_288);
+        }
+        assert_eq!(ctx.alloc_quota(), 4096);
+        assert_eq!(ctx.stack_budget(), 524_288);
+
+        // A checkpoint with no flag and a shallow frame records nothing.
+        // SAFETY: as above.
+        unsafe {
+            subscript_rt_sandbox_enter(pointer, 5);
+            subscript_rt_sandbox_poll(pointer, 6);
+        }
+        assert!(!ctx.trapped(), "neither checkpoint fires unbidden");
+
+        // SAFETY: as above.
+        unsafe { subscript_rt_ctx_interrupt(pointer) };
+        assert!(ctx.interrupted());
+        // SAFETY: as above.
+        unsafe { subscript_rt_sandbox_poll(pointer, 7) };
+        let record = ctx.trap_record().expect("the interrupt trap is recorded");
+        assert_eq!(record.kind, TrapKind::Interrupted);
+        assert_eq!(record.pos_id, 7);
+    }
+
+    /// §109.4 rule 2: the quota refuses the request that passes it,
+    /// through the C allocation entry point.
+    #[test]
+    fn the_allocation_quota_refuses_a_request_through_the_c_entry_point() {
+        let mut ctx = Context::new();
+        let pointer: *mut Context = &mut *ctx;
+        // SAFETY: `pointer` addresses the live Context this test owns.
+        unsafe { subscript_rt_ctx_set_alloc_quota(pointer, 4096) };
+        // SAFETY: as above; the allocation entry point takes the same
+        // contract as generated code.
+        let inside = unsafe { subscript_rt_alloc(pointer, 1024, 1, 11) };
+        assert!(!inside.is_null(), "a request under the quota allocates");
+        // SAFETY: as above.
+        let outside = unsafe { subscript_rt_alloc(pointer, 8192, 1, 12) };
+        assert!(outside.is_null(), "a request over the quota allocates none");
+        let record = ctx.trap_record().expect("the quota trap is recorded");
+        assert_eq!(record.kind, TrapKind::AllocationQuota);
+        assert_eq!(record.pos_id, 12);
+    }
 
     #[test]
     fn globals_init_conversion_failures_trap_before_returning_null() {

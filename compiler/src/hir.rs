@@ -45,6 +45,10 @@ pub struct Module {
     /// Checked top-level non-declaration statements, in source order.
     /// The accept corpus uses these statements in entries such as `a168`.
     pub top_level: Vec<Stmt>,
+    /// The compile profile this module was checked under
+    /// (`specs/blocks/compiler.md` §109.1 rule 2). This is the one
+    /// carrier: the LIR lowering and each tier runner read it here.
+    pub profile: crate::Profile,
 }
 
 /// One root that owns expressions in a checked module.
@@ -4659,6 +4663,7 @@ mod tests {
             foreign_fns: Vec::new(),
             foreign_mirrors: Vec::new(),
             top_level: Vec::new(),
+            profile: crate::Profile::Default,
         };
         assert_eq!(
             function.host_entry_trap_sites(&module),
@@ -5053,6 +5058,7 @@ mod tests {
             foreign_fns: Vec::new(),
             foreign_mirrors: Vec::new(),
             top_level: Vec::new(),
+            profile: crate::Profile::Default,
         };
         assert!(m.functions.is_empty());
     }

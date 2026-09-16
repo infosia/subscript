@@ -14,9 +14,10 @@
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
-use subscript_compiler::{check_program, Pos, SourceFile};
+use subscript_compiler::{check_program_with, CheckOptions, Pos, Profile, SourceFile};
 use subscript_runtime::TrapKind;
 
 use crate::jit::{AbnormalTermination, RunError, TrapReport};
@@ -900,16 +901,48 @@ fn aot_entry_with_host_hooks(
     Ok(entry)
 }
 
+/// One linked ship-tier program, with the temporary directory that owns
+/// its files and the position table its traps resolve through.
+struct LinkedProgram {
+    directory: TempDir,
+    executable: PathBuf,
+    positions: Vec<Pos>,
+}
+
 fn execute_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<Vec<u8>, RunError> {
+    let program = build_c_aot(files, config)?;
+    let run = Command::new(&program.executable)
+        .output()
+        .map_err(|e| RunError::Internal(internal(format!("run linked program: {e}"))))?;
+    drop(program.directory);
+    if run.status.success() {
+        return Ok(run.stdout);
+    }
+    match parse_trap(&run.stderr, &program.positions, &run.stdout) {
+        Some(report) => Err(RunError::Trap(report)),
+        None => Err(RunError::AbnormalTermination(AbnormalTermination {
+            status: format!("linked C program exited with {}", run.status),
+            stdout: run.stdout,
+            stderr: run.stderr,
+        })),
+    }
+}
+
+fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProgram, RunError> {
     let RunConfig {
         native_libraries: libraries,
         fail_alloc_after,
         freed_handle_diagnostics,
         pre_entry_hook,
         post_run_hook,
+        profile,
+        interrupt_after_millis,
         ..
     } = config;
-    let hir = check_program(files).map_err(RunError::Rejected)?;
+    let hir = check_program_with(files, &CheckOptions::with_profile(profile))
+        .map_err(RunError::Rejected)?;
+    // §109.1 rule 2: the checked module is the carrier from here on.
+    let profile = hir.profile;
     let program = crate::emit_c(&hir).map_err(|e| RunError::Internal(internal(e)))?;
     require_native_symbols(&program.foreign_symbols, libraries)?;
     let staticlib = runtime_staticlib()?;
@@ -943,6 +976,28 @@ fn execute_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<Vec<u8>,
         setup.push_str(&format!(
             "    subscript_rt_ctx_fail_alloc_after(ctx, {n}u);\n"
         ));
+    }
+    // §109.5: the ship runner emits the profile defaults into the entry,
+    // before the first `call_script_entry`.
+    setup.push_str(&profile_defaults_c(profile));
+    if let Some(millis) = interrupt_after_millis {
+        const REPORT_ANCHOR: &str = "    uint64_t len = 0;";
+        if !AOT_ENTRY_C.contains(REPORT_ANCHOR) {
+            return Err(RunError::Internal(internal(
+                "AOT entry post-run anchor moved",
+            )));
+        }
+        entry = entry.replacen(
+            INTERRUPT_THREAD_ANCHOR,
+            &format!("{INTERRUPT_THREAD_ANCHOR}{}", interrupt_thread_c(millis)),
+            1,
+        );
+        entry = entry.replacen(
+            REPORT_ANCHOR,
+            &format!("    subscript_report_interrupt_latency();\n{REPORT_ANCHOR}"),
+            1,
+        );
+        setup.push_str("    subscript_start_interrupt_thread(ctx);\n");
     }
     if !setup.is_empty() {
         setup.push_str(anchor);
@@ -991,20 +1046,214 @@ fn execute_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<Vec<u8>,
         ))));
     }
 
-    let run = Command::new(&exe_path)
-        .output()
+    Ok(LinkedProgram {
+        directory: dir,
+        executable: exe_path,
+        positions: program.positions,
+    })
+}
+
+/// The Context-configuration lines one profile contributes to the host
+/// entry (`specs/blocks/compiler.md` §109.5). The default profile
+/// contributes nothing.
+fn profile_defaults_c(profile: Profile) -> String {
+    if profile != Profile::Sandbox {
+        return String::new();
+    }
+    format!(
+        "    subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C({}));\n    subscript_rt_ctx_set_stack_budget(ctx, UINT64_C({}));\n",
+        crate::SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES,
+        crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES,
+    )
+}
+
+/// The generated host entry for one compile profile
+/// (`specs/blocks/compiler.md` §109.5).
+///
+/// The default profile returns [`AOT_ENTRY_C`] unchanged. The sandbox
+/// profile returns it with the quota and the stack budget set before the
+/// first script call.
+///
+/// # Errors
+///
+/// Returns an error when the entry's Context-configuration anchor moved.
+pub fn aot_entry_for_profile(profile: Profile) -> Result<String, String> {
+    let defaults = profile_defaults_c(profile);
+    if defaults.is_empty() {
+        return Ok(AOT_ENTRY_C.to_string());
+    }
+    const ANCHOR: &str = "    call_script_entry(ctx, subscript_init);";
+    if !AOT_ENTRY_C.contains(ANCHOR) {
+        return Err(internal("AOT entry Context-configuration anchor moved"));
+    }
+    Ok(AOT_ENTRY_C.replacen(ANCHOR, &format!("{defaults}{ANCHOR}"), 1))
+}
+
+/// The anchor the emitted interrupt thread follows in the host entry.
+const INTERRUPT_THREAD_ANCHOR: &str =
+    "extern void subscript_kick_async_exports(subscript_rt_context *ctx);";
+
+/// The C source of the second thread that sets the interrupt flag after
+/// `millis` milliseconds, and of the report of the time from that store
+/// to the end of the run (`specs/blocks/compiler.md` §109.7).
+///
+/// The report goes to stderr, so the program's stdout stays the bytes the
+/// goldens compare.
+fn interrupt_thread_c(millis: u64) -> String {
+    let body = r#"
+
+#include <stdio.h>
+#if defined(_WIN32)
+#include <windows.h>
+static LARGE_INTEGER subscript_interrupt_store;
+static void subscript_record_interrupt_store(void) {
+    QueryPerformanceCounter(&subscript_interrupt_store);
+}
+static void subscript_report_interrupt_latency(void) {
+    LARGE_INTEGER now;
+    LARGE_INTEGER frequency;
+    if (subscript_interrupt_store.QuadPart == 0) {
+        return;
+    }
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&frequency);
+    fprintf(stderr, "interrupt-latency-ns %llu\n",
+            (unsigned long long)((now.QuadPart - subscript_interrupt_store.QuadPart) *
+                                 1000000000LL / frequency.QuadPart));
+}
+static DWORD WINAPI subscript_interrupt_thread(LPVOID argument) {
+    Sleep(SUBSCRIPT_INTERRUPT_AFTER_MILLIS);
+    subscript_rt_ctx_interrupt((const subscript_rt_context *)argument);
+    subscript_record_interrupt_store();
+    return 0;
+}
+static void subscript_start_interrupt_thread(subscript_rt_context *ctx) {
+    HANDLE thread = CreateThread(NULL, 0, subscript_interrupt_thread, ctx, 0, NULL);
+    if (thread != NULL) {
+        CloseHandle(thread);
+    }
+}
+#else
+#include <pthread.h>
+#include <time.h>
+#include <unistd.h>
+static struct timespec subscript_interrupt_store;
+static void subscript_record_interrupt_store(void) {
+    clock_gettime(CLOCK_MONOTONIC, &subscript_interrupt_store);
+}
+static void subscript_report_interrupt_latency(void) {
+    struct timespec now;
+    if (subscript_interrupt_store.tv_sec == 0 && subscript_interrupt_store.tv_nsec == 0) {
+        return;
+    }
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    fprintf(stderr, "interrupt-latency-ns %lld\n",
+            (long long)((now.tv_sec - subscript_interrupt_store.tv_sec) * 1000000000LL +
+                        (now.tv_nsec - subscript_interrupt_store.tv_nsec)));
+}
+static void *subscript_interrupt_thread(void *argument) {
+    usleep((useconds_t)(SUBSCRIPT_INTERRUPT_AFTER_MILLIS * 1000u));
+    subscript_rt_ctx_interrupt((const subscript_rt_context *)argument);
+    subscript_record_interrupt_store();
+    return NULL;
+}
+static void subscript_start_interrupt_thread(subscript_rt_context *ctx) {
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, subscript_interrupt_thread, ctx) == 0) {
+        pthread_detach(thread);
+    }
+}
+#endif
+"#;
+    body.replace("SUBSCRIPT_INTERRUPT_AFTER_MILLIS", &format!("{millis}u"))
+}
+
+/// The stderr line the emitted report writes.
+const INTERRUPT_LATENCY_PREFIX: &str = "interrupt-latency-ns ";
+
+/// Reads the emitted latency report out of the linked program's stderr.
+fn interrupt_latency(stderr: &[u8]) -> Option<Duration> {
+    let text = std::str::from_utf8(stderr).ok()?;
+    let line = text
+        .lines()
+        .find_map(|line| line.strip_prefix(INTERRUPT_LATENCY_PREFIX))?;
+    Some(Duration::from_nanos(line.trim().parse().ok()?))
+}
+
+/// What one interrupted ship-tier run produced
+/// (`specs/blocks/compiler.md` §109.7).
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct InterruptedRun {
+    /// The run's exact stdout bytes, or the error that stopped it.
+    pub outcome: Result<Vec<u8>, RunError>,
+    /// The time the linked program measured from the flag store to the
+    /// end of its run. `None` when the program reported none.
+    pub latency: Option<Duration>,
+}
+
+/// Runs the shipping tier with a second thread that sets the Context
+/// interrupt flag (`specs/blocks/compiler.md` §109.7).
+///
+/// `config.interrupt_after_millis` is the delay the emitted thread sleeps
+/// before the flag store. `None` emits no thread, so a program with an
+/// endless loop never stops: that shape is the firing control, and
+/// `deadline` bounds it. The linked program is killed when it passes the
+/// deadline, and the call then returns `None`.
+///
+/// A completed run returns its outcome and the time the linked program
+/// measured from the flag store to the end of its run.
+///
+/// # Errors
+///
+/// Returns the same [`RunError`] variants as [`run_c_aot`].
+pub fn run_c_aot_interrupted(
+    files: &[SourceFile],
+    config: RunConfig<'_>,
+    deadline: Duration,
+) -> Result<Option<InterruptedRun>, RunError> {
+    let program = build_c_aot(files, config)?;
+    let started = Instant::now();
+    let mut child = Command::new(&program.executable)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| RunError::Internal(internal(format!("run linked program: {e}"))))?;
-    if run.status.success() {
-        return Ok(run.stdout);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {}
+            Err(e) => {
+                return Err(RunError::Internal(internal(format!(
+                    "wait for linked program: {e}"
+                ))));
+            }
+        }
+        if started.elapsed() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_millis(1));
     }
-    match parse_trap(&run.stderr, &program.positions, &run.stdout) {
-        Some(report) => Err(RunError::Trap(report)),
-        None => Err(RunError::AbnormalTermination(AbnormalTermination {
-            status: format!("linked C program exited with {}", run.status),
-            stdout: run.stdout,
-            stderr: run.stderr,
-        })),
-    }
+    let run = child
+        .wait_with_output()
+        .map_err(|e| RunError::Internal(internal(format!("read linked program output: {e}"))))?;
+    drop(program.directory);
+    let latency = interrupt_latency(&run.stderr);
+    let outcome = if run.status.success() {
+        Ok(run.stdout)
+    } else {
+        match parse_trap(&run.stderr, &program.positions, &run.stdout) {
+            Some(report) => Err(RunError::Trap(report)),
+            None => Err(RunError::AbnormalTermination(AbnormalTermination {
+                status: format!("linked C program exited with {}", run.status),
+                stdout: run.stdout,
+                stderr: run.stderr,
+            })),
+        }
+    };
+    Ok(Some(InterruptedRun { outcome, latency }))
 }
 
 /// Parses the entry program's `trap <kind> <pos_id> <message>` line
@@ -1041,6 +1290,39 @@ mod tests {
     fn aot_entry_without_host_hooks_is_byte_identical_to_the_standing_entry() {
         let generated = aot_entry_with_host_hooks(None, None).expect("generate entry");
         assert_eq!(generated.as_bytes(), AOT_ENTRY_C.as_bytes());
+    }
+
+    /// §109.5: the generated entry carries the profile defaults, and the
+    /// default profile leaves the standing entry unchanged.
+    #[test]
+    fn the_generated_entry_carries_the_profile_defaults() {
+        let default = aot_entry_for_profile(Profile::Default).expect("generate entry");
+        assert_eq!(default.as_bytes(), AOT_ENTRY_C.as_bytes());
+        let sandbox = aot_entry_for_profile(Profile::Sandbox).expect("generate entry");
+        assert_ne!(sandbox, default);
+        for call in [
+            &format!(
+                "subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C({}));",
+                crate::SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES
+            ),
+            &format!(
+                "subscript_rt_ctx_set_stack_budget(ctx, UINT64_C({}));",
+                crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES
+            ),
+        ] {
+            assert!(sandbox.contains(call.as_str()), "missing `{call}`");
+            assert!(!default.contains(call.as_str()), "unexpected `{call}`");
+        }
+        let defaults = sandbox
+            .find("subscript_rt_ctx_set_alloc_quota")
+            .expect("the quota call");
+        let entry = sandbox
+            .find("    call_script_entry(ctx, subscript_init);")
+            .expect("the first script call");
+        assert!(
+            defaults < entry,
+            "the defaults precede the first script call"
+        );
     }
 
     #[test]
@@ -1265,7 +1547,7 @@ mod tests {
     /// The compile/link flags and runtime inputs are exactly the ones used
     /// by `run_c_aot`; only the host driver source differs.
     fn run_c_aot_with_entry(files: &[SourceFile], entry: &str) -> std::process::Output {
-        let hir = check_program(files).expect("test program checks");
+        let hir = check_program_with(files, &CheckOptions::default()).expect("test program checks");
         let program = crate::emit_c(&hir).expect("emit ship C");
         let staticlib = runtime_staticlib().expect("runtime staticlib");
         let dir = TempDir::new("host-api-test").expect("temp dir");

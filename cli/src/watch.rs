@@ -5,7 +5,7 @@
 //! applies the warning policy, delegates swaps to [`ReloadSession`], and calls
 //! `main` after a start or accepted swap.
 
-use subscript_codegen::{ReloadError, ReloadSession, RunError, TrapReport};
+use subscript_codegen::{ReloadError, ReloadSession, RunConfig, RunError, TrapReport};
 use subscript_compiler::{
     check_program_with, check_warnings, CheckOptions, Diagnostic, Profile, SourceFile, Warning,
 };
@@ -142,7 +142,10 @@ impl WatchSession {
     }
 
     fn start(&mut self, files: &[SourceFile], warnings: Vec<Warning>) -> WatchStep {
-        match ReloadSession::new_capturing_initializer_trap(files) {
+        // §109.5: the session applies the profile defaults before the
+        // initializer call.
+        let config = RunConfig::with_profile(self.profile);
+        match ReloadSession::new_capturing_initializer_trap_configured(files, config) {
             Ok((mut session, Some(trap))) => {
                 // The initializer output is available in `trap.stdout`.
                 let _ = session.take_output();

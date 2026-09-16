@@ -168,6 +168,20 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let name = operation.semantic_name.clone();
         let runtime_symbol = operation.runtime_symbol().map(str::to_owned);
         match intrinsic.family {
+            l::IntrinsicFamily::Sandbox => {
+                let symbol = runtime_symbol
+                    .ok_or_else(|| internal(format!("Sandbox.{name} has no runtime symbol")))?;
+                self.emit_simple_runtime_intrinsic(
+                    out,
+                    instruction,
+                    target,
+                    &symbol,
+                    operands,
+                    operand_types,
+                    true,
+                    result,
+                )
+            }
             l::IntrinsicFamily::Ambient => match name.as_str() {
                 "Print" => self.emit_simple_runtime_intrinsic(
                     out,

@@ -16,8 +16,8 @@ use program_loader::load_program;
 use runtime_paths::{resolve_runtime_paths, RuntimeEnvironment, RuntimeOverrides, RuntimePaths};
 use subscript_codegen::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, emit_c_files,
-    host_c_compiler, include_directory_arg, run_jit, runtime_system_libraries, CCompilerStyle,
-    EmitCFilesError, RunError,
+    host_c_compiler, include_directory_arg, run_jit_configured, runtime_system_libraries,
+    CCompilerStyle, EmitCFilesError, RunConfig, RunError,
 };
 use subscript_compiler::{
     check_program_with, check_warnings, render_diagnostics, render_warnings, CheckOptions,
@@ -220,7 +220,7 @@ fn emit_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failu
             return Ok(PROGRAM_ERROR);
         }
     }
-    emit_c_files(&files, &output, "program", write_entry)
+    emit_c_files(&files, &output, "program", write_entry, Profile::default())
         .map(|_| SUCCESS)
         .map_err(|error| map_emit_error(error, &files))
 }
@@ -410,8 +410,15 @@ fn build_command<O: Write, E: Write>(
     }
     let runtime = resolve_runtime_paths(parsed.runtime, RuntimeEnvironment::current(), &current)
         .map_err(Failure::usage)?;
-    let emitted = emit_c_files(&files, &output, "program", hosts.is_empty())
-        .map_err(|error| map_emit_error(error, &files))?;
+    // §109.5: the entry the build writes carries the profile defaults.
+    let emitted = emit_c_files(
+        &files,
+        &output,
+        "program",
+        hosts.is_empty(),
+        parsed.profile.unwrap_or_default(),
+    )
+    .map_err(|error| map_emit_error(error, &files))?;
     let executable = executable_path(&output, &source)?;
     compile_build(
         &emitted.source,
@@ -616,7 +623,9 @@ fn run_command<O: Write, E: Write>(
             return Ok(PROGRAM_ERROR);
         }
     }
-    match run_jit(&files) {
+    // §109.5: the runner applies the profile defaults before the entry.
+    let config = RunConfig::with_profile(profile);
+    match run_jit_configured(&files, config).map(|output| output.stdout) {
         Ok(output) => {
             stdout
                 .write_all(&output)

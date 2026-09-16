@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use cranelift_jit::{JITBuilder, JITModule};
-use subscript_compiler::{check_program, Diagnostic, Pos, SourceFile};
+use subscript_compiler::{check_program_with, CheckOptions, Diagnostic, Pos, Profile, SourceFile};
 use subscript_runtime::{
     ffi, Context, TrapKind, FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
 };
@@ -145,6 +145,8 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
     let symbols: &[(&str, *const u8)] = runtime_symbols!(
         subscript_rt_print,
         subscript_rt_collect,
+        subscript_rt_sandbox_enter,
+        subscript_rt_sandbox_poll,
         subscript_rt_alloc,
         subscript_rt_globals_init,
         subscript_rt_boundary_scratch_mark,
@@ -388,8 +390,12 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
 fn compile_jit(
     files: &[SourceFile],
     libraries: &[NativeLibrary],
-) -> Result<(JITModule, Lowered), RunError> {
-    let hir = check_program(files).map_err(RunError::Rejected)?;
+    profile: Profile,
+) -> Result<(JITModule, Lowered, Profile), RunError> {
+    let hir = check_program_with(files, &CheckOptions::with_profile(profile))
+        .map_err(RunError::Rejected)?;
+    // §109.1 rule 2: the checked module is the carrier from here on.
+    let profile = hir.profile;
 
     let flags = dev_flags().map_err(RunError::Internal)?;
     let isa = cranelift_native::builder()
@@ -419,7 +425,7 @@ fn compile_jit(
     module
         .finalize_definitions()
         .map_err(|e| RunError::Internal(internal(format!("finalize: {e}"))))?;
-    Ok((module, lowered))
+    Ok((module, lowered, profile))
 }
 
 /// Calls one finalized `(subscript_rt_context*) -> void` script entry under the host
@@ -666,6 +672,28 @@ unsafe extern "C" fn capture_stdout_line(userdata: *mut c_void, line: *const u8,
     }
 }
 
+/// What one dev-tier entry run produced: its outcome, and the measured
+/// interrupt latency when the run set the flag from a second thread.
+struct EntryOutcome {
+    run: Result<CompletedRun, RunError>,
+    interrupt_latency: Option<Duration>,
+}
+
+/// What one dev-tier entry run needs beyond the finalized code.
+#[derive(Debug, Clone, Copy, Default)]
+struct EntryOptions {
+    /// Object-level Context allocation number to reject.
+    fail_alloc_after: Option<u64>,
+    /// Enables retained freed-handle diagnostics.
+    freed_handle_diagnostics: bool,
+    /// The profile the module was checked under (§109.1 rule 2). The
+    /// runner reads the §109.5 defaults from it.
+    profile: Profile,
+    /// Sets the Context interrupt flag from a second thread after this
+    /// many milliseconds (§109.7). `None` starts no thread.
+    interrupt_after_millis: Option<u64>,
+}
+
 /// Runs the module initializer and then the exported `main` on a fresh
 /// Context, returning the stdout bytes of the run and how long the
 /// `main` call itself took.
@@ -677,12 +705,25 @@ unsafe extern "C" fn capture_stdout_line(userdata: *mut c_void, line: *const u8,
 fn execute_entry(
     module: &JITModule,
     lowered: &Lowered,
-    fail_alloc_after: Option<u64>,
-    freed_handle_diagnostics: bool,
+    options: EntryOptions,
     write_through: Option<File>,
-) -> Result<CompletedRun, RunError> {
+) -> EntryOutcome {
+    let EntryOptions {
+        fail_alloc_after,
+        freed_handle_diagnostics,
+        profile,
+        interrupt_after_millis,
+    } = options;
     let init_ptr = module.get_finalized_function(lowered.init);
-    let main = lowered.main_id().map_err(RunError::Internal)?;
+    let main = match lowered.main_id() {
+        Ok(main) => main,
+        Err(message) => {
+            return EntryOutcome {
+                run: Err(RunError::Internal(message)),
+                interrupt_latency: None,
+            };
+        }
+    };
     let main_ptr = module.get_finalized_function(main);
 
     let needs_panic_stdout_fallback = write_through.is_none();
@@ -709,6 +750,19 @@ fn execute_entry(
     if let Some(n) = fail_alloc_after {
         ctx.fail_alloc_after(n);
     }
+    // §109.5: the runner applies the profile defaults before the first
+    // `enter_script`, so the module initializer already runs under them.
+    crate::apply_profile_defaults(&mut ctx, profile);
+    let interrupter = interrupt_after_millis.map(|millis| {
+        let address = (&*ctx as *const Context) as usize;
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(millis));
+            // SAFETY: the run below joins this thread before the Context
+            // is dropped, and the call touches one atomic (§109.4 rule 1).
+            unsafe { Context::set_interrupt(address as *const Context) };
+            Instant::now()
+        })
+    });
     let mut elapsed = Duration::ZERO;
     {
         // SAFETY: `init_ptr`/`main_ptr` are finalized JIT code for
@@ -747,6 +801,12 @@ fn execute_entry(
         }
     }
 
+    // §109.7: the recorded number is the time from the flag store to this
+    // runner's return.
+    let interrupt_latency = interrupter.map(|handle| {
+        let store = handle.join().unwrap_or_else(|_| Instant::now());
+        store.elapsed()
+    });
     let trap = ctx.trap_record().map(|r| {
         let pos = lowered
             .positions
@@ -758,18 +818,21 @@ fn execute_entry(
     ctx.set_print_observer(None, std::ptr::null_mut());
     drop(aborting_stdout);
     let stdout = stdout.bytes;
-    match trap {
-        Some((rule, message, pos)) => Err(RunError::Trap(TrapReport {
-            rule,
-            message,
-            pos,
-            stdout,
-        })),
-        None => Ok(CompletedRun {
-            ctx,
-            stdout,
-            elapsed,
-        }),
+    EntryOutcome {
+        run: match trap {
+            Some((rule, message, pos)) => Err(RunError::Trap(TrapReport {
+                rule,
+                message,
+                pos,
+                stdout,
+            })),
+            None => Ok(CompletedRun {
+                ctx,
+                stdout,
+                elapsed,
+            }),
+        },
+        interrupt_latency,
     }
 }
 
@@ -887,8 +950,7 @@ fn parse_child_protocol(bytes: &[u8], stdout: Vec<u8>) -> Result<Vec<u8>, RunErr
 fn execute_entry_retained(
     module: &JITModule,
     lowered: &Lowered,
-    fail_alloc_after: Option<u64>,
-    freed_handle_diagnostics: bool,
+    options: EntryOptions,
 ) -> Result<Vec<u8>, RunError> {
     let mut output = RetainedOutput::new()?;
     let writer = output.writer()?;
@@ -918,16 +980,10 @@ fn execute_entry_retained(
             // generated code ran.
             unsafe { libc::_exit(122) };
         }
-        let outcome = execute_entry(
-            module,
-            lowered,
-            fail_alloc_after,
-            freed_handle_diagnostics,
-            Some(writer),
-        );
+        let outcome = execute_entry(module, lowered, options, Some(writer));
         let written = write_child_protocol(
             protocol.file.as_mut().expect("live JIT child protocol"),
-            &outcome,
+            &outcome.run,
         )
         .is_ok();
         // SAFETY: this is the forked child. `_exit` avoids running inherited
@@ -982,19 +1038,13 @@ fn execute_entry_retained(
 fn execute_entry_retained(
     module: &JITModule,
     lowered: &Lowered,
-    fail_alloc_after: Option<u64>,
-    freed_handle_diagnostics: bool,
+    options: EntryOptions,
 ) -> Result<Vec<u8>, RunError> {
     let output = RetainedOutput::new()?;
     let writer = output.writer()?;
-    execute_entry(
-        module,
-        lowered,
-        fail_alloc_after,
-        freed_handle_diagnostics,
-        Some(writer),
-    )
-    .map(|run| run.stdout)
+    execute_entry(module, lowered, options, Some(writer))
+        .run
+        .map(|run| run.stdout)
 }
 
 fn run_entry(
@@ -1002,8 +1052,17 @@ fn run_entry(
     lowered: &Lowered,
     fail_alloc_after: Option<u64>,
 ) -> Result<(Vec<u8>, Duration), RunError> {
-    execute_entry(module, lowered, fail_alloc_after, false, None)
-        .map(|run| (run.stdout, run.elapsed))
+    execute_entry(
+        module,
+        lowered,
+        EntryOptions {
+            fail_alloc_after,
+            ..EntryOptions::default()
+        },
+        None,
+    )
+    .run
+    .map(|run| (run.stdout, run.elapsed))
 }
 
 fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {
@@ -1055,27 +1114,22 @@ pub fn run_jit_configured(
             "host hooks are not available in the development tier",
         )));
     }
-    let (module, lowered) = compile_jit(files, config.native_libraries)?;
+    let (module, lowered, profile) = compile_jit(files, config.native_libraries, config.profile)?;
+    let options = EntryOptions {
+        fail_alloc_after: config.fail_alloc_after,
+        freed_handle_diagnostics: config.freed_handle_diagnostics,
+        profile,
+        interrupt_after_millis: config.interrupt_after_millis,
+    };
     let outcome = if config.memory_accounting {
-        execute_entry(
-            &module,
-            &lowered,
-            config.fail_alloc_after,
-            config.freed_handle_diagnostics,
-            None,
-        )
-        .map(|run| RunOutput {
-            memory_accounting: Some(memory_accounting(&run.ctx)),
-            stdout: run.stdout,
-        })
+        execute_entry(&module, &lowered, options, None)
+            .run
+            .map(|run| RunOutput {
+                memory_accounting: Some(memory_accounting(&run.ctx)),
+                stdout: run.stdout,
+            })
     } else {
-        execute_entry_retained(
-            &module,
-            &lowered,
-            config.fail_alloc_after,
-            config.freed_handle_diagnostics,
-        )
-        .map(|stdout| RunOutput {
+        execute_entry_retained(&module, &lowered, options).map(|stdout| RunOutput {
             stdout,
             memory_accounting: None,
         })
@@ -1212,6 +1266,44 @@ pub fn run_jit_with_alloc_failure(files: &[SourceFile], n: u64) -> Result<Vec<u8
     .stdout)
 }
 
+/// Runs the development tier in this process and sets the Context
+/// interrupt flag from a second thread (`specs/blocks/compiler.md`
+/// §109.7).
+///
+/// `config.interrupt_after_millis` is the delay before the flag store.
+/// `None` starts no thread, so a program with an endless loop never
+/// returns: that shape is the firing control, and the caller bounds it.
+///
+/// The run is in process, because the thread that sets the flag and the
+/// Context must belong to one process. The second return value is the
+/// time from the flag store to this function's return.
+pub fn run_jit_interrupted(
+    files: &[SourceFile],
+    config: RunConfig<'_>,
+) -> (Result<Vec<u8>, RunError>, Option<Duration>) {
+    let compiled = compile_jit(files, config.native_libraries, config.profile);
+    let (module, lowered, profile) = match compiled {
+        Ok(compiled) => compiled,
+        Err(error) => return (Err(error), None),
+    };
+    let outcome = execute_entry(
+        &module,
+        &lowered,
+        EntryOptions {
+            fail_alloc_after: config.fail_alloc_after,
+            freed_handle_diagnostics: config.freed_handle_diagnostics,
+            profile,
+            interrupt_after_millis: config.interrupt_after_millis,
+        },
+        None,
+    );
+    let run = outcome.run.map(|run| run.stdout);
+    // SAFETY: the execution above returned and no pointer into JIT memory
+    // survives.
+    unsafe { module.free_memory() };
+    (run, outcome.interrupt_latency)
+}
+
 /// Timed samples for one subject of the performance gate
 /// (`specs/blocks/compiler.md` §9).
 #[derive(Debug, Clone)]
@@ -1249,7 +1341,7 @@ pub struct BenchSamples {
 /// errors as [`run_jit`].
 pub fn jit_compile_time(files: &[SourceFile]) -> Result<Duration, RunError> {
     let started = Instant::now();
-    let (module, _lowered) = compile_jit(files, &[])?;
+    let (module, _lowered, _) = compile_jit(files, &[], Profile::Default)?;
     let elapsed = started.elapsed();
     // SAFETY: the finalized module was not executed and no pointer into its
     // code or data escaped this function.
@@ -1304,7 +1396,7 @@ pub fn jit_bench_with_warmup_floor(
         )));
     }
     let started = Instant::now();
-    let (module, lowered) = compile_jit(files, &[])?;
+    let (module, lowered, _) = compile_jit(files, &[], Profile::Default)?;
     let compile = started.elapsed();
 
     let mut samples = Vec::with_capacity(timed);
@@ -1381,20 +1473,22 @@ pub fn jit_bench_with_warmup_floor(
 pub(crate) fn memory_accounting_after_run(
     files: &[SourceFile],
 ) -> Result<(u64, u64, u64), RunError> {
-    let (module, lowered) = compile_jit(files, &[])?;
-    let result = execute_entry(&module, &lowered, None, false, None).map(|run| {
-        let p: *const Context = &*run.ctx;
-        let accounting = memory_accounting(&run.ctx);
-        // SAFETY: shared host accessors over a live Context after every
-        // script entry returned.
-        unsafe {
-            (
-                ffi::subscript_rt_ctx_live_allocations(p),
-                accounting.live_bytes,
-                accounting.reserved_bytes,
-            )
-        }
-    });
+    let (module, lowered, _) = compile_jit(files, &[], Profile::Default)?;
+    let result = execute_entry(&module, &lowered, EntryOptions::default(), None)
+        .run
+        .map(|run| {
+            let p: *const Context = &*run.ctx;
+            let accounting = memory_accounting(&run.ctx);
+            // SAFETY: shared host accessors over a live Context after every
+            // script entry returned.
+            unsafe {
+                (
+                    ffi::subscript_rt_ctx_live_allocations(p),
+                    accounting.live_bytes,
+                    accounting.reserved_bytes,
+                )
+            }
+        });
     // SAFETY: all entries returned and no code pointer survives.
     unsafe { module.free_memory() };
     result
@@ -1405,7 +1499,7 @@ pub(crate) fn live_allocations_after_main_calls(
     files: &[SourceFile],
     calls: usize,
 ) -> Result<Vec<u64>, RunError> {
-    let (module, lowered) = compile_jit(files, &[])?;
+    let (module, lowered, _) = compile_jit(files, &[], Profile::Default)?;
     let init = module.get_finalized_function(lowered.init);
     let main = module.get_finalized_function(lowered.main_id().map_err(RunError::Internal)?);
     let mut ctx = Context::new();
@@ -1459,7 +1553,7 @@ pub(crate) fn allocation_attribution_after_run(
         triples.push((class_id, pos_id, payload_bytes));
     }
 
-    let (module, lowered) = compile_jit(files, &[])?;
+    let (module, lowered, _) = compile_jit(files, &[], Profile::Default)?;
     let init = module.get_finalized_function(lowered.init);
     let main_id = lowered.main_id().map_err(RunError::Internal)?;
     let main = module.get_finalized_function(main_id);
@@ -1576,7 +1670,8 @@ mod tests {
              }\n\
              export function main(): void {}\n",
         );
-        let (module, lowered) = compile_jit(&program, &[]).expect("compile allocation probe");
+        let (module, lowered, _) =
+            compile_jit(&program, &[], Profile::Default).expect("compile allocation probe");
         let init = module.get_finalized_function(lowered.init);
         let populate = lowered
             .entries
@@ -1657,7 +1752,8 @@ mod tests {
              }\n\
              export function main(): void {}\n",
         );
-        let (module, lowered) = compile_jit(&program, &[]).expect("compile allocation probe");
+        let (module, lowered, _) =
+            compile_jit(&program, &[], Profile::Default).expect("compile allocation probe");
         let init = module.get_finalized_function(lowered.init);
         let entry = |name: &str| {
             lowered
@@ -1729,7 +1825,8 @@ mod tests {
                print(\"done\");\n\
              }\n",
         );
-        let (module, lowered) = compile_jit(&program, &[]).expect("compile observer program");
+        let (module, lowered, _) =
+            compile_jit(&program, &[], Profile::Default).expect("compile observer program");
         let init = module.get_finalized_function(lowered.init);
         let main = module.get_finalized_function(lowered.main_id().expect("main entry"));
         let mut ctx = Context::new();
@@ -1807,7 +1904,8 @@ mod tests {
     fn jit_corpus_output_is_byte_identical_with_an_observer_registered() {
         let source = include_str!("../../corpus/accept/a01-hello.ts");
         let program = [SourceFile::new("a01-hello.ts", source)];
-        let (module, lowered) = compile_jit(&program, &[]).expect("compile a01");
+        let (module, lowered, _) =
+            compile_jit(&program, &[], Profile::Default).expect("compile a01");
         let init = module.get_finalized_function(lowered.init);
         let main = module.get_finalized_function(lowered.main_id().expect("main entry"));
 
@@ -1945,9 +2043,13 @@ mod tests {
         // ship-tier half of the both-tier check is
         // `tests/cemit.rs::date_now_reads_the_pinned_context_clock_in_the_ship_tier`
         // — the same program, pinned ms, and expected bytes.
-        let (module, lowered) = compile_jit(&sources(
-            "export function main(): void {\n  const t: i64 = Date.now();\n  print(`${t}`);\n  print(new Date(Date.now()).toISOString());\n}\n",
-        ), &[])
+        let (module, lowered, _) = compile_jit(
+            &sources(
+                "export function main(): void {\n  const t: i64 = Date.now();\n  print(`${t}`);\n  print(new Date(Date.now()).toISOString());\n}\n",
+            ),
+            &[],
+            Profile::Default,
+        )
         .expect("compile");
         let init_ptr = module.get_finalized_function(lowered.init);
         let main_ptr = module.get_finalized_function(lowered.main_id().expect("main entry"));

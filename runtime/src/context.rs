@@ -48,6 +48,7 @@ use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::c_void;
 use std::hash::{BuildHasherDefault, Hasher};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::trap::{TrapKind, TrapRecord};
 use crate::worker::{
@@ -652,6 +653,16 @@ pub struct Context {
     // the worker module; the Context itself remains thread-affine.
     workers: WorkerSet,
     script_depth: u32,
+    // §109.4 rule 1: the one Context field a second thread writes. Both
+    // sandbox-profile checkpoints read it with a relaxed load.
+    interrupt: AtomicBool,
+    // §109.4 rule 2: the live-payload ceiling, in bytes. Zero is none.
+    alloc_quota: u64,
+    // §109.4 rule 3: the script stack allowance, in bytes. Zero is none.
+    stack_budget: u64,
+    // The address of a local of `enter_script` at depth 0. The stack
+    // grows down, so a deeper frame has a lower address.
+    stack_floor: usize,
     // Active frames are tracked separately while a callback is on the stack
     // so explicit collection keeps the running frame alive.
     // §94 scheduler state: runnable continuations in FIFO order, and the
@@ -791,6 +802,10 @@ impl Context {
             module_globals: None,
             workers: WorkerSet::default(),
             script_depth: 0,
+            interrupt: AtomicBool::new(false),
+            alloc_quota: 0,
+            stack_budget: 0,
+            stack_floor: 0,
             async_ready: VecDeque::new(),
             async_parked: VecDeque::new(),
             async_trapping: None,
@@ -1135,7 +1150,104 @@ impl Context {
 
     /// Marks entry into script code (the host called into the script).
     pub fn enter_script(&mut self) {
+        if self.script_depth == 0 {
+            // §109.4 rule 3: the floor is the address of a local of this
+            // call. Every script frame the entry opens sits below it.
+            let anchor = 0u8;
+            self.stack_floor = std::ptr::addr_of!(anchor) as usize;
+        }
         self.script_depth = self.script_depth.saturating_add(1);
+    }
+
+    // ----- sandbox-profile limits (`specs/blocks/compiler.md` §109.4) -----
+
+    /// Sets the interrupt flag of the Context at `ctx` with a relaxed
+    /// store.
+    ///
+    /// This is the one Context operation a second thread performs
+    /// (§109.4 rule 1). It touches one atomic and reads no other field,
+    /// so it needs no exclusive access and takes a raw pointer rather
+    /// than a reference.
+    ///
+    /// # Safety
+    ///
+    /// `ctx` addresses a live Context that outlives this call.
+    pub unsafe fn set_interrupt(ctx: *const Context) {
+        // SAFETY: the caller supplies a live Context. `addr_of!` reaches
+        // one field and materializes no reference to the Context, so the
+        // owning thread's exclusive borrow is not aliased.
+        let flag = unsafe { std::ptr::addr_of!((*ctx).interrupt) };
+        // SAFETY: `flag` addresses a live `AtomicBool`, which is the one
+        // type whose shared access across threads is defined.
+        unsafe { (*flag).store(true, Ordering::Relaxed) };
+    }
+
+    /// True while the interrupt flag is set.
+    #[must_use]
+    pub fn interrupted(&self) -> bool {
+        self.interrupt.load(Ordering::Relaxed)
+    }
+
+    /// Sets the live-payload allocation quota in bytes. Zero is none.
+    pub fn set_alloc_quota(&mut self, bytes: u64) {
+        self.alloc_quota = bytes;
+    }
+
+    /// The current allocation quota in bytes. Zero is none.
+    #[must_use]
+    pub fn alloc_quota(&self) -> u64 {
+        self.alloc_quota
+    }
+
+    /// Sets the script stack budget in bytes. Zero is none.
+    pub fn set_stack_budget(&mut self, bytes: u64) {
+        self.stack_budget = bytes;
+    }
+
+    /// The current stack budget in bytes. Zero is none.
+    #[must_use]
+    pub fn stack_budget(&self) -> u64 {
+        self.stack_budget
+    }
+
+    /// The sandbox-profile function-entry checkpoint (§109.3).
+    ///
+    /// `stack_probe` is the address of a local of the calling frame. An
+    /// interrupt wins over the stack budget, because the host asked for
+    /// the run to stop.
+    pub fn sandbox_enter(&mut self, stack_probe: usize, pos_id: u32) {
+        if self.interrupted() {
+            self.trap(
+                TrapKind::Interrupted,
+                TrapKind::Interrupted.message(None),
+                pos_id,
+            );
+            return;
+        }
+        if self.stack_budget == 0 {
+            return;
+        }
+        let limit = self
+            .stack_floor
+            .saturating_sub(usize::try_from(self.stack_budget).unwrap_or(usize::MAX));
+        if stack_probe < limit {
+            self.trap(
+                TrapKind::StackBudget,
+                TrapKind::StackBudget.message(None),
+                pos_id,
+            );
+        }
+    }
+
+    /// The sandbox-profile loop-edge checkpoint (§109.3).
+    pub fn sandbox_poll(&mut self, pos_id: u32) {
+        if self.interrupted() {
+            self.trap(
+                TrapKind::Interrupted,
+                TrapKind::Interrupted.message(None),
+                pos_id,
+            );
+        }
     }
 
     /// Marks return from script code.
@@ -1632,6 +1744,10 @@ impl Context {
         }
         self.trap = None;
         self.trap_flag = 0;
+        // §109.4 rule 1: the flag is cleared with the trap, so the next
+        // host call runs instead of trapping again at its first
+        // checkpoint.
+        self.interrupt.store(false, Ordering::Relaxed);
         // A trapping JSON operation may unwind before its finish leaf on
         // the dev tier. Builders and parsed trees are transient
         // implementation state, not language-visible state.
@@ -1842,6 +1958,20 @@ impl Context {
                 return std::ptr::null_mut();
             }
             self.alloc_fail_countdown = Some(remaining - 1);
+        }
+        // §109.4 rule 2: over the quota, the request takes the same
+        // fault path with `AllocationQuota` in place of
+        // `AllocationFailure`.
+        if self.alloc_quota != 0 {
+            let live = self.live_bytes() as u64;
+            if live.saturating_add(size as u64) > self.alloc_quota {
+                self.trap(
+                    TrapKind::AllocationQuota,
+                    TrapKind::AllocationQuota.message(None),
+                    pos_id,
+                );
+                return std::ptr::null_mut();
+            }
         }
         if self.uses_ship_arena() {
             return self.arena_alloc(size, class_id, pos_id);
@@ -6117,5 +6247,127 @@ mod tests {
             let p7 = ctx.array_elem_ptr(h, 7, 0);
             assert_eq!((p7 as *const u32).read(), 7);
         }
+    }
+    // ----- sandbox-profile limits (compiler.md §109.4) -----
+
+    #[test]
+    fn allocation_quota_traps_the_request_that_passes_it() {
+        let mut ctx = Context::new();
+        ctx.set_alloc_quota(4096);
+        let first = ctx.alloc(2048, 1, 11);
+        assert!(!first.is_null(), "a request under the quota must allocate");
+        assert!(!ctx.trapped());
+        let second = ctx.alloc(4096, 1, 12);
+        assert!(
+            second.is_null(),
+            "a request over the quota must allocate nothing"
+        );
+        let record = ctx.trap_record().expect("the quota trap is recorded");
+        assert_eq!(record.kind, TrapKind::AllocationQuota);
+        assert_eq!(record.pos_id, 12);
+    }
+
+    #[test]
+    fn no_allocation_quota_admits_the_same_requests() {
+        let mut ctx = Context::new();
+        assert_eq!(ctx.alloc_quota(), 0);
+        assert!(!ctx.alloc(2048, 1, 11).is_null());
+        assert!(!ctx.alloc(4096, 1, 12).is_null());
+        assert!(!ctx.trapped(), "the default quota refuses nothing");
+    }
+
+    #[test]
+    fn stack_budget_traps_a_probe_below_the_floor_minus_the_budget() {
+        let mut ctx = Context::new();
+        ctx.enter_script();
+        let floor = ctx.stack_floor;
+        ctx.set_stack_budget(4096);
+        ctx.sandbox_enter(floor - 1024, 21);
+        assert!(!ctx.trapped(), "a probe inside the budget must not trap");
+        ctx.sandbox_enter(floor - 8192, 22);
+        let record = ctx.trap_record().expect("the budget trap is recorded");
+        assert_eq!(record.kind, TrapKind::StackBudget);
+        assert_eq!(record.pos_id, 22);
+    }
+
+    #[test]
+    fn no_stack_budget_admits_any_probe() {
+        let mut ctx = Context::new();
+        ctx.enter_script();
+        let floor = ctx.stack_floor;
+        assert_eq!(ctx.stack_budget(), 0);
+        ctx.sandbox_enter(floor - 8192, 22);
+        assert!(!ctx.trapped(), "the default budget refuses no frame");
+    }
+
+    #[test]
+    fn enter_script_records_the_floor_only_at_depth_zero() {
+        let mut ctx = Context::new();
+        ctx.enter_script();
+        let outer = ctx.stack_floor;
+        assert_ne!(outer, 0);
+        ctx.enter_script();
+        assert_eq!(ctx.stack_floor, outer, "a nested entry keeps the floor");
+        ctx.exit_script();
+        ctx.exit_script();
+    }
+
+    #[test]
+    fn the_interrupt_flag_traps_at_both_checkpoints() {
+        for at_enter in [true, false] {
+            let mut ctx = Context::new();
+            ctx.enter_script();
+            let probe = ctx.stack_floor - 16;
+            // SAFETY: the Context is live for the whole test.
+            unsafe { Context::set_interrupt(&*ctx) };
+            assert!(ctx.interrupted());
+            if at_enter {
+                ctx.sandbox_enter(probe, 31);
+            } else {
+                ctx.sandbox_poll(31);
+            }
+            let record = ctx.trap_record().expect("the interrupt trap is recorded");
+            assert_eq!(record.kind, TrapKind::Interrupted);
+            assert_eq!(record.pos_id, 31);
+        }
+    }
+
+    #[test]
+    fn an_unset_interrupt_flag_traps_at_neither_checkpoint() {
+        let mut ctx = Context::new();
+        ctx.enter_script();
+        let probe = ctx.stack_floor - 16;
+        assert!(!ctx.interrupted());
+        ctx.sandbox_enter(probe, 31);
+        ctx.sandbox_poll(31);
+        assert!(!ctx.trapped(), "an unset flag stops nothing");
+    }
+
+    #[test]
+    fn clear_trap_clears_the_interrupt_flag_with_the_trap() {
+        let mut ctx = Context::new();
+        ctx.enter_script();
+        // SAFETY: the Context is live for the whole test.
+        unsafe { Context::set_interrupt(&*ctx) };
+        ctx.sandbox_poll(31);
+        assert!(ctx.trapped());
+        ctx.exit_script();
+        ctx.clear_trap();
+        assert!(!ctx.interrupted(), "the flag is cleared with the trap");
+        ctx.enter_script();
+        ctx.sandbox_poll(32);
+        assert!(!ctx.trapped(), "the next call runs");
+    }
+
+    #[test]
+    fn a_second_thread_sets_the_interrupt_flag() {
+        let ctx = Context::new();
+        let address = (&*ctx as *const Context) as usize;
+        let setter = std::thread::spawn(move || {
+            // SAFETY: the test thread keeps the Context alive until join.
+            unsafe { Context::set_interrupt(address as *const Context) };
+        });
+        setter.join().expect("the setter thread");
+        assert!(ctx.interrupted());
     }
 }

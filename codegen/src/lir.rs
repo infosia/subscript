@@ -345,11 +345,81 @@ fn intrinsic_operations() -> Vec<l::IntrinsicOperation> {
                 }
             }),
     );
+    for (operation, name) in SANDBOX_OPERATIONS.iter().enumerate() {
+        table.push(l::IntrinsicOperation {
+            family: l::IntrinsicFamily::Sandbox,
+            operation: operation as u16,
+            semantic_name: (*name).to_string(),
+            runtime_symbol: intrinsic_runtime_symbol(l::IntrinsicFamily::Sandbox, name)
+                .map(str::to_string),
+            signatures: Vec::new(),
+        });
+    }
     table
+}
+
+/// The sandbox-profile checkpoints, in operation order
+/// (`specs/blocks/compiler.md` §109.3). The index is the family-local
+/// operation number.
+pub(crate) const SANDBOX_OPERATIONS: [&str; 2] = ["Enter", "Poll"];
+
+/// The checkpoint a lowered call names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SandboxCheckpoint {
+    /// Runs first in every function body.
+    Enter,
+    /// Runs on every loop iteration edge, before the condition.
+    Poll,
+}
+
+impl SandboxCheckpoint {
+    /// The family-local operation number of this checkpoint.
+    fn operation(self) -> u16 {
+        match self {
+            SandboxCheckpoint::Enter => 0,
+            SandboxCheckpoint::Poll => 1,
+        }
+    }
+
+    /// The LIR call target of this checkpoint.
+    pub(crate) fn target(self) -> l::CallTarget {
+        l::CallTarget {
+            kind: l::CallTargetKind::Intrinsic(l::Intrinsic {
+                family: l::IntrinsicFamily::Sandbox,
+                operation: self.operation(),
+                type_argument: None,
+                worker_entry: None,
+            }),
+            parameter_types: Vec::new(),
+            return_type: None,
+        }
+    }
+}
+
+/// The two signature-table rows the sandbox checkpoints need.
+///
+/// Both take no LIR operand and return nothing: the Context and the
+/// position id are implicit arguments the tiers add (§109.3).
+pub(crate) fn sandbox_call_signatures() -> Vec<l::CallSignature> {
+    [SandboxCheckpoint::Enter, SandboxCheckpoint::Poll]
+        .into_iter()
+        .map(|checkpoint| l::CallSignature {
+            target: match checkpoint.target().kind {
+                l::CallTargetKind::Intrinsic(intrinsic) => {
+                    l::CallSignatureTarget::Intrinsic(intrinsic)
+                }
+                _ => unreachable!("a sandbox checkpoint target is an intrinsic"),
+            },
+            parameter_types: Vec::new(),
+            return_type: None,
+        })
+        .collect()
 }
 
 fn intrinsic_runtime_symbol(family: l::IntrinsicFamily, name: &str) -> Option<&'static str> {
     Some(match (family, name) {
+        (l::IntrinsicFamily::Sandbox, "Enter") => "subscript_rt_sandbox_enter",
+        (l::IntrinsicFamily::Sandbox, "Poll") => "subscript_rt_sandbox_poll",
         (l::IntrinsicFamily::Ambient, "Print") => "subscript_rt_print",
         (l::IntrinsicFamily::Ambient, "Collect") => "subscript_rt_collect",
         (l::IntrinsicFamily::Ambient, "UnsafeDelete") => "subscript_rt_delete",

@@ -65,14 +65,15 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::FuncId;
 use subscript_compiler::types::display_type;
 use subscript_compiler::{
-    check_program, hir, ClassId, Diagnostic, EnumId, Pos, SourceFile, StringAliasId, Type,
+    check_program_with, hir, CheckOptions, ClassId, Diagnostic, EnumId, Pos, Profile, SourceFile,
+    StringAliasId, Type,
 };
 use subscript_runtime::Context;
 
 use crate::jit::{register_runtime, RunError, TrapReport};
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
 use crate::native::{missing_symbol, register_symbols};
-use crate::NativeLibrary;
+use crate::{NativeLibrary, RunConfig};
 
 // ----- declaration hash -----
 
@@ -522,6 +523,9 @@ pub struct ReloadSession {
     positions: Vec<Pos>,
     decls: DeclarationHash,
     native_libraries: Vec<NativeLibrary>,
+    // The profile the session's module was checked under (§109.1 rule
+    // 2). Every reload checks the new sources under the same profile.
+    profile: Profile,
 }
 
 /// One compiled generation: the module plus what the driver needs from
@@ -761,7 +765,52 @@ impl ReloadSession {
     pub fn new_capturing_initializer_trap(
         files: &[SourceFile],
     ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
-        Self::build(files, &[])
+        Self::build(files, &[], Profile::Default)
+    }
+
+    /// Compiles `files` under one complete option record, runs the
+    /// module-global initializer, and returns the live session together
+    /// with any trap raised by that initializer.
+    ///
+    /// The session applies the §109.5 defaults of the profile the checked
+    /// module carries, before the initializer call.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same [`RunError`] variants as
+    /// [`ReloadSession::new_capturing_initializer_trap`].
+    pub fn new_capturing_initializer_trap_configured(
+        files: &[SourceFile],
+        config: RunConfig<'_>,
+    ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
+        Self::build(files, config.native_libraries, config.profile)
+    }
+
+    /// Compiles `files` under one complete option record and returns the
+    /// live session.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same [`RunError`] variants as [`ReloadSession::new`].
+    pub fn new_configured(
+        files: &[SourceFile],
+        config: RunConfig<'_>,
+    ) -> Result<ReloadSession, RunError> {
+        let (session, trap) = Self::build(files, config.native_libraries, config.profile)?;
+        match trap {
+            Some(trap) => Err(RunError::Trap(trap)),
+            None => Ok(session),
+        }
+    }
+
+    /// The address of this session's Context.
+    ///
+    /// A host passes it to a second thread as a `usize` and calls
+    /// [`subscript_runtime::ffi::subscript_rt_ctx_interrupt`] on it
+    /// (§109.4 rule 1). No other Context call is safe from that thread.
+    #[must_use]
+    pub fn context_address(&self) -> usize {
+        (&*self.ctx as *const Context) as usize
     }
 
     /// Compiles `files` in reload mode with caller-supplied native
@@ -778,7 +827,7 @@ impl ReloadSession {
         files: &[SourceFile],
         libraries: &[NativeLibrary],
     ) -> Result<ReloadSession, RunError> {
-        let (session, trap) = Self::build(files, libraries)?;
+        let (session, trap) = Self::build(files, libraries, Profile::Default)?;
         match trap {
             Some(trap) => Err(RunError::Trap(trap)),
             None => Ok(session),
@@ -788,8 +837,10 @@ impl ReloadSession {
     fn build(
         files: &[SourceFile],
         libraries: &[NativeLibrary],
+        profile: Profile,
     ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
-        let hirm = check_program(files).map_err(RunError::Rejected)?;
+        let hirm = check_program_with(files, &CheckOptions::with_profile(profile))
+            .map_err(RunError::Rejected)?;
         let decls = declaration_hash(&hirm);
         let gen = compile(&hirm, libraries)?;
         let globals = match GlobalBlock::new(gen.globals_size, gen.globals_align) {
@@ -809,9 +860,13 @@ impl ReloadSession {
             positions: gen.positions,
             decls,
             native_libraries: libraries.to_vec(),
+            profile: hirm.profile,
         };
         session.ctx.set_fn_table(session.table.as_ptr());
         session.ctx.set_globals(session.globals.ptr);
+        // §109.5: the runner reads the profile the checked module carries
+        // and applies its defaults before the first `enter_script`.
+        crate::apply_profile_defaults(&mut session.ctx, hirm.profile);
         let init_slot = gen
             .init_slot
             .ok_or_else(|| RunError::Internal(internal("no initializer slot")))?;
@@ -987,7 +1042,8 @@ impl ReloadSession {
         if self.ctx.has_live_workers() {
             return Err(ReloadError::LiveWorkers);
         }
-        let hirm = check_program(files).map_err(ReloadError::Rejected)?;
+        let hirm = check_program_with(files, &CheckOptions::with_profile(self.profile))
+            .map_err(ReloadError::Rejected)?;
         let decls = declaration_hash(&hirm);
         if decls != self.decls {
             return Err(ReloadError::DeclarationChanged {
@@ -1083,7 +1139,7 @@ mod tests {
     }
 
     fn hash_of(text: &str) -> DeclarationHash {
-        let m = check_program(&src(text)).expect("checks");
+        let m = check_program_with(&src(text), &CheckOptions::default()).expect("checks");
         declaration_hash(&m)
     }
 
@@ -1433,6 +1489,61 @@ mod tests {
         assert_eq!(session.take_output(), b"echo=37\n");
         assert!(session.ctx.trap_record().is_none());
         assert!(!session.ctx.has_live_workers());
+    }
+
+    /// §109.5: a session built under the profile applies the defaults
+    /// before the initializer call, and a default-profile session sets
+    /// neither limit.
+    #[test]
+    fn a_profile_session_applies_the_run_time_defaults() {
+        let source = "export function main(): void {\n\x20 print(\"profiled\");\n}\n";
+        let default = ReloadSession::new(&src(source)).expect("default session");
+        assert_eq!(default.ctx.alloc_quota(), 0);
+        assert_eq!(default.ctx.stack_budget(), 0);
+
+        let mut sandbox =
+            ReloadSession::new_configured(&src(source), RunConfig::with_profile(Profile::Sandbox))
+                .expect("sandbox session");
+        assert_eq!(
+            sandbox.ctx.alloc_quota(),
+            crate::SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES
+        );
+        assert_eq!(
+            sandbox.ctx.stack_budget(),
+            crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES
+        );
+        assert_ne!(sandbox.context_address(), 0);
+        sandbox.call_main().expect("the profile program runs");
+        assert_eq!(sandbox.take_output(), b"profiled\n");
+    }
+
+    /// §109.2: a session built under the profile keeps it, so a reload
+    /// that violates a profile rule is rejected rather than swapped in.
+    #[test]
+    fn a_profile_session_reloads_under_the_same_profile() {
+        let clean = "export function main(): void {\n\x20 print(\"one\");\n}\n";
+        let freeing = "export function main(): void {\n\
+                       \x20 const values: i32[] = [1];\n\
+                       \x20 print(\"one\");\n\
+                       \x20 Context.free(values);\n\
+                       }\n";
+        let (mut session, trap) = ReloadSession::new_capturing_initializer_trap_configured(
+            &src(clean),
+            RunConfig::with_profile(Profile::Sandbox),
+        )
+        .expect("sandbox session");
+        assert!(trap.is_none());
+        match session.reload(&src(freeing)) {
+            Err(ReloadError::Rejected(diagnostics)) => {
+                assert!(
+                    diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.message.contains("sandbox")),
+                    "{diagnostics:?}"
+                );
+            }
+            other => panic!("the reload must keep the session's profile: {other:?}"),
+        }
     }
 
     #[test]

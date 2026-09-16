@@ -9,6 +9,7 @@
 //! revision and JIT stdout live in `corpus/trap`, while this test derives
 //! the body-only replacement that makes the saved coroutine stale.
 
+#[allow(dead_code)]
 mod corpus;
 // The fixture is excluded on windows-msvc (compiler.md §11c), and no interop
 // corpus entry is run there, so this module and its symbols are gated out

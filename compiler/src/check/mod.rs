@@ -1340,6 +1340,7 @@ pub(crate) fn run(
             foreign_fns: ck.foreign_defs,
             foreign_mirrors: ck.foreign_mirrors,
             top_level: ck.top_level,
+            profile: options.profile,
         };
         module.operation_signatures = operation_signatures(&mut module);
         crate::trap_sites::decide_index_checks(&mut module);
@@ -6236,6 +6237,28 @@ impl<'p> Checker<'p> {
 #[cfg(test)]
 mod tests {
     use crate::{check_program, RuleCode, SourceFile};
+
+    /// §109.1 rule 2: the checked module carries the profile it was
+    /// checked under, and it is the only carrier downstream.
+    #[test]
+    fn the_checked_module_carries_the_profile_it_was_checked_under() {
+        use crate::{check_program_with, CheckOptions, Profile};
+
+        let files = [SourceFile::new(
+            "profile.ts",
+            "export function main(): void {\n  print(\"p\");\n}\n",
+        )];
+        for profile in [Profile::Default, Profile::Sandbox] {
+            let module = check_program_with(&files, &CheckOptions::with_profile(profile))
+                .expect("the source checks under both profiles");
+            assert_eq!(module.profile, profile);
+        }
+        assert_eq!(
+            check_program(&files).expect("clean check").profile,
+            Profile::Default,
+            "no selector is the default profile"
+        );
+    }
 
     #[test]
     fn synthetic_owner_returns_its_prefix_after_question_mark() {

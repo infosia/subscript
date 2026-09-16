@@ -46,21 +46,24 @@ pub use cemit::CProgram;
 pub use emit_files::{emit_c_files, EmitCFilesError, EmittedCFiles};
 pub use jit::{
     jit_bench, jit_bench_with_warmup_floor, jit_compile_time, run_jit, run_jit_configured,
-    run_jit_with_alloc_failure, run_jit_with_freed_handle_diagnostics_and_native_libraries,
-    run_jit_with_memory_accounting, run_jit_with_memory_accounting_and_native_libraries,
-    run_jit_with_native_libraries, AbnormalTermination, BenchSamples, JitMemoryAccounting,
-    RunError, TrapReport, JIT_OUTPUT_FILE_ENV,
+    run_jit_interrupted, run_jit_with_alloc_failure,
+    run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_memory_accounting,
+    run_jit_with_memory_accounting_and_native_libraries, run_jit_with_native_libraries,
+    AbnormalTermination, BenchSamples, JitMemoryAccounting, RunError, TrapReport,
+    JIT_OUTPUT_FILE_ENV,
 };
 pub use layout::{padding_ranges, value_class_layouts, FieldLayout, StructLayout};
 pub use ship::{
-    add_c11_optimized_flags, add_executable_output, add_object_directory, host_c_compiler,
-    host_entry, include_directory_arg, run_c_aot, run_c_aot_configured,
-    run_c_aot_with_alloc_failure, run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
-    run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
-    runtime_staticlib_name, runtime_staticlib_path, runtime_system_libraries, tool_output_report,
-    CCompilerStyle, HostCCompiler, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
-    WINDOWS_SYSTEM_LIBRARIES,
+    add_c11_optimized_flags, add_executable_output, add_object_directory, aot_entry_for_profile,
+    host_c_compiler, host_entry, include_directory_arg, run_c_aot, run_c_aot_configured,
+    run_c_aot_interrupted, run_c_aot_with_alloc_failure,
+    run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
+    run_c_aot_with_native_libraries_and_host_hooks, runtime_staticlib_name, runtime_staticlib_path,
+    runtime_system_libraries, tool_output_report, CCompilerStyle, HostCCompiler, AOT_ENTRY_C,
+    HOST_HEADER_C, RUNTIME_STATICLIB_ENV, WINDOWS_SYSTEM_LIBRARIES,
 };
+
+use subscript_compiler::Profile;
 
 /// Options shared by the development and shipping tier runners.
 #[derive(Debug, Clone, Copy, Default)]
@@ -78,6 +81,60 @@ pub struct RunConfig<'a> {
     pub pre_entry_hook: Option<&'a str>,
     /// Shipping-tier hook called after the run and before Context release.
     pub post_run_hook: Option<&'a str>,
+    /// The compile profile (`specs/blocks/compiler.md` §109.1). The
+    /// runner passes it to the checker; the checked module then carries
+    /// it, and the runner reads the §109.5 defaults from there.
+    pub profile: Profile,
+    /// Sets the Context interrupt flag from a second thread after this
+    /// many milliseconds (§109.7). `None` starts no thread.
+    pub interrupt_after_millis: Option<u64>,
+}
+
+impl<'a> RunConfig<'a> {
+    /// Builds the default options for one compile profile (§109.1).
+    #[must_use]
+    pub fn with_profile(profile: Profile) -> Self {
+        RunConfig {
+            profile,
+            ..RunConfig::default()
+        }
+    }
+
+    /// Makes `libraries` available to foreign calls.
+    #[must_use]
+    pub fn with_native_libraries(mut self, libraries: &'a [NativeLibrary]) -> Self {
+        self.native_libraries = libraries;
+        self
+    }
+
+    /// Sets the Context interrupt flag from a second thread after
+    /// `millis` milliseconds (§109.7).
+    #[must_use]
+    pub fn with_interrupt_after_millis(mut self, millis: u64) -> Self {
+        self.interrupt_after_millis = Some(millis);
+        self
+    }
+}
+
+/// The allocation quota a sandbox-profile run starts with, in bytes
+/// (`specs/blocks/compiler.md` §109.5). A host that embeds the runtime
+/// sets its own.
+pub const SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES: u64 = 67_108_864;
+
+/// The stack budget a sandbox-profile run starts with, in bytes
+/// (`specs/blocks/compiler.md` §109.5).
+pub const SANDBOX_DEFAULT_STACK_BUDGET_BYTES: u64 = 524_288;
+
+/// Applies the §109.5 defaults of `profile` to `ctx`.
+///
+/// The default profile sets nothing, so a trusted program keeps the
+/// Context it had before this section.
+pub(crate) fn apply_profile_defaults(ctx: &mut subscript_runtime::Context, profile: Profile) {
+    if profile != Profile::Sandbox {
+        return;
+    }
+    ctx.set_alloc_quota(SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES);
+    ctx.set_stack_budget(SANDBOX_DEFAULT_STACK_BUDGET_BYTES);
 }
 
 /// Output from one configured tier run.
@@ -149,6 +206,99 @@ mod tests {
         assert_eq!(ship.stdout, jit.stdout);
         assert!(jit.memory_accounting.is_none());
         assert!(ship.memory_accounting.is_none());
+    }
+
+    /// §109.1 rule 2 and §109.3: one source under both profiles runs to
+    /// the same bytes on the reference interpreter. The profile adds
+    /// checkpoints, never an observable effect of its own.
+    #[test]
+    fn the_configured_interpreter_runs_a_module_of_either_profile() {
+        use subscript_compiler::{check_program_with, CheckOptions, Profile};
+
+        let files = [SourceFile::new(
+            "profiled.ts",
+            "function step(value: i32): i32 {\n\
+             \x20 return value + 1;\n\
+             }\n\
+             export function main(): void {\n\
+             \x20 let total: i32 = 0;\n\
+             \x20 for (let index: i32 = 0; index < 4; index = index + 1) {\n\
+             \x20   total = step(total);\n\
+             \x20 }\n\
+             \x20 print(`${total}`);\n\
+             }\n",
+        )];
+        let mut outputs = Vec::new();
+        for profile in [Profile::Default, Profile::Sandbox] {
+            let hir = check_program_with(&files, &CheckOptions::with_profile(profile))
+                .expect("the source checks under both profiles");
+            let lir = lir::lower_module(&hir).expect("the source lowers");
+            let output = interpreter::interpret_configured(&lir, RunConfig::with_profile(profile))
+                .expect("the interpreter runs the module");
+            outputs.push(output);
+        }
+        assert_eq!(outputs[0], b"4\n");
+        assert_eq!(outputs[0], outputs[1]);
+    }
+
+    /// Every [`RunConfig`] builder sets its own field and leaves the rest
+    /// at the default contract.
+    #[test]
+    fn run_config_builders_set_one_field_each() {
+        use subscript_compiler::Profile;
+
+        let default = RunConfig::default();
+        assert_eq!(default.profile, Profile::Default);
+        assert_eq!(default.interrupt_after_millis, None);
+        assert!(default.native_libraries.is_empty());
+
+        let profiled = RunConfig::with_profile(Profile::Sandbox);
+        assert_eq!(profiled.profile, Profile::Sandbox);
+        assert_eq!(profiled.interrupt_after_millis, None);
+
+        let interrupted = profiled.with_interrupt_after_millis(50);
+        assert_eq!(interrupted.profile, Profile::Sandbox);
+        assert_eq!(interrupted.interrupt_after_millis, Some(50));
+
+        let libraries: [NativeLibrary; 0] = [];
+        let with_libraries = interrupted.with_native_libraries(&libraries);
+        assert_eq!(with_libraries.interrupt_after_millis, Some(50));
+        assert!(with_libraries.native_libraries.is_empty());
+    }
+
+    /// §109.5: the tier runners apply the profile defaults, and a default
+    /// profile sets neither limit. The sandbox program allocates past the
+    /// quota; the same source completes under the default profile.
+    #[test]
+    fn the_tier_runners_apply_the_profile_defaults() {
+        use subscript_compiler::Profile;
+
+        let files = [SourceFile::new(
+            "quota.ts",
+            "export function main(): void {\n\
+             \x20 print(\"start\");\n\
+             \x20 let seed: u8[] = [1];\n\
+             \x20 for (let step: i32 = 0; step < 18; step = step + 1) {\n\
+             \x20   seed = seed.concat(seed);\n\
+             \x20 }\n\
+             \x20 const blocks: u8[][] = [];\n\
+             \x20 for (let block: i32 = 0; block < 300; block = block + 1) {\n\
+             \x20   blocks.push(seed.slice(0, seed.length));\n\
+             \x20 }\n\
+             \x20 print(`${blocks.length}`);\n\
+             }\n",
+        )];
+        let completed = run_jit_configured(&files, RunConfig::default())
+            .expect("the default profile sets no quota");
+        assert_eq!(completed.stdout, b"start\n300\n");
+
+        match run_jit_configured(&files, RunConfig::with_profile(Profile::Sandbox)) {
+            Err(RunError::Trap(report)) => {
+                assert_eq!(report.rule, TrapKind::AllocationQuota);
+                assert_eq!(report.stdout, b"start\n");
+            }
+            other => panic!("the profile quota must stop the run: {other:?}"),
+        }
     }
 
     fn run(src: &str) -> Result<Vec<u8>, RunError> {

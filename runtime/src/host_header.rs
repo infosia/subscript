@@ -53,6 +53,18 @@ pub fn render() -> Result<String, String> {
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_set_binding_count_advisory",
     )?;
+    let interrupt_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_interrupt",
+    )?;
+    let alloc_quota_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_set_alloc_quota",
+    )?;
+    let stack_budget_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_set_stack_budget",
+    )?;
     let async_pending_docs = docs_for(
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_async_pending",
@@ -177,6 +189,15 @@ pub fn render() -> Result<String, String> {
         }
         if function.name == "subscript_rt_ctx_set_binding_count_advisory" {
             push_comment(&mut out, &binding_count_advisory_setter_docs);
+        }
+        if function.name == "subscript_rt_ctx_interrupt" {
+            push_comment(&mut out, &interrupt_docs);
+        }
+        if function.name == "subscript_rt_ctx_set_alloc_quota" {
+            push_comment(&mut out, &alloc_quota_docs);
+        }
+        if function.name == "subscript_rt_ctx_set_stack_budget" {
+            push_comment(&mut out, &stack_budget_docs);
         }
         if function.name == "subscript_rt_ctx_async_pending" {
             push_comment(&mut out, &async_pending_docs);

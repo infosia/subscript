@@ -342,8 +342,14 @@ fn a19_emit_is_byte_identical_to_the_shared_directory_entry() -> Result<(), Stri
 
     let module_directory = root.join("corpus/accept/a19-modules");
     let directory_mode_sources = directory_sources(&module_directory)?;
-    subscript_codegen::emit_c_files(&directory_mode_sources, &shared_output, "a19-modules", true)
-        .map_err(|error| format!("emit a19 directory-mode reference: {error}"))?;
+    subscript_codegen::emit_c_files(
+        &directory_mode_sources,
+        &shared_output,
+        "a19-modules",
+        true,
+        subscript_compiler::Profile::Default,
+    )
+    .map_err(|error| format!("emit a19 directory-mode reference: {error}"))?;
 
     for (cli_name, shared_name) in [
         ("program.c", "a19-modules.c"),
@@ -912,5 +918,83 @@ fn profile_selects_the_sandbox_rules_and_rejects_every_other_name() -> Result<()
             .arg(&source),
     )?;
     assert_code(&twice, 2);
+    Ok(())
+}
+
+/// §109.5: `build --profile sandbox` writes the run-time defaults into
+/// the generated entry, and `run --profile sandbox` applies them.
+///
+/// The firing control is the same source without the flag: the entry
+/// carries neither call, and the run completes.
+#[test]
+fn the_sandbox_profile_carries_its_run_time_defaults_through_build_and_run() -> Result<(), String> {
+    let dir = TestDir::new()?;
+    // The program allocates past the 64 MiB quota, so the profile stops
+    // it and the default profile runs it to the end.
+    let source = dir.write(
+        "quota.ts",
+        concat!(
+            "export function main(): void {\n",
+            "  print(\"start\");\n",
+            "  let seed: u8[] = [1];\n",
+            "  for (let step: i32 = 0; step < 18; step = step + 1) {\n",
+            "    seed = seed.concat(seed);\n",
+            "  }\n",
+            "  const blocks: u8[][] = [];\n",
+            "  for (let block: i32 = 0; block < 300; block = block + 1) {\n",
+            "    blocks.push(seed.slice(0, seed.length));\n",
+            "  }\n",
+            "  print(`${blocks.length}`);\n",
+            "}\n",
+        )
+        .as_bytes(),
+    )?;
+
+    for (profile, present) in [(None, false), (Some("sandbox"), true)] {
+        let out = dir.directory(if present { "sandbox" } else { "default" })?;
+        let mut command = subscript();
+        command
+            .arg("build")
+            .arg("--source")
+            .arg(&source)
+            .arg("-o")
+            .arg(&out);
+        if let Some(name) = profile {
+            command.arg("--profile").arg(name);
+        }
+        let built = output(&mut command)?;
+        assert_code(&built, 0);
+        let entry = std::fs::read_to_string(out.join("entry.c"))
+            .map_err(|error| format!("read entry.c: {error}"))?;
+        for call in [
+            "subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C(67108864));",
+            "subscript_rt_ctx_set_stack_budget(ctx, UINT64_C(524288));",
+        ] {
+            assert_eq!(
+                entry.contains(call),
+                present,
+                "profile {profile:?}: `{call}` presence in the generated entry"
+            );
+        }
+    }
+
+    let completed = output(subscript().arg("run").arg(&source))?;
+    assert_code(&completed, 0);
+    assert_eq!(String::from_utf8_lossy(&completed.stdout), "start\n300\n");
+
+    let stopped = output(
+        subscript()
+            .arg("run")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source),
+    )?;
+    assert_code(&stopped, 1);
+    assert_eq!(String::from_utf8_lossy(&stopped.stdout), "start\n");
+    assert!(
+        String::from_utf8_lossy(&stopped.stderr).contains("allocation-quota"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&stopped.stderr)
+    );
     Ok(())
 }

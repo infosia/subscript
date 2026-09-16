@@ -146,12 +146,43 @@ int32_t subscript_rt_ctx_clear_trap(subscript_rt_context* ctx);
 void subscript_rt_ctx_enter_script(subscript_rt_context* ctx);
 void subscript_rt_ctx_exit_script(subscript_rt_context* ctx);
 void subscript_rt_ctx_fail_alloc_after(subscript_rt_context* ctx, uint64_t n);
+/**
+ * Requests that the running script stop at its next sandbox-profile
+ * checkpoint (compiler.md 109.4).
+ *
+ * Any thread can call this while the owning thread runs script code. It
+ * is the one subscript_rt_context call outside the exclusive contract: it sets one
+ * atomic flag and reads no other field. A script compiled under the
+ * sandbox profile reads the flag at every function entry and on every
+ * loop edge, and records the `interrupted` trap (kind 25) there. A
+ * script compiled under the default profile has no checkpoint, so the
+ * flag has no effect on it. `subscript_rt_ctx_clear_trap` clears the
+ * flag together with the trap.
+ *
+ * # Safety
+ *
+ * `ctx` addresses a live subscript_rt_context that outlives this call.
+ */
+void subscript_rt_ctx_interrupt(const subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_live_allocations(const subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context* ctx);
 subscript_rt_context* subscript_rt_ctx_new(void);
 void subscript_rt_ctx_release(subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_reserved_bytes(const subscript_rt_context* ctx);
 void subscript_rt_ctx_seed_random(subscript_rt_context* ctx, uint64_t seed);
+/**
+ * Sets the subscript_rt_context allocation quota in bytes (compiler.md 109.4).
+ *
+ * An allocation request whose live payload bytes plus its own size pass
+ * `bytes` records the `allocation-quota` trap (kind 26) at the
+ * allocation site and returns no storage. Zero removes the quota, which
+ * is the default.
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract.
+ */
+void subscript_rt_ctx_set_alloc_quota(subscript_rt_context* ctx, uint64_t bytes);
 /**
  * Sets the callback-binding count advisory threshold.
  *
@@ -249,6 +280,20 @@ void subscript_rt_ctx_set_now(subscript_rt_context* ctx, int64_t ms);
  */
 void subscript_rt_ctx_set_print_observer(subscript_rt_context* ctx, subscript_rt_print_observer observer, void* userdata);
 void subscript_rt_ctx_set_regex_budget(subscript_rt_context* ctx, uint64_t budget);
+/**
+ * Sets the script stack budget in bytes (compiler.md 109.4).
+ *
+ * The entry call at script depth zero records the stack floor. A
+ * sandbox-profile function entry below the floor minus `bytes` records
+ * the `stack-budget` trap (kind 27). Set a budget below the stack size
+ * of the thread that calls the script. Zero removes the budget, which
+ * is the default.
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract.
+ */
+void subscript_rt_ctx_set_stack_budget(subscript_rt_context* ctx, uint64_t bytes);
 void subscript_rt_ctx_set_trap_observer(subscript_rt_context* ctx, subscript_rt_trap_observer observer, void* userdata);
 const uint8_t* subscript_rt_ctx_stdout(const subscript_rt_context* ctx, uint64_t* len);
 uint32_t subscript_rt_ctx_trap_kind(const subscript_rt_context* ctx);
