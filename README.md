@@ -172,18 +172,6 @@ handles all cross the boundary with no conversion. No specific host header
 is privileged by the language; if host data must become script-visible,
 the host grows a C facade.
 
-### A sandbox profile for content you did not write
-
-Mods, shared levels, and plugins compile under `--profile sandbox`. The
-profile is a compile profile, not a second tier: the same JIT and the
-same emitted C run it. It rejects `Context.free`, `Context.fromBytes`,
-workers, and over-limit source, each with a stable diagnostic code, and
-the compiler places a checkpoint at every function entry and loop edge.
-The host sets three limits through the C API — an interrupt that any
-thread can raise, an allocation quota, and a stack budget — and each
-one stops the script with an ordinary trap the host reads back. A
-program that does not select the profile pays nothing.
-
 ### No implicit GC
 
 Memory is Context-scoped. Allocate objects normally, release finished
@@ -234,6 +222,74 @@ run. The interpreter runs the entries that need no host C library, as
 the third witness: 124 of them in the debug profile, and 125 under
 `SUBSCRIPT_FULL_INTERPRETER_SWEEP=1`. The language's behaviour is
 defined by that corpus, not by any one backend.
+
+## The sandbox profile
+
+Everything above assumes you wrote the script. Content you did not
+write — a mod, a shared level, a plugin — compiles under the **sandbox
+profile**: `subscript check|build|run --profile sandbox`. The profile
+is a compile profile, not a second tier. The same development JIT and
+the same emitted C run it, the same goldens check it, and a program
+that does not select the profile gets no new instruction and no new
+check. Contract: `specs/blocks/compiler.md` §109.
+
+**What the profile rejects.** Four rules, each with a stable diagnostic
+code. The same source checks clean under the default profile, so a
+profile rejection is not a TypeScript divergence and `tsc` still
+accepts it.
+
+| Code | Rejects |
+|---|---|
+| `S023` | `Context.free`. Memory is allocate-only. |
+| `S024` | `Context.fromBytes`. Bytes the content supplies cannot become an object. |
+| `S025` | `Worker.spawn`, `Inbox`, and `Outbox`. |
+| `S026` | A source over 1 MiB, or a bracket depth over 256, counted before the parser runs. |
+
+Your header mirror is the other half of the boundary: a script binds
+only the `--mirror` you give it, so you build one mirror per trust
+level and pass the narrow one to content you did not write.
+
+**What the profile adds at run time.** The compiler places a checkpoint
+at every function entry and on every loop edge, and the host sets three
+limits through the C API. Each limit stops the script with an ordinary
+trap that the host reads back, and the Context survives.
+
+| Limit | C API | Trap |
+|---|---|---|
+| interrupt | `subscript_rt_ctx_interrupt_handle` on the owning thread, then `subscript_rt_interrupt_set` from any thread | `interrupted` |
+| allocation quota | `subscript_rt_ctx_set_alloc_quota(ctx, bytes)` | `allocation-quota` |
+| stack budget | `subscript_rt_ctx_set_stack_budget(ctx, bytes)` | `stack-budget` |
+
+`run` and `build --profile sandbox` set a 64 MiB quota and a 512 KiB
+stack budget by default; a host that links the emitted C sets its own.
+The cost is the checkpoints: on the benchmark matrix the profile runs
+at 1.0× to 4.4× the default profile, tracking how often a workload
+calls a function or takes a loop edge.
+
+**Memory under the profile.** The profile rejects `Context.free`, so
+collection is the one way memory returns, and nothing collects unbidden.
+The quota is a stop, not a pacer. Two patterns keep a long-running
+program under it:
+
+1. **The host paces.** `subscript_rt_ctx_live_bytes` is a counter, so
+   the host reads it at every frame boundary for free and calls
+   `subscript_rt_collect` there when the value passes the fraction of
+   the quota it chose — outside any script call, at a moment it picked.
+2. **The script collects at its own boundary.** `Context.collect()`
+   stays callable under the profile. A script that calls it at the end
+   of its frame function keeps its own live set bounded, and the host's
+   pacer is the backstop.
+
+A collect is a stop-the-world mark-sweep, proportional to the live set
+plus the dead set. There is no incremental collector and no bound on a
+collect's length; a host that needs one measures at its own live set.
+
+**What it is not.** The profile does not load source at run time: you
+compile the content with `subscript build --profile sandbox` and link
+it as you link your own scripts. It hardens nothing outside the profile.
+The host tutorial's Step 11 walks a complete C host through all of
+this with a measured run, and [`examples/sandbox/`](examples/sandbox/)
+is that host.
 
 ## Performance
 
