@@ -6,14 +6,21 @@
 2026-09-05 (`specs/tracking/development-cost-review-2026-09-05.md`,
 finding 3).
 
-Measured at `3677d1f`, this host. The three commands a landing note
+Measured at `3677d1f`, this host, and re-measured at `64cd422`
+(the second number in each cell). The three commands a landing note
 calls "the gate" run three different sets:
 
 | Command | Interpreter corpus | Performance thresholds |
 |---|---|---|
-| `cargo test` (debug) | 124 runnable entries | skipped, `perf_gate.rs` line 3 |
+| `cargo test` (debug) | 124 runnable entries at `3677d1f`; 180 run of 181 runnable at `64cd422` | skipped, `perf_gate.rs` line 3 |
 | `cargo test --release` | skipped, `lir.rs` line 2020 | run |
-| `--release` with `SUBSCRIPT_FULL_INTERPRETER_SWEEP=1` | 125 entries | run |
+| `--release` with `SUBSCRIPT_FULL_INTERPRETER_SWEEP=1` | 125 entries at `3677d1f`; 181 at `64cd422` | run |
+
+*(Amended 2026-09-17.)* At `3677d1f` the count was a constant in
+`lir.rs`. The test now derives it from each entry's `interpreter:`
+header, so the numbers move with the corpus: 237 accept entries, 56
+declared exclusions (50 for a foreign call), 181 runnable; the debug
+profile omits the one cost benchmark.
 
 A skip prints a free-text line, and nothing counts the lines. The
 q35 record (`specs/tracking/q35-string-messages.md`) cites a release
