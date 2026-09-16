@@ -366,6 +366,7 @@ benchmarks/                        the subscript-benchmarks crate
   src/bin/cross-language.rs        the runner (bin `cross-language`)
   src/bin/perf-gate.rs             the P4 perf-gate harness (bin `perf-gate`)
   src/bin/bound-call.rs            the boundary-price runner (bin `bound-call`)
+  src/bin/sandbox-cost.rs          the sandbox-profile cost runner (bin `sandbox-cost`, compiler.md §109.8 criterion 5)
   aot-entry.c                      AOT timing entry, shared by both bins
   a22-baseline.c                   the perf-gate's hand-written C baseline
   boundary-noop.c                  the boundary-price backend (with boundary-noop.h)
@@ -380,6 +381,12 @@ benchmarks/                        the subscript-benchmarks crate
 
 Re-run the cross-language suite with
 `cargo run --offline --release -p subscript-benchmarks --bin cross-language`.
+
+`sandbox-cost` runs the ten workloads under the default profile and
+under the sandbox profile on both subscript tiers, with the §109.5
+defaults set around the timed call, and prints one row per workload
+and tier: default median, sandbox median, ratio. It writes no record;
+the number lands in the tracking note of the round that ran it.
 
 - The subscript workloads are ordinary accept-corpus-style programs
   (tsc-clean, decided spellings). They may be added to `corpus/accept/`
