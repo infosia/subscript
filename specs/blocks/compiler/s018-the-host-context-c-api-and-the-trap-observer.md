@@ -301,13 +301,18 @@ The count agrees; neither byte figure does.
 **Cost.** `reserved_bytes` is O(chunks + live large allocations) on the
 ship tier and walks the retained allocation records on the dev tier when
 freed-handle diagnostics are on (§8.1a-1) —
-cheap, but not O(1). `live_allocations` and `live_bytes` walk live
-blocks on the ship tier and are **O(live blocks)** — they are diagnostics, not per-frame counters. The contract
-deliberately does **not** add running counters maintained in
-`alloc`/`delete`: that would make the figures O(1) at the price of an
-invariant that must stay correct across delete, chunk reuse and
-`Context.collect()`, and a memory statistic that can itself drift is worse
-than one that is slow.
+cheap, but not O(1). `live_allocations` and `reserved_bytes` walk live
+blocks on the ship tier and are **O(live blocks)** — they are
+diagnostics, not per-frame counters. `live_bytes` is a counter the
+runtime maintains at every allocation, release, retention, and
+collection, in both memory modes, because the §109.4 allocation quota
+reads it on every allocation (§109.4 rule 2). The invariant that a
+maintained counter must hold across delete, chunk reuse, and
+`Context.collect()` is checked: a debug assertion compares the counter
+against the walk at every collection, and one test per kind of change
+compares the two. *(Amended 2026-09-16: the first text kept all three
+as walks and refused a maintained counter; the quota made `live_bytes`
+a per-allocation read, and the walk measured quadratic.)*
 
 Read-only: none of the three can change script-visible output, so
 §0.3 determinism and the golden corpus are unaffected. A host that
