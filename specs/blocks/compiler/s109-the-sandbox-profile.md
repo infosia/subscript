@@ -121,7 +121,15 @@ program is unchanged. Each is one C API call.
    allocates. Over the quota, it takes the §21 fault path with
    `AllocationQuota` in place of `AllocationFailure`. Strings, arrays,
    maps, sets, and objects all pass through that path, so no separate
-   size limit exists.
+   size limit exists. The runtime keeps `live_bytes` as a counter it
+   maintains at every allocation, release, retention, and collection,
+   in both memory modes. The quota check reads the counter and costs
+   the same at every live count. A debug assertion compares the
+   counter against the fold over the live set at every collection,
+   and a test compares the two after each kind of change. *(Amended
+   2026-09-16, after round 2: the first implementation folded over
+   the live set at every allocation, measured quadratic at 10,000 and
+   20,000 live allocations.)*
 3. **Stack budget.** `enter_script` at depth 0 records the address of
    a local as the floor. `subscript_rt_sandbox_enter` compares the
    address of its own local against the floor minus the budget. Below
@@ -130,6 +138,10 @@ program is unchanged. Each is one C API call.
    stated in the host tutorial.
 4. A trap under the profile is an ordinary trap: first trap wins, the
    observer fires, the Context survives, the host reads it (§18.2).
+5. The limits are the host's facts, not the program's. LIR carries
+   the two intrinsics and no limit. Every runner, the CLI, and the
+   interpreter harness set the limits the way a host does, through
+   the C API or the runtime's own setters, before the entry runs.
 
 ### 109.5 Defaults under the CLI and the corpus harness
 
@@ -160,7 +172,7 @@ scripts.
 | `r-sandbox-source-depth` | reject | S026, depth 257 |
 | `a-sandbox-clean` | accept | a profile program with a loop, a call, `bytesOf` on a scalar struct, and `Context.collect()` runs on every tier and matches its golden |
 | `t-sandbox-alloc-quota` | trap | `AllocationQuota` at the allocation site, output before the trap intact |
-| `t-sandbox-stack-budget` | trap | `StackBudget` at the recursive call; the entry prints nothing that depends on the depth reached |
+| `t-sandbox-stack-budget` | trap | `StackBudget` at the entry of the function the run failed to enter; the entry prints nothing that depends on the depth reached |
 
 Each reject entry's header states what `tsc` does, measured. Each
 reject entry also carries a twin without the header line, and that
