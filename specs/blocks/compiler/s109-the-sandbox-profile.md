@@ -215,6 +215,30 @@ after 50 ms, and an assertion that the entry returns with
 control, bounded by a 2 s abort. The recorded number is the time from
 the flag to the return.
 
+### 109.8a Memory under the profile is reclaimed at a boundary
+
+*(Added 2026-09-17.)* The profile rejects `Context.free`, so
+collection is the one way memory returns. Nothing collects unbidden
+(invariant 2), and the quota is a stop, not a pacer. Two patterns
+keep a long-running profile program under its quota. Both are host
+documentation; neither adds a rule to the compiler or the runtime.
+
+1. **The host paces.** `subscript_rt_ctx_live_bytes` reads a counter
+   (§18, §109.4 rule 2), so a host reads it at every frame boundary
+   at no cost. If the value is above the fraction of the quota the
+   host chose, the host calls `subscript_rt_collect` there, outside
+   any script call. The host, not the script, decides when.
+2. **The script collects at its own boundary.** `Context.collect()`
+   stays callable under the profile. A script that calls it at the
+   end of its frame function keeps its own live set bounded, and the
+   host's pacer is the backstop.
+
+The host tutorial shows both with a measured run, and
+`examples/sandbox/` carries the program. A collect is stop-the-world
+mark-sweep, proportional to the live set plus the dead set; a host
+that needs a bound on its length has no rule here yet, and asks for
+one with a measurement.
+
 ### 109.8 Exit criteria
 
 1. Every 109.7 entry is Red at this contract's pin and Green after.
