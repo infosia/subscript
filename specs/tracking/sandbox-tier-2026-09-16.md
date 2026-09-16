@@ -393,3 +393,58 @@ six bins. File growth over the phase (`aebef92` to `594b267`):
 `jit.rs` 1,985 → 2,179, which crosses §5.y and is split in the
 review-fix round; `ship.rs` 2,184 → 2,481 and `interpreter.rs`
 6,930 → 6,987, both already over the limit at the pin.
+
+## P26 Phase Review (2026-09-17)
+
+A fresh reviewer read the cumulative diff `aebef92..594b267` against
+seven questions: the boundary's soundness, the `live_bytes` counter,
+the stack floor, the interrupt flag, tests, contract-code agreement,
+and conventions. Findings: CRITICAL 0, MAJOR 2, MINOR 9. Every
+finding is fixed in `e2c6b13`; the contract amendments are `49271f6`
+and `bb3fb42`.
+
+| Severity | Finding | Fix |
+|---|---|---|
+| MAJOR | `jit.rs` was 1,985 lines at the pin and 2,179 at review; §5.y says split first | seven child modules under `codegen/src/jit/`, largest 441 lines, parent 687; a pure move, 62 functions before and after |
+| MAJOR | the module initializer got no `Sandbox.Enter`; the LIR test's source had no global, so it could not see it | `Enter` on the initializer; the test source gained a global and a top-level statement and was Red at the pin |
+| MINOR | `do` named in §109.3; HIR has none | contract |
+| MINOR | S021 cited after the renumber | contract |
+| MINOR | the tracking note's status line contradicted its content | record |
+| MINOR | `expect` on thread spawn in library code | fallback to the caller's thread, one line; no injection point for a test |
+| MINOR | the second thread stored into the flag inside the owner's `&mut Context` | the flag is an `Arc<Interrupt>` cell outside the Context's bytes; `subscript_rt_ctx_interrupt_handle` on the owner thread, `subscript_rt_interrupt_set` from any thread; `subscript_rt_ctx_interrupt` removed |
+| MINOR | the emitted ship interrupt thread was detached; a short program freed the Context under it | joined before release, both branches |
+| MINOR | the dev-JIT firing control left a runaway thread | the control sets the flag through the handle and joins |
+| MINOR | `Profile::as_str` had no caller and no test | removed |
+| MINOR | fused callback loops carried no `Poll`; the checkpoint interval was the array length | `Poll` on `array-callback.cond` and `for-each.cond`; two tests, Red at the pin |
+
+Checked sound by the reviewer: every `live_bytes` site in both modes;
+the mode switch refused after the first allocation; the stack floor
+recorded at depth 0 on the script thread in every entry path
+including `async_step`; the regex budget default; `bytesInto`'s range
+check; no history token in any added comment; hygiene and fmt clean.
+
+Interrupt latency with the control fixed, four serialized runs:
+dev-JIT 20.1–28.3 µs, ship-C-AOT 37–41 µs.
+
+Gate after the fixes: `gate quick 49271f6 dirty:18 debug 1528/0/2
+skips 2 goldens-moved 0 exit 0`. `tools/hygiene.sh` exit 0 on the
+committed tree.
+
+### §109.8 exit criteria
+
+| # | Criterion | Status |
+|---|---|---|
+| 1 | every §109.7 entry Red at the pin, Green after | met (rounds 1, 2) |
+| 2 | `tools/gate.sh full` green | met: `gate full e2c6b13 dirty:1 debug 1528/0/2 release 1525/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0` |
+| 3 | interrupt latency per tier recorded | met (round 2, review-fix) |
+| 4 | the adversarial list rejects or traps | met (round 3) |
+| 5 | the benchmark matrix under the profile | met (rounds 3, 3b) |
+| 6 | README and tutorial state the profile | met (round 3) |
+| 7 | hygiene clean at the Phase Review | met |
+
+**P26 is COMPLETE** (2026-09-17): no open CRITICAL or MAJOR, the full
+gate green, hygiene clean.
+
+Open after the phase: the CLI takes no host limit and no interrupt;
+twelve Rust files remain past §5.y, all past it at the pin; the
+`benchmarks/Cargo.toml` bin comment names four of six bins.
