@@ -45,7 +45,20 @@ diagnostic names the profile in its message.
 | S023 | `Context.free`. Memory is allocate-only. `Context.collect()` stays callable: a rejection adds no safety, and the interrupt flag bounds its cost. |
 | S024 | `Context.fromBytes`, always. `Context.bytesOf` and `Context.bytesInto` stay accepted: the default profile already rejects a layout with a handle, a reference, or a string (S100, the value-class whitelist), so no profile rule is needed. |
 | S025 | `Worker.spawn`, `Inbox`, and `Outbox`. |
-| S026 | Source over a limit, before the parser runs: more than 1,048,576 bytes in one file, or a bracket depth over 256. The depth is a count over the bytes of `(`, `[`, `{` against `)`, `]`, `}`, with no lexing; a closer below zero resets to zero. The count over-approximates the syntactic depth, so it rejects more, never less. |
+| S026 | Source over a limit, before the parser runs: more than 1,048,576 bytes in one file, or a bracket depth over 256. The depth is a count over the **lexer's tokens** of `(`, `[`, `{` against `)`, `]`, `}`: the SWC lexer runs as a plain iterator with no parser, so a bracket inside a comment, a string, a template, or a regular-expression literal is not a bracket. A closer below zero resets to zero. The lexer is a flat loop over the bytes, so its cost does not grow with the depth. |
+
+*(Amended 2026-09-17, after an external review.)* The first text
+counted bytes with no lexing and claimed the count over-approximates
+the syntactic depth. It does not: a closer inside a comment
+decrements the count, so `(/*)*/` repeated cancels the scan. Measured
+at `5d288f5` with the release CLI: 257 such levels check clean under
+the profile; 2,000 abort the process with a main-thread stack
+overflow, in the warning walk that runs after the checker thread
+returns. The count is now the lexer's. Every stage after the checker
+that recurses over the tree (`check_warnings`, the LIR lowering, the
+emitters) runs on the caller's thread and is bounded only by S026,
+so the exactness of S026 is the profile's whole defence there. The
+default profile keeps no limit and is unchanged.
 
 *(Amended 2026-09-16, after round 1.)* The first text assigned S019
 to S022. §99.3 retires S019 and forbids its reuse, so the codes are
@@ -143,6 +156,24 @@ program is unchanged. Each is one C API call.
    2026-09-16, after round 2: the first implementation folded over
    the live set at every allocation, measured quadratic at 10,000 and
    20,000 live allocations.)*
+
+   **No buffer sized by script input exists outside the quota.** A
+   runtime operation whose result size follows from its inputs
+   computes that size first and allocates it through the Context
+   (`alloc_str_with`, or the array and map paths), which checks the
+   quota before any byte exists. Where the size is not known before
+   the bytes are built, the buffer grows through a Context-owned
+   allocation, never through a Rust `Vec` or `String` that the quota
+   does not see. A total check holds this: a test binary with a
+   counting global allocator drives every `subscript_rt_*` entry whose
+   result size a script controls, under a small quota and a huge
+   request, and asserts the peak allocation stays under the quota plus
+   a fixed slack; the same test derives the entry list from `ffi.rs`
+   and fails on an entry that is neither covered nor listed with a
+   reason. *(Amended 2026-09-17, after an external review:
+   `String.repeat` built the result in a `Vec` before `alloc_str`,
+   measured at 259 MiB resident for a 256 MiB request under a 64 MiB
+   quota, before the trap.)*
 3. **Stack budget.** `enter_script` at depth 0 records the address of
    a local as the floor. `subscript_rt_sandbox_enter` compares the
    address of its own local against the floor minus the budget. Below
