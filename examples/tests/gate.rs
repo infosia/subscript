@@ -451,6 +451,14 @@ fn context_per_scene_host_builds_runs_and_matches_golden() {
     assert_host_program_matches_golden("context-per-scene", "Context-per-scene host");
 }
 
+/// The sandbox-profile host (`specs/blocks/compiler.md` §109): the script
+/// never returns on its own, so the golden output proves the host's
+/// interrupt stopped it.
+#[test]
+fn sandbox_host_builds_runs_and_matches_golden() {
+    assert_host_program_matches_golden("sandbox", "sandbox-profile host");
+}
+
 #[test]
 fn derived_example_set_excludes_phase_gate_programs() {
     let examples = discover_examples().unwrap_or_else(|error| panic!("discover examples: {error}"));

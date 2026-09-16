@@ -86,9 +86,12 @@ gaps to be closed later:
   grows in *computation* — numbers, strings, collections — while access to
   the outside world stays the host's to grant. That is a division of
   responsibility, not a capability ceiling.
-- **Not a sandbox.** Scripts are first-party, trusted code. The compiler
-  spends its effort on early, precise diagnostics for honest mistakes, not
-  on containing hostile ones.
+- **Not a sandbox by default.** A script is first-party code, and the
+  compiler spends its effort on early, precise diagnostics for honest
+  mistakes rather than on containing hostile ones. For content the host
+  did not write, `--profile sandbox` narrows the accepted language and
+  adds run-time limits the host sets, and a program that does not select
+  the profile pays nothing.
 
 ## Tutorials
 

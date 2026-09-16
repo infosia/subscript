@@ -1050,19 +1050,11 @@ fn execute_entry_retained(
 fn run_entry(
     module: &JITModule,
     lowered: &Lowered,
-    fail_alloc_after: Option<u64>,
+    options: EntryOptions,
 ) -> Result<(Vec<u8>, Duration), RunError> {
-    execute_entry(
-        module,
-        lowered,
-        EntryOptions {
-            fail_alloc_after,
-            ..EntryOptions::default()
-        },
-        None,
-    )
-    .run
-    .map(|run| (run.stdout, run.elapsed))
+    execute_entry(module, lowered, options, None)
+        .run
+        .map(|run| (run.stdout, run.elapsed))
 }
 
 fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {
@@ -1390,14 +1382,57 @@ pub fn jit_bench_with_warmup_floor(
     timed: usize,
     warmup_floor: Duration,
 ) -> Result<BenchSamples, RunError> {
+    jit_bench_configured(files, RunConfig::default(), warmup, timed, warmup_floor)
+}
+
+/// Measures the dev-JIT tier like [`jit_bench_with_warmup_floor`], with one
+/// complete option record.
+///
+/// The checked module carries the compile profile
+/// (`specs/blocks/compiler.md` §109.1 rule 2), and this runner applies that
+/// profile's §109.5 defaults to the Context of every run, before the first
+/// `enter_script`. The measured span is the `main` call alone, so the two
+/// limit calls are outside it.
+///
+/// A benchmark reports timed samples only, so `memory_accounting`, the
+/// interrupt thread, and the shipping-tier host hooks are unavailable here.
+///
+/// # Errors
+///
+/// Returns the same errors as [`jit_bench`], and [`RunError::Internal`] for
+/// an option this runner has no channel for.
+pub fn jit_bench_configured(
+    files: &[SourceFile],
+    config: RunConfig<'_>,
+    warmup: usize,
+    timed: usize,
+    warmup_floor: Duration,
+) -> Result<BenchSamples, RunError> {
     if timed == 0 {
         return Err(RunError::Internal(internal(
             "a benchmark subject needs at least one timed run",
         )));
     }
+    if config.pre_entry_hook.is_some() || config.post_run_hook.is_some() {
+        return Err(RunError::Internal(internal(
+            "host hooks are not available in the development tier",
+        )));
+    }
+    if config.memory_accounting || config.interrupt_after_millis.is_some() {
+        return Err(RunError::Internal(internal(
+            "a benchmark reports timed samples only: memory accounting and \
+             the interrupt thread are not available",
+        )));
+    }
     let started = Instant::now();
-    let (module, lowered, _) = compile_jit(files, &[], Profile::Default)?;
+    let (module, lowered, profile) = compile_jit(files, config.native_libraries, config.profile)?;
     let compile = started.elapsed();
+    let options = EntryOptions {
+        fail_alloc_after: config.fail_alloc_after,
+        freed_handle_diagnostics: config.freed_handle_diagnostics,
+        profile,
+        interrupt_after_millis: None,
+    };
 
     let mut samples = Vec::with_capacity(timed);
     let mut warmup_elapsed = Duration::ZERO;
@@ -1405,7 +1440,7 @@ pub fn jit_bench_with_warmup_floor(
     let mut stdout: Option<Vec<u8>> = None;
     let mut failure: Option<RunError> = None;
     while warmup_iterations < warmup || warmup_elapsed < warmup_floor {
-        match run_entry(&module, &lowered, None) {
+        match run_entry(&module, &lowered, options) {
             Ok((out, elapsed)) => {
                 match &stdout {
                     Some(first) if first != &out => {
@@ -1430,7 +1465,7 @@ pub fn jit_bench_with_warmup_floor(
     }
     if failure.is_none() {
         for _ in 0..timed {
-            match run_entry(&module, &lowered, None) {
+            match run_entry(&module, &lowered, options) {
                 Ok((out, elapsed)) => {
                     match &stdout {
                         Some(first) if first != &out => {
@@ -2073,6 +2108,56 @@ mod tests {
         // SAFETY: all executions above have returned; no pointer into
         // the JIT memory survives.
         unsafe { module.free_memory() };
+    }
+
+    /// §109.5: the bench runner applies the profile defaults, so a
+    /// sandbox-profile run stops at the stack budget. The same program with
+    /// a base case is the firing control: it runs clean under the profile.
+    #[test]
+    fn jit_bench_configured_applies_the_profile_defaults() {
+        const ENDLESS: &str = "function descend(depth: i32): i32 {\n                                 return descend(depth + 1) + 1;\n}\n                               export function main(): void {\n                                 print(`${descend(0)}`);\n}\n";
+        const BOUNDED: &str = "function descend(depth: i32): i32 {\n                                 if (depth > 8) {\n    return depth;\n  }\n                                 return descend(depth + 1) + 1;\n}\n                               export function main(): void {\n                                 print(`${descend(0)}`);\n}\n";
+        let config = RunConfig::with_profile(Profile::Sandbox);
+        let trapped = jit_bench_configured(&sources(ENDLESS), config, 0, 1, Duration::ZERO);
+        match trapped {
+            Err(RunError::Trap(report)) => assert_eq!(report.rule, TrapKind::StackBudget),
+            other => panic!("expected the stack-budget trap, got {other:?}"),
+        }
+        let clean = jit_bench_configured(&sources(BOUNDED), config, 0, 2, Duration::ZERO)
+            .expect("the bounded program runs under the profile");
+        assert_eq!(clean.stdout, b"18\n");
+        assert_eq!(clean.samples.len(), 2);
+    }
+
+    /// A benchmark reports timed samples only, so the options with no
+    /// channel here are refused rather than ignored.
+    #[test]
+    fn jit_bench_configured_refuses_an_option_it_cannot_report() {
+        let files = sources("export function main(): void {\n  print(\"tick\");\n}\n");
+        for config in [
+            RunConfig {
+                memory_accounting: true,
+                ..RunConfig::default()
+            },
+            RunConfig {
+                interrupt_after_millis: Some(1),
+                ..RunConfig::default()
+            },
+            RunConfig {
+                pre_entry_hook: Some("host_pre_entry"),
+                ..RunConfig::default()
+            },
+        ] {
+            let refused = jit_bench_configured(&files, config, 0, 1, Duration::ZERO);
+            assert!(
+                matches!(refused, Err(RunError::Internal(_))),
+                "the runner accepted an option it cannot report"
+            );
+        }
+        // The firing control: the same call with the default record runs.
+        let ran = jit_bench_configured(&files, RunConfig::default(), 0, 1, Duration::ZERO)
+            .expect("the default record runs");
+        assert_eq!(ran.stdout, b"tick\n");
     }
 
     #[test]

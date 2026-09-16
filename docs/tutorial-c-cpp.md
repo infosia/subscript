@@ -5,7 +5,9 @@ native application. Its syntax is a subset of TypeScript; its execution
 and memory model are C-compatible: every language-visible struct has
 the layout the platform C ABI gives the equivalent C struct, no garbage
 collector runs behind your code, and the host owns the main loop.
-Scripts are trusted first-party logic, not sandboxed plugins.
+Scripts are trusted first-party logic by default. For content you did
+not write, the sandbox profile narrows the language and adds the
+limits you set (Step 11).
 
 This tutorial assumes C, not TypeScript. Every command and every output
 below comes from a run against the repository as committed. The host of
@@ -607,7 +609,7 @@ void subscript_export_warmup(subscript_rt_context* ctx) {
 
 A script fault is a **trap**: an out-of-range index, integer division
 by zero, a checked `as` that fails, a failed allocation, and about
-twenty more (`runtime/src/trap.rs`, `TrapKind`, kinds 1 through 24 at
+twenty more (`runtime/src/trap.rs`, `TrapKind`, kinds 1 through 27 at
 this commit). A trap stops the entry that raised it. It never unwinds
 across the C boundary, and it never raises a signal.
 
@@ -1116,10 +1118,13 @@ contract.
   observer (`subscript_rt_ctx_set_print_observer`): each line reaches
   your callback and nothing is retained (§18.2f).
 - **An entry that never returns is yours to contain.** Calls are
-  synchronous and nothing interrupts one; an accidental infinite loop
-  freezes the calling thread, by accepted design — scripts are trusted,
-  and isolation against a hung script is the host's to supply. The one
-  bounded subsystem is regular expressions, through
+  synchronous. A default-profile entry carries no checkpoint, so an
+  accidental endless loop freezes the calling thread, and isolation
+  against it is yours to supply. An entry compiled under the sandbox
+  profile (Step 11) reads the Context interrupt flag at every function
+  entry and on every loop edge, so `subscript_rt_ctx_interrupt(ctx)` from
+  a second thread stops it with the `interrupted` trap. Outside the
+  profile the one bounded subsystem is regular expressions, through
   `subscript_rt_ctx_set_regex_budget`.
 - **Async scripts complete only if you step them.** An exported `async`
   entry runs to its first `await` and parks; your frame loop calls
@@ -1216,10 +1221,142 @@ there and shipping C safe.
 `subscript run` covers programs without host C bindings. A program that
 binds your header goes through `subscript build` (Step 7).
 
+### Step 11 — the sandbox profile
+
+Every step above assumes you wrote the script. For content you did not
+write — a mod, a shared level, a plugin — compile it under the **sandbox
+profile**. The profile is a compile profile, not a second tier: the same
+dev JIT and the same emitted C run it. `check`, `build`, and `run` accept
+`--profile sandbox`. The default profile has no name and no flag, and a
+program that does not select the profile gets no new instruction and no
+new check.
+
+**What the profile rejects.** Four rules, each with a stable code:
+
+| Code | Rejects |
+|---|---|
+| `S023` | `Context.free`. Memory is allocate-only. `Context.collect()` stays callable. |
+| `S024` | `Context.fromBytes`. Bytes the content supplies carry no layout proof. |
+| `S025` | `Worker.spawn`, `Inbox`, and `Outbox`. |
+| `S026` | A source over 1,048,576 bytes, or a bracket depth over 256. Both are counted before the parser runs. |
+
+The same source checks clean under the default profile, so a profile
+rejection is not a TypeScript divergence:
+
+```text
+$ subscript check --profile sandbox plugin.ts
+error[S023]: `Context.free` is rejected under the sandbox profile
+ --> plugin.ts:11:3
+   |
+11 |   Context.free(node);
+   |   ^
+   = rule: The sandbox profile rejects `Context.free`; memory is allocate-only there.
+error: 1 error(s)
+
+$ subscript check plugin.ts
+check: plugin.ts: no errors
+```
+
+Your header mirror is the other half. A script binds only the `--mirror`
+you give it (Step 7), so build one mirror per trust level with
+`subscript bind` and pass the narrow one to content you did not write.
+
+**What the profile adds at run time.** Three limits. Each is one C call,
+and each is yours to set:
+
+| Limit | C API | Trap |
+|---|---|---|
+| interrupt | `subscript_rt_ctx_interrupt(ctx)` | `interrupted`, kind 25 |
+| allocation quota | `subscript_rt_ctx_set_alloc_quota(ctx, bytes)`; 0 is none | `allocation-quota`, kind 26 |
+| stack budget | `subscript_rt_ctx_set_stack_budget(ctx, bytes)`; 0 is none | `stack-budget`, kind 27 |
+
+The compiler puts a checkpoint at every function entry and on every loop
+edge, and each checkpoint reads the interrupt flag.
+`subscript_rt_ctx_interrupt` is the one Context call another thread can
+make while the owning thread runs script: it sets one atomic and reads no
+other field. Each of the three raises an ordinary trap — the first trap
+wins, the Context survives, and `subscript_rt_ctx_clear_trap` clears the
+interrupt flag together with the trap.
+
+**Set a stack budget below your thread's stack size.** `enter_script`
+records the stack address it runs at, and each checkpoint compares its own
+address against that floor minus your budget. The runtime cannot read the
+real size of your thread, so the margin is your fact to supply. A 256 KiB
+budget on a thread with an 8 MiB stack stops runaway recursion with a
+trap; a budget above the real size lets the thread overflow first.
+
+**The defaults.** `--profile sandbox` on `run`, and on a `build` that
+writes the generated entry, set the quota to 67,108,864 bytes and the
+stack budget to 524,288 bytes before the entry runs. Recursion with no
+base case then stops at the budget instead of taking the process down:
+
+```text
+$ subscript build --profile sandbox --source deep.ts -o out --run
+start
+trap 27 0 stack-budget
+$ echo $?
+3
+```
+
+`out/entry.c` carries the two calls that did it:
+
+```c
+    subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C(67108864));
+    subscript_rt_ctx_set_stack_budget(ctx, UINT64_C(524288));
+```
+
+With `--host`, `build` writes no entry, so the limits are yours to set —
+which is the whole of the example below.
+
+**A complete host.** [`examples/sandbox/`](../examples/sandbox/) is four
+files. [`mod.ts`](../examples/sandbox/mod.ts) exports `tick(): void`,
+which prints one line and then loops forever.
+[`main.c`](../examples/sandbox/main.c) creates the Context, sets a 16 MiB
+quota and a 256 KiB stack budget, starts a thread that calls
+`subscript_rt_ctx_interrupt` after 20 ms, calls `tick`, and reads the trap
+back. [`build.sh`](../examples/sandbox/build.sh) is one command:
+
+```sh
+subscript build \
+    --profile sandbox \
+    --source mod.ts \
+    --host main.c \
+    -o out \
+    --run
+```
+
+The host holds the endless call for 20 ms and then gets it back:
+
+```text
+$ sh examples/sandbox/build.sh
+host:limits quota=16777216 stack-budget=262144
+host:interrupt armed after 20ms
+script:tick running
+host:trap kind=25 message=interrupted
+host:cleared trap kind=0
+```
+
+[`expected.txt`](../examples/sandbox/expected.txt) holds those bytes, and
+`cargo test -p subscript-examples` compares them on every run.
+
+**`subscript emit` takes no `--profile`.**
+
+```text
+$ subscript emit --profile sandbox plugin.ts -o out
+subscript: unknown option `--profile`
+```
+
+For Step 4's path, run `build --profile sandbox -o gen/` instead: it
+writes the same `program.c` and `program.alloc.h` into `gen/`, beside the
+program it links. Whichever path you take, what you embed is the ship
+tier — the runtime has no API that compiles source at run time, so
+content that arrives after you ship is content you compile and link like
+your own.
+
 ## Reading on
 
 - [`examples/README.md`](../examples/README.md) — eleven single-concept
-  examples with expected output, and the two host capstones.
+  examples with expected output, and the three C host programs.
 - [`generated-docs/language-reference.md`](../generated-docs/language-reference.md)
   — every rejection rule with its pinned corpus entry.
 - [`generated-docs/api-reference.md`](../generated-docs/api-reference.md)

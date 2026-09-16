@@ -18,11 +18,15 @@ Read the numbered examples in order:
    script's `init`, `update`, and `shutdown` exports.
 5. [`context-per-scene/`](context-per-scene/) runs two scenes with fresh
    Contexts, showing script state reset while host frame state continues.
-6. [`hot-reload/`](hot-reload/) is interactive: `sh run.sh` starts
+6. [`sandbox/`](sandbox/) runs content the host did not write: the script
+   is built with `subscript build --profile sandbox`, the host sets an
+   allocation quota and a stack budget, and a second thread stops an
+   endless entry with `subscript_rt_ctx_interrupt`.
+7. [`hot-reload/`](hot-reload/) is interactive: `sh run.sh` starts
    `subscript run --watch`, and editing `demo.ts` demonstrates live
    body swaps with surviving module state, refusal of declaration
    edits, and diagnostics while the old program keeps running.
-7. [`rust-host/`](rust-host/) embeds through the Rust crates directly
+8. [`rust-host/`](rust-host/) embeds through the Rust crates directly
    (`cargo run -p subscript-example-rust-host`): a frame loop, a
    mid-run body swap with surviving state, and a refused declaration
    edit, with the exact output pinned by its integration test.
@@ -63,7 +67,7 @@ cargo test --offline -p subscript-examples
 This derives the numbered set from the directory, runs every example and the
 phase-proof program under both dev-JIT and ship-C-AOT, compares both outputs
 byte-for-byte with their committed goldens, regenerates the engine mirror,
-and builds and runs both host programs. It needs the repository's Rust
+and builds and runs the three host programs. It needs the repository's Rust
 dependencies available offline and the platform C compiler already required
 by the ship tier.
 
@@ -74,14 +78,15 @@ dependencies:
 npx tsc -p tsconfig.json
 ```
 
-To build and run either host program directly:
+To build and run a host program directly:
 
 ```sh
 sh examples/host/build.sh
 sh examples/context-per-scene/build.sh
+sh examples/sandbox/build.sh
 ```
 
-Both scripts are thin wrappers over the developer CLI
+Each script is a thin wrapper over the developer CLI
 ([`specs/blocks/cli.md`](../specs/blocks/cli.md)): `subscript build --run`
 owns the emit → compile → link pipeline, `subscript run <file.ts>` runs a
 bindings-free example under the dev JIT, and `subscript link-flags` prints
@@ -102,10 +107,12 @@ that mirror, while both execution tiers call the declared C functions
 directly. The complete host path is
 [`host/game.ts`](host/game.ts), [`host/main.c`](host/main.c), and
 [`host/build.sh`](host/build.sh); the Context-lifetime counterpart is
-[`context-per-scene/`](context-per-scene/).
+[`context-per-scene/`](context-per-scene/). [`sandbox/`](sandbox/) binds no
+header: a host gives untrusted content one narrow mirror, or none.
 
-These examples deliberately contain no device build, benchmark, or trapping
-program. Device linkage and performance measurement have their own tooling;
-intentional traps live in [`corpus/trap/`](../corpus/trap/). The accept and
+These examples deliberately contain no device build and no benchmark. Device
+linkage and performance measurement have their own tooling. The sandbox host
+ends in a trap, because the interrupt is what it teaches; every other
+intentional trap lives in [`corpus/trap/`](../corpus/trap/). The accept and
 reject [corpus](../corpus/) is the executable language definition.
 `examples/` is a maintained introduction to that defined behavior.

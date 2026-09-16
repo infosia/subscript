@@ -404,8 +404,14 @@ Development tier, all in `subscript_codegen`:
   its site.
 - `run_jit_configured(&files, config)` — one `RunConfig` record in
   place of the named combinations above; returns `RunOutput`.
-- `jit_compile_time`, `jit_bench`, `jit_bench_with_warmup_floor` —
-  measurement entry points for the performance gate, not host API.
+- `jit_compile_time`, `jit_bench`, `jit_bench_with_warmup_floor`,
+  `jit_bench_configured` — measurement entry points for the
+  performance gate, not host API.
+- `run_jit_interrupted(&files, config)` — runs in this process and
+  sets the Context interrupt flag from a second thread after
+  `RunConfig::interrupt_after_millis`. It returns the outcome and the
+  time from the flag to the return. `run_c_aot_interrupted` is the
+  ship-tier form, with a bound on the run.
 - `JIT_OUTPUT_FILE_ENV` — an optional environment override that names
   a parent-owned output file for a JIT run.
 
@@ -434,8 +440,15 @@ Ship tier, same crate:
 
 `RunConfig` holds `native_libraries`, `fail_alloc_after`,
 `freed_handle_diagnostics`, `memory_accounting`, `pre_entry_hook`,
-and `post_run_hook`. `RunOutput` holds `stdout` and an optional
-`memory_accounting`.
+`post_run_hook`, `profile`, and `interrupt_after_millis`. `RunOutput`
+holds `stdout` and an optional `memory_accounting`.
+
+`profile` is the compile profile (`Profile::Default` or
+`Profile::Sandbox`). The runner passes it to the checker, the checked
+module carries it, and each runner reads the profile's run-time
+defaults from there: under `Profile::Sandbox` a run starts with a
+67,108,864-byte allocation quota and a 524,288-byte stack budget. A
+host that drives the Context itself sets its own through the C API.
 
 `NativeLibrary::new(include_directories, c_sources, symbols)` is
 `unsafe`: every symbol address must stay valid for every run that
