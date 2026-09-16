@@ -164,7 +164,11 @@ sandbox` set the quota to 67,108,864 bytes and the stack budget to
 sets its own. A Rust host, and every in-repo runner and benchmark,
 sets its own through `RunConfig`: `alloc_quota` and `stack_budget`,
 each `Option<u64>`, and a set value replaces the default. The
-interrupt has no default; nothing sets it unless the host does.
+interrupt has no default; nothing sets it unless the host does. A
+Rust caller of the in-process dev runner reaches the run's interrupt
+cell through `RunConfig.interrupt_handle`, a sink the runner fills
+before the first script call; the forked runner and the ship runner
+refuse it, because their Context is in another process.
 *(Amended 2026-09-17: round 3 could not measure `callbacks` because
 no runner took a host quota.)*
 

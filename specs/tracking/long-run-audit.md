@@ -67,7 +67,9 @@ Q13's lifetime rule, and interning removes the need.
 Exported calls are synchronous and nothing can interrupt one: no fuel, no
 watchdog, no `subscript_rt_ctx_interrupt` — the only bounded-execution
 mechanism in the runtime is the regex budget (`context.rs:392`,
-host-settable, added by P23 for exactly this class of fault). An accident
+host-settable, added by P23 for exactly this class of fault). *(2026-09-17:
+the sandbox profile adds an interrupt that a second thread sets through
+`subscript_rt_interrupt_set`; the default profile is unchanged. §109.4.)* An accident
 as small as a wrong loop bound freezes the host's frame forever; the host
 cannot even time the call out, because the trap machinery runs *inside*
 script execution and there is no safe cross-thread entry.

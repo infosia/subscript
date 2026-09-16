@@ -271,7 +271,7 @@ Contract pin `382de51`. Implementation commit: the one after
 | Item | Result |
 |---|---|
 | Red | at the pin, `t57` printed `start` then `300` and exited 0; `t58` died on signal 4 with no stdout; `a238` printed its golden (no checkpoint existed) |
-| Runtime | `Interrupted` 25, `AllocationQuota` 26, `StackBudget` 27; `subscript_rt_ctx_interrupt`, `_set_alloc_quota`, `_set_stack_budget`, `subscript_rt_sandbox_enter`, `subscript_rt_sandbox_poll`; header regenerated |
+| Runtime | `Interrupted` 25, `AllocationQuota` 26, `StackBudget` 27; `subscript_rt_ctx_interrupt` (replaced in the review-fix round by `subscript_rt_ctx_interrupt_handle` and `subscript_rt_interrupt_set`), `_set_alloc_quota`, `_set_stack_budget`, `subscript_rt_sandbox_enter`, `subscript_rt_sandbox_poll`; header regenerated |
 | LIR | `IntrinsicFamily::Sandbox` with `Enter` (every function body and every resume block) and `Poll` (every `while`, `for`, `for-of` header); nothing under the default profile, asserted by a two-profile diff |
 | Executors | dev JIT, ship C, interpreter each lower both as the runtime call; the interpreter now brackets its entries with `enter_script`/`exit_script` |
 | Runners | `RunConfig.profile`; every runner reads `hir.profile` and applies the defaults; the ship entry emits the two calls; `interpret_configured` |
