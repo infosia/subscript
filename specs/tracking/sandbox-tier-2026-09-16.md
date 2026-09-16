@@ -310,3 +310,53 @@ Contract pin `c6251df`; §18 amended to agree (`0cd904a`).
 `live_allocations` and `reserved_bytes` still walk. `context.rs` is
 6,567 lines, on the §5.y split list.
 Gate: `gate quick 28c8b538557895ea4a80da71e6e2ffb3e79daa28 dirty:1 debug 1507/0/2 skips 2 goldens-moved 0 exit 0`
+
+## P26 round 3 — the cost runner, the adversarial sweep, the docs (landed)
+
+Contract pin `af47450`. Gate:
+`gate quick af47450 dirty:12 debug 1515/0/2 skips 2 goldens-moved 0 exit 0`.
+
+### Criterion 5 — the cost of the profile
+
+`sandbox-cost`, release, arm64 macOS, median of 11 after a 200 ms
+warm-up floor, one child per cell. Ratio is sandbox over default.
+
+| Workload | dev-JIT | ship-C-AOT |
+|---|---|---|
+| fib-recursive | 1.43x | 3.12x |
+| fib-loop | 3.02x | 4.34x |
+| mandelbrot | 1.85x | 1.03x |
+| primes | 1.97x | 1.82x |
+| sort | 1.30x | 1.56x |
+| queen | 1.16x | 1.40x |
+| particles | 1.19x | 2.11x |
+| collect | 1.00x | 1.01x |
+| tree | rejected S023 | rejected S023 |
+| callbacks | not measured, quota | not measured, quota |
+
+The cost tracks call and loop-edge frequency: both intrinsics are a
+runtime call with a pending-trap check. `tree` frees with
+`Context.free`, so it has no profile form; a variant without frees
+is a different program. `callbacks` keeps 7 MB per round live and
+passes the 64 MiB default; no runner took a host quota (round 3b).
+
+Candidate for later evidence, not proposed here: an inline relaxed
+load of the flag through a pointer the runtime hands out at
+`enter_script`, in place of the call, with the stack check kept at
+`Enter` only.
+
+### Criterion 4 — the adversarial list
+
+Five shapes, each with a control: 1,048,577 bytes → S026; depth 257
+→ S026; recursion with no base case → `stack-budget` on both tiers;
+an allocation loop with every block live → `allocation-quota` on
+both tiers; `fromBytes` of forged bytes → S024.
+`codegen/tests/sandbox_adversarial.rs`.
+
+### Criterion 6 — the docs
+
+`examples/sandbox/` (a C host that sets the limits, interrupts from a
+second thread after 20 ms, and reads the trap back; checked by the
+examples gate), tutorial Step 11, README, `llms.txt`,
+`docs/tutorial-rust.md`. Every pasted output is from a run in the
+round.
