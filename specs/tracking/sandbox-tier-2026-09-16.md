@@ -230,3 +230,35 @@ Two findings outside the proposal:
 - `a22-matrix-propagation` is 99.46% of the release interpreter
   sweep's time. If the sweep's wall time matters, that entry is the
   whole cost.
+
+## P26 round 1 — compile-time rules (landed)
+
+Contract pin `d5b9519`. Implementation commit: the one after it.
+
+| Item | Result |
+|---|---|
+| Red | at the pin, `subscript check --profile sandbox` on each reject entry exits 2, "unknown option `--profile`"; `check` exits 0 |
+| Green | S023 `Context.free`, S024 `Context.fromBytes`, S025 `Inbox`/`Outbox`/`Worker.spawn`, S026 depth 257; each with a default-profile firing control |
+| Corpus | `r233` to `r236`; twins `a235` to `a237`, goldens by inspection, confirmed on both tiers; `tsc: accepts` measured on all seven |
+| Gate | `gate quick d5b9519 dirty:28 debug 1474/0/2 skips 2 goldens-moved 0 exit 0` |
+
+Two contract corrections came out of the round, both in §109.2's
+amendment: S019 was a retired code (§99.3), and the `bytesOf` clause
+had no program because the default profile rejects the layout.
+
+The checker thread: the parser and the checker recurse once per
+nesting level. A 2 MiB debug test thread overflows at depth 66. The
+64 MiB checker thread carries depth 2,000 and overflows at 2,500. The
+default profile keeps no limit, so a trusted program past that depth
+aborts the process instead of reporting. Recorded; no change
+proposed.
+
+S026 reports at the bracket that takes the whole-file depth over 256,
+so `r236`'s 256th parenthesis fires because the function body's `{`
+is open. That is the contracted over-approximation.
+
+The round 1 gate under the coding agent's environment failed at the
+build step on an `xcrun` cache write denial; the coordinator's
+environment did not reproduce it. A dead-code warning in a shared
+test module that the coding agent's clippy run did not cover was the
+one real build failure; fixed by moving the helper to its caller.
