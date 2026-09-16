@@ -367,7 +367,7 @@ benchmarks/                        the subscript-benchmarks crate
   src/bin/perf-gate.rs             the P4 perf-gate harness (bin `perf-gate`)
   src/bin/bound-call.rs            the boundary-price runner (bin `bound-call`)
   src/bin/sandbox-cost.rs          the sandbox-profile cost runner (bin `sandbox-cost`, compiler.md §109.8 criterion 5)
-  aot-entry.c                      AOT timing entry, shared by both bins
+  aot-entry.c                      AOT timing entry, shared by the ship-tier timing bins
   a22-baseline.c                   the perf-gate's hand-written C baseline
   boundary-noop.c                  the boundary-price backend (with boundary-noop.h)
   workloads/
