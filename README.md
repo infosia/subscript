@@ -219,9 +219,10 @@ The tiers are held to **byte-identical output**: a standing
 differential gate runs every corpus program under the dev tier and the
 ship tier and compares both against a committed golden, on every test
 run. The interpreter runs the entries that need no host C library, as
-the third witness: 124 of them in the debug profile, and 125 under
-`SUBSCRIPT_FULL_INTERPRETER_SWEEP=1`. The language's behaviour is
-defined by that corpus, not by any one backend.
+the third witness: 180 of them in the debug profile, and 181 under
+`SUBSCRIPT_FULL_INTERPRETER_SWEEP=1` (56 entries declare an
+exclusion, 50 of them for a foreign call). The language's behaviour
+is defined by that corpus, not by any one backend.
 
 ## The sandbox profile
 
