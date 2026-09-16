@@ -70,15 +70,6 @@ pub enum Profile {
 /// The default profile has no name (§109.1 rule 1), so only
 /// [`Profile::Sandbox`] answers a name.
 impl Profile {
-    /// The selector spelling of this profile, or `None` for the default.
-    #[must_use]
-    pub fn as_str(self) -> Option<&'static str> {
-        match self {
-            Profile::Default => None,
-            Profile::Sandbox => Some("sandbox"),
-        }
-    }
-
     /// Parses a profile selector. Returns `None` for an unknown name.
     #[must_use]
     pub fn parse(name: &str) -> Option<Self> {
@@ -212,37 +203,45 @@ const CHECKER_STACK_BYTES: usize = 64 * 1024 * 1024;
 /// returns its result.
 ///
 /// A panic on that thread resumes on the caller, so a caller that counts
-/// panics sees exactly what a direct call gives it.
+/// panics sees exactly what a direct call gives it. If the host refuses
+/// the thread, the caller's own thread runs `work` and the depth a
+/// program can reach becomes a property of the caller's stack.
 fn on_the_checker_thread<T, F>(work: F) -> T
 where
     T: Send,
-    F: Send + FnOnce() -> T,
+    F: Sync + Fn() -> T,
 {
+    let body = || {
+        let value = work();
+        // The place record lives in thread-local storage, so it
+        // crosses the join with the value it describes.
+        #[cfg(test)]
+        let value = (value, check::take_classified_places());
+        value
+    };
+    // A shared reference to a `Fn` closure is itself callable and is
+    // `Copy`, so the thread takes one and this frame keeps the closure
+    // for the fallback below.
+    let body = &body;
     std::thread::scope(|scope| {
-        let handle = std::thread::Builder::new()
+        let spawned = std::thread::Builder::new()
             .stack_size(CHECKER_STACK_BYTES)
             .name("subscript-checker".to_owned())
-            .spawn_scoped(scope, || {
-                let value = work();
-                // The place record lives in thread-local storage, so it
-                // crosses the join with the value it describes.
-                #[cfg(test)]
-                let value = (value, check::take_classified_places());
-                value
-            })
-            .expect("spawn the checker thread");
-        match handle.join() {
-            Ok(value) => {
-                #[cfg(test)]
-                let value = {
-                    let (value, places) = value;
-                    check::absorb_classified_places(places);
-                    value
-                };
-                value
-            }
-            Err(payload) => std::panic::resume_unwind(payload),
-        }
+            .spawn_scoped(scope, body);
+        let value = match spawned {
+            Ok(handle) => match handle.join() {
+                Ok(value) => value,
+                Err(payload) => std::panic::resume_unwind(payload),
+            },
+            Err(_) => body(),
+        };
+        #[cfg(test)]
+        let value = {
+            let (value, places) = value;
+            check::absorb_classified_places(places);
+            value
+        };
+        value
     })
 }
 

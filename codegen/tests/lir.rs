@@ -1691,8 +1691,12 @@ fn every_corpus_entry_lowers_to_verified_lir() {
 /// The source both profiles lower in
 /// [`the_sandbox_profile_emits_the_checkpoints_and_the_default_profile_emits_none`].
 /// It holds one `while`, one `for`, and one `for-of`, each with a bound
-/// the unroller cannot fold.
+/// the unroller cannot fold. One module global and one top-level
+/// statement make the lowering build the module initializer, which
+/// §109.3 counts as a function body.
 const CHECKPOINT_SOURCE: &str = "\
+let seed: i32 = 1;\n\
+seed = seed + 1;\n\
 function fold(values: i32[]): i32 {\n\
 \x20 let total: i32 = 0;\n\
 \x20 let index: i32 = 0;\n\
@@ -1767,6 +1771,17 @@ fn the_sandbox_profile_emits_the_checkpoints_and_the_default_profile_emits_none(
         "the default profile emits no checkpoint"
     );
 
+    let initializer = sandbox
+        .initializer
+        .expect("the source carries a module initializer");
+    assert!(
+        sandbox
+            .functions
+            .iter()
+            .any(|function| function.id == initializer),
+        "the module initializer is one of the lowered function bodies"
+    );
+
     let mut enters = 0usize;
     let mut polls = 0usize;
     let mut loop_headers = 0usize;
@@ -1809,7 +1824,7 @@ fn the_sandbox_profile_emits_the_checkpoints_and_the_default_profile_emits_none(
     assert_eq!(
         enters,
         sandbox.functions.len(),
-        "one Enter per function body"
+        "one Enter per function body, the module initializer included"
     );
     assert_eq!(loop_headers, 3, "the source holds three loops");
     assert_eq!(polls, loop_headers, "one Poll per loop header");
@@ -1843,6 +1858,96 @@ fn every_sandbox_checkpoint_carries_the_call_trap() {
         }
     }
     assert!(checked > 0, "the profile emitted no checkpoint");
+}
+
+/// The source of [`a_static_array_callback_loop_polls_on_its_iteration_edge`].
+/// `map` over a dynamic array with a known callback is the fused form the
+/// lowering builds in place of the runtime call.
+const STATIC_ARRAY_CALLBACK_SOURCE: &str = "\
+export function main(): void {\n\
+\x20 const values: i32[] = [1, 2, 3];\n\
+\x20 const doubled: i32[] = values.map((value: i32): i32 => value * 2);\n\
+\x20 print(`${doubled.length}`);\n\
+}\n";
+
+/// The source of [`a_for_each_loop_polls_on_its_iteration_edge`]. `Set`
+/// `forEach` is the second fused form the lowering builds.
+const FOR_EACH_SOURCE: &str = "\
+export function main(): void {\n\
+\x20 const seen: Set<i32> = new Set<i32>();\n\
+\x20 seen.add(1);\n\
+\x20 seen.add(2);\n\
+\x20 seen.forEach((value: i32): void => {\n\
+\x20   print(`${value}`);\n\
+\x20 });\n\
+}\n";
+
+/// The number of blocks named `header` in `module`, and how many of them
+/// carry `Sandbox.Poll` as their first instruction.
+fn fused_loop_headers(module: &Module, header: &str) -> (usize, usize) {
+    let mut blocks = 0usize;
+    let mut polls = 0usize;
+    for function in &module.functions {
+        for block in &function.blocks {
+            if block.source_name.as_deref() != Some(header) {
+                continue;
+            }
+            blocks += 1;
+            if block.instructions.first().and_then(sandbox_operation) == Some(1) {
+                polls += 1;
+            }
+        }
+    }
+    (blocks, polls)
+}
+
+/// Asserts that the one block named `header` starts with `Sandbox.Poll`
+/// under the sandbox profile and with no checkpoint under the default
+/// profile (§109.3).
+///
+/// The default lowering builds the same block, so the block count is the
+/// control: a source that stops building the fused loop fails here rather
+/// than passing with zero polls.
+fn assert_fused_loop_polls(name: &str, source: &str, header: &str) {
+    let sandbox = lower_profiled(name, source, Profile::Sandbox);
+    let (sandbox_blocks, sandbox_polls) = fused_loop_headers(&sandbox, header);
+    assert_eq!(
+        sandbox_blocks, 1,
+        "{header}: the source builds one fused loop"
+    );
+    assert_eq!(
+        sandbox_polls, 1,
+        "{header}: the fused loop polls on its iteration edge"
+    );
+
+    let default = lower_profiled(name, source, Profile::Default);
+    let (default_blocks, default_polls) = fused_loop_headers(&default, header);
+    assert_eq!(
+        default_blocks, 1,
+        "{header}: the default profile builds the same fused loop"
+    );
+    assert_eq!(
+        default_polls, 0,
+        "{header}: the default profile emits no checkpoint"
+    );
+}
+
+/// §109.3: the fused loop the lowering builds for a static Array callback
+/// polls on its iteration edge.
+#[test]
+fn a_static_array_callback_loop_polls_on_its_iteration_edge() {
+    assert_fused_loop_polls(
+        "array-callback.ts",
+        STATIC_ARRAY_CALLBACK_SOURCE,
+        "array-callback.cond",
+    );
+}
+
+/// §109.3: the fused loop the lowering builds for `forEach` polls on its
+/// iteration edge.
+#[test]
+fn a_for_each_loop_polls_on_its_iteration_edge() {
+    assert_fused_loop_polls("for-each.ts", FOR_EACH_SOURCE, "for-each.cond");
 }
 
 /// A profile source with one async body, one generator, and one await, so

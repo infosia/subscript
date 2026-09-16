@@ -9,18 +9,21 @@
 //!
 //! The firing control is the same program with no second thread. It must
 //! not complete inside a 2 s bound, and each control asserts that the
-//! bound fired.
+//! bound fired. The dev-JIT control then sets the flag through the
+//! Context's interrupt handle and joins its runner thread, so no thread
+//! outlives the test.
 //!
 //! The reference interpreter has no test here: `interpret_configured`
-//! owns its Context for the whole call and hands no address to another
-//! thread, so this file cannot set the flag on an interpreter run.
+//! owns its Context for the whole call and hands out no interrupt
+//! handle, so this file cannot set the flag on an interpreter run.
 
 use std::sync::mpsc;
-use std::time::Duration;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use subscript_codegen::{run_c_aot_interrupted, run_jit_interrupted, RunConfig, RunError};
 use subscript_compiler::{Profile, SourceFile};
-use subscript_runtime::TrapKind;
+use subscript_runtime::{Interrupt, TrapKind};
 
 /// The delay the second thread sleeps before it sets the flag.
 const INTERRUPT_AFTER_MILLIS: u64 = 50;
@@ -85,15 +88,37 @@ fn the_dev_jit_returns_the_interrupt_trap() {
     println!("interrupt latency dev-JIT: {} ns", latency.as_nanos());
 }
 
+/// The bound the control waits for its runner thread to return in, after
+/// it sets the flag.
+const CONTROL_TEARDOWN_BOUND: Duration = Duration::from_secs(60);
+
+/// How long the control polls for the runner to store its handle.
+const HANDLE_BOUND: Duration = Duration::from_secs(10);
+
+/// Reads the handle the runner stored, polling until `HANDLE_BOUND`.
+fn await_handle(sink: &OnceLock<Arc<Interrupt>>) -> Arc<Interrupt> {
+    let started = Instant::now();
+    loop {
+        if let Some(handle) = sink.get() {
+            return Arc::clone(handle);
+        }
+        assert!(
+            started.elapsed() < HANDLE_BOUND,
+            "the dev-JIT runner stored no interrupt handle"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
 #[test]
 fn the_dev_jit_endless_program_does_not_stop_without_the_interrupt() {
+    let sink: Arc<OnceLock<Arc<Interrupt>>> = Arc::new(OnceLock::new());
+    let runner_sink = Arc::clone(&sink);
     let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
+    let runner = std::thread::spawn(move || {
         let files = endless_program();
-        let _ = sender.send(run_jit_interrupted(
-            &files,
-            RunConfig::with_profile(Profile::Sandbox),
-        ));
+        let config = RunConfig::with_profile(Profile::Sandbox).with_interrupt_handle(&runner_sink);
+        let _ = sender.send(run_jit_interrupted(&files, config));
     });
     let outcome = receiver.recv_timeout(CONTROL_BOUND);
     assert!(
@@ -102,6 +127,15 @@ fn the_dev_jit_endless_program_does_not_stop_without_the_interrupt() {
         outcome.map(|(run, _)| run.is_ok())
     );
     println!("dev-JIT control: the {CONTROL_BOUND:?} bound fired");
+
+    // §109.4 rule 1: the handle stops the run the control started, so no
+    // thread outlives this test.
+    await_handle(&sink).set();
+    let stopped = receiver
+        .recv_timeout(CONTROL_TEARDOWN_BOUND)
+        .expect("the control run returns once the flag is set");
+    assert_interrupted("dev-JIT control", &stopped.0);
+    runner.join().expect("the control runner thread");
 }
 
 #[test]

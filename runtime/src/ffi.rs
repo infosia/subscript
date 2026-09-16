@@ -18,8 +18,8 @@
 //! result from a trapping function is never fed into another call.
 
 use crate::context::{
-    AllocationVisitor, AsyncResume, CallbackBinding, Context, DiagnosticsObserver, PrintObserver,
-    TrapObserver,
+    AllocationVisitor, AsyncResume, CallbackBinding, Context, DiagnosticsObserver, Interrupt,
+    PrintObserver, TrapObserver,
 };
 use crate::trap::TrapKind;
 use crate::worker::{Worker, WorkerEntry, WorkerInbox, WorkerInit, WorkerOutbox};
@@ -5212,26 +5212,45 @@ pub unsafe extern "C" fn subscript_rt_ctx_exit_script(ctx: *mut Context) {
     unsafe { &mut *ctx }.exit_script();
 }
 
-/// Requests that the running script stop at its next sandbox-profile
-/// checkpoint (compiler.md 109.4).
+/// Returns the interrupt handle of `ctx` (compiler.md 109.4).
 ///
-/// Any thread can call this while the owning thread runs script code. It
-/// is the one Context call outside the exclusive contract: it sets one
-/// atomic flag and reads no other field. A script compiled under the
-/// sandbox profile reads the flag at every function entry and on every
-/// loop edge, and records the `interrupted` trap (kind 25) there. A
-/// script compiled under the default profile has no checkpoint, so the
-/// flag has no effect on it. `subscript_rt_ctx_clear_trap` clears the
-/// flag together with the trap.
+/// Call it on the owning thread, before or between runs. The handle
+/// addresses one heap cell outside the Context's bytes, and it is valid
+/// until the Context is released. `subscript_rt_interrupt_set` is the
+/// call another thread makes on it while the owning thread runs script
+/// code. `subscript_rt_ctx_clear_trap` clears the flag together with the
+/// trap.
 ///
 /// # Safety
 ///
-/// `ctx` addresses a live Context that outlives this call.
+/// `ctx` follows the exclusive Context contract.
 #[no_mangle]
-pub unsafe extern "C" fn subscript_rt_ctx_interrupt(ctx: *const Context) {
-    // SAFETY: the caller supplies a live Context; the call touches one
+pub unsafe extern "C" fn subscript_rt_ctx_interrupt_handle(
+    ctx: *const Context,
+) -> *const Interrupt {
+    // SAFETY: exclusive Context contract.
+    unsafe { &*ctx }.interrupt_cell()
+}
+
+/// Requests that the running script stop at its next sandbox-profile
+/// checkpoint (compiler.md 109.4).
+///
+/// Any thread can call this while the owning thread runs script code: it
+/// sets one atomic flag in the cell `handle` addresses and reads no
+/// Context field. A script compiled under the sandbox profile reads the
+/// flag at every function entry and on every loop edge, and records the
+/// `interrupted` trap (kind 25) there. A script compiled under the
+/// default profile has no checkpoint, so the flag has no effect on it.
+///
+/// # Safety
+///
+/// `handle` is a handle from `subscript_rt_ctx_interrupt_handle` whose
+/// Context is not released.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_interrupt_set(handle: *const Interrupt) {
+    // SAFETY: the caller supplies a live cell; the call touches one
     // atomic, which is defined across threads.
-    unsafe { Context::set_interrupt(ctx) };
+    unsafe { &*handle }.set();
 }
 
 /// Sets the Context allocation quota in bytes (compiler.md 109.4).
@@ -5435,8 +5454,11 @@ mod tests {
         }
         assert!(!ctx.trapped(), "neither checkpoint fires unbidden");
 
-        // SAFETY: as above.
-        unsafe { subscript_rt_ctx_interrupt(pointer) };
+        // SAFETY: as above; the handle is valid while this Context is.
+        unsafe {
+            let handle = subscript_rt_ctx_interrupt_handle(pointer);
+            subscript_rt_interrupt_set(handle);
+        }
         assert!(ctx.interrupted());
         // SAFETY: as above.
         unsafe { subscript_rt_sandbox_poll(pointer, 7) };

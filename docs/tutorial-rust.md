@@ -410,7 +410,9 @@ Development tier, all in `subscript_codegen`:
 - `run_jit_interrupted(&files, config)` — runs in this process and
   sets the Context interrupt flag from a second thread after
   `RunConfig::interrupt_after_millis`. It returns the outcome and the
-  time from the flag to the return. `run_c_aot_interrupted` is the
+  time from the flag to the return. It also stores the run's interrupt
+  handle in `RunConfig::interrupt_handle`, so a caller on another
+  thread stops the run itself. `run_c_aot_interrupted` is the
   ship-tier form, with a bound on the run.
 - `JIT_OUTPUT_FILE_ENV` — an optional environment override that names
   a parent-owned output file for a JIT run.
@@ -440,9 +442,16 @@ Ship tier, same crate:
 
 `RunConfig` holds `native_libraries`, `fail_alloc_after`,
 `freed_handle_diagnostics`, `memory_accounting`, `pre_entry_hook`,
-`post_run_hook`, `profile`, `interrupt_after_millis`, `alloc_quota`,
-and `stack_budget`. `RunOutput` holds `stdout` and an optional
-`memory_accounting`.
+`post_run_hook`, `profile`, `interrupt_after_millis`,
+`interrupt_handle`, `alloc_quota`, and `stack_budget`. `RunOutput`
+holds `stdout` and an optional `memory_accounting`.
+
+`interrupt_handle` is a `&OnceLock<Arc<Interrupt>>` the in-process
+development runner fills before the first script call. The handle owns
+the Context's interrupt cell, so `handle.set()` from any thread stops
+the run at its next checkpoint. A `run_jit*` helper that forks the run
+fills nothing, because the child's Context is in another process; the
+shipping tier refuses the option for the same reason.
 
 `profile` is the compile profile (`Profile::Default` or
 `Profile::Sandbox`). The runner passes it to the checker, the checked
@@ -460,6 +469,12 @@ four runners apply both — `run_jit_configured`, `run_c_aot_configured`
 `interpret_configured`. A host that drives the Context itself calls
 `subscript_rt_ctx_set_alloc_quota` and
 `subscript_rt_ctx_set_stack_budget` instead.
+
+The third limit is the interrupt. `ReloadSession::interrupt_handle`
+returns the session's `Arc<Interrupt>`, and `RunConfig::interrupt_handle`
+takes the handle of a one-shot dev-tier run. A second thread calls
+`set` on the handle, and the run stops at its next checkpoint with the
+`Interrupted` trap.
 
 `NativeLibrary::new(include_directories, c_sources, symbols)` is
 `unsafe`: every symbol address must stay valid for every run that

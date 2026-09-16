@@ -49,6 +49,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::c_void;
 use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::trap::{TrapKind, TrapRecord};
 use crate::worker::{
@@ -624,6 +625,38 @@ pub struct CallbackBinding {
     pub userdata2: *mut u8,
 }
 
+/// The interrupt cell of one Context (`specs/blocks/compiler.md` §109.4
+/// rule 1).
+///
+/// The cell lives in its own heap allocation, outside the Context's
+/// bytes, so a store from another thread never touches memory the owner
+/// thread holds exclusively. The host obtains a handle on the owner
+/// thread and sets the flag from any thread. The C spelling of a handle
+/// is `const subscript_rt_interrupt*`.
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct Interrupt {
+    flag: AtomicBool,
+}
+
+impl Interrupt {
+    /// Sets the flag with a relaxed store. Any thread can call this.
+    pub fn set(&self) {
+        self.flag.store(true, Ordering::Relaxed);
+    }
+
+    /// True while the flag is set.
+    #[must_use]
+    pub fn is_set(&self) -> bool {
+        self.flag.load(Ordering::Relaxed)
+    }
+
+    /// Clears the flag with a relaxed store.
+    pub fn clear(&self) {
+        self.flag.store(false, Ordering::Relaxed);
+    }
+}
+
 /// The script execution context.
 ///
 /// `repr(C)` with a fixed prefix that generated code reads directly
@@ -653,9 +686,10 @@ pub struct Context {
     // the worker module; the Context itself remains thread-affine.
     workers: WorkerSet,
     script_depth: u32,
-    // §109.4 rule 1: the one Context field a second thread writes. Both
-    // sandbox-profile checkpoints read it with a relaxed load.
-    interrupt: AtomicBool,
+    // §109.4 rule 1: the interrupt cell, in its own heap allocation. A
+    // store from another thread reaches the cell and never the Context's
+    // own bytes. Both sandbox-profile checkpoints read it.
+    interrupt: Arc<Interrupt>,
     // §109.4 rule 2: the live-payload ceiling, in bytes. Zero is none.
     alloc_quota: u64,
     // §109.4 rule 3: the script stack allowance, in bytes. Zero is none.
@@ -806,7 +840,7 @@ impl Context {
             module_globals: None,
             workers: WorkerSet::default(),
             script_depth: 0,
-            interrupt: AtomicBool::new(false),
+            interrupt: Arc::new(Interrupt::default()),
             alloc_quota: 0,
             stack_budget: 0,
             stack_floor: 0,
@@ -1166,31 +1200,27 @@ impl Context {
 
     // ----- sandbox-profile limits (`specs/blocks/compiler.md` §109.4) -----
 
-    /// Sets the interrupt flag of the Context at `ctx` with a relaxed
-    /// store.
+    /// A handle on this Context's interrupt cell (§109.4 rule 1).
     ///
-    /// This is the one Context operation a second thread performs
-    /// (§109.4 rule 1). It touches one atomic and reads no other field,
-    /// so it needs no exclusive access and takes a raw pointer rather
-    /// than a reference.
-    ///
-    /// # Safety
-    ///
-    /// `ctx` addresses a live Context that outlives this call.
-    pub unsafe fn set_interrupt(ctx: *const Context) {
-        // SAFETY: the caller supplies a live Context. `addr_of!` reaches
-        // one field and materializes no reference to the Context, so the
-        // owning thread's exclusive borrow is not aliased.
-        let flag = unsafe { std::ptr::addr_of!((*ctx).interrupt) };
-        // SAFETY: `flag` addresses a live `AtomicBool`, which is the one
-        // type whose shared access across threads is defined.
-        unsafe { (*flag).store(true, Ordering::Relaxed) };
+    /// The handle is obtained on the owner thread, before or between
+    /// runs. It keeps the cell alive on its own, so a second thread that
+    /// holds it can set the flag at any time.
+    #[must_use]
+    pub fn interrupt_handle(&self) -> Arc<Interrupt> {
+        Arc::clone(&self.interrupt)
+    }
+
+    /// The address of this Context's interrupt cell, for the C API
+    /// (§109.4 rule 1). It is valid until the Context is released.
+    #[must_use]
+    pub fn interrupt_cell(&self) -> *const Interrupt {
+        Arc::as_ptr(&self.interrupt)
     }
 
     /// True while the interrupt flag is set.
     #[must_use]
     pub fn interrupted(&self) -> bool {
-        self.interrupt.load(Ordering::Relaxed)
+        self.interrupt.is_set()
     }
 
     /// Sets the live-payload allocation quota in bytes. Zero is none.
@@ -1752,7 +1782,7 @@ impl Context {
         // §109.4 rule 1: the flag is cleared with the trap, so the next
         // host call runs instead of trapping again at its first
         // checkpoint.
-        self.interrupt.store(false, Ordering::Relaxed);
+        self.interrupt.clear();
         // A trapping JSON operation may unwind before its finish leaf on
         // the dev tier. Builders and parsed trees are transient
         // implementation state, not language-visible state.
@@ -6512,8 +6542,7 @@ mod tests {
             let mut ctx = Context::new();
             ctx.enter_script();
             let probe = ctx.stack_floor - 16;
-            // SAFETY: the Context is live for the whole test.
-            unsafe { Context::set_interrupt(&*ctx) };
+            ctx.interrupt_handle().set();
             assert!(ctx.interrupted());
             if at_enter {
                 ctx.sandbox_enter(probe, 31);
@@ -6541,8 +6570,7 @@ mod tests {
     fn clear_trap_clears_the_interrupt_flag_with_the_trap() {
         let mut ctx = Context::new();
         ctx.enter_script();
-        // SAFETY: the Context is live for the whole test.
-        unsafe { Context::set_interrupt(&*ctx) };
+        ctx.interrupt_handle().set();
         ctx.sandbox_poll(31);
         assert!(ctx.trapped());
         ctx.exit_script();
@@ -6553,15 +6581,50 @@ mod tests {
         assert!(!ctx.trapped(), "the next call runs");
     }
 
+    /// §109.4 rule 1: the handle carries the cell to another thread, and
+    /// the store lands in the cell rather than in the Context's bytes.
     #[test]
-    fn a_second_thread_sets_the_interrupt_flag() {
+    fn a_second_thread_sets_the_interrupt_flag_through_the_handle() {
         let ctx = Context::new();
-        let address = (&*ctx as *const Context) as usize;
-        let setter = std::thread::spawn(move || {
-            // SAFETY: the test thread keeps the Context alive until join.
-            unsafe { Context::set_interrupt(address as *const Context) };
-        });
+        let handle = ctx.interrupt_handle();
+        let setter = std::thread::spawn(move || handle.set());
         setter.join().expect("the setter thread");
+        assert!(ctx.interrupted());
+    }
+
+    /// §109.4 rule 1: the handle outlives the Context, because it owns
+    /// the cell with it. A store after the release reaches the cell and
+    /// no released memory.
+    #[test]
+    fn the_interrupt_handle_outlives_the_context() {
+        let handle = {
+            let ctx = Context::new();
+            ctx.interrupt_handle()
+        };
+        assert!(!handle.is_set());
+        handle.set();
+        assert!(handle.is_set());
+    }
+
+    /// §109.4 rule 1: the cell answers a set flag and clears it again.
+    #[test]
+    fn the_interrupt_cell_sets_and_clears_its_flag() {
+        let cell = Interrupt::default();
+        assert!(!cell.is_set(), "a fresh cell starts clear");
+        cell.set();
+        assert!(cell.is_set());
+        cell.clear();
+        assert!(!cell.is_set());
+    }
+
+    /// §109.4 rule 1: the C handle and the Rust handle address one cell.
+    #[test]
+    fn the_c_handle_addresses_the_same_cell_as_the_rust_handle() {
+        let ctx = Context::new();
+        let cell = ctx.interrupt_cell();
+        assert_eq!(cell, Arc::as_ptr(&ctx.interrupt_handle()));
+        // SAFETY: the cell is alive while this Context is.
+        unsafe { &*cell }.set();
         assert!(ctx.interrupted());
     }
 }

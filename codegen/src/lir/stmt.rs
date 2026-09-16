@@ -744,6 +744,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
 
         self.enter_block(header)?;
+        // §109.3: the checkpoint runs on the iteration edge of the fused
+        // loop, before the condition.
+        self.emit_sandbox_checkpoint(SandboxCheckpoint::Poll, &expr.pos)?;
         let header_cursor = self.read_binding(cursor_binding, &expr.pos)?;
         let header_index = self.read_binding(index_binding, &expr.pos)?;
         let header_bound = self.read_binding(bound_binding, &expr.pos)?;
@@ -1080,6 +1083,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
 
         self.enter_block(header)?;
+        // §109.3: the checkpoint runs on the iteration edge of the fused
+        // loop, before the condition.
+        self.emit_sandbox_checkpoint(SandboxCheckpoint::Poll, &expr.pos)?;
         let cursor = self.read_binding(cursor_binding, &expr.pos)?;
         let index = self.read_binding(index_binding, &expr.pos)?;
         let captured_bound = self.read_binding(bound_binding, &expr.pos)?;

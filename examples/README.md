@@ -21,7 +21,7 @@ Read the numbered examples in order:
 6. [`sandbox/`](sandbox/) runs content the host did not write: the script
    is built with `subscript build --profile sandbox`, the host sets an
    allocation quota and a stack budget, and a second thread stops an
-   endless entry with `subscript_rt_ctx_interrupt`.
+   endless entry with `subscript_rt_interrupt_set`.
 7. [`hot-reload/`](hot-reload/) is interactive: `sh run.sh` starts
    `subscript run --watch`, and editing `demo.ts` demonstrates live
    body swaps with surviving module state, refusal of declaration

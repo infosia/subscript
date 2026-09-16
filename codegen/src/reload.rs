@@ -60,6 +60,7 @@
 use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::sync::Arc;
 
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::FuncId;
@@ -68,7 +69,7 @@ use subscript_compiler::{
     check_program_with, hir, CheckOptions, ClassId, Diagnostic, EnumId, Pos, Profile, SourceFile,
     StringAliasId, Type,
 };
-use subscript_runtime::Context;
+use subscript_runtime::{Context, Interrupt};
 
 use crate::jit::{register_runtime, RunError, TrapReport};
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
@@ -815,14 +816,15 @@ impl ReloadSession {
         }
     }
 
-    /// The address of this session's Context.
+    /// The interrupt handle of this session's Context
+    /// (`specs/blocks/compiler.md` §109.4 rule 1).
     ///
-    /// A host passes it to a second thread as a `usize` and calls
-    /// [`subscript_runtime::ffi::subscript_rt_ctx_interrupt`] on it
-    /// (§109.4 rule 1). No other Context call is safe from that thread.
+    /// A host obtains it on this thread and passes it to a second
+    /// thread, which calls [`subscript_runtime::Interrupt::set`] on it.
+    /// No Context call is safe from that thread.
     #[must_use]
-    pub fn context_address(&self) -> usize {
-        (&*self.ctx as *const Context) as usize
+    pub fn interrupt_handle(&self) -> Arc<Interrupt> {
+        self.ctx.interrupt_handle()
     }
 
     /// Compiles `files` in reload mode with caller-supplied native
@@ -1526,9 +1528,25 @@ mod tests {
             sandbox.ctx.stack_budget(),
             crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES
         );
-        assert_ne!(sandbox.context_address(), 0);
         sandbox.call_main().expect("the profile program runs");
         assert_eq!(sandbox.take_output(), b"profiled\n");
+    }
+
+    /// §109.4 rule 1: the session hands out a handle on its own Context
+    /// cell, and a second thread sets the flag through it.
+    #[test]
+    fn a_session_hands_out_the_interrupt_handle_of_its_context() {
+        let source = "export function main(): void {\n\x20 print(\"profiled\");\n}\n";
+        let session = ReloadSession::new(&src(source)).expect("session");
+        let handle = session.interrupt_handle();
+        assert!(!handle.is_set(), "a fresh session starts with a clear flag");
+        assert!(!session.ctx.interrupted());
+        let setter = std::thread::spawn(move || handle.set());
+        setter.join().expect("the setter thread");
+        assert!(
+            session.ctx.interrupted(),
+            "the handle addresses the session's cell"
+        );
     }
 
     /// §109.5: a session takes the host's quota, and it replaces the

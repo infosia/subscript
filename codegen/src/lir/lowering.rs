@@ -179,6 +179,9 @@ impl<'a> Lowering<'a> {
                 None,
                 Vec::new(),
             )?;
+            // §109.3: the module initializer is a function body, so the
+            // checkpoint is its first instruction.
+            builder.emit_sandbox_checkpoint(SandboxCheckpoint::Enter, &pos)?;
             let top_level = builder.function.body.clone();
             if let Some(global) = globals
                 .iter()

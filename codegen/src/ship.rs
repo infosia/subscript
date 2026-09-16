@@ -711,7 +711,8 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 /// # Errors
 ///
 /// Returns the same [`RunError`] variants as [`run_c_aot`]. A request for
-/// development-tier memory accounting produces [`RunError::Internal`].
+/// development-tier memory accounting, or for the interrupt handle,
+/// produces [`RunError::Internal`].
 pub fn run_c_aot_configured(
     files: &[SourceFile],
     config: RunConfig<'_>,
@@ -929,6 +930,13 @@ fn execute_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<Vec<u8>,
 }
 
 fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProgram, RunError> {
+    // §109.4 rule 1: the linked program owns its Context in another
+    // process, so no ship-tier run can answer a handle request.
+    if config.interrupt_handle.is_some() {
+        return Err(RunError::Internal(internal(
+            "the interrupt handle is not available in the shipping tier",
+        )));
+    }
     let RunConfig {
         native_libraries: libraries,
         fail_alloc_after,
@@ -995,7 +1003,10 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
         );
         entry = entry.replacen(
             REPORT_ANCHOR,
-            &format!("    subscript_report_interrupt_latency();\n{REPORT_ANCHOR}"),
+            &format!(
+                "    subscript_join_interrupt_thread();\n\
+                 \x20   subscript_report_interrupt_latency();\n{REPORT_ANCHOR}"
+            ),
             1,
         );
         setup.push_str("    subscript_start_interrupt_thread(ctx);\n");
@@ -1112,8 +1123,13 @@ const INTERRUPT_THREAD_ANCHOR: &str =
 /// `millis` milliseconds, and of the report of the time from that store
 /// to the end of the run (`specs/blocks/compiler.md` §109.7).
 ///
-/// The report goes to stderr, so the program's stdout stays the bytes the
-/// goldens compare.
+/// The entry holds the thread handle and joins the thread after the
+/// script entry returns, so no thread outlives the run. A program that
+/// is shorter than `millis` waits for the thread.
+///
+/// The host obtains the interrupt handle on the owning thread and passes
+/// it to the thread (§109.4 rule 1). The report goes to stderr, so the
+/// program's stdout stays the bytes the goldens compare.
 fn interrupt_thread_c(millis: u64) -> String {
     let body = r#"
 
@@ -1136,16 +1152,23 @@ static void subscript_report_interrupt_latency(void) {
             (unsigned long long)((now.QuadPart - subscript_interrupt_store.QuadPart) *
                                  1000000000LL / frequency.QuadPart));
 }
+static HANDLE subscript_interrupt_handle_thread;
 static DWORD WINAPI subscript_interrupt_thread(LPVOID argument) {
     Sleep(SUBSCRIPT_INTERRUPT_AFTER_MILLIS);
-    subscript_rt_ctx_interrupt((const subscript_rt_context *)argument);
+    subscript_rt_interrupt_set((const subscript_rt_interrupt *)argument);
     subscript_record_interrupt_store();
     return 0;
 }
 static void subscript_start_interrupt_thread(subscript_rt_context *ctx) {
-    HANDLE thread = CreateThread(NULL, 0, subscript_interrupt_thread, ctx, 0, NULL);
-    if (thread != NULL) {
-        CloseHandle(thread);
+    const subscript_rt_interrupt *handle = subscript_rt_ctx_interrupt_handle(ctx);
+    subscript_interrupt_handle_thread =
+        CreateThread(NULL, 0, subscript_interrupt_thread, (LPVOID)handle, 0, NULL);
+}
+static void subscript_join_interrupt_thread(void) {
+    if (subscript_interrupt_handle_thread != NULL) {
+        WaitForSingleObject(subscript_interrupt_handle_thread, INFINITE);
+        CloseHandle(subscript_interrupt_handle_thread);
+        subscript_interrupt_handle_thread = NULL;
     }
 }
 #else
@@ -1166,16 +1189,24 @@ static void subscript_report_interrupt_latency(void) {
             (long long)((now.tv_sec - subscript_interrupt_store.tv_sec) * 1000000000LL +
                         (now.tv_nsec - subscript_interrupt_store.tv_nsec)));
 }
+static pthread_t subscript_interrupt_handle_thread;
+static int subscript_interrupt_thread_started;
 static void *subscript_interrupt_thread(void *argument) {
     usleep((useconds_t)(SUBSCRIPT_INTERRUPT_AFTER_MILLIS * 1000u));
-    subscript_rt_ctx_interrupt((const subscript_rt_context *)argument);
+    subscript_rt_interrupt_set((const subscript_rt_interrupt *)argument);
     subscript_record_interrupt_store();
     return NULL;
 }
 static void subscript_start_interrupt_thread(subscript_rt_context *ctx) {
-    pthread_t thread;
-    if (pthread_create(&thread, NULL, subscript_interrupt_thread, ctx) == 0) {
-        pthread_detach(thread);
+    const subscript_rt_interrupt *handle = subscript_rt_ctx_interrupt_handle(ctx);
+    subscript_interrupt_thread_started =
+        pthread_create(&subscript_interrupt_handle_thread, NULL, subscript_interrupt_thread,
+                       (void *)handle) == 0;
+}
+static void subscript_join_interrupt_thread(void) {
+    if (subscript_interrupt_thread_started) {
+        pthread_join(subscript_interrupt_handle_thread, NULL);
+        subscript_interrupt_thread_started = 0;
     }
 }
 #endif

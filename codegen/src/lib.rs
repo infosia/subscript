@@ -63,7 +63,10 @@ pub use ship::{
     HOST_HEADER_C, RUNTIME_STATICLIB_ENV, WINDOWS_SYSTEM_LIBRARIES,
 };
 
+use std::sync::{Arc, OnceLock};
+
 use subscript_compiler::Profile;
+use subscript_runtime::Interrupt;
 
 /// Options shared by the development and shipping tier runners.
 #[derive(Debug, Clone, Copy, Default)]
@@ -88,6 +91,16 @@ pub struct RunConfig<'a> {
     /// Sets the Context interrupt flag from a second thread after this
     /// many milliseconds (§109.7). `None` starts no thread.
     pub interrupt_after_millis: Option<u64>,
+    /// Where the development tier stores the interrupt handle of the
+    /// run's Context (`specs/blocks/compiler.md` §109.4 rule 1), before
+    /// the first script call. A caller that starts a run on its own
+    /// thread reads the handle here and stops the run with it.
+    ///
+    /// [`run_jit_interrupted`] runs in this process and stores the
+    /// handle. A `run_jit*` helper that forks the run stores nothing,
+    /// because the child's Context is in another process. The shipping
+    /// tier stores nothing for the same reason.
+    pub interrupt_handle: Option<&'a OnceLock<Arc<Interrupt>>>,
     /// The allocation quota this run starts with, in bytes
     /// (`specs/blocks/compiler.md` §109.5). A set value replaces
     /// [`SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES`] under the sandbox profile,
@@ -125,6 +138,14 @@ impl<'a> RunConfig<'a> {
     #[must_use]
     pub fn with_interrupt_after_millis(mut self, millis: u64) -> Self {
         self.interrupt_after_millis = Some(millis);
+        self
+    }
+
+    /// Stores the interrupt handle of the run's Context in `handle`
+    /// (§109.4 rule 1).
+    #[must_use]
+    pub fn with_interrupt_handle(mut self, handle: &'a OnceLock<Arc<Interrupt>>) -> Self {
+        self.interrupt_handle = Some(handle);
         self
     }
 
@@ -335,6 +356,56 @@ mod tests {
         assert_eq!(both.alloc_quota, Some(1_024));
         assert_eq!(both.stack_budget, Some(65_536));
         assert_eq!(both.profile, Profile::Default);
+
+        let sink: OnceLock<Arc<Interrupt>> = OnceLock::new();
+        assert!(default.interrupt_handle.is_none());
+        let with_handle = default.with_interrupt_handle(&sink);
+        assert!(with_handle.interrupt_handle.is_some());
+        assert_eq!(with_handle.interrupt_after_millis, None);
+    }
+
+    /// §109.4 rule 1: the in-process dev-tier runner stores the interrupt
+    /// handle of the run's Context. The same run with no sink is the
+    /// control: it stores nothing.
+    #[test]
+    fn the_dev_runner_stores_the_interrupt_handle_of_its_context() {
+        let files = [SourceFile::new(
+            "handle.ts",
+            "export function main(): void {\n\x20 print(\"ran\");\n}\n",
+        )];
+        let sink: OnceLock<Arc<Interrupt>> = OnceLock::new();
+        let config = RunConfig::with_profile(Profile::Sandbox).with_interrupt_handle(&sink);
+        let (outcome, latency) = run_jit_interrupted(&files, config);
+        assert_eq!(outcome.expect("the profiled run completes"), b"ran\n");
+        assert!(latency.is_none(), "the run started no interrupt thread");
+        let handle = sink.get().expect("the runner stored the handle");
+        assert!(!handle.is_set(), "the run set no flag");
+
+        let empty: OnceLock<Arc<Interrupt>> = OnceLock::new();
+        let (control, _) = run_jit_interrupted(&files, RunConfig::with_profile(Profile::Sandbox));
+        assert_eq!(control.expect("the control run completes"), b"ran\n");
+        assert!(empty.get().is_none(), "a run with no sink stores nothing");
+    }
+
+    /// §109.4 rule 1: the shipping tier owns its Context in another
+    /// process, so it refuses a handle request rather than ignoring it.
+    /// The same record with no sink is the firing control.
+    #[test]
+    fn the_ship_runner_refuses_an_interrupt_handle() {
+        let files = [SourceFile::new(
+            "handle.ts",
+            "export function main(): void {\n\x20 print(\"ran\");\n}\n",
+        )];
+        let sink: OnceLock<Arc<Interrupt>> = OnceLock::new();
+        let refused =
+            run_c_aot_configured(&files, RunConfig::default().with_interrupt_handle(&sink));
+        assert!(
+            matches!(refused, Err(RunError::Internal(_))),
+            "the ship runner accepted a handle request"
+        );
+        let ran = run_c_aot_configured(&files, RunConfig::default())
+            .expect("the same record with no sink runs");
+        assert_eq!(ran.stdout, b"ran\n");
     }
 
     /// The program every host-quota test runs: it allocates 4,096 bytes

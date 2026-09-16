@@ -56,20 +56,22 @@ static void hostObserveScriptPrint(
     fputc('\n', stream);
 }
 
-/* The second thread. `subscript_rt_ctx_interrupt` is the one Context call
- * any thread can make while the owning thread runs script code: it sets
- * one atomic flag and reads no other field. */
+/* The second thread. The host obtains the interrupt handle on this
+ * thread, before the run, and passes it to the thread.
+ * `subscript_rt_interrupt_set` is the one call any thread can make while
+ * the owning thread runs script code: it sets one atomic flag in a cell
+ * outside the Context and reads no Context field. */
 #if defined(_WIN32)
 static DWORD WINAPI hostInterruptThread(LPVOID argument) {
     Sleep(HOST_INTERRUPT_AFTER_MILLIS);
-    subscript_rt_ctx_interrupt((const subscript_rt_context *)argument);
+    subscript_rt_interrupt_set((const subscript_rt_interrupt *)argument);
     return 0u;
 }
 
 static bool hostStartInterruptThread(
-    subscript_rt_context *ctx,
+    const subscript_rt_interrupt *handle,
     HANDLE *thread) {
-    *thread = CreateThread(NULL, 0, hostInterruptThread, ctx, 0, NULL);
+    *thread = CreateThread(NULL, 0, hostInterruptThread, (LPVOID)handle, 0, NULL);
     return *thread != NULL;
 }
 
@@ -83,14 +85,14 @@ static void *hostInterruptThread(void *argument) {
     delay.tv_sec = 0;
     delay.tv_nsec = (long)HOST_INTERRUPT_AFTER_MILLIS * 1000000L;
     nanosleep(&delay, NULL);
-    subscript_rt_ctx_interrupt((const subscript_rt_context *)argument);
+    subscript_rt_interrupt_set((const subscript_rt_interrupt *)argument);
     return NULL;
 }
 
 static bool hostStartInterruptThread(
-    subscript_rt_context *ctx,
+    const subscript_rt_interrupt *handle,
     pthread_t *thread) {
-    return pthread_create(thread, NULL, hostInterruptThread, ctx) == 0;
+    return pthread_create(thread, NULL, hostInterruptThread, (void *)handle) == 0;
 }
 
 static void hostJoinInterruptThread(pthread_t thread) {
@@ -151,12 +153,15 @@ int main(void) {
         return 3;
     }
 
+    /* The handle is obtained on this thread, before the run, and it is
+     * valid until the Context is released. */
+    const subscript_rt_interrupt *interrupt = subscript_rt_ctx_interrupt_handle(ctx);
 #if defined(_WIN32)
     HANDLE interrupter;
 #else
     pthread_t interrupter;
 #endif
-    if (!hostStartInterruptThread(ctx, &interrupter)) {
+    if (!hostStartInterruptThread(interrupt, &interrupter)) {
         subscript_rt_ctx_release(ctx);
         return 2;
     }

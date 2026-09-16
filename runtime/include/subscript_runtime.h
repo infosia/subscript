@@ -19,6 +19,7 @@ extern "C" {
 #endif
 
 typedef struct subscript_rt_context subscript_rt_context;
+typedef struct subscript_rt_interrupt subscript_rt_interrupt;
 
 typedef struct subscript_rt_worker subscript_rt_worker;
 typedef struct subscript_rt_worker_inbox subscript_rt_worker_inbox;
@@ -147,23 +148,20 @@ void subscript_rt_ctx_enter_script(subscript_rt_context* ctx);
 void subscript_rt_ctx_exit_script(subscript_rt_context* ctx);
 void subscript_rt_ctx_fail_alloc_after(subscript_rt_context* ctx, uint64_t n);
 /**
- * Requests that the running script stop at its next sandbox-profile
- * checkpoint (compiler.md 109.4).
+ * Returns the interrupt handle of `ctx` (compiler.md 109.4).
  *
- * Any thread can call this while the owning thread runs script code. It
- * is the one subscript_rt_context call outside the exclusive contract: it sets one
- * atomic flag and reads no other field. A script compiled under the
- * sandbox profile reads the flag at every function entry and on every
- * loop edge, and records the `interrupted` trap (kind 25) there. A
- * script compiled under the default profile has no checkpoint, so the
- * flag has no effect on it. `subscript_rt_ctx_clear_trap` clears the
- * flag together with the trap.
+ * Call it on the owning thread, before or between runs. The handle
+ * addresses one heap cell outside the subscript_rt_context's bytes, and it is valid
+ * until the subscript_rt_context is released. `subscript_rt_interrupt_set` is the
+ * call another thread makes on it while the owning thread runs script
+ * code. `subscript_rt_ctx_clear_trap` clears the flag together with the
+ * trap.
  *
  * # Safety
  *
- * `ctx` addresses a live subscript_rt_context that outlives this call.
+ * `ctx` follows the exclusive subscript_rt_context contract.
  */
-void subscript_rt_ctx_interrupt(const subscript_rt_context* ctx);
+const subscript_rt_interrupt* subscript_rt_ctx_interrupt_handle(const subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_live_allocations(const subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context* ctx);
 subscript_rt_context* subscript_rt_ctx_new(void);
@@ -300,6 +298,24 @@ uint32_t subscript_rt_ctx_trap_kind(const subscript_rt_context* ctx);
 const uint8_t* subscript_rt_ctx_trap_message(const subscript_rt_context* ctx, uint64_t* len);
 uint32_t subscript_rt_ctx_trap_pos_id(const subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_visit_live_allocations(const subscript_rt_context* ctx, subscript_rt_alloc_visitor visitor, void* userdata);
+
+/**
+ * Requests that the running script stop at its next sandbox-profile
+ * checkpoint (compiler.md 109.4).
+ *
+ * Any thread can call this while the owning thread runs script code: it
+ * sets one atomic flag in the cell `handle` addresses and reads no
+ * subscript_rt_context field. A script compiled under the sandbox profile reads the
+ * flag at every function entry and on every loop edge, and records the
+ * `interrupted` trap (kind 25) there. A script compiled under the
+ * default profile has no checkpoint, so the flag has no effect on it.
+ *
+ * # Safety
+ *
+ * `handle` is a handle from `subscript_rt_ctx_interrupt_handle` whose
+ * subscript_rt_context is not released.
+ */
+void subscript_rt_interrupt_set(const subscript_rt_interrupt* handle);
 
 /**
  * Closes a worker's parent-to-worker queue.

@@ -1121,10 +1121,12 @@ contract.
   synchronous. A default-profile entry carries no checkpoint, so an
   accidental endless loop freezes the calling thread, and isolation
   against it is yours to supply. An entry compiled under the sandbox
-  profile (Step 11) reads the Context interrupt flag at every function
-  entry and on every loop edge, so `subscript_rt_ctx_interrupt(ctx)` from
-  a second thread stops it with the `interrupted` trap. Outside the
-  profile the one bounded subsystem is regular expressions, through
+  profile (Step 11) reads the interrupt flag at every function entry and
+  on every loop edge. Take the handle with
+  `subscript_rt_ctx_interrupt_handle(ctx)` on the owning thread;
+  `subscript_rt_interrupt_set(handle)` from a second thread then stops
+  the entry with the `interrupted` trap. Outside the profile the one
+  bounded subsystem is regular expressions, through
   `subscript_rt_ctx_set_regex_budget`.
 - **Async scripts complete only if you step them.** An exported `async`
   entry runs to its first `await` and parks; your frame loop calls
@@ -1266,17 +1268,20 @@ and each is yours to set:
 
 | Limit | C API | Trap |
 |---|---|---|
-| interrupt | `subscript_rt_ctx_interrupt(ctx)` | `interrupted`, kind 25 |
+| interrupt | `subscript_rt_ctx_interrupt_handle(ctx)`, then `subscript_rt_interrupt_set(handle)` | `interrupted`, kind 25 |
 | allocation quota | `subscript_rt_ctx_set_alloc_quota(ctx, bytes)`; 0 is none | `allocation-quota`, kind 26 |
 | stack budget | `subscript_rt_ctx_set_stack_budget(ctx, bytes)`; 0 is none | `stack-budget`, kind 27 |
 
 The compiler puts a checkpoint at every function entry and on every loop
-edge, and each checkpoint reads the interrupt flag.
-`subscript_rt_ctx_interrupt` is the one Context call another thread can
-make while the owning thread runs script: it sets one atomic and reads no
-other field. Each of the three raises an ordinary trap — the first trap
-wins, the Context survives, and `subscript_rt_ctx_clear_trap` clears the
-interrupt flag together with the trap.
+edge, and each checkpoint reads the interrupt flag. The flag lives in its
+own heap cell, outside the Context. Take a handle on it with
+`subscript_rt_ctx_interrupt_handle` on the owning thread, before or
+between runs; the handle is valid until you release the Context.
+`subscript_rt_interrupt_set` is the one call another thread makes while
+the owning thread runs script: it sets one atomic in that cell and reads
+no Context field. Each of the three raises an ordinary trap — the first
+trap wins, the Context survives, and `subscript_rt_ctx_clear_trap` clears
+the interrupt flag together with the trap.
 
 **Set a stack budget below your thread's stack size.** `enter_script`
 records the stack address it runs at, and each checkpoint compares its own
@@ -1312,9 +1317,9 @@ which is the whole of the example below.
 files. [`mod.ts`](../examples/sandbox/mod.ts) exports `tick(): void`,
 which prints one line and then loops forever.
 [`main.c`](../examples/sandbox/main.c) creates the Context, sets a 16 MiB
-quota and a 256 KiB stack budget, starts a thread that calls
-`subscript_rt_ctx_interrupt` after 20 ms, calls `tick`, and reads the trap
-back. [`build.sh`](../examples/sandbox/build.sh) is one command:
+quota and a 256 KiB stack budget, takes the interrupt handle, starts a
+thread that calls `subscript_rt_interrupt_set` after 20 ms, calls `tick`,
+and reads the trap back. [`build.sh`](../examples/sandbox/build.sh) is one command:
 
 ```sh
 subscript build \

@@ -53,9 +53,9 @@ pub fn render() -> Result<String, String> {
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_set_binding_count_advisory",
     )?;
-    let interrupt_docs = docs_for(
+    let interrupt_handle_docs = docs_for(
         FFI_SOURCE,
-        "pub unsafe extern \"C\" fn subscript_rt_ctx_interrupt",
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_interrupt_handle",
     )?;
     let alloc_quota_docs = docs_for(
         FFI_SOURCE,
@@ -79,6 +79,8 @@ pub fn render() -> Result<String, String> {
     )?;
     let mut functions = parse_functions(FFI_SOURCE, "subscript_rt_ctx_")?;
     functions.sort_by(|a, b| a.name.cmp(&b.name));
+    let mut interrupt_functions = parse_functions(FFI_SOURCE, "subscript_rt_interrupt_")?;
+    interrupt_functions.sort_by(|a, b| a.name.cmp(&b.name));
     let mut worker_functions = parse_functions(FFI_SOURCE, "subscript_rt_worker_")?;
     worker_functions.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -113,7 +115,8 @@ pub fn render() -> Result<String, String> {
     out.push_str("#ifdef __cplusplus\n");
     out.push_str("extern \"C\" {\n");
     out.push_str("#endif\n\n");
-    out.push_str("typedef struct subscript_rt_context subscript_rt_context;\n\n");
+    out.push_str("typedef struct subscript_rt_context subscript_rt_context;\n");
+    out.push_str("typedef struct subscript_rt_interrupt subscript_rt_interrupt;\n\n");
     out.push_str("typedef struct subscript_rt_worker subscript_rt_worker;\n");
     out.push_str("typedef struct subscript_rt_worker_inbox subscript_rt_worker_inbox;\n");
     out.push_str("typedef struct subscript_rt_worker_outbox subscript_rt_worker_outbox;\n\n");
@@ -190,8 +193,8 @@ pub fn render() -> Result<String, String> {
         if function.name == "subscript_rt_ctx_set_binding_count_advisory" {
             push_comment(&mut out, &binding_count_advisory_setter_docs);
         }
-        if function.name == "subscript_rt_ctx_interrupt" {
-            push_comment(&mut out, &interrupt_docs);
+        if function.name == "subscript_rt_ctx_interrupt_handle" {
+            push_comment(&mut out, &interrupt_handle_docs);
         }
         if function.name == "subscript_rt_ctx_set_alloc_quota" {
             push_comment(&mut out, &alloc_quota_docs);
@@ -208,6 +211,14 @@ pub fn render() -> Result<String, String> {
         if function.name == "subscript_rt_ctx_async_unfinished" {
             push_comment(&mut out, &async_unfinished_docs);
         }
+        out.push_str(&c_function(&function.name, function)?);
+        out.push_str(";\n");
+    }
+    out.push('\n');
+    for function in &interrupt_functions {
+        let declaration = format!("pub unsafe extern \"C\" fn {}", function.name);
+        let docs = docs_for(FFI_SOURCE, &declaration)?;
+        push_comment(&mut out, &docs);
         out.push_str(&c_function(&function.name, function)?);
         out.push_str(";\n");
     }
@@ -411,6 +422,7 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "u64" => Ok("uint64_t"),
         "*mut Context" => Ok("subscript_rt_context*"),
         "*const Context" => Ok("const subscript_rt_context*"),
+        "*const Interrupt" => Ok("const subscript_rt_interrupt*"),
         "*mut Worker" => Ok("subscript_rt_worker*"),
         "*mut WorkerInbox" => Ok("subscript_rt_worker_inbox*"),
         "*mut WorkerOutbox" => Ok("subscript_rt_worker_outbox*"),
