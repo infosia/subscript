@@ -23,7 +23,7 @@ use subscript_runtime::TrapKind;
 use crate::jit::{AbnormalTermination, RunError, TrapReport};
 use crate::lower::internal;
 use crate::native::missing_symbol;
-use crate::{NativeLibrary, RunConfig, RunOutput};
+use crate::{HostLimits, NativeLibrary, RunConfig, RunOutput};
 
 #[cfg(unix)]
 #[path = "../clang_resolver.rs"]
@@ -939,6 +939,7 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
         interrupt_after_millis,
         ..
     } = config;
+    let limits = config.host_limits();
     let hir = check_program_with(files, &CheckOptions::with_profile(profile))
         .map_err(RunError::Rejected)?;
     // §109.1 rule 2: the checked module is the carrier from here on.
@@ -977,9 +978,9 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
             "    subscript_rt_ctx_fail_alloc_after(ctx, {n}u);\n"
         ));
     }
-    // §109.5: the ship runner emits the profile defaults into the entry,
+    // §109.5: the ship runner emits the run-time limits into the entry,
     // before the first `call_script_entry`.
-    setup.push_str(&profile_defaults_c(profile));
+    setup.push_str(&run_limits_c(profile, limits));
     if let Some(millis) = interrupt_after_millis {
         const REPORT_ANCHOR: &str = "    uint64_t len = 0;";
         if !AOT_ENTRY_C.contains(REPORT_ANCHOR) {
@@ -1053,18 +1054,32 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
     })
 }
 
-/// The Context-configuration lines one profile contributes to the host
-/// entry (`specs/blocks/compiler.md` §109.5). The default profile
-/// contributes nothing.
-fn profile_defaults_c(profile: Profile) -> String {
-    if profile != Profile::Sandbox {
-        return String::new();
+/// The Context-configuration lines one profile and one host record
+/// contribute to the host entry (`specs/blocks/compiler.md` §109.5).
+///
+/// The ship entry receives a host-set limit the way it receives the
+/// profile default: one call, before the first script call. Where the
+/// host sets neither limit, the default profile contributes nothing.
+fn run_limits_c(profile: Profile, limits: HostLimits) -> String {
+    let sandbox = profile == Profile::Sandbox;
+    let mut lines = String::new();
+    if let Some(bytes) = limits
+        .alloc_quota
+        .or_else(|| sandbox.then_some(crate::SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES))
+    {
+        lines.push_str(&format!(
+            "    subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C({bytes}));\n"
+        ));
     }
-    format!(
-        "    subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C({}));\n    subscript_rt_ctx_set_stack_budget(ctx, UINT64_C({}));\n",
-        crate::SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES,
-        crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES,
-    )
+    if let Some(bytes) = limits
+        .stack_budget
+        .or_else(|| sandbox.then_some(crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES))
+    {
+        lines.push_str(&format!(
+            "    subscript_rt_ctx_set_stack_budget(ctx, UINT64_C({bytes}));\n"
+        ));
+    }
+    lines
 }
 
 /// The generated host entry for one compile profile
@@ -1078,7 +1093,7 @@ fn profile_defaults_c(profile: Profile) -> String {
 ///
 /// Returns an error when the entry's Context-configuration anchor moved.
 pub fn aot_entry_for_profile(profile: Profile) -> Result<String, String> {
-    let defaults = profile_defaults_c(profile);
+    let defaults = run_limits_c(profile, HostLimits::default());
     if defaults.is_empty() {
         return Ok(AOT_ENTRY_C.to_string());
     }

@@ -21,6 +21,11 @@
 //! A workload the profile rejects reports its rule code in place of the
 //! sandbox median.
 //!
+//! A workload whose live set passes the §109.5 default quota takes a host
+//! quota through `RunConfig::alloc_quota` and the ship entry's
+//! `SUBSCRIPT_BENCH_ALLOC_QUOTA` macro. The `quota` column names the quota
+//! each sandbox subject ran under.
+//!
 //! Usage (release only — a debug runtime is unoptimized and unfair):
 //! `cargo run --offline --release -p subscript-benchmarks --bin sandbox-cost`
 //! Flags: `--warmup N`, `--timed M`, `--only <id>`.
@@ -64,6 +69,36 @@ const AOT_BENCH_ENTRY_C: &str = concat!(
 
 /// Ship-tier flags, as the cross-language runner uses.
 const SHIP_CFLAGS: [&str; 4] = ["-O2", "-fwrapv", "-ffp-contract=off", "-std=c11"];
+
+/// The host allocation quota one workload needs above the §109.5 default
+/// (`specs/blocks/compiler.md` §109.4 rule 5). `callbacks` keeps every
+/// array of all 20 rounds live, so its live set passes 67,108,864 bytes
+/// part way through and the default quota traps it.
+const WORKLOAD_ALLOC_QUOTAS: [(&str, u64); 1] = [("callbacks", 268_435_456)];
+
+/// The allocation quota the sandbox subject of `id` runs under.
+fn sandbox_alloc_quota(id: &str) -> u64 {
+    WORKLOAD_ALLOC_QUOTAS
+        .iter()
+        .find(|(workload, _)| *workload == id)
+        .map_or(SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES, |(_, quota)| *quota)
+}
+
+/// What one subject of the matrix measures: the profile it compiles
+/// under, the limit the host sets for it, and the procedure.
+#[derive(Clone, Copy)]
+struct Subject {
+    /// The compile profile (§109.1).
+    profile: Profile,
+    /// The host allocation quota in bytes (§109.5). `None` leaves the
+    /// limit to the profile, which is what a default-profile subject
+    /// runs under.
+    quota: Option<u64>,
+    /// Minimum discarded warm-up iterations.
+    warmup: usize,
+    /// Timed runs.
+    timed: usize,
+}
 
 /// Default minimum number of discarded warm-up iterations.
 const DEFAULT_WARMUP: usize = 3;
@@ -143,6 +178,9 @@ struct Args {
     jit_child: Option<PathBuf>,
     /// The profile the private child measures under.
     child_profile: Profile,
+    /// The allocation quota the private child sets, in bytes. `None`
+    /// leaves the limit to the profile (§109.5).
+    child_alloc_quota: Option<u64>,
 }
 
 /// Parses the command line.
@@ -153,6 +191,7 @@ fn parse_args() -> Result<Args, Fail> {
         only: None,
         jit_child: None,
         child_profile: Profile::Default,
+        child_alloc_quota: None,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut index = 0;
@@ -184,6 +223,15 @@ fn parse_args() -> Result<Args, Fail> {
                 parsed.child_profile = profile_by_name(&value()?)?;
                 index += 2;
             }
+            "--alloc-quota" => {
+                let bytes = value()?;
+                parsed.child_alloc_quota = Some(
+                    bytes
+                        .parse()
+                        .map_err(|_| format!("`{bytes}` is not a byte count"))?,
+                );
+                index += 2;
+            }
             other => return Err(format!("unknown argument `{other}`")),
         }
     }
@@ -211,7 +259,13 @@ fn profile_by_name(value: &str) -> Result<Profile, Fail> {
 fn run() -> Result<ExitCode, Fail> {
     let args = parse_args()?;
     if let Some(source) = &args.jit_child {
-        return run_jit_child(source, args.child_profile, args.warmup, args.timed);
+        return run_jit_child(
+            source,
+            args.child_profile,
+            args.child_alloc_quota,
+            args.warmup,
+            args.timed,
+        );
     }
     let root = repository_root()?;
     let workloads = match &args.only {
@@ -245,8 +299,8 @@ fn run() -> Result<ExitCode, Fail> {
         "timed span:  the exported workload call alone; the profile limits are set outside it"
     );
     println!(
-        "limits:      quota {} bytes, stack budget {} bytes (§109.5 defaults)",
-        SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES, SANDBOX_DEFAULT_STACK_BUDGET_BYTES
+        "limits:      stack budget {} bytes (§109.5 default); the quota column names each row's quota, §109.5 default {} bytes",
+        SANDBOX_DEFAULT_STACK_BUDGET_BYTES, SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES
     );
     println!();
 
@@ -259,20 +313,22 @@ fn run() -> Result<ExitCode, Fail> {
         let source = std::fs::read_to_string(&path)
             .map_err(|error| format!("read {}: {error}", path.display()))?;
         let files = vec![SourceFile::new(format!("{id}.ts"), source)];
+        // §109.4 rule 5: the quota is the host's fact. The sandbox subject
+        // runs under the workload's quota; the default subject keeps the
+        // Context no limit, which is what the ratio compares against.
+        let quota = sandbox_alloc_quota(id);
         let mut outcomes = Vec::new();
         for tier in TIERS {
             for (name, profile) in PROFILES {
+                let subject = Subject {
+                    profile,
+                    quota: (profile == Profile::Sandbox).then_some(quota),
+                    warmup: args.warmup,
+                    timed: args.timed,
+                };
                 let outcome = match tier {
-                    "dev-JIT" => measure_jit(&path, profile, args.warmup, args.timed),
-                    _ => measure_ship(
-                        &files,
-                        &work,
-                        &staticlib,
-                        id,
-                        profile,
-                        args.warmup,
-                        args.timed,
-                    ),
+                    "dev-JIT" => measure_jit(&path, subject),
+                    _ => measure_ship(&files, &work, &staticlib, id, subject),
                 };
                 if let Outcome::Error(reason) = &outcome {
                     eprintln!("sandbox-cost: {id} {tier} {name}: {reason}");
@@ -295,6 +351,7 @@ fn run() -> Result<ExitCode, Fail> {
             outcomes,
             checksum: checksums.first().copied(),
             agreed,
+            quota,
         });
     }
     let _ = std::fs::remove_dir_all(&work);
@@ -317,6 +374,8 @@ struct Row {
     checksum: Option<i128>,
     /// Whether every measured subject produced that checksum.
     agreed: bool,
+    /// The allocation quota the sandbox subjects ran under, in bytes.
+    quota: u64,
 }
 
 impl Row {
@@ -326,6 +385,15 @@ impl Row {
             .iter()
             .find(|(row_tier, row_profile, _)| *row_tier == tier && *row_profile == profile)
             .map(|(_, _, outcome)| outcome)
+    }
+
+    /// The quota cell: the bytes a measured sandbox subject ran under.
+    /// A subject the profile rejected ran under none.
+    fn quota_cell(&self, sandbox: &Outcome) -> String {
+        match sandbox {
+            Outcome::Ok { .. } => self.quota.to_string(),
+            Outcome::Rejected(_) | Outcome::Error(_) => "-".to_string(),
+        }
     }
 
     /// The checksum cell.
@@ -341,8 +409,8 @@ impl Row {
 /// Prints the table: one row per workload and tier.
 fn report(rows: &[Row]) {
     println!(
-        "{:<15} {:<11} {:>14} {:>14} {:>7}  checksum",
-        "workload", "tier", "default", "sandbox", "ratio"
+        "{:<15} {:<11} {:>14} {:>14} {:>7} {:>10}  checksum",
+        "workload", "tier", "default", "sandbox", "ratio", "quota"
     );
     for row in rows {
         for tier in TIERS {
@@ -356,10 +424,11 @@ fn report(rows: &[Row]) {
                 _ => "-".to_string(),
             };
             println!(
-                "{:<15} {tier:<11} {:>14} {:>14} {ratio:>7}  {}",
+                "{:<15} {tier:<11} {:>14} {:>14} {ratio:>7} {:>10}  {}",
                 row.id,
                 default.cell(),
                 sandbox.cell(),
+                row.quota_cell(sandbox),
                 row.checksum_cell(),
             );
         }
@@ -375,27 +444,31 @@ fn repository_root() -> Result<PathBuf, Fail> {
 }
 
 /// Measures one dev-JIT subject in a fresh child process.
-fn measure_jit(source: &Path, profile: Profile, warmup: usize, timed: usize) -> Outcome {
+fn measure_jit(source: &Path, subject: Subject) -> Outcome {
     let exe = match std::env::current_exe() {
         Ok(exe) => exe,
         Err(error) => return Outcome::Error(format!("locate this executable: {error}")),
     };
     let name = PROFILES
         .iter()
-        .find(|(_, candidate)| *candidate == profile)
+        .find(|(_, candidate)| *candidate == subject.profile)
         .map_or("default", |(name, _)| *name);
-    let output = Command::new(&exe)
+    let mut command = Command::new(&exe);
+    command
         .arg("--jit-child")
         .arg(source)
         .arg("--profile")
         .arg(name)
         .arg("--warmup")
-        .arg(warmup.to_string())
+        .arg(subject.warmup.to_string())
         .arg("--timed")
-        .arg(timed.to_string())
-        .output();
+        .arg(subject.timed.to_string());
+    if let Some(bytes) = subject.quota {
+        command.arg("--alloc-quota").arg(bytes.to_string());
+    }
+    let output = command.output();
     match output {
-        Ok(output) => parse_child(output, timed),
+        Ok(output) => parse_child(output, subject.timed),
         Err(error) => Outcome::Error(format!("run the dev-JIT child: {error}")),
     }
 }
@@ -407,11 +480,9 @@ fn measure_ship(
     work: &Path,
     staticlib: &Path,
     id: &str,
-    profile: Profile,
-    warmup: usize,
-    timed: usize,
+    subject: Subject,
 ) -> Outcome {
-    let module = match check_program_with(files, &CheckOptions::with_profile(profile)) {
+    let module = match check_program_with(files, &CheckOptions::with_profile(subject.profile)) {
         Ok(module) => module,
         Err(diagnostics) => return rejected(&diagnostics),
     };
@@ -445,10 +516,10 @@ fn measure_ship(
         .args(cfg!(target_os = "linux").then_some("-D_POSIX_C_SOURCE=199309L"));
     if sandbox {
         // The entry sets these on every fresh Context, before the first
-        // script call (§109.5). One source of the two numbers.
-        build.arg(format!(
-            "-DSUBSCRIPT_BENCH_ALLOC_QUOTA={SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES}"
-        ));
+        // script call (§109.5). The ship entry receives the host's quota
+        // the way it receives the default.
+        let alloc_quota = subject.quota.unwrap_or(SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES);
+        build.arg(format!("-DSUBSCRIPT_BENCH_ALLOC_QUOTA={alloc_quota}"));
         build.arg(format!(
             "-DSUBSCRIPT_BENCH_STACK_BUDGET={SANDBOX_DEFAULT_STACK_BUDGET_BYTES}"
         ));
@@ -472,12 +543,12 @@ fn measure_ship(
         Err(error) => return Outcome::Error(format!("the C compiler could not run: {error}")),
     }
     let run = Command::new(&exe)
-        .arg(warmup.to_string())
-        .arg(timed.to_string())
+        .arg(subject.warmup.to_string())
+        .arg(subject.timed.to_string())
         .arg(WARMUP_FLOOR.as_nanos().to_string())
         .output();
     match run {
-        Ok(output) => parse_child(output, timed),
+        Ok(output) => parse_child(output, subject.timed),
         Err(error) => Outcome::Error(format!("run {}: {error}", exe.display())),
     }
 }
@@ -580,6 +651,7 @@ fn median(samples_s: &[f64]) -> Option<f64> {
 fn run_jit_child(
     source: &Path,
     profile: Profile,
+    quota: Option<u64>,
     warmup: usize,
     timed: usize,
 ) -> Result<ExitCode, Fail> {
@@ -591,13 +663,11 @@ fn run_jit_child(
         .unwrap_or("workload.ts")
         .to_string();
     let files = vec![SourceFile::new(name, text)];
-    let bench = match jit_bench_configured(
-        &files,
-        RunConfig::with_profile(profile),
-        warmup,
-        timed,
-        WARMUP_FLOOR,
-    ) {
+    let mut config = RunConfig::with_profile(profile);
+    if let Some(bytes) = quota {
+        config = config.with_alloc_quota(bytes);
+    }
+    let bench = match jit_bench_configured(&files, config, warmup, timed, WARMUP_FLOOR) {
         Ok(bench) => bench,
         Err(RunError::Rejected(diagnostics)) => {
             let code = diagnostics

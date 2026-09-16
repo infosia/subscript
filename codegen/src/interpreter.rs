@@ -132,7 +132,8 @@ pub fn interpret(module: &l::Module) -> Result<Vec<u8>, InterpretError> {
 /// The interpreter takes LIR, which the checker's profile already shaped
 /// (`specs/blocks/compiler.md` §109.3). `config.profile` is the value the
 /// caller read from the checked module, and it selects the §109.5
-/// Context defaults this run starts with.
+/// Context defaults this run starts with. `config.alloc_quota` and
+/// `config.stack_budget` replace those defaults, one limit each.
 ///
 /// # Errors
 ///
@@ -142,7 +143,11 @@ pub fn interpret_configured(
     config: crate::RunConfig<'_>,
 ) -> Result<Vec<u8>, InterpretError> {
     let mut interpreter = Interpreter::new(module)?;
-    crate::apply_profile_defaults(&mut interpreter.context, config.profile);
+    crate::apply_run_limits(
+        &mut interpreter.context,
+        config.profile,
+        config.host_limits(),
+    );
     match interpreter.run() {
         Ok(output) => Ok(output),
         Err(source) => Err(InterpretError::Execution {

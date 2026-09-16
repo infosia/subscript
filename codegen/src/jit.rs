@@ -23,7 +23,7 @@ use subscript_runtime::{
 
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions, Lowered};
 use crate::native::{missing_symbol, register_symbols};
-use crate::{NativeLibrary, RunConfig, RunOutput};
+use crate::{HostLimits, NativeLibrary, RunConfig, RunOutput};
 
 /// Optional environment-variable override naming an existing parent-owned
 /// output file. JIT run helpers otherwise create and own a temporary file;
@@ -692,6 +692,9 @@ struct EntryOptions {
     /// Sets the Context interrupt flag from a second thread after this
     /// many milliseconds (§109.7). `None` starts no thread.
     interrupt_after_millis: Option<u64>,
+    /// The limits the host set, each replacing the profile's default
+    /// for that limit (§109.5).
+    limits: HostLimits,
 }
 
 /// Runs the module initializer and then the exported `main` on a fresh
@@ -713,6 +716,7 @@ fn execute_entry(
         freed_handle_diagnostics,
         profile,
         interrupt_after_millis,
+        limits,
     } = options;
     let init_ptr = module.get_finalized_function(lowered.init);
     let main = match lowered.main_id() {
@@ -750,9 +754,9 @@ fn execute_entry(
     if let Some(n) = fail_alloc_after {
         ctx.fail_alloc_after(n);
     }
-    // §109.5: the runner applies the profile defaults before the first
+    // §109.5: the runner applies the run-time limits before the first
     // `enter_script`, so the module initializer already runs under them.
-    crate::apply_profile_defaults(&mut ctx, profile);
+    crate::apply_run_limits(&mut ctx, profile, limits);
     let interrupter = interrupt_after_millis.map(|millis| {
         let address = (&*ctx as *const Context) as usize;
         std::thread::spawn(move || {
@@ -1112,6 +1116,7 @@ pub fn run_jit_configured(
         freed_handle_diagnostics: config.freed_handle_diagnostics,
         profile,
         interrupt_after_millis: config.interrupt_after_millis,
+        limits: config.host_limits(),
     };
     let outcome = if config.memory_accounting {
         execute_entry(&module, &lowered, options, None)
@@ -1286,6 +1291,7 @@ pub fn run_jit_interrupted(
             freed_handle_diagnostics: config.freed_handle_diagnostics,
             profile,
             interrupt_after_millis: config.interrupt_after_millis,
+            limits: config.host_limits(),
         },
         None,
     );
@@ -1432,6 +1438,7 @@ pub fn jit_bench_configured(
         freed_handle_diagnostics: config.freed_handle_diagnostics,
         profile,
         interrupt_after_millis: None,
+        limits: config.host_limits(),
     };
 
     let mut samples = Vec::with_capacity(timed);

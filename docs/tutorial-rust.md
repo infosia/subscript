@@ -440,15 +440,26 @@ Ship tier, same crate:
 
 `RunConfig` holds `native_libraries`, `fail_alloc_after`,
 `freed_handle_diagnostics`, `memory_accounting`, `pre_entry_hook`,
-`post_run_hook`, `profile`, and `interrupt_after_millis`. `RunOutput`
-holds `stdout` and an optional `memory_accounting`.
+`post_run_hook`, `profile`, `interrupt_after_millis`, `alloc_quota`,
+and `stack_budget`. `RunOutput` holds `stdout` and an optional
+`memory_accounting`.
 
 `profile` is the compile profile (`Profile::Default` or
 `Profile::Sandbox`). The runner passes it to the checker, the checked
 module carries it, and each runner reads the profile's run-time
 defaults from there: under `Profile::Sandbox` a run starts with a
-67,108,864-byte allocation quota and a 524,288-byte stack budget. A
-host that drives the Context itself sets its own through the C API.
+67,108,864-byte allocation quota and a 524,288-byte stack budget.
+
+`alloc_quota` and `stack_budget` are those two limits in bytes, each
+an `Option<u64>`, and each set through `RunConfig::with_alloc_quota`
+or `RunConfig::with_stack_budget`. A set value replaces the profile
+default for that limit. A set value applies under `Profile::Default`
+too: a limit is your fact, and it does not depend on the profile. The
+four runners apply both — `run_jit_configured`, `run_c_aot_configured`
+(through the entry it emits), `ReloadSession::new_configured`, and
+`interpret_configured`. A host that drives the Context itself calls
+`subscript_rt_ctx_set_alloc_quota` and
+`subscript_rt_ctx_set_stack_budget` instead.
 
 `NativeLibrary::new(include_directories, c_sources, symbols)` is
 `unsafe`: every symbol address must stay valid for every run that

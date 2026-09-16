@@ -88,6 +88,19 @@ pub struct RunConfig<'a> {
     /// Sets the Context interrupt flag from a second thread after this
     /// many milliseconds (§109.7). `None` starts no thread.
     pub interrupt_after_millis: Option<u64>,
+    /// The allocation quota this run starts with, in bytes
+    /// (`specs/blocks/compiler.md` §109.5). A set value replaces
+    /// [`SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES`] under the sandbox profile,
+    /// and applies under the default profile as well: the limit is the
+    /// host's fact and does not depend on the profile (§109.4 rule 5).
+    /// `None` keeps the profile's default, and the default profile keeps
+    /// no quota.
+    pub alloc_quota: Option<u64>,
+    /// The stack budget this run starts with, in bytes
+    /// (`specs/blocks/compiler.md` §109.5). It replaces
+    /// [`SANDBOX_DEFAULT_STACK_BUDGET_BYTES`] under the same rule as
+    /// `alloc_quota`.
+    pub stack_budget: Option<u64>,
 }
 
 impl<'a> RunConfig<'a> {
@@ -114,6 +127,39 @@ impl<'a> RunConfig<'a> {
         self.interrupt_after_millis = Some(millis);
         self
     }
+
+    /// Starts the run with an allocation quota of `bytes` (§109.5).
+    #[must_use]
+    pub fn with_alloc_quota(mut self, bytes: u64) -> Self {
+        self.alloc_quota = Some(bytes);
+        self
+    }
+
+    /// Starts the run with a stack budget of `bytes` (§109.5).
+    #[must_use]
+    pub fn with_stack_budget(mut self, bytes: u64) -> Self {
+        self.stack_budget = Some(bytes);
+        self
+    }
+
+    /// The two host-set limits of this record (§109.4 rule 5).
+    pub(crate) fn host_limits(&self) -> HostLimits {
+        HostLimits {
+            alloc_quota: self.alloc_quota,
+            stack_budget: self.stack_budget,
+        }
+    }
+}
+
+/// The two limits a host sets on the Context of a run
+/// (`specs/blocks/compiler.md` §109.4 rule 5). `None` leaves the limit
+/// to the profile.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct HostLimits {
+    /// The allocation quota in bytes.
+    pub(crate) alloc_quota: Option<u64>,
+    /// The stack budget in bytes.
+    pub(crate) stack_budget: Option<u64>,
 }
 
 /// The allocation quota a sandbox-profile run starts with, in bytes
@@ -125,16 +171,31 @@ pub const SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES: u64 = 67_108_864;
 /// (`specs/blocks/compiler.md` §109.5).
 pub const SANDBOX_DEFAULT_STACK_BUDGET_BYTES: u64 = 524_288;
 
-/// Applies the §109.5 defaults of `profile` to `ctx`.
+/// Applies the run-time limits of `profile` and `limits` to `ctx`
+/// (`specs/blocks/compiler.md` §109.5).
 ///
-/// The default profile sets nothing, so a trusted program keeps the
-/// Context it had before this section.
-pub(crate) fn apply_profile_defaults(ctx: &mut subscript_runtime::Context, profile: Profile) {
-    if profile != Profile::Sandbox {
-        return;
+/// A limit `limits` sets replaces the profile's default for that limit,
+/// under either profile. Where `limits` sets neither, the default
+/// profile sets nothing, so a trusted program keeps the Context it had
+/// before this section.
+pub(crate) fn apply_run_limits(
+    ctx: &mut subscript_runtime::Context,
+    profile: Profile,
+    limits: HostLimits,
+) {
+    let sandbox = profile == Profile::Sandbox;
+    if let Some(bytes) = limits
+        .alloc_quota
+        .or_else(|| sandbox.then_some(SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES))
+    {
+        ctx.set_alloc_quota(bytes);
     }
-    ctx.set_alloc_quota(SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES);
-    ctx.set_stack_budget(SANDBOX_DEFAULT_STACK_BUDGET_BYTES);
+    if let Some(bytes) = limits
+        .stack_budget
+        .or_else(|| sandbox.then_some(SANDBOX_DEFAULT_STACK_BUDGET_BYTES))
+    {
+        ctx.set_stack_budget(bytes);
+    }
 }
 
 /// Output from one configured tier run.
@@ -264,6 +325,111 @@ mod tests {
         let with_libraries = interrupted.with_native_libraries(&libraries);
         assert_eq!(with_libraries.interrupt_after_millis, Some(50));
         assert!(with_libraries.native_libraries.is_empty());
+
+        assert_eq!(default.alloc_quota, None);
+        assert_eq!(default.stack_budget, None);
+        let quota = default.with_alloc_quota(1_024);
+        assert_eq!(quota.alloc_quota, Some(1_024));
+        assert_eq!(quota.stack_budget, None);
+        let both = quota.with_stack_budget(65_536);
+        assert_eq!(both.alloc_quota, Some(1_024));
+        assert_eq!(both.stack_budget, Some(65_536));
+        assert_eq!(both.profile, Profile::Default);
+    }
+
+    /// The program every host-quota test runs: it allocates 4,096 bytes
+    /// of array elements, which is over the 1,024-byte quota the tests
+    /// set and far under the §109.5 default.
+    const QUOTA_PROGRAM: &str = "export function main(): void {\n\
+         \x20 let seed: u8[] = [1];\n\
+         \x20 for (let step: i32 = 0; step < 12; step = step + 1) {\n\
+         \x20   seed = seed.concat(seed);\n\
+         \x20 }\n\
+         \x20 print(`${seed.length}`);\n\
+         }\n";
+
+    /// §109.5: the dev-tier runner takes the host's quota, and it
+    /// replaces the profile default. The same program under the default
+    /// quota is the firing control.
+    #[test]
+    fn the_jit_runner_applies_a_host_quota() {
+        use subscript_compiler::Profile;
+
+        let files = [SourceFile::new("host-quota.ts", QUOTA_PROGRAM)];
+        let config = RunConfig::with_profile(Profile::Sandbox);
+        match run_jit_configured(&files, config.with_alloc_quota(1_024)) {
+            Err(RunError::Trap(report)) => assert_eq!(report.rule, TrapKind::AllocationQuota),
+            other => panic!("the host quota must stop the run: {other:?}"),
+        }
+        let clean = run_jit_configured(&files, config).expect("the default quota admits the run");
+        assert_eq!(clean.stdout, b"4096\n");
+    }
+
+    /// §109.5: a set limit applies under the default profile as well.
+    /// The limit is the host's fact and does not depend on the profile
+    /// (§109.4 rule 5). The same record without the quota is the firing
+    /// control.
+    #[test]
+    fn the_default_profile_takes_a_host_quota() {
+        let files = [SourceFile::new("host-quota.ts", QUOTA_PROGRAM)];
+        let config = RunConfig::default();
+        assert_eq!(config.profile, Profile::Default);
+        match run_jit_configured(&files, config.with_alloc_quota(1_024)) {
+            Err(RunError::Trap(report)) => assert_eq!(report.rule, TrapKind::AllocationQuota),
+            other => panic!("the host quota must stop the run: {other:?}"),
+        }
+        let clean = run_jit_configured(&files, config).expect("no quota admits the run");
+        assert_eq!(clean.stdout, b"4096\n");
+    }
+
+    /// §109.5: the ship entry receives the host's quota the way it
+    /// receives the default, with the same firing control.
+    #[test]
+    fn the_ship_runner_applies_a_host_quota() {
+        use subscript_compiler::Profile;
+
+        let files = [SourceFile::new("host-quota.ts", QUOTA_PROGRAM)];
+        let config = RunConfig::with_profile(Profile::Sandbox);
+        match run_c_aot_configured(&files, config.with_alloc_quota(1_024)) {
+            Err(RunError::Trap(report)) => assert_eq!(report.rule, TrapKind::AllocationQuota),
+            other => panic!("the host quota must stop the run: {other:?}"),
+        }
+        let clean = run_c_aot_configured(&files, config).expect("the default quota admits the run");
+        assert_eq!(clean.stdout, b"4096\n");
+    }
+
+    /// §109.5: the reference interpreter takes the same two fields from
+    /// the same record, with the same firing control.
+    #[test]
+    fn the_interpreter_applies_a_host_quota() {
+        use subscript_compiler::{check_program_with, CheckOptions, Profile};
+
+        let files = [SourceFile::new("host-quota.ts", QUOTA_PROGRAM)];
+        let hir = check_program_with(&files, &CheckOptions::with_profile(Profile::Sandbox))
+            .expect("the program checks under the profile");
+        let lir = lir::lower_module(&hir).expect("the program lowers");
+        let config = RunConfig::with_profile(Profile::Sandbox);
+        match interpreter::interpret_configured(&lir, config.with_alloc_quota(1_024)) {
+            Err(error) => match &error {
+                interpreter::InterpretError::Execution { source, .. } => match source.as_ref() {
+                    interpreter::InterpretError::Trap { kind, .. } => {
+                        assert_eq!(kind, "allocation-quota");
+                    }
+                    other => panic!("the host quota must trap: {other:?}"),
+                },
+                interpreter::InterpretError::Trap { kind, .. } => {
+                    assert_eq!(kind, "allocation-quota");
+                }
+                other => panic!("the host quota must trap: {other:?}"),
+            },
+            Ok(output) => panic!(
+                "the host quota must stop the run: {:?}",
+                String::from_utf8_lossy(&output)
+            ),
+        }
+        let clean = interpreter::interpret_configured(&lir, config)
+            .expect("the default quota admits the run");
+        assert_eq!(clean, b"4096\n");
     }
 
     /// §109.5: the tier runners apply the profile defaults, and a default

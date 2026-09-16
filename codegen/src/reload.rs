@@ -73,7 +73,7 @@ use subscript_runtime::Context;
 use crate::jit::{register_runtime, RunError, TrapReport};
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
 use crate::native::{missing_symbol, register_symbols};
-use crate::{NativeLibrary, RunConfig};
+use crate::{HostLimits, NativeLibrary, RunConfig};
 
 // ----- declaration hash -----
 
@@ -765,15 +765,17 @@ impl ReloadSession {
     pub fn new_capturing_initializer_trap(
         files: &[SourceFile],
     ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
-        Self::build(files, &[], Profile::Default)
+        Self::build(files, &[], Profile::Default, HostLimits::default())
     }
 
     /// Compiles `files` under one complete option record, runs the
     /// module-global initializer, and returns the live session together
     /// with any trap raised by that initializer.
     ///
-    /// The session applies the §109.5 defaults of the profile the checked
-    /// module carries, before the initializer call.
+    /// The session applies the §109.5 limits before the initializer
+    /// call: the defaults of the profile the checked module carries,
+    /// with `config.alloc_quota` and `config.stack_budget` in place of
+    /// the default each one sets.
     ///
     /// # Errors
     ///
@@ -783,7 +785,12 @@ impl ReloadSession {
         files: &[SourceFile],
         config: RunConfig<'_>,
     ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
-        Self::build(files, config.native_libraries, config.profile)
+        Self::build(
+            files,
+            config.native_libraries,
+            config.profile,
+            config.host_limits(),
+        )
     }
 
     /// Compiles `files` under one complete option record and returns the
@@ -796,7 +803,12 @@ impl ReloadSession {
         files: &[SourceFile],
         config: RunConfig<'_>,
     ) -> Result<ReloadSession, RunError> {
-        let (session, trap) = Self::build(files, config.native_libraries, config.profile)?;
+        let (session, trap) = Self::build(
+            files,
+            config.native_libraries,
+            config.profile,
+            config.host_limits(),
+        )?;
         match trap {
             Some(trap) => Err(RunError::Trap(trap)),
             None => Ok(session),
@@ -827,7 +839,8 @@ impl ReloadSession {
         files: &[SourceFile],
         libraries: &[NativeLibrary],
     ) -> Result<ReloadSession, RunError> {
-        let (session, trap) = Self::build(files, libraries, Profile::Default)?;
+        let (session, trap) =
+            Self::build(files, libraries, Profile::Default, HostLimits::default())?;
         match trap {
             Some(trap) => Err(RunError::Trap(trap)),
             None => Ok(session),
@@ -838,6 +851,7 @@ impl ReloadSession {
         files: &[SourceFile],
         libraries: &[NativeLibrary],
         profile: Profile,
+        limits: HostLimits,
     ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
         let hirm = check_program_with(files, &CheckOptions::with_profile(profile))
             .map_err(RunError::Rejected)?;
@@ -865,8 +879,8 @@ impl ReloadSession {
         session.ctx.set_fn_table(session.table.as_ptr());
         session.ctx.set_globals(session.globals.ptr);
         // §109.5: the runner reads the profile the checked module carries
-        // and applies its defaults before the first `enter_script`.
-        crate::apply_profile_defaults(&mut session.ctx, hirm.profile);
+        // and applies the run-time limits before the first `enter_script`.
+        crate::apply_run_limits(&mut session.ctx, hirm.profile, limits);
         let init_slot = gen
             .init_slot
             .ok_or_else(|| RunError::Internal(internal("no initializer slot")))?;
@@ -1515,6 +1529,46 @@ mod tests {
         assert_ne!(sandbox.context_address(), 0);
         sandbox.call_main().expect("the profile program runs");
         assert_eq!(sandbox.take_output(), b"profiled\n");
+    }
+
+    /// §109.5: a session takes the host's quota, and it replaces the
+    /// profile default. The same program under the default quota is the
+    /// firing control.
+    #[test]
+    fn a_session_applies_a_host_quota() {
+        let source = "export function main(): void {\n\
+                      \x20 let seed: u8[] = [1];\n\
+                      \x20 for (let step: i32 = 0; step < 12; step = step + 1) {\n\
+                      \x20   seed = seed.concat(seed);\n\
+                      \x20 }\n\
+                      \x20 print(`${seed.length}`);\n\
+                      }\n";
+        let config = RunConfig::with_profile(Profile::Sandbox);
+        let mut limited =
+            ReloadSession::new_configured(&src(source), config.with_alloc_quota(1_024))
+                .expect("sandbox session");
+        assert_eq!(limited.ctx.alloc_quota(), 1_024);
+        assert_eq!(
+            limited.ctx.stack_budget(),
+            crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES
+        );
+        match limited.call_main() {
+            Err(RunError::Trap(report)) => {
+                assert_eq!(report.rule, subscript_runtime::TrapKind::AllocationQuota);
+            }
+            other => panic!("the host quota must stop the call: {other:?}"),
+        }
+
+        let mut clean =
+            ReloadSession::new_configured(&src(source), config).expect("sandbox session");
+        assert_eq!(
+            clean.ctx.alloc_quota(),
+            crate::SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES
+        );
+        clean
+            .call_main()
+            .expect("the default quota admits the call");
+        assert_eq!(clean.take_output(), b"4096\n");
     }
 
     /// §109.2: a session built under the profile keeps it, so a reload
