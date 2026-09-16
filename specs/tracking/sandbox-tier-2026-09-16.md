@@ -360,3 +360,34 @@ second thread after 20 ms, and reads the trap back; checked by the
 examples gate), tutorial Step 11, README, `llms.txt`,
 `docs/tutorial-rust.md`. Every pasted output is from a run in the
 round.
+
+## P26 round 3b — a host quota on `RunConfig` (landed)
+
+Contract pin `d5f84df`. `RunConfig.alloc_quota` and
+`RunConfig.stack_budget`; a set value replaces the profile default
+and applies under the default profile too. Five tests, one per
+runner plus the default-profile clause; dropping the limit argument
+turns all five Red. Gate:
+`gate quick b1c48d778fa0a305f4cce158cc461ebf90fa5eda dirty:7 debug 1520/0/2 skips 2 goldens-moved 0 exit 0`
+
+The criterion 5 table, complete (release, arm64 macOS, sandbox over
+default; `callbacks` under a 256 MiB host quota, every other row
+under the §109.5 defaults):
+
+| Workload | dev-JIT | ship-C-AOT |
+|---|---|---|
+| fib-recursive | 1.47x | 3.18x |
+| fib-loop | 3.02x | 4.41x |
+| mandelbrot | 1.85x | 1.03x |
+| primes | 1.97x | 1.82x |
+| sort | 1.30x | 1.59x |
+| queen | 1.16x | 1.42x |
+| particles | 1.18x | 2.11x |
+| callbacks | 1.15x | 2.95x |
+| collect | 1.01x | 1.02x |
+| tree | rejected S023 | rejected S023 |
+
+Open at the end of the rounds: the CLI takes no host limit (§109.5
+names none); `interpreter.rs` (6,987), `ship.rs` (2,481), and
+`jit.rs` (2,179) are past §5.y and grew by 9, 45, and 13 lines; the
+`benchmarks/Cargo.toml` bin comment names four of six bins.
