@@ -448,3 +448,23 @@ gate green, hygiene clean.
 Open after the phase: the CLI takes no host limit and no interrupt;
 twelve Rust files remain past §5.y, all past it at the pin; the
 `benchmarks/Cargo.toml` bin comment names four of six bins.
+
+## P26 follow-up — memory under the profile (landed 2026-09-17)
+
+Owner request: document how a profile program reclaims memory. Contract
+§109.8a (`99c9985`) and §18.2d's `subscript_rt_ctx_collect` (`608e6c5`,
+after the round's part 1 stopped on the missing declaration: the host
+header declares the `subscript_rt_ctx_` family only, and the script
+intrinsic `subscript_rt_collect` is outside it). Implementation
+`c1db294`; README section `cd003ec`.
+
+`examples/sandbox/`, measured on the ship tier, batch 1,280 nodes with
+one string each, a three-batch window, quota 1,048,576, threshold
+786,432:
+
+| Phase | Host collects | Peak live | Final live |
+|---|---|---|---|
+| A, the host paces | frames 10, 17, 24 | 868,480 | 199,216 |
+| B, the script collects each frame | 0 | — | 199,216 |
+
+Gate: `gate quick 608e6c5 dirty:7 debug 1530/0/2 skips 2 goldens-moved 0 exit 0`.
