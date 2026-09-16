@@ -148,8 +148,12 @@ program is unchanged. Each is one C API call.
 `subscript --profile sandbox` and a corpus entry with `profile:
 sandbox` set the quota to 67,108,864 bytes and the stack budget to
 524,288 bytes before the entry runs. A host embedding the runtime
-sets its own. The interrupt has no default; nothing sets it unless
-the host does.
+sets its own. A Rust host, and every in-repo runner and benchmark,
+sets its own through `RunConfig`: `alloc_quota` and `stack_budget`,
+each `Option<u64>`, and a set value replaces the default. The
+interrupt has no default; nothing sets it unless the host does.
+*(Amended 2026-09-17: round 3 could not measure `callbacks` because
+no runner took a host quota.)*
 
 ### 109.6 Deferred: run-time source loading
 
