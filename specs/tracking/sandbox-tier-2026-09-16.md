@@ -1,7 +1,7 @@
 # Sandbox tier — the proposal and the measurement round (2026-09-16)
 
-Status: measurement round. No owner decision exists. Nothing here
-changes a rule.
+Status: the record of P26. It holds the proposal, the measurement
+round, the owner decision of 2026-09-16, and every landed round.
 
 ## The proposal
 
@@ -388,6 +388,8 @@ under the §109.5 defaults):
 | tree | rejected S023 | rejected S023 |
 
 Open at the end of the rounds: the CLI takes no host limit (§109.5
-names none); `interpreter.rs` (6,987), `ship.rs` (2,481), and
-`jit.rs` (2,179) are past §5.y and grew by 9, 45, and 13 lines; the
-`benchmarks/Cargo.toml` bin comment names four of six bins.
+names none); the `benchmarks/Cargo.toml` bin comment names four of
+six bins. File growth over the phase (`aebef92` to `594b267`):
+`jit.rs` 1,985 → 2,179, which crosses §5.y and is split in the
+review-fix round; `ship.rs` 2,184 → 2,481 and `interpreter.rs`
+6,930 → 6,987, both already over the limit at the pin.

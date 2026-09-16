@@ -73,7 +73,7 @@ builds one mirror per trust level with `subscript bind` and passes
 the narrow one to untrusted content. 109.7 adds the example.
 
 Deferred, each for its own evidence: a checker work limit; a Worker
-count limit as an alternative to S021.
+count limit as an alternative to S025.
 
 ### 109.3 What the lowering emits
 
@@ -82,8 +82,14 @@ emits them only under the profile.
 
 | Intrinsic | Placed | Effect |
 |---|---|---|
-| `Sandbox.Enter` | first instruction of every function body, after the parameter binds | calls `subscript_rt_sandbox_enter(ctx)`; then the pending-trap check |
-| `Sandbox.Poll` | on the iteration edge of every HIR loop (`while`, `do`, `for`, `for-of`), before the condition | calls `subscript_rt_sandbox_poll(ctx)`; then the pending-trap check |
+| `Sandbox.Enter` | first instruction of every function body, after the parameter binds; the module initializer is a function body | calls `subscript_rt_sandbox_enter(ctx)`; then the pending-trap check |
+| `Sandbox.Poll` | on the iteration edge of every loop the lowering emits, before the condition: the HIR loops (`while`, `for`, `for-of`) and the fused loops the lowering builds for a static callback, a static array callback, and `forEach` | calls `subscript_rt_sandbox_poll(ctx)`; then the pending-trap check |
+
+*(Amended 2026-09-17, after the Phase Review.)* The first text named
+`do`, which HIR does not have, and named the HIR loops only. The
+module initializer got no `Enter`, and a fused callback loop got no
+`Poll`, so the interval between checkpoints on such a loop was the
+array length. Both are closed.
 
 1. Both are calls into the shared runtime followed by the pending
    trap check that every runtime call already gets. No tier decides
@@ -105,17 +111,24 @@ program is unchanged. Each is one C API call.
 
 | Limit | C API | Trap |
 |---|---|---|
-| interrupt | `subscript_rt_ctx_interrupt(ctx)` sets an atomic flag | `Interrupted` = 25 |
+| interrupt | `subscript_rt_ctx_interrupt_handle(ctx)` on the owner thread; `subscript_rt_interrupt_set(handle)` from any thread | `Interrupted` = 25 |
 | allocation quota | `subscript_rt_ctx_set_alloc_quota(ctx, bytes)`; 0 is none | `AllocationQuota` = 26 |
 | stack budget | `subscript_rt_ctx_set_stack_budget(ctx, bytes)`; 0 is none | `StackBudget` = 27 |
 
-1. **Interrupt.** `subscript_rt_ctx_interrupt` is callable from any
-   thread. It is the one Context call outside the exclusive contract,
-   and it touches one atomic. `Enter` and `Poll` read the flag with a
-   relaxed load. If the flag is set, the runtime records the
-   `Interrupted` trap at the intrinsic's position and the trap-stop
-   path returns to the host. `subscript_rt_ctx_clear_trap` clears the
-   flag with the trap.
+1. **Interrupt.** The flag lives in its own heap cell, outside the
+   Context's bytes, so a store from another thread never touches
+   memory the owner thread holds exclusively. The host obtains the
+   cell on the owner thread, before or between runs:
+   `subscript_rt_ctx_interrupt_handle(ctx)` returns
+   `const subscript_rt_interrupt*`, valid until the Context is
+   released. `subscript_rt_interrupt_set(handle)` is callable from any
+   thread and stores `true` with a relaxed store. `Enter` and `Poll`
+   read the cell with a relaxed load. If the flag is set, the runtime
+   records the `Interrupted` trap at the intrinsic's position and the
+   trap-stop path returns to the host. `subscript_rt_ctx_clear_trap`
+   clears the flag with the trap. *(Amended 2026-09-17, after the
+   Phase Review: the first text stored through the Context pointer
+   from the second thread, inside the owner's exclusive borrow.)*
 2. **Allocation quota.** The §21 allocation path compares
    `live_bytes` plus the request against the quota before it
    allocates. Over the quota, it takes the §21 fault path with
