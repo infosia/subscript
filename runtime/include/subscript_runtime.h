@@ -144,6 +144,7 @@ uint64_t subscript_rt_ctx_async_step(subscript_rt_context* ctx);
  */
 uint64_t subscript_rt_ctx_async_unfinished(const subscript_rt_context* ctx);
 int32_t subscript_rt_ctx_clear_trap(subscript_rt_context* ctx);
+void subscript_rt_ctx_collect(subscript_rt_context* ctx);
 void subscript_rt_ctx_enter_script(subscript_rt_context* ctx);
 void subscript_rt_ctx_exit_script(subscript_rt_context* ctx);
 void subscript_rt_ctx_fail_alloc_after(subscript_rt_context* ctx, uint64_t n);

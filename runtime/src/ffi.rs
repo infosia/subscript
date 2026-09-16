@@ -5405,6 +5405,25 @@ pub unsafe extern "C" fn subscript_rt_ctx_reserved_bytes(ctx: *const Context) ->
     unsafe { &*ctx }.reserved_bytes() as u64
 }
 
+/// The host's explicit collection (invariant 2).
+///
+/// This is the same collector that `Context.collect()` reaches from
+/// script, so the two callers share one mark-sweep. The script
+/// intrinsic keeps its own symbol, `subscript_rt_collect`, which the
+/// generated host header does not declare.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract. The host calls this
+/// between script calls, at script depth 0. A call from inside a
+/// script call, such as a host callback, aliases the Context that
+/// generated code holds.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_collect(ctx: *mut Context) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.collect();
+}
+
 /// Visits each live Context-owned allocation and returns the number visited.
 ///
 /// The callback receives the allocation's class id, allocating position
@@ -7291,6 +7310,49 @@ mod tests {
             );
         }
         assert_eq!(ctx.trap_record().map(|r| r.kind), Some(TrapKind::Internal));
+    }
+
+    /// §18.2d: the host's collect entry reclaims an unreachable
+    /// allocation. The control below runs the same shape with no call.
+    #[test]
+    fn ffi_ctx_collect_reclaims_unreachable_bytes() {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
+            let dead = ctx.alloc(4096, 1, 0);
+            assert!(!dead.is_null(), "{tier}: the allocation failed");
+            let p: *mut Context = &mut *ctx;
+            // SAFETY: shared Context contract at a host boundary.
+            let before = unsafe { subscript_rt_ctx_live_bytes(p) };
+            // SAFETY: exclusive Context at a host boundary; depth is 0.
+            unsafe { subscript_rt_ctx_collect(p) };
+            // SAFETY: shared Context contract at a host boundary.
+            let after = unsafe { subscript_rt_ctx_live_bytes(p) };
+            assert!(after < before, "{tier}: live_bytes {before} -> {after}");
+            assert!(
+                !ctx.is_live(dead as usize),
+                "{tier}: the allocation survived"
+            );
+        }
+    }
+
+    /// The firing control for the test above. Nothing collects unbidden
+    /// (invariant 2), so the same shape without the call keeps the bytes.
+    #[test]
+    fn ffi_ctx_collect_control_without_the_call_keeps_the_bytes() {
+        for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
+            let dead = ctx.alloc(4096, 1, 0);
+            assert!(!dead.is_null(), "{tier}: the allocation failed");
+            let p: *mut Context = &mut *ctx;
+            // SAFETY: shared Context contract at a host boundary.
+            let before = unsafe { subscript_rt_ctx_live_bytes(p) };
+            // No collect call here. That absence is the control.
+            // SAFETY: shared Context contract at a host boundary.
+            let after = unsafe { subscript_rt_ctx_live_bytes(p) };
+            assert_eq!(after, before, "{tier}: live_bytes fell with no call");
+            assert!(
+                ctx.is_live(dead as usize),
+                "{tier}: the allocation went away"
+            );
+        }
     }
 
     #[test]

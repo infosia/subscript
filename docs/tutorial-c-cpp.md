@@ -306,8 +306,10 @@ At runtime, the host can watch the same quantities:
 report the Context's memory, and
 `subscript_rt_ctx_visit_live_allocations` walks every live allocation
 with its class and allocation-site ids (`specs/blocks/compiler.md`
-§18.2d, §21.2). The count is comparable across the two tiers; the byte
-figures are not, because the tiers have different allocators. "Step 6"
+§18.2d, §21.2), and `subscript_rt_ctx_collect` runs the same collection
+that `Context.collect()` reaches, between script calls (Step 11 shows
+when a host wants that). The count is comparable across the two tiers;
+the byte figures are not, because the tiers have different allocators. "Step 6"
 below resolves those ids to names and source positions.
 
 ## Embedding subscript in your host, step by step
@@ -1315,11 +1317,12 @@ which is the whole of the example below.
 
 **A complete host.** [`examples/sandbox/`](../examples/sandbox/) is four
 files. [`mod.ts`](../examples/sandbox/mod.ts) exports `tick(): void`,
-which prints one line and then loops forever.
-[`main.c`](../examples/sandbox/main.c) creates the Context, sets a 16 MiB
-quota and a 256 KiB stack budget, takes the interrupt handle, starts a
-thread that calls `subscript_rt_interrupt_set` after 20 ms, calls `tick`,
-and reads the trap back. [`build.sh`](../examples/sandbox/build.sh) is one command:
+which prints one line and then loops forever, and the two memory exports
+the next part uses. [`main.c`](../examples/sandbox/main.c) creates the
+Context, sets a 16 MiB quota and a 256 KiB stack budget, takes the
+interrupt handle, starts a thread that calls `subscript_rt_interrupt_set`
+after 20 ms, calls `tick`, and reads the trap back.
+[`build.sh`](../examples/sandbox/build.sh) is one command:
 
 ```sh
 subscript build \
@@ -1341,8 +1344,68 @@ host:trap kind=25 message=interrupted
 host:cleared trap kind=0
 ```
 
-[`expected.txt`](../examples/sandbox/expected.txt) holds those bytes, and
-`cargo test -p subscript-examples` compares them on every run.
+The run then goes on into the two memory phases below.
+[`expected.txt`](../examples/sandbox/expected.txt) holds every line of
+it, and `cargo test -p subscript-examples` compares them on every run.
+
+#### Reclaiming memory under the profile
+
+The profile rejects `Context.free` (`S023`), so collection is the one way
+memory returns. The quota is a stop, not a pacer: it traps the program,
+so something must collect first.
+
+**Pattern 1 — you pace it.** Three calls, and the last one is the part
+Step 11 adds:
+
+```c
+subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C(1048576));
+uint64_t live = subscript_rt_ctx_live_bytes(ctx);  /* a counter */
+subscript_rt_ctx_collect(ctx);                     /* depth 0 only */
+```
+
+`subscript_rt_ctx_live_bytes` reads a counter, so you read it at every
+frame boundary for free. Pick a fraction of your quota, and collect above
+it. `examples/sandbox/` picks three quarters of 1 MiB, calls `frame` 24
+times, and collects outside the script call:
+
+```text
+host:memory quota=1048576 threshold=786432
+host:collect frame=10 live=868480 -> 199216
+host:collect frame=17 live=807040 -> 199216
+host:collect frame=24 live=807040 -> 199216
+host:phase-a frames=24 collects=3 live=199216
+```
+
+`frame` allocates a batch of 1,280 objects and keeps the last three
+batches, so it drops about one batch per frame and never collects. The
+live set climbs 86,832 bytes per frame, passes the threshold on frame 10,
+and falls back to the window each time. The peak is 868,480 bytes, under
+the 1,048,576-byte quota.
+
+**Call `subscript_rt_ctx_collect` at script depth 0, between script
+calls.** A call from inside a host callback aliases the Context that
+generated code holds.
+
+**Pattern 2 — the script collects at its own boundary.**
+`Context.collect()` stays callable under the profile. In
+[`mod.ts`](../examples/sandbox/mod.ts) the export `frameAndCollect` is
+`frame` plus one statement: `Context.collect()` as its last. The host
+sets the quota and collects nothing for the whole phase:
+
+```text
+host:phase-b frames=24 collects=0 live=199216
+```
+
+24 frames end at the same 199,216 bytes that Phase A falls back to. The
+two patterns hold the same bound. Phase A reaches it three times; Phase B
+holds it at every frame. Keep your pacer as the backstop: a script you
+did not write can drop that line.
+
+**What a collect costs.** It is stop-the-world mark-sweep, proportional
+to the live set plus the dead set. The two phases above measure one
+program on one live set, so they give you no bound on the pause. If you
+need a bound, measure it at your own live set. This project has no rule
+for it yet (`specs/blocks/compiler.md` §109.8a).
 
 **`subscript emit` takes no `--profile`.**
 

@@ -11,6 +11,10 @@
  * The stack budget is below this thread's stack size. That is the host's
  * fact to supply: the runtime measures the script's depth against the
  * budget, not against the real stack.
+ *
+ * After the interrupt, two phases show how memory returns under the
+ * profile (section 109.8a). Phase A paces the collect from the host.
+ * Phase B lets the script collect at the end of its own frame.
  */
 
 #include "subscript_runtime.h"
@@ -33,11 +37,23 @@
 /* The generated symbol of the exported `tick(): void`. */
 void subscript_export_tick(subscript_rt_context *ctx);
 
+/* The generated symbols of the two memory-pattern exports. `frame`
+ * allocates and never collects; `frameAndCollect` collects at its end. */
+void subscript_export_frame(subscript_rt_context *ctx);
+void subscript_export_frameAndCollect(subscript_rt_context *ctx);
+
 /* The limits this host gives untrusted content. Both are well under the
  * defaults the CLI applies (64 MiB and 512 KiB), because this host knows
  * its own budget and its own thread. */
 #define HOST_ALLOC_QUOTA UINT64_C(16777216)  /* 16 MiB */
 #define HOST_STACK_BUDGET UINT64_C(262144)   /* 256 KiB */
+
+/* The memory phases below run under a tighter quota, so a small program
+ * shows the pacer at work. The threshold is three quarters of the quota:
+ * the host picks that fraction, and the runtime knows nothing about it. */
+#define HOST_MEMORY_QUOTA UINT64_C(1048576)  /* 1 MiB */
+#define HOST_MEMORY_THRESHOLD (HOST_MEMORY_QUOTA / 4u * 3u)
+#define HOST_MEMORY_FRAMES 24u
 
 /* How long the script runs before the second thread stops it. */
 #define HOST_INTERRUPT_AFTER_MILLIS 20u
@@ -184,6 +200,59 @@ int main(void) {
     printf(
         "host:cleared trap kind=%" PRIu32 "\n",
         subscript_rt_ctx_trap_kind(ctx));
+
+    /* Memory under the profile (compiler.md section 109.8a). The profile
+     * rejects Context.free, so collection is the one way memory returns.
+     * Every live figure printed below is stable across runs, so the
+     * golden pins each one exactly. */
+    subscript_rt_ctx_set_alloc_quota(ctx, HOST_MEMORY_QUOTA);
+    printf(
+        "host:memory quota=%" PRIu64 " threshold=%" PRIu64 "\n",
+        HOST_MEMORY_QUOTA,
+        (uint64_t)HOST_MEMORY_THRESHOLD);
+
+    /* Pattern 1 — the host paces. live_bytes is a counter, so this read
+     * costs the same at every live count. The collect runs here, outside
+     * the script call, at a moment the host picked. */
+    unsigned hostCollects = 0u;
+    for (unsigned frameIndex = 1u; frameIndex <= HOST_MEMORY_FRAMES; ++frameIndex) {
+        if (!hostCallScript(ctx, subscript_export_frame)) {
+            hostReportTrap(ctx);
+            subscript_rt_ctx_release(ctx);
+            return 3;
+        }
+        uint64_t live = subscript_rt_ctx_live_bytes(ctx);
+        if (live > (uint64_t)HOST_MEMORY_THRESHOLD) {
+            subscript_rt_ctx_collect(ctx);
+            hostCollects += 1u;
+            printf(
+                "host:collect frame=%u live=%" PRIu64 " -> %" PRIu64 "\n",
+                frameIndex,
+                live,
+                subscript_rt_ctx_live_bytes(ctx));
+        }
+    }
+    printf(
+        "host:phase-a frames=%u collects=%u live=%" PRIu64 "\n",
+        HOST_MEMORY_FRAMES,
+        hostCollects,
+        subscript_rt_ctx_live_bytes(ctx));
+
+    /* Pattern 2 — the script collects at its own boundary. One host
+     * collect resets the live set to the window, and the host then
+     * collects nothing for the whole phase. */
+    subscript_rt_ctx_collect(ctx);
+    for (unsigned frameIndex = 1u; frameIndex <= HOST_MEMORY_FRAMES; ++frameIndex) {
+        if (!hostCallScript(ctx, subscript_export_frameAndCollect)) {
+            hostReportTrap(ctx);
+            subscript_rt_ctx_release(ctx);
+            return 3;
+        }
+    }
+    printf(
+        "host:phase-b frames=%u collects=0 live=%" PRIu64 "\n",
+        HOST_MEMORY_FRAMES,
+        subscript_rt_ctx_live_bytes(ctx));
 
     subscript_rt_ctx_release(ctx);
     return 0;

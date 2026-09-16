@@ -21,7 +21,10 @@ Read the numbered examples in order:
 6. [`sandbox/`](sandbox/) runs content the host did not write: the script
    is built with `subscript build --profile sandbox`, the host sets an
    allocation quota and a stack budget, and a second thread stops an
-   endless entry with `subscript_rt_interrupt_set`.
+   endless entry with `subscript_rt_interrupt_set`. Two memory phases
+   follow. Phase A paces the collect from the host with
+   `subscript_rt_ctx_collect`; Phase B lets the script collect at the end
+   of its own frame.
 7. [`hot-reload/`](hot-reload/) is interactive: `sh run.sh` starts
    `subscript run --watch`, and editing `demo.ts` demonstrates live
    body swaps with surviving module state, refusal of declaration
@@ -112,7 +115,8 @@ header: a host gives untrusted content one narrow mirror, or none.
 
 These examples deliberately contain no device build and no benchmark. Device
 linkage and performance measurement have their own tooling. The sandbox host
-ends in a trap, because the interrupt is what it teaches; every other
-intentional trap lives in [`corpus/trap/`](../corpus/trap/). The accept and
+traps on purpose, because the interrupt is what it teaches; it clears that
+trap and then runs its two memory phases. Every other intentional trap
+lives in [`corpus/trap/`](../corpus/trap/). The accept and
 reject [corpus](../corpus/) is the executable language definition.
 `examples/` is a maintained introduction to that defined behavior.
