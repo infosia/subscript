@@ -468,3 +468,26 @@ one string each, a three-batch window, quota 1,048,576, threshold
 | B, the script collects each frame | 0 | — | 199,216 |
 
 Gate: `gate quick 608e6c5 dirty:7 debug 1530/0/2 skips 2 goldens-moved 0 exit 0`.
+
+## Security review follow-ups (2026-09-17)
+
+Two reviews after P26 COMPLETE: an external reproduction report (two
+P1: `(/*)*/` cancels the S026 byte scan; `String.repeat` builds its
+result outside the quota) and this session's adversarial review (two
+MAJOR, one root cause: nesting through `<>`, `!`, and `? :` escapes
+S026 and aborts the process; a chain of `!` is exponential in the
+checker). A policy review then asked the contract to state outcomes.
+
+Contract: `bc1d2ad` (S026 over lexer tokens; no script-sized buffer
+outside the quota), `0acd1b6` (the checker bounds the tree and visits
+each node once; the pipeline on the compile thread), and §109.0 (the
+guarantees, the host's facts, the exclusions, S027, the work and
+output budgets, the per-program source limit).
+
+### Pre-registered measurements
+
+| Id | Measurement | Decides |
+|---|---|---|
+| M6 | resident bytes of a Context holding 64 MiB of 8-byte objects, and of 4 KiB objects, in both memory modes, against the quota | the reserved-bytes charge of §109.0 "Memory, precisely" and its multipliers |
+| M7 | the SWC parser alone on the deepest 1 MiB source per nesting construct, on the compile thread: returns or overflows, and the stack size that suffices | the token-level proxies §109.2 rule 2 needs, if any |
+| M8 | wall time of the checker on a 200-deep `!` chain before and after the one-visit fix | rule 1 |

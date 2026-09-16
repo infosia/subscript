@@ -16,6 +16,71 @@ tier executes. The runtime holds three host-set limits. A program
 that does not select the profile gets no new instruction and no new
 check.
 
+### 109.0 What the profile guarantees
+
+*(Added 2026-09-17, after a policy review that asked for outcomes,
+not only prohibitions.)* The rules in 109.1 to 109.5 exist to hold
+the four statements below. A rule that does not serve one of them is
+not a profile rule.
+
+1. **Reach.** An accepted profile program reaches only the functions
+   its mirror declares and the memory its own Context allocated. It
+   holds no address it did not receive from the runtime or the host.
+2. **Stop.** The program stops with an ordinary trap before any
+   host-set limit is exceeded: the allocation quota before the bytes
+   exist, the stack budget before the next frame, the interrupt at
+   the next checkpoint. The Context survives and the host reads the
+   trap.
+3. **Return.** After the host sets the interrupt, control returns to
+   the host within bounded work: the straight-line code between two
+   checkpoints, plus one runtime operation in flight. A runtime
+   operation has no interior checkpoint; its work is a polynomial in
+   its input and output sizes, and both are under the quota. Regular
+   expressions carry their own work budget (§23).
+4. **Compile.** On every source within S026's limits, the compiler
+   returns a diagnostic or an accepted program, in work bounded by a
+   polynomial in the source size, on a thread whose stack it sizes.
+
+**What the host supplies.** Each guarantee rests on a fact only the
+host holds. The host tutorial states each one where the host acts.
+
+- The thread that runs script has more stack than the budget plus
+  the headroom 109.4 rule 3 names.
+- Every function in the mirror is part of the trusted boundary. It
+  validates the arguments a script controls (pointer and count pairs,
+  handles, indices, lengths), bounds its own work or is excluded from
+  guarantee 3 by the host's own statement, and does not block.
+- The profile arms no interrupt. A host that needs guarantee 3 arms
+  one, or accepts that a program under the profile runs until it
+  returns or traps.
+- Same-process execution trusts the compiler, the generated code, and
+  the runtime to be memory-safe. A host that must contain a defect in
+  those components adds an isolation boundary of its own, such as a
+  separate process. The profile does not provide one.
+
+**What is excluded, by name.**
+
+- `Context.collect()` has no interior checkpoint. Its work is
+  proportional to the live set plus the dead set, which the quota
+  bounds; it is not interruptible. A host that needs a latency bound
+  calls collect at its own boundary (109.8a) and sizes the quota to
+  the collect it can afford.
+- A host function's work is the host's (above).
+- The quota bounds the bytes the Context reserves for the program.
+  It does not bound the host's own allocations, or the compiler's.
+
+**Memory, precisely.** The quota charges the bytes the allocator
+reserves for an allocation: the payload rounded to its size class
+plus the block header in the arena mode, and the payload plus the
+header plus the per-allocation record in the exact-size mode. Process
+memory attributable to the Context is then the quota plus a fixed
+overhead, whatever the allocation sizes. *(The implementation at this
+date charges the requested payload only. With 8-byte objects the
+overhead is about 5x the payload in the arena mode and about 11x in
+the exact-size mode, so a 64 MiB quota reserves up to 700 MiB. The
+charge moves to reserved bytes in the round that measures the
+multipliers; the tracking note pre-registers that measurement.)*
+
 ### 109.1 Selection
 
 1. The CLI accepts `--profile sandbox` on `check`, `build`, and
@@ -42,10 +107,11 @@ diagnostic names the profile in its message.
 
 | Code | Rejects |
 |---|---|
-| S023 | `Context.free`. Memory is allocate-only. `Context.collect()` stays callable: a rejection adds no safety, and the interrupt flag bounds its cost. |
+| S023 | `Context.free`. Memory is allocate-only. `Context.collect()` stays callable: a rejection adds no safety, and its work is bounded by the quota (109.0, excluded from guarantee 3). |
+| S027 | A function whose frame is over 65,536 bytes, under the profile. The checker already sizes every frame (`MAX_FRAME_BYTES`); the profile lowers the limit so that the stack check at `Enter` sees at most one bounded frame past the budget. |
 | S024 | `Context.fromBytes`, always. `Context.bytesOf` and `Context.bytesInto` stay accepted: the default profile already rejects a layout with a handle, a reference, or a string (S100, the value-class whitelist), so no profile rule is needed. |
 | S025 | `Worker.spawn`, `Inbox`, and `Outbox`. |
-| S026 | Source over a limit, before the parser runs: more than 1,048,576 bytes in one file, or a bracket depth over 256. The depth is a count over the **lexer's tokens** of `(`, `[`, `{` against `)`, `]`, `}`: the SWC lexer runs as a plain iterator with no parser, so a bracket inside a comment, a string, a template, or a regular-expression literal is not a bracket. A closer below zero resets to zero. The lexer is a flat loop over the bytes, so its cost does not grow with the depth. |
+| S026 | Source over a limit, before the parser runs: more than 1,048,576 bytes in one file, more than 8,388,608 bytes in one program (every file the entry imports, mirrors excluded), or a bracket depth over 256. The depth is a count over the **lexer's tokens** of `(`, `[`, `{` against `)`, `]`, `}`: the SWC lexer runs as a plain iterator with no parser, so a bracket inside a comment, a string, a template, or a regular-expression literal is not a bracket. A closer below zero resets to zero. The lexer is a flat loop over the bytes, so its cost does not grow with the depth. |
 
 *(Amended 2026-09-17, after an external review.)* The first text
 counted bytes with no lexing and claimed the count over-approximates
@@ -105,6 +171,12 @@ in the checker, doubling per operator. Three rules close the class:
    compile: parse, check, warnings, lowering, and emission, in the
    CLI and in every codegen runner. Nothing that recurses over the
    tree runs on the caller's thread.
+4. **Work and output are budgeted.** Under the profile the checker
+   counts the nodes it visits and the type instances it creates;
+   over 16,777,216 it reports S026 and stops. The LIR lowering counts
+   the instructions it emits; over 4,194,304 it reports S026 and
+   stops. Nesting bounds depth; these two bound the width that
+   instantiation and expansion can add.
 
 The parser runs before rule 2 can reject, so its own tolerance is
 measured, not assumed: for each nesting construct the grammar has
@@ -215,9 +287,14 @@ program is unchanged. Each is one C API call.
 3. **Stack budget.** `enter_script` at depth 0 records the address of
    a local as the floor. `subscript_rt_sandbox_enter` compares the
    address of its own local against the floor minus the budget. Below
-   the floor minus the budget, it records `StackBudget`. The host sets
-   a budget below the thread's stack size. That is the host's fact,
-   stated in the host tutorial.
+   the floor minus the budget, it records `StackBudget`. The check
+   runs after the frame of the entered function exists, so the
+   overshoot past the budget is at most that one frame, which S027
+   bounds at 65,536 bytes, plus the runtime's own call depth, which
+   is under 65,536 bytes. The host sets a budget at least 131,072
+   bytes below the thread's stack size. That is the host's fact,
+   stated in the host tutorial. *(Amended 2026-09-17: the first text
+   named no headroom.)*
 4. A trap under the profile is an ordinary trap: first trap wins, the
    observer fires, the Context survives, the host reads it (§18.2).
 5. The limits are the host's facts, not the program's. LIR carries
