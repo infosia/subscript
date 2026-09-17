@@ -591,3 +591,13 @@ one line, O(n²) output (7.69 GB for 32,000 items on a 160 KB line).
 Decision: the parser's constant stays and the host's build timeout
 bounds it; the renderer gains a line index, a 240-byte window, and a
 200-item cap (round 6).
+
+### Security round 6 — the renderer (landed)
+
+Gate: `gate quick 1bb891c dirty:3 debug 1583/0/2 skips 2 goldens-moved 0 exit 0`.
+At the pin, 32,000 items on one 160 KB line rendered 7.68 GB in 1.1 s
+and 40,000 one-per-line items took 16.7 s (quadratic). After: a line
+index per file, a 240-byte window at UTF-8 boundaries, 200 items;
+640,000 items on one line render 59,986 bytes in 19 ms, 800,000
+label items in 31 ms (linear). No pinned rendered form changed. Step
+11 names the host's compile timeout.
