@@ -734,3 +734,32 @@ pages; the unoptimized memory kill and the Windows Job Object path
 are unmeasured on this host (M14).
 
 Gate: `gate quick e75f8c0d2abae85c525e06a16a074e7258d0d64a dirty:6 debug 1604/0/2 skips 4 goldens-moved 0 exit 0`
+
+## The security rounds, closed (2026-09-17)
+
+`gate full b67e9d3 clean debug 1604/0/2 release 1600/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0`;
+`tools/hygiene.sh` exit 0. Five fresh reviews and ten fix rounds
+after P26 COMPLETE (`f5e16ab`): 48 commits. No CRITICAL or MAJOR is
+open.
+
+What changed the form, in order: the S026 scan moved from bytes to
+lexer tokens (round 1), then was retired for a byte limit sized to
+the parser's stack (round 7), because a count over a lexer with no
+parser cannot be exact; the compile moved onto one thread the
+compiler sizes (round 2), then into a budgeted child process (round
+9), because the parser is external and its work on a hostile shape
+is bounded only by a process. The quota moved from payload to
+reserved bytes (M6) and now covers every temporary a script sizes,
+the print sink, and callback bindings, held by a total check over
+every `subscript_rt_` export.
+
+Open, recorded in the sections above and in §109: the CLI takes no
+host limit and no `--interrupt`; `subscript_rt_print` carries no
+`pos_id`; a profile run that ends abnormally returns no output; the
+watch loop's window between its two compiles; Ctrl-C does not reach
+the child's process group; RSS excludes compressed pages; thirteen
+Rust files are over §5.y (`ship.rs` and `context.rs` grew in these
+rounds). The owner's gate hosts run M9, M12, and M14 (the 1, 4, and
+8 GiB reservations, `RLIMIT_AS` on Linux, the Job Object on
+Windows) and the unoptimized memory kill needs a host with more than
+16 GB.
