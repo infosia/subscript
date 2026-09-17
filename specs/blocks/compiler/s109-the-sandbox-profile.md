@@ -585,13 +585,19 @@ one with a measurement.
 
 ### 109.6a The heavy tests
 
-*(Added 2026-09-17, round 9.)* Two CLI tests drive the compile
-child to its budgets: the memory-budget test reaches about 10 GB of
-resident memory, and each runs for up to the budget. They run only
-when `SUBSCRIPT_HEAVY_TESTS=1` is set, and the skip prints one
-`gate-skip:` line that the gate counts (§85). The full gate sets the
-variable; the quick gate does not. The time-budget test with its
-2 s test budget stays in the quick gate.
+*(Added 2026-09-17, round 9; measured in round 9b.)* Two CLI tests
+drive the compile child to its budgets. The memory-budget test
+reaches about 10 GB of resident memory in both of its runs, and the
+time-budget test's firing control runs under the contract's 300 s
+budget (67.6 s unoptimized). Those heavy parts run only when
+`SUBSCRIPT_HEAVY_TESTS=1` is set; without it each test prints one
+`gate-skip:` line that the gate counts (§85), so the quick shape's
+expected skip count is 4 and the full shape's is 2. The time-budget
+test's 2 s stop runs in every shape. The full gate exports the
+variable for the whole shape; the quick gate does not; the gate
+record names the variable beside the release step's (§85 rule 5).
+Measured: the two tests take 2.7 s without the variable and 214.6 s
+with it; the debug suite 358 s against 495 s.
 
 ### 109.7a The in-repo runners under the profile
 
