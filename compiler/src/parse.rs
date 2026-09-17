@@ -3,14 +3,13 @@
 
 use swc_common::{BytePos, FileName, SourceMap, Span, Spanned};
 use swc_ecma_ast as ast;
-use swc_ecma_parser::{
-    lexer::Lexer, token::TokenAndSpan, Parser, StringInput, Syntax, Tokens, TsSyntax,
-};
+use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, Tokens, TsSyntax};
 
+use crate::check::profile;
 use crate::diag::{Diagnostic, Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::provenance;
-use crate::SourceFile;
+use crate::{Profile, SourceFile};
 
 /// One parsed source file.
 pub(crate) struct ParsedFile {
@@ -83,12 +82,19 @@ fn stem_of(name: &str) -> String {
 /// returned. Import-like text in comments and string literals is not an
 /// import.
 ///
+/// `profile` is the compile profile the caller checks under (§109.1
+/// rule 2). Under [`Profile::Sandbox`] the §109.2 rule 5 scan runs on
+/// the source first, so this entry never parses a file S026 rejects.
+///
 /// # Errors
 ///
 /// Returns parser or ambient-provenance diagnostics for an invalid source.
-pub fn parse_import_specifiers(source: &SourceFile) -> Result<Vec<String>, Vec<Diagnostic>> {
+pub fn parse_import_specifiers(
+    source: &SourceFile,
+    profile: Profile,
+) -> Result<Vec<String>, Vec<Diagnostic>> {
     swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-        let program = parse_program(std::slice::from_ref(source))?;
+        let program = parse_program(std::slice::from_ref(source), profile)?;
         let mut specifiers = Vec::new();
         for file in program.files {
             for item in file.module.body {
@@ -114,46 +120,99 @@ fn syntax_of(dts: bool) -> Syntax {
     })
 }
 
-/// Runs `scan` over the tokens of one program source.
+/// Builds the one lexer of this compiler, over one source of `map`.
 ///
-/// The lexer is the one [`parse_program`] builds, with the same syntax
-/// and no [`Parser`], so one lexical rule serves the parser and every
-/// scan. The lexer is a flat loop over the bytes, so its cost does not
-/// grow with the nesting depth of the source.
+/// This is the only constructor of a [`Lexer`], so every parse and every
+/// scan reads one lexical rule, and no entry parses a source the sandbox
+/// profile rejects (§109.2 rule 5). A test in `compiler/tests/` reads
+/// `compiler/src` and `cli/src` and fails on a second construction.
 ///
-/// `scan` receives the token iterator and a mapper from a byte position
-/// to the [`Pos`] the parser reports for the same offset. `scan` stops
-/// at any point.
+/// Under [`Profile::Sandbox`] the S026 per-file scan runs here, before
+/// the lexer this function hands out exists: the byte limit, the token
+/// count, and the bracket depth. The scan reads its own lexer, which is
+/// a flat loop over the bytes, so its cost does not grow with the
+/// nesting depth of the source. A source the scan rejects gets no lexer,
+/// so its caller cannot parse it.
 ///
-/// Returns `None` when the lexer reports an error up to the point where
-/// `scan` stopped. The parser reports that source, so a scan of it
-/// answers nothing.
-pub(crate) fn with_tokens<T>(
+/// A lexer error does not stop the count: the scan reads every token the
+/// lexer answers, so its findings are total over the source. When the
+/// scan rejects and the lexer also recorded an error, both report and the
+/// parser does not run on that source (§109.2 rule 5).
+///
+/// An ambient source (`.d.ts`) is a mirror, which is the host's text and
+/// not the program's, so S026 does not scan it (§109.2).
+fn lexer_for<'a>(
+    map: &SourceMap,
+    file: &'a swc_common::SourceFile,
     name: &str,
-    source: &str,
-    scan: impl FnOnce(&mut dyn Iterator<Item = TokenAndSpan>, &dyn Fn(BytePos) -> Pos) -> T,
-) -> Option<T> {
-    let source_map = SourceMap::default();
-    let fm = source_map.new_source_file(
-        FileName::Custom(name.to_string()).into(),
-        source.to_string(),
-    );
-    let mut lexer = Lexer::new(
-        syntax_of(false),
+    dts: bool,
+    profile: Profile,
+) -> Result<Lexer<'a>, Vec<Diagnostic>> {
+    let syntax = syntax_of(dts);
+    if profile == Profile::Sandbox && !dts {
+        let mut scanning = Lexer::new(
+            syntax,
+            ast::EsVersion::Es2022,
+            StringInput::from(file),
+            None,
+        );
+        let at = |position: BytePos| lookup_at(map, name, position);
+        let token_error = std::cell::RefCell::new(None);
+        let found = {
+            let mut tokens = scanning.by_ref().inspect(|spanned| {
+                if let swc_ecma_parser::token::Token::Error(error) = &spanned.token {
+                    let mut first = token_error.borrow_mut();
+                    if first.is_none() {
+                        *first = Some(error.clone());
+                    }
+                }
+            });
+            profile::source_scan(name, file.src.len(), &mut tokens, &at)
+        };
+        if let Some(rejection) = found {
+            let mut rejected = vec![rejection];
+            let error = token_error
+                .into_inner()
+                .or_else(|| scanning.take_errors().into_iter().next());
+            if let Some(error) = error {
+                rejected.push(parser_diagnostic(&error, at(error.span().lo)));
+            }
+            return Err(rejected);
+        }
+    }
+    Ok(Lexer::new(
+        syntax,
         ast::EsVersion::Es2022,
-        StringInput::from(&*fm),
+        StringInput::from(file),
         None,
+    ))
+}
+
+/// Answers the §109.2 rule 5 rejection of one source, and parses nothing.
+///
+/// The scan is inside [`lexer_for`], so this reads exactly what a parse
+/// of the same source reads.
+#[cfg(test)]
+pub(crate) fn sandbox_scan(source: &SourceFile) -> Vec<Diagnostic> {
+    let map = SourceMap::default();
+    let file = map.new_source_file(
+        FileName::Custom(source.name.clone()).into(),
+        source.source.clone(),
     );
-    let scanned = {
-        let at = |position: BytePos| lookup_at(&source_map, name, position);
-        scan(&mut lexer, &at)
-    };
-    lexer.take_errors().is_empty().then_some(scanned)
+    lexer_for(&map, &file, &source.name, source.dts, Profile::Sandbox)
+        .err()
+        .unwrap_or_default()
 }
 
 /// Parses every source file. Parse failures become `S100` diagnostics;
 /// the parser never panics on malformed input.
-pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec<Diagnostic>> {
+///
+/// Under [`Profile::Sandbox`] each source passes the §109.2 rule 5 scan
+/// before this function lexes it.
+pub(crate) fn parse_program(
+    sources: &[SourceFile],
+    profile: Profile,
+) -> Result<ParsedProgram, Vec<Diagnostic>> {
     let source_map = SourceMap::default();
     let mut files = Vec::new();
     let mut diags = Vec::new();
@@ -174,12 +233,13 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
             FileName::Custom(source.name.clone()).into(),
             source.source.clone(),
         );
-        let lexer = Lexer::new(
-            syntax_of(source.dts),
-            ast::EsVersion::Es2022,
-            StringInput::from(&*fm),
-            None,
-        );
+        let lexer = match lexer_for(&source_map, &fm, &source.name, source.dts, profile) {
+            Ok(lexer) => lexer,
+            Err(rejected) => {
+                diags.extend(rejected);
+                continue;
+            }
+        };
         let mut parser = Parser::new_from(lexer);
         let parsed = parser.parse_module();
         let mut errors = parser.take_errors();
@@ -257,6 +317,18 @@ fn lookup_at(source_map: &SourceMap, fallback_file: &str, at: BytePos) -> Pos {
 mod tests {
     use super::*;
 
+    /// Parses under the default profile, which runs no §109.2 rule.
+    fn parse_program_default(sources: &[SourceFile]) -> Result<ParsedProgram, Vec<Diagnostic>> {
+        parse_program(sources, Profile::Default)
+    }
+
+    /// Reads one source's imports under the default profile.
+    fn parse_import_specifiers_default(
+        source: &SourceFile,
+    ) -> Result<Vec<String>, Vec<Diagnostic>> {
+        parse_import_specifiers(source, Profile::Default)
+    }
+
     fn src(name: &str, text: &str) -> SourceFile {
         SourceFile {
             name: name.to_string(),
@@ -267,7 +339,7 @@ mod tests {
 
     #[test]
     fn parses_a_decorated_class() {
-        let program = parse_program(&[src(
+        let program = parse_program_default(&[src(
             "t.ts",
             "@CStruct\nclass V { x: f32;\n constructor(x: f32) { this.x = x; } }\n",
         )])
@@ -277,7 +349,7 @@ mod tests {
 
     #[test]
     fn reports_parse_errors_as_s100() {
-        let Err(err) = parse_program(&[src("bad.ts", "function ( {")]) else {
+        let Err(err) = parse_program_default(&[src("bad.ts", "function ( {")]) else {
             panic!("expected a parse error");
         };
         assert_eq!(err[0].code, RuleCode::S100);
@@ -286,7 +358,7 @@ mod tests {
 
     #[test]
     fn positions_are_one_based() {
-        let program = parse_program(&[src("p.ts", "const x: i32 = 1;\n")]).expect("parse");
+        let program = parse_program_default(&[src("p.ts", "const x: i32 = 1;\n")]).expect("parse");
         let item = &program.files[0].module.body[0];
         use swc_common::Spanned;
         let pos = program.pos(item.span());
@@ -301,7 +373,7 @@ mod tests {
 
     #[test]
     fn public_import_parser_returns_only_ast_import_declarations() {
-        let imports = parse_import_specifiers(&src(
+        let imports = parse_import_specifiers_default(&src(
             "main.ts",
             concat!(
                 "// import { fake } from \"./comment\";\n",
@@ -317,14 +389,15 @@ mod tests {
 
     #[test]
     fn public_import_parser_reports_parse_diagnostics() {
-        let diagnostics = parse_import_specifiers(&src("bad.ts", "import {"))
+        let diagnostics = parse_import_specifiers_default(&src("bad.ts", "import {"))
             .expect_err("invalid source must be rejected");
         assert_eq!(diagnostics[0].code, RuleCode::S100);
         assert_eq!(diagnostics[0].pos.file, "bad.ts");
     }
 
     fn string_parts(source: &str) -> Vec<String> {
-        let program = parse_program(&[src("value.ts", source)]).expect("valid string expression");
+        let program =
+            parse_program_default(&[src("value.ts", source)]).expect("valid string expression");
         let ast::ModuleItem::Stmt(ast::Stmt::Expr(statement)) = &program.files[0].module.body[0]
         else {
             panic!("expected an expression");
@@ -426,7 +499,8 @@ mod tests {
                 10,
             ),
         ] {
-            let Err(diagnostics) = parse_program(&[src("lone.ts", &format!("\n{bad}"))]) else {
+            let Err(diagnostics) = parse_program_default(&[src("lone.ts", &format!("\n{bad}"))])
+            else {
                 panic!("accepted {bad}");
             };
             assert_eq!(diagnostics.len(), 1, "{bad}");
@@ -453,7 +527,8 @@ mod tests {
 
     #[test]
     fn identifier_surrogate_pair_stays_rejected() {
-        let Err(diagnostics) = parse_program(&[src("identifier.ts", r"const \ud801\udc00 = 1;")])
+        let Err(diagnostics) =
+            parse_program_default(&[src("identifier.ts", r"const \ud801\udc00 = 1;")])
         else {
             panic!("accepted identifier surrogate escapes");
         };
@@ -466,7 +541,7 @@ mod tests {
         assert_eq!(diagnostics[0].divergence, None);
         for good in [r"const \u{10400} = 1;", "const 𐐀 = 1;"] {
             assert!(
-                parse_program(&[src("identifier.ts", good)]).is_ok(),
+                parse_program_default(&[src("identifier.ts", good)]).is_ok(),
                 "{good}"
             );
         }

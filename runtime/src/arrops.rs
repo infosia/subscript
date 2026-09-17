@@ -1852,6 +1852,14 @@ pub unsafe fn sort(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u
     if n < 2 {
         return;
     }
+    // §109.4 rule 2: the sort holds two copies of the receiver while it
+    // runs, so the quota takes that bounded multiple before either copy
+    // exists. Over the quota the trap stands and the array is untouched.
+    let copies = n.saturating_mul(esz).saturating_mul(2);
+    // SAFETY: caller contract.
+    if !unsafe { (*ctx).check_quota(copies, 0) } {
+        return;
+    }
     with_abi!(abi, T, {
         let mut buf: Vec<T> = Vec::with_capacity(n);
         for i in 0..n {

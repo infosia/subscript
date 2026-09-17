@@ -721,7 +721,7 @@ fn run_watch<O: Write, E: Write>(
     stderr: &mut E,
 ) -> Result<u8, Failure> {
     let mut session = WatchSession::new(deny_warnings, profile);
-    let mut watched = match on_the_compile_thread(|| load_program(source, &[])) {
+    let mut watched = match on_the_compile_thread(|| load_program(source, &[], profile)) {
         Ok(initial_files) => {
             let initial_paths = loaded_file_paths(source, &initial_files)?;
             let initial = session.step(&initial_files);
@@ -756,7 +756,7 @@ fn run_watch<O: Write, E: Write>(
         }
         watched.refresh();
 
-        let files = match on_the_compile_thread(|| load_program(source, &[])) {
+        let files = match on_the_compile_thread(|| load_program(source, &[], profile)) {
             Ok(files) => files,
             Err(failure) => {
                 session.invalidate_loaded_sources();
@@ -876,7 +876,7 @@ fn load_and_check(
     profile: Profile,
 ) -> Result<(Vec<SourceFile>, Vec<Warning>), Failure> {
     on_the_compile_thread(|| {
-        let files = load_program(source, mirrors)?;
+        let files = load_program(source, mirrors, profile)?;
         let warnings = accepted_warnings(&files, profile)?;
         Ok((files, warnings))
     })

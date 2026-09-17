@@ -742,6 +742,10 @@ impl<'p> Checker<'p> {
         if self.class_sigs[class.0].generic_method_is_rejected(name, is_static) {
             return None;
         }
+        // §109.2 rule 4: one unit for the instance this call site asks for.
+        if !self.spend_work(1, &pos) {
+            return None;
+        }
         let Some(type_args) = &call.type_args else {
             self.error_diverging(
                 RuleCode::S100,

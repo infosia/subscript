@@ -3,14 +3,15 @@
 //!
 //! A counting global allocator records the peak live bytes of the
 //! process. Each covered `subscript_rt_*` entry runs under a small quota
-//! with a request that would produce about 256 MiB. The three entries
+//! with a request that would produce about 256 MiB. The four entries
 //! that keep a bounded multiple of their input instead (§109.4 rule 2)
 //! run on an input the quota holds, whose multiple passes the quota.
 //! Each must record the `AllocationQuota` trap and leave the peak under
 //! the quota plus a fixed slack.
 //!
-//! The second test derives the entry list from `runtime/src/ffi.rs`. An
-//! entry that is neither covered nor listed with a reason fails it.
+//! The second test derives the entry list from `runtime/src/ffi.rs` over
+//! every `subscript_rt_` export, whatever its family. An entry that is
+//! neither covered nor listed with a reason fails it.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -149,6 +150,18 @@ fn string_of(ctx: &mut Context, byte: u8, len: usize) -> *const u8 {
     handle.cast_const()
 }
 
+/// A descending comparator of the shape `sort` calls: `(ctx, env, a, b)
+/// -> i32`.
+unsafe extern "C" fn descending(_ctx: *mut Context, _env: *const u8, a: f64, b: f64) -> i32 {
+    if a > b {
+        -1
+    } else if a < b {
+        1
+    } else {
+        0
+    }
+}
+
 /// A live string handle of `text`.
 fn string(ctx: &mut Context, text: &[u8]) -> *const u8 {
     let handle = ctx.alloc_str(text, 0);
@@ -172,10 +185,12 @@ const COVERED: &[&str] = &[
     "subscript_rt_json_raw",
     "subscript_rt_json_str",
     "subscript_rt_json_parse_begin",
+    "subscript_rt_arr_sort",
+    "subscript_rt_boundary_scratch_alloc",
 ];
 
-/// Every other `subscript_rt_(str|arr|json|regex|assoc|worker)_` entry,
-/// with the reason a script cannot size its result.
+/// Every other `subscript_rt_` export, with the reason a script cannot
+/// size its result or its temporary.
 const EXEMPT: &[(&str, &str)] = &[
     // Strings.
     (
@@ -375,10 +390,6 @@ const EXEMPT: &[(&str, &str)] = &[
     ("subscript_rt_arr_some", "the result is one scalar"),
     ("subscript_rt_arr_every", "the result is one scalar"),
     ("subscript_rt_arr_find_index", "the result is one scalar"),
-    (
-        "subscript_rt_arr_sort",
-        "the two temporaries are copies of the receiver, which the quota holds",
-    ),
     // Maps and sets.
     (
         "subscript_rt_assoc_iter_begin",
@@ -429,6 +440,377 @@ const EXEMPT: &[(&str, &str)] = &[
         "subscript_rt_worker_outbox_post",
         "§109.2 S025 rejects the Worker surface under the profile",
     ),
+    // Every other family. The total check reads every export of
+    // `ffi.rs`, so each one is covered by a case or listed here.
+    (
+        "subscript_rt_alloc",
+        "the result size is known first and goes into the Context allocation",
+    ),
+    (
+        "subscript_rt_array_byte_range",
+        "the result is a range of the receiver, which the quota holds",
+    ),
+    (
+        "subscript_rt_array_data",
+        "the result is a pointer into an allocation that already exists",
+    ),
+    (
+        "subscript_rt_array_from_bytes",
+        "the result size is the readable span the caller gives",
+    ),
+    ("subscript_rt_array_len", "the result is one scalar"),
+    ("subscript_rt_array_new", "the result is one empty array"),
+    ("subscript_rt_array_pop", "the result is one element copy"),
+    (
+        "subscript_rt_array_ptr",
+        "the result is a pointer into an allocation that already exists",
+    ),
+    (
+        "subscript_rt_array_push",
+        "the receiver grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_array_spread_array",
+        "the result array grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_array_spread_assoc",
+        "the result array grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_array_spread_fixed",
+        "the result array grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_array_spread_string",
+        "the result array grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_array_with_capacity",
+        "the capacity goes into the Context allocation, which the quota checks",
+    ),
+    (
+        "subscript_rt_async_await",
+        "the call records one continuation",
+    ),
+    (
+        "subscript_rt_async_complete",
+        "the result is one element copy",
+    ),
+    ("subscript_rt_async_is_stale", "the result is one scalar"),
+    (
+        "subscript_rt_async_kick",
+        "the call runs a frame the quota already holds",
+    ),
+    (
+        "subscript_rt_async_missing_completion",
+        "the call records one trap",
+    ),
+    (
+        "subscript_rt_async_park",
+        "the call moves one frame between queues",
+    ),
+    ("subscript_rt_async_register", "the call records one frame"),
+    (
+        "subscript_rt_async_release",
+        "the call decrements one count",
+    ),
+    (
+        "subscript_rt_async_release_array",
+        "the call walks an array the quota holds",
+    ),
+    (
+        "subscript_rt_async_result",
+        "the result is one element copy",
+    ),
+    ("subscript_rt_async_retain", "the call increments one count"),
+    (
+        "subscript_rt_async_retain_array",
+        "the call walks an array the quota holds",
+    ),
+    (
+        "subscript_rt_boundary_scratch_mark",
+        "the result is one scalar",
+    ),
+    (
+        "subscript_rt_boundary_scratch_release",
+        "the call releases the scratch scope",
+    ),
+    (
+        "subscript_rt_cb_bind",
+        "the result is one binding record of fixed size",
+    ),
+    (
+        "subscript_rt_cb_trampoline",
+        "the call forwards one message to a script callback",
+    ),
+    (
+        "subscript_rt_collect",
+        "the call releases memory and allocates none",
+    ),
+    ("subscript_rt_ctx_async_pending", "the result is one scalar"),
+    (
+        "subscript_rt_ctx_async_step",
+        "the call drains queues the quota already holds",
+    ),
+    (
+        "subscript_rt_ctx_async_unfinished",
+        "the result is one scalar",
+    ),
+    ("subscript_rt_ctx_charged_bytes", "the result is one scalar"),
+    (
+        "subscript_rt_ctx_clear_trap",
+        "the call clears the trap record",
+    ),
+    (
+        "subscript_rt_ctx_collect",
+        "the call releases memory and allocates none",
+    ),
+    (
+        "subscript_rt_ctx_enter_script",
+        "the call records one depth",
+    ),
+    ("subscript_rt_ctx_exit_script", "the call records one depth"),
+    (
+        "subscript_rt_ctx_fail_alloc_after",
+        "the call stores one host counter",
+    ),
+    (
+        "subscript_rt_ctx_interrupt_handle",
+        "the result is one interrupt cell of fixed size",
+    ),
+    (
+        "subscript_rt_ctx_live_allocations",
+        "the result is one scalar",
+    ),
+    ("subscript_rt_ctx_live_bytes", "the result is one scalar"),
+    (
+        "subscript_rt_ctx_new",
+        "the result is one Context the host owns",
+    ),
+    ("subscript_rt_ctx_release", "the call frees the Context"),
+    (
+        "subscript_rt_ctx_reserved_bytes",
+        "the result is one scalar",
+    ),
+    (
+        "subscript_rt_ctx_seed_random",
+        "the call reseeds a fixed-size generator state",
+    ),
+    (
+        "subscript_rt_ctx_set_alloc_quota",
+        "the call stores the quota itself",
+    ),
+    (
+        "subscript_rt_ctx_set_binding_count_advisory",
+        "the call stores one host threshold",
+    ),
+    (
+        "subscript_rt_ctx_set_diagnostics_observer",
+        "the call stores one host callback",
+    ),
+    (
+        "subscript_rt_ctx_set_freed_handle_diagnostics",
+        "the call stores one host flag",
+    ),
+    (
+        "subscript_rt_ctx_set_now",
+        "the call stores one host timestamp",
+    ),
+    (
+        "subscript_rt_ctx_set_print_observer",
+        "the call stores one host callback",
+    ),
+    (
+        "subscript_rt_ctx_set_regex_budget",
+        "the call stores one host budget",
+    ),
+    (
+        "subscript_rt_ctx_set_stack_budget",
+        "the call stores one host budget",
+    ),
+    (
+        "subscript_rt_ctx_set_trap_observer",
+        "the call stores one host callback",
+    ),
+    (
+        "subscript_rt_ctx_stdout",
+        "the result borrows the capture sink, which is the host's buffer",
+    ),
+    ("subscript_rt_ctx_trap_kind", "the result is one scalar"),
+    (
+        "subscript_rt_ctx_trap_message",
+        "the result borrows the trap message the runtime already holds",
+    ),
+    ("subscript_rt_ctx_trap_pos_id", "the result is one scalar"),
+    (
+        "subscript_rt_ctx_visit_live_allocations",
+        "the call visits the live set and allocates nothing",
+    ),
+    ("subscript_rt_date_get", "the result is one scalar"),
+    ("subscript_rt_date_new", "the result is one scalar"),
+    ("subscript_rt_date_now", "the result is one scalar"),
+    (
+        "subscript_rt_date_to_iso",
+        "the result is one ISO timestamp of fixed length",
+    ),
+    ("subscript_rt_date_utc", "the result is one scalar"),
+    ("subscript_rt_delete", "the call releases one allocation"),
+    ("subscript_rt_f16_from_f64", "the result is one scalar"),
+    ("subscript_rt_f16_to_f64", "the result is one scalar"),
+    ("subscript_rt_fixed_arr_every", "the result is one scalar"),
+    (
+        "subscript_rt_fixed_arr_filter",
+        "the result array grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_fixed_arr_find_index",
+        "the result is one scalar",
+    ),
+    (
+        "subscript_rt_fixed_arr_for_each",
+        "the call records no result",
+    ),
+    (
+        "subscript_rt_fixed_arr_map",
+        "the result array grows through the Context path, which the quota checks",
+    ),
+    ("subscript_rt_fixed_arr_reduce", "the result is one element"),
+    (
+        "subscript_rt_fixed_arr_reduce_right",
+        "the result is one element",
+    ),
+    ("subscript_rt_fixed_arr_some", "the result is one scalar"),
+    ("subscript_rt_fmod", "the result is one scalar"),
+    (
+        "subscript_rt_fmt_bool",
+        "the result is one formatted scalar",
+    ),
+    ("subscript_rt_fmt_f32", "the result is one formatted scalar"),
+    ("subscript_rt_fmt_f64", "the result is one formatted scalar"),
+    (
+        "subscript_rt_globals_init",
+        "the result size is the module image's global block, not script input",
+    ),
+    ("subscript_rt_interrupt_set", "the call stores one flag"),
+    ("subscript_rt_map_for_each", "the call records no result"),
+    ("subscript_rt_map_get", "the result is one value copy"),
+    ("subscript_rt_map_get_or", "the result is one value copy"),
+    (
+        "subscript_rt_map_group_by",
+        "every group is a Context allocation that the quota checks",
+    ),
+    ("subscript_rt_map_new", "the result is one empty map"),
+    (
+        "subscript_rt_map_set",
+        "the entry grows through the Context path, which the quota checks",
+    ),
+    ("subscript_rt_math_clz32", "the result is one scalar"),
+    (
+        "subscript_rt_math_f32_from_bits",
+        "the result is one scalar",
+    ),
+    ("subscript_rt_math_f32_to_bits", "the result is one scalar"),
+    ("subscript_rt_math_fround", "the result is one scalar"),
+    ("subscript_rt_math_imul", "the result is one scalar"),
+    ("subscript_rt_math_random", "the result is one scalar"),
+    ("subscript_rt_num_is_finite", "the result is one scalar"),
+    ("subscript_rt_num_is_integer", "the result is one scalar"),
+    ("subscript_rt_num_is_nan", "the result is one scalar"),
+    (
+        "subscript_rt_num_is_safe_integer",
+        "the result is one scalar",
+    ),
+    ("subscript_rt_num_parse_float", "the result is one scalar"),
+    ("subscript_rt_num_parse_int", "the result is one scalar"),
+    (
+        "subscript_rt_num_to_exponential",
+        "the result is one formatted scalar of at most 100 digits",
+    ),
+    (
+        "subscript_rt_num_to_fixed",
+        "the result is one formatted scalar of at most 101 digits",
+    ),
+    (
+        "subscript_rt_num_to_precision",
+        "the result is one formatted scalar of at most 100 digits",
+    ),
+    (
+        "subscript_rt_num_to_string_f32",
+        "the result is one formatted scalar bounded by the radix",
+    ),
+    (
+        "subscript_rt_num_to_string_f64",
+        "the result is one formatted scalar bounded by the radix",
+    ),
+    (
+        "subscript_rt_print",
+        "the line is one string the quota holds, and the capture sink is the host's",
+    ),
+    (
+        "subscript_rt_root_add",
+        "the call records one root range of the module image",
+    ),
+    ("subscript_rt_sandbox_enter", "the call reads two counters"),
+    ("subscript_rt_sandbox_poll", "the call reads one flag"),
+    (
+        "subscript_rt_set_add",
+        "the entry grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_set_difference",
+        "the result set grows through the Context path, which the quota checks",
+    ),
+    ("subscript_rt_set_for_each", "the call records no result"),
+    (
+        "subscript_rt_set_from_array",
+        "the result set grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_set_from_assoc",
+        "the result set grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_set_from_fixed",
+        "the result set grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_set_from_string",
+        "the result set grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_set_intersection",
+        "the result set grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_set_is_disjoint_from",
+        "the result is one scalar",
+    ),
+    ("subscript_rt_set_is_subset_of", "the result is one scalar"),
+    (
+        "subscript_rt_set_is_superset_of",
+        "the result is one scalar",
+    ),
+    ("subscript_rt_set_new", "the result is one empty set"),
+    (
+        "subscript_rt_set_symmetric_difference",
+        "the result set grows through the Context path, which the quota checks",
+    ),
+    (
+        "subscript_rt_set_union",
+        "the result set grows through the Context path, which the quota checks",
+    ),
+    ("subscript_rt_shadow_pop", "the call records no bytes"),
+    (
+        "subscript_rt_shadow_push",
+        "the call records one frame range the caller owns",
+    ),
+    ("subscript_rt_trap", "the call records one trap"),
+    (
+        "subscript_rt_trap_index_out_of_bounds",
+        "the call records one trap",
+    ),
+    ("subscript_rt_trap_wire_enum", "the call records one trap"),
 ];
 
 /// Takes the process-wide counter lock, ignoring an earlier panic.
@@ -652,6 +1034,55 @@ fn every_covered_entry_stays_under_the_quota() {
         measured.push(peak);
     }
 
+    // `sort(cmp)`: §109.4 rule 2 keeps a bounded multiple here too. The
+    // sort holds two copies of the receiver, so a receiver of half the
+    // quota passes it.
+    {
+        let mut ctx = quota_context();
+        let elements = 4_096;
+        let array = ctx.array_with_capacity(elements, 8, 0);
+        assert!(!array.is_null(), "the receiver must fit the quota");
+        for index in 0..elements {
+            let value = (elements - index) as f64;
+            // SAFETY: a live eight-byte-element array of this Context.
+            assert!(
+                unsafe { ctx.array_push(array, (&value as *const f64).cast(), 0) } >= 0,
+                "the receiver must fit the quota"
+            );
+        }
+        let pointer: *mut Context = &mut *ctx;
+        let peak = peak_of("subscript_rt_arr_sort", &mut ctx, |_| {
+            // SAFETY: live exclusive Context, live array, live
+            // comparator. Kind 2 is `f64` (`arrops::ElemKind::from_u32`).
+            unsafe {
+                ffi::subscript_rt_arr_sort(
+                    pointer,
+                    array,
+                    descending as *const u8,
+                    std::ptr::null(),
+                    2,
+                );
+            }
+        });
+        measured.push(peak);
+    }
+
+    // The boundary scratch block: the marshal sizes it from the length
+    // of the array it lowers, and the block lives outside the Context.
+    {
+        let mut ctx = quota_context();
+        let pointer: *mut Context = &mut *ctx;
+        // SAFETY: live exclusive Context.
+        let mark = unsafe { ffi::subscript_rt_boundary_scratch_mark(pointer) };
+        let peak = peak_of("subscript_rt_boundary_scratch_alloc", &mut ctx, |_| {
+            // SAFETY: live exclusive Context.
+            unsafe { ffi::subscript_rt_boundary_scratch_alloc(pointer, HUGE as u64, 1) };
+        });
+        // SAFETY: live exclusive Context and a mark of this Context.
+        unsafe { ffi::subscript_rt_boundary_scratch_release(pointer, mark) };
+        measured.push(peak);
+    }
+
     let names: Vec<&str> = measured.iter().map(|one| one.entry).collect();
     assert_eq!(names, COVERED, "every covered entry needs one case here");
     for one in &measured {
@@ -693,20 +1124,20 @@ fn every_exported_entry_is_covered_or_listed_with_a_reason() {
         .expect("read runtime/src/ffi.rs");
     let mut exported: Vec<&str> = Vec::new();
     for line in source.lines() {
-        let Some(rest) = line.strip_prefix("pub unsafe extern \"C\" fn ") else {
+        // §109.4 rule 2: every export, whatever its family.
+        let Some(rest) = line
+            .strip_prefix("pub unsafe extern \"C\" fn ")
+            .or_else(|| line.strip_prefix("pub extern \"C\" fn "))
+        else {
             continue;
         };
         let name = rest.split('(').next().unwrap_or_default();
-        if name.strip_prefix("subscript_rt_").is_some_and(|tail| {
-            ["str_", "arr_", "json_", "regex_", "assoc_", "worker_"]
-                .iter()
-                .any(|family| tail.starts_with(family))
-        }) {
+        if name.starts_with("subscript_rt_") {
             exported.push(name);
         }
     }
     assert!(
-        exported.len() > 90,
+        exported.len() > 200,
         "the reader found {} entries; it is wrong",
         exported.len()
     );

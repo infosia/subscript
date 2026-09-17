@@ -119,3 +119,30 @@ fn a_forty_thousand_level_conditional_chain_returns_under_the_default_profile() 
     );
     assert_eq!(checked, Ok(1), "the chain must check clean");
 }
+
+/// §109.2 rule 3: `check_program_with` spawns the compile thread itself,
+/// so a host that embeds this crate gets the stack bound from the API.
+///
+/// The source nests 2,000 parentheses, and the caller is a 2 MiB
+/// thread, the size of an ordinary test thread. The call carries no
+/// wrapper: a body that runs on this thread overflows its stack and
+/// aborts the process.
+#[test]
+fn a_bare_check_returns_from_a_two_mebibyte_caller_thread() {
+    let source = format!(
+        "export function main(): void {{\n  const value: i32 = {}7{};\n  print(`${{value}}`);\n}}\n",
+        "(".repeat(2_000),
+        ")".repeat(2_000)
+    );
+    let checked = std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || {
+            check_program(&[SourceFile::new("deep.ts", source)])
+                .map(|module| module.functions.len())
+        })
+        .expect("spawn the 2 MiB caller thread")
+        .join()
+        .expect("the check returns from a 2 MiB caller thread");
+    assert_eq!(checked, Ok(1), "the deep source must check clean");
+    println!("2,000 nested parentheses: a bare check returns from a 2 MiB caller thread");
+}

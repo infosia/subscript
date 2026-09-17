@@ -1742,7 +1742,8 @@ mod tests {
             "export function f(): void { use({ value: (root.field = 1) }); }\n",
         );
         let program = swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-            crate::parse::parse_program(&[source]).expect("object source parses")
+            crate::parse::parse_program(&[source], crate::Profile::Default)
+                .expect("object source parses")
         });
         let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) =
             &program.files[0].module.body[0]

@@ -762,7 +762,7 @@ fn language_layout_matches_c_offsetof_for_every_mirrored_struct() {
             ("blend".to_string(), 8),
             ("writeMask".to_string(), 16),
         ],
-        "the round-3 fixture must retain the downstream's measured layout"
+        "the fixture must retain the downstream's measured layout"
     );
 
     let mut report =

@@ -921,6 +921,85 @@ fn profile_selects_the_sandbox_rules_and_rejects_every_other_name() -> Result<()
     Ok(())
 }
 
+/// §109.2 rule 5: the parser's entry owns the S026 scan, so no command
+/// parses a source the scan rejects.
+///
+/// `deep.ts` nests 300,000 type arguments in 900,012 bytes, under the
+/// per-file byte limit. At the pin the loader parsed it to read its
+/// imports, and the compile thread overflowed its stack: `check
+/// --profile sandbox` aborted with exit 134. `octal.ts` puts a legacy
+/// octal literal before 300 parentheses; at the pin the loader reported
+/// the octal parse error and no S026.
+#[test]
+fn s026_rejects_a_source_before_any_command_parses_it() -> Result<(), String> {
+    let dir = TestDir::new()?;
+    let levels = 300_000;
+    let deep = dir.write(
+        "deep.ts",
+        format!("let x: {}i32{};\n", "A<".repeat(levels), ">".repeat(levels)).as_bytes(),
+    )?;
+    let octal = dir.write(
+        "octal.ts",
+        format!(
+            "let o: i32 = 010;\nlet p: i32 = {}1{};\n",
+            "(".repeat(300),
+            ")".repeat(300)
+        )
+        .as_bytes(),
+    )?;
+
+    for source in [&deep, &octal] {
+        for command in ["check", "run"] {
+            let rejected = output(
+                subscript()
+                    .arg(command)
+                    .arg("--profile")
+                    .arg("sandbox")
+                    .arg(source),
+            )?;
+            assert_code(&rejected, 1);
+            let rendered = String::from_utf8_lossy(&rejected.stderr).into_owned();
+            assert!(
+                rendered.contains("error[S026]") && rendered.contains("sandbox profile"),
+                "{command} {}: {rendered}",
+                source.display()
+            );
+        }
+        let built = dir.directory("build")?;
+        let rejected = output(
+            subscript()
+                .arg("build")
+                .arg("--source")
+                .arg(source)
+                .arg("-o")
+                .arg(&built)
+                .arg("--profile")
+                .arg("sandbox"),
+        )?;
+        assert_code(&rejected, 1);
+        assert!(
+            String::from_utf8_lossy(&rejected.stderr).contains("error[S026]"),
+            "build {}: {}",
+            source.display(),
+            String::from_utf8_lossy(&rejected.stderr)
+        );
+    }
+
+    // The firing control: the default profile runs no §109.2 rule, so
+    // the octal source keeps the parse error it always had. The deep
+    // source has no control here, because the default profile keeps no
+    // limit and the parser recurses once for each of its 300,000 levels.
+    let default = output(subscript().arg("check").arg(&octal))?;
+    assert_code(&default, 1);
+    let rendered = String::from_utf8_lossy(&default.stderr).into_owned();
+    assert!(
+        rendered.contains("error[S100]") && rendered.contains("Legacy octal"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("S026"), "{rendered}");
+    Ok(())
+}
+
 /// §109.5: `build --profile sandbox` writes the run-time defaults into
 /// the generated entry, and `run --profile sandbox` applies them.
 ///

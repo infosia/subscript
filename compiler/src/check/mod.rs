@@ -2583,6 +2583,9 @@ impl<'p> Checker<'p> {
                     );
                 }
             }
+            // §109.2 rule 4: the nesting guard covers the types of the
+            // declaration, which no resolution walks.
+            self.guard_type_parameters(tp);
             let type_params: Vec<String> =
                 tp.params.iter().map(|p| p.name.sym.to_string()).collect();
             self.generic_classes.insert(
@@ -2703,6 +2706,9 @@ impl<'p> Checker<'p> {
         &mut self,
         params: &ast::TsTypeParamDecl,
     ) -> (Vec<String>, bool) {
+        // §109.2 rule 4: the nesting guard covers the types of the
+        // declaration, which no resolution walks.
+        self.guard_type_parameters(params);
         let mut names = HashSet::new();
         let mut duplicate = false;
         let names = params
@@ -5896,6 +5902,10 @@ impl<'p> Checker<'p> {
         if self.fn_sigs.contains_key(&name) {
             return Some(name);
         }
+        // §109.2 rule 4: one unit for the instance this site creates.
+        if !self.spend_work(1, &pos) {
+            return None;
+        }
         let saved_file = self.cur_file;
         let saved_subst = std::mem::take(&mut self.subst);
         self.cur_file = template.file;
@@ -5961,6 +5971,10 @@ impl<'p> Checker<'p> {
         };
         if known {
             return Some(instance);
+        }
+        // §109.2 rule 4: one unit for the instance this site creates.
+        if !self.spend_work(1, &pos) {
+            return None;
         }
         let saved_file = self.cur_file;
         let saved_subst = std::mem::take(&mut self.subst);
@@ -6034,6 +6048,10 @@ impl<'p> Checker<'p> {
         let name = self.mono_name(key, args);
         if let Some(&id) = self.class_ids.get(&name) {
             return Some(id);
+        }
+        // §109.2 rule 4: one unit for the instance this site creates.
+        if !self.spend_work(1, &pos) {
+            return None;
         }
         let saved_file = self.cur_file;
         let saved_subst = std::mem::take(&mut self.subst);

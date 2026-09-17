@@ -404,8 +404,8 @@ fn a_program_over_the_byte_limit_rejects_s026() {
 
 /// §109.2 rule 3: the compile of a dev-tier run is on the compile
 /// thread, so a depth no caller thread holds still runs. The thread here
-/// is 2 MiB, the size of an ordinary test thread, and the source is the
-/// depth the round-1 test pinned.
+/// is 2 MiB, the size of an ordinary test thread, and the source nests
+/// 2,000 parentheses.
 #[test]
 fn a_deep_source_runs_through_the_dev_jit_from_a_two_mebibyte_thread() {
     let source = format!(

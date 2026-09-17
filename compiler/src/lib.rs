@@ -162,11 +162,25 @@ pub fn check_program(files: &[SourceFile]) -> Result<hir::Module, Vec<Diagnostic
 
 /// Checks a program with the specified options.
 ///
+/// The work runs on the compile thread (§109.2 rule 3): this function
+/// spawns it, so a host that embeds this crate gets the stack bound from
+/// the API and not from a wrapper of its own. A caller already on that
+/// thread runs the work inline.
+///
 /// # Errors
 ///
 /// Returns the diagnostic list when the program parses with errors or
 /// violates any language rule.
 pub fn check_program_with(
+    files: &[SourceFile],
+    options: &CheckOptions,
+) -> Result<hir::Module, Vec<Diagnostic>> {
+    on_the_compile_thread(|| check_on_this_thread(files, options))
+}
+
+/// Checks a program on the thread that calls it (§109.2 rule 3: the
+/// compile thread).
+fn check_on_this_thread(
     files: &[SourceFile],
     options: &CheckOptions,
 ) -> Result<hir::Module, Vec<Diagnostic>> {
@@ -177,9 +191,9 @@ pub fn check_program_with(
             Pos::new(String::new(), 1, 1),
         )]);
     }
-    // §109.2 S026 runs before the parser, so a source past a limit never
-    // reaches it. The program limit reports once, at the entry file, and
-    // the per-file limits report after it.
+    // §109.2 S026: the program limit is a fact of the file set, so it
+    // reports once, at the entry file, before any source is parsed. The
+    // per-file limits belong to the parser's entry (rule 5).
     if options.profile == Profile::Sandbox {
         // §109.2a: every bound of the profile assumes the compile
         // thread's stack, so a refused thread checks nothing.
@@ -199,13 +213,9 @@ pub fn check_program_with(
         if let Some(program) = check::profile::program_limit_diagnostic(files) {
             return Err(vec![program]);
         }
-        let limits = check::profile::source_limit_diagnostics(files);
-        if !limits.is_empty() {
-            return Err(limits);
-        }
     }
     swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-        let parsed = parse::parse_program(files)?;
+        let parsed = parse::parse_program(files, options.profile)?;
         check::run(&parsed, options)
     })
 }
@@ -419,6 +429,12 @@ mod tests {
         check_program(&[SourceFile::new("test.ts", src)])
     }
 
+    /// Checks one source on this thread, for a test that reads a record
+    /// the checker keeps in a thread-local.
+    fn check_inline(src: &str) -> Result<hir::Module, Vec<Diagnostic>> {
+        check_on_this_thread(&[SourceFile::new("test.ts", src)], &CheckOptions::default())
+    }
+
     #[test]
     fn empty_program_list_is_an_error() {
         let err = check_program(&[]).unwrap_err();
@@ -435,12 +451,16 @@ mod tests {
         assert_eq!(module.functions[0].ret, Type::Void);
     }
 
+    /// The classification record is a thread-local of the thread the
+    /// checker runs on, so this test checks inline and reads its own
+    /// thread (§109.2 rule 3 spawns the compile thread for
+    /// [`check_program_with`]).
     #[test]
     fn assignment_targets_classify_every_place_variant_from_source() {
         use crate::check::{take_classified_places, PlaceKind};
 
         let _ = take_classified_places();
-        check_one(
+        check_inline(
             "let global: i32 = 0;\n\
              class Holder {\n\
                field: i32 = 0;\n\

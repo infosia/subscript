@@ -3,10 +3,9 @@
 //! attributes to itself is the quota plus a fixed overhead, whatever the
 //! allocation sizes.
 //!
-//! This is the pre-registered measurement M6. The program fills a
-//! Context to the quota with 8-byte objects, and separately with
-//! 4,096-byte objects, in both memory modes, and reports the bytes the
-//! process holds at the trap.
+//! The program fills a Context to the quota with 8-byte objects, and
+//! separately with 4,096-byte objects, in both memory modes, and reports
+//! the bytes the process holds at the trap.
 //!
 //! Resident bytes have no portable reader in a test, so the counting
 //! global allocator of `quota_peak.rs` reports the bytes instead: the

@@ -169,7 +169,17 @@ pub unsafe extern "C" fn subscript_rt_boundary_scratch_alloc(
     size: u64,
     pos_id: u32,
 ) -> *mut u8 {
-    unsafe { &mut *ctx }.boundary_scratch_alloc(size as usize, pos_id)
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    // §109.4 rule 2: the boundary marshal sizes this block from the
+    // length of the array it lowers, so a script sizes it. The block
+    // lives outside the Context, so the quota takes its bytes before it
+    // exists.
+    let size = size as usize;
+    if !runtime.check_quota(size, pos_id) {
+        return std::ptr::null_mut();
+    }
+    runtime.boundary_scratch_alloc(size, pos_id)
 }
 
 /// Releases every boundary scratch block allocated since `mark`.

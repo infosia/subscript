@@ -1,8 +1,9 @@
 //! The sandbox-profile source limits (`specs/blocks/compiler.md` §109.2,
 //! S026), and the tests for every §109.2 rule.
 //!
-//! The scan runs before the parser, over every source file that is not
-//! ambient. The depth is a count over the **lexer's tokens**, so a
+//! The parser's one lexer constructor runs the per-file scan, over every
+//! source file that is not ambient, before it hands out a lexer (§109.2
+//! rule 5). The depth is a count over the **lexer's tokens**, so a
 //! bracket inside a comment, a string, a template, or a
 //! regular-expression literal is not a bracket. The lexer is a flat loop
 //! over the bytes, so the cost of the scan does not grow with the depth.
@@ -12,10 +13,11 @@
 //! sandbox profile, and the firing control that the same source checks
 //! clean under the default profile.
 
-use swc_ecma_parser::token::Token;
+use swc_common::{BytePos, Spanned};
+use swc_ecma_ast as ast;
+use swc_ecma_parser::token::{Token, TokenAndSpan};
 
 use crate::diag::{Diagnostic, Pos, RuleCode};
-use crate::parse;
 use crate::{Profile, SourceFile};
 
 use super::Checker;
@@ -178,6 +180,170 @@ impl Checker<'_> {
     }
 }
 
+/// Every type one type node holds directly.
+///
+/// The match is exhaustive, so a new node kind of the pinned parser
+/// fails the build here rather than escaping the descent.
+fn child_types(ty: &ast::TsType) -> Vec<&ast::TsType> {
+    fn of_annotation(annotation: &ast::TsTypeAnn) -> &ast::TsType {
+        &annotation.type_ann
+    }
+    fn of_params<'a>(params: &'a [ast::TsFnParam], found: &mut Vec<&'a ast::TsType>) {
+        for param in params {
+            let annotation = match param {
+                ast::TsFnParam::Ident(binding) => binding.type_ann.as_deref(),
+                ast::TsFnParam::Array(pattern) => pattern.type_ann.as_deref(),
+                ast::TsFnParam::Rest(pattern) => pattern.type_ann.as_deref(),
+                ast::TsFnParam::Object(pattern) => pattern.type_ann.as_deref(),
+            };
+            found.extend(annotation.map(of_annotation));
+        }
+    }
+    fn of_members<'a>(members: &'a [ast::TsTypeElement], found: &mut Vec<&'a ast::TsType>) {
+        for member in members {
+            match member {
+                ast::TsTypeElement::TsCallSignatureDecl(signature) => {
+                    of_params(&signature.params, found);
+                    found.extend(signature.type_ann.as_deref().map(of_annotation));
+                }
+                ast::TsTypeElement::TsConstructSignatureDecl(signature) => {
+                    of_params(&signature.params, found);
+                    found.extend(signature.type_ann.as_deref().map(of_annotation));
+                }
+                ast::TsTypeElement::TsPropertySignature(signature) => {
+                    found.extend(signature.type_ann.as_deref().map(of_annotation));
+                }
+                ast::TsTypeElement::TsGetterSignature(signature) => {
+                    found.extend(signature.type_ann.as_deref().map(of_annotation));
+                }
+                ast::TsTypeElement::TsSetterSignature(signature) => {
+                    of_params(std::slice::from_ref(&signature.param), found);
+                }
+                ast::TsTypeElement::TsMethodSignature(signature) => {
+                    of_params(&signature.params, found);
+                    found.extend(signature.type_ann.as_deref().map(of_annotation));
+                }
+                ast::TsTypeElement::TsIndexSignature(signature) => {
+                    of_params(&signature.params, found);
+                    found.extend(signature.type_ann.as_deref().map(of_annotation));
+                }
+            }
+        }
+    }
+    fn of_type_param<'a>(param: &'a ast::TsTypeParam, found: &mut Vec<&'a ast::TsType>) {
+        found.extend(param.constraint.as_deref());
+        found.extend(param.default.as_deref());
+    }
+
+    let mut found: Vec<&ast::TsType> = Vec::new();
+    match ty {
+        ast::TsType::TsKeywordType(_) | ast::TsType::TsThisType(_) => {}
+        ast::TsType::TsFnOrConstructorType(shape) => match shape {
+            ast::TsFnOrConstructorType::TsFnType(function) => {
+                of_params(&function.params, &mut found);
+                found.push(of_annotation(&function.type_ann));
+            }
+            ast::TsFnOrConstructorType::TsConstructorType(constructor) => {
+                of_params(&constructor.params, &mut found);
+                found.push(of_annotation(&constructor.type_ann));
+            }
+        },
+        ast::TsType::TsTypeRef(reference) => {
+            if let Some(arguments) = &reference.type_params {
+                found.extend(arguments.params.iter().map(Box::as_ref));
+            }
+        }
+        ast::TsType::TsTypeQuery(query) => {
+            if let Some(arguments) = &query.type_args {
+                found.extend(arguments.params.iter().map(Box::as_ref));
+            }
+        }
+        ast::TsType::TsTypeLit(literal) => of_members(&literal.members, &mut found),
+        ast::TsType::TsArrayType(array) => found.push(&array.elem_type),
+        ast::TsType::TsTupleType(tuple) => {
+            found.extend(tuple.elem_types.iter().map(|element| &*element.ty));
+        }
+        ast::TsType::TsOptionalType(optional) => found.push(&optional.type_ann),
+        ast::TsType::TsRestType(rest) => found.push(&rest.type_ann),
+        ast::TsType::TsUnionOrIntersectionType(shape) => match shape {
+            ast::TsUnionOrIntersectionType::TsUnionType(union) => {
+                found.extend(union.types.iter().map(Box::as_ref));
+            }
+            ast::TsUnionOrIntersectionType::TsIntersectionType(intersection) => {
+                found.extend(intersection.types.iter().map(Box::as_ref));
+            }
+        },
+        ast::TsType::TsConditionalType(conditional) => {
+            found.push(&conditional.check_type);
+            found.push(&conditional.extends_type);
+            found.push(&conditional.true_type);
+            found.push(&conditional.false_type);
+        }
+        ast::TsType::TsInferType(infer) => of_type_param(&infer.type_param, &mut found),
+        ast::TsType::TsParenthesizedType(parenthesized) => found.push(&parenthesized.type_ann),
+        ast::TsType::TsTypeOperator(operator) => found.push(&operator.type_ann),
+        ast::TsType::TsIndexedAccessType(access) => {
+            found.push(&access.obj_type);
+            found.push(&access.index_type);
+        }
+        ast::TsType::TsMappedType(mapped) => {
+            of_type_param(&mapped.type_param, &mut found);
+            found.extend(mapped.name_type.as_deref());
+            found.extend(mapped.type_ann.as_deref());
+        }
+        ast::TsType::TsLitType(literal) => {
+            if let ast::TsLit::Tpl(template) = &literal.lit {
+                found.extend(template.types.iter().map(Box::as_ref));
+            }
+        }
+        ast::TsType::TsTypePredicate(predicate) => {
+            found.extend(predicate.type_ann.as_deref().map(of_annotation));
+        }
+        ast::TsType::TsImportType(import) => {
+            if let Some(arguments) = &import.type_args {
+                found.extend(arguments.params.iter().map(Box::as_ref));
+            }
+        }
+    }
+    found
+}
+
+impl Checker<'_> {
+    /// Enters the nesting guard over every type of one type-parameter
+    /// declaration: each constraint and each default (§109.2 rule 4).
+    ///
+    /// [`Checker::resolve_type`] guards every annotation it resolves. The
+    /// types of a type-parameter declaration are TypeScript's own
+    /// typing, which this language does not read, so no resolution walks
+    /// them. This descent gives them the same bound. It resolves
+    /// nothing, so it adds no diagnostic but S026 and creates no
+    /// instance.
+    ///
+    /// Under the default profile it walks nothing, because the guard
+    /// enforces nothing there.
+    pub(crate) fn guard_type_parameters(&mut self, declaration: &ast::TsTypeParamDecl) {
+        if self.profile != Profile::Sandbox {
+            return;
+        }
+        for param in &declaration.params {
+            for ty in param.constraint.iter().chain(param.default.iter()) {
+                self.guard_type_depth(ty);
+            }
+        }
+    }
+
+    /// One level of the descent of [`Checker::guard_type_parameters`].
+    fn guard_type_depth(&mut self, ty: &ast::TsType) {
+        let pos = self.pos(ty.span());
+        if self.enter_nesting(&pos) {
+            for child in child_types(ty) {
+                self.guard_type_depth(child);
+            }
+        }
+        self.leave_nesting();
+    }
+}
+
 /// Reports the program-wide byte limit (§109.2, S026), before the parser.
 ///
 /// The sum is over every file that is not ambient: a mirror is the host's
@@ -202,21 +368,34 @@ pub(crate) fn program_limit_diagnostic(files: &[SourceFile]) -> Option<Diagnosti
     ))
 }
 
-/// Reports every source file that is over a §109.2 S026 limit.
+/// Reports the first §109.2 S026 per-file limit that one source is over
+/// (rule 5). The parser's one lexer constructor runs this scan, so no
+/// entry parses a source this function rejects.
 ///
-/// One file reports at most one diagnostic: the byte limit first, then
-/// the first bracket that takes the depth over the limit.
-pub(crate) fn source_limit_diagnostics(files: &[SourceFile]) -> Vec<Diagnostic> {
-    files
-        .iter()
-        .filter(|file| !file.dts)
-        .filter_map(|file| source_limits(&file.name, &file.source))
-        .collect()
-}
-
-/// Reports the first §109.2 S026 limit that one source is over.
-fn source_limits(name: &str, source: &str) -> Option<Diagnostic> {
-    let bytes = source.len();
+/// The byte limit reports first, and it reads no token. `tokens` is then
+/// the lexer's own token stream and `at` maps a byte position to the
+/// [`Pos`] the parser reports for the same offset.
+///
+/// The bracket count is over the lexer's tokens: `(`, `[`, `{`, and the
+/// `${` of a template head each open one level, and `)`, `]`, and `}`
+/// each close one. `${` opens a level because the `}` that ends its
+/// expression is an ordinary `}` token, and because the parser recurses
+/// once for the expression it opens. A closer below zero resets the depth
+/// to zero.
+///
+/// The token count is over every token the lexer answers. It bounds the
+/// parser's recursion for the nests that open no bracket.
+///
+/// One flat loop reads both, so the cost of the scan does not grow with
+/// the depth. The first limit in token order reports. A lexer error does
+/// not stop the count; the caller reports that error beside this finding
+/// (§109.2 rule 5).
+pub(crate) fn source_scan(
+    name: &str,
+    bytes: usize,
+    tokens: &mut dyn Iterator<Item = TokenAndSpan>,
+    at: &dyn Fn(BytePos) -> Pos,
+) -> Option<Diagnostic> {
     if bytes > SOURCE_BYTE_LIMIT {
         return Some(Diagnostic::new(
             RuleCode::S026,
@@ -227,70 +406,41 @@ fn source_limits(name: &str, source: &str) -> Option<Diagnostic> {
             Pos::new(name, 1, 1),
         ));
     }
-    token_limits(name, source)
-}
-
-/// Reports the first token that takes the bracket depth or the token
-/// count over its limit.
-///
-/// The bracket count is over the lexer's tokens: `(`, `[`, `{`, and the
-/// `${` of a template head each open one level, and `)`, `]`, and `}`
-/// each close one. `${` opens a level because the `}` that ends its
-/// expression is an ordinary `}` token, and because the parser recurses
-/// once for the expression it opens. A closer below zero resets the depth
-/// to zero. A lexer error stops the scan and reports nothing; the parser
-/// reports that source.
-///
-/// The token count is over every token the lexer answers. It bounds the
-/// parser's recursion for the nests that open no bracket.
-///
-/// One flat loop reads both, so the cost of the scan does not grow with
-/// the depth. The first limit in token order reports.
-///
-/// The position is the token's own span, which is what the parser
-/// reports for the same offset.
-fn token_limits(name: &str, source: &str) -> Option<Diagnostic> {
-    parse::with_tokens(name, source, |tokens, at| {
-        let mut depth: u32 = 0;
-        let mut count: u32 = 0;
-        for spanned in tokens {
-            if matches!(spanned.token, Token::Error(_)) {
-                break;
-            }
-            count += 1;
-            if count > TOKEN_COUNT_LIMIT {
-                return Some(Diagnostic::new(
-                    RuleCode::S026,
-                    format!(
-                        "source file of {count} tokens is over the sandbox profile limit of \
-                         {TOKEN_COUNT_LIMIT} tokens"
-                    ),
-                    at(spanned.span.lo),
-                ));
-            }
-            match spanned.token {
-                Token::LParen | Token::LBracket | Token::LBrace | Token::DollarLBrace => {
-                    depth += 1;
-                    if depth > BRACKET_DEPTH_LIMIT {
-                        return Some(Diagnostic::new(
-                            RuleCode::S026,
-                            format!(
-                                "bracket depth {depth} is over the sandbox profile limit of \
-                                 {BRACKET_DEPTH_LIMIT}"
-                            ),
-                            at(spanned.span.lo),
-                        ));
-                    }
-                }
-                Token::RParen | Token::RBracket | Token::RBrace => {
-                    depth = depth.saturating_sub(1);
-                }
-                _ => {}
-            }
+    let mut depth: u32 = 0;
+    let mut count: u32 = 0;
+    for spanned in tokens {
+        count += 1;
+        if count > TOKEN_COUNT_LIMIT {
+            return Some(Diagnostic::new(
+                RuleCode::S026,
+                format!(
+                    "source file of {count} tokens is over the sandbox profile limit of \
+                     {TOKEN_COUNT_LIMIT} tokens"
+                ),
+                at(spanned.span.lo),
+            ));
         }
-        None
-    })
-    .flatten()
+        match spanned.token {
+            Token::LParen | Token::LBracket | Token::LBrace | Token::DollarLBrace => {
+                depth += 1;
+                if depth > BRACKET_DEPTH_LIMIT {
+                    return Some(Diagnostic::new(
+                        RuleCode::S026,
+                        format!(
+                            "bracket depth {depth} is over the sandbox profile limit of \
+                             {BRACKET_DEPTH_LIMIT}"
+                        ),
+                        at(spanned.span.lo),
+                    ));
+                }
+            }
+            Token::RParen | Token::RBracket | Token::RBrace => {
+                depth = depth.saturating_sub(1);
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -434,8 +584,12 @@ mod tests {
         }
     }
 
+    /// The §109.2 rule 5 scan of one program source, through the
+    /// parser's one lexer constructor. The parser does not run.
     fn scan(source: &str) -> Option<Diagnostic> {
-        source_limits("limits.ts", source)
+        crate::parse::sandbox_scan(&SourceFile::new("limits.ts", source))
+            .into_iter()
+            .next()
     }
 
     /// One source of `depth` nested parentheses around a literal.
@@ -527,13 +681,11 @@ mod tests {
     #[test]
     fn s026_does_not_count_a_bracket_inside_a_comment_or_a_literal() {
         let openers = "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1);
-        let escaped = r"\(".repeat(BRACKET_DEPTH_LIMIT as usize + 1);
         for source in [
             format!("// {openers}\n"),
             format!("/* {openers} */\n"),
             format!("const s: string = \"{openers}\";\n"),
             format!("const t: string = `{openers}`;\n"),
-            format!("const r: RegExp = /{escaped}/;\n"),
         ] {
             assert!(
                 scan(&source).is_none(),
@@ -542,6 +694,37 @@ mod tests {
         }
         // The firing control: the same openers as tokens report.
         assert!(scan(&openers).is_some());
+    }
+
+    /// The scan reads the lexer with no parser, so the lexer has no
+    /// syntactic context for `/`: it answers a division operator and
+    /// reads the body of a regular-expression literal as ordinary
+    /// tokens. A bracket inside such a literal is therefore a bracket
+    /// the depth counts. Measured here, on a literal the default profile
+    /// accepts.
+    #[test]
+    fn s026_counts_a_bracket_inside_a_regular_expression_literal() {
+        let regex = |levels: usize| {
+            format!(
+                "export function main(): void {{\n  const r: RegExp = /{}a{}/;\n  print(`${{r.source.length}}`);\n}}\n",
+                "(".repeat(levels),
+                ")".repeat(levels)
+            )
+        };
+        let over = regex(BRACKET_DEPTH_LIMIT as usize + 1);
+        let diagnostic = scan(&over).expect("the scan counts the literal's brackets");
+        assert_eq!(diagnostic.code, RuleCode::S026);
+        assert!(
+            diagnostic.message.contains("bracket depth"),
+            "{}",
+            diagnostic.message
+        );
+        // The default profile rejects the same literal for a reason of
+        // its own: the regular-expression engine holds a nesting limit
+        // under 256, so this shape is no program either profile accepts.
+        let rejected = check(&over, Profile::Default);
+        assert_eq!(rejected.len(), 1, "{rejected:?}");
+        assert_eq!(rejected[0].code, RuleCode::S100);
     }
 
     #[test]
@@ -683,14 +866,48 @@ mod tests {
             .contains("bracket depth"));
     }
 
+    /// §109.2 rule 5: a lexer error does not abandon the scan. The scan
+    /// reads every token, so its findings are total over the source, and
+    /// the rejection carries the lexer's error as the parse error.
+    ///
+    /// The nest after the openers is 300,000 type-argument levels, which
+    /// is deeper than the compile thread's stack holds in either build
+    /// (§109.2a): a parse of this source aborts the process. The test
+    /// returns, so the parser did not run.
     #[test]
-    fn s026_reports_nothing_for_a_source_the_lexer_rejects() {
-        let openers = "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1);
-        // The unterminated string stops the lexer before the openers.
-        assert!(scan(&format!("const s: string = \"x\n{openers}")).is_none());
-        // The firing control: the terminated string leaves the openers
-        // in the token stream.
-        assert!(scan(&format!("const s: string = \"x\";\n{openers}")).is_some());
+    fn s026_reports_the_scan_and_the_lexer_error_of_a_source_the_lexer_rejects() {
+        const LEVELS: usize = 300_000;
+        let openers = "(".repeat(300);
+        let closers = ")".repeat(300);
+        let nest = format!("{}i32{}", "A<".repeat(LEVELS), ">".repeat(LEVELS));
+        let source =
+            format!("const s: string = \"x\nconst p: i32 = {openers}1{closers};\nlet d: {nest};\n");
+        assert!(
+            source.len() <= SOURCE_BYTE_LIMIT,
+            "the source must stay under the byte limit: {} bytes",
+            source.len()
+        );
+        let reported = check(&source, Profile::Sandbox);
+        assert_eq!(reported.len(), 2, "{reported:?}");
+        assert_eq!(reported[0].code, RuleCode::S026);
+        assert!(
+            reported[0].message.contains("bracket depth"),
+            "{}",
+            reported[0].message
+        );
+        assert_eq!(reported[1].code, RuleCode::S100);
+        assert!(
+            reported[1].message.contains("parse error"),
+            "{}",
+            reported[1].message
+        );
+        // The firing control: with the string terminated the same
+        // openers report the depth on their own, and no parse error
+        // joins it.
+        let sound = source.replacen("\"x\n", "\"x\";\n", 1);
+        let only_depth = check(&sound, Profile::Sandbox);
+        assert_eq!(only_depth.len(), 1, "{only_depth:?}");
+        assert_eq!(only_depth[0].code, RuleCode::S026);
     }
 
     #[test]
@@ -701,10 +918,10 @@ mod tests {
             ")".repeat(BRACKET_DEPTH_LIMIT as usize + 1)
         );
         let ambient = SourceFile::ambient("mirror.d.ts", deep.clone());
-        assert!(source_limit_diagnostics(&[ambient]).is_empty());
+        assert!(crate::parse::sandbox_scan(&ambient).is_empty());
         // The firing control: the same text in a program file reports.
         let program = SourceFile::new("program.ts", deep);
-        assert_eq!(source_limit_diagnostics(&[program]).len(), 1);
+        assert_eq!(crate::parse::sandbox_scan(&program).len(), 1);
     }
 
     #[test]
@@ -1002,5 +1219,82 @@ mod tests {
         // the work to a thread of its own.
         let spawned = crate::on_the_compile_thread(|| std::thread::current().id());
         assert_ne!(spawned, std::thread::current().id());
+    }
+
+    /// §109.2 rule 4: the work budget counts the type instances the
+    /// checker creates, so a source that instantiates more often than
+    /// the budget stops with S026.
+    ///
+    /// Measured with the test-only budget: the same source checks clean
+    /// at 14 units with one instantiation and at 131 with ten, so each
+    /// instance costs its own unit and the nodes of its body.
+    #[test]
+    fn s026_stops_the_check_at_the_instantiation_budget() {
+        const TYPES: [&str; 10] = [
+            "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64",
+        ];
+        let calls: String = TYPES
+            .iter()
+            .map(|ty| format!("  print(`${{identity<{ty}>(1 as {ty})}}`);\n"))
+            .collect();
+        let source = format!(
+            "function identity<T>(value: T): T {{\n  return value;\n}}\n\nexport function main(): void {{\n{calls}}}\n"
+        );
+        let checked = |profile, budget| {
+            let mut options = CheckOptions::with_profile(profile);
+            options.budgets.work = budget;
+            crate::on_the_compile_thread(|| {
+                check_program_with(&[SourceFile::new("mono.ts", source.clone())], &options)
+                    .err()
+                    .unwrap_or_default()
+            })
+        };
+
+        // Five units are fewer than the ten instances the source asks
+        // for, so the instantiation charge alone stops the check.
+        let reported = checked(Profile::Sandbox, 5);
+        assert_eq!(reported[0].code, RuleCode::S026, "{reported:?}");
+        assert!(
+            reported[0]
+                .message
+                .contains("checker work over the sandbox profile budget"),
+            "{}",
+            reported[0].message
+        );
+        // The firing control: the raised budget accepts the same source,
+        // and the default profile accepts it under the small budget.
+        assert!(checked(Profile::Sandbox, 1_000).is_empty());
+        assert!(checked(Profile::Default, 5).is_empty());
+    }
+
+    /// §109.2 rule 4: the nesting guard's type descent covers a
+    /// type-parameter constraint as it covers an annotation. The
+    /// declaration's default is the same node kind, so the guard covers
+    /// it too.
+    #[test]
+    fn s026_rejects_a_deep_type_parameter_constraint_under_the_profile_only() {
+        let nest = |levels: usize| format!("{}i32{}", "Array<".repeat(levels), ">".repeat(levels));
+        let declared = |spelling: &str, levels: usize| {
+            format!(
+                "function identity<T {spelling} {}>(value: T): T {{\n  return value;\n}}\n\nexport function main(): void {{\n  print(`${{identity<i32>(1)}}`);\n}}\n",
+                nest(levels)
+            )
+        };
+        for spelling in ["extends", "="] {
+            let source = |levels: usize| declared(spelling, levels);
+            let over = source(257);
+            let reported = check(&over, Profile::Sandbox);
+            assert_eq!(reported[0].code, RuleCode::S026, "{reported:?}");
+            assert!(
+                reported[0].message.contains("nesting depth"),
+                "{}",
+                reported[0].message
+            );
+            // The firing control: the deepest accepted nest checks clean
+            // under the profile, and the default profile accepts both.
+            assert!(check(&source(254), Profile::Sandbox).is_empty());
+            assert!(check(&over, Profile::Default).is_empty());
+            assert!(check(&source(254), Profile::Default).is_empty());
+        }
     }
 }
