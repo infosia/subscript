@@ -234,7 +234,7 @@ the same emitted C run it, the same goldens check it, and a program
 that does not select the profile gets no new instruction and no new
 check. Contract: `specs/blocks/compiler.md` §109.
 
-**What the profile rejects.** Four rules, each with a stable diagnostic
+**What the profile rejects.** Five rules, each with a stable diagnostic
 code. The same source checks clean under the default profile, so a
 profile rejection is not a TypeScript divergence and `tsc` still
 accepts it.
@@ -244,7 +244,15 @@ accepts it.
 | `S023` | `Context.free`. Memory is allocate-only. |
 | `S024` | `Context.fromBytes`. Bytes the content supplies cannot become an object. |
 | `S025` | `Worker.spawn`, `Inbox`, and `Outbox`. |
-| `S026` | A source over 1 MiB, or a bracket depth over 256, counted before the parser runs. |
+| `S026` | A source over 1,048,576 bytes, a program over 8,388,608 bytes, a file over 131,072 tokens, or a nesting depth over 256. The byte count, the token count, and the bracket count run before the parser; the nesting limit is a depth guard in the checker. |
+| `S027` | A function whose frame is over 65,536 bytes. The stack check at the function entry then sees at most one bounded frame past the budget. |
+
+The whole compile — parse, check, warnings, lowering, and emission —
+runs on one thread the compiler spawns, with a 1 GiB stack in an
+optimized build and 4 GiB in an unoptimized one, so the depth a source
+reaches is the compiler's fact and not the calling thread's. The token
+limit is one number in every build: that stack divided by the measured
+stack cost of one nesting level, with a margin.
 
 Your header mirror is the other half of the boundary: a script binds
 only the `--mirror` you give it, so you build one mirror per trust

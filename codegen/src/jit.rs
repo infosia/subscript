@@ -107,6 +107,17 @@ pub enum RunError {
     Internal(String),
 }
 
+impl From<crate::EmitError> for RunError {
+    /// A stop a compile-profile rule produced is the rule's rejection
+    /// (§109.2 rule 4); every other stop is an internal failure.
+    fn from(error: crate::EmitError) -> Self {
+        error.diagnostic.map_or_else(
+            || RunError::Internal(error.message.clone()),
+            |diagnostic| RunError::Rejected(vec![diagnostic]),
+        )
+    }
+}
+
 impl std::fmt::Display for RunError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -229,17 +229,62 @@ pub struct RunOutput {
     pub memory_accounting: Option<JitMemoryAccounting>,
 }
 
+/// A stop from the shared lowering or from an emitter.
+///
+/// A stop that a compile-profile rule produced carries that rule's
+/// diagnostic (`specs/blocks/compiler.md` §109.2 rule 4), so every
+/// consumer to the CLI renders it as the rule's rejection. Every other
+/// stop is an internal failure, and carries its message alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct EmitError {
+    /// The exact reason the emission stopped.
+    pub message: String,
+    /// The rule diagnostic, when a rule stopped the lowering.
+    pub diagnostic: Option<subscript_compiler::Diagnostic>,
+}
+
+impl EmitError {
+    /// A stop that no rule names.
+    #[must_use]
+    pub fn internal(message: impl Into<String>) -> Self {
+        EmitError {
+            message: message.into(),
+            diagnostic: None,
+        }
+    }
+
+    /// The stop one LIR lowering error carries, with its rule code.
+    fn lowering(error: &lir::LowerError) -> Self {
+        EmitError {
+            message: format!("internal error: LIR construction failed: {error}"),
+            diagnostic: error.diagnostic(),
+        }
+    }
+}
+
+impl std::fmt::Display for EmitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for EmitError {}
+
+impl From<EmitError> for String {
+    fn from(error: EmitError) -> Self {
+        error.message
+    }
+}
+
 /// Lowers checked HIR to verified LIR and emits ship-tier C.
 ///
 /// # Errors
 ///
 /// Returns an error for discovery HIR, invalid LIR, unsupported target
 /// transcription, or a missing exported `main(): void`.
-pub fn emit_c(module: &subscript_compiler::hir::Module) -> Result<CProgram, String> {
-    reject_discovery_hir_for_c(module)?;
-    let lir = lir::lower_module(module)
-        .map_err(|error| format!("internal error: LIR construction failed: {error}"))?;
-    cemit::emit_lir_c(&lir, true)
+pub fn emit_c(module: &subscript_compiler::hir::Module) -> Result<CProgram, EmitError> {
+    emit_c_program(module, true)
 }
 
 /// Lowers checked HIR to verified LIR and emits host-owned ship-tier C.
@@ -250,19 +295,27 @@ pub fn emit_c(module: &subscript_compiler::hir::Module) -> Result<CProgram, Stri
 ///
 /// Returns an error for discovery HIR, invalid LIR, or unsupported target
 /// transcription.
-pub fn emit_c_without_main(module: &subscript_compiler::hir::Module) -> Result<CProgram, String> {
-    reject_discovery_hir_for_c(module)?;
-    let lir = lir::lower_module(module)
-        .map_err(|error| format!("internal error: LIR construction failed: {error}"))?;
-    cemit::emit_lir_c(&lir, false)
+pub fn emit_c_without_main(
+    module: &subscript_compiler::hir::Module,
+) -> Result<CProgram, EmitError> {
+    emit_c_program(module, false)
 }
 
-fn reject_discovery_hir_for_c(module: &subscript_compiler::hir::Module) -> Result<(), String> {
+fn emit_c_program(
+    module: &subscript_compiler::hir::Module,
+    with_main: bool,
+) -> Result<CProgram, EmitError> {
+    reject_discovery_hir_for_c(module)?;
+    let lir = lir::lower_module(module).map_err(|error| EmitError::lowering(&error))?;
+    cemit::emit_lir_c(&lir, with_main).map_err(EmitError::internal)
+}
+
+fn reject_discovery_hir_for_c(module: &subscript_compiler::hir::Module) -> Result<(), EmitError> {
     if let Some(import) = module.poisoned_imports.first() {
-        return Err(format!(
+        return Err(EmitError::internal(format!(
             "cannot emit discovery HIR: poisoned import `{}`",
             import.module
-        ));
+        )));
     }
     Ok(())
 }

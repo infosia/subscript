@@ -1237,14 +1237,23 @@ dev JIT and the same emitted C run it. `check`, `build`, and `run` accept
 program that does not select the profile gets no new instruction and no
 new check.
 
-**What the profile rejects.** Four rules, each with a stable code:
+**What the profile rejects.** Five rules, each with a stable code:
 
 | Code | Rejects |
 |---|---|
 | `S023` | `Context.free`. Memory is allocate-only. `Context.collect()` stays callable. |
 | `S024` | `Context.fromBytes`. Bytes the content supplies carry no layout proof. |
 | `S025` | `Worker.spawn`, `Inbox`, and `Outbox`. |
-| `S026` | A source over 1,048,576 bytes, or a bracket depth over 256. Both are counted before the parser runs. |
+| `S026` | A source over 1,048,576 bytes, a program over 8,388,608 bytes, a file over 131,072 tokens, or a nesting depth over 256. The byte count, the token count, and the bracket count run before the parser; the nesting limit is a depth guard in the checker. |
+| `S027` | A function whose frame is over 65,536 bytes. The stack check at the function entry then sees at most one bounded frame past your budget. |
+
+The whole compile — parse, check, warnings, lowering, and emission —
+runs on one thread the compiler spawns, with a 1 GiB stack in an
+optimized build and 4 GiB in an unoptimized one. The depth a source
+reaches is therefore the compiler's fact, not a property of the thread
+you call it from. The token limit is one number in every build: that
+stack divided by the measured stack cost of one nesting level, with a
+margin.
 
 The same source checks clean under the default profile, so a profile
 rejection is not a TypeScript divergence:
@@ -1287,12 +1296,45 @@ no Context field. Each of the three raises an ordinary trap — the first
 trap wins, the Context survives, and `subscript_rt_ctx_clear_trap` clears
 the interrupt flag together with the trap.
 
-**Set a stack budget below your thread's stack size.** `enter_script`
-records the stack address it runs at, and each checkpoint compares its own
-address against that floor minus your budget. The runtime cannot read the
-real size of your thread, so the margin is your fact to supply. A 256 KiB
-budget on a thread with an 8 MiB stack stops runaway recursion with a
-trap; a budget above the real size lets the thread overflow first.
+**Set a stack budget at least 131,072 bytes below your thread's stack
+size.** `enter_script` records the stack address it runs at, and each
+checkpoint compares its own address against that floor minus your
+budget. The check runs after the entered function's frame exists, so the
+overshoot past the budget is that one frame, which `S027` holds under
+65,536 bytes, plus the runtime's own call depth, which is under 65,536
+bytes. The runtime cannot read the real size of your thread, so the
+headroom is your fact to supply. `examples/sandbox/main.c` sets a
+262,144-byte budget and calls script on the process's main thread: that
+budget plus the headroom is 393,216 bytes, and a main thread starts with
+at least 1 MiB on every host this project builds for *(docs)*. The
+budget traps first, so the thread never overflows. A budget above the
+real size lets the thread overflow first.
+
+**What the host supplies.** Each guarantee of the profile rests on a
+fact only you hold. The list is short and it is complete
+(`specs/blocks/compiler.md` §109.0):
+
+- **The thread.** Give the thread that runs script more stack than your
+  budget plus the 131,072 bytes above.
+- **The mirror.** Every function in the mirror is part of the trusted
+  boundary. It validates the arguments a script controls — pointer and
+  count pairs, handles, indices, lengths — bounds its own work, and does
+  not block. A mirror function that does none of those is a hole the
+  profile cannot close.
+- **The interrupt.** The profile arms no interrupt. Arm one, or accept
+  that a program under the profile runs until it returns or traps.
+- **The process.** Same-process execution trusts the compiler, the
+  generated code, and the runtime to be memory-safe. If you must contain
+  a defect in those, add an isolation boundary of your own, such as a
+  separate process. The profile does not provide one.
+
+**What is excluded, by name.** `Context.collect()` has no interior
+checkpoint: an interrupt you set during a collect is read at the next
+checkpoint after it, not inside it. Its work is proportional to the live
+set plus the dead set, which your quota bounds. A runtime operation has
+no interior checkpoint either, so the work between two checkpoints is
+the straight-line code plus one runtime operation in flight. A host
+function's work is yours, as above.
 
 **The defaults.** `--profile sandbox` on `run`, and on a `build` that
 writes the generated entry, set the quota to 67,108,864 bytes and the

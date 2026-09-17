@@ -6,7 +6,7 @@ use std::fmt;
 
 use subscript_compiler::hir;
 use subscript_compiler::lir as l;
-use subscript_compiler::{ClassId, Pos, Type};
+use subscript_compiler::{ClassId, Diagnostic, Pos, RuleCode, Type};
 
 use crate::lir_types::boundary_box_class;
 
@@ -33,10 +33,27 @@ use self::verify::verify_function;
 /// LIR without guessing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LowerError {
+    /// The rule that stopped the lowering, when a §109.2 rule did.
+    /// `None` for every stop that no rule names, which the CLI reports
+    /// as an internal failure.
+    pub code: Option<RuleCode>,
     /// Source position of the construct.
     pub pos: Pos,
     /// Exact reason lowering stopped.
     pub message: String,
+}
+
+impl LowerError {
+    /// The diagnostic this stop renders as, when a rule code names it
+    /// (`specs/blocks/compiler.md` §109.2 rule 4).
+    ///
+    /// The CLI renders the answer with the checker's diagnostics, so a
+    /// budget stop prints `error[S026]` and not an internal failure.
+    #[must_use]
+    pub fn diagnostic(&self) -> Option<Diagnostic> {
+        self.code
+            .map(|code| Diagnostic::new(code, self.message.clone(), self.pos.clone()))
+    }
 }
 
 impl fmt::Display for LowerError {
@@ -145,6 +162,7 @@ pub(crate) fn lower_module_within(
     }
     if let Err(errors) = verify_module(&lowered) {
         return Err(LowerError {
+            code: None,
             pos: lowered.functions.first().map_or_else(
                 || Pos::new("<module>", 1, 1),
                 |function| function.pos.clone(),
@@ -310,6 +328,7 @@ impl From<&hir::Param> for CallParam {
 /// The §109.2 rule 4 output-budget rejection.
 fn instruction_budget_error(pos: Option<&Pos>, emitted: u64, budget: u64) -> LowerError {
     LowerError {
+        code: Some(RuleCode::S026),
         pos: pos.cloned().unwrap_or_else(|| Pos::new("<module>", 1, 1)),
         message: format!(
             "lowered output of {emitted} instructions is over the sandbox profile \
@@ -1038,12 +1057,14 @@ fn convert_binary(value: hir::BinOp) -> Result<l::BinaryOp, LowerError> {
         hir::BinOp::UShr => l::BinaryOp::UShr,
         hir::BinOp::And | hir::BinOp::Or => {
             return Err(LowerError {
+                code: None,
                 pos: Pos::new("<operator>", 1, 1),
                 message: "short-circuit operator reached scalar instruction lowering".to_string(),
             });
         }
         _ => {
             return Err(LowerError {
+                code: None,
                 pos: Pos::new("<operator>", 1, 1),
                 message: format!("unrecognized binary operator {value:?}"),
             });
@@ -1181,6 +1202,44 @@ mod budget_tests {
     #[test]
     fn the_contract_budget_is_four_million_instructions() {
         assert_eq!(SANDBOX_INSTRUCTION_BUDGET, 4_194_304);
+    }
+
+    /// §109.2 rule 4: the budget stop reaches the CLI as the rule's
+    /// rejection. The stop carries S026, every carrier to the renderer
+    /// keeps it, and the rendered line is the rule's.
+    #[test]
+    fn the_budget_stop_renders_as_the_rule_it_reports() {
+        use crate::{EmitCFilesError, EmitError, RunError};
+        use subscript_compiler::{render_diagnostics, RuleCode, SourceFile};
+
+        let module = checked(Profile::Sandbox);
+        let stop = lower_module_within(&module, 4).expect_err("the small budget stops");
+        assert_eq!(stop.code, Some(RuleCode::S026));
+
+        let files = [SourceFile::new("budget.ts", SOURCE)];
+        let diagnostic = stop.diagnostic().expect("the stop carries a diagnostic");
+        let rendered = render_diagnostics(&files, &[diagnostic]);
+        assert!(
+            rendered.starts_with("error[S026]"),
+            "the renderer answered: {rendered}"
+        );
+
+        // The two carriers between the lowering and the CLI: the build
+        // path reports diagnostics, and the run path reports a rejection.
+        let emit = EmitError::lowering(&stop);
+        assert!(matches!(
+            EmitCFilesError::from(emit.clone()),
+            EmitCFilesError::Diagnostics(_)
+        ));
+        assert!(matches!(RunError::from(emit), RunError::Rejected(_)));
+
+        // The firing control: a stop that no rule names stays internal.
+        let internal = EmitError::internal("no rule names this stop");
+        assert!(matches!(
+            EmitCFilesError::from(internal.clone()),
+            EmitCFilesError::Emission(_)
+        ));
+        assert!(matches!(RunError::from(internal), RunError::Internal(_)));
     }
 }
 

@@ -1299,20 +1299,26 @@ fn define_reload_entry_adapter<M: Module>(
 }
 
 /// Lowers a checked program into `module`.
+///
+/// A stop that a compile-profile rule produced carries that rule's
+/// diagnostic (§109.2 rule 4), so the caller renders it as the rule's
+/// rejection and not as an internal failure.
 pub(crate) fn lower_module_with<M: Module>(
     module: &mut M,
     hirm: &HirModule,
     opts: LowerOptions,
-) -> Result<Lowered, String> {
+) -> Result<Lowered, crate::EmitError> {
     if let Some(import) = hirm.poisoned_imports.first() {
-        return Err(format!(
+        return Err(crate::EmitError::internal(format!(
             "cannot lower discovery HIR: poisoned import `{}`",
             import.module
-        ));
+        )));
     }
-    let lirm = crate::lir::lower_module(hirm)
-        .map_err(|error| internal(format!("LIR construction failed: {error}")))?;
-    lower_lir_module_with(module, &lirm, opts)
+    let lirm = crate::lir::lower_module(hirm).map_err(|error| crate::EmitError {
+        message: internal(format!("LIR construction failed: {error}")),
+        diagnostic: error.diagnostic(),
+    })?;
+    lower_lir_module_with(module, &lirm, opts).map_err(crate::EmitError::internal)
 }
 
 fn lower_lir_module_with<M: Module>(
@@ -1871,7 +1877,7 @@ mod tests {
         };
 
         assert_eq!(
-            error,
+            error.message,
             "cannot lower discovery HIR: poisoned import `./p.typegpu`"
         );
     }

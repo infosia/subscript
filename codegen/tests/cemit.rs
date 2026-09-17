@@ -1621,9 +1621,9 @@ fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
         .expect("string parameter");
     parameter.foreign_provenance = None;
     let error = emit_c(&missing_parameter).expect_err("missing string provenance must fail");
-    assert!(error.contains("internal error"), "{error}");
-    assert!(error.contains("engineUse"), "{error}");
-    assert!(error.contains("engineLabel"), "{error}");
+    assert!(error.message.contains("internal error"), "{error}");
+    assert!(error.message.contains("engineUse"), "{error}");
+    assert!(error.message.contains("engineLabel"), "{error}");
 
     let mut missing_descriptor = provenance_fixture();
     let parameter = missing_descriptor
@@ -1639,9 +1639,9 @@ fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
         .expect("descriptor parameter");
     parameter.foreign_provenance = None;
     let error = emit_c(&missing_descriptor).expect_err("missing descriptor provenance must fail");
-    assert!(error.contains("internal error"), "{error}");
-    assert!(error.contains("engineUse"), "{error}");
-    assert!(error.contains("engineWrite"), "{error}");
+    assert!(error.message.contains("internal error"), "{error}");
+    assert!(error.message.contains("engineUse"), "{error}");
+    assert!(error.message.contains("engineWrite"), "{error}");
 
     let mut missing_callback = provenance_fixture();
     let field = missing_callback
@@ -1657,16 +1657,16 @@ fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
         .expect("callback field");
     field.foreign_provenance = None;
     let error = emit_c(&missing_callback).expect_err("missing callback provenance must fail");
-    assert!(error.contains("internal error"), "{error}");
-    assert!(error.contains("EngineSink"), "{error}");
-    assert!(error.contains("engineCallback"), "{error}");
+    assert!(error.message.contains("internal error"), "{error}");
+    assert!(error.message.contains("EngineSink"), "{error}");
+    assert!(error.message.contains("engineCallback"), "{error}");
 
     let mut missing_mirror = provenance_fixture();
     missing_mirror.foreign_mirrors.clear();
     let error = emit_c(&missing_mirror).expect_err("missing mirror provenance must fail");
-    assert!(error.contains("internal error"), "{error}");
-    assert!(error.contains("engineUse"), "{error}");
-    assert!(error.contains("invalid mirror id"), "{error}");
+    assert!(error.message.contains("internal error"), "{error}");
+    assert!(error.message.contains("engineUse"), "{error}");
+    assert!(error.message.contains("invalid mirror id"), "{error}");
 }
 
 #[test]

@@ -429,15 +429,21 @@ fn a_deep_source_runs_through_the_dev_jit_from_a_two_mebibyte_thread() {
 ///
 /// Type arguments and assignment chains open no bracket, so the bracket
 /// count sees nothing and the parser recurses once for each level before
-/// any checker rule can run. At the token limit the deepest either one
-/// reaches costs 44 MB of stack, which the compile thread holds. Each
-/// source here is one token over the limit, so S026 reports before the
-/// parser; each control is one token under it, so the parser runs the
-/// whole nest and the nesting guard reports instead.
+/// any checker rule can run. Each source here is far over the limit, so
+/// S026 reports before the parser; each control is under it, so the
+/// parser runs the whole nest and the nesting guard reports instead.
+///
+/// The control depth is a sixteenth of the limit. The deepest nest the
+/// limit admits is 56,160 type-argument levels, which this compiler
+/// parses in 899 MB of stack unoptimized and 298 MB optimized. The
+/// compile thread holds both (§109.2a), and the control holds them with
+/// a margin over 8x.
 #[test]
 fn a_source_at_the_token_limit_parses_inside_the_compile_thread() {
     /// §109.2 S026: the token limit of one file.
-    const TOKEN_COUNT_LIMIT: usize = 16_384;
+    const TOKEN_COUNT_LIMIT: usize = 131_072;
+    /// The control depth: the parser runs the whole nest below it.
+    const CONTROL_LEVELS: usize = TOKEN_COUNT_LIMIT / 16;
     // Two tokens for each level, and five tokens for `const deep: … = [];`
     // outside the nest.
     let type_arguments = |levels: usize| {
@@ -464,11 +470,11 @@ fn a_source_at_the_token_limit_parses_inside_the_compile_thread() {
         );
         println!("{shape} at {TOKEN_COUNT_LIMIT} levels: S026 before the parser");
     }
-    // The control: half the levels is under the token limit, so the
+    // The control: the control depth is under the token limit, so the
     // parser runs the whole nest and the nesting guard reports.
     for (shape, source) in [
-        ("type arguments", type_arguments(TOKEN_COUNT_LIMIT / 4)),
-        ("assignment chain", assignments(TOKEN_COUNT_LIMIT / 4)),
+        ("type arguments", type_arguments(CONTROL_LEVELS)),
+        ("assignment chain", assignments(CONTROL_LEVELS)),
     ] {
         assert_eq!(
             check_under(Profile::Sandbox, &source),
@@ -476,8 +482,7 @@ fn a_source_at_the_token_limit_parses_inside_the_compile_thread() {
             "{shape}: the nesting guard must report"
         );
         println!(
-            "{shape} at {} levels: the parser returns and the nesting guard reports",
-            TOKEN_COUNT_LIMIT / 4
+            "{shape} at {CONTROL_LEVELS} levels: the parser returns and the nesting guard reports"
         );
     }
 }

@@ -45,7 +45,7 @@ pub(super) fn compile_jit(
 
     let lowered =
         on_the_compile_thread(|| lower_module_with(&mut module, &hir, LowerOptions::default()))
-            .map_err(RunError::Internal)?;
+            .map_err(RunError::from)?;
     if let Some(name) = missing_symbol(&lowered.foreign_symbols, libraries) {
         // Cranelift-JIT retains a platform symbol-lookup fallback and
         // exposes only an API for appending more lookup functions. The

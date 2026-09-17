@@ -181,6 +181,21 @@ pub fn check_program_with(
     // reaches it. The program limit reports once, at the entry file, and
     // the per-file limits report after it.
     if options.profile == Profile::Sandbox {
+        // §109.2a: every bound of the profile assumes the compile
+        // thread's stack, so a refused thread checks nothing.
+        if compile_thread_refused() {
+            let entry = files
+                .iter()
+                .find(|file| !file.dts)
+                .or_else(|| files.first())
+                .map_or_else(String::new, |file| file.name.clone());
+            return Err(vec![Diagnostic::new(
+                RuleCode::S026,
+                "the compile thread is unavailable, so the sandbox profile \
+                 checks nothing",
+                Pos::new(entry, 1, 1),
+            )]);
+        }
         if let Some(program) = check::profile::program_limit_diagnostic(files) {
             return Err(vec![program]);
         }
@@ -204,16 +219,38 @@ pub fn check_program_with(
 /// caller runs on. S026's nesting limit of 256 is far under the capacity
 /// this stack gives.
 ///
-/// The size comes from the measured parser cost: the deepest construct
-/// costs 6,750 stack bytes for each token it nests, so S026's token
-/// limit of 16,384 holds the parser under 111 MB, and this stack holds
-/// that with a margin over 2x.
-pub const COMPILE_THREAD_STACK_BYTES: usize = 256 * 1024 * 1024;
+/// S026's token limit is one contract number in every build, 131,072
+/// per file. This size is the implementation's fact: the deepest
+/// construct the bracket count does not bound costs 5,313 stack bytes
+/// for each level it nests in an optimized build and 16,018 in an
+/// unoptimized one, so each build gets the stack that holds the limit
+/// with a margin of at least 1.5 (§109.2a). The token limit of S026
+/// carries the derivation and the test that pins the constants together.
+pub const COMPILE_THREAD_STACK_BYTES: usize = if cfg!(debug_assertions) {
+    4_294_967_296
+} else {
+    1_073_741_824
+};
 
 std::thread_local! {
     /// True while this thread runs [`on_the_compile_thread`] work.
     static ON_THE_COMPILE_THREAD: std::cell::Cell<bool> =
         const { std::cell::Cell::new(false) };
+
+    /// True while this thread runs the work that a refused compile
+    /// thread left to it (§109.2a).
+    static COMPILE_THREAD_REFUSED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// True when the host refused the compile thread and this thread runs
+/// the work instead (§109.2a).
+///
+/// Every bound the sandbox profile holds assumes the compile thread's
+/// stack, so the profile checks nothing when the answer is true. The
+/// default profile runs the work on the caller's thread, as before.
+pub(crate) fn compile_thread_refused() -> bool {
+    COMPILE_THREAD_REFUSED.with(std::cell::Cell::get)
 }
 
 /// Marks this thread as the compile thread until it drops.
@@ -231,6 +268,63 @@ impl CompileThreadMark {
 impl Drop for CompileThreadMark {
     fn drop(&mut self) {
         ON_THE_COMPILE_THREAD.set(self.0);
+    }
+}
+
+/// Marks this thread as the one that runs a refused compile thread's
+/// work, until it drops (§109.2a).
+struct RefusedMark(bool);
+
+impl RefusedMark {
+    fn enter() -> Self {
+        Self(COMPILE_THREAD_REFUSED.replace(true))
+    }
+}
+
+impl Drop for RefusedMark {
+    fn drop(&mut self) {
+        COMPILE_THREAD_REFUSED.set(self.0);
+    }
+}
+
+// The test-only hook that refuses the compile thread (§109.2a). A stack
+// size the platform rejects is a host fact that no test can arrange on
+// every host, so the refusal is a flag. It is thread-local, so one test
+// forces it while the tests beside it spawn as usual.
+#[cfg(test)]
+std::thread_local! {
+    /// True while this thread refuses the compile thread.
+    static REFUSE_COMPILE_THREAD: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Refuses the compile thread for the rest of this thread's work.
+#[cfg(test)]
+pub(crate) struct ForcedRefusal(bool);
+
+#[cfg(test)]
+impl ForcedRefusal {
+    pub(crate) fn enter() -> Self {
+        Self(REFUSE_COMPILE_THREAD.replace(true))
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForcedRefusal {
+    fn drop(&mut self) {
+        REFUSE_COMPILE_THREAD.set(self.0);
+    }
+}
+
+/// True when the test-only hook refuses the compile thread.
+fn refuse_compile_thread() -> bool {
+    #[cfg(test)]
+    {
+        REFUSE_COMPILE_THREAD.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        false
     }
 }
 
@@ -254,7 +348,10 @@ enum CompileWork<T, F> {
 /// A panic on that thread resumes on the caller, so a caller that counts
 /// panics sees exactly what a direct call gives it. If the host refuses
 /// the thread, the caller's own thread runs `work` and the depth a
-/// program can reach becomes a property of the caller's stack.
+/// program can reach becomes a property of the caller's stack. The
+/// sandbox profile does not accept that, so the refusal is recorded for
+/// the work and [`check_program_with`] reports S026 under the profile
+/// (§109.2a). The default profile keeps the fallback.
 pub fn on_the_compile_thread<T, F>(work: F) -> T
 where
     T: Send,
@@ -282,17 +379,25 @@ where
     // refused spawn drops the reference and leaves the work in place.
     let body = &body;
     std::thread::scope(|scope| {
-        let spawned = std::thread::Builder::new()
-            .stack_size(COMPILE_THREAD_STACK_BYTES)
-            .name("subscript-compile".to_owned())
-            .spawn_scoped(scope, body);
+        let spawned = if refuse_compile_thread() {
+            None
+        } else {
+            std::thread::Builder::new()
+                .stack_size(COMPILE_THREAD_STACK_BYTES)
+                .name("subscript-compile".to_owned())
+                .spawn_scoped(scope, body)
+                .ok()
+        };
         match spawned {
-            Ok(handle) => {
+            Some(handle) => {
                 if let Err(payload) = handle.join() {
                     std::panic::resume_unwind(payload);
                 }
             }
-            Err(_) => body(),
+            None => {
+                let _refused = RefusedMark::enter();
+                body();
+            }
         }
     });
     match slot.into_inner() {

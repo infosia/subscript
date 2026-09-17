@@ -626,7 +626,7 @@ fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation
             // SAFETY: nothing ran and no pointer into this module
             // escaped; the partially built module is unreachable.
             unsafe { module.free_memory() };
-            return Err(RunError::Internal(e));
+            return Err(RunError::from(e));
         }
     };
     if let Some(name) = missing_symbol(&lowered.foreign_symbols, libraries) {

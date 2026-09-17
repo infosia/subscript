@@ -38,9 +38,49 @@ pub(crate) const BRACKET_DEPTH_LIMIT: u32 = 256;
 /// no bracket, and the parser recurses once for each of their levels
 /// before any checker rule can run. Every parser level consumes at least
 /// one token, so this count is the proxy that bounds the parser's own
-/// recursion. The measured worst cost is 6,750 stack bytes for one
-/// level, so this limit holds the parser under 111 MB.
-pub(crate) const TOKEN_COUNT_LIMIT: u32 = 16_384;
+/// recursion.
+///
+/// The number is one contract number, the same in every build. It is
+/// `stack / (cost × margin)`, rounded down to a power of two, and the
+/// stack of each build profile is the size that answers it
+/// (§109.2a). [`token_count_limit`] derives it from the pair of the
+/// build it compiles in, and a test compares the derived value against
+/// the contract's for both pairs, so no constant moves alone.
+pub(crate) const TOKEN_COUNT_LIMIT: u32 = token_count_limit();
+
+/// Derives the token limit from the compile thread's stack and the
+/// parser cost of this build (§109.2a).
+const fn token_count_limit() -> u32 {
+    let per_level = parser_stack_bytes_per_level() * TOKEN_LIMIT_MARGIN_TENTHS;
+    let levels = (crate::COMPILE_THREAD_STACK_BYTES as u64 * 10) / per_level;
+    1_u32 << levels.ilog2()
+}
+
+/// The parser's stack cost for one level in the build that compiles this
+/// code (§109.2a).
+pub(crate) const fn parser_stack_bytes_per_level() -> u64 {
+    if cfg!(debug_assertions) {
+        PARSER_STACK_BYTES_PER_LEVEL_UNOPTIMIZED
+    } else {
+        PARSER_STACK_BYTES_PER_LEVEL
+    }
+}
+
+/// The parser's stack cost for one level of the deepest construct the
+/// bracket count does not bound, in an optimized build, in bytes
+/// (§109.2a: type arguments).
+pub(crate) const PARSER_STACK_BYTES_PER_LEVEL: u64 = 5_313;
+
+/// The same cost in an unoptimized build, which is what the gate's own
+/// binaries carry (§109.2a).
+pub(crate) const PARSER_STACK_BYTES_PER_LEVEL_UNOPTIMIZED: u64 = 16_018;
+
+/// The margin the token limit holds over the parser cost of its build,
+/// in tenths (§109.2a: 1.5).
+///
+/// One level costs at least one token, so the margin covers the levels a
+/// construct with a cheaper token cost can reach.
+pub(crate) const TOKEN_LIMIT_MARGIN_TENTHS: u64 = 15;
 
 /// The deepest recursive descent the sandbox profile accepts
 /// (§109.2 rule 2). One expression, one type, or one statement is one
@@ -519,6 +559,84 @@ mod tests {
         let diagnostic =
             scan(&nest(BRACKET_DEPTH_LIMIT as usize + 1)).expect("257 `${` levels report");
         assert_eq!(diagnostic.code, RuleCode::S026);
+    }
+
+    /// §109.2a: a refused compile thread is a rejection under the
+    /// profile, because every bound the profile holds assumes that
+    /// stack. The control is the same source under the default profile,
+    /// which keeps the inline fallback and checks clean.
+    #[test]
+    fn a_refused_compile_thread_reports_s026_under_the_profile() {
+        const SOURCE: &str = "export function main(): void {\n  print(\"x\");\n}\n";
+        let refused = |profile| {
+            // The hook is thread-local, so it refuses the spawn this
+            // call makes and no other.
+            let _forced = crate::ForcedRefusal::enter();
+            crate::on_the_compile_thread(|| {
+                check_program_with(
+                    &[SourceFile::new("refused.ts", SOURCE)],
+                    &CheckOptions::with_profile(profile),
+                )
+                .err()
+                .unwrap_or_default()
+            })
+        };
+        let sandbox = refused(Profile::Sandbox);
+        assert_eq!(sandbox.len(), 1, "{sandbox:?}");
+        assert_eq!(sandbox[0].code, RuleCode::S026);
+        assert!(
+            sandbox[0].message.contains("compile thread is unavailable")
+                && sandbox[0].message.contains("sandbox profile"),
+            "{}",
+            sandbox[0].message
+        );
+        // The control: the default profile runs the work inline.
+        assert!(refused(Profile::Default).is_empty());
+        // The control: the profile accepts the same source when the
+        // thread spawns.
+        assert!(check(SOURCE, Profile::Sandbox).is_empty());
+    }
+
+    /// §109.2a: the derived limit is the contract's number, and the
+    /// three constants it reads are the contract's measured pair and its
+    /// margin. A change to one of them alone fails here, so the
+    /// derivation cannot drift.
+    #[test]
+    fn the_token_limit_follows_from_the_stack_and_the_cost() {
+        assert_eq!(TOKEN_COUNT_LIMIT, 131_072);
+        assert_eq!(TOKEN_LIMIT_MARGIN_TENTHS, 15);
+        assert_eq!(PARSER_STACK_BYTES_PER_LEVEL, 5_313);
+        assert_eq!(PARSER_STACK_BYTES_PER_LEVEL_UNOPTIMIZED, 16_018);
+
+        // The stack of the build this test runs in is the one the pair
+        // names, and the limit above is what that pair derives.
+        let (stack, cost) = if cfg!(debug_assertions) {
+            (4_294_967_296_u64, PARSER_STACK_BYTES_PER_LEVEL_UNOPTIMIZED)
+        } else {
+            (1_073_741_824_u64, PARSER_STACK_BYTES_PER_LEVEL)
+        };
+        assert_eq!(crate::COMPILE_THREAD_STACK_BYTES as u64, stack);
+        assert_eq!(parser_stack_bytes_per_level(), cost);
+
+        // Both pairs derive the one contract number, each with a margin
+        // of at least 1.5. One constant that moves alone fails here.
+        for (build, stack, cost) in [
+            ("optimized", 1_073_741_824_u64, PARSER_STACK_BYTES_PER_LEVEL),
+            (
+                "unoptimized",
+                4_294_967_296_u64,
+                PARSER_STACK_BYTES_PER_LEVEL_UNOPTIMIZED,
+            ),
+        ] {
+            let levels = (stack * 10) / (cost * TOKEN_LIMIT_MARGIN_TENTHS);
+            let derived = 1_u64 << levels.ilog2();
+            assert_eq!(derived, u64::from(TOKEN_COUNT_LIMIT), "{build}");
+            let held = u64::from(TOKEN_COUNT_LIMIT) * cost;
+            assert!(
+                held * TOKEN_LIMIT_MARGIN_TENTHS / 10 <= stack,
+                "{build}: {held} bytes at the limit, against a {stack}-byte stack"
+            );
+        }
     }
 
     /// §109.2 S026: the token count bounds the parser's recursion for

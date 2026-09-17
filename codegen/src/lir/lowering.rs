@@ -7,6 +7,7 @@ impl<'a> Lowering<'a> {
         let fallback = || Pos::new("<module>", 1, 1);
         if !module.poisoned_imports.is_empty() {
             return Err(LowerError {
+                code: None,
                 pos: module
                     .poisoned_imports
                     .first()
@@ -41,6 +42,7 @@ impl<'a> Lowering<'a> {
                     .is_some()
                 {
                     return Err(LowerError {
+                        code: None,
                         pos: method.pos.clone(),
                         message: format!(
                             "class `{}` has duplicate checked method `{}`",
@@ -61,6 +63,7 @@ impl<'a> Lowering<'a> {
                 .is_some()
             {
                 return Err(LowerError {
+                    code: None,
                     pos: function.pos.clone(),
                     message: format!("duplicate checked function `{}`", function.name),
                 });
@@ -143,6 +146,7 @@ impl<'a> Lowering<'a> {
                 .get(&function.name)
                 .cloned()
                 .ok_or_else(|| LowerError {
+                    code: None,
                     pos: function.pos.clone(),
                     message: format!("missing id for function `{}`", function.name),
                 })?;
@@ -242,6 +246,7 @@ impl<'a> Lowering<'a> {
             .enumerate()
             .map(|(index, function)| {
                 function.ok_or_else(|| LowerError {
+                    code: None,
                     pos: Pos::new("<module>", 1, 1),
                     message: format!("function id {index} was allocated but not lowered"),
                 })
@@ -258,6 +263,7 @@ impl<'a> Lowering<'a> {
                     .get(&entry.function)
                     .map(|record| record.id)
                     .ok_or_else(|| LowerError {
+                        code: None,
                         pos: Pos::new("<worker entry>", 1, 1),
                         message: format!(
                             "worker entry names unresolved function `{}`",
@@ -294,6 +300,7 @@ impl<'a> Lowering<'a> {
                     .get(&function.name)
                     .map(|record| record.id)
                     .ok_or_else(|| LowerError {
+                        code: None,
                         pos: function.pos.clone(),
                         message: "async root has no function id".to_string(),
                     })
@@ -425,6 +432,7 @@ impl<'a> Lowering<'a> {
                             .get(&(class_index, field.name.clone()))
                             .copied()
                             .ok_or_else(|| LowerError {
+                                code: None,
                                 pos: field.pos.clone(),
                                 message: format!("missing id for field `{}`", field.name),
                             })?;
@@ -481,6 +489,7 @@ impl<'a> Lowering<'a> {
                     .get(function.mirror.0)
                     .map(|mirror| mirror.include.clone())
                     .ok_or_else(|| LowerError {
+                        code: None,
                         pos: function.pos.clone(),
                         message: format!(
                             "foreign function `{}` has an invalid mirror id",
@@ -521,6 +530,7 @@ impl<'a> Lowering<'a> {
             .get(&(class, name.to_string()))
             .cloned()
             .ok_or_else(|| LowerError {
+                code: None,
                 pos: pos.clone(),
                 message: format!("missing method id for class #{class} `{name}`"),
             })
@@ -538,11 +548,13 @@ impl<'a> Lowering<'a> {
             .functions
             .get_mut(id.0 as usize)
             .ok_or_else(|| LowerError {
+                code: None,
                 pos: function.pos.clone(),
                 message: format!("function id {} is outside the module table", id.0),
             })?;
         if slot.is_some() {
             return Err(LowerError {
+                code: None,
                 pos: function.pos.clone(),
                 message: format!("function id {} has two bodies", id.0),
             });

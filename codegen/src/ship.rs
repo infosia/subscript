@@ -957,7 +957,7 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
             .map_err(RunError::Rejected)?;
         // §109.1 rule 2: the checked module is the carrier from here on.
         let profile = hir.profile;
-        let program = crate::emit_c(&hir).map_err(|e| RunError::Internal(internal(e)))?;
+        let program = crate::emit_c(&hir).map_err(RunError::from)?;
         Ok::<_, RunError>((profile, program))
     })?;
     require_native_symbols(&program.foreign_symbols, libraries)?;

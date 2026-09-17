@@ -62,6 +62,18 @@ impl fmt::Display for EmitCFilesError {
     }
 }
 
+impl From<crate::EmitError> for EmitCFilesError {
+    /// A stop a compile-profile rule produced is the rule's rejection
+    /// (§109.2 rule 4), which the CLI renders with the checker's
+    /// diagnostics; every other stop is an emission failure.
+    fn from(error: crate::EmitError) -> Self {
+        error.diagnostic.map_or_else(
+            || Self::Emission(error.message.clone()),
+            |diagnostic| Self::Diagnostics(vec![diagnostic]),
+        )
+    }
+}
+
 impl std::error::Error for EmitCFilesError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -110,7 +122,7 @@ pub fn emit_c_files(
         } else {
             emit_c_without_main(&hir)
         }
-        .map_err(EmitCFilesError::Emission)?;
+        .map_err(EmitCFilesError::from)?;
         Ok::<_, EmitCFilesError>((profile, program))
     })?;
 

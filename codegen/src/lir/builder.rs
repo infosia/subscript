@@ -138,6 +138,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
 
     pub(super) fn error(&self, pos: &Pos, message: impl Into<String>) -> LowerError {
         LowerError {
+            code: None,
             pos: pos.clone(),
             message: message.into(),
         }

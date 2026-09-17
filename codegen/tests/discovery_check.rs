@@ -14,7 +14,7 @@ fn c_emission_rejects_a_discovery_hir() {
     let error = emit_c(&discovery_hir()).expect_err("discovery HIR must not emit C");
 
     assert_eq!(
-        error,
+        error.message,
         "cannot emit discovery HIR: poisoned import `./p.typegpu`"
     );
 }
