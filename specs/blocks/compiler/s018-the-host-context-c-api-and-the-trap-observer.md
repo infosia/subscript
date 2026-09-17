@@ -255,7 +255,17 @@ uint64_t subscript_rt_ctx_live_allocations(const subscript_rt_context*);
 uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context*);
 uint64_t subscript_rt_ctx_reserved_bytes(const subscript_rt_context*);
 void     subscript_rt_ctx_collect(subscript_rt_context*);
+uint64_t subscript_rt_ctx_charged_bytes(const subscript_rt_context*);
 ```
+
+*(Added 2026-09-17, M6.)* `subscript_rt_ctx_charged_bytes` reads the
+bytes the Context has reserved for its live allocations: the payload
+rounded to its size class plus the block header in the arena mode,
+the payload plus the header plus the per-record constant in the
+exact-size mode (§109.0). It is the counter the allocation quota
+compares against, so a host that sets a quota paces on it (§109.8a).
+It is a counter, maintained with `live_bytes`, and tier-dependent as
+`live_bytes` is.
 
 *(Added 2026-09-17, §109.8a.)* `subscript_rt_ctx_collect` is the host's
 explicit collection (invariant 2): the same `Context::collect` that

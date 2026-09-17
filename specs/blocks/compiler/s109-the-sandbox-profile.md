@@ -74,12 +74,16 @@ reserves for an allocation: the payload rounded to its size class
 plus the block header in the arena mode, and the payload plus the
 header plus the per-allocation record in the exact-size mode. Process
 memory attributable to the Context is then the quota plus a fixed
-overhead, whatever the allocation sizes. *(The implementation at this
-date charges the requested payload only. With 8-byte objects the
-overhead is about 5x the payload in the arena mode and about 11x in
-the exact-size mode, so a 64 MiB quota reserves up to 700 MiB. The
-charge moves to reserved bytes in the round that measures the
-multipliers; the tracking note pre-registers that measurement.)*
+overhead, whatever the allocation sizes. The host reads the charged
+bytes through `subscript_rt_ctx_charged_bytes` (§18.2d) and paces on
+that figure (109.8a). Reserved bytes are a tier fact, as `live_bytes`
+is (§18.2d): a 64 MiB quota holds 6,100,800 payload bytes of 8-byte
+objects in the exact-size mode and 33,554,432 in the arena mode, and
+about 66 MB of 4 KiB objects in both. *(Measured in the M6 round at
+`52373a9`, before the charge: with 8-byte objects a 64 MiB quota held
+1,023,410,200 bytes in the exact-size mode, 15.25x, and 134,348,816
+in the arena mode, 2.00x; after the charge the worst case is 1.04x.
+The estimate this paragraph first carried, 5x and 11x, was wrong.)*
 
 ### 109.1 Selection
 
@@ -278,8 +282,12 @@ program is unchanged. Each is one C API call.
    and the operation then reports the total it wanted to
    `check_quota`, which records the same trap the final allocation
    would have. The temporary is not itself a Context allocation, so
-   `live_bytes` and the trap position do not change; a result that
-   fits the quota exactly still fits. Two entries keep a bounded
+   `live_bytes` and the trap position do not change. The headroom is
+   in reserved bytes: the largest payload that fits is the headroom
+   less the header and the record in the exact-size mode, and the
+   largest size class at or under the headroom in the arena mode. A
+   growing temporary holds at most twice its charge while its vector
+   doubles. Two entries keep a bounded
    multiple instead: `toUpperCase` and `toLowerCase` build at most
    three bytes per receiver byte through the standard library's
    locale-free case mapping, and `JSON.parse` builds a transient
@@ -350,7 +358,7 @@ scripts.
 | `r-sandbox-worker` | reject | S025 |
 | `r-sandbox-source-depth` | reject | S026, depth 257 |
 | `a-sandbox-clean` | accept | a profile program with a loop, a call, `bytesOf` on a scalar struct, and `Context.collect()` runs on every tier and matches its golden |
-| `t-sandbox-alloc-quota` | trap | `AllocationQuota` at the allocation site, output before the trap intact |
+| `t-sandbox-alloc-quota` | trap | `AllocationQuota` at the allocation site, output before the trap intact. The entry reaches the quota with allocations of 4 KiB or more, so the two tiers' reserved sizes agree within 3% and the trap lands on the same allocation in both. A trap entry that reaches the quota with small objects is not constructible: the tiers charge them differently (§109.0). |
 | `t-sandbox-stack-budget` | trap | `StackBudget` at the entry of the function the run failed to enter; the entry prints nothing that depends on the depth reached |
 
 Each reject entry's header states what `tsc` does, measured. Each
@@ -381,12 +389,14 @@ collection is the one way memory returns. Nothing collects unbidden
 keep a long-running profile program under its quota. Both are host
 documentation; neither adds a rule to the compiler or the runtime.
 
-1. **The host paces.** `subscript_rt_ctx_live_bytes` reads a counter
-   (§18, §109.4 rule 2), so a host reads it at every frame boundary
-   at no cost. If the value is above the fraction of the quota the
-   host chose, the host calls `subscript_rt_ctx_collect` there
-   (§18.2d), outside any script call. The host, not the script,
-   decides when.
+1. **The host paces.** `subscript_rt_ctx_charged_bytes` reads the
+   counter the quota compares against (§18.2d, §109.0), so a host
+   reads it at every frame boundary at no cost. If the value is above
+   the fraction of the quota the host chose, the host calls
+   `subscript_rt_ctx_collect` there (§18.2d), outside any script
+   call. The host, not the script, decides when. `live_bytes` is the
+   payload figure and does not predict the trap. *(Amended
+   2026-09-17, M6: the first text paced on `live_bytes`.)*
 2. **The script collects at its own boundary.** `Context.collect()`
    stays callable under the profile. A script that calls it at the
    end of its frame function keeps its own live set bounded, and the
