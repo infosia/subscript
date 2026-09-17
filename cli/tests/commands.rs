@@ -1630,10 +1630,11 @@ fn slow_host_c() -> Result<String, String> {
 #define SUBSCRIPT_STEP_8192 SUBSCRIPT_STEP_4096 SUBSCRIPT_STEP_4096
 #define SUBSCRIPT_STEP_16384 SUBSCRIPT_STEP_8192 SUBSCRIPT_STEP_8192
 #define SUBSCRIPT_STEP_32768 SUBSCRIPT_STEP_16384 SUBSCRIPT_STEP_16384
+#define SUBSCRIPT_STEP_65536 SUBSCRIPT_STEP_32768 SUBSCRIPT_STEP_32768
 int subscript_slow_host(int a);
 int subscript_slow_host(int a) {
     int t = a;
-    SUBSCRIPT_STEP_32768
+    SUBSCRIPT_STEP_65536
     return t;
 }
 int main(void) { return 0; }
@@ -1649,13 +1650,13 @@ int main(void) { return 0; }
 /// The firing control is the same build under the contract's budget: it
 /// writes the executable. The wait after the killed build is the
 /// control's own wall time, so a slower host waits longer.
+///
+/// The budget is half the control's own wall time, not a constant: the
+/// host sets how long the C compile takes, and a constant is one host's
+/// number. `slow_host_c` makes the C compile the larger part of the
+/// build, so half the wall is inside it.
 #[test]
 fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String> {
-    /// The seconds the killed build gets. The C compile is what runs
-    /// when it elapses: the emit before it takes about one second of
-    /// the whole build.
-    const BUDGET: &str = "2";
-
     let dir = TestDir::new()?;
     let source = dir.write("tiny.ts", clean_source())?;
     let host = dir.write("host.c", slow_host_c()?.as_bytes())?;
@@ -1690,11 +1691,17 @@ fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String
     assert!(executable.is_file(), "the control writes the executable");
     println!("the whole build: {control_wall:?}");
 
+    // The budget the killed build gets, in whole seconds, which is all
+    // the variable takes. One second is the floor: a host whose whole
+    // build is under two seconds emits the C well inside it.
+    let budget = (control_wall.as_secs() / 2).max(1);
     let killed_out = dir.directory("killed")?;
     let executable = killed_out.join(format!("tiny{}", std::env::consts::EXE_SUFFIX));
     let started = std::time::Instant::now();
-    let stopped =
-        output(build(&killed_out).env(subscript_cli::COMPILE_TIME_BUDGET_VARIABLE, BUDGET))?;
+    let stopped = output(build(&killed_out).env(
+        subscript_cli::COMPILE_TIME_BUDGET_VARIABLE,
+        budget.to_string(),
+    ))?;
     let killed_wall = started.elapsed();
     assert_code(&stopped, 1);
     let rendered = String::from_utf8_lossy(&stopped.stderr).into_owned();
@@ -1710,7 +1717,7 @@ fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String
     // build that had started its C compile.
     assert!(
         killed_out.join("program.c").is_file(),
-        "the child emitted the C before the budget elapsed"
+        "the child emitted the C before the {budget}-second budget elapsed, against a whole build of {control_wall:?}"
     );
 
     // A C compiler that outlived the kill has less work left than the
@@ -1718,10 +1725,12 @@ fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String
     std::thread::sleep(control_wall);
     assert!(
         !executable.is_file(),
-        "the killed C compiler wrote {}",
+        "the killed C compiler wrote {}, on a {budget}-second budget against a whole build of {control_wall:?}",
         executable.display()
     );
-    println!("the killed build: {killed_wall:?}, no executable after {control_wall:?} more");
+    println!(
+        "the killed build: {killed_wall:?} on a {budget}-second budget; no executable after {control_wall:?} more"
+    );
     Ok(())
 }
 

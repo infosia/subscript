@@ -800,7 +800,13 @@ the 1.65 s that follow. The margin between "the budget fires" and "the
 C compile has not ended" is 0.1 to 0.9 s here, against the 3.87 s
 build the macOS host measured, so the constant is that host's number.
 
-Open: the test needs a budget derived from the measured control wall,
-and a `slow_host_c` whose C compile dominates the build, so the kill
-lands inside the C compile on every host. The unoptimized memory kill
-still needs a host with more than 16 GB.
+The test is fixed. `slow_host_c` spells 65,536 steps, so the C compile
+is the larger part of the build, and the budget is half the control's
+own measured wall time, at least one second. No constant is left. The
+whole build on this host is now 3.67 to 4.35 s, the derived budget is
+1 or 2 s, and three runs all end with `program.c` on disk and no
+executable after the control's wall time again. The boundary between
+the two budgets is a 4.0 s control wall, and both sides pass.
+
+Open: the unoptimized memory kill still needs a host with more than
+16 GB.
