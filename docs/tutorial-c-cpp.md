@@ -1322,11 +1322,17 @@ fact only you hold. The list is short and it is complete
   profile cannot close.
 - **The interrupt.** The profile arms no interrupt. Arm one, or accept
   that a program under the profile runs until it returns or traps.
-- **The compile timeout.** The profile bounds the compiler's work to a
-  polynomial in the source size (§109.0, guarantee 4). It does not bound
-  the wall time: inside every `S026` limit, 26,210 `<i32>` type
-  assertions take 134.3 s in the parser, measured in a release build.
-  Bound the compile with the timeout you give any build step.
+- **The compile budgets.** This project's own compiler stages are
+  bounded by construction. The parser is not: inside every `S026` limit,
+  26,210 `<i32>` type assertions take 134.3 s in it, and a 130,990-byte
+  chain of one repeated label takes about 10 GB. The CLI therefore
+  compiles in a child process under the profile, with a memory budget
+  and a time budget (§109.2 rule 6): 4,294,967,296 bytes of address
+  space in an optimized build, 12,884,901,888 unoptimized, and 300 s in
+  both. A child that passes either budget is one `S026` at the entry
+  file, so the compile always ends in a diagnostic or an accepted
+  program. If you embed the compiler crate instead of calling the CLI,
+  run it in a child process of your own with the same two budgets.
 - **The process.** Same-process execution trusts the compiler, the
   generated code, and the runtime to be memory-safe. If you must contain
   a defect in those, add an isolation boundary of your own, such as a

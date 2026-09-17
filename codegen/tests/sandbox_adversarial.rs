@@ -519,12 +519,12 @@ fn a_deep_source_runs_through_the_dev_jit_from_a_two_mebibyte_thread() {
 }
 
 /// A regular-expression literal that holds a backtick, then a nest of
-/// `levels` type arguments (the reviewer's `tick.ts`).
+/// `levels` type arguments.
 ///
-/// A lexer with no parser reads the `/` as division and the backtick as
-/// a template head, so every later token of the file desyncs. §109.2
-/// rule 5 retires the token and bracket counts for that reason: the byte
-/// limit reads no token, so this shape carries no lexical trap for it.
+/// §109.2 rule 5: the S026 byte check counts bytes and reads no token,
+/// so it is exact on a source a lexer alone cannot read. A lexer with
+/// no parser takes the `/` for division and the backtick for a template
+/// head, and desyncs on every later token of this file.
 fn regex_then_type_nest(levels: usize) -> String {
     format!(
         "export function main(): void {{\n  const r: RegExp = /`/;\n  const deep: {}i32{} = [];\n  print(`${{r.source.length}}${{deep.length}}`);\n}}\n",
@@ -533,9 +533,9 @@ fn regex_then_type_nest(levels: usize) -> String {
     )
 }
 
-/// §109.2 rule 5: the reviewer's `tick.ts`. Over the byte limit the byte
-/// check reports and the parser never runs; under it the parser runs the
-/// whole nest and the nesting guard reports.
+/// §109.2 rule 5: over the byte limit the byte check reports and the
+/// parser never runs. Inside the limit the parser runs the whole nest
+/// and the nesting guard of rule 2 reports.
 #[test]
 fn a_regex_literal_before_a_deep_type_nest_rejects_s026() {
     // 300,000 levels is 2,100,000 bytes, far over the byte limit. The
@@ -562,13 +562,12 @@ fn a_regex_literal_before_a_deep_type_nest_rejects_s026() {
     );
 }
 
-/// §109.2 rule 5: the reviewer's `quotereplace.ts`. A quote inside a
-/// regular-expression literal, on 257 lines.
+/// §109.2 rule 5: a quote inside a regular-expression literal, on 257
+/// lines.
 ///
-/// The retired token scan read each `"` as the start of a string
-/// literal, so it lost the `)` of every line and reported a false S026
-/// at 257 and a false S100 for an unterminated string. The byte check
-/// reads no token, so the source checks clean and runs.
+/// The S026 check counts bytes and reads no token, so a quote a lexer
+/// alone takes for the start of a string literal costs this source
+/// nothing: it checks clean under the profile and runs on both tiers.
 #[test]
 fn a_quote_inside_a_regex_literal_checks_clean_and_runs() {
     let mut source =
@@ -585,6 +584,54 @@ fn a_quote_inside_a_regex_literal_checks_clean_and_runs() {
     assert_both_tiers_run("quote inside a regex literal", &source, b"a0b\n");
 }
 
+/// A chain of `labels` same labels, inside S026's byte limit.
+///
+/// The parser's duplicate-label path is superlinear in memory on this
+/// shape (M13).
+fn same_label_chain(labels: usize) -> String {
+    format!(
+        "export function main(): void {{}}\n{};\n",
+        "a:".repeat(labels)
+    )
+}
+
+/// A generic call whose type argument nests `levels` deep over a leaf
+/// that is an expression and not a type.
+///
+/// The parser reads the whole nest before the leaf refuses it, so its
+/// work is superlinear in the level count (M13).
+fn nested_generic_call(levels: usize) -> String {
+    format!(
+        "export function main(): void {{\n  const x: i32 = f<{}1+1{}>(1);\n  print(`${{x}}`);\n}}\n",
+        "A<".repeat(levels),
+        ">".repeat(levels)
+    )
+}
+
+/// §109.2 rule 6: the two shapes of M13 are the parser's, and no rule
+/// of §109.2 rejects either one.
+///
+/// At the sizes here each shape returns in milliseconds with the
+/// parser's own S100, under both profiles. The profile therefore adds
+/// no rule for them, and what bounds them at S026's byte limit is the
+/// budgeted child: there the label chain passes the memory budget and
+/// the generic call passes the time budget, each as one S026.
+#[test]
+fn the_parser_shapes_of_m13_carry_no_profile_rule() {
+    for (shape, source) in [
+        ("same-label chain, 2,000 labels", same_label_chain(2_000)),
+        ("nested generic call, 500 levels", nested_generic_call(500)),
+    ] {
+        for profile in [Profile::Sandbox, Profile::Default] {
+            assert_eq!(
+                check_under(profile, &source),
+                Err(RuleCode::S100),
+                "{shape} under {profile:?}"
+            );
+        }
+        println!("{shape}: the parser reports S100 under both profiles");
+    }
+}
 /// A 65,536-byte line printed 4,096 times.
 ///
 /// The program prints 256 MiB, four times the profile's default quota.

@@ -1256,8 +1256,8 @@ fn an_observed_print_charges_nothing_and_take_stdout_releases_the_charge() {
     unsafe { ffi::subscript_rt_print(pointer, line) };
     assert_eq!(
         ctx.charged_bytes(),
-        charged_before + 4_096,
-        "an unobserved line charges its bytes"
+        charged_before + 4_097,
+        "an unobserved line charges its bytes and its newline"
     );
     assert_eq!(ctx.take_stdout().len(), 4_097);
     assert_eq!(
@@ -1327,4 +1327,90 @@ fn every_exported_entry_is_covered_or_listed_with_a_reason() {
         exported.len(),
         "the two lists must name every entry exactly once"
     );
+}
+
+/// The empty lines each case below prints: four times the quota, so a
+/// charged sink passes the quota long before the loop ends.
+const EMPTY_LINES: usize = 4 * QUOTA as usize;
+
+/// §109.4 rule 2: `print` charges the line's bytes and its newline, so
+/// an empty line grows the sink against the quota and the loop traps.
+///
+/// The control is the observer path: the same loop with an observer
+/// installed retains nothing, charges nothing, and runs to its end.
+#[test]
+fn an_empty_print_charges_its_newline_and_traps() {
+    let _guard = one_at_a_time();
+
+    let mut ctx = quota_context();
+    let empty = string(&mut ctx, b"");
+    let charged_before = ctx.charged_bytes();
+    let pointer: *mut Context = &mut *ctx;
+    let measured = peak_of("subscript_rt_print", &mut ctx, || {
+        for _ in 0..EMPTY_LINES {
+            // SAFETY: live exclusive Context and live string handle.
+            let trapped = unsafe {
+                ffi::subscript_rt_print(pointer, empty);
+                (*pointer).trapped()
+            };
+            if trapped {
+                break;
+            }
+        }
+    });
+    assert_eq!(measured.trap, Some(TrapKind::AllocationQuota));
+    assert!(
+        measured.peak < QUOTA as usize + SLACK,
+        "peak {} bytes over the quota {QUOTA} plus {SLACK}, floor fell {} bytes",
+        measured.peak,
+        measured.fell
+    );
+    let lines = ctx.stdout_bytes().len();
+    assert!(
+        lines > 0 && lines < EMPTY_LINES,
+        "{lines} newlines before the trap"
+    );
+    assert!(
+        ctx.stdout_bytes().iter().all(|byte| *byte == b'\n'),
+        "the sink holds the newline of each empty line"
+    );
+    assert_eq!(
+        ctx.charged_bytes(),
+        charged_before + lines,
+        "each empty line charges one byte"
+    );
+    println!(
+        "empty print: {lines} newlines, peak {} bytes",
+        measured.peak
+    );
+
+    // The control: an observed line is not retained, so the same loop
+    // charges nothing and reaches its end.
+    unsafe extern "C" fn count(userdata: *mut std::ffi::c_void, _line: *const u8, _len: u64) {
+        // SAFETY: the test passes a live `u64`.
+        unsafe { *userdata.cast::<u64>() += 1 };
+    }
+
+    let mut ctx = quota_context();
+    let empty = string(&mut ctx, b"");
+    let charged_before = ctx.charged_bytes();
+    let pointer: *mut Context = &mut *ctx;
+    let mut seen: u64 = 0;
+    // SAFETY: live exclusive Context; the observer and its userdata
+    // outlive the calls below.
+    unsafe {
+        ffi::subscript_rt_ctx_set_print_observer(
+            pointer,
+            Some(count),
+            std::ptr::from_mut(&mut seen).cast(),
+        );
+    }
+    for _ in 0..EMPTY_LINES {
+        // SAFETY: live exclusive Context and live string handle.
+        unsafe { ffi::subscript_rt_print(pointer, empty) };
+    }
+    assert_eq!(seen, EMPTY_LINES as u64, "the observer must see every line");
+    assert_eq!(ctx.trap_record().map(|record| record.kind), None);
+    assert_eq!(ctx.charged_bytes(), charged_before);
+    assert!(ctx.stdout_bytes().is_empty());
 }

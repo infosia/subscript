@@ -252,7 +252,9 @@ runs on one thread the compiler spawns, with a 2 GiB stack in an
 optimized build and 8 GiB in an unoptimized one, so the depth a source
 reaches is the compiler's fact and not the calling thread's. That stack
 holds the deepest nesting a file of the byte limit can spell, with a
-margin.
+margin. The parser is external, so under the profile the CLI runs the
+whole compile in a child process with a memory budget and a 300-second
+time budget, and a child that passes either budget is one `S026`.
 
 Your header mirror is the other half of the boundary: a script binds
 only the `--mirror` you give it, so you build one mirror per trust

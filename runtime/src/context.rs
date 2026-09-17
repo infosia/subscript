@@ -1965,9 +1965,9 @@ impl Context {
     // ----- stdout sink -----
 
     /// Delivers `bytes` to the installed print observer without retaining
-    /// them. With no observer, charges `bytes.len()` to the allocation
-    /// quota and appends `bytes` and a trailing newline to the stdout
-    /// sink (§109.4 rule 2).
+    /// them. With no observer, charges `bytes.len()` plus the newline to
+    /// the allocation quota and appends `bytes` and that newline to the
+    /// stdout sink (§109.4 rule 2).
     ///
     /// Over the quota the line is dropped and the `AllocationQuota` trap
     /// is recorded at `pos_id`.
@@ -1992,7 +1992,8 @@ impl Context {
         unsafe { self.print_view(bytes.as_ptr(), bytes.len(), pos_id) };
     }
 
-    /// Delivers `len` bytes at `ptr`, or charges them and appends them.
+    /// Delivers `len` bytes at `ptr`, or charges `len` plus the newline
+    /// and appends both (§109.4 rule 2).
     ///
     /// # Safety
     ///
@@ -2009,10 +2010,13 @@ impl Context {
             unsafe { observer(userdata, ptr, len as u64) };
             return;
         }
-        if !self.check_quota(len, pos_id) {
+        // §109.4 rule 2: the sink grows by the line and its newline, so
+        // the charge is both. An empty line still grows the sink.
+        let charge = len.saturating_add(1);
+        if !self.check_quota(charge, pos_id) {
             return;
         }
-        self.stdout_charge = self.stdout_charge.saturating_add(len);
+        self.stdout_charge = self.stdout_charge.saturating_add(charge);
         // SAFETY: the caller guarantees `len` readable bytes at `ptr`
         // that this append does not move.
         let line = unsafe { std::slice::from_raw_parts(ptr, len) };

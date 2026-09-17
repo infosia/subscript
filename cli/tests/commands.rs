@@ -1181,3 +1181,173 @@ fn the_print_sink_charges_the_quota_under_the_profile() -> Result<(), String> {
     assert_eq!(all, (LINES * (LINE + 1)) as u64);
     Ok(())
 }
+
+/// A chain of `labels` same labels, inside S026's byte limit.
+///
+/// The SWC parser's duplicate-label path is superlinear in memory on
+/// this shape. The parser is external, so §109.2 rule 6 bounds it with
+/// a process.
+fn same_label_chain(labels: usize) -> String {
+    format!(
+        "export function main(): void {{}}\n{};\n//a\n",
+        "a:".repeat(labels)
+    )
+}
+
+/// A generic call whose type argument nests `levels` deep over a leaf
+/// that is an expression and not a type.
+///
+/// The parser reads the whole nest before the leaf refuses it, so its
+/// work is superlinear in the level count.
+fn nested_generic_call(levels: usize) -> String {
+    format!(
+        "export function main(): void {{\n  const x: i32 = f<{}1+1{}>(1);\n  print(`${{x}}`);\n}}\n",
+        "A<".repeat(levels),
+        ">".repeat(levels)
+    )
+}
+
+/// §109.2 rule 6: a child that passes its memory budget is one S026 at
+/// the entry file, and the same source under the default profile keeps
+/// the parser's own outcome with no child.
+///
+/// 65,476 labels is 130,990 bytes, inside S026's per-file limit of
+/// 131,072, so the compile runs. The control is what the process
+/// boundary closes: with no child the parser's outcome reaches the
+/// caller, and on a host that kills the process that outcome is no
+/// diagnostic at all.
+#[test]
+fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
+    /// The labels the chain spells.
+    const LABELS: usize = 65_476;
+
+    let dir = TestDir::new()?;
+    let source = dir.write("profile_label.ts", same_label_chain(LABELS).as_bytes())?;
+    assert_eq!(
+        std::fs::metadata(&source)
+            .map_err(|error| format!("read profile_label.ts: {error}"))?
+            .len(),
+        130_990
+    );
+
+    let stopped = output(
+        subscript()
+            .arg("check")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source),
+    )?;
+    assert_code(&stopped, 1);
+    let rendered = String::from_utf8_lossy(&stopped.stderr).into_owned();
+    assert!(
+        rendered.starts_with("error[S026]: the compiler passed its memory budget\n"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains(&source.display().to_string()),
+        "the stop names the entry file: {rendered}"
+    );
+
+    // The control: the default profile spawns nothing, so the parser's
+    // own outcome reaches the caller and no budget stop is reported.
+    let unbudgeted = output(subscript().arg("check").arg(&source))?;
+    assert_ne!(unbudgeted.status.code(), Some(0));
+    let rendered = String::from_utf8_lossy(&unbudgeted.stderr).into_owned();
+    assert!(!rendered.contains("S026"), "{rendered}");
+    println!(
+        "profile_label.ts under the default profile: status {}, {} bytes of stderr",
+        unbudgeted.status,
+        unbudgeted.stderr.len()
+    );
+    Ok(())
+}
+
+/// §109.2 rule 6: the parent kills a child that passes its time budget
+/// and reports one S026 at the entry file.
+///
+/// The test-only variable shortens the budget to 2 s. The firing
+/// control is the same source under the contract's budget: the parser
+/// finishes and its own diagnostic reaches the caller.
+#[test]
+fn a_compile_over_the_time_budget_reports_one_s026() -> Result<(), String> {
+    /// The nesting levels the source spells.
+    const LEVELS: usize = 4_000;
+    /// The seconds the test gives the child.
+    const BUDGET: &str = "2";
+
+    let dir = TestDir::new()?;
+    let source = dir.write("nested_generic.ts", nested_generic_call(LEVELS).as_bytes())?;
+
+    let started = std::time::Instant::now();
+    let stopped = output(
+        subscript()
+            .env(subscript_cli::COMPILE_TIME_BUDGET_VARIABLE, BUDGET)
+            .arg("check")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source),
+    )?;
+    let wall = started.elapsed();
+    assert_code(&stopped, 1);
+    let rendered = String::from_utf8_lossy(&stopped.stderr).into_owned();
+    assert!(
+        rendered.starts_with("error[S026]: the compiler passed its time budget\n"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains(&source.display().to_string()),
+        "the stop names the entry file: {rendered}"
+    );
+    assert!(
+        wall < std::time::Duration::from_secs(60),
+        "the parent waited {wall:?} on a 2-second budget"
+    );
+
+    // The firing control: with the contract's budget the same source
+    // reaches the parser's own diagnostic, so the budget is what
+    // stopped the run above.
+    let parsed = output(
+        subscript()
+            .arg("check")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source),
+    )?;
+    assert_code(&parsed, 1);
+    let rendered = String::from_utf8_lossy(&parsed.stderr).into_owned();
+    assert!(
+        rendered.contains("error[S100]") && !rendered.contains("S026"),
+        "{rendered}"
+    );
+    println!("nested_generic.ts at {LEVELS} levels: the 2-second budget stops it in {wall:?}");
+    Ok(())
+}
+
+/// §109.2 rule 6: an accepted profile program compiles and runs through
+/// the budgeted child, with its committed golden output.
+#[test]
+fn the_budgeted_child_runs_an_accepted_profile_program() -> Result<(), String> {
+    let entry = workspace_root().join("corpus/accept/a238-sandbox-clean.ts");
+    let golden = std::fs::read(entry.with_extension("expected"))
+        .map_err(|error| format!("read the golden: {error}"))?;
+
+    let checked = output(
+        subscript()
+            .arg("check")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&entry),
+    )?;
+    assert_code(&checked, 0);
+
+    let ran = output(
+        subscript()
+            .arg("run")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&entry),
+    )?;
+    assert_code(&ran, 0);
+    assert_eq!(ran.stdout, golden);
+    Ok(())
+}
