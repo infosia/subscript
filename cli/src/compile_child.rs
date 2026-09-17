@@ -105,6 +105,7 @@ const TIME_MESSAGE: &str = "the compiler passed its time budget";
 /// a failed allocation, and the runtime then ends the child on
 /// `SIGABRT`. This text is what separates that end from every other
 /// abort (§109.2 rule 6).
+#[cfg(unix)]
 const ALLOCATION_FAILURE_TEXT: &[u8] = b"memory allocation of";
 
 /// The resident bytes a child must have held for the parent to read a
@@ -117,6 +118,7 @@ const ALLOCATION_FAILURE_TEXT: &[u8] = b"memory allocation of";
 /// compares the largest reading it took, and one half of the budget is
 /// what separates a child that was holding memory from one that was
 /// not.
+#[cfg(unix)]
 fn system_memory_kill_floor() -> u64 {
     MEMORY_BUDGET_BYTES / 2
 }
