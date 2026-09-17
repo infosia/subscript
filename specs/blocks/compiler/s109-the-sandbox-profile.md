@@ -226,24 +226,37 @@ that measurement.
    `check`, `build`, `run`, and the watch loop's compile run the
    compile in a child `subscript` process. The child has a memory
    budget and a time budget of 300 s. The memory budget is the
-   build's compile-thread stack plus the heap a compile takes:
-   12,884,901,888 bytes unoptimized (8 GiB of stack plus 4 GiB),
-   4,294,967,296 optimized (2 GiB plus 2 GiB); a budget under the
-   stack reservation refuses every compile, and a `const` assertion
-   holds the order. The budget is enforced three ways, by host:
-   `RLIMIT_AS` on Linux, set by the child on its first line; a Job
-   Object with a process memory limit on Windows, created and joined
-   by the child on its first line; and on macOS, where `setrlimit`
-   refuses `RLIMIT_AS` (measured `EINVAL`), the parent reads the
+   build's compile-thread stack plus the heap a compile takes.
+   Unoptimized it is 12,884,901,888 bytes (8 GiB of stack plus
+   4 GiB); optimized 4,294,967,296 (2 GiB plus 2 GiB). A budget
+   under the stack reservation refuses every compile, and a `const`
+   assertion holds the order. Each host enforces the budget its own
+   way. On Linux the child sets `RLIMIT_AS` on its first line. On
+   Windows the child creates a Job Object with a process memory
+   limit and joins it on its first line; the job kills every process
+   in it when the parent's handle closes. On macOS `setrlimit`
+   refuses `RLIMIT_AS` (measured `EINVAL`), so the parent reads the
    child's resident bytes at every 10 ms poll through
    `proc_pid_rusage` and kills a child over the budget. The parent
-   also kills a child past the time budget. A child that dies or
-   passes a budget is one S026 at the entry file: "the compiler
-   passed its memory budget" or "… its time budget". The child's
-   diagnostics pass through unchanged. Under the default profile
-   nothing spawns. The watch loop checks each edit in a budgeted
-   child first and then compiles in process for the live session,
-   so its parser never sees a source the budgets refuse.
+   kills a child past the time budget. A kill reaches the child's
+   whole process group, so a C compiler the child started dies with
+   it. The child runs only when the parent marks it: the private
+   flag without the parent's environment marker is a usage error.
+   The outcome is one line at the entry file. A child the parent
+   killed for memory, or that the system killed for memory, reads
+   "the compiler passed its memory budget". A child the parent
+   killed for time reads "… its time budget". A child that stopped
+   any other way reads "the compiler stopped abnormally (signal n)"
+   or "(exit code n)", and that line is S026 too. Exit codes 0, 1,
+   and 2 pass through. The child's diagnostics pass through
+   unchanged. The parent kills the child on its own panic. Under the
+   default profile nothing spawns. The watch loop checks each edit
+   in a budgeted child first and then compiles in process for the
+   live session. An edit that lands between the two compiles is
+   parsed in process; that window is the operator's own loop.
+   *(Amended 2026-09-17, fifth Phase Review: the first classification
+   read every abnormal end as the memory budget; a kill reached the
+   direct child only; the flag was reachable from the command line.)*
    *(Added 2026-09-17, fourth Phase Review: a chain of 65,476 same
    labels in 130,990 bytes takes over 10 GB in the parser's
    duplicate-label path and is killed by the system, with no
@@ -586,18 +599,19 @@ one with a measurement.
 ### 109.6a The heavy tests
 
 *(Added 2026-09-17, round 9; measured in round 9b.)* Two CLI tests
-drive the compile child to its budgets. The memory-budget test
-reaches about 10 GB of resident memory in both of its runs, and the
-time-budget test's firing control runs under the contract's 300 s
-budget (67.6 s unoptimized). Those heavy parts run only when
-`SUBSCRIPT_HEAVY_TESTS=1` is set; without it each test prints one
-`gate-skip:` line that the gate counts (§85), so the quick shape's
-expected skip count is 4 and the full shape's is 2. The time-budget
-test's 2 s stop runs in every shape. The full gate exports the
-variable for the whole shape; the quick gate does not; the gate
-record names the variable beside the release step's (§85 rule 5).
-Measured: the two tests take 2.7 s without the variable and 214.6 s
-with it; the debug suite 358 s against 495 s.
+drive the compile child to its budgets. The memory-budget test's
+default-profile control reaches about 10 GB of resident memory; its
+profile run stops at the budget (4.35 GB optimized). The time-budget
+test's firing control runs under the 300 s budget (67.6 s
+unoptimized). Those heavy parts run only when
+`SUBSCRIPT_HEAVY_TESTS=1` is set. Without it each test prints one
+`gate-skip:` line that the gate counts (§85). The quick shape's
+expected skip count is therefore 4 and the full shape's is 2. The
+time-budget test's 2 s stop runs in every shape. The full gate
+exports the variable for the whole shape; the quick gate does not.
+The gate record names the variable (§85 rule 5). Measured: the two
+tests take 2.7 s without the variable and 214.6 s with it; the
+debug suite 358 s against 495 s.
 
 ### 109.7a The in-repo runners under the profile
 
