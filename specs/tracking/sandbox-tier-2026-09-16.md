@@ -699,3 +699,38 @@ Open: the gate record's `environment:` line does not yet name
 `SUBSCRIPT_HEAVY_TESTS` (§85 rule 5; `cli/tests/gate.rs` pins the
 release step's line); the unoptimized memory kill needs a host with
 more than 16 GB.
+
+### Fifth Phase Review and security round 10 (landed)
+
+A fresh reviewer read `e53af91..84b0973`: CRITICAL 0, MAJOR 0,
+MINOR 12. Round 10 closed the eight in the child and the gate
+record: every end of the child is classified apart (the parent's
+memory kill, the parent's time kill, the system's memory kill keyed
+on the largest resident reading at or above one half of the budget
+on macOS or the runtime's allocation-failure text on a host with
+`RLIMIT_AS`, and otherwise "stopped abnormally (signal n / exit code
+n)", all S026); the time budget uses `checked_add` and refuses a
+value over 86,400 s; a guard kills the child's process group when
+the parent unwinds or returns early; the child's outcome survives a
+failed write of the parent's stdout; the child leads its own process
+group so a kill reaches the C compiler (measured: a 2 s budget on a
+3.87 s build leaves no executable); `--compile-child` without the
+parent's `SUBSCRIPT_COMPILE_CHILD` marker is a usage error; the gate
+record names `SUBSCRIPT_HEAVY_TESTS=1` beside the release step's
+variable.
+
+Measured: macOS reclaims the child's pages before it kills it, so the
+resident reading at the kill is 2.1 to 2.3 GB against a largest
+reading of 9.7 to 10.0 GB; the floor for "the system killed it for
+memory" is therefore one half of the budget on the largest reading,
+not three quarters on the last.
+
+Recorded, not changed: a terminal's Ctrl-C no longer reaches the
+child (its own group), so a parent ended by `SIGINT` without an
+unwind leaves the child to its budgets; an operator's `SIGKILL` on a
+child holding half the budget reads as the memory budget; the watch
+loop's window between its two compiles; RSS excludes compressed
+pages; the unoptimized memory kill and the Windows Job Object path
+are unmeasured on this host (M14).
+
+Gate: `gate quick e75f8c0d2abae85c525e06a16a074e7258d0d64a dirty:6 debug 1604/0/2 skips 4 goldens-moved 0 exit 0`
