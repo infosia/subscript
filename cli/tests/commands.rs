@@ -1,5 +1,6 @@
 //! End-to-end clean and contracted-error paths for every CLI subcommand.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1451,5 +1452,321 @@ fn the_budgeted_child_runs_an_accepted_profile_program() -> Result<(), String> {
     )?;
     assert_code(&ran, 0);
     assert_eq!(ran.stdout, golden);
+    Ok(())
+}
+
+/// A source that checks clean and prints one line.
+fn clean_source() -> &'static [u8] {
+    b"export function main(): void {\n  print(`ok`);\n}\n"
+}
+
+/// §109.2 rule 6: a child that stopped abnormally is one S026 that
+/// names the signal or the exit code, and never a budget.
+///
+/// The two facts are derived apart: the message is the parent's, and
+/// the exit code and the signal number are the host's own reading of a
+/// child the test-only variable ended.
+#[test]
+fn an_abnormal_end_of_the_child_names_the_signal_or_the_exit_code() -> Result<(), String> {
+    let dir = TestDir::new()?;
+    let source = dir.write("clean.ts", clean_source())?;
+
+    // The panic runtime picks the exit code; the parent reads it back.
+    let panicked = output(
+        subscript()
+            .env(subscript_cli::COMPILE_CHILD_STOP_VARIABLE, "panic")
+            .arg("check")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source),
+    )?;
+    assert_code(&panicked, 1);
+    let rendered = String::from_utf8_lossy(&panicked.stderr).into_owned();
+    assert!(
+        rendered.contains("error[S026]: the compiler stopped abnormally (exit code 101)"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains(&source.display().to_string()),
+        "the stop names the entry file: {rendered}"
+    );
+    // The child's own stderr reaches the caller before the stop.
+    assert!(rendered.contains("panicked"), "{rendered}");
+    // An abnormal stop is not a budget.
+    assert!(!rendered.contains("passed its memory budget"), "{rendered}");
+
+    #[cfg(unix)]
+    {
+        let terminated = output(
+            subscript()
+                .env(subscript_cli::COMPILE_CHILD_STOP_VARIABLE, "sigterm")
+                .arg("check")
+                .arg("--profile")
+                .arg("sandbox")
+                .arg(&source),
+        )?;
+        assert_code(&terminated, 1);
+        let rendered = String::from_utf8_lossy(&terminated.stderr).into_owned();
+        assert!(
+            rendered.contains("error[S026]: the compiler stopped abnormally (signal 15)"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("passed its memory budget"), "{rendered}");
+    }
+
+    // The control: with no test-only stop the same source checks clean
+    // through the same child.
+    let clean = output(
+        subscript()
+            .arg("check")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source),
+    )?;
+    assert_code(&clean, 0);
+    Ok(())
+}
+
+/// §109.2 rule 6: a time budget over the ceiling, and one that is not a
+/// count of seconds, leave the contract's 300 s budget.
+///
+/// `2` is the accepted value in the list, and it runs the same path.
+/// That the parent reads an accepted value at all is
+/// `a_compile_over_the_time_budget_reports_one_s026`, which stops a
+/// child with a 2 s value.
+#[test]
+fn a_time_budget_the_environment_cannot_ask_for_keeps_the_contract_budget() -> Result<(), String> {
+    let dir = TestDir::new()?;
+    let source = dir.write("clean.ts", clean_source())?;
+
+    for value in ["18446744073709551615", "86401", "soon", "2"] {
+        let checked = output(
+            subscript()
+                .env(subscript_cli::COMPILE_TIME_BUDGET_VARIABLE, value)
+                .arg("check")
+                .arg("--profile")
+                .arg("sandbox")
+                .arg(&source),
+        )?;
+        assert_code(&checked, 0);
+        let rendered = String::from_utf8_lossy(&checked.stderr).into_owned();
+        assert!(!rendered.contains("S026"), "{value}: {rendered}");
+        assert!(rendered.contains("no errors"), "{value}: {rendered}");
+    }
+    Ok(())
+}
+
+/// §109.2 rule 6: a failed write of the parent's own stdout reports the
+/// write error and keeps the child's outcome.
+///
+/// The reader closes the pipe before the parent writes, so the write
+/// fails. The firing control is the same run with an open stdout: it
+/// carries the golden bytes and reports no write error.
+#[cfg(unix)]
+#[test]
+fn a_closed_stdout_keeps_the_childs_outcome_and_reports_the_write_error() -> Result<(), String> {
+    use std::process::Stdio;
+
+    let entry = workspace_root().join("corpus/accept/a238-sandbox-clean.ts");
+    let golden = std::fs::read(entry.with_extension("expected"))
+        .map_err(|error| format!("read the golden: {error}"))?;
+    assert!(!golden.is_empty(), "the control needs bytes to write");
+
+    let mut child = subscript()
+        .arg("run")
+        .arg("--profile")
+        .arg("sandbox")
+        .arg(&entry)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("run subscript: {error}"))?;
+    drop(child.stdout.take());
+    let closed = child
+        .wait_with_output()
+        .map_err(|error| format!("wait for subscript: {error}"))?;
+    let rendered = String::from_utf8_lossy(&closed.stderr).into_owned();
+    assert!(rendered.contains("write program stdout"), "{rendered}");
+    assert_code(&closed, 0);
+
+    // The firing control: the same run writes the golden and reports
+    // no write error.
+    let open = output(
+        subscript()
+            .arg("run")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&entry),
+    )?;
+    assert_code(&open, 0);
+    assert_eq!(open.stdout, golden);
+    let rendered = String::from_utf8_lossy(&open.stderr).into_owned();
+    assert!(!rendered.contains("write program stdout"), "{rendered}");
+    Ok(())
+}
+
+/// A C host that takes seconds to compile at `-O2`.
+///
+/// The preprocessor expands the chain, so the source is short and the
+/// translation unit the optimizer reads is not. The function takes its
+/// input from the caller and has external linkage, so the optimizer
+/// folds nothing and drops nothing.
+fn slow_host_c() -> Result<String, String> {
+    subscript_codegen::host_entry(
+        r#"
+#define SUBSCRIPT_STEP_1 t = t * 3 + 1; t = t ^ (t >> 3);
+#define SUBSCRIPT_STEP_2 SUBSCRIPT_STEP_1 SUBSCRIPT_STEP_1
+#define SUBSCRIPT_STEP_4 SUBSCRIPT_STEP_2 SUBSCRIPT_STEP_2
+#define SUBSCRIPT_STEP_8 SUBSCRIPT_STEP_4 SUBSCRIPT_STEP_4
+#define SUBSCRIPT_STEP_16 SUBSCRIPT_STEP_8 SUBSCRIPT_STEP_8
+#define SUBSCRIPT_STEP_32 SUBSCRIPT_STEP_16 SUBSCRIPT_STEP_16
+#define SUBSCRIPT_STEP_64 SUBSCRIPT_STEP_32 SUBSCRIPT_STEP_32
+#define SUBSCRIPT_STEP_128 SUBSCRIPT_STEP_64 SUBSCRIPT_STEP_64
+#define SUBSCRIPT_STEP_256 SUBSCRIPT_STEP_128 SUBSCRIPT_STEP_128
+#define SUBSCRIPT_STEP_512 SUBSCRIPT_STEP_256 SUBSCRIPT_STEP_256
+#define SUBSCRIPT_STEP_1024 SUBSCRIPT_STEP_512 SUBSCRIPT_STEP_512
+#define SUBSCRIPT_STEP_2048 SUBSCRIPT_STEP_1024 SUBSCRIPT_STEP_1024
+#define SUBSCRIPT_STEP_4096 SUBSCRIPT_STEP_2048 SUBSCRIPT_STEP_2048
+#define SUBSCRIPT_STEP_8192 SUBSCRIPT_STEP_4096 SUBSCRIPT_STEP_4096
+#define SUBSCRIPT_STEP_16384 SUBSCRIPT_STEP_8192 SUBSCRIPT_STEP_8192
+#define SUBSCRIPT_STEP_32768 SUBSCRIPT_STEP_16384 SUBSCRIPT_STEP_16384
+int subscript_slow_host(int a);
+int subscript_slow_host(int a) {
+    int t = a;
+    SUBSCRIPT_STEP_32768
+    return t;
+}
+int main(void) { return 0; }
+"#,
+    )
+}
+
+/// §109.2 rule 6: a budget kill reaches the child's whole process
+/// group, so the C compiler the child started dies with it.
+///
+/// The two facts are derived apart: the parent reports one S026, and
+/// the executable is the C compiler's own record of reaching its end.
+/// The firing control is the same build under the contract's budget: it
+/// writes the executable. The wait after the killed build is the
+/// control's own wall time, so a slower host waits longer.
+#[test]
+fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String> {
+    /// The seconds the killed build gets. The C compile is what runs
+    /// when it elapses: the emit before it takes about one second of
+    /// the whole build.
+    const BUDGET: &str = "2";
+
+    let dir = TestDir::new()?;
+    let source = dir.write("tiny.ts", clean_source())?;
+    let host = dir.write("host.c", slow_host_c()?.as_bytes())?;
+    let runtime = subscript_codegen::runtime_staticlib_path().map_err(|error| error.to_string())?;
+    let include = workspace_root().join("runtime").join("include");
+    let build = |out: &Path| {
+        let mut command = subscript();
+        command
+            .arg("build")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg("--source")
+            .arg(&source)
+            .arg("--host")
+            .arg(&host)
+            .arg("-o")
+            .arg(out)
+            .arg("--runtime-lib")
+            .arg(&runtime)
+            .arg("--runtime-include")
+            .arg(&include);
+        command
+    };
+
+    // The firing control: the C compiler reaches its end and writes.
+    let control_out = dir.directory("control")?;
+    let executable = control_out.join(format!("tiny{}", std::env::consts::EXE_SUFFIX));
+    let started = std::time::Instant::now();
+    let built = output(&mut build(&control_out))?;
+    let control_wall = started.elapsed();
+    assert_code(&built, 0);
+    assert!(executable.is_file(), "the control writes the executable");
+    println!("the whole build: {control_wall:?}");
+
+    let killed_out = dir.directory("killed")?;
+    let executable = killed_out.join(format!("tiny{}", std::env::consts::EXE_SUFFIX));
+    let started = std::time::Instant::now();
+    let stopped =
+        output(build(&killed_out).env(subscript_cli::COMPILE_TIME_BUDGET_VARIABLE, BUDGET))?;
+    let killed_wall = started.elapsed();
+    assert_code(&stopped, 1);
+    let rendered = String::from_utf8_lossy(&stopped.stderr).into_owned();
+    assert!(
+        rendered.starts_with("error[S026]: the compiler passed its time budget\n"),
+        "{rendered}"
+    );
+    assert!(
+        killed_wall < control_wall,
+        "the budget stopped the build before its end: {killed_wall:?} against {control_wall:?}"
+    );
+    // The emitted C is what the C compiler reads, so the kill reached a
+    // build that had started its C compile.
+    assert!(
+        killed_out.join("program.c").is_file(),
+        "the child emitted the C before the budget elapsed"
+    );
+
+    // A C compiler that outlived the kill has less work left than the
+    // whole build took, so this wait covers it.
+    std::thread::sleep(control_wall);
+    assert!(
+        !executable.is_file(),
+        "the killed C compiler wrote {}",
+        executable.display()
+    );
+    println!("the killed build: {killed_wall:?}, no executable after {control_wall:?} more");
+    Ok(())
+}
+
+/// §109.2 rule 6: the private flag is not a user option, on every
+/// subcommand.
+///
+/// The firing control is each command with no flag: it runs.
+#[test]
+fn the_compile_child_flag_is_not_a_user_option() -> Result<(), String> {
+    let dir = TestDir::new()?;
+    let source = dir.write("clean.ts", clean_source())?;
+    let header = dir.write("host.h", b"void host_tick(void);\n")?;
+    let emitted = dir.directory("emitted")?;
+    let bound = dir.0.join("host.ts");
+
+    let commands: [(&str, Vec<OsString>); 4] = [
+        ("check", vec![source.clone().into()]),
+        ("run", vec![source.clone().into()]),
+        (
+            "emit",
+            vec![source.clone().into(), "-o".into(), emitted.clone().into()],
+        ),
+        (
+            "bind",
+            vec![
+                "--header".into(),
+                header.clone().into(),
+                "-o".into(),
+                bound.clone().into(),
+            ],
+        ),
+    ];
+    for (command, args) in commands {
+        let refused = output(subscript().arg(command).args(&args).arg("--compile-child"))?;
+        assert_code(&refused, 2);
+        let rendered = String::from_utf8_lossy(&refused.stderr).into_owned();
+        assert_eq!(
+            rendered.trim_end(),
+            "subscript: the compile child flag is not a user option",
+            "{command}"
+        );
+
+        // The firing control: the same command with no flag runs.
+        let ran = output(subscript().arg(command).args(&args))?;
+        assert_code(&ran, 0);
+    }
     Ok(())
 }

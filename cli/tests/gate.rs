@@ -296,7 +296,9 @@ fn full_fails_on_release_skip() {
         "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 1/1 clippy 7/18/13 goldens-moved 0 exit 1",
     );
     let release = record.split("## release\n").nth(1).unwrap();
-    assert!(release.contains(" test --offline --locked --workspace --no-fail-fast --release\nenvironment: SUBSCRIPT_FULL_INTERPRETER_SWEEP=1\n"));
+    // §109.6a: the full shape exports the heavy-test variable, and the
+    // record names it beside the release step's own.
+    assert!(release.contains(" test --offline --locked --workspace --no-fail-fast --release\nenvironment: SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 SUBSCRIPT_HEAVY_TESTS=1\n"));
     assert!(release.contains("tests: 5/0/3\ngate-skip count: 1\n```text\ngate-skip: stub_suite unset fixture variable\n```"));
     assert!(release.contains("release sweep: 1"));
     assert!(release.contains("## hygiene\ncommand: tools/hygiene.sh\n"));

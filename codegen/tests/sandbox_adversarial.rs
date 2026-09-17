@@ -587,7 +587,7 @@ fn a_quote_inside_a_regex_literal_checks_clean_and_runs() {
 /// A chain of `labels` same labels, inside S026's byte limit.
 ///
 /// The parser's duplicate-label path is superlinear in memory on this
-/// shape (M13).
+/// shape, and the budgeted child is what bounds it (§109.2 rule 6).
 fn same_label_chain(labels: usize) -> String {
     format!(
         "export function main(): void {{}}\n{};\n",
@@ -599,7 +599,8 @@ fn same_label_chain(labels: usize) -> String {
 /// that is an expression and not a type.
 ///
 /// The parser reads the whole nest before the leaf refuses it, so its
-/// work is superlinear in the level count (M13).
+/// work is superlinear in the level count, and the budgeted child is
+/// what bounds it (§109.2 rule 6).
 fn nested_generic_call(levels: usize) -> String {
     format!(
         "export function main(): void {{\n  const x: i32 = f<{}1+1{}>(1);\n  print(`${{x}}`);\n}}\n",
@@ -608,8 +609,8 @@ fn nested_generic_call(levels: usize) -> String {
     )
 }
 
-/// §109.2 rule 6: the two shapes of M13 are the parser's, and no rule
-/// of §109.2 rejects either one.
+/// §109.2 rule 6: the two superlinear shapes are the parser's, and no
+/// rule of §109.2 rejects either one.
 ///
 /// At the sizes here each shape returns in milliseconds with the
 /// parser's own S100, under both profiles. The profile therefore adds

@@ -7,6 +7,7 @@ mod runtime_paths;
 /// Testable state transitions for `run --watch`.
 pub mod watch;
 
+pub use compile_child::CHILD_STOP_VARIABLE as COMPILE_CHILD_STOP_VARIABLE;
 pub use compile_child::TIME_BUDGET_VARIABLE as COMPILE_TIME_BUDGET_VARIABLE;
 
 use std::ffi::OsString;
@@ -82,13 +83,15 @@ where
     E: Write,
 {
     let mut args = args.into_iter().collect::<Vec<_>>();
-    // §109.2 rule 6: the child's own first line sets its memory budget,
-    // before it reads an argument or a source.
-    let role = compile_child::take_role(&mut args);
-    if role == Role::Child {
-        let _ = compile_child::apply_memory_budget();
-    }
-    let result = dispatch(&args, role, stdout, stderr);
+    let result = compile_child::take_role(&mut args).and_then(|role| {
+        // §109.2 rule 6: the child's own first line sets its memory
+        // budget, before it reads an argument or a source.
+        if role == Role::Child {
+            let _ = compile_child::apply_memory_budget();
+            compile_child::apply_test_only_stop();
+        }
+        dispatch(&args, role, stdout, stderr)
+    });
     match result {
         Ok(code) => code,
         Err(failure) => {

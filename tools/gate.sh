@@ -167,7 +167,7 @@ run() {
     command_status=0
     if [ "$step" = release ]; then
         release_ran=1
-        step_env=SUBSCRIPT_FULL_INTERPRETER_SWEEP=1
+        step_env='SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 SUBSCRIPT_HEAVY_TESTS=1'
         SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 run_bounded "$@" || command_status=$?
     else
         if [ "$step" = clippy ]; then clippy_ran=1; fi
