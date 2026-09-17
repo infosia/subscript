@@ -1,17 +1,21 @@
 //! The sandbox-profile source limits (`specs/blocks/compiler.md` §109.2,
 //! S026), and the tests for every §109.2 rule.
 //!
-//! The scan runs before the parser, over the bytes of every source file
-//! that is not ambient. It does no lexing, so a bracket inside a string
-//! or a comment counts. The count over-approximates the syntactic depth,
-//! so it rejects more, never less.
+//! The scan runs before the parser, over every source file that is not
+//! ambient. The depth is a count over the **lexer's tokens**, so a
+//! bracket inside a comment, a string, a template, or a
+//! regular-expression literal is not a bracket. The lexer is a flat loop
+//! over the bytes, so the cost of the scan does not grow with the depth.
 //!
 //! S023 to S025 report at their own sites, so this module holds no code
 //! for them. It holds the pair every rule needs: the rejection under the
 //! sandbox profile, and the firing control that the same source checks
 //! clean under the default profile.
 
+use swc_ecma_parser::token::Token;
+
 use crate::diag::{Diagnostic, Pos, RuleCode};
+use crate::parse;
 use crate::SourceFile;
 
 /// The largest source file the sandbox profile accepts, in bytes.
@@ -48,39 +52,46 @@ fn source_limits(name: &str, source: &str) -> Option<Diagnostic> {
     bracket_depth_limit(name, source)
 }
 
-/// Reports the first bracket that takes the depth over the limit.
+/// Reports the first bracket token that takes the depth over the limit.
 ///
-/// The position counts the line breaks and the characters of the scan,
-/// which is what the parser reports for the same offset.
+/// The count is over the lexer's tokens: `(`, `[`, `{`, and the `${` of
+/// a template head each open one level, and `)`, `]`, and `}` each close
+/// one. `${` opens a level because the `}` that ends its expression is
+/// an ordinary `}` token, and because the parser recurses once for the
+/// expression it opens. A closer below zero resets the depth to zero. A
+/// lexer error stops the scan and reports nothing; the parser reports
+/// that source.
+///
+/// The position is the opener's own span, which is what the parser
+/// reports for the same offset.
 fn bracket_depth_limit(name: &str, source: &str) -> Option<Diagnostic> {
-    let mut depth: u32 = 0;
-    let mut line: u32 = 1;
-    let mut col: u32 = 1;
-    for character in source.chars() {
-        match character {
-            '\n' => {
-                line += 1;
-                col = 0;
-            }
-            '(' | '[' | '{' => {
-                depth += 1;
-                if depth > BRACKET_DEPTH_LIMIT {
-                    return Some(Diagnostic::new(
-                        RuleCode::S026,
-                        format!(
-                            "bracket depth {depth} is over the sandbox profile limit of \
-                             {BRACKET_DEPTH_LIMIT}"
-                        ),
-                        Pos::new(name, line, col),
-                    ));
+    parse::with_tokens(name, source, |tokens, at| {
+        let mut depth: u32 = 0;
+        for spanned in tokens {
+            match spanned.token {
+                Token::Error(_) => break,
+                Token::LParen | Token::LBracket | Token::LBrace | Token::DollarLBrace => {
+                    depth += 1;
+                    if depth > BRACKET_DEPTH_LIMIT {
+                        return Some(Diagnostic::new(
+                            RuleCode::S026,
+                            format!(
+                                "bracket depth {depth} is over the sandbox profile limit of \
+                                 {BRACKET_DEPTH_LIMIT}"
+                            ),
+                            at(spanned.span.lo),
+                        ));
+                    }
                 }
+                Token::RParen | Token::RBracket | Token::RBrace => {
+                    depth = depth.saturating_sub(1);
+                }
+                _ => {}
             }
-            ')' | ']' | '}' => depth = depth.saturating_sub(1),
-            _ => {}
         }
-        col += 1;
-    }
-    None
+        None
+    })
+    .flatten()
 }
 
 #[cfg(test)]
@@ -281,12 +292,100 @@ mod tests {
         assert_eq!(diagnostic.code, RuleCode::S026);
     }
 
+    /// The shape the external review measured: a byte count cancels
+    /// itself, because the `)` inside each comment decrements it. The
+    /// token count sees one `(` per level and no closer.
+    fn comment_levels(levels: usize) -> String {
+        format!(
+            "export function main(): void {{\n  const x: i32 = {}1{};\n  print(`${{x}}`);\n}}\n",
+            "(/*)*/".repeat(levels),
+            ")".repeat(levels)
+        )
+    }
+
     #[test]
-    fn s026_counts_a_bracket_inside_a_string_or_a_comment() {
-        let source = format!("// {}\n", "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1));
-        let diagnostic = scan(&source).expect("the byte scan does no lexing");
+    fn s026_counts_the_levels_that_a_byte_count_cancels() {
+        let diagnostic = sandbox_only_rejection(&comment_levels(257));
         assert_eq!(diagnostic.code, RuleCode::S026);
-        assert_eq!(diagnostic.pos.line, 1);
+        assert_eq!(diagnostic.pos.line, 2);
+        assert!(
+            diagnostic.message.contains("sandbox profile"),
+            "{}",
+            diagnostic.message
+        );
+        // The firing control: the same shape under the limit checks clean.
+        // The function body's own `{` holds one level, so 255 levels is
+        // the deepest this shape reaches at the limit.
+        assert!(scan(&comment_levels(255)).is_none());
+    }
+
+    #[test]
+    fn s026_does_not_count_a_bracket_inside_a_comment_or_a_literal() {
+        let openers = "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1);
+        let escaped = r"\(".repeat(BRACKET_DEPTH_LIMIT as usize + 1);
+        for source in [
+            format!("// {openers}\n"),
+            format!("/* {openers} */\n"),
+            format!("const s: string = \"{openers}\";\n"),
+            format!("const t: string = `{openers}`;\n"),
+            format!("const r: RegExp = /{escaped}/;\n"),
+        ] {
+            assert!(
+                scan(&source).is_none(),
+                "the token scan counts no bracket here: {source}"
+            );
+        }
+        // The firing control: the same openers as tokens report.
+        assert!(scan(&openers).is_some());
+    }
+
+    #[test]
+    fn s026_counts_a_template_substitution_as_one_opener() {
+        // `${` opens a brace token in SWC, and the `}` that ends the
+        // expression closes it, so each level counts exactly once.
+        let nest = |levels: usize| {
+            format!(
+                "{}1{}",
+                "`${".repeat(levels),
+                "}`".repeat(levels).to_string()
+            )
+        };
+        assert!(scan(&nest(BRACKET_DEPTH_LIMIT as usize)).is_none());
+        let diagnostic =
+            scan(&nest(BRACKET_DEPTH_LIMIT as usize + 1)).expect("257 `${` levels report");
+        assert_eq!(diagnostic.code, RuleCode::S026);
+    }
+
+    #[test]
+    fn s026_reports_the_byte_limit_before_the_depth() {
+        let deep = format!(
+            "{}0{}",
+            "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1),
+            ")".repeat(BRACKET_DEPTH_LIMIT as usize + 1)
+        );
+        let padding = " ".repeat(SOURCE_BYTE_LIMIT + 1 - deep.len());
+        let diagnostic = scan(&format!("{deep}{padding}")).expect("a source over both reports");
+        assert!(
+            diagnostic.message.contains("bytes"),
+            "the byte limit reports first: {}",
+            diagnostic.message
+        );
+        // The firing control: the same brackets under the byte limit
+        // report the depth.
+        assert!(scan(&deep)
+            .expect("the depth reports on its own")
+            .message
+            .contains("bracket depth"));
+    }
+
+    #[test]
+    fn s026_reports_nothing_for_a_source_the_lexer_rejects() {
+        let openers = "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1);
+        // The unterminated string stops the lexer before the openers.
+        assert!(scan(&format!("const s: string = \"x\n{openers}")).is_none());
+        // The firing control: the terminated string leaves the openers
+        // in the token stream.
+        assert!(scan(&format!("const s: string = \"x\";\n{openers}")).is_some());
     }
 
     #[test]
@@ -312,6 +411,38 @@ mod tests {
             "{}",
             diagnostic.message
         );
+    }
+
+    /// §109.2: the lexer is a flat loop over the bytes, so the scan
+    /// returns from a small stack at a depth no parser reaches. The
+    /// thread here is 2 MiB, the size of an ordinary test thread.
+    #[test]
+    fn s026_scans_a_deep_source_from_a_two_mebibyte_stack() {
+        let sources = [
+            ("12,000 comment levels", comment_levels(12_000)),
+            (
+                "12,000 template openers",
+                format!("{}1{}", "`${".repeat(12_000), "}`".repeat(12_000)),
+            ),
+            // 58,254 lines of 18 bytes is 1,048,572: the largest source
+            // under the byte limit, so the lexer runs on all of it.
+            ("1 MiB of source", "const x: i32 = 1;\n".repeat(58_254)),
+        ];
+        let scanned = std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || {
+                for (name, source) in sources {
+                    let started = std::time::Instant::now();
+                    let reported = scan(&source).is_some();
+                    println!(
+                        "{name}: {} bytes, {:?}, reported={reported}",
+                        source.len(),
+                        started.elapsed()
+                    );
+                }
+            })
+            .expect("spawn the scan thread");
+        scanned.join().expect("the scan returns from a 2 MiB stack");
     }
 
     /// §109.2: the checker runs on a 64 MiB thread, so the depth a source

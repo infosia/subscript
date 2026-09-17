@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use regress::Regex;
 
-use crate::context::{Context, CLASS_REGEX};
+use crate::context::{Context, QuotaBuf, CLASS_REGEX};
 use crate::trap::TrapKind;
 
 #[repr(C)]
@@ -369,7 +369,7 @@ pub(crate) fn search(ctx: &mut Context, subject: *const u8, regex: *const u8, po
 }
 
 fn append_regex_replacement(
-    out: &mut Vec<u8>,
+    out: &mut QuotaBuf,
     source: &[u8],
     found: &CaptureMatch,
     replacement: &[u8],
@@ -411,15 +411,22 @@ pub(crate) fn replace(
     let Some(found) = find_and_record(ctx, regex, text, pos_id) else {
         return std::ptr::null_mut();
     };
-    let mut out = Vec::new();
+    // §109.4 rule 2: a `$'` or `` $` `` substitution makes the result
+    // size a product of the inputs, so the buffer holds at most the
+    // quota headroom and the trap replaces the copy that would not fit.
+    let mut out = ctx.quota_buf();
     if let Some(found) = found {
-        out.extend_from_slice(&text.as_bytes()[..found.range.start]);
+        out.extend(&text.as_bytes()[..found.range.start]);
         append_regex_replacement(&mut out, text.as_bytes(), &found, replacement.as_bytes());
-        out.extend_from_slice(&text.as_bytes()[found.range.end..]);
+        out.extend(&text.as_bytes()[found.range.end..]);
     } else {
-        out.extend_from_slice(text.as_bytes());
+        out.extend(text.as_bytes());
     }
-    ctx.alloc_str(&out, pos_id)
+    if out.over_quota() {
+        ctx.check_quota(out.wanted(), pos_id);
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(out.bytes(), pos_id)
 }
 
 fn next_code_point(text: &str, at: usize) -> usize {
@@ -455,18 +462,24 @@ pub(crate) fn replace_all(
         );
         return std::ptr::null_mut();
     }
-    let mut out = Vec::new();
+    // §109.4 rule 2: the result size is the match count times the
+    // replacement, so the buffer holds at most the quota headroom and
+    // the trap replaces the copy that would not fit.
+    let mut out = ctx.quota_buf();
     let mut emitted = 0usize;
     let mut search_at = 0usize;
     let mut last = None;
     loop {
+        if out.over_quota() {
+            break;
+        }
         let Some(found) = budgeted_find(ctx, &compiled, text, search_at, pos_id) else {
             return std::ptr::null_mut();
         };
         let Some(found) = found else {
             break;
         };
-        out.extend_from_slice(&text.as_bytes()[emitted..found.range.start]);
+        out.extend(&text.as_bytes()[emitted..found.range.start]);
         append_regex_replacement(&mut out, text.as_bytes(), &found, replacement.as_bytes());
         emitted = found.range.end;
         let empty = found.range.start == found.range.end;
@@ -481,9 +494,13 @@ pub(crate) fn replace_all(
         };
         last = Some(found);
     }
-    out.extend_from_slice(&text.as_bytes()[emitted..]);
+    out.extend(&text.as_bytes()[emitted..]);
     ctx.regex_store().record(regex, last);
-    ctx.alloc_str(&out, pos_id)
+    if out.over_quota() {
+        ctx.check_quota(out.wanted(), pos_id);
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(out.bytes(), pos_id)
 }
 
 fn push_string(ctx: &mut Context, array: *mut u8, bytes: &[u8], pos_id: u32) -> bool {

@@ -13,6 +13,8 @@
 //! documents a harmless total fallback instead of a panic (CLAUDE.md
 //! core principle 5).
 
+use crate::context::QuotaBuf;
+
 /// True for exactly ECMA's WhiteSpace + LineTerminator code points
 /// (Q21). This intentionally includes U+FEFF and excludes U+0085,
 /// unlike Rust's [`char::is_whitespace`].
@@ -166,23 +168,43 @@ pub fn substr_range(len: usize, start: i32, length: i32) -> (usize, usize) {
 /// returns the receiver unchanged as a total fallback.
 #[must_use]
 pub fn split<'a>(hay: &'a [u8], sep: &[u8]) -> Vec<&'a [u8]> {
+    let mut pieces = Vec::new();
+    split_each(hay, sep, |piece| {
+        pieces.push(piece);
+        true
+    });
+    pieces
+}
+
+/// `split(sep)` one piece at a time, in the order [`split`] gives.
+///
+/// `visit` answers whether the scan continues, so a caller that
+/// allocates each piece through the Context stops at the first trap and
+/// holds no list of pieces outside the allocation quota (§109.4 rule 2).
+pub fn split_each<'a>(hay: &'a [u8], sep: &[u8], mut visit: impl FnMut(&'a [u8]) -> bool) {
     if sep.is_empty() {
-        return match std::str::from_utf8(hay) {
-            Ok(text) => text
-                .char_indices()
-                .map(|(at, ch)| &hay[at..at + ch.len_utf8()])
-                .collect(),
-            Err(_) => vec![hay],
-        };
+        match std::str::from_utf8(hay) {
+            Ok(text) => {
+                for (at, ch) in text.char_indices() {
+                    if !visit(&hay[at..at + ch.len_utf8()]) {
+                        return;
+                    }
+                }
+            }
+            Err(_) => {
+                visit(hay);
+            }
+        }
+        return;
     }
-    let mut out = Vec::new();
     let mut at = 0usize;
     while let Some(i) = find_from(hay, sep, at) {
-        out.push(&hay[at..i]);
+        if !visit(&hay[at..i]) {
+            return;
+        }
         at = i + sep.len();
     }
-    out.push(&hay[at..]);
-    out
+    visit(&hay[at..]);
 }
 
 /// `trimStart()`: strips leading ECMA WhiteSpace + LineTerminator
@@ -213,12 +235,17 @@ pub fn trim(s: &[u8]) -> &[u8] {
     trim_end(trim_start(s))
 }
 
-/// `repeat(n)`: `n` copies; `repeat(0)` is empty. `n` must be
-/// non-negative (the caller traps on `repeat(-1)`); a negative `n`
-/// falls back to empty rather than panicking.
-#[must_use]
-pub fn repeat(s: &[u8], n: i32) -> Vec<u8> {
-    s.repeat(usize::try_from(n.max(0)).unwrap_or(0))
+/// `repeat(n)`: writes `n` copies of `s` into an exact-size buffer.
+///
+/// The caller computes `s.len() * n` and allocates that many bytes
+/// through the Context, so no copy of the result exists outside the
+/// allocation quota (§109.4 rule 2). `out.len()` must be a whole
+/// multiple of `s.len()`; an empty `s` writes nothing.
+pub fn repeat_into(s: &[u8], out: &mut [u8]) {
+    if s.is_empty() {
+        return;
+    }
+    fill_cyclic(out, s);
 }
 
 /// `padStart`/`padEnd` (Q21 byte lengths): pads with cyclic copies of
@@ -318,7 +345,7 @@ pub fn to_lower(s: &[u8]) -> Vec<u8> {
 /// surfaces share the exact parser for `$$`, `$&`, ``$` ``, `$'`,
 /// `$1`–`$99`, and `$<name>`.
 pub(crate) fn append_replacement(
-    out: &mut Vec<u8>,
+    out: &mut QuotaBuf,
     source: &[u8],
     match_start: usize,
     match_end: usize,
@@ -342,15 +369,15 @@ pub(crate) fn append_replacement(
                 at += 2;
             }
             b'&' => {
-                out.extend_from_slice(&source[match_start..match_end]);
+                out.extend(&source[match_start..match_end]);
                 at += 2;
             }
             b'`' => {
-                out.extend_from_slice(&source[..match_start]);
+                out.extend(&source[..match_start]);
                 at += 2;
             }
             b'\'' => {
-                out.extend_from_slice(&source[match_end..]);
+                out.extend(&source[match_end..]);
                 at += 2;
             }
             b'0'..=b'9' => {
@@ -371,7 +398,7 @@ pub(crate) fn append_replacement(
                     };
                 if let Some(index) = capture {
                     if let Some(range) = numbered(index) {
-                        out.extend_from_slice(&source[range]);
+                        out.extend(&source[range]);
                     }
                     at += consumed;
                 } else {
@@ -390,7 +417,7 @@ pub(crate) fn append_replacement(
                 let name_end = at + 2 + relative_end;
                 let name = std::str::from_utf8(&replacement[at + 2..name_end]).unwrap_or_default();
                 if let Some(range) = named(name) {
-                    out.extend_from_slice(&source[range]);
+                    out.extend(&source[range]);
                 }
                 at = name_end + 1;
             }
@@ -402,30 +429,22 @@ pub(crate) fn append_replacement(
     }
 }
 
-/// `replace(pat, repl)`: replaces the first occurrence with ECMA's
-/// string-pattern `$` substitutions. No match returns the bytes
-/// unchanged; an empty `pat` matches at index 0.
-#[must_use]
-pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
+/// `replace(pat, repl)`: appends the receiver with its first
+/// occurrence replaced, using ECMA's string-pattern `$` substitutions.
+/// No match appends the bytes unchanged; an empty `pat` matches at
+/// index 0.
+///
+/// The result size is not known before the bytes exist, so the caller
+/// supplies a quota-bounded buffer (§109.4 rule 2) and reads
+/// [`QuotaBuf::over_quota`] afterwards.
+pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8], out: &mut QuotaBuf) {
     match find_from(s, pat, 0) {
         Some(i) => {
-            let mut out = Vec::with_capacity(s.len() - pat.len() + repl.len());
-            out.extend_from_slice(&s[..i]);
-            append_replacement(
-                &mut out,
-                s,
-                i,
-                i + pat.len(),
-                repl,
-                0,
-                false,
-                |_| None,
-                |_| None,
-            );
-            out.extend_from_slice(&s[i + pat.len()..]);
-            out
+            out.extend(&s[..i]);
+            append_replacement(out, s, i, i + pat.len(), repl, 0, false, |_| None, |_| None);
+            out.extend(&s[i + pat.len()..]);
         }
-        None => s.to_vec(),
+        None => out.extend(s),
     }
 }
 
@@ -435,50 +454,64 @@ pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
 /// `"aa".replaceAll("a", "aa")` is `"aaaa"`). Each replacement uses
 /// ECMA's string-pattern `$` substitutions. An empty pattern matches
 /// every UTF-8 code-point boundary, including both ends. Invalid UTF-8
-/// returns the receiver unchanged as a total fallback.
-#[must_use]
-pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
+/// appends the receiver unchanged as a total fallback.
+///
+/// The result size is not known before the bytes exist, so the caller
+/// supplies a quota-bounded buffer (§109.4 rule 2) and reads
+/// [`QuotaBuf::over_quota`] afterwards. The pass stops at the first
+/// append that takes the total past the bound.
+pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8], out: &mut QuotaBuf) {
     if pat.is_empty() {
         let Ok(text) = std::str::from_utf8(s) else {
-            return s.to_vec();
+            out.extend(s);
+            return;
         };
-        let mut out = Vec::new();
         let mut previous = 0;
         for at in text
             .char_indices()
             .map(|(at, _)| at)
             .chain(std::iter::once(s.len()))
         {
-            out.extend_from_slice(&s[previous..at]);
-            append_replacement(&mut out, s, at, at, repl, 0, false, |_| None, |_| None);
+            if out.over_quota() {
+                return;
+            }
+            out.extend(&s[previous..at]);
+            append_replacement(out, s, at, at, repl, 0, false, |_| None, |_| None);
             previous = at;
         }
-        return out;
+        return;
     }
-    let mut out = Vec::new();
     let mut at = 0usize;
     while let Some(i) = find_from(s, pat, at) {
-        out.extend_from_slice(&s[at..i]);
-        append_replacement(
-            &mut out,
-            s,
-            i,
-            i + pat.len(),
-            repl,
-            0,
-            false,
-            |_| None,
-            |_| None,
-        );
+        if out.over_quota() {
+            return;
+        }
+        out.extend(&s[at..i]);
+        append_replacement(out, s, i, i + pat.len(), repl, 0, false, |_| None, |_| None);
         at = i + pat.len();
     }
-    out.extend_from_slice(&s[at..]);
-    out
+    out.extend(&s[at..]);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `replace(pat, repl)` into an unbounded buffer, as a value.
+    fn replaced_first(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
+        let mut out = QuotaBuf::new(usize::MAX);
+        replace_first(s, pat, repl, &mut out);
+        assert!(!out.over_quota());
+        out.bytes().to_vec()
+    }
+
+    /// `replaceAll(pat, repl)` into an unbounded buffer, as a value.
+    fn replaced_all(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
+        let mut out = QuotaBuf::new(usize::MAX);
+        replace_all(s, pat, repl, &mut out);
+        assert!(!out.over_quota());
+        out.bytes().to_vec()
+    }
 
     #[test]
     fn empty_patterns_use_utf8_boundaries_and_both_ends() {
@@ -494,17 +527,20 @@ mod tests {
             assert!(actual
                 .iter()
                 .all(|piece| std::str::from_utf8(piece).is_ok()));
-            assert_eq!(replace_all(text.as_bytes(), b"", b"-"), replaced.as_bytes());
+            assert_eq!(
+                replaced_all(text.as_bytes(), b"", b"-"),
+                replaced.as_bytes()
+            );
         }
-        assert_eq!(replace_first(b"", b"", b"-"), b"-");
-        assert_eq!(replace_first("aé".as_bytes(), b"", b"-"), "-aé".as_bytes());
+        assert_eq!(replaced_first(b"", b"", b"-"), b"-");
+        assert_eq!(replaced_first("aé".as_bytes(), b"", b"-"), "-aé".as_bytes());
         assert_eq!(
-            replace_all("aé".as_bytes(), b"", b"<$`|$&|$'>"),
+            replaced_all("aé".as_bytes(), b"", b"<$`|$&|$'>"),
             "<||aé>a<a||é>é<aé||>".as_bytes()
         );
-        assert_eq!(replace_all(b"", b"", b"<$`|$&|$'>"), b"<||>");
+        assert_eq!(replaced_all(b"", b"", b"<$`|$&|$'>"), b"<||>");
         assert_eq!(split("aé".as_bytes(), "é".as_bytes()), vec![&b"a"[..], b""]);
-        assert_eq!(replace_all(b"ab", b"b", b"-"), b"a-");
+        assert_eq!(replaced_all(b"ab", b"b", b"-"), b"a-");
     }
 
     #[test]
@@ -607,12 +643,17 @@ mod tests {
 
     #[test]
     fn repeat_counts_including_zero() {
-        assert_eq!(repeat(b"ab", 0), b"");
-        assert_eq!(repeat(b"ab", 1), b"ab");
-        assert_eq!(repeat(b"ab", 3), b"ababab");
-        assert_eq!(repeat(b"", 5), b"");
-        // The documented negative fallback (the FFI traps first).
-        assert_eq!(repeat(b"ab", -1), b"");
+        for (s, n, expected) in [
+            (&b"ab"[..], 0usize, &b""[..]),
+            (b"ab", 1, b"ab"),
+            (b"ab", 3, b"ababab"),
+            (b"", 5, b""),
+            (b"abc", 4, b"abcabcabcabc"),
+        ] {
+            let mut out = vec![0u8; s.len() * n];
+            repeat_into(s, &mut out);
+            assert_eq!(out, expected, "{s:?} x {n}");
+        }
     }
 
     #[test]
@@ -648,32 +689,32 @@ mod tests {
 
     #[test]
     fn replace_first_substitutes_ecma_string_patterns() {
-        assert_eq!(replace_first(b"aaa", b"a", b"b"), b"baa");
-        assert_eq!(replace_first(b"abc", b"z", b"y"), b"abc");
+        assert_eq!(replaced_first(b"aaa", b"a", b"b"), b"baa");
+        assert_eq!(replaced_first(b"abc", b"z", b"y"), b"abc");
         assert_eq!(
-            replace_first(b"a-b", b"-", b"[$$][$&][$`][$'][$1]"),
+            replaced_first(b"a-b", b"-", b"[$$][$&][$`][$'][$1]"),
             b"a[$][-][a][b][$1]b"
         );
-        assert_eq!(replace_first(b"x=1", b"1", b"$&"), b"x=1");
+        assert_eq!(replaced_first(b"x=1", b"1", b"$&"), b"x=1");
         // Empty pattern matches at 0 (ECMA-262): repl + s.
-        assert_eq!(replace_first(b"abc", b"", b"X"), b"Xabc");
-        assert_eq!(replace_first(b"abc", b"", b"$'"), b"abcabc");
+        assert_eq!(replaced_first(b"abc", b"", b"X"), b"Xabc");
+        assert_eq!(replaced_first(b"abc", b"", b"$'"), b"abcabc");
     }
 
     #[test]
     fn replace_all_never_rescans_a_replacement() {
-        assert_eq!(replace_all(b"abcabc", b"bc", b"X"), b"aXaX");
+        assert_eq!(replaced_all(b"abcabc", b"bc", b"X"), b"aXaX");
         // The replacement contains the pattern; one pass, no rescan.
-        assert_eq!(replace_all(b"aa", b"a", b"aa"), b"aaaa");
-        assert_eq!(replace_all(b"abc", b"z", b"y"), b"abc");
-        assert_eq!(replace_all(b"x=1", b"1", b"$&"), b"x=1");
+        assert_eq!(replaced_all(b"aa", b"a", b"aa"), b"aaaa");
+        assert_eq!(replaced_all(b"abc", b"z", b"y"), b"abc");
+        assert_eq!(replaced_all(b"x=1", b"1", b"$&"), b"x=1");
         assert_eq!(
-            replace_all(b"a-b-c", b"-", b"<$`|$&|$'>"),
+            replaced_all(b"a-b-c", b"-", b"<$`|$&|$'>"),
             b"a<a|-|b-c>b<a-b|-|c>c"
         );
-        assert_eq!(replace_all(b"a-b", b"-", b"[$1]"), b"a[$1]b");
+        assert_eq!(replaced_all(b"a-b", b"-", b"[$1]"), b"a[$1]b");
         // An empty pattern matches both ends and each code-point boundary.
-        assert_eq!(replace_all(b"ab", b"", b"X"), b"XaXbX");
+        assert_eq!(replaced_all(b"ab", b"", b"X"), b"XaXbX");
     }
 
     #[test]

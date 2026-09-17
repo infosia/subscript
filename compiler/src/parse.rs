@@ -3,7 +3,9 @@
 
 use swc_common::{BytePos, FileName, SourceMap, Span, Spanned};
 use swc_ecma_ast as ast;
-use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
+use swc_ecma_parser::{
+    lexer::Lexer, token::TokenAndSpan, Parser, StringInput, Syntax, Tokens, TsSyntax,
+};
 
 use crate::diag::{Diagnostic, Pos, RuleCode};
 use crate::divergence::Divergence;
@@ -99,6 +101,56 @@ pub fn parse_import_specifiers(source: &SourceFile) -> Result<Vec<String>, Vec<D
     })
 }
 
+/// The syntax every lexer of this compiler reads.
+///
+/// `dts` selects the ambient dialect for a `.d.ts` source.
+fn syntax_of(dts: bool) -> Syntax {
+    Syntax::Typescript(TsSyntax {
+        tsx: false,
+        decorators: true,
+        dts,
+        no_early_errors: false,
+        disallow_ambiguous_jsx_like: false,
+    })
+}
+
+/// Runs `scan` over the tokens of one program source.
+///
+/// The lexer is the one [`parse_program`] builds, with the same syntax
+/// and no [`Parser`], so one lexical rule serves the parser and every
+/// scan. The lexer is a flat loop over the bytes, so its cost does not
+/// grow with the nesting depth of the source.
+///
+/// `scan` receives the token iterator and a mapper from a byte position
+/// to the [`Pos`] the parser reports for the same offset. `scan` stops
+/// at any point.
+///
+/// Returns `None` when the lexer reports an error up to the point where
+/// `scan` stopped. The parser reports that source, so a scan of it
+/// answers nothing.
+pub(crate) fn with_tokens<T>(
+    name: &str,
+    source: &str,
+    scan: impl FnOnce(&mut dyn Iterator<Item = TokenAndSpan>, &dyn Fn(BytePos) -> Pos) -> T,
+) -> Option<T> {
+    let source_map = SourceMap::default();
+    let fm = source_map.new_source_file(
+        FileName::Custom(name.to_string()).into(),
+        source.to_string(),
+    );
+    let mut lexer = Lexer::new(
+        syntax_of(false),
+        ast::EsVersion::Es2022,
+        StringInput::from(&*fm),
+        None,
+    );
+    let scanned = {
+        let at = |position: BytePos| lookup_at(&source_map, name, position);
+        scan(&mut lexer, &at)
+    };
+    lexer.take_errors().is_empty().then_some(scanned)
+}
+
 /// Parses every source file. Parse failures become `S100` diagnostics;
 /// the parser never panics on malformed input.
 pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec<Diagnostic>> {
@@ -122,15 +174,8 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
             FileName::Custom(source.name.clone()).into(),
             source.source.clone(),
         );
-        let syntax = Syntax::Typescript(TsSyntax {
-            tsx: false,
-            decorators: true,
-            dts: source.dts,
-            no_early_errors: false,
-            disallow_ambiguous_jsx_like: false,
-        });
         let lexer = Lexer::new(
-            syntax,
+            syntax_of(source.dts),
             ast::EsVersion::Es2022,
             StringInput::from(&*fm),
             None,
@@ -189,10 +234,18 @@ fn parser_diagnostic(err: &swc_ecma_parser::error::Error, pos: Pos) -> Diagnosti
 }
 
 fn lookup(source_map: &SourceMap, fallback_file: &str, span: Span) -> Pos {
-    if span.lo == BytePos(0) {
+    lookup_at(source_map, fallback_file, span.lo)
+}
+
+/// Converts a byte position to the `Pos` the parser reports for it.
+///
+/// `BytePos(0)` is SWC's dummy position; it maps to the first position
+/// of `fallback_file`.
+fn lookup_at(source_map: &SourceMap, fallback_file: &str, at: BytePos) -> Pos {
+    if at == BytePos(0) {
         return Pos::new(fallback_file, 1, 1);
     }
-    let loc = source_map.lookup_char_pos(span.lo);
+    let loc = source_map.lookup_char_pos(at);
     let file = match &*loc.file.name {
         FileName::Custom(name) => name.clone(),
         other => other.to_string(),

@@ -16,7 +16,21 @@ use std::collections::{HashMap, HashSet};
 pub(crate) struct JsonBuilders {
     next: u64,
     output: HashMap<u64, Vec<u8>>,
+    limit: HashMap<u64, usize>,
     active: HashMap<u64, HashSet<usize>>,
+}
+
+/// The result of one append into a builder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Append {
+    /// The bytes were appended.
+    Ok,
+    /// The builder id was absent.
+    Unknown,
+    /// The append would take the builder past the allocation quota
+    /// (`specs/blocks/compiler.md` §109.4 rule 2). The builder holds its
+    /// bytes so far and nothing more.
+    OverQuota,
 }
 
 /// Result of inserting one reference in a tracked builder's active path.
@@ -595,10 +609,11 @@ impl<'a> Parser<'a> {
 impl JsonBuilders {
     /// Starts one builder. Only the tracked spelling allocates an active
     /// reference set.
-    pub(crate) fn begin(&mut self, tracked: bool) -> Option<u64> {
+    pub(crate) fn begin(&mut self, tracked: bool, limit: usize) -> Option<u64> {
         self.next = self.next.checked_add(1)?;
         let id = self.next;
         self.output.insert(id, Vec::new());
+        self.limit.insert(id, limit);
         if tracked {
             self.active.insert(id, HashSet::new());
         }
@@ -608,60 +623,72 @@ impl JsonBuilders {
     /// Removes a completed builder and returns its exact JSON bytes.
     pub(crate) fn finish(&mut self, id: u64) -> Option<Vec<u8>> {
         self.active.remove(&id);
+        self.limit.remove(&id);
         self.output.remove(&id)
     }
 
     /// Drops every transient builder after a trapped run unwound.
     pub(crate) fn clear(&mut self) {
         self.output.clear();
+        self.limit.clear();
         self.active.clear();
     }
 
     /// Appends bytes that the generated serializer already shaped as JSON
     /// punctuation.
-    pub(crate) fn raw(&mut self, id: u64, bytes: &[u8]) -> bool {
+    pub(crate) fn raw(&mut self, id: u64, bytes: &[u8]) -> Append {
         let Some(output) = self.output.get_mut(&id) else {
-            return false;
+            return Append::Unknown;
         };
+        let limit = self.limit.get(&id).copied().unwrap_or(usize::MAX);
+        if output.len().saturating_add(bytes.len()) > limit {
+            return Append::OverQuota;
+        }
         output.extend_from_slice(bytes);
-        true
+        Append::Ok
     }
 
     /// Appends one quoted JSON string. Language strings are valid UTF-8,
     /// so all non-control bytes can pass through unchanged: unlike a JS
     /// UTF-16 string, there is no lone-surrogate case.
-    pub(crate) fn string(&mut self, id: u64, bytes: &[u8]) -> bool {
+    pub(crate) fn string(&mut self, id: u64, bytes: &[u8]) -> Append {
         let Some(output) = self.output.get_mut(&id) else {
-            return false;
+            return Append::Unknown;
         };
+        let limit = self.limit.get(&id).copied().unwrap_or(usize::MAX);
+        // The quoted length follows from the bytes, so it is known
+        // before any byte exists (§109.4 rule 2).
+        if output.len().saturating_add(quoted_len(bytes)) > limit {
+            return Append::OverQuota;
+        }
         append_quoted(output, bytes);
-        true
+        Append::Ok
     }
 
     /// Appends a signed 32-bit integer through the shared Q14 formatter.
-    pub(crate) fn i32(&mut self, id: u64, value: i32) -> bool {
+    pub(crate) fn i32(&mut self, id: u64, value: i32) -> Append {
         self.raw(id, crate::fmt::fmt_i32(value).as_bytes())
     }
 
     /// Appends an unsigned 32-bit integer through the shared Q14
     /// formatter.
-    pub(crate) fn u32(&mut self, id: u64, value: u32) -> bool {
+    pub(crate) fn u32(&mut self, id: u64, value: u32) -> Append {
         self.raw(id, crate::fmt::fmt_u32(value).as_bytes())
     }
 
     /// Appends a signed 64-bit integer through the shared Q14 formatter.
-    pub(crate) fn i64(&mut self, id: u64, value: i64) -> bool {
+    pub(crate) fn i64(&mut self, id: u64, value: i64) -> Append {
         self.raw(id, crate::fmt::fmt_i64(value).as_bytes())
     }
 
     /// Appends an unsigned 64-bit integer through the shared Q14
     /// formatter.
-    pub(crate) fn u64(&mut self, id: u64, value: u64) -> bool {
+    pub(crate) fn u64(&mut self, id: u64, value: u64) -> Append {
         self.raw(id, crate::fmt::fmt_u64(value).as_bytes())
     }
 
     /// Appends a finite `f32`, normalizing either zero sign to JSON `0`.
-    pub(crate) fn f32(&mut self, id: u64, value: f32) -> bool {
+    pub(crate) fn f32(&mut self, id: u64, value: f32) -> Append {
         if value == 0.0 {
             self.raw(id, b"0")
         } else {
@@ -670,7 +697,7 @@ impl JsonBuilders {
     }
 
     /// Appends a finite `f64`, normalizing either zero sign to JSON `0`.
-    pub(crate) fn f64(&mut self, id: u64, value: f64) -> bool {
+    pub(crate) fn f64(&mut self, id: u64, value: f64) -> Append {
         if value == 0.0 {
             self.raw(id, b"0")
         } else {
@@ -701,6 +728,20 @@ impl JsonBuilders {
     }
 }
 
+/// The exact bytes [`append_quoted`] writes for `bytes`, quotes
+/// included. One test compares the two.
+fn quoted_len(bytes: &[u8]) -> usize {
+    let mut len = 2usize;
+    for &byte in bytes {
+        len = len.saturating_add(match byte {
+            b'"' | b'\\' | 0x08 | 0x09 | 0x0a | 0x0c | 0x0d => 2,
+            0x00..=0x1f => 6,
+            _ => 1,
+        });
+    }
+    len
+}
+
 fn append_quoted(output: &mut Vec<u8>, bytes: &[u8]) {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     output.push(b'"');
@@ -729,12 +770,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_quoted_length_matches_the_bytes_the_builder_writes() {
+        // The check compares the counter against the writer over every
+        // byte value and over a plain string.
+        let every_byte: Vec<u8> = (0..=u8::MAX).collect();
+        for input in [&every_byte[..], b"plain", b"", "\u{1F600}".as_bytes()] {
+            let mut written = Vec::new();
+            append_quoted(&mut written, input);
+            assert_eq!(quoted_len(input), written.len(), "{input:?}");
+        }
+    }
+
+    #[test]
+    fn a_builder_refuses_an_append_over_its_limit_and_keeps_the_bytes_so_far() {
+        let mut builders = JsonBuilders::default();
+        let id = builders.begin(false, 8).expect("builder");
+        assert_eq!(builders.raw(id, b"[1,2]"), Append::Ok);
+        assert_eq!(builders.string(id, b"abcdefgh"), Append::OverQuota);
+        assert_eq!(builders.raw(id, b"abcd"), Append::OverQuota);
+        // The firing control: an append that fits still lands.
+        assert_eq!(builders.raw(id, b"]"), Append::Ok);
+        assert_eq!(builders.finish(id).expect("output"), b"[1,2]]");
+        assert_eq!(builders.raw(id, b"x"), Append::Unknown);
+    }
+
+    #[test]
     fn escaping_matches_node_24_control_boundary() {
         let mut builders = JsonBuilders::default();
-        let id = builders.begin(false).expect("builder");
+        let id = builders.begin(false, usize::MAX).expect("builder");
         let mut input: Vec<u8> = (0..=0x20).collect();
         input.extend_from_slice(&[b'"', b'/', b'\\', 0x7f]);
-        assert!(builders.string(id, &input));
+        assert_eq!(builders.string(id, &input), Append::Ok);
         assert_eq!(
             builders.finish(id).expect("output"),
             br#""\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u000b\f\r\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f \"/\\""#
@@ -744,19 +810,19 @@ mod tests {
     #[test]
     fn floats_reuse_q14_but_json_normalizes_negative_zero() {
         let mut builders = JsonBuilders::default();
-        let id = builders.begin(false).expect("builder");
-        assert!(builders.f64(id, -0.0));
-        assert!(builders.raw(id, b"|"));
-        assert!(builders.f64(id, 1e21));
-        assert!(builders.raw(id, b"|"));
-        assert!(builders.f32(id, 0.1));
+        let id = builders.begin(false, usize::MAX).expect("builder");
+        assert_eq!(builders.f64(id, -0.0), Append::Ok);
+        assert_eq!(builders.raw(id, b"|"), Append::Ok);
+        assert_eq!(builders.f64(id, 1e21), Append::Ok);
+        assert_eq!(builders.raw(id, b"|"), Append::Ok);
+        assert_eq!(builders.f32(id, 0.1), Append::Ok);
         assert_eq!(builders.finish(id).expect("output"), b"0|1e+21|0.1");
     }
 
     #[test]
     fn tracked_builder_uses_an_active_path_not_a_global_seen_set() {
         let mut builders = JsonBuilders::default();
-        let id = builders.begin(true).expect("builder");
+        let id = builders.begin(true, usize::MAX).expect("builder");
         assert_eq!(builders.visit(id, 7), Visit::Inserted);
         assert_eq!(builders.visit(id, 7), Visit::Cycle);
         assert!(builders.leave(id, 7));

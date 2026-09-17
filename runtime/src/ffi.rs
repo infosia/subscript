@@ -1578,17 +1578,27 @@ pub unsafe extern "C" fn subscript_rt_str_split(
     if arr.is_null() {
         return std::ptr::null_mut();
     }
-    for piece in crate::strops::split(hay, sep) {
+    // §109.4 rule 2: every piece is a Context allocation the quota
+    // checks, and the scan holds no list of pieces of its own, so the
+    // first piece over the quota stops it.
+    let mut failed = false;
+    crate::strops::split_each(hay, sep, |piece| {
         let handle = ctx.alloc_str(piece, pos_id);
         if handle.is_null() {
-            return std::ptr::null_mut();
+            failed = true;
+            return false;
         }
         let word = handle as u64;
         // SAFETY: `arr` is a live 8-byte-element array of this context;
         // `word` is readable for 8 bytes.
         if unsafe { ctx.array_push(arr, (&word as *const u64).cast(), pos_id) } < 0 {
-            return std::ptr::null_mut();
+            failed = true;
+            return false;
         }
+        true
+    });
+    if failed {
+        return std::ptr::null_mut();
     }
     arr
 }
@@ -1690,10 +1700,29 @@ pub unsafe extern "C" fn subscript_rt_str_repeat(
         );
         return std::ptr::null_mut();
     }
-    // SAFETY: live string handle. Context string allocations keep immutable
-    // input allocation addresses stable.
-    let bytes = unsafe { ctx.str_view(s) };
-    ctx.alloc_str(&crate::strops::repeat(bytes, n), pos_id)
+    // SAFETY: live string handle. Allocating the result does not move the
+    // immutable input allocation.
+    let (bytes_ptr, bytes_len) = {
+        let bytes = unsafe { ctx.str_bytes(s) };
+        (bytes.as_ptr(), bytes.len())
+    };
+    // §109.4 rule 2: the result size is `len * n`, so the result goes
+    // straight into the Context allocation that the quota checks. No
+    // copy of it exists outside the quota.
+    let Some(result_len) = bytes_len.checked_mul(n as usize) else {
+        ctx.trap(
+            TrapKind::AllocationFailure,
+            format!("repeat({n}) of {bytes_len} bytes is not representable"),
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    ctx.alloc_str_with(result_len, pos_id, |destination| {
+        // SAFETY: the input range stays live during this synchronous
+        // writer, and it does not overlap the fresh destination.
+        let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr, bytes_len) };
+        crate::strops::repeat_into(bytes, destination);
+    })
 }
 
 /// Shared body of `padStart`/`padEnd` (Q21 byte lengths): pads with
@@ -1861,7 +1890,16 @@ pub unsafe extern "C" fn subscript_rt_str_replace(
     let pat = unsafe { ctx.str_view(pat) };
     // SAFETY: live string handles.
     let repl = unsafe { ctx.str_view(repl) };
-    ctx.alloc_str(&crate::strops::replace_first(bytes, pat, repl), pos_id)
+    // §109.4 rule 2: a `$'` or `` $` `` substitution makes the result
+    // size a product of the inputs, so the buffer holds at most the
+    // quota headroom and the trap replaces the copy that would not fit.
+    let mut out = ctx.quota_buf();
+    crate::strops::replace_first(bytes, pat, repl, &mut out);
+    if out.over_quota() {
+        ctx.check_quota(out.wanted(), pos_id);
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(out.bytes(), pos_id)
 }
 
 /// `replaceAll(pat, repl)`: every occurrence in one left-to-right pass
@@ -1892,7 +1930,16 @@ pub unsafe extern "C" fn subscript_rt_str_replace_all(
     let pat = unsafe { ctx.str_view(pat) };
     // SAFETY: live string handles.
     let repl = unsafe { ctx.str_view(repl) };
-    ctx.alloc_str(&crate::strops::replace_all(bytes, pat, repl), pos_id)
+    // §109.4 rule 2: the result size is the match count times the
+    // replacement, so the buffer holds at most the quota headroom and
+    // the trap replaces the copy that would not fit.
+    let mut out = ctx.quota_buf();
+    crate::strops::replace_all(bytes, pat, repl, &mut out);
+    if out.over_quota() {
+        ctx.check_quota(out.wanted(), pos_id);
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(out.bytes(), pos_id)
 }
 
 // ----- RegExp (stdlib.md §15, Q31) -----
@@ -2120,18 +2167,34 @@ pub unsafe extern "C" fn subscript_rt_fmt_bool(ctx: *mut Context, v: u32, pos_id
 
 // ----- JSON.stringify (stdlib.md §13, Q28) -----
 
-fn json_builder_result(ctx: &mut Context, ok: bool, operation: &str, pos_id: u32) {
-    if !ok {
-        ctx.trap(
+fn json_builder_result(
+    ctx: &mut Context,
+    appended: crate::json::Append,
+    operation: &str,
+    pos_id: u32,
+) {
+    match appended {
+        crate::json::Append::Ok => {}
+        crate::json::Append::Unknown => ctx.trap(
             TrapKind::Internal,
             format!("unknown JSON builder in {operation}"),
             pos_id,
-        );
+        ),
+        // §109.4 rule 2: the builder never grows past the quota
+        // headroom, so the trap replaces the bytes that would not fit.
+        crate::json::Append::OverQuota => ctx.trap(
+            TrapKind::AllocationQuota,
+            TrapKind::AllocationQuota.message(None),
+            pos_id,
+        ),
     }
 }
 
 fn json_begin(ctx: &mut Context, tracked: bool, pos_id: u32) -> u64 {
-    match ctx.json_builders().begin(tracked) {
+    // §109.4 rule 2: the builder bytes are a buffer a script sizes, so
+    // the quota headroom at the start bounds them.
+    let limit = ctx.quota_headroom();
+    match ctx.json_builders().begin(tracked, limit) {
         Some(id) => id,
         None => {
             ctx.trap(
@@ -2253,7 +2316,7 @@ fn json_float<T>(
     builder: u64,
     value: T,
     finite: bool,
-    append: impl FnOnce(&mut crate::json::JsonBuilders, u64, T) -> bool,
+    append: impl FnOnce(&mut crate::json::JsonBuilders, u64, T) -> crate::json::Append,
     operation: &str,
     pos_id: u32,
 ) {
@@ -2427,8 +2490,10 @@ pub unsafe extern "C" fn subscript_rt_json_leave(
 ) {
     // SAFETY: shared contract.
     let ctx = unsafe { &mut *ctx };
-    let ok = ctx.json_builders().leave(builder, reference as usize);
-    json_builder_result(ctx, ok, "leave", pos_id);
+    let left = ctx.json_builders().leave(builder, reference as usize);
+    if !left {
+        ctx.trap(TrapKind::Internal, "unknown JSON builder in leave", pos_id);
+    }
 }
 
 // ----- JSON.parse (stdlib.md §13.4, Q28) -----

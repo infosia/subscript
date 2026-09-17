@@ -35,7 +35,7 @@
 //! generated code never unwinds (the trap-flag discipline), so no
 //! unwind crosses these calls.
 
-use crate::context::Context;
+use crate::context::{Context, QuotaBuf};
 use crate::trap::TrapKind;
 use crate::valeq::{read_uint, value_eq, ValueKind};
 
@@ -542,10 +542,16 @@ pub unsafe fn join(
     let sep_bytes = unsafe { (*ctx).str_view(sep) };
     // SAFETY: caller contract.
     let (n, esz) = unsafe { (len_of(ctx, h, pos_id), (*ctx).array_elem_size(h)) };
-    let mut out: Vec<u8> = Vec::new();
+    // §109.4 rule 2: the result size is the element count times the
+    // separator, so the buffer holds at most the quota headroom and the
+    // trap replaces the copy that would not fit.
+    let mut out: QuotaBuf = unsafe { (*ctx).quota_buf() };
     for i in 0..n {
+        if out.over_quota() {
+            break;
+        }
         if i > 0 {
-            out.extend_from_slice(sep_bytes);
+            out.extend(sep_bytes);
         }
         // SAFETY: `i < n`; caller contract.
         let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
@@ -553,40 +559,40 @@ pub unsafe fn join(
             // SAFETY (each arm): element storage is `esz` readable bytes
             // of the arm's type; widths are fixed by the kind except the
             // integer-read arms, which read the tier's own width.
-            FmtKind::I32 => out.extend_from_slice(
+            FmtKind::I32 => out.extend(
                 crate::fmt::fmt_i32(unsafe { p.cast::<i32>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::U32 => out.extend_from_slice(
+            FmtKind::U32 => out.extend(
                 crate::fmt::fmt_u32(unsafe { p.cast::<u32>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::I64 => out.extend_from_slice(
+            FmtKind::I64 => out.extend(
                 crate::fmt::fmt_i64(unsafe { p.cast::<i64>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::U64 => out.extend_from_slice(
+            FmtKind::U64 => out.extend(
                 crate::fmt::fmt_u64(unsafe { p.cast::<u64>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::F32 => out.extend_from_slice(
+            FmtKind::F32 => out.extend(
                 crate::fmt::fmt_f32(unsafe { p.cast::<f32>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::F64 => out.extend_from_slice(
+            FmtKind::F64 => out.extend(
                 crate::fmt::fmt_f64(unsafe { p.cast::<f64>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::I8 => out.extend_from_slice(
+            FmtKind::I8 => out.extend(
                 crate::fmt::fmt_i32(i32::from(unsafe { p.cast::<i8>().read_unaligned() }))
                     .as_bytes(),
             ),
-            FmtKind::U8 => out.extend_from_slice(
-                crate::fmt::fmt_u32(u32::from(unsafe { p.read_unaligned() })).as_bytes(),
-            ),
-            FmtKind::I16 => out.extend_from_slice(
+            FmtKind::U8 => {
+                out.extend(crate::fmt::fmt_u32(u32::from(unsafe { p.read_unaligned() })).as_bytes())
+            }
+            FmtKind::I16 => out.extend(
                 crate::fmt::fmt_i32(i32::from(unsafe { p.cast::<i16>().read_unaligned() }))
                     .as_bytes(),
             ),
-            FmtKind::U16 => out.extend_from_slice(
+            FmtKind::U16 => out.extend(
                 crate::fmt::fmt_u32(u32::from(unsafe { p.cast::<u16>().read_unaligned() }))
                     .as_bytes(),
             ),
-            FmtKind::F16 => out.extend_from_slice(
+            FmtKind::F16 => out.extend(
                 crate::fmt::fmt_f64(crate::half::to_f64(unsafe {
                     p.cast::<u16>().read_unaligned()
                 }))
@@ -594,9 +600,9 @@ pub unsafe fn join(
             ),
             // Booleans are 1 byte under the dev JIT and 4 under the
             // ship-C emitter; read the tier's own width.
-            FmtKind::Bool => out.extend_from_slice(
-                crate::fmt::fmt_bool(unsafe { read_uint(p, esz) } != 0).as_bytes(),
-            ),
+            FmtKind::Bool => {
+                out.extend(crate::fmt::fmt_bool(unsafe { read_uint(p, esz) } != 0).as_bytes())
+            }
             FmtKind::Str => {
                 // SAFETY: an 8-byte string handle.
                 let s = unsafe { p.cast::<*const u8>().read_unaligned() };
@@ -604,13 +610,18 @@ pub unsafe fn join(
                     // SAFETY: live string handle. Context string allocations
                     // keep immutable input allocation addresses stable.
                     let bytes = unsafe { (*ctx).str_view(s) };
-                    out.extend_from_slice(bytes);
+                    out.extend(bytes);
                 }
             }
         }
     }
     // SAFETY: caller contract.
-    unsafe { &mut *ctx }.alloc_str(&out, pos_id)
+    let ctx = unsafe { &mut *ctx };
+    if out.over_quota() {
+        ctx.check_quota(out.wanted(), pos_id);
+        return std::ptr::null_mut();
+    }
+    ctx.alloc_str(out.bytes(), pos_id)
 }
 
 // ----- slice / fill / reverse / concat / structural mutation -----

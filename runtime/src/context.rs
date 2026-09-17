@@ -657,6 +657,72 @@ impl Interrupt {
     }
 }
 
+/// A temporary byte buffer that the allocation quota bounds
+/// (`specs/blocks/compiler.md` §109.4 rule 2).
+///
+/// A runtime operation whose result size is not known before its bytes
+/// exist appends into this buffer. The buffer holds at most the
+/// Context's quota headroom, so the operation never builds a larger
+/// temporary than the result the quota accepts. Past the headroom the
+/// buffer keeps the total it wanted and drops every later byte. The
+/// operation then passes that total to [`Context::check_quota`], which
+/// records the `AllocationQuota` trap at the operation's position.
+///
+/// With no quota the headroom is [`usize::MAX`], so the buffer is an
+/// ordinary growing [`Vec`] and the operation pays nothing.
+#[derive(Debug)]
+pub struct QuotaBuf {
+    bytes: Vec<u8>,
+    limit: usize,
+    wanted: usize,
+}
+
+impl QuotaBuf {
+    /// A buffer that holds at most `limit` bytes.
+    #[must_use]
+    pub fn new(limit: usize) -> Self {
+        QuotaBuf {
+            bytes: Vec::new(),
+            limit,
+            wanted: 0,
+        }
+    }
+
+    /// Appends one byte.
+    pub fn push(&mut self, byte: u8) {
+        self.extend(std::slice::from_ref(&byte));
+    }
+
+    /// Appends `bytes`.
+    pub fn extend(&mut self, bytes: &[u8]) {
+        self.wanted = self.wanted.saturating_add(bytes.len());
+        if self.wanted > self.limit {
+            self.bytes.clear();
+            self.bytes.shrink_to_fit();
+            return;
+        }
+        self.bytes.extend_from_slice(bytes);
+    }
+
+    /// True after an append took the total past the limit.
+    #[must_use]
+    pub fn over_quota(&self) -> bool {
+        self.wanted > self.limit
+    }
+
+    /// The total the appends wanted, over the limit as well as under it.
+    #[must_use]
+    pub fn wanted(&self) -> usize {
+        self.wanted
+    }
+
+    /// The bytes held. Empty after the total passed the limit.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 /// The script execution context.
 ///
 /// `repr(C)` with a fixed prefix that generated code reads directly
@@ -1232,6 +1298,50 @@ impl Context {
     #[must_use]
     pub fn alloc_quota(&self) -> u64 {
         self.alloc_quota
+    }
+
+    /// Answers whether `size` more payload bytes stay inside the
+    /// allocation quota, and records the `AllocationQuota` trap at
+    /// `pos_id` when they do not (§109.4 rule 2).
+    ///
+    /// [`Context::alloc`] asks this before it allocates. A runtime
+    /// operation that must build a temporary of a known size asks it
+    /// before it builds the temporary, so no buffer sized by script
+    /// input exists outside the quota.
+    pub fn check_quota(&mut self, size: usize, pos_id: u32) -> bool {
+        if self.alloc_quota == 0 {
+            return true;
+        }
+        if (self.live_bytes() as u64).saturating_add(size as u64) <= self.alloc_quota {
+            return true;
+        }
+        self.trap(
+            TrapKind::AllocationQuota,
+            TrapKind::AllocationQuota.message(None),
+            pos_id,
+        );
+        false
+    }
+
+    /// The payload bytes one more allocation can take before the quota
+    /// stops it (§109.4 rule 2). [`usize::MAX`] when the quota is none.
+    ///
+    /// A runtime operation whose result size is not known before its
+    /// bytes exist bounds its temporary by this value, so the temporary
+    /// is never larger than the result the quota would accept.
+    #[must_use]
+    pub fn quota_headroom(&self) -> usize {
+        if self.alloc_quota == 0 {
+            return usize::MAX;
+        }
+        usize::try_from(self.alloc_quota.saturating_sub(self.live_bytes() as u64))
+            .unwrap_or(usize::MAX)
+    }
+
+    /// A temporary byte buffer for this Context, bounded by the quota.
+    #[must_use]
+    pub(crate) fn quota_buf(&self) -> QuotaBuf {
+        QuotaBuf::new(self.quota_headroom())
     }
 
     /// Sets the script stack budget in bytes. Zero is none.
@@ -1998,16 +2108,8 @@ impl Context {
         // fault path with `AllocationQuota` in place of
         // `AllocationFailure`. `live_bytes` is the maintained counter, so
         // this check costs the same at every live count.
-        if self.alloc_quota != 0 {
-            let live = self.live_bytes() as u64;
-            if live.saturating_add(size as u64) > self.alloc_quota {
-                self.trap(
-                    TrapKind::AllocationQuota,
-                    TrapKind::AllocationQuota.message(None),
-                    pos_id,
-                );
-                return std::ptr::null_mut();
-            }
+        if !self.check_quota(size, pos_id) {
+            return std::ptr::null_mut();
         }
         if self.uses_ship_arena() {
             return self.arena_alloc(size, class_id, pos_id);
@@ -6498,6 +6600,68 @@ mod tests {
         assert!(!ctx.alloc(2048, 1, 11).is_null());
         assert!(!ctx.alloc(4096, 1, 12).is_null());
         assert!(!ctx.trapped(), "the default quota refuses nothing");
+    }
+
+    #[test]
+    fn check_quota_answers_the_same_bound_the_allocation_path_takes() {
+        // §109.4 rule 2: one allocation of 2048 payload bytes under a
+        // 4096-byte quota leaves 2048 bytes for the next one.
+        let mut ctx = Context::new();
+        ctx.set_alloc_quota(4096);
+        assert!(!ctx.alloc(2048, 1, 11).is_null());
+        assert_eq!(ctx.quota_headroom(), 2048);
+        assert!(ctx.check_quota(2048, 12), "the headroom itself fits");
+        assert!(!ctx.trapped());
+        assert!(!ctx.check_quota(2049, 13), "one byte over reports");
+        let record = ctx.trap_record().expect("the quota trap is recorded");
+        assert_eq!(record.kind, TrapKind::AllocationQuota);
+        assert_eq!(record.pos_id, 13);
+    }
+
+    #[test]
+    fn no_allocation_quota_leaves_the_headroom_unbounded() {
+        let mut ctx = Context::new();
+        assert_eq!(ctx.quota_headroom(), usize::MAX);
+        assert!(ctx.check_quota(usize::MAX, 11));
+        assert!(!ctx.trapped(), "the default quota refuses nothing");
+    }
+
+    #[test]
+    fn a_quota_buffer_holds_the_limit_and_reports_the_total_it_wanted() {
+        let mut buffer = QuotaBuf::new(4);
+        buffer.extend(b"ab");
+        buffer.push(b'c');
+        assert_eq!(buffer.bytes(), b"abc");
+        assert_eq!(buffer.wanted(), 3);
+        assert!(!buffer.over_quota());
+        buffer.extend(b"de");
+        assert!(buffer.over_quota(), "five bytes is over a limit of four");
+        assert_eq!(buffer.wanted(), 5);
+        assert!(
+            buffer.bytes().is_empty(),
+            "the buffer holds nothing once it is over the limit"
+        );
+        // Every later append keeps the total and adds no byte.
+        buffer.extend(b"fgh");
+        assert_eq!(buffer.wanted(), 8);
+        assert!(buffer.bytes().is_empty());
+    }
+
+    #[test]
+    fn a_context_quota_buffer_takes_the_headroom_as_its_limit() {
+        // As above: 4096 minus the 2048 payload bytes is 2048.
+        let mut ctx = Context::new();
+        ctx.set_alloc_quota(4096);
+        assert!(!ctx.alloc(2048, 1, 11).is_null());
+        let mut buffer = ctx.quota_buf();
+        buffer.extend(&[0u8; 2048]);
+        assert!(!buffer.over_quota(), "the headroom itself fits");
+        buffer.push(0);
+        assert!(buffer.over_quota(), "one byte over the headroom reports");
+        // The firing control: with no quota the same appends fit.
+        let mut unbounded = Context::new().quota_buf();
+        unbounded.extend(&[0u8; 2049]);
+        assert!(!unbounded.over_quota());
     }
 
     #[test]
