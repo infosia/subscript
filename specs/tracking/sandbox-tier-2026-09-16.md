@@ -759,10 +759,9 @@ host limit and no `--interrupt`; `subscript_rt_print` carries no
 watch loop's window between its two compiles; Ctrl-C does not reach
 the child's process group; RSS excludes compressed pages; thirteen
 Rust files are over §5.y (`ship.rs` and `context.rs` grew in these
-rounds). The owner's gate hosts run M9, M12, and M14 (the 1, 4, and
-8 GiB reservations, `RLIMIT_AS` on Linux, the Job Object on
-Windows) and the unoptimized memory kill needs a host with more than
-16 GB.
+rounds). *(2026-09-18: M14 is closed on the Windows host, and the
+sections below hold it. M9's and M12's reservations still run on the
+macOS host alone, and the Linux `RLIMIT_AS` path is unmeasured.)*
 
 ## The Windows host (2026-09-18)
 
