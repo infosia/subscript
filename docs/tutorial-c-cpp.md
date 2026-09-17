@@ -1329,10 +1329,13 @@ fact only you hold. The list is short and it is complete
   compiles in a child process under the profile, with a memory budget
   and a time budget (§109.2 rule 6): 4,294,967,296 bytes of address
   space in an optimized build, 12,884,901,888 unoptimized, and 300 s in
-  both. A child that passes either budget is one `S026` at the entry
-  file, so the compile always ends in a diagnostic or an accepted
-  program. If you embed the compiler crate instead of calling the CLI,
-  run it in a child process of your own with the same two budgets.
+  both. On macOS the system refuses `RLIMIT_AS`, so the parent process
+  holds the memory budget there: it reads the child's resident bytes at
+  every poll and kills a child over the budget. A child that passes
+  either budget is one `S026` at the entry file, so the compile always
+  ends in a diagnostic or an accepted program. If you embed the compiler
+  crate instead of calling the CLI, run it in a child process of your own
+  with the same two budgets.
 - **The process.** Same-process execution trusts the compiler, the
   generated code, and the runtime to be memory-safe. If you must contain
   a defect in those, add an isolation boundary of your own, such as a

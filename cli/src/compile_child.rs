@@ -6,6 +6,10 @@
 //! itself, the child compiles with a memory budget and a time budget,
 //! and a child that passes either budget is one S026 at the entry file.
 //! Under the default profile nothing spawns.
+//!
+//! The child sets its own memory budget where the host holds one. macOS
+//! refuses `RLIMIT_AS`, so the parent holds the budget there: it reads
+//! the child's resident bytes at every poll.
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -82,9 +86,12 @@ pub(crate) enum Role {
 pub(crate) enum MemoryBudget {
     /// The host holds this process to [`MEMORY_BUDGET_BYTES`].
     Set,
-    /// The host refused the limit. The parent's time budget and its
-    /// reading of an abnormal exit still hold guarantee 4, because a
-    /// child the system kills is one S026.
+    /// The host refused the limit. macOS refuses `RLIMIT_AS`, and the
+    /// parent holds the budget there: it reads the child's resident
+    /// bytes at every poll and kills a child over the budget. The
+    /// parent's time budget and its reading of an abnormal exit hold
+    /// guarantee 4 on every other such host, because a child the system
+    /// kills is one S026.
     Refused,
 }
 
@@ -274,7 +281,7 @@ pub(crate) fn compile_in_child<O: Write, E: Write>(
         .map_err(|error| Failure::usage(format!("write compiler output: {error}")))?;
 
     match stop? {
-        Stop::Killed => Err(budget_stop(entry, TIME_MESSAGE)),
+        Stop::Killed(passed) => Err(budget_stop(entry, passed.message())),
         Stop::Exited(status) => match status.code() {
             Some(0) => Ok(SUCCESS),
             Some(1) => Ok(PROGRAM_ERROR),
@@ -311,8 +318,27 @@ pub(crate) fn guard_watch_compile(entry: &Path) -> Result<(), Failure> {
 enum Stop {
     /// The child ended on its own.
     Exited(std::process::ExitStatus),
-    /// The parent killed the child at the time budget.
-    Killed,
+    /// The parent killed the child at the budget it names.
+    Killed(Passed),
+}
+
+/// The budget a child passed under the parent's watch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Passed {
+    /// The child ran past the time budget.
+    Time,
+    /// The child held more than [`MEMORY_BUDGET_BYTES`].
+    Memory,
+}
+
+impl Passed {
+    /// The S026 message for this budget (§109.2 rule 6).
+    fn message(self) -> &'static str {
+        match self {
+            Self::Time => TIME_MESSAGE,
+            Self::Memory => MEMORY_MESSAGE,
+        }
+    }
 }
 
 /// Reads one pipe to its end.
@@ -338,9 +364,16 @@ fn time_budget_of(value: Option<&str>) -> Duration {
     Duration::from_secs(seconds)
 }
 
-/// Waits for the child and kills it at `budget`.
+/// Waits for the child and kills it at the memory budget or at
+/// `budget` (§109.2 rule 6).
+///
+/// macOS refuses `RLIMIT_AS`, so the parent holds the memory budget
+/// there: at every poll it reads the child's resident bytes. On a host
+/// that sets the limit inside the child, [`resident_bytes`] reads
+/// nothing and the loop watches the time budget alone.
 fn wait_within(child: &mut Child, budget: Duration) -> Result<Stop, Failure> {
     let deadline = Instant::now() + budget;
+    let pid = child.id();
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return Ok(Stop::Exited(status)),
@@ -351,13 +384,63 @@ fn wait_within(child: &mut Child, budget: Duration) -> Result<Stop, Failure> {
                 )))
             }
         }
+        if over_budget(pid, MEMORY_BUDGET_BYTES) {
+            return Ok(kill_child(child, Passed::Memory));
+        }
         if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok(Stop::Killed);
+            return Ok(kill_child(child, Passed::Time));
         }
         std::thread::sleep(POLL_INTERVAL);
     }
+}
+
+/// Kills the child and answers the budget it passed.
+fn kill_child(child: &mut Child, passed: Passed) -> Stop {
+    let _ = child.kill();
+    let _ = child.wait();
+    Stop::Killed(passed)
+}
+
+/// True when the process `pid` holds more than `budget` resident bytes.
+///
+/// The answer is false where the parent reads nothing, because the
+/// limit the child set holds the budget there.
+fn over_budget(pid: u32, budget: u64) -> bool {
+    resident_bytes(pid).is_some_and(|bytes| bytes > budget)
+}
+
+/// The resident bytes of the process `pid`, where the parent holds the
+/// memory budget (§109.2 rule 6).
+///
+/// macOS refuses `RLIMIT_AS` (measured `EINVAL`), so the parent reads
+/// the child's `ri_resident_size` through `proc_pid_rusage`.
+#[cfg(target_os = "macos")]
+fn resident_bytes(pid: u32) -> Option<u64> {
+    let pid = i32::try_from(pid).ok()?;
+    // SAFETY: `rusage_info_v0` is plain data, and all zeros is one
+    // value of it. `proc_pid_rusage` overwrites every field it reports.
+    let mut info: libc::rusage_info_v0 = unsafe { std::mem::zeroed() };
+    // SAFETY: the flavor selects `rusage_info_v0`, and the pointer is
+    // the address of one live value of that type, as the C call takes
+    // it.
+    let read = unsafe {
+        libc::proc_pid_rusage(
+            pid,
+            libc::RUSAGE_INFO_V0,
+            std::ptr::from_mut(&mut info).cast::<libc::rusage_info_t>(),
+        )
+    };
+    (read == 0).then_some(info.ri_resident_size)
+}
+
+/// The resident bytes of the process `pid`, where the parent holds the
+/// memory budget (§109.2 rule 6).
+///
+/// Every other host sets the limit inside the child, so the parent
+/// reads nothing.
+#[cfg(not(target_os = "macos"))]
+fn resident_bytes(_pid: u32) -> Option<u64> {
+    None
 }
 
 /// One S026 at the entry file for a child that passed a budget.
@@ -435,6 +518,36 @@ mod tests {
             "RLIMIT_AS: {outcome:?}, budget {MEMORY_BUDGET_BYTES}, soft {}",
             after.rlim_cur
         );
+    }
+
+    /// §109.2 rule 6: the parent reads the child's resident bytes where
+    /// the host refuses `RLIMIT_AS`, and reads nothing where the child
+    /// sets its own limit.
+    ///
+    /// The two facts are derived apart: the budget is this module's
+    /// number, and the bytes are the kernel's reading of this live
+    /// process. The zero budget is the firing control, because every
+    /// live process holds more than zero bytes.
+    #[test]
+    fn the_parent_reads_the_resident_bytes_of_a_process() {
+        let mine = std::process::id();
+        if cfg!(target_os = "macos") {
+            let bytes = resident_bytes(mine).expect("read the resident bytes of this process");
+            assert!(bytes > 0);
+            assert!(over_budget(mine, 0));
+            assert!(!over_budget(mine, MEMORY_BUDGET_BYTES));
+            println!("resident bytes of the test process: {bytes}");
+        } else {
+            assert_eq!(resident_bytes(mine), None);
+            assert!(!over_budget(mine, 0));
+        }
+    }
+
+    /// The kill of each budget carries its own S026 message.
+    #[test]
+    fn each_budget_names_its_own_stop() {
+        assert_eq!(Passed::Memory.message(), MEMORY_MESSAGE);
+        assert_eq!(Passed::Time.message(), TIME_MESSAGE);
     }
 
     /// The test-only variable replaces the budget, and the contract's

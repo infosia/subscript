@@ -1207,6 +1207,72 @@ fn nested_generic_call(levels: usize) -> String {
     )
 }
 
+/// The variable that selects the heavy CLI tests (§109.6a).
+const HEAVY_TESTS_VARIABLE: &str = "SUBSCRIPT_HEAVY_TESTS";
+
+/// One poll's growth past the memory budget (§109.2 rule 6).
+///
+/// The parent reads the child's resident bytes every 10 ms, so the peak
+/// the kernel measures is the budget plus what the child took in one
+/// interval.
+#[cfg(target_os = "macos")]
+const POLL_GROWTH_BYTES: u64 = 268_435_456;
+
+/// The memory budget of this build (§109.2 rule 6).
+///
+/// The test binary and the CLI binary carry the same build, so the
+/// number here is the number the parent holds the child to.
+#[cfg(target_os = "macos")]
+const MEMORY_BUDGET_BYTES: u64 = if cfg!(debug_assertions) {
+    12_884_901_888
+} else {
+    4_294_967_296
+};
+
+/// The `gate-skip:` line a heavy part prints when `selected` is false
+/// (§109.6a). `part` names the test and what it omits.
+fn heavy_skip_line(part: &str, selected: bool) -> Option<String> {
+    (!selected).then(|| format!("gate-skip: {part}; set {HEAVY_TESTS_VARIABLE}=1 to run it"))
+}
+
+/// True when the caller must omit its heavy part, and prints the skip
+/// line first.
+fn skipped_as_heavy(part: &str) -> bool {
+    let Some(line) = heavy_skip_line(part, std::env::var_os(HEAVY_TESTS_VARIABLE).is_some()) else {
+        return false;
+    };
+    use std::io::Write;
+    // Start a new line after any test harness prefix, outside its capture.
+    writeln!(std::io::stdout().lock(), "\n{line}").expect("write the gate skip line");
+    true
+}
+
+/// §109.6a: the skip line a heavy part prints, and the variable that
+/// removes it.
+#[test]
+fn the_heavy_skip_line_is_declared() {
+    assert_eq!(
+        heavy_skip_line("a_heavy_test reaches a budget", false).as_deref(),
+        Some("gate-skip: a_heavy_test reaches a budget; set SUBSCRIPT_HEAVY_TESTS=1 to run it")
+    );
+    assert_eq!(heavy_skip_line("a_heavy_test reaches a budget", true), None);
+}
+
+/// The largest resident set size of any child this process waited for.
+///
+/// macOS reports `ru_maxrss` in bytes. The kernel measures this figure,
+/// and the parent's poll reads `proc_pid_rusage`, so the two facts are
+/// derived apart (§109.2 rule 6).
+#[cfg(target_os = "macos")]
+fn largest_child_peak_bytes() -> u64 {
+    // SAFETY: `rusage` is plain data, and all zeros is one value of it.
+    let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+    // SAFETY: `getrusage` writes one `rusage` through the pointer.
+    let read = unsafe { libc::getrusage(libc::RUSAGE_CHILDREN, &mut usage) };
+    assert_eq!(read, 0, "read the resource use of the waited children");
+    u64::try_from(usage.ru_maxrss).expect("a resident set size is not negative")
+}
+
 /// §109.2 rule 6: a child that passes its memory budget is one S026 at
 /// the entry file, and the same source under the default profile keeps
 /// the parser's own outcome with no child.
@@ -1221,6 +1287,12 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
     /// The labels the chain spells.
     const LABELS: usize = 65_476;
 
+    if skipped_as_heavy(concat!(
+        "a_compile_over_the_memory_budget_reports_one_s026 ",
+        "drives the compile child to the memory budget"
+    )) {
+        return Ok(());
+    }
     let dir = TestDir::new()?;
     let source = dir.write("profile_label.ts", same_label_chain(LABELS).as_bytes())?;
     assert_eq!(
@@ -1230,6 +1302,7 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
         130_990
     );
 
+    let started = std::time::Instant::now();
     let stopped = output(
         subscript()
             .arg("check")
@@ -1237,6 +1310,7 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
             .arg("sandbox")
             .arg(&source),
     )?;
+    let wall = started.elapsed();
     assert_code(&stopped, 1);
     let rendered = String::from_utf8_lossy(&stopped.stderr).into_owned();
     assert!(
@@ -1247,6 +1321,22 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
         rendered.contains(&source.display().to_string()),
         "the stop names the entry file: {rendered}"
     );
+
+    // macOS refuses `RLIMIT_AS`, so the parent holds the budget by its
+    // poll. The kernel's own figure for the child that just ended must
+    // then stay under the budget plus one poll's growth. The reading
+    // comes before the control below, which runs with no budget at all.
+    #[cfg(target_os = "macos")]
+    {
+        let peak = largest_child_peak_bytes();
+        println!("the budgeted child: {wall:?}, peak {peak} resident bytes");
+        assert!(
+            peak < MEMORY_BUDGET_BYTES + POLL_GROWTH_BYTES,
+            "the peak is {peak} resident bytes"
+        );
+    }
+    #[cfg(not(target_os = "macos"))]
+    println!("the budgeted child: {wall:?}");
 
     // The control: the default profile spawns nothing, so the parser's
     // own outcome reaches the caller and no budget stop is reported.
@@ -1303,9 +1393,20 @@ fn a_compile_over_the_time_budget_reports_one_s026() -> Result<(), String> {
         "the parent waited {wall:?} on a 2-second budget"
     );
 
+    println!("nested_generic.ts at {LEVELS} levels: the 2-second budget stops it in {wall:?}");
+
     // The firing control: with the contract's budget the same source
     // reaches the parser's own diagnostic, so the budget is what
-    // stopped the run above.
+    // stopped the run above. The control runs under the 300 s budget,
+    // so it is the heavy part of this test (§109.6a); the stop above
+    // keeps its 2 s budget and stays in the quick gate.
+    if skipped_as_heavy(concat!(
+        "a_compile_over_the_time_budget_reports_one_s026 ",
+        "omits its firing control under the 300 s budget"
+    )) {
+        return Ok(());
+    }
+    let started = std::time::Instant::now();
     let parsed = output(
         subscript()
             .arg("check")
@@ -1313,13 +1414,14 @@ fn a_compile_over_the_time_budget_reports_one_s026() -> Result<(), String> {
             .arg("sandbox")
             .arg(&source),
     )?;
+    let control_wall = started.elapsed();
     assert_code(&parsed, 1);
     let rendered = String::from_utf8_lossy(&parsed.stderr).into_owned();
     assert!(
         rendered.contains("error[S100]") && !rendered.contains("S026"),
         "{rendered}"
     );
-    println!("nested_generic.ts at {LEVELS} levels: the 2-second budget stops it in {wall:?}");
+    println!("the control reaches the parser's own diagnostic in {control_wall:?}");
     Ok(())
 }
 

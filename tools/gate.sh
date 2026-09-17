@@ -13,6 +13,12 @@ if [ "$#" -ne 1 ]; then
     echo 'usage: tools/gate.sh <quick|full>'
     exit 2
 fi
+# compiler.md section 109.6a: the heavy CLI tests run in the full shape.
+# The quick shape prints one gate-skip line for each of them.
+if [ "$shape" = full ]; then
+    SUBSCRIPT_HEAVY_TESTS=1
+    export SUBSCRIPT_HEAVY_TESTS
+fi
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
 CARGO=${CARGO:-cargo}
