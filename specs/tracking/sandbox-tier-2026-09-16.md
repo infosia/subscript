@@ -636,3 +636,23 @@ shortened it by 24 to 118 bytes; the window now tracks its own floor.
 Open: the in-repo runners' print observer still holds unbounded host
 memory under the profile (round 8, §109.7a); `subscript_rt_print`
 carries no `pos_id`, so its quota trap sits at position 0.
+
+### Security round 8 (landed)
+
+Gate: see the verdict line below. M12 in a debug build: an 8 GiB
+compile-thread reservation spawns in 85 µs and commits 81,920 bytes
+untouched; a 131,072-byte file of open parentheses (131,071 levels)
+parses in 550 ms and 4,086,595,584 resident bytes, 31,150 per level,
+0.48 of the stack. Under the profile the dev-JIT runner, the emitted
+ship entry, and the reload session install no print observer and
+read the charged Context sink: `sink.ts` (65,536 bytes × 4,096 lines)
+now traps `AllocationQuota` with 1,022 whole lines (66,978,814 bytes,
+0.998 of the quota) before the trap, and the dev-JIT peak is 101 MB
+against 805 MB at the pin. Every profile golden holds.
+
+Open after round 8: `examples/sandbox/main.c` installs a print
+observer (a host program; its output is three lines); a profile run
+that ends abnormally returns no output, because the sink reaches the
+retained file once at the end; `subscript_rt_print` carries no
+`pos_id`; `ship.rs` is 2,605 lines, one of thirteen files over §5.y.
+`gate quick 75c963e39c209824648e4d0841700bc5e2db9866 dirty:11 debug 1582/0/2 skips 2 goldens-moved 0 exit 0`
