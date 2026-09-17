@@ -115,7 +115,7 @@ diagnostic names the profile in its message.
 | S027 | A function whose frame is over 65,536 bytes, under the profile. The checker already sizes every frame (`MAX_FRAME_BYTES`); the profile lowers the limit so that the stack check at `Enter` sees at most one bounded frame past the budget. |
 | S024 | `Context.fromBytes`, always. `Context.bytesOf` and `Context.bytesInto` stay accepted: the default profile already rejects a layout with a handle, a reference, or a string (S100, the value-class whitelist), so no profile rule is needed. |
 | S025 | `Worker.spawn`, `Inbox`, and `Outbox`. |
-| S026 | Source over a limit, before the parser runs: more than 1,048,576 bytes in one file, more than 8,388,608 bytes in one program (every file the entry imports, mirrors excluded), more than the token limit of 109.2a in one file, or a bracket depth over 256. The depth is a count over the **lexer's tokens** of `(`, `[`, `{` against `)`, `]`, `}`: the SWC lexer runs as a plain iterator with no parser, so a bracket inside a comment, a string, a template, or a regular-expression literal is not a bracket. A closer below zero resets to zero. The lexer is a flat loop over the bytes, so its cost does not grow with the depth. |
+| S026 | Source over a limit, before the parser runs: more than 1,048,576 bytes in one file, more than 8,388,608 bytes in one program (every file the entry imports, mirrors excluded), more than the token limit of 109.2a in one file, or a bracket depth over 256. The depth is a count over the **lexer's tokens** of `(`, `[`, `{` against `)`, `]`, `}`: the SWC lexer runs as a plain iterator with no parser, so a bracket inside a comment, a string, or a template is not a bracket. A lexer with no parser reads `/` as division, so a bracket inside a regular-expression literal counts; that over-approximation rejects only a literal that nests 257 brackets, which the regular-expression engine's own limit refuses anyway. A closer below zero resets to zero. The lexer is a flat loop over the bytes, so its cost does not grow with the depth. |
 
 *(Amended 2026-09-17, after an external review.)* The first text
 counted bytes with no lexing and claimed the count over-approximates
@@ -184,7 +184,9 @@ in the checker, doubling per operator. Three rules close the class:
    unit at each of the four instantiation sites, and the body's nodes
    through the descent); over 16,777,216 it reports S026 and stops.
    The nesting guard's type descent covers a type-parameter
-   constraint as it covers an annotation. The LIR lowering counts
+   constraint and a type-parameter default as it covers an
+   annotation; the checker resolves neither, so the guard walks the
+   type nodes and creates no instance. The LIR lowering counts
    the instructions it emits; over 4,194,304 it reports S026 and
    stops. Nesting bounds depth; these two bound the width that
    instantiation and expansion can add.
@@ -205,10 +207,13 @@ that measurement.
    parses a source (`parse_import_specifiers` included) runs the
    per-file S026 limits on that source first: bytes, tokens, and
    bracket depth. No caller can parse a file the scan did not admit,
-   because there is no parser entry without the scan. A lexer error
-   during the scan is the rejection: the compiler reports the scan's
-   findings so far and the lexer's error as the parse error, and the
-   parser does not run on that source. *(Amended 2026-09-17, second
+   because there is no parser entry without the scan. The scan reads
+   every token, so its counts are total over the source whatever the
+   lexer reports; a lexer error alone is not a rejection, because a
+   lexer with no parser reports an error for a valid
+   regular-expression escape. When the scan rejects, the lexer's
+   first error is reported beside the rejection as the parse error,
+   and the parser does not run on that source. *(Amended 2026-09-17, second
    Phase Review. The class "a parse before the scan" was raised twice:
    `program_loader` parsed imports on the caller's thread in round 2,
    and parsed every file with the full parser before the scan in
@@ -241,6 +246,23 @@ was 187,498 units against 16,777,216, so both budgets are safety
 nets, tested through a test-only budget. The LIR lowering stops at
 its budget, and the CLI renders that stop as S026: `LowerError`
 carries the rule code (closed in the docs round).
+
+**M10, decided.** *(2026-09-17.)* Measured inside every S026 limit,
+release: `<i32>` type assertions × n is O(n²) in the SWC parser
+(16,000: 24.5 s; 43,690, the most the token limit admits: 180.8 s);
+a numeric literal of n digits is O(n²) in the SWC lexer (1,048,576
+digits: about 1 s). Both are polynomial, so guarantee 4 holds; the
+constant is the parser's, and this project does not patch the
+parser. The host bounds compile wall time with its own timeout, as
+it bounds any build step; the tutorial states this beside the other
+host facts. The other three shapes (decorators on one line, one per
+line, and labels) were this compiler's diagnostic renderer:
+`source_line` scanned the file from byte zero for every item, and the
+snippet copied the whole source line per item, so 32,000 diagnostics
+on one 160 KB line rendered 7.69 GB. Rule: **the renderer indexes the
+lines of a file once, writes a window of at most 240 bytes around
+the column, and renders at most 200 items; the summary line carries
+the total.**
 
 ### 109.2a The compile thread and the token limit
 
