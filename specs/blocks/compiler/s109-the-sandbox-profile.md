@@ -115,7 +115,7 @@ diagnostic names the profile in its message.
 | S027 | A function whose frame is over 65,536 bytes, under the profile. The checker already sizes every frame (`MAX_FRAME_BYTES`); the profile lowers the limit so that the stack check at `Enter` sees at most one bounded frame past the budget. |
 | S024 | `Context.fromBytes`, always. `Context.bytesOf` and `Context.bytesInto` stay accepted: the default profile already rejects a layout with a handle, a reference, or a string (S100, the value-class whitelist), so no profile rule is needed. |
 | S025 | `Worker.spawn`, `Inbox`, and `Outbox`. |
-| S026 | Source over a limit, before the parser runs: more than 1,048,576 bytes in one file, more than 8,388,608 bytes in one program (every file the entry imports, mirrors excluded), more than the token limit of 109.2a in one file, or a bracket depth over 256. The depth is a count over the **lexer's tokens** of `(`, `[`, `{` against `)`, `]`, `}`: the SWC lexer runs as a plain iterator with no parser, so a bracket inside a comment, a string, or a template is not a bracket. A lexer with no parser reads `/` as division, so a bracket inside a regular-expression literal counts; that over-approximation rejects only a literal that nests 257 brackets, which the regular-expression engine's own limit refuses anyway. A closer below zero resets to zero. The lexer is a flat loop over the bytes, so its cost does not grow with the depth. |
+| S026 | Source over a byte limit, before the parser runs: more than 131,072 bytes in one file, or more than 8,388,608 bytes in one program (every file the entry imports, mirrors excluded). The count is over bytes and needs no lexer. The parser's stack holds the deepest nesting a file of that size can spell (109.2a). The exact nesting bound is the checker's guard (rule 2), after the parse. |
 
 *(Amended 2026-09-17, after an external review.)* The first text
 counted bytes with no lexing and claimed the count over-approximates
@@ -177,7 +177,8 @@ in the checker, doubling per operator. Three rules close the class:
    thread. `check_program_with` spawns that thread itself when the
    caller is not already on it, so a host that embeds the compiler
    crate gets the bound from the API, not from a wrapper; a caller
-   already on the thread runs inline. *(Amended 2026-09-17, second
+   already on the thread runs inline. Every public entry that parses
+   (`parse_import_specifiers` included) spawns the same way. *(Amended 2026-09-17, second
    Phase Review: the round-4 form left the spawn to the callers.)*
 4. **Work and output are budgeted.** Under the profile the checker
    counts the nodes it visits and the type instances it creates (one
@@ -202,25 +203,18 @@ gets a token-level proxy limit before the parser, recorded in 109.2a
 with its number. The stack size of the compile thread is set from
 that measurement.
 
-5. **The parser's entry owns the S026 scan.** Under the profile,
-   `parse::parse_program` and every other function that lexes or
-   parses a source (`parse_import_specifiers` included) runs the
-   per-file S026 limits on that source first: bytes, tokens, and
-   bracket depth. No caller can parse a file the scan did not admit,
-   because there is no parser entry without the scan. The scan reads
-   every token, so its counts are total over the source whatever the
-   lexer reports; a lexer error alone is not a rejection, because a
-   lexer with no parser reports an error for a valid
-   regular-expression escape. When the scan rejects, the lexer's
-   first error is reported beside the rejection as the parse error,
-   and the parser does not run on that source. *(Amended 2026-09-17, second
-   Phase Review. The class "a parse before the scan" was raised twice:
-   `program_loader` parsed imports on the caller's thread in round 2,
-   and parsed every file with the full parser before the scan in
-   round 4, aborting on a 600 KB type-argument nest inside the byte
-   limit. A lexer error let the parser run over 2.78 GB of nesting
-   inside the byte limit. Both are closed by the form: the scan lives
-   in the parser's entry.)*
+5. **The parser's entry owns the S026 byte check.** Under the
+   profile, the one lexer constructor in `parse.rs` refuses a source
+   over the byte limit. No caller can parse a file that check did not
+   admit. *(Amended 2026-09-17, third Phase Review. The class "the
+   parser runs on a source the scan did not bound" was raised three
+   times: `program_loader` parsed on the caller's thread; it parsed
+   before the scan; and a lexer with no parser reads a regex literal
+   as division, so a quote inside one desyncs the token and bracket
+   count for the rest of the file. A count over tokens cannot be
+   exact without the parser. The token limit and the pre-parse
+   bracket depth are retired. The byte limit is exact and total, and
+   the parser's stack is sized to it.)*
 
 *(Measured 2026-09-17, security round 2, at `52373a9`.)* The
 exponential `!` chain was the warning walk: the `Unary`/`Cast` arm of
@@ -267,51 +261,47 @@ the summary line carries the total.** *(Measured after the fix:
 640,000 items on one 160 KB line render in 19 ms and 59,986 bytes;
 800,000 label items in 31 ms.)*
 
-### 109.2a The compile thread and the token limit
+### 109.2a The compile thread and the byte limit
 
-*(Added 2026-09-17, security round 2.)* The compile thread's stack
-is `COMPILE_THREAD_STACK_BYTES`. The parser's stack cost per nesting
-level, measured on the deepest 1 MiB source of each construct at
-64 MiB and bisected:
+*(Rewritten 2026-09-17, third Phase Review.)* The parser recurses
+once per nesting level. The stack cost of one level, measured per
+construct on the deepest source of each (M7), and the bytes one
+level needs:
 
-| Construct | Bytes per level | Bounded before the parser by |
+| Construct | Bytes per level, optimized | Source bytes per level |
 |---|---|---|
-| parenthesis | 6,750 | the bracket depth |
-| template substitution | 5,249 | the bracket depth (`${` is a bracket token) |
-| type arguments | 5,313 | the token limit |
-| assignment chain | 2,832 | the token limit |
-| conditional expression | 2,512 | the token limit |
-| prefix operator | 152 | the token limit |
-| conditional type, exponent, member, call, binary chains, unions, array-type suffixes | returns at the 1 MiB maximum | nothing needed |
+| parenthesis | 6,750 | 1 |
+| type arguments | 5,313 | 2 |
+| template substitution | 5,249 | 2 |
+| assignment chain | 2,832 | 2 |
+| conditional expression | 2,512 | 2 |
+| prefix operator | 152 | 1 |
 
-**The token limit** is one flat pass over the lexer's tokens, beside
-the bracket count. Its number follows from the stack and the worst
-per-level cost of a construct the bracket depth does not bound, with
-a margin: `tokens = stack / (5,313 × margin)`, rounded down to a power
-of two. A construct the bracket depth bounds is not in that
-derivation, because the bracket count rejects it first.
+The unoptimized build costs 3.02x per level. The worst product of
+cost and density is the parenthesis: one byte per level at 6,750
+bytes of stack. A file of `SOURCE_BYTE_LIMIT` bytes can therefore
+need `SOURCE_BYTE_LIMIT × 6,750` bytes of stack, and the compile
+thread's stack must hold that with a margin of at least 1.5, in each
+build:
 
-**The token limit is a contract number, 131,072 per file, the same
-in every build.** The stack is the implementation's fact and is
-sized per build profile so that the derivation holds with a margin
-of at least 1.5 in each:
+| Build | Bytes per level | Stack | Worst file (131,072 bytes) | Margin |
+|---|---|---|---|---|
+| optimized | 6,750 | 2,147,483,648 | 884,736,000 | 2.43 |
+| unoptimized | 20,385 | 4,294,967,296 | 2,672,001,024 | 1.61 |
 
-| Build | Bytes per level (type arguments) | Stack | Margin |
-|---|---|---|---|
-| optimized | 5,313 | 1,073,741,824 | 1.54 |
-| unoptimized (the gate's own binaries) | 16,018 | 4,294,967,296 | 2.02 |
+A test derives the margin from the three constants of the build it
+runs in and fails under 1.5. The byte limit is a contract number,
+the same in every build. M11 re-measures every construct of M7 on a
+file at the byte limit in both builds; a construct that overflows
+moves the stack or the limit, and the round records it. The Windows
+and Linux gate hosts run the same (§100).
 
-A test derives the limit from the stack and the cost of the build it
-runs in and fails if either constant moves alone. *(M9, measured
-2026-09-17 on arm64 macOS: a 1 GiB reservation commits 16,384 bytes
-before the first parsed byte; 131,072 type-argument levels parse in
-139 ms and 723 MB resident; the smallest stack that holds them is
-696,254,464 bytes, 5,312 per level. The unoptimized cost is 3.02x.
-The first text set 256 MiB and 16,384 tokens, about 1,500 lines,
-which is under what a mod can honestly hold.)* The Windows and Linux
-gate hosts run M9's three checks (§100): the reservation spawns and
-commits nothing untouched, the 131,072-level nest parses, and the
-unoptimized workspace suite passes.
+The first form set 1,048,576 bytes per file with a token limit of
+131,072 and a bracket depth of 256, both counted over a lexer with
+no parser. A file of 1,048,576 bytes at 6,750 per level needs 7 GB
+of stack, and the two counts were not exact (rule 5). 131,072 bytes
+is about 3,000 lines; a larger program splits into files, and the
+program limit of 8,388,608 bytes holds 64 of them.
 
 **A refused spawn is a rejection under the profile.** If the compile
 thread cannot be created, `check_program_with` under the profile
@@ -423,8 +413,12 @@ program is unchanged. Each is one C API call.
    so the bound of §109.0 holds for them too. A third multiple:
    `sort` holds two copies of its receiver while it sorts, and
    charges twice the receiver's bytes against the headroom before it
-   begins. Every bounded multiple is named here; an entry with a
-   multiple this list does not name is a defect. A total check holds
+   begins. The `print` sink is Context memory that script output
+   sizes: with no print observer installed, each `print` charges the
+   line's bytes to the quota before it appends, and `take_stdout`
+   releases the charge. A callback binding record is charged at
+   registration. Every bounded multiple is named here; an entry with
+   a multiple this list does not name is a defect. A total check holds
    this: a test binary with a counting global allocator drives every
    `subscript_rt_*` entry whose result size a script controls, under a
    small quota and a huge request, and asserts the peak allocation
