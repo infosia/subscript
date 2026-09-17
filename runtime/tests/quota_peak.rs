@@ -3,9 +3,11 @@
 //!
 //! A counting global allocator records the peak live bytes of the
 //! process. Each covered `subscript_rt_*` entry runs under a small quota
-//! with a request that would produce about 256 MiB. Each must record the
-//! `AllocationQuota` trap and leave the peak under the quota plus a
-//! fixed slack.
+//! with a request that would produce about 256 MiB. The three entries
+//! that keep a bounded multiple of their input instead (§109.4 rule 2)
+//! run on an input the quota holds, whose multiple passes the quota.
+//! Each must record the `AllocationQuota` trap and leave the peak under
+//! the quota plus a fixed slack.
 //!
 //! The second test derives the entry list from `runtime/src/ffi.rs`. An
 //! entry that is neither covered nor listed with a reason fails it.
@@ -160,6 +162,8 @@ const COVERED: &[&str] = &[
     "subscript_rt_str_repeat",
     "subscript_rt_str_pad_start",
     "subscript_rt_str_pad_end",
+    "subscript_rt_str_to_upper",
+    "subscript_rt_str_to_lower",
     "subscript_rt_str_replace",
     "subscript_rt_str_replace_all",
     "subscript_rt_regex_replace",
@@ -167,6 +171,7 @@ const COVERED: &[&str] = &[
     "subscript_rt_arr_join",
     "subscript_rt_json_raw",
     "subscript_rt_json_str",
+    "subscript_rt_json_parse_begin",
 ];
 
 /// Every other `subscript_rt_(str|arr|json|regex|assoc|worker)_` entry,
@@ -228,14 +233,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "the result is a sub-slice of the receiver, which the quota holds",
     ),
     (
-        "subscript_rt_str_to_upper",
-        "the result is at most three bytes per receiver byte, and the quota holds the receiver",
-    ),
-    (
-        "subscript_rt_str_to_lower",
-        "the result is at most three bytes per receiver byte, and the quota holds the receiver",
-    ),
-    (
         "subscript_rt_str_data",
         "the result is a pointer into an allocation that already exists",
     ),
@@ -290,10 +287,6 @@ const EXEMPT: &[(&str, &str)] = &[
     ("subscript_rt_json_visit", "the result is one scalar"),
     ("subscript_rt_json_leave", "the call records no bytes"),
     // JSON input.
-    (
-        "subscript_rt_json_parse_begin",
-        "the transient document follows the input string, which the quota holds",
-    ),
     (
         "subscript_rt_json_parse_end",
         "the call releases a document",
@@ -482,6 +475,27 @@ fn every_covered_entry_stays_under_the_quota() {
         measured.push(peak);
     }
 
+    // `toUpperCase`/`toLowerCase`: §109.4 rule 2 keeps a bounded
+    // multiple for these two. A receiver of half the quota fits, and
+    // three bytes for each receiver byte passes it.
+    for (entry, call) in [
+        (
+            "subscript_rt_str_to_upper",
+            ffi::subscript_rt_str_to_upper
+                as unsafe extern "C" fn(*mut Context, *const u8, u32) -> *mut u8,
+        ),
+        ("subscript_rt_str_to_lower", ffi::subscript_rt_str_to_lower),
+    ] {
+        let mut ctx = quota_context();
+        let receiver = string_of(&mut ctx, b'a', 32_768);
+        let pointer: *mut Context = &mut *ctx;
+        let peak = peak_of(entry, &mut ctx, |_| {
+            // SAFETY: live exclusive Context and live string handle.
+            unsafe { call(pointer, receiver, 1) };
+        });
+        measured.push(peak);
+    }
+
     // `replace("", repl)`: the replacement is 16,384 `$'` tokens and the
     // receiver is 16,384 bytes, so one match writes 256 MiB.
     {
@@ -612,6 +626,28 @@ fn every_covered_entry_stays_under_the_quota() {
                     break;
                 }
             }
+        });
+        measured.push(peak);
+    }
+
+    // `JSON.parse`: §109.4 rule 2 keeps a bounded multiple here too. A
+    // 64,001-byte `[1,1,…]` input fits the quota, and its transient
+    // document of about 40 bytes for each two input bytes passes it.
+    {
+        let mut ctx = quota_context();
+        let mut text = vec![b'['];
+        for number in 0..32_000 {
+            if number > 0 {
+                text.push(b',');
+            }
+            text.push(b'1');
+        }
+        text.push(b']');
+        let input = string(&mut ctx, &text);
+        let pointer: *mut Context = &mut *ctx;
+        let peak = peak_of("subscript_rt_json_parse_begin", &mut ctx, |_| {
+            // SAFETY: live exclusive Context and live string handle.
+            unsafe { ffi::subscript_rt_json_parse_begin(pointer, input, 1) };
         });
         measured.push(peak);
     }

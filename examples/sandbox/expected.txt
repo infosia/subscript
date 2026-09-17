@@ -4,8 +4,10 @@ script:tick running
 host:trap kind=25 message=interrupted
 host:cleared trap kind=0
 host:memory quota=1048576 threshold=786432
-host:collect frame=10 live=868480 -> 199216
-host:collect frame=17 live=807040 -> 199216
-host:collect frame=24 live=807040 -> 199216
-host:phase-a frames=24 collects=3 live=199216
-host:phase-b frames=24 collects=0 live=199216
+host:collect frame=6 charged=890048 -> 322256
+host:collect frame=10 charged=915472 -> 322256
+host:collect frame=14 charged=915472 -> 322256
+host:collect frame=18 charged=915472 -> 322256
+host:collect frame=22 charged=915472 -> 322256
+host:phase-a frames=24 collects=5 charged=618864
+host:phase-b frames=24 collects=0 charged=322256

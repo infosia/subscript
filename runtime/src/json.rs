@@ -64,6 +64,15 @@ pub(crate) const NUMBER_U64: u32 = 7;
 pub(crate) const NUMBER_F32: u32 = 8;
 pub(crate) const NUMBER_F64: u32 = 9;
 
+/// Bytes one transient parse node reserves
+/// (`specs/blocks/compiler.md` §109.4 rule 2, about 40 bytes per node).
+///
+/// A node holds one [`JsonValue`] in the document's node vector, and one
+/// handle in the child vector of its parent — a node has at most one
+/// parent. The text a string node and a number node keep, and the keys
+/// an object node keeps, are bytes of the input, which the quota holds.
+pub(crate) const NODE_BYTES: usize = size_of::<JsonValue>() + size_of::<u64>();
+
 /// Maximum number of nested JSON arrays/objects accepted from input.
 ///
 /// Parsing uses recursive descent, so this bounds stack use for
@@ -113,19 +122,39 @@ pub(crate) struct JsonParsers {
     documents: HashMap<u64, JsonDocument>,
 }
 
+/// What one `JSON.parse` document build produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParseBegin {
+    /// The transient document is live under this nonzero handle.
+    Document(u64),
+    /// The text is not one complete JSON document.
+    Malformed,
+    /// The transient document wanted more bytes than `limit`. The value
+    /// is the total the nodes wanted (§109.4 rule 2).
+    OverQuota(usize),
+}
+
 impl JsonParsers {
-    /// Parses one complete JSON text. Malformed input returns zero and
-    /// creates no transient document.
-    pub(crate) fn begin(&mut self, bytes: &[u8]) -> u64 {
-        let Some(document) = Parser::new(bytes).parse() else {
-            return 0;
+    /// Parses one complete JSON text into a transient document of at
+    /// most `limit` bytes. Malformed input creates no document.
+    ///
+    /// §109.4 rule 2: the document is a buffer the script sizes, so the
+    /// build charges [`NODE_BYTES`] per node against `limit` and stops
+    /// at the node that passes it.
+    pub(crate) fn begin(&mut self, bytes: &[u8], limit: usize) -> ParseBegin {
+        let mut parser = Parser::new(bytes, limit);
+        let Some(document) = parser.parse() else {
+            if parser.wanted > limit {
+                return ParseBegin::OverQuota(parser.wanted);
+            }
+            return ParseBegin::Malformed;
         };
         let Some(next) = self.next.checked_add(1) else {
-            return 0;
+            return ParseBegin::Malformed;
         };
         self.next = next;
         self.documents.insert(next, document);
-        next
+        ParseBegin::Document(next)
     }
 
     /// Drops one completed transient document.
@@ -359,24 +388,30 @@ struct Parser<'a> {
     bytes: &'a [u8],
     at: usize,
     values: Vec<JsonValue>,
+    /// The bytes the nodes reserve (§109.4 rule 2).
+    limit: usize,
+    /// The bytes the nodes wanted, over the limit as well as under it.
+    wanted: usize,
 }
 
 impl<'a> Parser<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
+    fn new(bytes: &'a [u8], limit: usize) -> Self {
         Self {
             bytes,
             at: 0,
             values: Vec::new(),
+            limit,
+            wanted: 0,
         }
     }
 
-    fn parse(mut self) -> Option<JsonDocument> {
+    fn parse(&mut self) -> Option<JsonDocument> {
         self.ws();
         let root = self.value(0)?;
         self.ws();
-        (self.at == self.bytes.len()).then_some(JsonDocument {
+        (self.at == self.bytes.len()).then(|| JsonDocument {
             root,
-            values: self.values,
+            values: std::mem::take(&mut self.values),
         })
     }
 
@@ -565,7 +600,13 @@ impl<'a> Parser<'a> {
         Some(value)
     }
 
+    /// Records one node, or stops the parse at the node that passes the
+    /// limit (§109.4 rule 2).
     fn push(&mut self, value: JsonValue) -> Option<u64> {
+        self.wanted = self.wanted.saturating_add(NODE_BYTES);
+        if self.wanted > self.limit {
+            return None;
+        }
         self.values.push(value);
         u64::try_from(self.values.len()).ok()
     }
@@ -769,6 +810,16 @@ fn append_quoted(output: &mut Vec<u8>, bytes: &[u8]) {
 mod tests {
     use super::*;
 
+    /// The unbounded document build, for the tests that do not measure
+    /// the quota. Anything but a document reports zero, as the C entry
+    /// does.
+    fn begin(parsers: &mut JsonParsers, bytes: &[u8]) -> u64 {
+        match parsers.begin(bytes, usize::MAX) {
+            ParseBegin::Document(id) => id,
+            ParseBegin::Malformed | ParseBegin::OverQuota(_) => 0,
+        }
+    }
+
     #[test]
     fn the_quoted_length_matches_the_bytes_the_builder_writes() {
         // The check compares the counter against the writer over every
@@ -832,7 +883,8 @@ mod tests {
     #[test]
     fn parser_matches_node_number_and_duplicate_key_edges() {
         let mut parsers = JsonParsers::default();
-        let id = parsers.begin(
+        let id = begin(
+            &mut parsers,
             br#"{"duplicate":1,"duplicate":2,"negative":-0,"beyond":9007199254740993,"overflow":1e400}"#,
         );
         assert_ne!(id, 0);
@@ -859,7 +911,7 @@ mod tests {
     fn integer_targets_parse_decimal_text_exactly() {
         fn parse(text: &str, target: u32) -> Option<u64> {
             let mut parsers = JsonParsers::default();
-            let id = parsers.begin(text.as_bytes());
+            let id = begin(&mut parsers, text.as_bytes());
             assert_ne!(id, 0, "{text}");
             let root = parsers.root(id).expect("root");
             assert_eq!(
@@ -900,6 +952,32 @@ mod tests {
     }
 
     #[test]
+    fn the_parse_stops_at_the_node_that_passes_the_limit() {
+        // §109.4 rule 2: the build charges NODE_BYTES per node. `[1,1]`
+        // is three nodes: two numbers and the array that holds them.
+        assert_eq!(
+            NODE_BYTES, 40,
+            "one 32-byte JsonValue plus its 8-byte handle in the parent"
+        );
+        let mut parsers = JsonParsers::default();
+        assert_eq!(
+            parsers.begin(b"[1,1]", NODE_BYTES * 3),
+            ParseBegin::Document(1),
+            "three nodes fit a three-node limit"
+        );
+        assert_eq!(
+            parsers.begin(b"[1,1]", NODE_BYTES * 2),
+            ParseBegin::OverQuota(NODE_BYTES * 3),
+            "the third node passes a two-node limit"
+        );
+        assert_eq!(
+            parsers.begin(b"[1,]", usize::MAX),
+            ParseBegin::Malformed,
+            "malformed text under no limit is not over the quota"
+        );
+    }
+
+    #[test]
     fn parser_rejects_malformed_text_without_creating_a_document() {
         let mut parsers = JsonParsers::default();
         for malformed in [
@@ -909,7 +987,7 @@ mod tests {
             br#""\ud800""#,
             br#"true false"#,
         ] {
-            assert_eq!(parsers.begin(malformed), 0, "{malformed:?}");
+            assert_eq!(begin(&mut parsers, malformed), 0, "{malformed:?}");
         }
     }
 
@@ -926,14 +1004,14 @@ mod tests {
             "]".repeat(MAX_JSON_DEPTH + 1)
         );
         let mut parsers = JsonParsers::default();
-        assert_ne!(parsers.begin(accepted.as_bytes()), 0);
-        assert_eq!(parsers.begin(rejected.as_bytes()), 0);
+        assert_ne!(begin(&mut parsers, accepted.as_bytes()), 0);
+        assert_eq!(begin(&mut parsers, rejected.as_bytes()), 0);
     }
 
     #[test]
     fn parser_decodes_unicode_escapes_and_array_nodes() {
         let mut parsers = JsonParsers::default();
-        let id = parsers.begin(br#"["A\u00e9\uD83D\uDE00",null,true]"#);
+        let id = begin(&mut parsers, br#"["A\u00e9\uD83D\uDE00",null,true]"#);
         let root = parsers.root(id).expect("root");
         assert_eq!(parsers.array_len(id, root), Some(3));
         let text = parsers.array_get(id, root, 0).expect("text node");

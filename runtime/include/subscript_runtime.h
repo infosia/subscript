@@ -143,6 +143,22 @@ uint64_t subscript_rt_ctx_async_step(subscript_rt_context* ctx);
  * `ctx` follows the shared subscript_rt_context contract.
  */
 uint64_t subscript_rt_ctx_async_unfinished(const subscript_rt_context* ctx);
+/**
+ * Bytes the subscript_rt_context has reserved for its live allocations.
+ *
+ * This is the counter the allocation quota compares against
+ * (compiler.md 109.0): the payload rounded to its size class plus the
+ * block header in the arena mode, and the payload plus the header
+ * plus the per-record constant in the exact-size mode. A host that
+ * sets a quota paces on this figure (compiler.md 109.8a);
+ * `subscript_rt_ctx_live_bytes` is the payload figure and does not
+ * predict the trap. Like `live_bytes`, the value is tier-dependent.
+ *
+ * # Safety
+ *
+ * `ctx` follows the shared subscript_rt_context contract.
+ */
+uint64_t subscript_rt_ctx_charged_bytes(const subscript_rt_context* ctx);
 int32_t subscript_rt_ctx_clear_trap(subscript_rt_context* ctx);
 void subscript_rt_ctx_collect(subscript_rt_context* ctx);
 void subscript_rt_ctx_enter_script(subscript_rt_context* ctx);
@@ -172,10 +188,13 @@ void subscript_rt_ctx_seed_random(subscript_rt_context* ctx, uint64_t seed);
 /**
  * Sets the subscript_rt_context allocation quota in bytes (compiler.md 109.4).
  *
- * An allocation request whose live payload bytes plus its own size pass
- * `bytes` records the `allocation-quota` trap (kind 26) at the
- * allocation site and returns no storage. Zero removes the quota, which
- * is the default.
+ * The quota charges the bytes the allocator reserves for an allocation
+ * (compiler.md 109.0). The arena mode reserves the payload rounded to
+ * its size class, plus the block header. The exact-size mode reserves
+ * the payload, the header, and the per-allocation record. A request
+ * that passes the quota records the `allocation-quota` trap (kind 26)
+ * at the allocation site, and returns no storage. Zero removes the
+ * quota, which is the default.
  *
  * # Safety
  *

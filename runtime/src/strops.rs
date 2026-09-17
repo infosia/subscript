@@ -318,6 +318,10 @@ fn fill_cyclic(out: &mut [u8], pattern: &[u8]) {
 /// `toUpperCase()`: Unicode Default Case Conversion (Q21). Invalid
 /// UTF-8 is returned unchanged as a total fallback; language strings
 /// are always valid UTF-8.
+///
+/// The result is at most three bytes for each input byte, so the C
+/// entry charges that bounded multiple before it calls this
+/// (`specs/blocks/compiler.md` §109.4 rule 2).
 #[must_use]
 pub fn to_upper(s: &[u8]) -> Vec<u8> {
     match std::str::from_utf8(s) {
@@ -329,6 +333,10 @@ pub fn to_upper(s: &[u8]) -> Vec<u8> {
 /// `toLowerCase()`: Unicode Default Case Conversion (Q21). Invalid
 /// UTF-8 is returned unchanged as a total fallback; language strings
 /// are always valid UTF-8.
+///
+/// The result is at most three bytes for each input byte, so the C
+/// entry charges that bounded multiple before it calls this
+/// (`specs/blocks/compiler.md` §109.4 rule 2).
 #[must_use]
 pub fn to_lower(s: &[u8]) -> Vec<u8> {
     match std::str::from_utf8(s) {

@@ -22,9 +22,10 @@ Read the numbered examples in order:
    is built with `subscript build --profile sandbox`, the host sets an
    allocation quota and a stack budget, and a second thread stops an
    endless entry with `subscript_rt_interrupt_set`. Two memory phases
-   follow. Phase A paces the collect from the host with
-   `subscript_rt_ctx_collect`; Phase B lets the script collect at the end
-   of its own frame.
+   follow. Phase A paces the collect from the host: it reads
+   `subscript_rt_ctx_charged_bytes`, the figure the quota compares
+   against, and calls `subscript_rt_ctx_collect` above three quarters of
+   it; Phase B lets the script collect at the end of its own frame.
 7. [`hot-reload/`](hot-reload/) is interactive: `sh run.sh` starts
    `subscript run --watch`, and editing `demo.ts` demonstrates live
    body swaps with surviving module state, refusal of declaration

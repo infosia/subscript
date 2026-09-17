@@ -203,7 +203,7 @@ int main(void) {
 
     /* Memory under the profile (compiler.md section 109.8a). The profile
      * rejects Context.free, so collection is the one way memory returns.
-     * Every live figure printed below is stable across runs, so the
+     * Every charged figure printed below is stable across runs, so the
      * golden pins each one exactly. */
     subscript_rt_ctx_set_alloc_quota(ctx, HOST_MEMORY_QUOTA);
     printf(
@@ -211,9 +211,11 @@ int main(void) {
         HOST_MEMORY_QUOTA,
         (uint64_t)HOST_MEMORY_THRESHOLD);
 
-    /* Pattern 1 — the host paces. live_bytes is a counter, so this read
-     * costs the same at every live count. The collect runs here, outside
-     * the script call, at a moment the host picked. */
+    /* Pattern 1 — the host paces. charged_bytes is the counter the quota
+     * compares against, so this read costs the same at every live count
+     * and it predicts the trap. live_bytes reads the payload instead,
+     * which is a smaller figure and does not predict it. The collect
+     * runs here, outside the script call, at a moment the host picked. */
     unsigned hostCollects = 0u;
     for (unsigned frameIndex = 1u; frameIndex <= HOST_MEMORY_FRAMES; ++frameIndex) {
         if (!hostCallScript(ctx, subscript_export_frame)) {
@@ -221,22 +223,22 @@ int main(void) {
             subscript_rt_ctx_release(ctx);
             return 3;
         }
-        uint64_t live = subscript_rt_ctx_live_bytes(ctx);
-        if (live > (uint64_t)HOST_MEMORY_THRESHOLD) {
+        uint64_t charged = subscript_rt_ctx_charged_bytes(ctx);
+        if (charged > (uint64_t)HOST_MEMORY_THRESHOLD) {
             subscript_rt_ctx_collect(ctx);
             hostCollects += 1u;
             printf(
-                "host:collect frame=%u live=%" PRIu64 " -> %" PRIu64 "\n",
+                "host:collect frame=%u charged=%" PRIu64 " -> %" PRIu64 "\n",
                 frameIndex,
-                live,
-                subscript_rt_ctx_live_bytes(ctx));
+                charged,
+                subscript_rt_ctx_charged_bytes(ctx));
         }
     }
     printf(
-        "host:phase-a frames=%u collects=%u live=%" PRIu64 "\n",
+        "host:phase-a frames=%u collects=%u charged=%" PRIu64 "\n",
         HOST_MEMORY_FRAMES,
         hostCollects,
-        subscript_rt_ctx_live_bytes(ctx));
+        subscript_rt_ctx_charged_bytes(ctx));
 
     /* Pattern 2 — the script collects at its own boundary. One host
      * collect resets the live set to the window, and the host then
@@ -250,9 +252,9 @@ int main(void) {
         }
     }
     printf(
-        "host:phase-b frames=%u collects=0 live=%" PRIu64 "\n",
+        "host:phase-b frames=%u collects=0 charged=%" PRIu64 "\n",
         HOST_MEMORY_FRAMES,
-        subscript_rt_ctx_live_bytes(ctx));
+        subscript_rt_ctx_charged_bytes(ctx));
 
     subscript_rt_ctx_release(ctx);
     return 0;

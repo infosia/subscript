@@ -1831,6 +1831,12 @@ unsafe fn str_case_with(
     // SAFETY: live string handle. Context string allocations keep immutable
     // input allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
+    // §109.4 rule 2: the standard library's locale-free case mapping
+    // writes at most three bytes for each receiver byte, so the quota
+    // takes that bounded multiple before the build.
+    if !ctx.check_quota(bytes.len().saturating_mul(3), pos_id) {
+        return std::ptr::null_mut();
+    }
     ctx.alloc_str(&map(bytes), pos_id)
 }
 
@@ -2526,12 +2532,23 @@ fn parsed<T>(ctx: &mut Context, value: Option<T>, default: T, operation: &str, p
 pub unsafe extern "C" fn subscript_rt_json_parse_begin(
     ctx: *mut Context,
     text: *const u8,
-    _pos_id: u32,
+    pos_id: u32,
 ) -> u64 {
     // SAFETY: shared contract and live string handle.
     let ctx = unsafe { &mut *ctx };
     let bytes = unsafe { ctx.str_view(text) };
-    ctx.json_parsers().begin(bytes)
+    // §109.4 rule 2: the transient document is a buffer the script
+    // sizes, so the quota headroom bounds it and the trap replaces the
+    // nodes that would not fit.
+    let limit = ctx.quota_headroom();
+    match ctx.json_parsers().begin(bytes, limit) {
+        crate::json::ParseBegin::Document(parser) => parser,
+        crate::json::ParseBegin::Malformed => 0,
+        crate::json::ParseBegin::OverQuota(wanted) => {
+            ctx.check_quota(wanted, pos_id);
+            0
+        }
+    }
 }
 
 /// Removes one transient parsed document.
@@ -5320,10 +5337,13 @@ pub unsafe extern "C" fn subscript_rt_interrupt_set(handle: *const Interrupt) {
 
 /// Sets the Context allocation quota in bytes (compiler.md 109.4).
 ///
-/// An allocation request whose live payload bytes plus its own size pass
-/// `bytes` records the `allocation-quota` trap (kind 26) at the
-/// allocation site and returns no storage. Zero removes the quota, which
-/// is the default.
+/// The quota charges the bytes the allocator reserves for an allocation
+/// (compiler.md 109.0). The arena mode reserves the payload rounded to
+/// its size class, plus the block header. The exact-size mode reserves
+/// the payload, the header, and the per-allocation record. A request
+/// that passes the quota records the `allocation-quota` trap (kind 26)
+/// at the allocation site, and returns no storage. Zero removes the
+/// quota, which is the default.
 ///
 /// # Safety
 ///
@@ -5457,6 +5477,25 @@ pub unsafe extern "C" fn subscript_rt_ctx_live_allocations(ctx: *const Context) 
 pub unsafe extern "C" fn subscript_rt_ctx_live_bytes(ctx: *const Context) -> u64 {
     // SAFETY: shared Context contract.
     unsafe { &*ctx }.live_bytes() as u64
+}
+
+/// Bytes the Context has reserved for its live allocations.
+///
+/// This is the counter the allocation quota compares against
+/// (compiler.md 109.0): the payload rounded to its size class plus the
+/// block header in the arena mode, and the payload plus the header
+/// plus the per-record constant in the exact-size mode. A host that
+/// sets a quota paces on this figure (compiler.md 109.8a);
+/// `subscript_rt_ctx_live_bytes` is the payload figure and does not
+/// predict the trap. Like `live_bytes`, the value is tier-dependent.
+///
+/// # Safety
+///
+/// `ctx` follows the shared Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_charged_bytes(ctx: *const Context) -> u64 {
+    // SAFETY: shared Context contract.
+    unsafe { &*ctx }.charged_bytes() as u64
 }
 
 /// Bytes currently reserved from the system for Context allocations.
@@ -5932,6 +5971,44 @@ mod tests {
 
             subscript_rt_ctx_release(releasing);
             subscript_rt_ctx_release(diagnosing);
+        }
+    }
+
+    // §18.2d: the C reader answers the bytes the quota charges, in both
+    // memory modes, and agrees with the Rust accessor. The empty
+    // Context is the control: a reader that answered a constant would
+    // fail there.
+    #[test]
+    fn the_charged_bytes_reader_answers_the_documented_reservation() {
+        for (mode, mut ctx, reserved) in [
+            ("exact-size", Context::new(), 88u64),
+            ("arena", Context::new_releasing(), 32u64),
+        ] {
+            let empty: *const Context = &*ctx;
+            // SAFETY: `empty` addresses the live Context this test owns.
+            assert_eq!(
+                unsafe { subscript_rt_ctx_charged_bytes(empty) },
+                0,
+                "{mode}: an empty Context charges nothing"
+            );
+
+            assert!(!ctx.alloc(8, 1, 0).is_null(), "{mode}");
+
+            let filled: *const Context = &*ctx;
+            // SAFETY: `filled` addresses the same live Context.
+            let charged = unsafe { subscript_rt_ctx_charged_bytes(filled) };
+            assert_eq!(charged, reserved, "{mode}: the reservation of 8 bytes");
+            assert_eq!(
+                charged,
+                ctx.charged_bytes() as u64,
+                "{mode}: the C reader and the Rust accessor read one counter"
+            );
+            assert_eq!(
+                // SAFETY: `filled` addresses the same live Context.
+                unsafe { subscript_rt_ctx_live_bytes(filled) },
+                ctx.live_bytes() as u64,
+                "{mode}: the payload figure is a different quantity"
+            );
         }
     }
 

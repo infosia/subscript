@@ -61,6 +61,10 @@ pub fn render() -> Result<String, String> {
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_set_alloc_quota",
     )?;
+    let charged_bytes_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_charged_bytes",
+    )?;
     let stack_budget_docs = docs_for(
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_set_stack_budget",
@@ -198,6 +202,9 @@ pub fn render() -> Result<String, String> {
         }
         if function.name == "subscript_rt_ctx_set_alloc_quota" {
             push_comment(&mut out, &alloc_quota_docs);
+        }
+        if function.name == "subscript_rt_ctx_charged_bytes" {
+            push_comment(&mut out, &charged_bytes_docs);
         }
         if function.name == "subscript_rt_ctx_set_stack_budget" {
             push_comment(&mut out, &stack_budget_docs);

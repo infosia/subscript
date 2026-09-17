@@ -177,6 +177,17 @@ impl ResultStorage {
 
 /// Bytes between an allocation's base and its payload.
 pub const HEADER_SIZE: usize = 16;
+/// Bytes the exact-size mode reserves for one allocation's record
+/// (`specs/blocks/compiler.md` §109.0 "Memory, precisely").
+///
+/// The record is one `Allocation` plus its payload-address key in the
+/// live map. A hash map holds spare buckets, so the reservation is the
+/// entry divided by the load factor (seven buckets of eight in use),
+/// rounded up to a power of two. The quota charges it with the header
+/// and the payload at every exact-size allocation.
+pub const EXACT_RECORD_BYTES: usize = ((size_of::<Allocation>() + size_of::<usize>()) * 8)
+    .div_ceil(7)
+    .next_power_of_two();
 /// Recommended byte ceiling for freed-handle diagnostic retention.
 ///
 /// The runtime treats this as an ordinary literal budget; hosts may pass any
@@ -778,10 +789,15 @@ pub struct Context {
     // reload provenance, the fulfilled-value size the scheduler needs, the
     // cached completion, and the continuations registered on the frame.
     async_frames: HashMap<usize, AsyncFrameMeta>,
-    // §109.4 rule 2: live payload bytes in both memory modes. Every site
-    // that changes the live set moves it, so the quota check reads one
-    // field and costs the same at every live count.
+    // §109.4 rule 2: live payload bytes (§18.2d) in both memory modes.
+    // Every site that changes the live set moves it, so a reader costs
+    // the same at every live count.
     live_bytes_counter: usize,
+    // §109.0 "Memory, precisely": the bytes the allocator reserves for
+    // the live set, which is the quantity the quota charges. Every site
+    // that moves `live_bytes_counter` moves this one by the reserved
+    // size of the same allocation, so the quota check reads one field.
+    charged_bytes_counter: usize,
     // Exact-size live allocations. The dev tier uses this path; a ship
     // Context switches to it when freed-handle diagnostics are enabled.
     // Collection marks and sweeps only this map.
@@ -917,6 +933,7 @@ impl Context {
             active_async_frames: Vec::new(),
             async_frames: HashMap::new(),
             live_bytes_counter: 0,
+            charged_bytes_counter: 0,
             allocations: HashMap::new(),
             boundary_scratch: Vec::new(),
             dead_allocations: AddressSet::default(),
@@ -1289,7 +1306,7 @@ impl Context {
         self.interrupt.is_set()
     }
 
-    /// Sets the live-payload allocation quota in bytes. Zero is none.
+    /// Sets the reserved-byte allocation quota in bytes. Zero is none.
     pub fn set_alloc_quota(&mut self, bytes: u64) {
         self.alloc_quota = bytes;
     }
@@ -1300,9 +1317,28 @@ impl Context {
         self.alloc_quota
     }
 
-    /// Answers whether `size` more payload bytes stay inside the
-    /// allocation quota, and records the `AllocationQuota` trap at
-    /// `pos_id` when they do not (§109.4 rule 2).
+    /// The bytes the allocator reserves for a `size`-byte payload in
+    /// this Context's memory mode (§109.0 "Memory, precisely").
+    ///
+    /// The arena mode reserves the block of the smallest size class that
+    /// holds the header and the payload; above the largest class it
+    /// reserves the header plus the payload. The exact-size mode
+    /// reserves the header, the payload, and one
+    /// [`EXACT_RECORD_BYTES`] record.
+    fn reserved_size(&self, size: usize) -> usize {
+        let need = HEADER_SIZE.saturating_add(size.max(1));
+        if !self.uses_ship_arena() {
+            return need.saturating_add(EXACT_RECORD_BYTES);
+        }
+        if need > LARGEST_BLOCK {
+            return need;
+        }
+        SMALLEST_BLOCK << Self::size_class(need)
+    }
+
+    /// Answers whether the bytes a `size`-byte request reserves stay
+    /// inside the allocation quota, and records the `AllocationQuota`
+    /// trap at `pos_id` when they do not (§109.4 rule 2).
     ///
     /// [`Context::alloc`] asks this before it allocates. A runtime
     /// operation that must build a temporary of a known size asks it
@@ -1312,7 +1348,8 @@ impl Context {
         if self.alloc_quota == 0 {
             return true;
         }
-        if (self.live_bytes() as u64).saturating_add(size as u64) <= self.alloc_quota {
+        let reserved = self.reserved_size(size);
+        if (self.charged_bytes_counter as u64).saturating_add(reserved as u64) <= self.alloc_quota {
             return true;
         }
         self.trap(
@@ -1323,7 +1360,7 @@ impl Context {
         false
     }
 
-    /// The payload bytes one more allocation can take before the quota
+    /// The reserved bytes one more allocation can take before the quota
     /// stops it (§109.4 rule 2). [`usize::MAX`] when the quota is none.
     ///
     /// A runtime operation whose result size is not known before its
@@ -1334,8 +1371,11 @@ impl Context {
         if self.alloc_quota == 0 {
             return usize::MAX;
         }
-        usize::try_from(self.alloc_quota.saturating_sub(self.live_bytes() as u64))
-            .unwrap_or(usize::MAX)
+        usize::try_from(
+            self.alloc_quota
+                .saturating_sub(self.charged_bytes_counter as u64),
+        )
+        .unwrap_or(usize::MAX)
     }
 
     /// A temporary byte buffer for this Context, bounded by the quota.
@@ -2106,8 +2146,8 @@ impl Context {
         }
         // §109.4 rule 2: over the quota, the request takes the same
         // fault path with `AllocationQuota` in place of
-        // `AllocationFailure`. `live_bytes` is the maintained counter, so
-        // this check costs the same at every live count.
+        // `AllocationFailure`. The charged bytes are a maintained
+        // counter, so this check costs the same at every live count.
         if !self.check_quota(size, pos_id) {
             return std::ptr::null_mut();
         }
@@ -2119,6 +2159,7 @@ impl Context {
         };
         // SAFETY: the system block includes a complete header.
         let payload = unsafe { base.add(HEADER_SIZE) };
+        let reserved = layout.size().saturating_add(EXACT_RECORD_BYTES);
         self.allocations.insert(
             payload as usize,
             Allocation {
@@ -2130,6 +2171,7 @@ impl Context {
             },
         );
         self.live_bytes_counter = self.live_bytes_counter.saturating_add(size);
+        self.charged_bytes_counter = self.charged_bytes_counter.saturating_add(reserved);
         payload
     }
 
@@ -2225,6 +2267,7 @@ impl Context {
             self.live_bytes_counter = self
                 .live_bytes_counter
                 .saturating_add(block_size - HEADER_SIZE);
+            self.charged_bytes_counter = self.charged_bytes_counter.saturating_add(block_size);
             return payload;
         }
 
@@ -2250,6 +2293,7 @@ impl Context {
         self.live_bytes_counter = self
             .live_bytes_counter
             .saturating_add(block_size - HEADER_SIZE);
+        self.charged_bytes_counter = self.charged_bytes_counter.saturating_add(block_size);
         payload
     }
 
@@ -2303,6 +2347,7 @@ impl Context {
         };
         // SAFETY: the system block includes a complete header.
         let payload = unsafe { base.add(HEADER_SIZE) };
+        let reserved = layout.size();
         self.large.insert(
             payload as usize,
             LargeAlloc {
@@ -2312,6 +2357,7 @@ impl Context {
             },
         );
         self.live_bytes_counter = self.live_bytes_counter.saturating_add(size);
+        self.charged_bytes_counter = self.charged_bytes_counter.saturating_add(reserved);
         #[cfg(test)]
         self.stats
             .large
@@ -2422,6 +2468,9 @@ impl Context {
             self.live_bytes_counter = self
                 .live_bytes_counter
                 .saturating_sub((SMALLEST_BLOCK << class) - HEADER_SIZE);
+            self.charged_bytes_counter = self
+                .charged_bytes_counter
+                .saturating_sub(SMALLEST_BLOCK << class);
             return;
         }
         if let Some(a) = self.large.remove(&payload) {
@@ -2430,6 +2479,7 @@ impl Context {
             let class_id = unsafe { header_class_id(a.base) };
             self.release_class_state(class_id, payload);
             self.live_bytes_counter = self.live_bytes_counter.saturating_sub(a.payload_size);
+            self.charged_bytes_counter = self.charged_bytes_counter.saturating_sub(a.layout.size());
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `arena_alloc_large`; the record was just removed so this
             // frees it exactly once. Container clearing only retired
@@ -2450,6 +2500,9 @@ impl Context {
         self.live_bytes_counter = self
             .live_bytes_counter
             .saturating_sub(allocation.payload_size);
+        self.charged_bytes_counter = self
+            .charged_bytes_counter
+            .saturating_sub(allocation.layout.size().saturating_add(EXACT_RECORD_BYTES));
         // SAFETY: exact live-map membership proves the complete initialized
         // header remains owned by this Context.
         let class_id = allocation.class_id;
@@ -2525,6 +2578,9 @@ impl Context {
         self.live_bytes_counter = self
             .live_bytes_counter
             .saturating_sub(allocation.payload_size);
+        self.charged_bytes_counter = self
+            .charged_bytes_counter
+            .saturating_sub(allocation.layout.size().saturating_add(EXACT_RECORD_BYTES));
         // SAFETY: exact live-map membership proves the complete initialized
         // header remains owned by this Context.
         let class_id = allocation.class_id;
@@ -2719,6 +2775,45 @@ impl Context {
             .fold(0usize, |sum, a| sum.saturating_add(a.payload_size))
     }
 
+    /// The bytes the allocator reserves for the live set, which is the
+    /// quantity the allocation quota charges (§109.0 "Memory,
+    /// precisely"): the payload rounded to its size class plus the
+    /// block header in the arena mode, and the payload plus the header
+    /// plus [`EXACT_RECORD_BYTES`] in the exact-size mode.
+    ///
+    /// This is a counter the runtime maintains at every change of the
+    /// live set, so the quota check costs the same at every live count.
+    /// A host that sets a quota paces on this figure (§109.8a);
+    /// [`Context::live_bytes`] is the payload figure and does not
+    /// predict the trap. Like `live_bytes`, the value is
+    /// tier-dependent (§18.2d).
+    #[must_use]
+    pub fn charged_bytes(&self) -> usize {
+        self.charged_bytes_counter
+    }
+
+    /// The same quantity as [`Context::charged_bytes`], derived instead
+    /// by a walk over the live set.
+    ///
+    /// The two derivations are independent, so collection and the unit
+    /// tests compare them (§109.0 "Memory, precisely").
+    #[cfg(any(test, debug_assertions))]
+    fn charged_bytes_by_walk(&self) -> usize {
+        if self.uses_ship_arena() {
+            let mut bytes = self
+                .large
+                .values()
+                .fold(0usize, |sum, a| sum.saturating_add(a.layout.size()));
+            for (_, block_size) in self.live_blocks() {
+                bytes = bytes.saturating_add(block_size);
+            }
+            return bytes;
+        }
+        self.allocations.values().fold(0usize, |sum, a| {
+            sum.saturating_add(a.layout.size().saturating_add(EXACT_RECORD_BYTES))
+        })
+    }
+
     /// Bytes currently reserved from the system for Context allocations.
     ///
     /// Exact-size allocations include only live layouts unless freed-handle
@@ -2862,10 +2957,13 @@ impl Context {
             }
         }
         self.collect_with_trace(mark_trace_target());
-        // §109.4 rule 2: the maintained counter and the walk over the
-        // live set are two independent derivations of one quantity.
+        // §109.4 rule 2 and §109.0 "Memory, precisely": each maintained
+        // counter and the walk over the live set are two independent
+        // derivations of one quantity.
         #[cfg(debug_assertions)]
         debug_assert_eq!(self.live_bytes_by_walk(), self.live_bytes());
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(self.charged_bytes_by_walk(), self.charged_bytes());
     }
 
     /// Reports every live dynamic array whose unused data tail contains a
@@ -3257,6 +3355,7 @@ impl Context {
     fn sweep_dev_allocations(&mut self, retiring: usize) {
         if !self.freed_handle_diagnostics {
             let live_bytes_counter = &mut self.live_bytes_counter;
+            let charged_bytes = &mut self.charged_bytes_counter;
             for (_, allocation) in self.allocations.extract_if(|_, allocation| {
                 if allocation.marked {
                     allocation.marked = false;
@@ -3266,6 +3365,8 @@ impl Context {
                 }
             }) {
                 *live_bytes_counter = live_bytes_counter.saturating_sub(allocation.payload_size);
+                *charged_bytes = charged_bytes
+                    .saturating_sub(allocation.layout.size().saturating_add(EXACT_RECORD_BYTES));
                 // SAFETY: this allocation was live at sweep entry; its
                 // record was just removed, so this frees it exactly once.
                 unsafe { dealloc(allocation.base, allocation.layout) };
@@ -3297,6 +3398,7 @@ impl Context {
         let retained_allocations = &mut self.retained_allocations;
         let retained_bytes = &mut self.retained_bytes;
         let live_bytes_counter = &mut self.live_bytes_counter;
+        let charged_bytes = &mut self.charged_bytes_counter;
         // `extract_if` retains the live map's bucket storage. Later bursts
         // reuse it; accumulated deletion tombstones can eventually force one
         // bounded rebuild, but dead-count growth does not repeat peak
@@ -3310,6 +3412,8 @@ impl Context {
             }
         }) {
             *live_bytes_counter = live_bytes_counter.saturating_sub(allocation.payload_size);
+            *charged_bytes = charged_bytes
+                .saturating_sub(allocation.layout.size().saturating_add(EXACT_RECORD_BYTES));
             if allocation.payload_size < min_payload_bytes {
                 // SAFETY: this allocation was live at sweep entry; its
                 // record was just removed, so this frees it exactly once.
@@ -3413,6 +3517,8 @@ impl Context {
                             self.live_bytes_counter = self
                                 .live_bytes_counter
                                 .saturating_sub(block_size - HEADER_SIZE);
+                            self.charged_bytes_counter =
+                                self.charged_bytes_counter.saturating_sub(block_size);
                         }
                         // DEAD_STATE: already on the free list.
                         _ => {}
@@ -3435,6 +3541,8 @@ impl Context {
         for addr in freed {
             if let Some(a) = self.large.remove(&addr) {
                 self.live_bytes_counter = self.live_bytes_counter.saturating_sub(a.payload_size);
+                self.charged_bytes_counter =
+                    self.charged_bytes_counter.saturating_sub(a.layout.size());
                 // SAFETY: `base`/`layout` came from `alloc_zeroed` in
                 // `arena_alloc_large`; the record was just removed so
                 // this frees it exactly once.
@@ -4394,6 +4502,28 @@ mod tests {
         fn test_offset_live_bytes_counter(&mut self, delta: usize) {
             self.live_bytes_counter = self.live_bytes_counter.saturating_add(delta);
         }
+
+        /// Moves the charged-byte counter away from the live set, so one
+        /// test proves that the collection assertion of §109.0 "Memory,
+        /// precisely" reports a drifted counter.
+        fn test_offset_charged_bytes(&mut self, delta: usize) {
+            self.charged_bytes_counter = self.charged_bytes_counter.saturating_add(delta);
+        }
+    }
+
+    /// Compares each maintained byte counter against its own walk over
+    /// the live set (§109.4 rule 2, §109.0 "Memory, precisely").
+    fn assert_counters_match_the_walks(ctx: &Context, mode: &str) {
+        assert_eq!(
+            ctx.live_bytes(),
+            ctx.live_bytes_by_walk(),
+            "{mode}: live bytes"
+        );
+        assert_eq!(
+            ctx.charged_bytes(),
+            ctx.charged_bytes_by_walk(),
+            "{mode}: charged bytes"
+        );
     }
 
     // The emitted-C SsArrayHeader (codegen/src/cemit.rs, §10a) mirrors this
@@ -5016,18 +5146,18 @@ mod tests {
     }
 
     #[test]
-    fn the_live_byte_counter_matches_the_walk_after_an_allocation() {
+    fn the_byte_counters_match_the_walks_after_an_allocation() {
         for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let first = ctx.alloc(24, 1, 0);
             let second = ctx.alloc(17, 1, 0);
             assert!(!first.is_null() && !second.is_null(), "{mode}");
             assert!(ctx.live_bytes() > 0, "{mode}: two allocations are live");
-            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+            assert_counters_match_the_walks(&ctx, mode);
         }
     }
 
     #[test]
-    fn the_live_byte_counter_matches_the_walk_after_a_delete() {
+    fn the_byte_counters_match_the_walks_after_a_delete() {
         for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let kept = ctx.alloc(24, 1, 0);
             let deleted = ctx.alloc(17, 1, 0);
@@ -5037,15 +5167,15 @@ mod tests {
                 ctx.live_bytes() < before,
                 "{mode}: the delete leaves the live set"
             );
-            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+            assert_counters_match_the_walks(&ctx, mode);
             ctx.delete(kept as usize, 0);
             assert_eq!(ctx.live_bytes(), 0, "{mode}: the live set is empty");
-            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+            assert_counters_match_the_walks(&ctx, mode);
         }
     }
 
     #[test]
-    fn the_live_byte_counter_matches_the_walk_after_a_collection() {
+    fn the_byte_counters_match_the_walks_after_a_collection() {
         for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let kept = ctx.alloc(24, 1, 0);
             let dropped = ctx.alloc(64, 1, 0);
@@ -5064,12 +5194,12 @@ mod tests {
                 ctx.live_bytes() < before,
                 "{mode}: the sweep leaves the live set"
             );
-            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+            assert_counters_match_the_walks(&ctx, mode);
         }
     }
 
     #[test]
-    fn the_live_byte_counter_matches_the_walk_after_a_large_allocation() {
+    fn the_byte_counters_match_the_walks_after_a_large_allocation() {
         // Above LARGEST_BLOCK, so the ship arena takes its large path.
         const LARGE: usize = LARGEST_BLOCK + 904;
         for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
@@ -5079,17 +5209,17 @@ mod tests {
                 ctx.live_bytes() >= LARGE,
                 "{mode}: the large payload is live"
             );
-            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+            assert_counters_match_the_walks(&ctx, mode);
 
             ctx.delete(large as usize, 0);
 
             assert_eq!(ctx.live_bytes(), 0, "{mode}: the live set is empty");
-            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+            assert_counters_match_the_walks(&ctx, mode);
         }
     }
 
     #[test]
-    fn the_live_byte_counter_matches_the_walk_after_retention_and_eviction() {
+    fn the_byte_counters_match_the_walks_after_retention_and_eviction() {
         // One retained layout (32 payload bytes plus the header) fits;
         // two do not, so the second delete evicts the first record.
         const BUDGET: usize = 72;
@@ -5108,7 +5238,7 @@ mod tests {
                 64,
                 "{mode}: retention leaves the live set"
             );
-            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+            assert_counters_match_the_walks(&ctx, mode);
 
             ctx.delete(newest as usize, 0);
 
@@ -5122,7 +5252,7 @@ mod tests {
                 32,
                 "{mode}: eviction does not change the live set"
             );
-            assert_eq!(ctx.live_bytes(), ctx.live_bytes_by_walk(), "{mode}");
+            assert_counters_match_the_walks(&ctx, mode);
             assert!(ctx.is_live(kept as usize), "{mode}");
         }
     }
@@ -5150,6 +5280,62 @@ mod tests {
                 "{mode}: a counter away from the live set must fail collection"
             );
         }
+    }
+
+    // The firing control for the collection assertion of §109.0 "Memory,
+    // precisely". The assertion is a debug assertion, so the control runs
+    // only where the assertion is compiled.
+    #[test]
+    #[cfg(debug_assertions)]
+    fn collection_reports_a_charged_byte_counter_that_left_the_live_set() {
+        for (mode, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
+            let kept = ctx.alloc(24, 1, 0);
+            let mut root = kept as usize;
+            ctx.root_add(&mut root as *mut usize as usize, 1);
+            ctx.collect();
+            ctx.test_offset_charged_bytes(1);
+
+            let previous = std::panic::take_hook();
+            std::panic::set_hook(Box::new(|_| {}));
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ctx.collect()));
+            std::panic::set_hook(previous);
+
+            assert!(
+                outcome.is_err(),
+                "{mode}: a charge away from the live set must fail collection"
+            );
+        }
+    }
+
+    // §109.0 "Memory, precisely": the quota charges the bytes the
+    // allocator reserves. The exact-size mode reserves the header, the
+    // payload, and one record; the arena mode reserves the smallest size
+    // class that holds the header and the payload.
+    #[test]
+    fn the_charge_of_an_eight_byte_object_is_the_documented_reservation() {
+        assert_eq!(size_of::<Allocation>(), 40);
+        assert_eq!(
+            EXACT_RECORD_BYTES, 64,
+            "one Allocation plus its 8-byte key over a 7/8 load factor, \
+             rounded up to a power of two"
+        );
+        let mut dev = Context::new();
+        assert!(!dev.alloc(8, 1, 0).is_null());
+        assert_eq!(
+            dev.charged_bytes(),
+            HEADER_SIZE + 8 + EXACT_RECORD_BYTES,
+            "the exact-size charge is the header, the payload, and the record"
+        );
+        assert_eq!(dev.charged_bytes(), 88);
+
+        let mut ship = Context::new_releasing();
+        assert!(!ship.alloc(8, 1, 0).is_null());
+        assert_eq!(
+            ship.charged_bytes(),
+            SMALLEST_BLOCK,
+            "the arena charge is the whole size-class block"
+        );
+        assert_eq!(ship.charged_bytes(), 32);
     }
 
     #[test]
@@ -6604,15 +6790,19 @@ mod tests {
 
     #[test]
     fn check_quota_answers_the_same_bound_the_allocation_path_takes() {
-        // §109.4 rule 2: one allocation of 2048 payload bytes under a
-        // 4096-byte quota leaves 2048 bytes for the next one.
+        // §109.4 rule 2 and §109.0 "Memory, precisely": one allocation of
+        // 2048 payload bytes reserves 2128 bytes in the exact-size mode,
+        // so a 4096-byte quota keeps 1968 reserved bytes for the next
+        // one. The largest payload that fits reserves exactly those.
         let mut ctx = Context::new();
         ctx.set_alloc_quota(4096);
         assert!(!ctx.alloc(2048, 1, 11).is_null());
-        assert_eq!(ctx.quota_headroom(), 2048);
-        assert!(ctx.check_quota(2048, 12), "the headroom itself fits");
+        assert_eq!(ctx.quota_headroom(), 1968);
+        let fits = 1968 - HEADER_SIZE - EXACT_RECORD_BYTES;
+        assert_eq!(fits, 1888);
+        assert!(ctx.check_quota(fits, 12), "the largest payload fits");
         assert!(!ctx.trapped());
-        assert!(!ctx.check_quota(2049, 13), "one byte over reports");
+        assert!(!ctx.check_quota(fits + 1, 13), "one byte over reports");
         let record = ctx.trap_record().expect("the quota trap is recorded");
         assert_eq!(record.kind, TrapKind::AllocationQuota);
         assert_eq!(record.pos_id, 13);
@@ -6649,18 +6839,18 @@ mod tests {
 
     #[test]
     fn a_context_quota_buffer_takes_the_headroom_as_its_limit() {
-        // As above: 4096 minus the 2048 payload bytes is 2048.
+        // As above: 4096 minus the 2128 reserved bytes is 1968.
         let mut ctx = Context::new();
         ctx.set_alloc_quota(4096);
         assert!(!ctx.alloc(2048, 1, 11).is_null());
         let mut buffer = ctx.quota_buf();
-        buffer.extend(&[0u8; 2048]);
+        buffer.extend(&[0u8; 1968]);
         assert!(!buffer.over_quota(), "the headroom itself fits");
         buffer.push(0);
         assert!(buffer.over_quota(), "one byte over the headroom reports");
         // The firing control: with no quota the same appends fit.
         let mut unbounded = Context::new().quota_buf();
-        unbounded.extend(&[0u8; 2049]);
+        unbounded.extend(&[0u8; 1969]);
         assert!(!unbounded.over_quota());
     }
 

@@ -41,8 +41,9 @@ class Node {
 }
 
 // 1,280 nodes per batch, each node owning one string. The size is
-// measured, not chosen: it grows the live set by 86,832 bytes per frame,
-// so a host pacer at three quarters of a 1 MiB quota fires on frame 10.
+// measured, not chosen: it grows the bytes the quota charges by 148,304
+// per frame (compiler.md §109.0), so a host pacer at three quarters of a
+// 1 MiB quota fires on frame 6.
 const BATCH_SIZE: i32 = 1280;
 
 // The window keeps the last three batches reachable. A newer batch

@@ -302,8 +302,10 @@ warning: 1 warning(s)
 ```
 
 At runtime, the host can watch the same quantities:
-`subscript_rt_ctx_live_bytes` / `_live_allocations` / `_reserved_bytes`
-report the Context's memory, and
+`subscript_rt_ctx_live_bytes` / `_live_allocations` / `_charged_bytes` /
+`_reserved_bytes` report the Context's memory — `_charged_bytes` is the
+counter the allocation quota compares against (§109.0), and the one a
+host paces on — and
 `subscript_rt_ctx_visit_live_allocations` walks every live allocation
 with its class and allocation-site ids (`specs/blocks/compiler.md`
 §18.2d, §21.2), and `subscript_rt_ctx_collect` runs the same collection
@@ -1359,27 +1361,33 @@ Step 11 adds:
 
 ```c
 subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C(1048576));
-uint64_t live = subscript_rt_ctx_live_bytes(ctx);  /* a counter */
-subscript_rt_ctx_collect(ctx);                     /* depth 0 only */
+uint64_t charged = subscript_rt_ctx_charged_bytes(ctx); /* a counter */
+subscript_rt_ctx_collect(ctx);                          /* depth 0 only */
 ```
 
-`subscript_rt_ctx_live_bytes` reads a counter, so you read it at every
-frame boundary for free. Pick a fraction of your quota, and collect above
-it. `examples/sandbox/` picks three quarters of 1 MiB, calls `frame` 24
+`subscript_rt_ctx_charged_bytes` reads a counter, so you read it at every
+frame boundary for free. It reports the bytes the quota charges: the
+payload plus the allocator's own per-allocation bytes (§109.0).
+`subscript_rt_ctx_live_bytes` reports the payload alone, which is a
+smaller figure, so it does not predict the trap; pace on the charged
+bytes. Pick a fraction of your quota, and collect above it.
+`examples/sandbox/` picks three quarters of 1 MiB, calls `frame` 24
 times, and collects outside the script call:
 
 ```text
 host:memory quota=1048576 threshold=786432
-host:collect frame=10 live=868480 -> 199216
-host:collect frame=17 live=807040 -> 199216
-host:collect frame=24 live=807040 -> 199216
-host:phase-a frames=24 collects=3 live=199216
+host:collect frame=6 charged=890048 -> 322256
+host:collect frame=10 charged=915472 -> 322256
+host:collect frame=14 charged=915472 -> 322256
+host:collect frame=18 charged=915472 -> 322256
+host:collect frame=22 charged=915472 -> 322256
+host:phase-a frames=24 collects=5 charged=618864
 ```
 
 `frame` allocates a batch of 1,280 objects and keeps the last three
 batches, so it drops about one batch per frame and never collects. The
-live set climbs 86,832 bytes per frame, passes the threshold on frame 10,
-and falls back to the window each time. The peak is 868,480 bytes, under
+charged bytes climb 148,304 per frame, pass the threshold on frame 6,
+and fall back to the window each time. The peak is 915,472 bytes, under
 the 1,048,576-byte quota.
 
 **Call `subscript_rt_ctx_collect` at script depth 0, between script
@@ -1393,11 +1401,11 @@ generated code holds.
 sets the quota and collects nothing for the whole phase:
 
 ```text
-host:phase-b frames=24 collects=0 live=199216
+host:phase-b frames=24 collects=0 charged=322256
 ```
 
-24 frames end at the same 199,216 bytes that Phase A falls back to. The
-two patterns hold the same bound. Phase A reaches it three times; Phase B
+24 frames end at the same 322,256 bytes that Phase A falls back to. The
+two patterns hold the same bound. Phase A reaches it five times; Phase B
 holds it at every frame. Keep your pacer as the backstop: a script you
 did not write can drop that line.
 

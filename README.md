@@ -272,10 +272,12 @@ collection is the one way memory returns, and nothing collects unbidden.
 The quota is a stop, not a pacer. Two patterns keep a long-running
 program under it:
 
-1. **The host paces.** `subscript_rt_ctx_live_bytes` is a counter, so
-   the host reads it at every frame boundary for free and calls
-   `subscript_rt_ctx_collect` there when the value passes the fraction of
-   the quota it chose — outside any script call, at a moment it picked.
+1. **The host paces.** `subscript_rt_ctx_charged_bytes` is a counter and
+   is the figure the quota compares against, so the host reads it at
+   every frame boundary for free and calls `subscript_rt_ctx_collect`
+   there when the value passes the fraction of the quota it chose —
+   outside any script call, at a moment it picked. `live_bytes` reports
+   the payload alone and does not predict the trap.
 2. **The script collects at its own boundary.** `Context.collect()`
    stays callable under the profile. A script that calls it at the end
    of its frame function keeps its own live set bounded, and the host's
