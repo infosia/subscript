@@ -170,14 +170,21 @@ in the checker, doubling per operator. Three rules close the class:
    the bound without a guard of its own. The bracket count over the
    lexer's tokens stays, because it is the one limit that runs before
    the parser.
-3. **The whole pipeline runs on the compile thread.** The 64 MiB
-   thread of `check_program_with` becomes the thread of the whole
-   compile: parse, check, warnings, lowering, and emission, in the
-   CLI and in every codegen runner. Nothing that recurses over the
-   tree runs on the caller's thread.
+3. **The whole pipeline runs on the compile thread.** The compile
+   thread of 109.2a is the thread of the whole compile: parse, check,
+   warnings, lowering, and emission, in the CLI and in every codegen
+   runner. Nothing that recurses over the tree runs on the caller's
+   thread. `check_program_with` spawns that thread itself when the
+   caller is not already on it, so a host that embeds the compiler
+   crate gets the bound from the API, not from a wrapper; a caller
+   already on the thread runs inline. *(Amended 2026-09-17, second
+   Phase Review: the round-4 form left the spawn to the callers.)*
 4. **Work and output are budgeted.** Under the profile the checker
-   counts the nodes it visits and the type instances it creates;
-   over 16,777,216 it reports S026 and stops. The LIR lowering counts
+   counts the nodes it visits and the type instances it creates (one
+   unit at each of the four instantiation sites, and the body's nodes
+   through the descent); over 16,777,216 it reports S026 and stops.
+   The nesting guard's type descent covers a type-parameter
+   constraint as it covers an annotation. The LIR lowering counts
    the instructions it emits; over 4,194,304 it reports S026 and
    stops. Nesting bounds depth; these two bound the width that
    instantiation and expansion can add.
@@ -192,6 +199,23 @@ parser alone on the compile thread. A construct that overflows there
 gets a token-level proxy limit before the parser, recorded in 109.2a
 with its number. The stack size of the compile thread is set from
 that measurement.
+
+5. **The parser's entry owns the S026 scan.** Under the profile,
+   `parse::parse_program` and every other function that lexes or
+   parses a source (`parse_import_specifiers` included) runs the
+   per-file S026 limits on that source first: bytes, tokens, and
+   bracket depth. No caller can parse a file the scan did not admit,
+   because there is no parser entry without the scan. A lexer error
+   during the scan is the rejection: the compiler reports the scan's
+   findings so far and the lexer's error as the parse error, and the
+   parser does not run on that source. *(Amended 2026-09-17, second
+   Phase Review. The class "a parse before the scan" was raised twice:
+   `program_loader` parsed imports on the caller's thread in round 2,
+   and parsed every file with the full parser before the scan in
+   round 4, aborting on a 600 KB type-argument nest inside the byte
+   limit. A lexer error let the parser run over 2.78 GB of nesting
+   inside the byte limit. Both are closed by the form: the scan lives
+   in the parser's entry.)*
 
 *(Measured 2026-09-17, security round 2, at `52373a9`.)* The
 exponential `!` chain was the warning walk: the `Unary`/`Cast` arm of
@@ -359,8 +383,7 @@ program is unchanged. Each is one C API call.
    (`Context::quota_headroom`, the bytes one more allocation can
    take): a temporary bounded by that headroom holds nothing past it,
    and the operation then reports the total it wanted to
-   `check_quota`, which records the same trap the final allocation
-   would have. The temporary is not itself a Context allocation, so
+   `check_quota`, which records the same trap as the final allocation. The temporary is not itself a Context allocation, so
    `live_bytes` and the trap position do not change. The headroom is
    in reserved bytes: the largest payload that fits is the headroom
    less the header and the record in the exact-size mode, and the
@@ -372,14 +395,20 @@ program is unchanged. Each is one C API call.
    locale-free case mapping, and `JSON.parse` builds a transient
    document of about 40 bytes per node from an input the quota holds.
    Each charges its multiple against the headroom before it builds,
-   so the bound of §109.0 holds for them too. *(The charge for these
-   two lands with the M6 round.)* A total check holds this: a test binary with a
-   counting global allocator drives every `subscript_rt_*` entry whose
-   result size a script controls, under a small quota and a huge
-   request, and asserts the peak allocation stays under the quota plus
-   a fixed slack; the same test derives the entry list from `ffi.rs`
-   and fails on an entry that is neither covered nor listed with a
-   reason. *(Amended 2026-09-17, after an external review:
+   so the bound of §109.0 holds for them too. A third multiple:
+   `sort` holds two copies of its receiver while it sorts, and
+   charges twice the receiver's bytes against the headroom before it
+   begins. Every bounded multiple is named here; an entry with a
+   multiple this list does not name is a defect. A total check holds
+   this: a test binary with a counting global allocator drives every
+   `subscript_rt_*` entry whose result size a script controls, under a
+   small quota and a huge request, and asserts the peak allocation
+   stays under the quota plus a fixed slack; the same test derives
+   the entry list from `ffi.rs` over **every** `subscript_rt_` export,
+   whatever its family, and fails on an entry that is neither covered
+   nor listed with a reason. *(Amended 2026-09-17, second Phase
+   Review: the first check read six families of the sixteen, and
+   `sort` was exempt with an unstated multiple.)* *(Amended 2026-09-17, after an external review:
    `String.repeat` built the result in a `Vec` before `alloc_str`,
    measured at 259 MiB resident for a 256 MiB request under a 64 MiB
    quota, before the trap.)*
@@ -414,8 +443,8 @@ Rust caller of the in-process dev runner reaches the run's interrupt
 cell through `RunConfig.interrupt_handle`, a sink the runner fills
 before the first script call; the forked runner and the ship runner
 refuse it, because their Context is in another process.
-*(Amended 2026-09-17: round 3 could not measure `callbacks` because
-no runner took a host quota.)*
+*(Amended 2026-09-17: round 3 did not measure `callbacks` because no
+runner took a host quota.)*
 
 ### 109.6 Deferred: run-time source loading
 
