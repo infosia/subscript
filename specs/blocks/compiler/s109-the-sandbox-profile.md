@@ -225,12 +225,25 @@ that measurement.
 6. **The CLI compiles in a budgeted child under the profile.**
    `check`, `build`, `run`, and the watch loop's compile run the
    compile in a child `subscript` process. The child has a memory
-   budget (8,589,934,592 bytes unoptimized, 4,294,967,296 optimized:
-   `RLIMIT_AS` on unix, a Job Object on Windows) and a time budget
-   of 300 s that the parent enforces. A child that dies or passes a
-   budget is one S026 at the entry file: "the compiler passed its
-   memory budget" or "… its time budget". The child's diagnostics
-   pass through unchanged. Under the default profile nothing spawns.
+   budget and a time budget of 300 s. The memory budget is the
+   build's compile-thread stack plus the heap a compile takes:
+   12,884,901,888 bytes unoptimized (8 GiB of stack plus 4 GiB),
+   4,294,967,296 optimized (2 GiB plus 2 GiB); a budget under the
+   stack reservation refuses every compile, and a `const` assertion
+   holds the order. The budget is enforced three ways, by host:
+   `RLIMIT_AS` on Linux, set by the child on its first line; a Job
+   Object with a process memory limit on Windows, created and joined
+   by the child on its first line; and on macOS, where `setrlimit`
+   refuses `RLIMIT_AS` (measured `EINVAL`), the parent reads the
+   child's resident bytes at every 10 ms poll through
+   `proc_pid_rusage` and kills a child over the budget. The parent
+   also kills a child past the time budget. A child that dies or
+   passes a budget is one S026 at the entry file: "the compiler
+   passed its memory budget" or "… its time budget". The child's
+   diagnostics pass through unchanged. Under the default profile
+   nothing spawns. The watch loop checks each edit in a budgeted
+   child first and then compiles in process for the live session,
+   so its parser never sees a source the budgets refuse.
    *(Added 2026-09-17, fourth Phase Review: a chain of 65,476 same
    labels in 130,990 bytes takes over 10 GB in the parser's
    duplicate-label path and is killed by the system, with no
@@ -264,11 +277,12 @@ carries the rule code (closed in the docs round).
 **M10, decided.** *(2026-09-17.)* Measured inside every S026 limit,
 release: `<i32>` type assertions × n is O(n²) in the SWC parser
 (16,000: 24.5 s; 26,190 at the byte limit: 140 s); a nested generic
-call `f<A<…>>(1)` is about O(n³) there (4,000 levels: 112 s; 16,384
-at the byte limit: over 600 s); a same-label chain `a:a:…` is
-superlinear in memory in the parser's duplicate-label path (32,000:
-10.3 GB; 65,476: killed); a numeric literal of n digits is O(n²) in
-the SWC lexer. All are the parser's, and this project does
+call is superlinear there (the fourth review measured 112 s at 4,000
+levels on its spelling; round 9 measured `f<A<…A<1+1>…>>(1)` at
+6.2 s for 4,000 and the time budget at 43,664); a same-label chain
+`a:a:…` is superlinear in memory in the parser's duplicate-label
+path (32,000: 10.3 GB; 65,476: 10.4 GB, the memory budget); a
+numeric literal of n digits is O(n²) in the SWC lexer. All are the parser's, and this project does
 not patch the parser. The bound is the budgeted child of rule 6: a
 compile that passes 300 s or the memory budget is S026, and the
 tutorial states this beside the other host facts. The other three shapes (decorators on one line, one per
@@ -568,6 +582,16 @@ The host tutorial shows both with a measured run, and
 mark-sweep, proportional to the live set plus the dead set; a host
 that needs a bound on its length has no rule here yet, and asks for
 one with a measurement.
+
+### 109.6a The heavy tests
+
+*(Added 2026-09-17, round 9.)* Two CLI tests drive the compile
+child to its budgets: the memory-budget test reaches about 10 GB of
+resident memory, and each runs for up to the budget. They run only
+when `SUBSCRIPT_HEAVY_TESTS=1` is set, and the skip prints one
+`gate-skip:` line that the gate counts (§85). The full gate sets the
+variable; the quick gate does not. The time-budget test with its
+2 s test budget stays in the quick gate.
 
 ### 109.7a The in-repo runners under the profile
 
