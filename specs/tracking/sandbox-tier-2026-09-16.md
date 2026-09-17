@@ -763,3 +763,44 @@ rounds). The owner's gate hosts run M9, M12, and M14 (the 1, 4, and
 8 GiB reservations, `RLIMIT_AS` on Linux, the Job Object on
 Windows) and the unoptimized memory kill needs a host with more than
 16 GB.
+
+## The Windows host (2026-09-18)
+
+The budgeted compile child ran on a Windows host for the first time:
+`x86_64-pc-windows-msvc`, Windows 11 Pro 10.0.26200, rustc 1.95.0.
+
+Two build defects, both fixed at `1d24a26`. `CreateJobObjectW` takes a
+`SECURITY_ATTRIBUTES` pointer, so windows-sys gates it on
+`Win32_Security`, which the manifest did not ask for; the import failed
+with E0432. `ALLOCATION_FAILURE_TEXT` and `system_memory_kill_floor`
+have `#[cfg(unix)]` call sites alone, so the build reported two
+dead_code warnings; each item now carries `#[cfg(unix)]`. Neither
+defect can appear on a unix host, so the security rounds could not see
+them.
+
+M14, the Windows Job Object path, is measured. A probe that repeats
+`apply_memory_budget` shows `IsProcessInJob` at 1 before the create (a
+Windows terminal already holds the process in a job), then
+`CreateJobObjectW`, `SetInformationJobObject`, and
+`AssignProcessToJobObject` all succeed. A parent that ends the child
+with `TerminateProcess` closes the only handle to the job, and the
+grandchild the child started never reaches its write.
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` therefore covers the C compiler,
+as §109.2 rule 6 states.
+
+The whole suite is 1,600 tests with one failure:
+`a_budget_kill_reaches_the_c_compiler_the_child_started`. The failure
+is the test's own form, not the Windows path. The test fixes the
+budget at 2 s, and the firing control on this host is 2.76 s cold and
+1.60 to 1.90 s warm. Warm, the budget never fires and the build exits
+0. Cold, the budget fires, but the C compiler wrote the executable
+before it. The same test with a 1 s budget passes: the killed build
+ends at 1.03 s, `program.c` is on disk, and no executable appears in
+the 1.65 s that follow. The margin between "the budget fires" and "the
+C compile has not ended" is 0.1 to 0.9 s here, against the 3.87 s
+build the macOS host measured, so the constant is that host's number.
+
+Open: the test needs a budget derived from the measured control wall,
+and a `slow_host_c` whose C compile dominates the build, so the kill
+lands inside the C compile on every host. The unoptimized memory kill
+still needs a host with more than 16 GB.
