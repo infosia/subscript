@@ -277,9 +277,10 @@ level needs:
 | conditional expression | 2,512 | 2 |
 | prefix operator | 152 | 1 |
 
-The unoptimized build costs 3.02x per level. The worst product of
-cost and density is the parenthesis: one byte per level at 6,750
-bytes of stack. A file of `SOURCE_BYTE_LIMIT` bytes can therefore
+The worst product of cost and density is the parenthesis: one byte
+per level at 6,750 bytes of stack optimized and 31,151 unoptimized
+(M11; the unoptimized ratio is 4.66x for a parenthesis, not the
+3.02x of a type argument). A file of `SOURCE_BYTE_LIMIT` bytes can therefore
 need `SOURCE_BYTE_LIMIT × 6,750` bytes of stack, and the compile
 thread's stack must hold that with a margin of at least 1.5, in each
 build:
@@ -287,7 +288,12 @@ build:
 | Build | Bytes per level | Stack | Worst file (131,072 bytes) | Margin |
 |---|---|---|---|---|
 | optimized | 6,750 | 2,147,483,648 | 884,736,000 | 2.43 |
-| unoptimized | 20,385 | 4,294,967,296 | 2,672,001,024 | 1.61 |
+| unoptimized | 31,151 | 8,589,934,592 | 4,083,023,872 | 2.10 |
+
+*(Amended 2026-09-17, after M11: the first table set the unoptimized
+cost at 20,385 and the stack at 4 GiB, a measured margin of 1.05.
+The stack is 8 GiB; the reservation commits nothing untouched, as
+M9 measured for 1 GiB and 4 GiB, and M12 measures it for 8 GiB.)*
 
 A test derives the margin from the three constants of the build it
 runs in and fails under 1.5. The byte limit is a contract number,
@@ -535,15 +541,25 @@ mark-sweep, proportional to the live set plus the dead set; a host
 that needs a bound on its length has no rule here yet, and asks for
 one with a measurement.
 
+### 109.7a The in-repo runners under the profile
+
+*(Added 2026-09-17, round 7.)* `subscript run --profile sandbox`, the
+dev-JIT runner, and the ship runner are hosts of this repository.
+Under the profile they install no print observer: the Context sink,
+charged to the quota (§109.4 rule 2), is their capture, and they read
+it as they read the observer's buffer today. A host outside this
+repository that installs an observer owns that buffer and its bound.
+
 ### 109.8 Exit criteria
 
 1. Every 109.7 entry is Red at this contract's pin and Green after.
 2. `tools/gate.sh full` is green.
 3. The interrupt latency, per tier, is recorded in the tracking note.
 4. The adversarial list runs and each item rejects or traps: a
-   1,048,577-byte source; a 257-deep bracket source; recursion with no
-   base case; an allocation loop; `fromBytes` of forged bytes. The
-   outcome of each is recorded.
+   131,073-byte source; a 257-deep parenthesis source (the nesting
+   guard, after the parse); recursion with no base case; an
+   allocation loop; `fromBytes` of forged bytes; a regex literal that
+   holds a quote before a deep nest. The outcome of each is recorded.
 5. The benchmark matrix runs under the profile on the dev JIT and the
    ship tier. The ratio to the default profile is recorded per
    workload. No threshold; the number is the baseline.
