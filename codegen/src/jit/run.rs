@@ -1,4 +1,9 @@
 //! The dev-tier run entry points the crate exports.
+//!
+//! Every entry point here returns the stdout bytes of one run. Under the
+//! sandbox profile those bytes come from the Context sink, which the
+//! quota charges, because the runner installs no print observer
+//! (`specs/blocks/compiler.md` §109.7a).
 
 use std::time::Duration;
 

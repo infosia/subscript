@@ -3,7 +3,6 @@
 
 use std::ffi::c_void;
 use std::fs::File;
-#[cfg(unix)]
 use std::io::Write;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
@@ -99,17 +98,26 @@ pub(super) fn execute_entry(
     let main_ptr = module.get_finalized_function(main);
 
     let needs_panic_stdout_fallback = write_through.is_none();
+    // §109.7a: under the profile this runner installs no print observer.
+    // The Context sink, which charges the quota, is its capture, and the
+    // run reads the sink where an observed run reads the buffer below.
+    let observed = profile != Profile::Sandbox;
     let mut ctx = Context::new();
     let mut stdout = Box::new(CapturedStdout {
         bytes: Vec::new(),
         write_through,
     });
-    ctx.set_print_observer(
-        Some(capture_stdout_line),
-        (&mut *stdout as *mut CapturedStdout).cast::<c_void>(),
-    );
-    let aborting_stdout =
-        needs_panic_stdout_fallback.then(|| AbortingStdoutGuard::install(&stdout.bytes));
+    if observed {
+        ctx.set_print_observer(
+            Some(capture_stdout_line),
+            (&mut *stdout as *mut CapturedStdout).cast::<c_void>(),
+        );
+    }
+    // The hook flushes the buffer the observer fills. An unobserved run
+    // holds its bytes in the Context sink, which this runner reads after
+    // the run returns, so a run that ends abnormally returns none.
+    let aborting_stdout = (observed && needs_panic_stdout_fallback)
+        .then(|| AbortingStdoutGuard::install(&stdout.bytes));
     let diagnostics_set = ctx.set_freed_handle_diagnostics(
         freed_handle_diagnostics,
         0,
@@ -190,9 +198,23 @@ pub(super) fn execute_entry(
             .unwrap_or_else(|| Pos::new(String::new(), 0, 0));
         (r.kind, r.message.clone(), pos)
     });
-    ctx.set_print_observer(None, std::ptr::null_mut());
+    if observed {
+        ctx.set_print_observer(None, std::ptr::null_mut());
+    }
     drop(aborting_stdout);
-    let stdout = stdout.bytes;
+    // §109.7a: the sink is the capture of an unobserved run. The
+    // retained file receives it once, here, because no line-by-line
+    // callback wrote to that file during the run.
+    let stdout = if observed {
+        stdout.bytes
+    } else {
+        let bytes = ctx.take_stdout();
+        if let Some(file) = &mut stdout.write_through {
+            let _ = file.write_all(&bytes);
+            let _ = file.flush();
+        }
+        bytes
+    };
     EntryOutcome {
         run: match trap {
             Some((rule, message, pos)) => Err(RunError::Trap(TrapReport {

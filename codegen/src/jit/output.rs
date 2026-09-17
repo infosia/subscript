@@ -1,7 +1,11 @@
 //! Captured stdout of one dev-tier run and the files that retain it.
 //!
-//! A run appends every completed line to a helper-owned file, so an
-//! abnormal child termination still returns those bytes to the caller.
+//! An observed run appends every completed line to a helper-owned file,
+//! so an abnormal child termination still returns those bytes to the
+//! caller. Under the sandbox profile the runner installs no observer
+//! (`specs/blocks/compiler.md` §109.7a): the Context sink is the
+//! capture, and the run writes it to the retained file one time, after
+//! the run returns.
 
 use std::cell::Cell;
 use std::ffi::c_void;

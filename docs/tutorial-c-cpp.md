@@ -1249,7 +1249,7 @@ new check.
 
 The whole compile — parse, check, warnings, lowering, and emission —
 runs on one thread the compiler spawns, with a 2 GiB stack in an
-optimized build and 4 GiB in an unoptimized one. The depth a source
+optimized build and 8 GiB in an unoptimized one. The depth a source
 reaches is therefore the compiler's fact, not a property of the thread
 you call it from. That stack holds the deepest nesting a file of the
 byte limit can spell, with a margin.

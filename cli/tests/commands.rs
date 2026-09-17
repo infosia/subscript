@@ -1088,3 +1088,96 @@ fn the_sandbox_profile_carries_its_run_time_defaults_through_build_and_run() -> 
     );
     Ok(())
 }
+
+/// A 65,536-byte line printed 4,096 times.
+///
+/// The program prints 256 MiB, which is four times the profile's default
+/// quota of 64 MiB.
+fn sink_source() -> &'static str {
+    concat!(
+        "export function main(): void {\n",
+        "  const line: string = \"x\".repeat(65536);\n",
+        "  for (let step: i32 = 0; step < 4096; step = step + 1) {\n",
+        "    print(line);\n",
+        "  }\n",
+        "}\n",
+    )
+}
+
+/// §109.7a: `run --profile sandbox` installs no print observer, so the
+/// quota charges every printed line and a program that prints past the
+/// quota traps with the bytes before the trap intact.
+///
+/// The control is the same program under the default profile, which has
+/// no quota and prints all 4,096 lines.
+#[test]
+fn the_print_sink_charges_the_quota_under_the_profile() -> Result<(), String> {
+    /// The bytes of one line, without its newline.
+    const LINE: usize = 65_536;
+    /// The lines the program prints.
+    const LINES: usize = 4_096;
+    /// §109.5: the profile's default allocation quota.
+    const QUOTA: usize = 67_108_864;
+
+    let dir = TestDir::new()?;
+    let source = dir.write("sink.ts", sink_source().as_bytes())?;
+    // The output is measured, not compared against a golden, so it goes
+    // to a file: 256 MiB in a pipe buffer is the harness's memory, not
+    // the program's.
+    let captured = dir.0.join("sink.out");
+
+    let stopped = output(
+        subscript()
+            .arg("run")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source)
+            .stdout(std::process::Stdio::from(
+                std::fs::File::create(&captured)
+                    .map_err(|error| format!("create {}: {error}", captured.display()))?,
+            )),
+    )?;
+    assert_code(&stopped, 1);
+    assert!(
+        String::from_utf8_lossy(&stopped.stderr).contains("allocation-quota"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&stopped.stderr)
+    );
+    let bytes = std::fs::read(&captured).map_err(|error| format!("read the output: {error}"))?;
+    // The bytes before the trap are whole lines, and the quota stopped
+    // the program before the last one.
+    assert_eq!(bytes.len() % (LINE + 1), 0, "{} bytes", bytes.len());
+    let lines = bytes.len() / (LINE + 1);
+    assert!(lines > 0 && lines < LINES, "{lines} lines before the trap");
+    assert!(
+        bytes.len() < QUOTA,
+        "{} bytes against the quota",
+        bytes.len()
+    );
+    let one = [b"x".repeat(LINE), b"\n".to_vec()].concat();
+    assert!(
+        bytes.chunks_exact(LINE + 1).all(|chunk| chunk == one),
+        "a line before the trap is not intact"
+    );
+    println!(
+        "sink.ts under the profile: {lines} lines, {} bytes",
+        bytes.len()
+    );
+
+    // The control: no quota, so every line reaches the caller.
+    let completed = output(
+        subscript()
+            .arg("run")
+            .arg(&source)
+            .stdout(std::process::Stdio::from(
+                std::fs::File::create(&captured)
+                    .map_err(|error| format!("create {}: {error}", captured.display()))?,
+            )),
+    )?;
+    assert_code(&completed, 0);
+    let all = std::fs::metadata(&captured)
+        .map_err(|error| format!("read the output: {error}"))?
+        .len();
+    assert_eq!(all, (LINES * (LINE + 1)) as u64);
+    Ok(())
+}

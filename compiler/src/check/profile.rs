@@ -65,7 +65,7 @@ pub(crate) const PARSER_STACK_BYTES_PER_LEVEL_WORST: u64 = 6_750;
 /// The same cost in an unoptimized build, which is what the gate's own
 /// binaries carry (§109.2a).
 #[cfg(test)]
-pub(crate) const PARSER_STACK_BYTES_PER_LEVEL_WORST_UNOPTIMIZED: u64 = 20_385;
+pub(crate) const PARSER_STACK_BYTES_PER_LEVEL_WORST_UNOPTIMIZED: u64 = 31_151;
 
 /// The margin the compile thread's stack holds over the worst file the
 /// byte limit admits, in tenths (§109.2a: 1.5).
@@ -600,13 +600,13 @@ mod tests {
         assert_eq!(PROGRAM_BYTE_LIMIT, 8_388_608);
         assert_eq!(STACK_MARGIN_TENTHS, 15);
         assert_eq!(PARSER_STACK_BYTES_PER_LEVEL_WORST, 6_750);
-        assert_eq!(PARSER_STACK_BYTES_PER_LEVEL_WORST_UNOPTIMIZED, 20_385);
+        assert_eq!(PARSER_STACK_BYTES_PER_LEVEL_WORST_UNOPTIMIZED, 31_151);
 
         // The stack of the build this test runs in is the one the pair
         // names, and the cost selector answers that build's number.
         let (stack, cost) = if cfg!(debug_assertions) {
             (
-                4_294_967_296_u64,
+                8_589_934_592_u64,
                 PARSER_STACK_BYTES_PER_LEVEL_WORST_UNOPTIMIZED,
             )
         } else {

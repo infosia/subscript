@@ -17,12 +17,103 @@
 //! source under the default profile, which must check clean. A trap
 //! shape's control is the same program with a base case or a bounded
 //! loop, which must run clean under the profile.
+//!
+//! More shapes follow the list. The last one measures the print sink
+//! under the profile (§109.7a), so a counting global allocator records
+//! the peak of this test binary.
+
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use subscript_codegen::{run_c_aot_configured, run_jit_configured, RunConfig, RunError};
 use subscript_compiler::{
     check_program_with, on_the_compile_thread, CheckOptions, Profile, RuleCode, SourceFile,
 };
 use subscript_runtime::TrapKind;
+
+/// Live bytes the process holds, as the allocator sees them.
+static LIVE: AtomicUsize = AtomicUsize::new(0);
+/// The largest value [`LIVE`] reached since the window opened.
+static PEAK: AtomicUsize = AtomicUsize::new(0);
+/// The smallest value [`LIVE`] reached since the window opened.
+///
+/// The counters are process-wide and the other tests of this file run
+/// beside the measurement, so a window reads `PEAK - FLOOR`: the largest
+/// excursion above the lowest live value it saw. `PEAK - opened`
+/// under-counts by whatever another thread frees inside the window.
+static FLOOR: AtomicUsize = AtomicUsize::new(0);
+
+/// The system allocator with a live-bytes counter and a peak record.
+struct Counting;
+
+// SAFETY: every method forwards to the system allocator with the same
+// pointer and layout it was given; the counters add no requirement.
+unsafe impl GlobalAlloc for Counting {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: forwarded caller contract.
+        let pointer = unsafe { System.alloc(layout) };
+        if !pointer.is_null() {
+            PEAK.fetch_max(
+                LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size(),
+                Ordering::Relaxed,
+            );
+        }
+        pointer
+    }
+
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        FLOOR.fetch_min(
+            LIVE.fetch_sub(layout.size(), Ordering::Relaxed) - layout.size(),
+            Ordering::Relaxed,
+        );
+        // SAFETY: forwarded caller contract.
+        unsafe { System.dealloc(pointer, layout) };
+    }
+
+    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // SAFETY: forwarded caller contract.
+        let fresh = unsafe { System.realloc(pointer, layout, new_size) };
+        if !fresh.is_null() {
+            PEAK.fetch_max(
+                LIVE.fetch_add(new_size, Ordering::Relaxed) + new_size,
+                Ordering::Relaxed,
+            );
+            FLOOR.fetch_min(
+                LIVE.fetch_sub(layout.size(), Ordering::Relaxed) - layout.size(),
+                Ordering::Relaxed,
+            );
+        }
+        fresh
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: forwarded caller contract.
+        let pointer = unsafe { System.alloc_zeroed(layout) };
+        if !pointer.is_null() {
+            PEAK.fetch_max(
+                LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size(),
+                Ordering::Relaxed,
+            );
+        }
+        pointer
+    }
+}
+
+#[global_allocator]
+static ALLOCATOR: Counting = Counting;
+
+/// Opens a measurement window at the current live bytes.
+fn open_window() {
+    let live = LIVE.load(Ordering::Relaxed);
+    PEAK.store(live, Ordering::Relaxed);
+    FLOOR.store(live, Ordering::Relaxed);
+}
+
+/// The bytes the window held at once: the peak above its own floor.
+fn close_window() -> usize {
+    PEAK.load(Ordering::Relaxed)
+        .saturating_sub(FLOOR.load(Ordering::Relaxed))
+}
 
 /// §109.2 S026: the byte limit of one source file.
 const SOURCE_BYTE_LIMIT: usize = 131_072;
@@ -492,4 +583,102 @@ fn a_quote_inside_a_regex_literal_checks_clean_and_runs() {
         "257 quoted regex literals must check clean under the profile"
     );
     assert_both_tiers_run("quote inside a regex literal", &source, b"a0b\n");
+}
+
+/// A 65,536-byte line printed 4,096 times.
+///
+/// The program prints 256 MiB, four times the profile's default quota.
+fn sink_source() -> String {
+    concat!(
+        "export function main(): void {\n",
+        "  const line: string = \"x\".repeat(65536);\n",
+        "  for (let step: i32 = 0; step < 4096; step = step + 1) {\n",
+        "    print(line);\n",
+        "  }\n",
+        "}\n",
+    )
+    .to_string()
+}
+
+/// §109.7a: the dev-JIT runner installs no print observer under the
+/// profile, so the printed bytes live in the Context sink, the quota
+/// charges them, and the run traps instead of holding 256 MiB of host
+/// memory.
+///
+/// The measurement is in process: `memory_accounting` keeps the run on
+/// this thread, so the counting allocator above sees the run's bytes.
+/// The control is the same program under the default profile, whose
+/// observer buffer holds every line; it is also the firing control of
+/// the measurement, because it is the peak the profile must not reach.
+#[test]
+fn the_print_sink_bounds_the_dev_jit_peak_under_the_profile() {
+    /// The bytes of one line, without its newline.
+    const LINE: usize = 65_536;
+    /// The lines the program prints.
+    const LINES: usize = 4_096;
+    /// §109.5: the profile's default allocation quota.
+    const QUOTA: usize = 67_108_864;
+    /// The bytes the run may hold above the quota.
+    ///
+    /// The sink is a `Vec`, which doubles its buffer, so the copy that
+    /// reaches the quota holds the old buffer and the new one at once:
+    /// the measured peak is 100,870,977 bytes, 33.8 MB over the quota.
+    /// The other tests of this file allocate beside the window, so the
+    /// bound holds 64 MiB over the quota.
+    const SLACK: usize = 64 * 1024 * 1024;
+
+    // `memory_accounting` keeps the run in this process, where the
+    // counting allocator sees it.
+    let config = |profile| {
+        let mut config = RunConfig::with_profile(profile);
+        config.memory_accounting = true;
+        config
+    };
+
+    open_window();
+    let stopped = run_jit_configured(&files(sink_source()), config(Profile::Sandbox));
+    let peak = close_window();
+    let stdout = match stopped {
+        Err(RunError::Trap(report)) => {
+            assert_eq!(report.rule, TrapKind::AllocationQuota, "{}", report.message);
+            report.stdout
+        }
+        // A run that does not trap returns every printed byte, so the
+        // report names its length and not its bytes.
+        Ok(output) => panic!(
+            "the profile must trap the print sink: it ran and printed {} bytes",
+            output.stdout.len()
+        ),
+        Err(other) => panic!("the profile must trap the print sink: {other}"),
+    };
+    // The bytes before the trap are whole lines, and each one is intact.
+    assert_eq!(stdout.len() % (LINE + 1), 0, "{} bytes", stdout.len());
+    let lines = stdout.len() / (LINE + 1);
+    assert!(lines > 0 && lines < LINES, "{lines} lines before the trap");
+    let one = [b"x".repeat(LINE), b"\n".to_vec()].concat();
+    assert!(
+        stdout.chunks_exact(LINE + 1).all(|chunk| chunk == one),
+        "a line before the trap is not intact"
+    );
+    println!(
+        "sink.ts under the profile: {lines} lines, {} bytes, peak {peak} bytes",
+        stdout.len()
+    );
+    assert!(
+        peak < QUOTA + SLACK,
+        "the profile run peaked at {peak} bytes over a {QUOTA}-byte quota"
+    );
+
+    // The control: no quota, so the run keeps all 4,096 lines and the
+    // same measurement reads a peak the profile never reaches.
+    open_window();
+    let completed = run_jit_configured(&files(sink_source()), config(Profile::Default));
+    let control_peak = close_window();
+    let all = completed.expect("the default profile runs the sink").stdout;
+    assert_eq!(all.len(), LINES * (LINE + 1));
+    println!("sink.ts under the default profile: peak {control_peak} bytes");
+    assert!(
+        control_peak > QUOTA + SLACK,
+        "the control peaked at {control_peak} bytes, which the bound above admits"
+    );
 }

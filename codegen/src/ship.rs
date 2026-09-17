@@ -972,6 +972,12 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
     write_file(&src_path, program.source.as_bytes())?;
     let anchor = "    call_script_entry(ctx, subscript_init);";
     let mut entry = aot_entry_with_host_hooks(pre_entry_hook, post_run_hook)?;
+    // §109.7a: under the profile the ship runner's entry installs no
+    // print observer, and the Context sink it already reads after the
+    // run is its capture.
+    if profile == Profile::Sandbox {
+        entry = without_print_observer(&entry).map_err(RunError::Internal)?;
+    }
     if !entry.contains(anchor) {
         return Err(RunError::Internal(internal(
             "AOT entry Context-configuration anchor moved",
@@ -1100,26 +1106,67 @@ fn run_limits_c(profile: Profile, limits: HostLimits) -> String {
     lines
 }
 
-/// The generated host entry for one compile profile
-/// (`specs/blocks/compiler.md` §109.5).
+/// The print-observer callback of the host entry, with the blank line
+/// that follows it (`specs/blocks/compiler.md` §109.7a).
+const PRINT_OBSERVER_C: &str = "\
+static void write_stdout_line(void *userdata, const uint8_t *line, uint64_t line_len) {
+    FILE *stream = (FILE *)userdata;
+    if (line_len > 0) {
+        fwrite(line, 1, (size_t)line_len, stream);
+    }
+    fputc('\\n', stream);
+    fflush(stream);
+}
+
+";
+
+/// The line of the host entry that installs [`PRINT_OBSERVER_C`].
+const PRINT_OBSERVER_INSTALL_C: &str =
+    "    subscript_rt_ctx_set_print_observer(ctx, write_stdout_line, stdout);\n";
+
+/// `entry` with the print observer removed (`specs/blocks/compiler.md`
+/// §109.7a).
 ///
-/// The default profile returns [`AOT_ENTRY_C`] unchanged. The sandbox
-/// profile returns it with the quota and the stack budget set before the
-/// first script call.
+/// The entry reads the Context sink after the run in either form. With
+/// no observer the sink holds every line, and the quota charges it.
 ///
 /// # Errors
 ///
-/// Returns an error when the entry's Context-configuration anchor moved.
+/// Returns an error when the observer's definition or its install line
+/// moved.
+fn without_print_observer(entry: &str) -> Result<String, String> {
+    for anchor in [PRINT_OBSERVER_C, PRINT_OBSERVER_INSTALL_C] {
+        if !entry.contains(anchor) {
+            return Err(internal("AOT entry print-observer anchor moved"));
+        }
+    }
+    Ok(entry
+        .replacen(PRINT_OBSERVER_C, "", 1)
+        .replacen(PRINT_OBSERVER_INSTALL_C, "", 1))
+}
+
+/// The generated host entry for one compile profile
+/// (`specs/blocks/compiler.md` §109.5, §109.7a).
+///
+/// The default profile returns [`AOT_ENTRY_C`] unchanged. The sandbox
+/// profile returns it with the quota and the stack budget set before the
+/// first script call, and with no print observer.
+///
+/// # Errors
+///
+/// Returns an error when the entry's Context-configuration anchor or its
+/// print-observer anchor moved.
 pub fn aot_entry_for_profile(profile: Profile) -> Result<String, String> {
-    let defaults = run_limits_c(profile, HostLimits::default());
-    if defaults.is_empty() {
+    if profile != Profile::Sandbox {
         return Ok(AOT_ENTRY_C.to_string());
     }
+    let defaults = run_limits_c(profile, HostLimits::default());
     const ANCHOR: &str = "    call_script_entry(ctx, subscript_init);";
     if !AOT_ENTRY_C.contains(ANCHOR) {
         return Err(internal("AOT entry Context-configuration anchor moved"));
     }
-    Ok(AOT_ENTRY_C.replacen(ANCHOR, &format!("{defaults}{ANCHOR}"), 1))
+    let entry = AOT_ENTRY_C.replacen(ANCHOR, &format!("{defaults}{ANCHOR}"), 1);
+    without_print_observer(&entry)
 }
 
 /// The anchor the emitted interrupt thread follows in the host entry.
@@ -1376,6 +1423,45 @@ mod tests {
             defaults < entry,
             "the defaults precede the first script call"
         );
+    }
+
+    /// §109.7a: the ship runner's emitted entry installs no print
+    /// observer under the profile, and the default profile keeps it.
+    ///
+    /// The entry reads the Context sink after the run in either form, so
+    /// the removal leaves the report of the run's bytes in place.
+    #[test]
+    fn the_generated_entry_installs_no_print_observer_under_the_profile() {
+        let default = aot_entry_for_profile(Profile::Default).expect("generate entry");
+        let sandbox = aot_entry_for_profile(Profile::Sandbox).expect("generate entry");
+        // The header the entry carries declares the observer API, so the
+        // check reads the install line and the callback, not the name.
+        for spelling in [PRINT_OBSERVER_INSTALL_C, "write_stdout_line"] {
+            assert!(default.contains(spelling), "missing `{spelling}`");
+            assert!(!sandbox.contains(spelling), "unexpected `{spelling}`");
+        }
+        // The sink report is the capture of the unobserved run, so it
+        // stays in both forms.
+        for spelling in ["subscript_rt_ctx_stdout(ctx, &len)", "fwrite(out, 1,"] {
+            assert!(default.contains(spelling), "missing `{spelling}`");
+            assert!(sandbox.contains(spelling), "missing `{spelling}`");
+        }
+        // The removal takes the observer and nothing else.
+        assert_eq!(
+            sandbox.len() + PRINT_OBSERVER_C.len() + PRINT_OBSERVER_INSTALL_C.len(),
+            default.len() + run_limits_c(Profile::Sandbox, HostLimits::default()).len()
+        );
+    }
+
+    /// §109.7a: a moved anchor is an error, not a silent pass.
+    ///
+    /// The subject is a C source with no entry, because §100.2 reserves
+    /// every C entry body in this workspace for `host_entry`.
+    #[test]
+    fn a_moved_print_observer_anchor_reports() {
+        let error = without_print_observer("static void nothing(void) {}\n")
+            .expect_err("a source without the observer must report");
+        assert!(error.contains("print-observer anchor moved"), "{error}");
     }
 
     #[test]

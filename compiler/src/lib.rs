@@ -237,7 +237,7 @@ fn check_on_this_thread(
 /// `check::profile` holds the measured cost of one level in each build
 /// and the test that pins this size to it.
 pub const COMPILE_THREAD_STACK_BYTES: usize = if cfg!(debug_assertions) {
-    4_294_967_296
+    8_589_934_592
 } else {
     2_147_483_648
 };

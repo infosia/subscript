@@ -249,7 +249,7 @@ accepts it.
 
 The whole compile — parse, check, warnings, lowering, and emission —
 runs on one thread the compiler spawns, with a 2 GiB stack in an
-optimized build and 4 GiB in an unoptimized one, so the depth a source
+optimized build and 8 GiB in an unoptimized one, so the depth a source
 reaches is the compiler's fact and not the calling thread's. That stack
 holds the deepest nesting a file of the byte limit can spell, with a
 margin.

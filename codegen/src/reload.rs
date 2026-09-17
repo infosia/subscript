@@ -1026,6 +1026,11 @@ impl ReloadSession {
     }
 
     /// Takes the stdout bytes produced since the last take.
+    ///
+    /// The session installs no print observer, under either profile, so
+    /// the Context sink is its capture. Under the sandbox profile the
+    /// quota charges the sink until this call releases it
+    /// (`specs/blocks/compiler.md` §109.7a, §109.4 rule 2).
     #[must_use]
     pub fn take_output(&mut self) -> Vec<u8> {
         self.ctx.take_stdout()
