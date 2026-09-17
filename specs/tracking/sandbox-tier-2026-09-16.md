@@ -558,3 +558,36 @@ excluded" from §109.0. Linux and windows-msvc M9 is the owner's gate
 (§100): the 1 GiB and 4 GiB reservations spawn and commit nothing
 untouched, the 131,072-level nest parses, the unoptimized workspace
 suite passes.
+
+### Second Phase Review and its fix round (landed)
+
+A fresh reviewer read `f5e16ab..efef4db`: CRITICAL 1, MAJOR 6,
+MINOR 6. The CRITICAL was the class "a parse before the S026 scan"
+for the second time (`program_loader` parsed every file with the full
+parser before the scan; a 600 KB type-argument nest inside the byte
+limit aborted the compile thread), so the fix is the form: the
+parser's entry owns the scan (§109.2 rule 5), with a total check that
+every `Lexer`/`Parser` construction is the one constructor in
+`parse.rs`. Also: a lexer error no longer discards the scan;
+`check_program_with` spawns the compile thread itself; the quota's
+total check reads every `subscript_rt_` export (99 → 229; 130 had
+been neither covered nor exempt); `sort` (two receiver copies, 125 MB
+outside a 64 MiB quota at the pin) and `boundary_scratch_alloc` (a
+system allocation sized by the marshalled array, never seen before)
+charge the quota first; instantiations spend work; type-parameter
+constraints and defaults are guarded.
+
+Gate: `gate quick a67c7b4 dirty:18 debug 1578/0/2 skips 2 goldens-moved 0 exit 0`.
+
+Two measured facts about the scan's lexer: it reports a `Token::Error`
+for a valid regular-expression escape, and it reads `/` as division,
+so a bracket inside a regex literal counts (§109.2 amended both).
+
+M10, attributed: `<i32>` × n is the SWC parser, O(n²), 180.8 s at the
+most the token limit admits (43,690 levels); the numeric literal is
+the SWC lexer, O(n²), about 1 s at the byte limit; decorators and
+labels were this compiler's diagnostic renderer, O(n²) time and, on
+one line, O(n²) output (7.69 GB for 32,000 items on a 160 KB line).
+Decision: the parser's constant stays and the host's build timeout
+bounds it; the renderer gains a line index, a 240-byte window, and a
+200-item cap (round 6).
