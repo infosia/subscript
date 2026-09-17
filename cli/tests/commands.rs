@@ -1283,6 +1283,11 @@ fn largest_child_peak_bytes() -> u64 {
 /// boundary closes: with no child the parser's outcome reaches the
 /// caller, and on a host that kills the process that outcome is no
 /// diagnostic at all.
+///
+/// The S026 line is not always the first line. Linux and Windows turn
+/// the budget into a failed allocation, so the Rust runtime's own line
+/// passes through ahead of it. The check is therefore that the whole
+/// output holds one S026 and that it is this one.
 #[test]
 fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
     /// The labels the chain spells.
@@ -1314,13 +1319,27 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
     let wall = started.elapsed();
     assert_code(&stopped, 1);
     let rendered = String::from_utf8_lossy(&stopped.stderr).into_owned();
-    assert!(
-        rendered.starts_with("error[S026]: the compiler passed its memory budget\n"),
+    let reported: Vec<&str> = rendered
+        .lines()
+        .filter(|line| line.starts_with("error[S026]:"))
+        .collect();
+    assert_eq!(
+        reported,
+        ["error[S026]: the compiler passed its memory budget"],
         "{rendered}"
     );
     assert!(
         rendered.contains(&source.display().to_string()),
         "the stop names the entry file: {rendered}"
+    );
+
+    // The two facts are derived apart: the line above is the parent's
+    // classification, and this one is the child runtime's own record of
+    // the allocation the budget refused.
+    #[cfg(any(target_os = "linux", windows))]
+    assert!(
+        rendered.contains("memory allocation of"),
+        "the child's failed allocation passes through: {rendered}"
     );
 
     // macOS refuses `RLIMIT_AS`, so the parent holds the budget by its

@@ -101,11 +101,13 @@ const TIME_MESSAGE: &str = "the compiler passed its time budget";
 /// The text the Rust runtime writes before it ends a process that
 /// cannot allocate: `memory allocation of <n> bytes failed`.
 ///
-/// A host that sets `RLIMIT_AS` inside the child turns the budget into
-/// a failed allocation, and the runtime then ends the child on
-/// `SIGABRT`. This text is what separates that end from every other
-/// abort (§109.2 rule 6).
-#[cfg(unix)]
+/// Linux turns the budget into a failed allocation through
+/// `RLIMIT_AS`, and Windows through the Job Object's process memory
+/// limit. The runtime then ends the child: on `SIGABRT` under a signal
+/// host, and with `__fastfail`'s own exit code on Windows. This text is
+/// what separates that end from every other abnormal end
+/// (§109.2 rule 6).
+#[cfg(any(unix, windows))]
 const ALLOCATION_FAILURE_TEXT: &[u8] = b"memory allocation of";
 
 /// The resident bytes a child must have held for the parent to read a
@@ -419,11 +421,37 @@ fn classify(
         Some(0) => Ok(SUCCESS),
         Some(1) => Ok(PROGRAM_ERROR),
         Some(2) => Ok(USAGE_ERROR),
-        Some(code) => Err(format!(
-            "the compiler stopped abnormally (exit code {code})"
-        )),
+        Some(code) => Err(exit_code_message(code, child_stderr)),
         None => Err(signal_message(status, child_stderr, largest_resident)),
     }
+}
+
+/// The S026 message for a child that ended with a code no outcome
+/// describes (§109.2 rule 6).
+///
+/// The Job Object's process memory limit fails an allocation, the Rust
+/// runtime writes [`ALLOCATION_FAILURE_TEXT`], and `__fastfail` then
+/// ends the child with a code of its own. That text is what separates
+/// the budget from every other abnormal end, as it does under
+/// `RLIMIT_AS`. Windows reports no signal, so the code alone cannot
+/// carry the difference.
+#[cfg(windows)]
+fn exit_code_message(code: i32, child_stderr: &[u8]) -> String {
+    if holds(child_stderr, ALLOCATION_FAILURE_TEXT) {
+        return String::from(MEMORY_MESSAGE);
+    }
+    format!("the compiler stopped abnormally (exit code {code})")
+}
+
+/// The S026 message for a child that ended with a code no outcome
+/// describes (§109.2 rule 6).
+///
+/// A host with signals reports the budget's failed allocation as
+/// `SIGABRT`, which [`signal_message`] reads. An exit code there is
+/// the child's own, so it stands alone.
+#[cfg(not(windows))]
+fn exit_code_message(code: i32, _child_stderr: &[u8]) -> String {
+    format!("the compiler stopped abnormally (exit code {code})")
 }
 
 /// The S026 message for a child that no exit code describes
@@ -477,7 +505,7 @@ fn system_memory_kill(signal: i32, child_stderr: &[u8], largest_resident: Option
 }
 
 /// True when `haystack` holds `needle`.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn holds(haystack: &[u8], needle: &[u8]) -> bool {
     !needle.is_empty()
         && haystack
@@ -981,6 +1009,54 @@ mod tests {
         assert_eq!(
             classify(signalled(libc::SIGABRT), b"assertion failed\n", None),
             Err(String::from("the compiler stopped abnormally (signal 6)"))
+        );
+    }
+
+    /// §109.2 rule 6: the parent reads each end of the child as the
+    /// contract names it, on a host with no signals.
+    ///
+    /// The two facts are derived apart: the classification is this
+    /// module's, and the exit code is the host's own encoding.
+    /// `__fastfail`'s code is the firing control: the same code
+    /// without the runtime's text is an abnormal end.
+    #[cfg(windows)]
+    #[test]
+    fn the_parent_reads_every_end_of_the_child() {
+        use std::os::windows::process::ExitStatusExt;
+
+        /// The code `__fastfail` gives a Rust abort
+        /// (`STATUS_STACK_BUFFER_OVERRUN`), as `status.code()` reads it.
+        const FAST_FAIL: u32 = 0xC000_0409;
+
+        let exited = ExitStatus::from_raw;
+        assert_eq!(classify(exited(0), b"", None), Ok(SUCCESS));
+        assert_eq!(classify(exited(1), b"", None), Ok(PROGRAM_ERROR));
+        assert_eq!(classify(exited(2), b"", None), Ok(USAGE_ERROR));
+        assert_eq!(
+            classify(exited(101), b"", None),
+            Err(String::from(
+                "the compiler stopped abnormally (exit code 101)"
+            ))
+        );
+
+        // A failed allocation under the Job Object's memory limit, and
+        // every other end that carries the same code.
+        let failed = b"memory allocation of 262144 bytes failed
+";
+        assert_eq!(
+            classify(exited(FAST_FAIL), failed, None),
+            Err(String::from(MEMORY_MESSAGE))
+        );
+        assert_eq!(
+            classify(
+                exited(FAST_FAIL),
+                b"assertion failed
+",
+                None
+            ),
+            Err(String::from(
+                "the compiler stopped abnormally (exit code -1073740791)"
+            ))
         );
     }
 

@@ -808,5 +808,49 @@ whole build on this host is now 3.67 to 4.35 s, the derived budget is
 executable after the control's wall time again. The boundary between
 the two budgets is a 4.0 s control wall, and both sides pass.
 
-Open: the unoptimized memory kill still needs a host with more than
-16 GB.
+## The unoptimized memory kill, measured (2026-09-18)
+
+The Windows host holds 63.71 GB, with a commit limit of 67.71 GB, so
+the unoptimized budget of 12,884,901,888 bytes is reachable. M14 is
+closed on this host.
+
+The measurement found a defect. The Job Object's process memory limit
+does not kill the child: it fails an allocation. The Rust runtime then
+writes "memory allocation of 262144 bytes failed" and `__fastfail`
+ends the child with exit code -1073740791
+(`STATUS_STACK_BUFFER_OVERRUN`), which no signal describes. `classify`
+read every exit code outside 0, 1, and 2 as an abnormal end, so the
+parent reported "the compiler stopped abnormally (exit code
+-1073740791)" where §109.2 rule 6 requires "the compiler passed its
+memory budget". Linux under `RLIMIT_AS` fails the same allocation, but
+ends the child on `SIGABRT`, and the signal path already read the
+text. The text is the fact both hosts share, so `classify` now reads
+it on Windows as well. The contract names it at `f35d20d`.
+
+The test's own check was one host's too. It asked that the S026 line
+was the first line, which holds only where the child writes nothing
+before it — macOS, where the parent's poll kills the child. The check
+is now that the whole output holds one S026 line and that it is this
+one. On Linux and Windows the test also reads the child's own
+allocation-failure line, which is the fact the parent's
+classification is derived from, measured apart from it.
+
+Measured, unoptimized, on `x86_64-pc-windows-msvc`:
+
+- The budgeted child reaches the 12 GiB budget and stops in 12.12 s
+  with one S026, "the compiler passed its memory budget".
+- The control, the same source under the default profile with no
+  child, runs 417 s and then ends with exit code 0xc0000409 and 119
+  bytes of stderr. It reports no diagnostic. The process boundary is
+  what turns 417 s and no answer into 12.12 s and one line.
+- The whole workspace suite with `SUBSCRIPT_HEAVY_TESTS=1` is green,
+  with the full shape's 2 expected skips. `cargo fmt --check` is
+  clean, `tools/hygiene.sh` exits 0, and clippy is unchanged at
+  7/18/13 with 0 in `subscript-cli`.
+
+The heavy memory test costs 430 s on this host, against the 214.6 s
+§109.6a records for the two heavy tests on the owner's host. The
+control is the whole of that cost.
+
+Open: nothing from M14. The macOS poll path and the Linux `RLIMIT_AS`
+path each still run on one host only.
