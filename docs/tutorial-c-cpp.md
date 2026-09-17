@@ -1323,6 +1323,11 @@ fact only you hold. The list is short and it is complete
   profile cannot close.
 - **The interrupt.** The profile arms no interrupt. Arm one, or accept
   that a program under the profile runs until it returns or traps.
+- **The compile timeout.** The profile bounds the compiler's work to a
+  polynomial in the source size (§109.0, guarantee 4). It does not bound
+  the wall time: inside every `S026` limit, 43,690 `<i32>` type
+  assertions take 180.8 s in the parser, measured in a release build.
+  Bound the compile with the timeout you give any build step.
 - **The process.** Same-process execution trusts the compiler, the
   generated code, and the runtime to be memory-safe. If you must contain
   a defect in those, add an isolation boundary of your own, such as a

@@ -72,10 +72,12 @@ let files = vec![
 ];
 ```
 
-That program prints `42`. `parse_import_specifiers(&file)` returns
-one file's import specifiers with the same parser the checker uses,
-so a host walks the import graph itself. `cli/src/program_loader.rs`
-is the reference implementation for on-disk loading.
+That program prints `42`. `parse_import_specifiers(&file,
+Profile::Default)` returns one file's import specifiers with the same
+parser the checker uses, so a host walks the import graph itself. The
+second argument is the compile profile ("The run entry points beside
+`run_jit`" below). `cli/src/program_loader.rs` is the reference
+implementation for on-disk loading.
 
 ## A frame-loop host in four steps
 
