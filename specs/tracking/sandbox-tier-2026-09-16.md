@@ -603,3 +603,36 @@ index per file, a 240-byte window at UTF-8 boundaries, 200 items;
 640,000 items on one line render 59,986 bytes in 19 ms, 800,000
 label items in 31 ms (linear). No pinned rendered form changed. Step
 11 names the host's compile timeout.
+
+### Third Phase Review and security round 7 (landed)
+
+A fresh reviewer read `efef4db..b1e2bfe`: CRITICAL 1, MAJOR 3, MINOR
+4. The CRITICAL was the third instance of "the parser runs on a
+source the scan did not bound": a lexer with no parser reads `/` as
+division, so a quote inside a regex literal desyncs the token and
+bracket counts for the rest of the file. Under CLAUDE.md the class
+is a defect of the form. Form: S026 is a byte limit only (131,072
+per file, 8,388,608 per program); the token limit and the pre-parse
+bracket depth are retired; the parser's stack is sized to the
+deepest nesting a file of the byte limit can spell (parenthesis: one
+byte per level); the checker's nesting guard is the one depth bound.
+M11 measured every M7 construct at 131,072 bytes: all return; the
+unoptimized parenthesis costs 31,151 per level (4.66x optimized),
+which sets the unoptimized stack at 8 GiB (margin 2.10; optimized
+2 GiB, 2.43). The `print` sink (268 MB outside a 64 MiB quota at the
+pin) and callback bindings now charge the quota;
+`parse_import_specifiers` spawns the compile thread; a regex literal
+holding a quote before a deep nest and 257 lines of
+`s.replace(/"/g, …)` are adversarial cases (the second checks clean
+and runs on both tiers). Corpus: `r241` and `a243` are the byte
+shapes; `r236`/`r237` reject through the nesting guard.
+
+Gate: `gate quick 2410a08 dirty:29 debug 1578/0/2 skips 2 goldens-moved 1 exit 0`
+(the moved golden is the retired token-count entry's). One flake
+fixed on the way: the counting-allocator control read `PEAK − before`
+and a concurrent free by the test harness, outside any test body,
+shortened it by 24 to 118 bytes; the window now tracks its own floor.
+
+Open: the in-repo runners' print observer still holds unbounded host
+memory under the profile (round 8, §109.7a); `subscript_rt_print`
+carries no `pos_id`, so its quota trap sits at position 0.
