@@ -272,9 +272,21 @@ program is unchanged. Each is one C API call.
    computes that size first and allocates it through the Context
    (`alloc_str_with`, or the array and map paths), which checks the
    quota before any byte exists. Where the size is not known before
-   the bytes are built, the buffer grows through a Context-owned
-   allocation, never through a Rust `Vec` or `String` that the quota
-   does not see. A total check holds this: a test binary with a
+   the bytes are built, the buffer grows inside the quota's headroom
+   (`Context::quota_headroom`, the bytes one more allocation can
+   take): a temporary bounded by that headroom holds nothing past it,
+   and the operation then reports the total it wanted to
+   `check_quota`, which records the same trap the final allocation
+   would have. The temporary is not itself a Context allocation, so
+   `live_bytes` and the trap position do not change; a result that
+   fits the quota exactly still fits. Two entries keep a bounded
+   multiple instead: `toUpperCase` and `toLowerCase` build at most
+   three bytes per receiver byte through the standard library's
+   locale-free case mapping, and `JSON.parse` builds a transient
+   document of about 40 bytes per node from an input the quota holds.
+   Each charges its multiple against the headroom before it builds,
+   so the bound of §109.0 holds for them too. *(The charge for these
+   two lands with the M6 round.)* A total check holds this: a test binary with a
    counting global allocator drives every `subscript_rt_*` entry whose
    result size a script controls, under a small quota and a huge
    request, and asserts the peak allocation stays under the quota plus
