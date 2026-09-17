@@ -798,6 +798,13 @@ pub struct Context {
     // that moves `live_bytes_counter` moves this one by the reserved
     // size of the same allocation, so the quota check reads one field.
     charged_bytes_counter: usize,
+    // §109.4 rule 2: the bytes the stdout sink charges to the quota.
+    // `take_stdout` releases them.
+    stdout_charge: usize,
+    // §109.4 rule 2: the bytes the live callback binding records charge
+    // to the quota. A record lives for the whole Context (Q13), so the
+    // charge goes when the Context does.
+    binding_charge: usize,
     // Exact-size live allocations. The dev tier uses this path; a ship
     // Context switches to it when freed-handle diagnostics are enabled.
     // Collection marks and sweeps only this map.
@@ -934,6 +941,8 @@ impl Context {
             async_frames: HashMap::new(),
             live_bytes_counter: 0,
             charged_bytes_counter: 0,
+            stdout_charge: 0,
+            binding_charge: 0,
             allocations: HashMap::new(),
             boundary_scratch: Vec::new(),
             dead_allocations: AddressSet::default(),
@@ -1349,7 +1358,7 @@ impl Context {
             return true;
         }
         let reserved = self.reserved_size(size);
-        if (self.charged_bytes_counter as u64).saturating_add(reserved as u64) <= self.alloc_quota {
+        if (self.charged_bytes() as u64).saturating_add(reserved as u64) <= self.alloc_quota {
             return true;
         }
         self.trap(
@@ -1371,11 +1380,8 @@ impl Context {
         if self.alloc_quota == 0 {
             return usize::MAX;
         }
-        usize::try_from(
-            self.alloc_quota
-                .saturating_sub(self.charged_bytes_counter as u64),
-        )
-        .unwrap_or(usize::MAX)
+        usize::try_from(self.alloc_quota.saturating_sub(self.charged_bytes() as u64))
+            .unwrap_or(usize::MAX)
     }
 
     /// A temporary byte buffer for this Context, bounded by the quota.
@@ -1959,18 +1965,58 @@ impl Context {
     // ----- stdout sink -----
 
     /// Delivers `bytes` to the installed print observer without retaining
-    /// them. With no observer, appends `bytes` and a trailing newline to
-    /// the stdout sink.
-    pub fn print_line(&mut self, bytes: &[u8]) {
+    /// them. With no observer, charges `bytes.len()` to the allocation
+    /// quota and appends `bytes` and a trailing newline to the stdout
+    /// sink (§109.4 rule 2).
+    ///
+    /// Over the quota the line is dropped and the `AllocationQuota` trap
+    /// is recorded at `pos_id`.
+    pub fn print_line(&mut self, bytes: &[u8], pos_id: u32) {
+        // SAFETY: `bytes` is a live slice for this call, and the sink is
+        // a separate allocation, so the append does not move it.
+        unsafe { self.print_view(bytes.as_ptr(), bytes.len(), pos_id) };
+    }
+
+    /// The same as [`Context::print_line`], over the bytes of a live
+    /// string handle, with no copy of the line.
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a live string handle of this Context.
+    pub unsafe fn print_str(&mut self, handle: *const u8, pos_id: u32) {
+        // SAFETY: the caller guarantees a live handle; the view outlives
+        // this call because the sink is a separate allocation and
+        // nothing here deletes or collects.
+        let bytes: &[u8] = unsafe { self.str_view(handle) };
+        // SAFETY: the view is readable for this call.
+        unsafe { self.print_view(bytes.as_ptr(), bytes.len(), pos_id) };
+    }
+
+    /// Delivers `len` bytes at `ptr`, or charges them and appends them.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must point at `len` readable bytes that this call does not
+    /// move: either the caller's own memory, or a Context string
+    /// allocation, which the append leaves in place.
+    unsafe fn print_view(&mut self, ptr: *const u8, len: usize, pos_id: u32) {
         if let Some(observer) = self.print_observer {
             let userdata = self.print_observer_userdata;
             // SAFETY: the host supplied the callback and userdata. The
             // callback contract forbids obtaining and using this Context
-            // while the exclusive borrow is live.
-            unsafe { observer(userdata, bytes.as_ptr(), bytes.len() as u64) };
+            // while the exclusive borrow is live. An observed line is not
+            // retained, so it charges nothing.
+            unsafe { observer(userdata, ptr, len as u64) };
             return;
         }
-        self.stdout.extend_from_slice(bytes);
+        if !self.check_quota(len, pos_id) {
+            return;
+        }
+        self.stdout_charge = self.stdout_charge.saturating_add(len);
+        // SAFETY: the caller guarantees `len` readable bytes at `ptr`
+        // that this append does not move.
+        let line = unsafe { std::slice::from_raw_parts(ptr, len) };
+        self.stdout.extend_from_slice(line);
         self.stdout.push(b'\n');
     }
 
@@ -2071,9 +2117,11 @@ impl Context {
         };
     }
 
-    /// Takes the captured stdout bytes.
+    /// Takes the captured stdout bytes, and releases the quota charge the
+    /// sink held (§109.4 rule 2).
     #[must_use]
     pub fn take_stdout(&mut self) -> Vec<u8> {
+        self.stdout_charge = 0;
         std::mem::take(&mut self.stdout)
     }
 
@@ -2790,6 +2838,18 @@ impl Context {
     #[must_use]
     pub fn charged_bytes(&self) -> usize {
         self.charged_bytes_counter
+            .saturating_add(self.stdout_charge)
+            .saturating_add(self.binding_charge)
+    }
+
+    /// The part of [`Context::charged_bytes`] the allocation path
+    /// maintains, with no off-heap charge (§109.4 rule 2).
+    ///
+    /// [`Context::charged_bytes_by_walk`] derives the same quantity from
+    /// the live set, so the two are comparable.
+    #[cfg(any(test, debug_assertions))]
+    fn allocation_charged_bytes(&self) -> usize {
+        self.charged_bytes_counter
     }
 
     /// The same quantity as [`Context::charged_bytes`], derived instead
@@ -2963,7 +3023,10 @@ impl Context {
         #[cfg(debug_assertions)]
         debug_assert_eq!(self.live_bytes_by_walk(), self.live_bytes());
         #[cfg(debug_assertions)]
-        debug_assert_eq!(self.charged_bytes_by_walk(), self.charged_bytes());
+        debug_assert_eq!(
+            self.charged_bytes_by_walk(),
+            self.allocation_charged_bytes()
+        );
     }
 
     /// Reports every live dynamic array whose unused data tail contains a
@@ -3737,6 +3800,15 @@ impl Context {
             return binding.cast();
         }
 
+        // §109.4 rule 2: a new record is Context memory the script sizes
+        // by the identities it registers, so it charges the quota. The
+        // record is still created when the quota refuses it: a null here
+        // would reach the host through a C `void* userdata` slot, and the
+        // recorded trap stops the run at the next checkpoint.
+        let record = std::mem::size_of::<CallbackBinding>();
+        self.check_quota(record, 0);
+        self.binding_charge = self.binding_charge.saturating_add(record);
+
         let ctx: *mut Context = self;
         let mut rec = Box::new(CallbackBinding {
             ctx,
@@ -4300,7 +4372,7 @@ mod tests {
         // SAFETY: the tests pass matching live `TestSchedulerFrame` values.
         let context = unsafe { &mut *ctx };
         let record = unsafe { &mut *frame.cast::<TestSchedulerFrame>() };
-        context.print_line(frame_label(record.id));
+        context.print_line(frame_label(record.id), 0);
         record.polls += 1;
         if record.polls == 3 {
             return 1;
@@ -4319,7 +4391,7 @@ mod tests {
         // SAFETY: the tests pass matching live `TestSchedulerFrame` values.
         let context = unsafe { &mut *ctx };
         let record = unsafe { &mut *frame.cast::<TestSchedulerFrame>() };
-        context.print_line(frame_label(record.id));
+        context.print_line(frame_label(record.id), 0);
         record.polls += 1;
         if record.polls > 1 {
             context.collect();
@@ -4520,7 +4592,7 @@ mod tests {
             "{mode}: live bytes"
         );
         assert_eq!(
-            ctx.charged_bytes(),
+            ctx.allocation_charged_bytes(),
             ctx.charged_bytes_by_walk(),
             "{mode}: charged bytes"
         );
@@ -4693,19 +4765,19 @@ mod tests {
         }
 
         let mut unset = Context::new();
-        unset.print_line(b"default");
+        unset.print_line(b"default", 0);
         assert_eq!(unset.take_stdout(), b"default\n");
 
         let mut ctx = Context::new();
         let mut observed = Vec::<Vec<u8>>::new();
         ctx.set_print_observer(Some(observe), std::ptr::from_mut(&mut observed).cast());
-        ctx.print_line(b"first");
-        ctx.print_line(b"second");
+        ctx.print_line(b"first", 0);
+        ctx.print_line(b"second", 0);
         assert_eq!(observed, [b"first".to_vec(), b"second".to_vec()]);
         assert!(ctx.stdout_bytes().is_empty());
 
         ctx.set_print_observer(None, std::ptr::from_mut(&mut observed).cast());
-        ctx.print_line(b"after-unset");
+        ctx.print_line(b"after-unset", 0);
         assert_eq!(observed, [b"first".to_vec(), b"second".to_vec()]);
         assert_eq!(ctx.stdout_bytes(), b"after-unset\n");
         assert!(ctx.print_observer_userdata.is_null());
@@ -4732,6 +4804,39 @@ mod tests {
         let second = ctx.bind_callback(code, std::ptr::null(), userdata1, other_userdata2);
         assert_ne!(first, second);
         assert_eq!(ctx.callbacks.len(), 2);
+    }
+
+    /// §109.4 rule 2: a new binding record charges its own bytes, and a
+    /// rebound identity charges nothing because it creates no record.
+    #[test]
+    fn a_binding_record_charges_the_quota_once_for_each_identity() {
+        fn callback_code() {}
+
+        let record = std::mem::size_of::<CallbackBinding>();
+        let mut ctx = Context::new();
+        let code = callback_code as *const () as *const u8;
+        let charged = ctx.charged_bytes();
+
+        let first = ctx.bind_callback(code, std::ptr::null(), 1 as *mut u8, std::ptr::null_mut());
+        assert_eq!(ctx.charged_bytes(), charged + record);
+        let repeated =
+            ctx.bind_callback(code, std::ptr::null(), 1 as *mut u8, std::ptr::null_mut());
+        assert_eq!(first, repeated);
+        assert_eq!(
+            ctx.charged_bytes(),
+            charged + record,
+            "a rebound identity creates no record"
+        );
+        ctx.bind_callback(code, std::ptr::null(), 2 as *mut u8, std::ptr::null_mut());
+        assert_eq!(ctx.charged_bytes(), charged + 2 * record);
+
+        // The firing control: a quota under the next record traps.
+        ctx.set_alloc_quota(ctx.charged_bytes() as u64);
+        ctx.bind_callback(code, std::ptr::null(), 3 as *mut u8, std::ptr::null_mut());
+        assert_eq!(
+            ctx.trap_record().map(|found| found.kind),
+            Some(TrapKind::AllocationQuota)
+        );
     }
 
     #[test]
@@ -5868,7 +5973,7 @@ mod tests {
         let kept = ctx.alloc(8, 1, 0);
         let deleted = ctx.alloc(8, 1, 0);
         ctx.delete(deleted as usize, 0);
-        ctx.print_line(b"before");
+        ctx.print_line(b"before", 0);
         ctx.bump_reload_epoch();
 
         ctx.trap(TrapKind::EmptyPop, "pop() on an empty array", 3);

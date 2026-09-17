@@ -1244,16 +1244,15 @@ new check.
 | `S023` | `Context.free`. Memory is allocate-only. `Context.collect()` stays callable. |
 | `S024` | `Context.fromBytes`. Bytes the content supplies carry no layout proof. |
 | `S025` | `Worker.spawn`, `Inbox`, and `Outbox`. |
-| `S026` | A source over 1,048,576 bytes, a program over 8,388,608 bytes, a file over 131,072 tokens, or a nesting depth over 256. The byte count, the token count, and the bracket count run before the parser; the nesting limit is a depth guard in the checker. |
+| `S026` | A source over 131,072 bytes in one file, a program over 8,388,608 bytes, or a nesting depth over 256. The byte counts run before the parser; the nesting limit is a depth guard in the checker. |
 | `S027` | A function whose frame is over 65,536 bytes. The stack check at the function entry then sees at most one bounded frame past your budget. |
 
 The whole compile — parse, check, warnings, lowering, and emission —
-runs on one thread the compiler spawns, with a 1 GiB stack in an
+runs on one thread the compiler spawns, with a 2 GiB stack in an
 optimized build and 4 GiB in an unoptimized one. The depth a source
 reaches is therefore the compiler's fact, not a property of the thread
-you call it from. The token limit is one number in every build: that
-stack divided by the measured stack cost of one nesting level, with a
-margin.
+you call it from. That stack holds the deepest nesting a file of the
+byte limit can spell, with a margin.
 
 The same source checks clean under the default profile, so a profile
 rejection is not a TypeScript divergence:
@@ -1325,8 +1324,8 @@ fact only you hold. The list is short and it is complete
   that a program under the profile runs until it returns or traps.
 - **The compile timeout.** The profile bounds the compiler's work to a
   polynomial in the source size (§109.0, guarantee 4). It does not bound
-  the wall time: inside every `S026` limit, 43,690 `<i32>` type
-  assertions take 180.8 s in the parser, measured in a release build.
+  the wall time: inside every `S026` limit, 26,210 `<i32>` type
+  assertions take 134.3 s in the parser, measured in a release build.
   Bound the compile with the timeout you give any build step.
 - **The process.** Same-process execution trusts the compiler, the
   generated code, and the runtime to be memory-safe. If you must contain

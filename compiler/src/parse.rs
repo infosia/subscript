@@ -3,7 +3,7 @@
 
 use swc_common::{BytePos, FileName, SourceMap, Span, Spanned};
 use swc_ecma_ast as ast;
-use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, Tokens, TsSyntax};
+use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
 
 use crate::check::profile;
 use crate::diag::{Diagnostic, Pos, RuleCode};
@@ -83,8 +83,12 @@ fn stem_of(name: &str) -> String {
 /// import.
 ///
 /// `profile` is the compile profile the caller checks under (§109.1
-/// rule 2). Under [`Profile::Sandbox`] the §109.2 rule 5 scan runs on
-/// the source first, so this entry never parses a file S026 rejects.
+/// rule 2). Under [`Profile::Sandbox`] the §109.2 rule 5 byte check runs
+/// on the source first, so this entry never parses a file S026 rejects.
+///
+/// §109.2 rule 3: every public entry that parses runs on the compile
+/// thread, so the depth this parse can reach is the compiler's fact and
+/// not the caller's thread. A caller already on that thread runs inline.
 ///
 /// # Errors
 ///
@@ -93,17 +97,19 @@ pub fn parse_import_specifiers(
     source: &SourceFile,
     profile: Profile,
 ) -> Result<Vec<String>, Vec<Diagnostic>> {
-    swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-        let program = parse_program(std::slice::from_ref(source), profile)?;
-        let mut specifiers = Vec::new();
-        for file in program.files {
-            for item in file.module.body {
-                if let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) = item {
-                    specifiers.push(import.src.value.to_string());
+    crate::on_the_compile_thread(|| {
+        swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
+            let program = parse_program(std::slice::from_ref(source), profile)?;
+            let mut specifiers = Vec::new();
+            for file in program.files {
+                for item in file.module.body {
+                    if let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) = item {
+                        specifiers.push(import.src.value.to_string());
+                    }
                 }
             }
-        }
-        Ok(specifiers)
+            Ok(specifiers)
+        })
     })
 }
 
@@ -122,66 +128,32 @@ fn syntax_of(dts: bool) -> Syntax {
 
 /// Builds the one lexer of this compiler, over one source of `map`.
 ///
-/// This is the only constructor of a [`Lexer`], so every parse and every
-/// scan reads one lexical rule, and no entry parses a source the sandbox
-/// profile rejects (§109.2 rule 5). A test in `compiler/tests/` reads
+/// This is the only constructor of a [`Lexer`], so every parse reads one
+/// lexical rule, and no entry parses a source the sandbox profile
+/// rejects (§109.2 rule 5). A test in `compiler/tests/` reads
 /// `compiler/src` and `cli/src` and fails on a second construction.
 ///
-/// Under [`Profile::Sandbox`] the S026 per-file scan runs here, before
-/// the lexer this function hands out exists: the byte limit, the token
-/// count, and the bracket depth. The scan reads its own lexer, which is
-/// a flat loop over the bytes, so its cost does not grow with the
-/// nesting depth of the source. A source the scan rejects gets no lexer,
-/// so its caller cannot parse it.
-///
-/// A lexer error does not stop the count: the scan reads every token the
-/// lexer answers, so its findings are total over the source. When the
-/// scan rejects and the lexer also recorded an error, both report and the
-/// parser does not run on that source (§109.2 rule 5).
+/// Under [`Profile::Sandbox`] the S026 byte limit runs here, before the
+/// lexer this function hands out exists. The check reads the length of
+/// the source and no token, so it is exact and total. A source it
+/// rejects gets no lexer, so its caller cannot parse it, and no parse
+/// error of that source reports beside the rejection.
 ///
 /// An ambient source (`.d.ts`) is a mirror, which is the host's text and
-/// not the program's, so S026 does not scan it (§109.2).
+/// not the program's, so S026 does not read it (§109.2).
 fn lexer_for<'a>(
-    map: &SourceMap,
     file: &'a swc_common::SourceFile,
     name: &str,
     dts: bool,
     profile: Profile,
 ) -> Result<Lexer<'a>, Vec<Diagnostic>> {
-    let syntax = syntax_of(dts);
     if profile == Profile::Sandbox && !dts {
-        let mut scanning = Lexer::new(
-            syntax,
-            ast::EsVersion::Es2022,
-            StringInput::from(file),
-            None,
-        );
-        let at = |position: BytePos| lookup_at(map, name, position);
-        let token_error = std::cell::RefCell::new(None);
-        let found = {
-            let mut tokens = scanning.by_ref().inspect(|spanned| {
-                if let swc_ecma_parser::token::Token::Error(error) = &spanned.token {
-                    let mut first = token_error.borrow_mut();
-                    if first.is_none() {
-                        *first = Some(error.clone());
-                    }
-                }
-            });
-            profile::source_scan(name, file.src.len(), &mut tokens, &at)
-        };
-        if let Some(rejection) = found {
-            let mut rejected = vec![rejection];
-            let error = token_error
-                .into_inner()
-                .or_else(|| scanning.take_errors().into_iter().next());
-            if let Some(error) = error {
-                rejected.push(parser_diagnostic(&error, at(error.span().lo)));
-            }
-            return Err(rejected);
+        if let Some(rejection) = profile::source_limit_diagnostic(name, file.src.len()) {
+            return Err(vec![rejection]);
         }
     }
     Ok(Lexer::new(
-        syntax,
+        syntax_of(dts),
         ast::EsVersion::Es2022,
         StringInput::from(file),
         None,
@@ -190,16 +162,16 @@ fn lexer_for<'a>(
 
 /// Answers the §109.2 rule 5 rejection of one source, and parses nothing.
 ///
-/// The scan is inside [`lexer_for`], so this reads exactly what a parse
+/// The check is inside [`lexer_for`], so this reads exactly what a parse
 /// of the same source reads.
 #[cfg(test)]
-pub(crate) fn sandbox_scan(source: &SourceFile) -> Vec<Diagnostic> {
+pub(crate) fn sandbox_source_limit(source: &SourceFile) -> Vec<Diagnostic> {
     let map = SourceMap::default();
     let file = map.new_source_file(
         FileName::Custom(source.name.clone()).into(),
         source.source.clone(),
     );
-    lexer_for(&map, &file, &source.name, source.dts, Profile::Sandbox)
+    lexer_for(&file, &source.name, source.dts, Profile::Sandbox)
         .err()
         .unwrap_or_default()
 }
@@ -207,8 +179,8 @@ pub(crate) fn sandbox_scan(source: &SourceFile) -> Vec<Diagnostic> {
 /// Parses every source file. Parse failures become `S100` diagnostics;
 /// the parser never panics on malformed input.
 ///
-/// Under [`Profile::Sandbox`] each source passes the §109.2 rule 5 scan
-/// before this function lexes it.
+/// Under [`Profile::Sandbox`] each source passes the §109.2 rule 5 byte
+/// check before this function lexes it.
 pub(crate) fn parse_program(
     sources: &[SourceFile],
     profile: Profile,
@@ -233,7 +205,7 @@ pub(crate) fn parse_program(
             FileName::Custom(source.name.clone()).into(),
             source.source.clone(),
         );
-        let lexer = match lexer_for(&source_map, &fm, &source.name, source.dts, profile) {
+        let lexer = match lexer_for(&fm, &source.name, source.dts, profile) {
             Ok(lexer) => lexer,
             Err(rejected) => {
                 diags.extend(rejected);

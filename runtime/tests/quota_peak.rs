@@ -24,6 +24,16 @@ use subscript_runtime::{Context, TrapKind};
 static LIVE: AtomicUsize = AtomicUsize::new(0);
 /// The largest value [`LIVE`] reached since the last reset.
 static PEAK: AtomicUsize = AtomicUsize::new(0);
+/// The smallest value [`LIVE`] reached since the last reset.
+///
+/// The three counters are process-wide, and the test harness frees each
+/// finished test's captured output and bookkeeping outside every test
+/// body, so no lock a test holds keeps `LIVE` still. A measurement
+/// therefore reads its window as `PEAK - FLOOR`: the largest excursion
+/// above the lowest live value of the window. Reading it as
+/// `PEAK - before` under-counts by whatever another thread frees between
+/// the reset and the request.
+static FLOOR: AtomicUsize = AtomicUsize::new(0);
 
 /// The system allocator with a live-bytes counter and a peak record.
 struct Counting;
@@ -41,7 +51,7 @@ unsafe impl GlobalAlloc for Counting {
     }
 
     unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+        record_low(LIVE.fetch_sub(layout.size(), Ordering::Relaxed) - layout.size());
         // SAFETY: forwarded caller contract.
         unsafe { System.dealloc(pointer, layout) };
     }
@@ -52,7 +62,7 @@ unsafe impl GlobalAlloc for Counting {
         if !fresh.is_null() {
             let live = LIVE.fetch_add(new_size, Ordering::Relaxed) + new_size;
             record(live);
-            LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+            record_low(LIVE.fetch_sub(layout.size(), Ordering::Relaxed) - layout.size());
         }
         fresh
     }
@@ -70,6 +80,30 @@ unsafe impl GlobalAlloc for Counting {
 /// Raises the peak to `live` when `live` is larger.
 fn record(live: usize) {
     PEAK.fetch_max(live, Ordering::Relaxed);
+}
+
+/// Lowers the floor to `live` when `live` is smaller.
+fn record_low(live: usize) {
+    FLOOR.fetch_min(live, Ordering::Relaxed);
+}
+
+/// Opens a measurement window at the current live bytes.
+fn open_window() -> usize {
+    let live = LIVE.load(Ordering::Relaxed);
+    PEAK.store(live, Ordering::Relaxed);
+    FLOOR.store(live, Ordering::Relaxed);
+    live
+}
+
+/// The bytes the window held at once: the peak above its own floor.
+///
+/// The second value is how far the floor fell below the value
+/// [`open_window`] read. It is the bytes another thread freed inside the
+/// window, and a test prints it beside its measurement.
+fn close_window(opened: usize) -> (usize, usize) {
+    let floor = FLOOR.load(Ordering::Relaxed);
+    let peak = PEAK.load(Ordering::Relaxed).saturating_sub(floor);
+    (peak, opened.saturating_sub(floor))
 }
 
 #[global_allocator]
@@ -98,6 +132,8 @@ fn quota_context() -> Box<Context> {
 struct Measurement {
     entry: &'static str,
     peak: usize,
+    /// Bytes another thread freed inside the window (§ the `FLOOR` note).
+    fell: usize,
     trap: Option<TrapKind>,
 }
 
@@ -127,18 +163,20 @@ impl Measurement {
 /// The peak resets after the inputs exist, so the value is the bytes the
 /// entry itself holds at once. The measurement is checked at the end of
 /// the test, so one run reports every entry that is over the bound.
-fn peak_of(
-    entry: &'static str,
-    ctx: &mut Context,
-    request: impl FnOnce(&mut Context),
-) -> Measurement {
-    let before = LIVE.load(Ordering::Relaxed);
-    PEAK.store(before, Ordering::Relaxed);
-    request(ctx);
-    let peak = PEAK.load(Ordering::Relaxed).saturating_sub(before);
+///
+/// `request` takes no Context: each case drives the entry through its own
+/// `*mut Context` and reads the trap through the same pointer. A
+/// `&mut Context` beside that pointer is a second path to the same
+/// bytes, and an optimized build is free to keep a read of it in a
+/// register across the call.
+fn peak_of(entry: &'static str, ctx: &mut Context, request: impl FnOnce()) -> Measurement {
+    let opened = open_window();
+    request();
+    let (peak, fell) = close_window(opened);
     Measurement {
         entry,
         peak,
+        fell,
         trap: ctx.trap_record().map(|record| record.kind),
     }
 }
@@ -187,6 +225,8 @@ const COVERED: &[&str] = &[
     "subscript_rt_json_parse_begin",
     "subscript_rt_arr_sort",
     "subscript_rt_boundary_scratch_alloc",
+    "subscript_rt_print",
+    "subscript_rt_cb_bind",
 ];
 
 /// Every other `subscript_rt_` export, with the reason a script cannot
@@ -537,10 +577,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "the call releases the scratch scope",
     ),
     (
-        "subscript_rt_cb_bind",
-        "the result is one binding record of fixed size",
-    ),
-    (
         "subscript_rt_cb_trampoline",
         "the call forwards one message to a script callback",
     ),
@@ -744,10 +780,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "the result is one formatted scalar bounded by the radix",
     ),
     (
-        "subscript_rt_print",
-        "the line is one string the quota holds, and the capture sink is the host's",
-    ),
-    (
         "subscript_rt_root_add",
         "the call records one root range of the module image",
     ),
@@ -830,7 +862,7 @@ fn every_covered_entry_stays_under_the_quota() {
         let mut ctx = quota_context();
         let receiver = string(&mut ctx, b"x");
         let pointer: *mut Context = &mut *ctx;
-        let peak = peak_of("subscript_rt_str_repeat", &mut ctx, |_| {
+        let peak = peak_of("subscript_rt_str_repeat", &mut ctx, || {
             // SAFETY: live exclusive Context and live string handle.
             unsafe { ffi::subscript_rt_str_repeat(pointer, receiver, HUGE as i32, 1) };
         });
@@ -850,7 +882,7 @@ fn every_covered_entry_stays_under_the_quota() {
         let receiver = string(&mut ctx, b"x");
         let pad = string(&mut ctx, b" ");
         let pointer: *mut Context = &mut *ctx;
-        let peak = peak_of(entry, &mut ctx, |_| {
+        let peak = peak_of(entry, &mut ctx, || {
             // SAFETY: live exclusive Context and live string handles.
             unsafe { call(pointer, receiver, HUGE as i32, pad, 1) };
         });
@@ -871,7 +903,7 @@ fn every_covered_entry_stays_under_the_quota() {
         let mut ctx = quota_context();
         let receiver = string_of(&mut ctx, b'a', 32_768);
         let pointer: *mut Context = &mut *ctx;
-        let peak = peak_of(entry, &mut ctx, |_| {
+        let peak = peak_of(entry, &mut ctx, || {
             // SAFETY: live exclusive Context and live string handle.
             unsafe { call(pointer, receiver, 1) };
         });
@@ -886,7 +918,7 @@ fn every_covered_entry_stays_under_the_quota() {
         let pattern = string(&mut ctx, b"");
         let replacement = string(&mut ctx, &b"$'".repeat(16_384));
         let pointer: *mut Context = &mut *ctx;
-        let peak = peak_of("subscript_rt_str_replace", &mut ctx, |_| {
+        let peak = peak_of("subscript_rt_str_replace", &mut ctx, || {
             // SAFETY: live exclusive Context and live string handles.
             unsafe {
                 ffi::subscript_rt_str_replace(pointer, receiver, pattern, replacement, 1);
@@ -903,7 +935,7 @@ fn every_covered_entry_stays_under_the_quota() {
         let pattern = string(&mut ctx, b"a");
         let replacement = string_of(&mut ctx, b'b', 16_384);
         let pointer: *mut Context = &mut *ctx;
-        let peak = peak_of("subscript_rt_str_replace_all", &mut ctx, |_| {
+        let peak = peak_of("subscript_rt_str_replace_all", &mut ctx, || {
             // SAFETY: live exclusive Context and live string handles.
             unsafe {
                 ffi::subscript_rt_str_replace_all(pointer, receiver, pattern, replacement, 1);
@@ -926,7 +958,7 @@ fn every_covered_entry_stays_under_the_quota() {
         // SAFETY: live exclusive Context and live string handles.
         let regex = unsafe { ffi::subscript_rt_regex_new(pointer, pattern, flags, 1) };
         assert!(!regex.is_null(), "the RegExp must fit the quota");
-        let peak = peak_of("subscript_rt_regex_replace", &mut ctx, |_| {
+        let peak = peak_of("subscript_rt_regex_replace", &mut ctx, || {
             // SAFETY: live exclusive Context and live handles.
             unsafe {
                 ffi::subscript_rt_regex_replace(pointer, subject, regex, replacement, 1);
@@ -947,7 +979,7 @@ fn every_covered_entry_stays_under_the_quota() {
         // SAFETY: live exclusive Context and live string handles.
         let regex = unsafe { ffi::subscript_rt_regex_new(pointer, pattern, flags, 1) };
         assert!(!regex.is_null(), "the RegExp must fit the quota");
-        let peak = peak_of("subscript_rt_regex_replace_all", &mut ctx, |_| {
+        let peak = peak_of("subscript_rt_regex_replace_all", &mut ctx, || {
             // SAFETY: live exclusive Context and live handles.
             unsafe {
                 ffi::subscript_rt_regex_replace_all(pointer, subject, regex, replacement, 1);
@@ -973,7 +1005,7 @@ fn every_covered_entry_stays_under_the_quota() {
         }
         let separator = string_of(&mut ctx, b's', 16_384);
         let pointer: *mut Context = &mut *ctx;
-        let peak = peak_of("subscript_rt_arr_join", &mut ctx, |_| {
+        let peak = peak_of("subscript_rt_arr_join", &mut ctx, || {
             // SAFETY: live exclusive Context, live array, live separator.
             // Kind 9 is `u8` (`arrops::FmtKind::from_u32`).
             unsafe { ffi::subscript_rt_arr_join(pointer, array, separator, 9, 1) };
@@ -993,18 +1025,19 @@ fn every_covered_entry_stays_under_the_quota() {
         // SAFETY: live exclusive Context.
         let builder = unsafe { ffi::subscript_rt_json_begin(pointer, 1) };
         assert_ne!(builder, 0, "the builder id must be live");
-        let peak = peak_of(entry, &mut ctx, |ctx| {
+        let peak = peak_of(entry, &mut ctx, || {
             for _ in 0..16_384 {
                 // SAFETY: live exclusive Context, live builder, live
                 // string handle.
-                unsafe {
+                let trapped = unsafe {
                     if quoted {
                         ffi::subscript_rt_json_str(pointer, builder, piece, 1);
                     } else {
                         ffi::subscript_rt_json_raw(pointer, builder, piece, 1);
                     }
-                }
-                if ctx.trapped() {
+                    (*pointer).trapped()
+                };
+                if trapped {
                     break;
                 }
             }
@@ -1027,7 +1060,7 @@ fn every_covered_entry_stays_under_the_quota() {
         text.push(b']');
         let input = string(&mut ctx, &text);
         let pointer: *mut Context = &mut *ctx;
-        let peak = peak_of("subscript_rt_json_parse_begin", &mut ctx, |_| {
+        let peak = peak_of("subscript_rt_json_parse_begin", &mut ctx, || {
             // SAFETY: live exclusive Context and live string handle.
             unsafe { ffi::subscript_rt_json_parse_begin(pointer, input, 1) };
         });
@@ -1051,7 +1084,7 @@ fn every_covered_entry_stays_under_the_quota() {
             );
         }
         let pointer: *mut Context = &mut *ctx;
-        let peak = peak_of("subscript_rt_arr_sort", &mut ctx, |_| {
+        let peak = peak_of("subscript_rt_arr_sort", &mut ctx, || {
             // SAFETY: live exclusive Context, live array, live
             // comparator. Kind 2 is `f64` (`arrops::ElemKind::from_u32`).
             unsafe {
@@ -1074,7 +1107,7 @@ fn every_covered_entry_stays_under_the_quota() {
         let pointer: *mut Context = &mut *ctx;
         // SAFETY: live exclusive Context.
         let mark = unsafe { ffi::subscript_rt_boundary_scratch_mark(pointer) };
-        let peak = peak_of("subscript_rt_boundary_scratch_alloc", &mut ctx, |_| {
+        let peak = peak_of("subscript_rt_boundary_scratch_alloc", &mut ctx, || {
             // SAFETY: live exclusive Context.
             unsafe { ffi::subscript_rt_boundary_scratch_alloc(pointer, HUGE as u64, 1) };
         });
@@ -1083,12 +1116,63 @@ fn every_covered_entry_stays_under_the_quota() {
         measured.push(peak);
     }
 
+    // `print`: with no observer installed the stdout sink is Context
+    // memory that script output sizes. 65,536 lines of 4,096 bytes is
+    // 256 MiB. The trap stops the loop, as an emitted trap check does.
+    {
+        let mut ctx = quota_context();
+        let line = string_of(&mut ctx, b'p', 4_096);
+        let pointer: *mut Context = &mut *ctx;
+        let peak = peak_of("subscript_rt_print", &mut ctx, || {
+            for _ in 0..(HUGE / 4_096) {
+                // SAFETY: live exclusive Context and live string handle.
+                let trapped = unsafe {
+                    ffi::subscript_rt_print(pointer, line);
+                    (*pointer).trapped()
+                };
+                if trapped {
+                    break;
+                }
+            }
+        });
+        measured.push(peak);
+    }
+
+    // `cb_bind`: one record for each identity the script registers.
+    // 6,710,886 records of 40 bytes is 256 MiB.
+    {
+        let mut ctx = quota_context();
+        let pointer: *mut Context = &mut *ctx;
+        let record = std::mem::size_of::<subscript_runtime::CallbackBinding>();
+        let peak = peak_of("subscript_rt_cb_bind", &mut ctx, || {
+            for index in 1..=(HUGE / record) {
+                // SAFETY: live exclusive Context; `env` is null, as a
+                // boundary callback's is, and each `userdata1` is a
+                // distinct identity.
+                let trapped = unsafe {
+                    ffi::subscript_rt_cb_bind(
+                        pointer,
+                        descending as *const u8,
+                        std::ptr::null(),
+                        index as *mut u8,
+                        std::ptr::null_mut(),
+                    );
+                    (*pointer).trapped()
+                };
+                if trapped {
+                    break;
+                }
+            }
+        });
+        measured.push(peak);
+    }
+
     let names: Vec<&str> = measured.iter().map(|one| one.entry).collect();
     assert_eq!(names, COVERED, "every covered entry needs one case here");
     for one in &measured {
         println!(
-            "{}: peak {} bytes under a {QUOTA}-byte quota, trap {:?}",
-            one.entry, one.peak, one.trap
+            "{}: peak {} bytes under a {QUOTA}-byte quota, trap {:?}, floor fell {} bytes",
+            one.entry, one.peak, one.trap, one.fell
         );
     }
     let violations: Vec<String> = measured.iter().filter_map(Measurement::violation).collect();
@@ -1105,15 +1189,81 @@ fn a_request_with_no_quota_holds_the_whole_result() {
     let receiver = string(&mut ctx, b"x");
     let pointer: *mut Context = &mut *ctx;
     let megabyte = 1024 * 1024;
-    let before = LIVE.load(Ordering::Relaxed);
-    PEAK.store(before, Ordering::Relaxed);
+    let opened = open_window();
     // SAFETY: live exclusive Context and live string handle.
     let result = unsafe { ffi::subscript_rt_str_repeat(pointer, receiver, megabyte, 1) };
-    let peak = PEAK.load(Ordering::Relaxed).saturating_sub(before);
+    let (peak, fell) = close_window(opened);
     assert!(!result.is_null(), "no quota accepts the request");
+    println!("no quota: peak {peak} bytes, floor fell {fell} bytes");
     assert!(
         peak >= megabyte as usize,
-        "the request must hold its result: {peak} bytes"
+        "the request must hold its result: {peak} bytes, floor fell {fell} bytes"
+    );
+}
+
+/// The control of the `print` case: the sink charges only what it
+/// retains (§109.4 rule 2).
+///
+/// With an observer installed the line is delivered and not retained, so
+/// the same volume that traps above runs clean and charges nothing.
+/// `take_stdout` then releases the charge the unobserved sink holds.
+#[test]
+fn an_observed_print_charges_nothing_and_take_stdout_releases_the_charge() {
+    let _guard = one_at_a_time();
+
+    /// Counts the lines the observer receives.
+    unsafe extern "C" fn count(userdata: *mut std::ffi::c_void, _line: *const u8, _len: u64) {
+        // SAFETY: the test passes a live `u64`.
+        unsafe { *userdata.cast::<u64>() += 1 };
+    }
+
+    let mut ctx = quota_context();
+    let line = string_of(&mut ctx, b'p', 4_096);
+    let charged_before = ctx.charged_bytes();
+    let pointer: *mut Context = &mut *ctx;
+    let mut seen: u64 = 0;
+    // SAFETY: live exclusive Context; the observer and its userdata
+    // outlive the calls below.
+    unsafe {
+        ffi::subscript_rt_ctx_set_print_observer(
+            pointer,
+            Some(count),
+            std::ptr::from_mut(&mut seen).cast(),
+        );
+    }
+    let lines = HUGE / 4_096;
+    for _ in 0..lines {
+        // SAFETY: live exclusive Context and live string handle.
+        unsafe { ffi::subscript_rt_print(pointer, line) };
+    }
+    assert_eq!(seen, lines as u64, "the observer must see every line");
+    assert_eq!(ctx.trap_record().map(|record| record.kind), None);
+    assert_eq!(
+        ctx.charged_bytes(),
+        charged_before,
+        "an observed line charges nothing"
+    );
+    assert!(
+        ctx.stdout_bytes().is_empty(),
+        "an observed line is not retained"
+    );
+
+    // With the observer cleared the sink retains and charges, and
+    // `take_stdout` releases that charge.
+    // SAFETY: live exclusive Context.
+    unsafe { ffi::subscript_rt_ctx_set_print_observer(pointer, None, std::ptr::null_mut()) };
+    // SAFETY: live exclusive Context and live string handle.
+    unsafe { ffi::subscript_rt_print(pointer, line) };
+    assert_eq!(
+        ctx.charged_bytes(),
+        charged_before + 4_096,
+        "an unobserved line charges its bytes"
+    );
+    assert_eq!(ctx.take_stdout().len(), 4_097);
+    assert_eq!(
+        ctx.charged_bytes(),
+        charged_before,
+        "`take_stdout` releases the sink's charge"
     );
 }
 

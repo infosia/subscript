@@ -1,6 +1,6 @@
 // corpus: accept/a239-sandbox-source-depth-comment-default
-// purpose: Runs the r237 source under the default profile; the bracket-depth limit is the profile's.
-// exercises: sandbox-profile-twin, source-limit, bracket-depth, lexer-tokens
+// purpose: Runs the r237 source under the default profile; the nesting limit is the profile's.
+// exercises: sandbox-profile-twin, nesting-depth, parentheses, comments
 // questions: Q6
 // tsc: accepts; js-comparable: yes
 export function main(): void {

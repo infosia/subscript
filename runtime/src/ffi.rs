@@ -55,6 +55,11 @@ pub struct SubStrView {
 /// observer, or appends them and a newline to the Context stdout sink when
 /// no observer is installed.
 ///
+/// With no observer the sink is Context memory that script output sizes,
+/// so the line charges the allocation quota before the append (§109.4
+/// rule 2). Over the quota the line is dropped and the run stops with
+/// the `AllocationQuota` trap.
+///
 /// # Safety
 ///
 /// Shared contract; `s` is a live string handle.
@@ -66,9 +71,7 @@ pub unsafe extern "C" fn subscript_rt_print(ctx: *mut Context, s: *const u8) {
         return;
     }
     // SAFETY: `s` is a live string handle of this context.
-    let bytes = unsafe { ctx.str_bytes(s) };
-    let owned = bytes.to_vec();
-    ctx.print_line(&owned);
+    unsafe { ctx.print_str(s, 0) };
 }
 
 /// `Context.collect()`: explicitly invoked collection (Q7).
@@ -6285,7 +6288,7 @@ mod tests {
     fn ffi_clear_trap_checks_depth_and_preserves_state_on_both_tier_policies() {
         for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let kept = ctx.alloc(8, 1, 0);
-            ctx.print_line(b"before");
+            ctx.print_line(b"before", 0);
             ctx.bump_reload_epoch();
             let live_before = ctx.live_count();
             let epoch_before = ctx.reload_epoch();

@@ -1,88 +1,76 @@
 //! The sandbox-profile source limits (`specs/blocks/compiler.md` §109.2,
 //! S026), and the tests for every §109.2 rule.
 //!
-//! The parser's one lexer constructor runs the per-file scan, over every
-//! source file that is not ambient, before it hands out a lexer (§109.2
-//! rule 5). The depth is a count over the **lexer's tokens**, so a
-//! bracket inside a comment, a string, a template, or a
-//! regular-expression literal is not a bracket. The lexer is a flat loop
-//! over the bytes, so the cost of the scan does not grow with the depth.
+//! The parser's one lexer constructor refuses a source over the byte
+//! limit, over every source file that is not ambient, before it hands
+//! out a lexer (§109.2 rule 5). The limit is a count over bytes and
+//! needs no lexer, so it is exact and total. The parser's stack holds
+//! the deepest nesting a file of that size can spell (§109.2a), and the
+//! exact nesting bound is the checker's guard (rule 2), after the parse.
 //!
 //! S023 to S025 report at their own sites, so this module holds no code
 //! for them. It holds the pair every rule needs: the rejection under the
 //! sandbox profile, and the firing control that the same source checks
 //! clean under the default profile.
 
-use swc_common::{BytePos, Spanned};
+use swc_common::Spanned;
 use swc_ecma_ast as ast;
-use swc_ecma_parser::token::{Token, TokenAndSpan};
 
 use crate::diag::{Diagnostic, Pos, RuleCode};
 use crate::{Profile, SourceFile};
 
 use super::Checker;
 
-/// The largest source file the sandbox profile accepts, in bytes.
-pub(crate) const SOURCE_BYTE_LIMIT: usize = 1_048_576;
+/// The largest source file the sandbox profile accepts, in bytes
+/// (§109.2, S026).
+///
+/// The count is over bytes and needs no lexer, so it is exact and total:
+/// no construct of the grammar can spell more levels than the bytes of
+/// this limit hold. The compile thread's stack holds the deepest nesting
+/// a file of this size can spell;
+/// `the_byte_limit_and_the_stack_hold_the_contract_margin` verifies that
+/// against the measured parser cost of one level.
+pub(crate) const SOURCE_BYTE_LIMIT: usize = 131_072;
 
 /// The largest program the sandbox profile accepts, in bytes: the sum
 /// over every file the entry imports, mirrors excluded.
 pub(crate) const PROGRAM_BYTE_LIMIT: usize = 8_388_608;
 
-/// The largest bracket depth the sandbox profile accepts.
-pub(crate) const BRACKET_DEPTH_LIMIT: u32 = 256;
-
-/// The largest number of lexer tokens the sandbox profile accepts in one
-/// file (§109.2, S026).
-///
-/// The bracket count stops a nest that a bracket opens. Type arguments,
-/// prefix operators, conditional expressions, and assignment chains open
-/// no bracket, and the parser recurses once for each of their levels
-/// before any checker rule can run. Every parser level consumes at least
-/// one token, so this count is the proxy that bounds the parser's own
-/// recursion.
-///
-/// The number is one contract number, the same in every build. It is
-/// `stack / (cost × margin)`, rounded down to a power of two, and the
-/// stack of each build profile is the size that answers it
-/// (§109.2a). [`token_count_limit`] derives it from the pair of the
-/// build it compiles in, and a test compares the derived value against
-/// the contract's for both pairs, so no constant moves alone.
-pub(crate) const TOKEN_COUNT_LIMIT: u32 = token_count_limit();
-
-/// Derives the token limit from the compile thread's stack and the
-/// parser cost of this build (§109.2a).
-const fn token_count_limit() -> u32 {
-    let per_level = parser_stack_bytes_per_level() * TOKEN_LIMIT_MARGIN_TENTHS;
-    let levels = (crate::COMPILE_THREAD_STACK_BYTES as u64 * 10) / per_level;
-    1_u32 << levels.ilog2()
-}
-
 /// The parser's stack cost for one level in the build that compiles this
 /// code (§109.2a).
-pub(crate) const fn parser_stack_bytes_per_level() -> u64 {
+///
+/// The cost is a measured record of the parser, not a number the
+/// compiler reads: the byte limit and the compile thread's stack are the
+/// two facts a compile uses, and
+/// `the_byte_limit_and_the_stack_hold_the_contract_margin` compares them
+/// against this record.
+#[cfg(test)]
+pub(crate) const fn parser_stack_bytes_per_level_worst() -> u64 {
     if cfg!(debug_assertions) {
-        PARSER_STACK_BYTES_PER_LEVEL_UNOPTIMIZED
+        PARSER_STACK_BYTES_PER_LEVEL_WORST_UNOPTIMIZED
     } else {
-        PARSER_STACK_BYTES_PER_LEVEL
+        PARSER_STACK_BYTES_PER_LEVEL_WORST
     }
 }
 
-/// The parser's stack cost for one level of the deepest construct the
-/// bracket count does not bound, in an optimized build, in bytes
-/// (§109.2a: type arguments).
-pub(crate) const PARSER_STACK_BYTES_PER_LEVEL: u64 = 5_313;
+/// The worst product of parser stack cost and source density, in bytes
+/// of stack for one level, in an optimized build (§109.2a).
+///
+/// The parenthesis is the worst construct: one source byte opens one
+/// level. A file of [`SOURCE_BYTE_LIMIT`] bytes can therefore need
+/// `SOURCE_BYTE_LIMIT` times this cost in bytes of stack.
+#[cfg(test)]
+pub(crate) const PARSER_STACK_BYTES_PER_LEVEL_WORST: u64 = 6_750;
 
 /// The same cost in an unoptimized build, which is what the gate's own
 /// binaries carry (§109.2a).
-pub(crate) const PARSER_STACK_BYTES_PER_LEVEL_UNOPTIMIZED: u64 = 16_018;
+#[cfg(test)]
+pub(crate) const PARSER_STACK_BYTES_PER_LEVEL_WORST_UNOPTIMIZED: u64 = 20_385;
 
-/// The margin the token limit holds over the parser cost of its build,
-/// in tenths (§109.2a: 1.5).
-///
-/// One level costs at least one token, so the margin covers the levels a
-/// construct with a cheaper token cost can reach.
-pub(crate) const TOKEN_LIMIT_MARGIN_TENTHS: u64 = 15;
+/// The margin the compile thread's stack holds over the worst file the
+/// byte limit admits, in tenths (§109.2a: 1.5).
+#[cfg(test)]
+pub(crate) const STACK_MARGIN_TENTHS: u64 = 15;
 
 /// The deepest recursive descent the sandbox profile accepts
 /// (§109.2 rule 2). One expression, one type, or one statement is one
@@ -368,79 +356,27 @@ pub(crate) fn program_limit_diagnostic(files: &[SourceFile]) -> Option<Diagnosti
     ))
 }
 
-/// Reports the first §109.2 S026 per-file limit that one source is over
-/// (rule 5). The parser's one lexer constructor runs this scan, so no
-/// entry parses a source this function rejects.
+/// Reports the §109.2 S026 per-file byte limit that one source is over
+/// (rule 5). The parser's one lexer constructor calls this, so no entry
+/// parses a source this function rejects.
 ///
-/// The byte limit reports first, and it reads no token. `tokens` is then
-/// the lexer's own token stream and `at` maps a byte position to the
-/// [`Pos`] the parser reports for the same offset.
-///
-/// The bracket count is over the lexer's tokens: `(`, `[`, `{`, and the
-/// `${` of a template head each open one level, and `)`, `]`, and `}`
-/// each close one. `${` opens a level because the `}` that ends its
-/// expression is an ordinary `}` token, and because the parser recurses
-/// once for the expression it opens. A closer below zero resets the depth
-/// to zero.
-///
-/// The token count is over every token the lexer answers. It bounds the
-/// parser's recursion for the nests that open no bracket.
-///
-/// One flat loop reads both, so the cost of the scan does not grow with
-/// the depth. The first limit in token order reports. A lexer error does
-/// not stop the count; the caller reports that error beside this finding
-/// (§109.2 rule 5).
-pub(crate) fn source_scan(
-    name: &str,
-    bytes: usize,
-    tokens: &mut dyn Iterator<Item = TokenAndSpan>,
-    at: &dyn Fn(BytePos) -> Pos,
-) -> Option<Diagnostic> {
-    if bytes > SOURCE_BYTE_LIMIT {
-        return Some(Diagnostic::new(
-            RuleCode::S026,
-            format!(
-                "source file of {bytes} bytes is over the sandbox profile limit of \
-                 {SOURCE_BYTE_LIMIT} bytes"
-            ),
-            Pos::new(name, 1, 1),
-        ));
+/// The count is over bytes and reads no token, so the check is exact and
+/// total over the source. A count over tokens cannot be exact without
+/// the parser: a lexer with no parser reads `/` as division, so a quote
+/// or a bracket inside a regular-expression literal desyncs every later
+/// token of the file.
+pub(crate) fn source_limit_diagnostic(name: &str, bytes: usize) -> Option<Diagnostic> {
+    if bytes <= SOURCE_BYTE_LIMIT {
+        return None;
     }
-    let mut depth: u32 = 0;
-    let mut count: u32 = 0;
-    for spanned in tokens {
-        count += 1;
-        if count > TOKEN_COUNT_LIMIT {
-            return Some(Diagnostic::new(
-                RuleCode::S026,
-                format!(
-                    "source file of {count} tokens is over the sandbox profile limit of \
-                     {TOKEN_COUNT_LIMIT} tokens"
-                ),
-                at(spanned.span.lo),
-            ));
-        }
-        match spanned.token {
-            Token::LParen | Token::LBracket | Token::LBrace | Token::DollarLBrace => {
-                depth += 1;
-                if depth > BRACKET_DEPTH_LIMIT {
-                    return Some(Diagnostic::new(
-                        RuleCode::S026,
-                        format!(
-                            "bracket depth {depth} is over the sandbox profile limit of \
-                             {BRACKET_DEPTH_LIMIT}"
-                        ),
-                        at(spanned.span.lo),
-                    ));
-                }
-            }
-            Token::RParen | Token::RBracket | Token::RBrace => {
-                depth = depth.saturating_sub(1);
-            }
-            _ => {}
-        }
-    }
-    None
+    Some(Diagnostic::new(
+        RuleCode::S026,
+        format!(
+            "source file of {bytes} bytes is over the sandbox profile limit of \
+             {SOURCE_BYTE_LIMIT} bytes"
+        ),
+        Pos::new(name, 1, 1),
+    ))
 }
 
 #[cfg(test)]
@@ -584,10 +520,10 @@ mod tests {
         }
     }
 
-    /// The §109.2 rule 5 scan of one program source, through the
+    /// The §109.2 rule 5 byte check of one program source, through the
     /// parser's one lexer constructor. The parser does not run.
-    fn scan(source: &str) -> Option<Diagnostic> {
-        crate::parse::sandbox_scan(&SourceFile::new("limits.ts", source))
+    fn source_limit(source: &str) -> Option<Diagnostic> {
+        crate::parse::sandbox_source_limit(&SourceFile::new("limits.ts", source))
             .into_iter()
             .next()
     }
@@ -604,9 +540,9 @@ mod tests {
     #[test]
     fn s026_a_source_at_the_byte_limit_passes_and_one_byte_over_reports() {
         let at_limit = "/".repeat(SOURCE_BYTE_LIMIT);
-        assert!(scan(&at_limit).is_none());
+        assert!(source_limit(&at_limit).is_none());
         let over = "/".repeat(SOURCE_BYTE_LIMIT + 1);
-        let diagnostic = scan(&over).expect("one byte over the limit reports");
+        let diagnostic = source_limit(&over).expect("one byte over the limit reports");
         assert_eq!(diagnostic.code, RuleCode::S026);
         assert_eq!(diagnostic.pos, Pos::new("limits.ts", 1, 1));
         assert!(
@@ -614,134 +550,6 @@ mod tests {
             "{}",
             diagnostic.message
         );
-    }
-
-    #[test]
-    fn s026_a_depth_at_the_limit_passes_and_one_over_reports_at_that_bracket() {
-        let at_limit = format!(
-            "{}0{}",
-            "(".repeat(BRACKET_DEPTH_LIMIT as usize),
-            ")".repeat(BRACKET_DEPTH_LIMIT as usize)
-        );
-        assert!(scan(&at_limit).is_none());
-        let over = format!(
-            "{}0{}",
-            "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1),
-            ")".repeat(BRACKET_DEPTH_LIMIT as usize + 1)
-        );
-        let diagnostic = scan(&over).expect("one level over the limit reports");
-        assert_eq!(diagnostic.code, RuleCode::S026);
-        // The 257th `(` is the character at column 257 of line 1.
-        assert_eq!(
-            diagnostic.pos,
-            Pos::new("limits.ts", 1, BRACKET_DEPTH_LIMIT + 1)
-        );
-    }
-
-    #[test]
-    fn s026_a_closer_below_zero_resets_the_depth_to_zero() {
-        // 256 unmatched closers precede the openers; without the reset the
-        // scan would carry a negative depth and accept a deeper nest.
-        let source = format!(
-            "{}{}0",
-            ")".repeat(BRACKET_DEPTH_LIMIT as usize),
-            "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1)
-        );
-        let diagnostic = scan(&source).expect("the reset keeps the limit in force");
-        assert_eq!(diagnostic.code, RuleCode::S026);
-    }
-
-    /// The shape the external review measured: a byte count cancels
-    /// itself, because the `)` inside each comment decrements it. The
-    /// token count sees one `(` per level and no closer.
-    fn comment_levels(levels: usize) -> String {
-        format!(
-            "export function main(): void {{\n  const x: i32 = {}1{};\n  print(`${{x}}`);\n}}\n",
-            "(/*)*/".repeat(levels),
-            ")".repeat(levels)
-        )
-    }
-
-    #[test]
-    fn s026_counts_the_levels_that_a_byte_count_cancels() {
-        let diagnostic = sandbox_only_rejection(&comment_levels(257));
-        assert_eq!(diagnostic.code, RuleCode::S026);
-        assert_eq!(diagnostic.pos.line, 2);
-        assert!(
-            diagnostic.message.contains("sandbox profile"),
-            "{}",
-            diagnostic.message
-        );
-        // The firing control: the same shape under the limit checks clean.
-        // The function body's own `{` holds one level, so 255 levels is
-        // the deepest this shape reaches at the limit.
-        assert!(scan(&comment_levels(255)).is_none());
-    }
-
-    #[test]
-    fn s026_does_not_count_a_bracket_inside_a_comment_or_a_literal() {
-        let openers = "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1);
-        for source in [
-            format!("// {openers}\n"),
-            format!("/* {openers} */\n"),
-            format!("const s: string = \"{openers}\";\n"),
-            format!("const t: string = `{openers}`;\n"),
-        ] {
-            assert!(
-                scan(&source).is_none(),
-                "the token scan counts no bracket here: {source}"
-            );
-        }
-        // The firing control: the same openers as tokens report.
-        assert!(scan(&openers).is_some());
-    }
-
-    /// The scan reads the lexer with no parser, so the lexer has no
-    /// syntactic context for `/`: it answers a division operator and
-    /// reads the body of a regular-expression literal as ordinary
-    /// tokens. A bracket inside such a literal is therefore a bracket
-    /// the depth counts. Measured here, on a literal the default profile
-    /// accepts.
-    #[test]
-    fn s026_counts_a_bracket_inside_a_regular_expression_literal() {
-        let regex = |levels: usize| {
-            format!(
-                "export function main(): void {{\n  const r: RegExp = /{}a{}/;\n  print(`${{r.source.length}}`);\n}}\n",
-                "(".repeat(levels),
-                ")".repeat(levels)
-            )
-        };
-        let over = regex(BRACKET_DEPTH_LIMIT as usize + 1);
-        let diagnostic = scan(&over).expect("the scan counts the literal's brackets");
-        assert_eq!(diagnostic.code, RuleCode::S026);
-        assert!(
-            diagnostic.message.contains("bracket depth"),
-            "{}",
-            diagnostic.message
-        );
-        // The default profile rejects the same literal for a reason of
-        // its own: the regular-expression engine holds a nesting limit
-        // under 256, so this shape is no program either profile accepts.
-        let rejected = check(&over, Profile::Default);
-        assert_eq!(rejected.len(), 1, "{rejected:?}");
-        assert_eq!(rejected[0].code, RuleCode::S100);
-    }
-
-    #[test]
-    fn s026_counts_a_template_substitution_as_one_opener() {
-        // `${` opens a brace token in SWC, and the `}` that ends the
-        // expression closes it, so each level counts exactly once.
-        let nest = |levels: usize| {
-            format!(
-                "{}1{}",
-                "`${".repeat(levels),
-                "}`".repeat(levels).to_string()
-            )
-        };
-        assert!(scan(&nest(BRACKET_DEPTH_LIMIT as usize)).is_none());
-        let diagnostic =
-            scan(&nest(BRACKET_DEPTH_LIMIT as usize + 1)).expect("257 `${` levels report");
-        assert_eq!(diagnostic.code, RuleCode::S026);
     }
 
     /// §109.2a: a refused compile thread is a rejection under the
@@ -780,191 +588,102 @@ mod tests {
         assert!(check(SOURCE, Profile::Sandbox).is_empty());
     }
 
-    /// §109.2a: the derived limit is the contract's number, and the
-    /// three constants it reads are the contract's measured pair and its
-    /// margin. A change to one of them alone fails here, so the
-    /// derivation cannot drift.
+    /// §109.2a: the compile thread's stack holds the deepest nesting a
+    /// file of [`SOURCE_BYTE_LIMIT`] bytes can spell, in each build, with
+    /// the contract's margin of 1.5.
+    ///
+    /// The four contract numbers are pinned here and the margin is
+    /// derived from them, so one constant that moves alone fails.
     #[test]
-    fn the_token_limit_follows_from_the_stack_and_the_cost() {
-        assert_eq!(TOKEN_COUNT_LIMIT, 131_072);
-        assert_eq!(TOKEN_LIMIT_MARGIN_TENTHS, 15);
-        assert_eq!(PARSER_STACK_BYTES_PER_LEVEL, 5_313);
-        assert_eq!(PARSER_STACK_BYTES_PER_LEVEL_UNOPTIMIZED, 16_018);
+    fn the_byte_limit_and_the_stack_hold_the_contract_margin() {
+        assert_eq!(SOURCE_BYTE_LIMIT, 131_072);
+        assert_eq!(PROGRAM_BYTE_LIMIT, 8_388_608);
+        assert_eq!(STACK_MARGIN_TENTHS, 15);
+        assert_eq!(PARSER_STACK_BYTES_PER_LEVEL_WORST, 6_750);
+        assert_eq!(PARSER_STACK_BYTES_PER_LEVEL_WORST_UNOPTIMIZED, 20_385);
 
         // The stack of the build this test runs in is the one the pair
-        // names, and the limit above is what that pair derives.
+        // names, and the cost selector answers that build's number.
         let (stack, cost) = if cfg!(debug_assertions) {
-            (4_294_967_296_u64, PARSER_STACK_BYTES_PER_LEVEL_UNOPTIMIZED)
+            (
+                4_294_967_296_u64,
+                PARSER_STACK_BYTES_PER_LEVEL_WORST_UNOPTIMIZED,
+            )
         } else {
-            (1_073_741_824_u64, PARSER_STACK_BYTES_PER_LEVEL)
+            (2_147_483_648_u64, PARSER_STACK_BYTES_PER_LEVEL_WORST)
         };
         assert_eq!(crate::COMPILE_THREAD_STACK_BYTES as u64, stack);
-        assert_eq!(parser_stack_bytes_per_level(), cost);
+        assert_eq!(parser_stack_bytes_per_level_worst(), cost);
 
-        // Both pairs derive the one contract number, each with a margin
-        // of at least 1.5. One constant that moves alone fails here.
-        for (build, stack, cost) in [
-            ("optimized", 1_073_741_824_u64, PARSER_STACK_BYTES_PER_LEVEL),
-            (
-                "unoptimized",
-                4_294_967_296_u64,
-                PARSER_STACK_BYTES_PER_LEVEL_UNOPTIMIZED,
-            ),
-        ] {
-            let levels = (stack * 10) / (cost * TOKEN_LIMIT_MARGIN_TENTHS);
-            let derived = 1_u64 << levels.ilog2();
-            assert_eq!(derived, u64::from(TOKEN_COUNT_LIMIT), "{build}");
-            let held = u64::from(TOKEN_COUNT_LIMIT) * cost;
-            assert!(
-                held * TOKEN_LIMIT_MARGIN_TENTHS / 10 <= stack,
-                "{build}: {held} bytes at the limit, against a {stack}-byte stack"
-            );
-        }
-    }
-
-    /// §109.2 S026: the token count bounds the parser's recursion for
-    /// every nest that opens no bracket.
-    #[test]
-    fn s026_a_token_count_at_the_limit_passes_and_one_over_reports() {
-        // One empty statement is one token, so this is the cheapest
-        // token flood a source can hold.
-        let at_limit = ";".repeat(TOKEN_COUNT_LIMIT as usize);
-        assert!(scan(&at_limit).is_none());
-        let over = ";".repeat(TOKEN_COUNT_LIMIT as usize + 1);
-        let diagnostic = scan(&over).expect("one token over the limit reports");
-        assert_eq!(diagnostic.code, RuleCode::S026);
+        // The worst file the byte limit admits, against the stack of the
+        // build this test runs in.
+        let worst = SOURCE_BYTE_LIMIT as u64 * cost;
         assert!(
-            diagnostic.message.contains("tokens"),
-            "{}",
-            diagnostic.message
+            worst * STACK_MARGIN_TENTHS / 10 <= stack,
+            "{worst} bytes at the limit, against a {stack}-byte stack"
         );
-        // The firing control: the same source under the default profile
-        // checks clean.
-        assert!(check(&over, Profile::Default).is_empty());
-        assert_eq!(check(&over, Profile::Sandbox)[0].code, RuleCode::S026);
     }
 
-    #[test]
-    fn s026_reports_the_byte_limit_before_the_depth() {
-        let deep = format!(
-            "{}0{}",
-            "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1),
-            ")".repeat(BRACKET_DEPTH_LIMIT as usize + 1)
-        );
-        let padding = " ".repeat(SOURCE_BYTE_LIMIT + 1 - deep.len());
-        let diagnostic = scan(&format!("{deep}{padding}")).expect("a source over both reports");
-        assert!(
-            diagnostic.message.contains("bytes"),
-            "the byte limit reports first: {}",
-            diagnostic.message
-        );
-        // The firing control: the same brackets under the byte limit
-        // report the depth.
-        assert!(scan(&deep)
-            .expect("the depth reports on its own")
-            .message
-            .contains("bracket depth"));
-    }
-
-    /// §109.2 rule 5: a lexer error does not abandon the scan. The scan
-    /// reads every token, so its findings are total over the source, and
-    /// the rejection carries the lexer's error as the parse error.
+    /// §109.2 rule 5: the byte check runs before the lexer exists, so a
+    /// source over the limit reports S026 alone and no parse error of
+    /// that source joins it.
     ///
-    /// The nest after the openers is 300,000 type-argument levels, which
-    /// is deeper than the compile thread's stack holds in either build
-    /// (§109.2a): a parse of this source aborts the process. The test
+    /// The nest here is 300,000 type-argument levels, which is deeper
+    /// than the compile thread's stack holds in either build (§109.2a),
+    /// and the unterminated string before it is a lexer error. The test
     /// returns, so the parser did not run.
     #[test]
-    fn s026_reports_the_scan_and_the_lexer_error_of_a_source_the_lexer_rejects() {
+    fn s026_reports_the_byte_limit_and_parses_nothing() {
         const LEVELS: usize = 300_000;
-        let openers = "(".repeat(300);
-        let closers = ")".repeat(300);
         let nest = format!("{}i32{}", "A<".repeat(LEVELS), ">".repeat(LEVELS));
-        let source =
-            format!("const s: string = \"x\nconst p: i32 = {openers}1{closers};\nlet d: {nest};\n");
+        let source = format!("const s: string = \"x\nlet d: {nest};\n");
         assert!(
-            source.len() <= SOURCE_BYTE_LIMIT,
-            "the source must stay under the byte limit: {} bytes",
+            source.len() > SOURCE_BYTE_LIMIT,
+            "the source must be over the byte limit: {} bytes",
             source.len()
         );
         let reported = check(&source, Profile::Sandbox);
-        assert_eq!(reported.len(), 2, "{reported:?}");
+        assert_eq!(reported.len(), 1, "{reported:?}");
         assert_eq!(reported[0].code, RuleCode::S026);
         assert!(
-            reported[0].message.contains("bracket depth"),
+            reported[0].message.contains("bytes"),
             "{}",
             reported[0].message
         );
-        assert_eq!(reported[1].code, RuleCode::S100);
-        assert!(
-            reported[1].message.contains("parse error"),
-            "{}",
-            reported[1].message
+        // The firing control: the same shape under the byte limit parses,
+        // and its lexer error reports.
+        let short = format!(
+            "const s: string = \"x\nlet d: {}i32{};\n",
+            "A<".repeat(8),
+            ">".repeat(8)
         );
-        // The firing control: with the string terminated the same
-        // openers report the depth on their own, and no parse error
-        // joins it.
-        let sound = source.replacen("\"x\n", "\"x\";\n", 1);
-        let only_depth = check(&sound, Profile::Sandbox);
-        assert_eq!(only_depth.len(), 1, "{only_depth:?}");
-        assert_eq!(only_depth[0].code, RuleCode::S026);
+        let parsed = check(&short, Profile::Sandbox);
+        assert_eq!(parsed.len(), 1, "{parsed:?}");
+        assert_eq!(parsed[0].code, RuleCode::S100);
     }
 
     #[test]
-    fn s026_does_not_scan_an_ambient_source() {
-        let deep = format!(
-            "{}0{}",
-            "(".repeat(BRACKET_DEPTH_LIMIT as usize + 1),
-            ")".repeat(BRACKET_DEPTH_LIMIT as usize + 1)
-        );
-        let ambient = SourceFile::ambient("mirror.d.ts", deep.clone());
-        assert!(crate::parse::sandbox_scan(&ambient).is_empty());
+    fn s026_does_not_read_an_ambient_source() {
+        let over = "/".repeat(SOURCE_BYTE_LIMIT + 1);
+        let ambient = SourceFile::ambient("mirror.d.ts", over.clone());
+        assert!(crate::parse::sandbox_source_limit(&ambient).is_empty());
         // The firing control: the same text in a program file reports.
-        let program = SourceFile::new("program.ts", deep);
-        assert_eq!(crate::parse::sandbox_scan(&program).len(), 1);
+        let program = SourceFile::new("program.ts", over);
+        assert_eq!(crate::parse::sandbox_source_limit(&program).len(), 1);
     }
 
+    /// §109.2 rule 2: the nesting guard is the one depth bound, so a
+    /// parenthesis nest over it reports after the parse.
     #[test]
     fn s026_rejects_a_deep_source_under_the_sandbox_profile_only() {
-        let diagnostic = sandbox_only_rejection(&nested(BRACKET_DEPTH_LIMIT as usize + 1));
+        let diagnostic = sandbox_only_rejection(&nested(257));
         assert_eq!(diagnostic.code, RuleCode::S026);
         assert!(
-            diagnostic.message.contains("sandbox profile"),
+            diagnostic.message.contains("nesting depth")
+                && diagnostic.message.contains("sandbox profile"),
             "{}",
             diagnostic.message
         );
-    }
-
-    /// §109.2: the lexer is a flat loop over the bytes, so the scan
-    /// returns from a small stack at a depth no parser reaches. The
-    /// thread here is 2 MiB, the size of an ordinary test thread.
-    #[test]
-    fn s026_scans_a_deep_source_from_a_two_mebibyte_stack() {
-        let sources = [
-            ("12,000 comment levels", comment_levels(12_000)),
-            (
-                "12,000 template openers",
-                format!("{}1{}", "`${".repeat(12_000), "}`".repeat(12_000)),
-            ),
-            // 58,254 lines of 18 bytes is 1,048,572: the largest source
-            // under the byte limit, so the lexer runs on all of it.
-            ("1 MiB of source", "const x: i32 = 1;\n".repeat(58_254)),
-        ];
-        let scanned = std::thread::Builder::new()
-            .stack_size(2 * 1024 * 1024)
-            .spawn(move || {
-                for (name, source) in sources {
-                    let started = std::time::Instant::now();
-                    let reported = scan(&source).is_some();
-                    println!(
-                        "{name}: {} bytes, {:?}, reported={reported}",
-                        source.len(),
-                        started.elapsed()
-                    );
-                }
-            })
-            .expect("spawn the scan thread");
-        scanned.join().expect("the scan returns from a 2 MiB stack");
     }
 
     /// One `main` whose single declaration nests `count` levels of one
@@ -1009,24 +728,15 @@ mod tests {
     /// §109.2 rule 2: each of these four shapes is over the limit at 257
     /// levels, and each checks clean under the default profile.
     ///
-    /// The first three open no bracket token, so the nesting guard is the
-    /// one limit that stops them. An arrow level opens a parenthesis, so
-    /// the bracket count reaches 257 first and reports there.
+    /// The nesting guard is the one depth bound, so every shape reports
+    /// through it, whether or not its level opens a bracket.
     #[test]
     fn s026_rejects_every_nesting_shape_over_the_limit() {
-        for (index, (name, source)) in nesting_shapes(NESTING_DEPTH_LIMIT as usize + 1)
-            .into_iter()
-            .enumerate()
-        {
+        for (name, source) in nesting_shapes(NESTING_DEPTH_LIMIT as usize + 1) {
             let sandbox = check(&source, Profile::Sandbox);
             assert_eq!(sandbox[0].code, RuleCode::S026, "{name}: {sandbox:?}");
-            let limit = if index == 3 {
-                "bracket depth"
-            } else {
-                "nesting depth"
-            };
             assert!(
-                sandbox[0].message.contains(limit)
+                sandbox[0].message.contains("nesting depth")
                     && sandbox[0].message.contains("sandbox profile"),
                 "{name}: {}",
                 sandbox[0].message
@@ -1187,13 +897,13 @@ mod tests {
         assert!(check(&at_limit, Profile::Sandbox).is_empty());
     }
 
-    /// §109.2: the checker runs on a 64 MiB thread, so the depth a source
-    /// can reach is a compiler fact and not the caller's thread. This test
-    /// runs on an ordinary debug test thread, which holds about 65 levels
-    /// on its own.
+    /// §109.2: the checker runs on the compile thread, so the depth a
+    /// source can reach is a compiler fact and not the caller's thread.
+    /// This test runs on an ordinary debug test thread, which holds about
+    /// 65 levels on its own.
     #[test]
     fn the_compile_thread_carries_a_depth_no_caller_thread_holds() {
-        for depth in [BRACKET_DEPTH_LIMIT as usize + 1, 2_000] {
+        for depth in [257, 2_000] {
             let checked = crate::on_the_compile_thread(|| {
                 crate::check_program(&[SourceFile::new("deep.ts", nested(depth))])
             });

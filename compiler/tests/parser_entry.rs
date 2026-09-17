@@ -1,7 +1,8 @@
-//! §109.2 rule 5 total check: the parser's entry owns the S026 scan.
+//! §109.2 rule 5 total check: the parser's entry owns the S026 byte
+//! check.
 //!
 //! A lexer or a parser that another site builds is a parser entry
-//! without the scan, and no review can find every such site. This test
+//! without the check, and no review can find every such site. This test
 //! reads every Rust source of `compiler/src` and `cli/src` and fails on
 //! one construction outside `parse.rs`'s one lexer constructor.
 
@@ -110,14 +111,16 @@ fn every_lexer_and_parser_is_built_in_the_one_constructor() {
     }
 
     assert!(read > 30, "the reader found {read} sources; it is wrong");
+    // `parse.rs` holds two constructions: the one `Lexer::new` of the
+    // constructor, and the `Parser::new_from` that consumes its lexer.
     assert!(
-        inside >= 3,
+        inside >= 2,
         "the reader found {inside} constructions in {PARSER_FILE}; it is wrong"
     );
     assert!(
         outside.is_empty(),
         "a lexer or a parser outside `{CONSTRUCTOR}` of {PARSER_FILE} parses \
-         without the §109.2 rule 5 scan: {outside:?}"
+         without the §109.2 rule 5 byte check: {outside:?}"
     );
 }
 

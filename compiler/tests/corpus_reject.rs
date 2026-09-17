@@ -349,7 +349,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r238-sandbox-nesting-generic.ts", RuleCode::S026, 9),
     ("r239-sandbox-nesting-unary.ts", RuleCode::S026, 9),
     ("r240-sandbox-frame.ts", RuleCode::S027, 8),
-    ("r241-sandbox-token-count.ts", RuleCode::S026, 10),
+    ("r241-sandbox-source-bytes.ts", RuleCode::S026, 1),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

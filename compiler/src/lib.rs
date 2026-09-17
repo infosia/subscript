@@ -229,17 +229,17 @@ fn check_on_this_thread(
 /// caller runs on. S026's nesting limit of 256 is far under the capacity
 /// this stack gives.
 ///
-/// S026's token limit is one contract number in every build, 131,072
-/// per file. This size is the implementation's fact: the deepest
-/// construct the bracket count does not bound costs 5,313 stack bytes
-/// for each level it nests in an optimized build and 16,018 in an
-/// unoptimized one, so each build gets the stack that holds the limit
-/// with a margin of at least 1.5 (§109.2a). The token limit of S026
-/// carries the derivation and the test that pins the constants together.
+/// S026's byte limit is one contract number in every build. This size is
+/// the implementation's fact: the worst product of parser stack cost and
+/// source density is the parenthesis, at one source byte for one level,
+/// so each build gets the stack that holds the deepest nesting a file of
+/// the byte limit can spell, with a margin of at least 1.5 (§109.2a).
+/// `check::profile` holds the measured cost of one level in each build
+/// and the test that pins this size to it.
 pub const COMPILE_THREAD_STACK_BYTES: usize = if cfg!(debug_assertions) {
     4_294_967_296
 } else {
-    1_073_741_824
+    2_147_483_648
 };
 
 std::thread_local! {

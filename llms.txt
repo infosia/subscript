@@ -14,7 +14,7 @@ subscript is a deterministic, TypeScript-shaped embedded language with a closed 
 - Add `--deny-warnings` when warnings must fail the check.
 - Run `subscript run file.ts` to execute it under the development tier.
 - Run `subscript bind --header host.h -o host.generated.d.ts` to generate the ambient mirror for a C header.
-- Add `--profile sandbox` to `check`, `build`, or `run` for content the host did not write: it rejects `Context.free`, `Context.fromBytes`, workers, a source over a byte, token, or nesting limit, and a frame over 65,536 bytes (S023 to S027), and it adds the host-set interrupt, allocation quota, and stack budget. The token limit is 131,072 per file.
+- Add `--profile sandbox` to `check`, `build`, or `run` for content the host did not write: it rejects `Context.free`, `Context.fromBytes`, workers, a source over a byte or nesting limit, and a frame over 65,536 bytes (S023 to S027), and it adds the host-set interrupt, allocation quota, and stack budget. The byte limit is 131,072 per file and 8,388,608 per program.
 
 Do not read `specs/` for current-state answers: it is decision history, not the generated language contract.
 

@@ -924,12 +924,14 @@ fn profile_selects_the_sandbox_rules_and_rejects_every_other_name() -> Result<()
 /// §109.2 rule 5: the parser's entry owns the S026 scan, so no command
 /// parses a source the scan rejects.
 ///
-/// `deep.ts` nests 300,000 type arguments in 900,012 bytes, under the
-/// per-file byte limit. At the pin the loader parsed it to read its
-/// imports, and the compile thread overflowed its stack: `check
-/// --profile sandbox` aborted with exit 134. `octal.ts` puts a legacy
-/// octal literal before 300 parentheses; at the pin the loader reported
-/// the octal parse error and no S026.
+/// `deep.ts` nests 300,000 type arguments in 900,012 bytes, over the
+/// per-file byte limit of 131,072. Every command reports S026 and no
+/// command parses it: the parser recurses once for each level, and the
+/// compile thread's stack does not hold 300,000 of them.
+///
+/// `octal.ts` puts a legacy octal literal, which the lexer refuses, in a
+/// file padded past the byte limit. Under the profile S026 reports
+/// alone, so the byte check ran before the lexer.
 #[test]
 fn s026_rejects_a_source_before_any_command_parses_it() -> Result<(), String> {
     let dir = TestDir::new()?;
@@ -940,12 +942,7 @@ fn s026_rejects_a_source_before_any_command_parses_it() -> Result<(), String> {
     )?;
     let octal = dir.write(
         "octal.ts",
-        format!(
-            "let o: i32 = 010;\nlet p: i32 = {}1{};\n",
-            "(".repeat(300),
-            ")".repeat(300)
-        )
-        .as_bytes(),
+        format!("let o: i32 = 010;\n// {}\n", "x".repeat(131_072)).as_bytes(),
     )?;
 
     for source in [&deep, &octal] {
@@ -997,6 +994,20 @@ fn s026_rejects_a_source_before_any_command_parses_it() -> Result<(), String> {
         "{rendered}"
     );
     assert!(!rendered.contains("S026"), "{rendered}");
+    // The byte check runs before the lexer, so the profile reports S026
+    // alone and the octal error of the same file does not join it.
+    let profiled = output(
+        subscript()
+            .arg("check")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&octal),
+    )?;
+    let rendered = String::from_utf8_lossy(&profiled.stderr).into_owned();
+    assert!(
+        rendered.contains("error[S026]") && !rendered.contains("S100"),
+        "{rendered}"
+    );
     Ok(())
 }
 

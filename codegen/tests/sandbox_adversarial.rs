@@ -7,8 +7,8 @@
 //!
 //! | Shape | Must |
 //! |---|---|
-//! | a 1,048,577-byte source | reject S026 |
-//! | a 257-deep bracket source | reject S026 |
+//! | a 131,073-byte source | reject S026 |
+//! | a 257-deep parenthesis source | reject S026 |
 //! | recursion with no base case | trap `stack-budget` on both tiers |
 //! | an allocation loop that keeps every block live | trap `allocation-quota` on both tiers |
 //! | `Context.fromBytes` of forged bytes | reject S024 |
@@ -25,10 +25,10 @@ use subscript_compiler::{
 use subscript_runtime::TrapKind;
 
 /// §109.2 S026: the byte limit of one source file.
-const SOURCE_BYTE_LIMIT: usize = 1_048_576;
+const SOURCE_BYTE_LIMIT: usize = 131_072;
 
-/// §109.2 S026: the bracket-depth limit.
-const BRACKET_DEPTH_LIMIT: usize = 256;
+/// §109.2 rule 2: the nesting limit of the checker's descent.
+const NESTING_DEPTH_LIMIT: usize = 256;
 
 fn files(source: String) -> Vec<SourceFile> {
     vec![SourceFile::new("adversarial.ts", source)]
@@ -142,8 +142,9 @@ fn source_of_length(bytes: usize) -> String {
     source
 }
 
-/// A program whose bracket depth reaches `depth`: one parenthesized
-/// integer inside the entry's braces, which are the first level.
+/// A program whose nesting depth reaches `depth`: one parenthesized
+/// integer inside the entry's body, whose declaration is the first
+/// level.
 fn source_of_depth(depth: usize) -> String {
     let inner = depth - 1;
     format!(
@@ -156,7 +157,7 @@ fn source_of_depth(depth: usize) -> String {
 #[test]
 fn a_source_one_byte_over_the_limit_rejects_s026() {
     let source = source_of_length(SOURCE_BYTE_LIMIT + 1);
-    assert_profile_rejects("1,048,577-byte source", &source, RuleCode::S026);
+    assert_profile_rejects("131,073-byte source", &source, RuleCode::S026);
     // The limit itself is accepted, so the rejection is the extra byte.
     let at_the_limit = source_of_length(SOURCE_BYTE_LIMIT);
     assert_eq!(
@@ -164,30 +165,31 @@ fn a_source_one_byte_over_the_limit_rejects_s026() {
         Ok(()),
         "the profile rejected a source of exactly the limit"
     );
-    println!("1,048,576-byte source: the profile accepts it");
+    println!("131,072-byte source: the profile accepts it");
 }
 
+/// §109.2 rule 2: the nesting guard is the one depth bound, so a
+/// parenthesis nest over it reports after the parse.
 #[test]
-fn a_source_one_bracket_over_the_limit_rejects_s026() {
-    let source = source_of_depth(BRACKET_DEPTH_LIMIT + 1);
-    assert_profile_rejects("257-deep bracket source", &source, RuleCode::S026);
-    // §109.2 rule 2: a parenthesis is a bracket token and an expression
-    // node, and the declaration statement and the literal are nodes of
-    // their own, so the nesting guard binds one level before the bracket
-    // count does. 255 is the deepest parenthesis source the profile
+fn a_source_one_parenthesis_over_the_limit_rejects_s026() {
+    let source = source_of_depth(NESTING_DEPTH_LIMIT + 1);
+    assert_profile_rejects("257-deep parenthesis source", &source, RuleCode::S026);
+    // A parenthesis is an expression node, and the declaration statement
+    // and the literal are nodes of their own, so 254 parentheses reach
+    // the limit. 255 is the deepest parenthesis source the profile
     // accepts.
-    let at_the_limit = source_of_depth(BRACKET_DEPTH_LIMIT - 1);
+    let at_the_limit = source_of_depth(NESTING_DEPTH_LIMIT - 1);
     assert_eq!(
         check_under(Profile::Sandbox, &at_the_limit),
         Ok(()),
         "the profile rejected the deepest accepted parenthesis source"
     );
     assert_eq!(
-        check_under(Profile::Sandbox, &source_of_depth(BRACKET_DEPTH_LIMIT)),
+        check_under(Profile::Sandbox, &source_of_depth(NESTING_DEPTH_LIMIT)),
         Err(RuleCode::S026),
         "one level more must report"
     );
-    println!("255-deep bracket source: the profile accepts it; 256 reports");
+    println!("255-deep parenthesis source: the profile accepts it; 256 reports");
 }
 
 #[test]
@@ -280,8 +282,8 @@ export function main(): void {\n\
     assert_profile_rejects("Context.fromBytes of forged bytes", FORGED, RuleCode::S024);
 }
 
-/// §109.2 rule 2: the four shapes the amendment names. None of the first
-/// three opens a bracket token, so S026's bracket count sees nothing.
+/// §109.2 rule 2: the four shapes the amendment names. The nesting guard
+/// is the one depth bound, so every one of them reports through it.
 ///
 /// Each shape is far past the limit, so the guard stops the descent long
 /// before any later stage walks the tree.
@@ -425,64 +427,69 @@ fn a_deep_source_runs_through_the_dev_jit_from_a_two_mebibyte_thread() {
     println!("2,000 nested parentheses: the dev JIT runs it from a 2 MiB caller thread");
 }
 
-/// §109.2 S026: the token limit is the proxy that bounds the parser.
+/// A regular-expression literal that holds a backtick, then a nest of
+/// `levels` type arguments (the reviewer's `tick.ts`).
 ///
-/// Type arguments and assignment chains open no bracket, so the bracket
-/// count sees nothing and the parser recurses once for each level before
-/// any checker rule can run. Each source here is far over the limit, so
-/// S026 reports before the parser; each control is under it, so the
-/// parser runs the whole nest and the nesting guard reports instead.
-///
-/// The control depth is a sixteenth of the limit. The deepest nest the
-/// limit admits is 56,160 type-argument levels, which this compiler
-/// parses in 899 MB of stack unoptimized and 298 MB optimized. The
-/// compile thread holds both (§109.2a), and the control holds them with
-/// a margin over 8x.
+/// A lexer with no parser reads the `/` as division and the backtick as
+/// a template head, so every later token of the file desyncs. §109.2
+/// rule 5 retires the token and bracket counts for that reason: the byte
+/// limit reads no token, so this shape carries no lexical trap for it.
+fn regex_then_type_nest(levels: usize) -> String {
+    format!(
+        "export function main(): void {{\n  const r: RegExp = /`/;\n  const deep: {}i32{} = [];\n  print(`${{r.source.length}}${{deep.length}}`);\n}}\n",
+        "Array<".repeat(levels),
+        ">".repeat(levels)
+    )
+}
+
+/// §109.2 rule 5: the reviewer's `tick.ts`. Over the byte limit the byte
+/// check reports and the parser never runs; under it the parser runs the
+/// whole nest and the nesting guard reports.
 #[test]
-fn a_source_at_the_token_limit_parses_inside_the_compile_thread() {
-    /// §109.2 S026: the token limit of one file.
-    const TOKEN_COUNT_LIMIT: usize = 131_072;
-    /// The control depth: the parser runs the whole nest below it.
-    const CONTROL_LEVELS: usize = TOKEN_COUNT_LIMIT / 16;
-    // Two tokens for each level, and five tokens for `const deep: … = [];`
-    // outside the nest.
-    let type_arguments = |levels: usize| {
-        format!(
-            "export function main(): void {{\n  const deep: {}i32{} = [];\n  print(`${{deep.length}}`);\n}}\n",
-            "Array<".repeat(levels),
-            ">".repeat(levels)
-        )
-    };
-    let assignments = |levels: usize| {
-        format!(
-            "export function main(): void {{\n  let a: i32 = 0;\n  {}1;\n  print(`${{a}}`);\n}}\n",
-            "a = ".repeat(levels)
-        )
-    };
-    for (shape, source) in [
-        ("type arguments", type_arguments(TOKEN_COUNT_LIMIT)),
-        ("assignment chain", assignments(TOKEN_COUNT_LIMIT)),
-    ] {
-        assert_eq!(
-            check_under(Profile::Sandbox, &source),
-            Err(RuleCode::S026),
-            "{shape}: the token limit must report"
-        );
-        println!("{shape} at {TOKEN_COUNT_LIMIT} levels: S026 before the parser");
+fn a_regex_literal_before_a_deep_type_nest_rejects_s026() {
+    // 300,000 levels is 2,100,000 bytes, far over the byte limit. The
+    // default profile keeps no limit and would parse every level, so
+    // this shape carries no default-profile control; the shape below is
+    // the control that the limit is the profile's.
+    let over = regex_then_type_nest(300_000);
+    assert!(over.len() > SOURCE_BYTE_LIMIT, "{} bytes", over.len());
+    assert_eq!(
+        check_under(Profile::Sandbox, &over),
+        Err(RuleCode::S026),
+        "the byte limit must report before the parser"
+    );
+    println!("regex literal before 300,000 type levels: S026 before the parser");
+
+    // The same shape inside the byte limit: the parser runs it and the
+    // nesting guard reports after the parse.
+    let under = regex_then_type_nest(1_000);
+    assert!(under.len() <= SOURCE_BYTE_LIMIT, "{} bytes", under.len());
+    assert_profile_rejects(
+        "regex literal before 1,000 type levels",
+        &under,
+        RuleCode::S026,
+    );
+}
+
+/// §109.2 rule 5: the reviewer's `quotereplace.ts`. A quote inside a
+/// regular-expression literal, on 257 lines.
+///
+/// The retired token scan read each `"` as the start of a string
+/// literal, so it lost the `)` of every line and reported a false S026
+/// at 257 and a false S100 for an unterminated string. The byte check
+/// reads no token, so the source checks clean and runs.
+#[test]
+fn a_quote_inside_a_regex_literal_checks_clean_and_runs() {
+    let mut source =
+        String::from("export function main(): void {\n  let s: string = \"a\\\"b\";\n");
+    for _ in 0..257 {
+        source.push_str("  s = s.replace(/\"/g, \"0\");\n");
     }
-    // The control: the control depth is under the token limit, so the
-    // parser runs the whole nest and the nesting guard reports.
-    for (shape, source) in [
-        ("type arguments", type_arguments(CONTROL_LEVELS)),
-        ("assignment chain", assignments(CONTROL_LEVELS)),
-    ] {
-        assert_eq!(
-            check_under(Profile::Sandbox, &source),
-            Err(RuleCode::S026),
-            "{shape}: the nesting guard must report"
-        );
-        println!(
-            "{shape} at {CONTROL_LEVELS} levels: the parser returns and the nesting guard reports"
-        );
-    }
+    source.push_str("  print(s);\n}\n");
+    assert_eq!(
+        check_under(Profile::Sandbox, &source),
+        Ok(()),
+        "257 quoted regex literals must check clean under the profile"
+    );
+    assert_both_tiers_run("quote inside a regex literal", &source, b"a0b\n");
 }

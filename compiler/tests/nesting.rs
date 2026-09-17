@@ -8,7 +8,10 @@
 
 use std::time::{Duration, Instant};
 
-use subscript_compiler::{check_program, check_warnings, hir, on_the_compile_thread, SourceFile};
+use subscript_compiler::{
+    check_program, check_warnings, hir, on_the_compile_thread, parse_import_specifiers, Profile,
+    SourceFile,
+};
 
 /// The chain length every test here builds.
 const DEPTH: usize = 200;
@@ -145,4 +148,36 @@ fn a_bare_check_returns_from_a_two_mebibyte_caller_thread() {
         .expect("the check returns from a 2 MiB caller thread");
     assert_eq!(checked, Ok(1), "the deep source must check clean");
     println!("2,000 nested parentheses: a bare check returns from a 2 MiB caller thread");
+}
+
+/// §109.2 rule 3: `parse_import_specifiers` spawns the compile thread
+/// itself, so every public entry that parses gets the stack bound from
+/// the API.
+///
+/// The source nests 40,000 type arguments in 120,041 bytes, under the
+/// S026 byte limit, so the byte check admits it and the parser runs the
+/// whole nest. The caller is a 2 MiB thread and the call carries no
+/// wrapper: a parse that ran on this thread would overflow its stack and
+/// abort the process.
+#[test]
+fn a_bare_import_scan_returns_from_a_two_mebibyte_caller_thread() {
+    let source = format!("let d: {}i32{};\n", "A<".repeat(40_000), ">".repeat(40_000));
+    let bytes = source.len();
+    let started = Instant::now();
+    let scanned = std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || {
+            parse_import_specifiers(
+                &SourceFile::new("deep-imports.ts", source),
+                Profile::Sandbox,
+            )
+        })
+        .expect("spawn the 2 MiB caller thread")
+        .join()
+        .expect("the import scan returns from a 2 MiB caller thread");
+    println!(
+        "40,000 nested type arguments: {bytes} bytes, {:?}, {scanned:?}",
+        started.elapsed()
+    );
+    assert_eq!(scanned, Ok(Vec::new()), "the deep source holds no import");
 }
