@@ -234,7 +234,12 @@ that measurement.
    way. On Linux the child sets `RLIMIT_AS` on its first line. On
    Windows the child creates a Job Object with a process memory
    limit and joins it on its first line; the job kills every process
-   in it when the parent's handle closes. On macOS `setrlimit`
+   in it when the parent's handle closes. Linux and Windows both
+   turn the budget into a failed allocation: the Rust runtime writes
+   "memory allocation of n bytes failed" and ends the child. That
+   text is what names the budget on both, because the end itself is
+   a signal on one host and an exit code on the other. On macOS
+   `setrlimit`
    refuses `RLIMIT_AS` (measured `EINVAL`), so the parent reads the
    child's resident bytes at every 10 ms poll through
    `proc_pid_rusage` and kills a child over the budget. The parent
@@ -254,6 +259,11 @@ that measurement.
    in a budgeted child first and then compiles in process for the
    live session. An edit that lands between the two compiles is
    parsed in process; that window is the operator's own loop.
+   *(Amended 2026-09-18: the Windows classification read the budget's
+   own end as an abnormal exit code. Measured on
+   `x86_64-pc-windows-msvc`: the Job Object limit fails an
+   allocation, and `__fastfail` then ends the child with exit code
+   -1073740791, which no signal describes.)*
    *(Amended 2026-09-17, fifth Phase Review: the first classification
    read every abnormal end as the memory budget; a kill reached the
    direct child only; the flag was reachable from the command line.)*
