@@ -38,8 +38,15 @@ not a profile rule.
    its input and output sizes, and both are under the quota. Regular
    expressions carry their own work budget (§23).
 4. **Compile.** On every source within S026's limits, the compiler
-   returns a diagnostic or an accepted program, in work bounded by a
-   polynomial in the source size, on a thread whose stack it sizes.
+   returns a diagnostic or an accepted program. This project's own
+   stages do that in work bounded by a polynomial in the source
+   size, on a thread whose stack it sizes. The parser is external,
+   and its work and memory on a hostile shape are not bounded by
+   construction (M10, M13). The CLI therefore holds the guarantee
+   by a process boundary: under the profile it compiles in a child
+   process with a memory budget and a time budget, and a child that
+   passes either budget is S026. A host that embeds the compiler
+   crate runs it the same way (109.2 rule 6).
 
 **What the host supplies.** Each guarantee rests on a fact only the
 host holds. The host tutorial states each one where the host acts.
@@ -124,11 +131,11 @@ decrements the count, so `(/*)*/` repeated cancels the scan. Measured
 at `5d288f5` with the release CLI: 257 such levels check clean under
 the profile; 2,000 abort the process with a main-thread stack
 overflow, in the warning walk that runs after the checker thread
-returns. The count is now the lexer's. Every stage after the checker
-that recurses over the tree (`check_warnings`, the LIR lowering, the
-emitters) runs on the caller's thread and is bounded only by S026,
-so the exactness of S026 is the profile's whole defence there. The
-default profile keeps no limit and is unchanged.
+returns. Every stage after the checker that recurses over the tree
+(`check_warnings`, the LIR lowering, the emitters) inherits the
+checker's nesting bound (rule 2) and runs on the compile thread
+(rule 3). The default profile keeps no limit and is unchanged.
+*(The token count this paragraph once named is retired, rule 5.)*
 
 *(Amended 2026-09-16, after round 1.)* The first text assigned S019
 to S022. §99.3 retires S019 and forbids its reuse, so the codes are
@@ -167,9 +174,8 @@ in the checker, doubling per operator. Three rules close the class:
    a depth over 256 is S026 at that node, under the profile only.
    The HIR the checker emits is therefore bounded, and every later
    stage (`check_warnings`, the LIR lowering, the emitters) inherits
-   the bound without a guard of its own. The bracket count over the
-   lexer's tokens stays, because it is the one limit that runs before
-   the parser.
+   the bound without a guard of its own. No count runs before the
+   parser except the byte limit (rule 5).
 3. **The whole pipeline runs on the compile thread.** The compile
    thread of 109.2a is the thread of the whole compile: parse, check,
    warnings, lowering, and emission, in the CLI and in every codegen
@@ -216,6 +222,20 @@ that measurement.
    bracket depth are retired. The byte limit is exact and total, and
    the parser's stack is sized to it.)*
 
+6. **The CLI compiles in a budgeted child under the profile.**
+   `check`, `build`, `run`, and the watch loop's compile run the
+   compile in a child `subscript` process. The child has a memory
+   budget (8,589,934,592 bytes unoptimized, 4,294,967,296 optimized:
+   `RLIMIT_AS` on unix, a Job Object on Windows) and a time budget
+   of 300 s that the parent enforces. A child that dies or passes a
+   budget is one S026 at the entry file: "the compiler passed its
+   memory budget" or "… its time budget". The child's diagnostics
+   pass through unchanged. Under the default profile nothing spawns.
+   *(Added 2026-09-17, fourth Phase Review: a chain of 65,476 same
+   labels in 130,990 bytes takes over 10 GB in the parser's
+   duplicate-label path and is killed by the system, with no
+   diagnostic; the parser is external, so the bound is a process.)*
+
 *(Measured 2026-09-17, security round 2, at `52373a9`.)* The
 exponential `!` chain was the warning walk: the `Unary`/`Cast` arm of
 `warn_w002_expr_uses` walked its operand and then fell through to the
@@ -243,13 +263,15 @@ carries the rule code (closed in the docs round).
 
 **M10, decided.** *(2026-09-17.)* Measured inside every S026 limit,
 release: `<i32>` type assertions × n is O(n²) in the SWC parser
-(16,000: 24.5 s; 43,690, the most the token limit admits: 180.8 s);
-a numeric literal of n digits is O(n²) in the SWC lexer (1,048,576
-digits: about 1 s). Both are polynomial, so guarantee 4 holds; the
-constant is the parser's, and this project does not patch the
-parser. The host bounds compile wall time with its own timeout, as
-it bounds any build step; the tutorial states this beside the other
-host facts. The other three shapes (decorators on one line, one per
+(16,000: 24.5 s; 26,190 at the byte limit: 140 s); a nested generic
+call `f<A<…>>(1)` is about O(n³) there (4,000 levels: 112 s; 16,384
+at the byte limit: over 600 s); a same-label chain `a:a:…` is
+superlinear in memory in the parser's duplicate-label path (32,000:
+10.3 GB; 65,476: killed); a numeric literal of n digits is O(n²) in
+the SWC lexer. All are the parser's, and this project does
+not patch the parser. The bound is the budgeted child of rule 6: a
+compile that passes 300 s or the memory budget is S026, and the
+tutorial states this beside the other host facts. The other three shapes (decorators on one line, one per
 line, and labels) were this compiler's diagnostic renderer:
 `source_line` scanned the file from byte zero for every item, and the
 snippet copied the whole source line per item, so 32,000 diagnostics
@@ -279,8 +301,12 @@ level needs:
 
 The worst product of cost and density is the parenthesis: one byte
 per level at 6,750 bytes of stack optimized and 31,151 unoptimized
-(M11; the unoptimized ratio is 4.66x for a parenthesis, not the
-3.02x of a type argument). A file of `SOURCE_BYTE_LIMIT` bytes can therefore
+(M11; the unoptimized ratio is 4.61x for a parenthesis, not the
+3.02x of a type argument). The build selector in the code is
+`cfg!(debug_assertions)`: the "unoptimized" row is the Cargo `dev`
+and `test` profiles, the "optimized" row is `release`. A custom
+profile that pairs `opt-level = 0` with `debug-assertions = false`
+gets the smaller stack; the gate runs no such profile. A file of `SOURCE_BYTE_LIMIT` bytes can therefore
 need `SOURCE_BYTE_LIMIT × 6,750` bytes of stack, and the compile
 thread's stack must hold that with a margin of at least 1.5, in each
 build:
@@ -421,8 +447,10 @@ program is unchanged. Each is one C API call.
    charges twice the receiver's bytes against the headroom before it
    begins. The `print` sink is Context memory that script output
    sizes: with no print observer installed, each `print` charges the
-   line's bytes to the quota before it appends, and `take_stdout`
-   releases the charge. A callback binding record is charged at
+   line's bytes plus its newline to the quota before it appends, and
+   `take_stdout` releases the charge. *(Amended 2026-09-17, fourth
+   Phase Review: the first charge omitted the newline, so
+   `print("")` grew the sink for free, 300 MB in 5 s.)* A callback binding record is charged at
    registration. Every bounded multiple is named here; an entry with
    a multiple this list does not name is a defect. A total check holds
    this: a test binary with a counting global allocator drives every

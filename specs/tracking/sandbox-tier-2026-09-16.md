@@ -494,6 +494,7 @@ output budgets, the per-program source limit).
 | M9 | whether a 1,073,741,824-byte compile-thread stack reserves and runs a 131,072-token type-argument nest on arm64 macOS, x86_64 Linux, and windows-msvc | §109.2a's two numbers |
 | M11 | every M7 construct on a 131,072-byte file, parser alone, optimized at 2 GiB and unoptimized at 4 GiB: returns or overflows, and the margin | §109.2a's byte limit and two stacks |
 | M12 | an 8,589,934,592-byte compile-thread reservation, unoptimized: spawns, commits nothing untouched, and parses a 131,072-byte parenthesis file | §109.2a's unoptimized stack |
+| M13 | the same-label chain and the nested generic call at the byte limit, release and debug, inside the budgeted child: the diagnostic, the wall, and the child's peak | §109.2 rule 6's two budgets |
 | M10 | the cost attribution of three quadratic shapes inside every limit (the second Phase Review): `<i32>` type assertions × n (8,000: 13 s; 40,000: over 300 s), decorators × n on one line (32,000: 1.4 s; 60,000: 563 s) against one per line (28.7 s), labels × n (60,000 duplicate: killed at 30 s); which part is this compiler's (position mapping, label checks) and which is the SWC parser's; the fix for ours; a bound with a number for SWC's | whether guarantee 4 needs a per-line or per-statement token rule |
 
 ### Security round 1 — S026 over lexer tokens; the quota covers temporaries (landed)
