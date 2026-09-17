@@ -658,3 +658,25 @@ that ends abnormally returns no output, because the sink reaches the
 retained file once at the end; `subscript_rt_print` carries no
 `pos_id`; `ship.rs` is 2,605 lines, one of thirteen files over §5.y.
 `gate quick 75c963e39c209824648e4d0841700bc5e2db9866 dirty:11 debug 1582/0/2 skips 2 goldens-moved 0 exit 0`
+
+### Fourth Phase Review and security round 9 (landed)
+
+A fresh reviewer read `b1e2bfe..e53af91`: CRITICAL 1, MAJOR 1, MINOR
+7. The CRITICAL: a same-label chain of 65,476 labels in 130,990
+bytes takes over 10 GB in the SWC parser's duplicate-label path and
+is killed by the system with no diagnostic. The parser is external,
+so the bound is a process: under the profile the CLI compiles in a
+child with a memory budget and a 300 s time budget (§109.2 rule 6),
+and a child that passes either is one S026. M13, inside the child:
+the label chain is the memory-budget S026 in 28.7 s (10.4 GB peak),
+the nested generic call is the time-budget S026 at 300 s; both
+builds. The MAJOR: `print` charged the line without its newline, so
+`print("")` grew the sink for free (300 MB in 5 s); closed. Two
+host facts: macOS refuses `setrlimit(RLIMIT_AS)` (`EINVAL`), so the
+parent enforces the budget there by polling the child's resident
+bytes (round 9b); and the unoptimized budget is the stack
+reservation plus 4 GiB, 12,884,901,888, because `RLIMIT_AS` must
+hold the 8 GiB thread. The two heavy CLI tests (10 GB, up to 300 s)
+move behind `SUBSCRIPT_HEAVY_TESTS=1` (§109.6a, round 9b).
+
+Gate: `gate quick b140eb2 dirty:10 debug 1592/0/2 skips 2 goldens-moved 0 exit 0`.
