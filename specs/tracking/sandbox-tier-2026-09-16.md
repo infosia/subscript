@@ -680,3 +680,22 @@ hold the 8 GiB thread. The two heavy CLI tests (10 GB, up to 300 s)
 move behind `SUBSCRIPT_HEAVY_TESTS=1` (§109.6a, round 9b).
 
 Gate: `gate quick b140eb2 dirty:10 debug 1592/0/2 skips 2 goldens-moved 0 exit 0`.
+
+### Security round 9b (landed)
+
+Gate: `gate quick 8712246 dirty:4 debug 1595/0/2 skips 4 goldens-moved 0 exit 0`
+(the quick shape's expected skips are now 4, §109.6a). On macOS the
+parent enforces the memory budget by reading the child's resident
+bytes through `proc_pid_rusage` at every 10 ms poll: the optimized
+label chain, killed by the system at 10.18 GB at the pin, is now
+killed by the parent at 4.35 GB against the 4 GiB budget, in 1.65 s
+(58,884,096 bytes over, under one poll's growth of 268,435,456).
+The unoptimized budget (12,884,901,888) is above what a 16 GB host
+lets one process hold, so its kill is unmeasured here. The two heavy
+CLI tests run only under `SUBSCRIPT_HEAVY_TESTS=1`, which the full
+gate exports: the debug suite is 358 s without them and 495 s with.
+
+Open: the gate record's `environment:` line does not yet name
+`SUBSCRIPT_HEAVY_TESTS` (§85 rule 5; `cli/tests/gate.rs` pins the
+release step's line); the unoptimized memory kill needs a host with
+more than 16 GB.
