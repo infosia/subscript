@@ -261,8 +261,11 @@ line, and labels) were this compiler's diagnostic renderer:
 snippet copied the whole source line per item, so 32,000 diagnostics
 on one 160 KB line rendered 7.69 GB. Rule: **the renderer indexes the
 lines of a file once, writes a window of at most 240 bytes around
-the column, and renders at most 200 items; the summary line carries
-the total.**
+the byte of the column's character (the column is a character
+count, §5), cut to UTF-8 boundaries, and renders at most 200 items;
+the summary line carries the total.** *(Measured after the fix:
+640,000 items on one 160 KB line render in 19 ms and 59,986 bytes;
+800,000 label items in 31 ms.)*
 
 ### 109.2a The compile thread and the token limit
 
