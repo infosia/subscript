@@ -509,3 +509,30 @@ Contract `bc1d2ad`, `8a258a1`. Gate:
 Bounded multiples kept, charged in the M6 round: `toUpperCase` and
 `toLowerCase` (3× the receiver), `JSON.parse` (about 40 bytes per
 node of a quota-held input).
+
+### Security rounds 2 and 3 (landed)
+
+One gate on the union tree:
+`gate quick 595332f dirty:60 debug 1568/0/2 skips 2 goldens-moved 0 exit 0`.
+
+**Round 2, nesting and budgets.** The exponential `!` chain was a
+double visit in `warn.rs` (30 operators: 25.75 s → 0.02 s). The
+main-thread abort was `program_loader` parsing imports on the caller's
+thread. Nesting guard at three sites (measured boundaries in §109.2),
+S027, per-program 8 MiB, checker work and LIR output budgets (both
+unreachable under 1 MiB: max 187,498 of 16,777,216 units), the whole
+pipeline on the compile thread (256 MiB), and the token limit of
+16,384 per file from the parser measurement (§109.2a; the target is
+131,072 at a 1 GiB stack, M9). Corpus `r238`–`r241`, twins
+`a239`–`a243`. A 40,000-level `? :` source now checks clean under the
+default profile in 0.13 s instead of aborting.
+
+**Round 3, M6.** The quota charges reserved bytes (`charged_bytes`,
+`EXACT_RECORD_BYTES` = 64): 64 MiB of 8-byte objects held 1,023 MB
+(15.25x) before and 69.7 MB (1.04x) after. `subscript_rt_ctx_charged_bytes`
+is the host's pacing figure; `examples/sandbox` paces on it (frame 6,
+then every fourth frame; peak 915,472). `toUpperCase`/`toLowerCase`
+charge 3x first; `JSON.parse` charges 40 bytes per node against the
+headroom. `sandbox-cost`: no cell moved. The `callbacks` ratios of the
+criterion 5 table are now 1.62x/3.72x at the pin (the move predates
+M6).
