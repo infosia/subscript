@@ -541,6 +541,14 @@ impl WarningChecker<'_> {
         }
     }
 
+    /// Reports every direct use of a freed name inside one expression.
+    ///
+    /// The tail loop visits every expression child, so an arm that walks
+    /// a child itself must return. An arm that walks a child and then
+    /// falls through visits that child twice, which costs `2^n` on a
+    /// chain of `n` such nodes (`specs/blocks/compiler.md` §109.2
+    /// rule 1: each syntax node is visited one time). A node whose
+    /// children all take the default walk needs no arm.
     fn warn_w002_expr_uses(&mut self, expr: &Expr, freed: &HashSet<String>) {
         match &expr.kind {
             ExprKind::Local(name) if freed.contains(name) => self.push(Warning::new(
@@ -550,9 +558,6 @@ impl WarningChecker<'_> {
                 ),
                 expr.pos.clone(),
             )),
-            ExprKind::Unary { operand, .. } | ExprKind::Cast(operand) => {
-                self.warn_w002_expr_uses(operand, freed);
-            }
             ExprKind::Binary { op, left, right } => {
                 self.warn_w002_expr_uses(left, freed);
                 if !matches!(op, hir::BinOp::And | hir::BinOp::Or) {

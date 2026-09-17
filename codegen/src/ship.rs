@@ -17,7 +17,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use subscript_compiler::{check_program_with, CheckOptions, Pos, Profile, SourceFile};
+use subscript_compiler::{
+    check_program_with, on_the_compile_thread, CheckOptions, Pos, Profile, SourceFile,
+};
 use subscript_runtime::TrapKind;
 
 use crate::jit::{AbnormalTermination, RunError, TrapReport};
@@ -948,11 +950,16 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
         ..
     } = config;
     let limits = config.host_limits();
-    let hir = check_program_with(files, &CheckOptions::with_profile(profile))
-        .map_err(RunError::Rejected)?;
-    // §109.1 rule 2: the checked module is the carrier from here on.
-    let profile = hir.profile;
-    let program = crate::emit_c(&hir).map_err(|e| RunError::Internal(internal(e)))?;
+    // §109.2 rule 3: the check and the emission both recurse over the
+    // tree, so both run on the compile thread.
+    let (profile, program) = on_the_compile_thread(|| {
+        let hir = check_program_with(files, &CheckOptions::with_profile(profile))
+            .map_err(RunError::Rejected)?;
+        // §109.1 rule 2: the checked module is the carrier from here on.
+        let profile = hir.profile;
+        let program = crate::emit_c(&hir).map_err(|e| RunError::Internal(internal(e)))?;
+        Ok::<_, RunError>((profile, program))
+    })?;
     require_native_symbols(&program.foreign_symbols, libraries)?;
     let staticlib = runtime_staticlib()?;
     let dir = TempDir::new("crun")?;

@@ -69,6 +69,19 @@ impl<'p> Checker<'p> {
     /// diagnostics for banned spellings. Errors resolve to
     /// [`Type::Error`] so one bad annotation does not cascade.
     pub(crate) fn resolve_type(&mut self, ty: &ast::TsType) -> Type {
+        let pos = self.pos(ty.span());
+        // §109.2 rule 2: one type annotation is one level of the descent.
+        let entered = self.enter_nesting(&pos);
+        let resolved = if entered {
+            self.resolve_type_node(ty)
+        } else {
+            Type::Error
+        };
+        self.leave_nesting();
+        resolved
+    }
+
+    fn resolve_type_node(&mut self, ty: &ast::TsType) -> Type {
         match ty {
             ast::TsType::TsKeywordType(kw) => self.resolve_keyword(kw),
             ast::TsType::TsTypeRef(r) => self.resolve_type_ref(r),

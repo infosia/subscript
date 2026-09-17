@@ -20,8 +20,8 @@ use subscript_codegen::{
     CCompilerStyle, EmitCFilesError, RunConfig, RunError,
 };
 use subscript_compiler::{
-    check_program_with, check_warnings, render_diagnostics, render_warnings, CheckOptions,
-    Diagnostic, Profile, SourceFile, Warning,
+    check_program_with, check_warnings, on_the_compile_thread, render_diagnostics, render_warnings,
+    CheckOptions, Diagnostic, Profile, SourceFile, Warning,
 };
 use watch::{WatchCall, WatchOutcome, WatchSession, WatchStep};
 
@@ -128,8 +128,8 @@ fn check_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Fail
         .source
         .as_ref()
         .ok_or_else(|| Failure::usage("check requires <file.ts>"))?;
-    let files = load_program(source, &parsed.mirrors)?;
-    let warnings = accepted_warnings(&files, parsed.profile.unwrap_or_default())?;
+    let (files, warnings) =
+        load_and_check(source, &parsed.mirrors, parsed.profile.unwrap_or_default())?;
     if warnings.is_empty() {
         writeln!(stderr, "check: {}: no errors", source.to_string_lossy())
             .map_err(|error| Failure::usage(format!("write check result: {error}")))?;
@@ -212,8 +212,7 @@ fn emit_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failu
     }
     let source = source.ok_or_else(|| Failure::usage("emit requires <file.ts>"))?;
     let output = output.ok_or_else(|| Failure::usage("emit requires -o <dir>"))?;
-    let files = load_program(&source, &mirrors)?;
-    let warnings = accepted_warnings(&files, Profile::default())?;
+    let (files, warnings) = load_and_check(&source, &mirrors, Profile::default())?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if deny_warnings {
@@ -400,8 +399,11 @@ fn build_command<O: Write, E: Write>(
         || source.parent().unwrap_or(&current).join("subscript-build"),
         |path| absolute(&path, &current),
     );
-    let files = load_program(&source_given, &parsed.mirrors)?;
-    let warnings = accepted_warnings(&files, parsed.profile.unwrap_or_default())?;
+    let (files, warnings) = load_and_check(
+        &source_given,
+        &parsed.mirrors,
+        parsed.profile.unwrap_or_default(),
+    )?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if parsed.deny_warnings {
@@ -615,8 +617,7 @@ fn run_command<O: Write, E: Write>(
     if watch {
         return run_watch(&source, deny_warnings, profile, stdout, stderr);
     }
-    let files = load_program(&source, &[])?;
-    let warnings = accepted_warnings(&files, profile)?;
+    let (files, warnings) = load_and_check(&source, &[], profile)?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if deny_warnings {
@@ -720,7 +721,7 @@ fn run_watch<O: Write, E: Write>(
     stderr: &mut E,
 ) -> Result<u8, Failure> {
     let mut session = WatchSession::new(deny_warnings, profile);
-    let mut watched = match load_program(source, &[]) {
+    let mut watched = match on_the_compile_thread(|| load_program(source, &[])) {
         Ok(initial_files) => {
             let initial_paths = loaded_file_paths(source, &initial_files)?;
             let initial = session.step(&initial_files);
@@ -755,7 +756,7 @@ fn run_watch<O: Write, E: Write>(
         }
         watched.refresh();
 
-        let files = match load_program(source, &[]) {
+        let files = match on_the_compile_thread(|| load_program(source, &[])) {
             Ok(files) => files,
             Err(failure) => {
                 session.invalidate_loaded_sources();
@@ -862,6 +863,23 @@ fn accepted_warnings(files: &[SourceFile], profile: Profile) -> Result<Vec<Warni
         Ok(module) => Ok(check_warnings(&module)),
         Err(diagnostics) => Err(rejection(files, diagnostics)),
     }
+}
+
+/// Loads one program from disk and checks it, on the compile thread.
+///
+/// The loader parses each file to read its imports, the checker walks the
+/// tree, and the warning walk repeats it, so none of the three runs on the
+/// caller's thread (§109.2 rule 3).
+fn load_and_check(
+    source: &Path,
+    mirrors: &[PathBuf],
+    profile: Profile,
+) -> Result<(Vec<SourceFile>, Vec<Warning>), Failure> {
+    on_the_compile_thread(|| {
+        let files = load_program(source, mirrors)?;
+        let warnings = accepted_warnings(&files, profile)?;
+        Ok((files, warnings))
+    })
 }
 
 /// Reads `--profile <name>` (§109.1 rule 1). An unknown name is a usage

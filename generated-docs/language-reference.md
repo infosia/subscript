@@ -426,7 +426,7 @@ function echo(inbox: Inbox<EchoMessage>, outbox: Outbox<EchoMessage>): void {
 
 ### S026
 
-The sandbox profile rejects a source over its byte limit or its bracket-depth limit.
+The sandbox profile rejects a source, a tree, or a check over one of its limits.
 
 Pinned corpus: [`corpus/reject/r236-sandbox-source-depth.ts`](../corpus/reject/r236-sandbox-source-depth.ts), line 9.
 
@@ -443,6 +443,27 @@ export function main(): void {
   const value: i32 = (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((7)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))));
   print(`${value}`);
 }
+```
+
+### S027
+
+The sandbox profile rejects a function whose stack frame is over its frame limit.
+
+Pinned corpus: [`corpus/reject/r240-sandbox-frame.ts`](../corpus/reject/r240-sandbox-frame.ts), line 8.
+
+Header guidance:
+
+```text
+// tsc: accepts
+// expected-error: S027 at the function whose frame is over the limit
+```
+
+```ts
+// tsc: accepts
+// expected-error: S027 at the function whose frame is over the limit
+function probe(input: FixedArray<u8, 65537>): u8 {
+  const block: FixedArray<u8, 65537> = input;
+  return block[0];
 ```
 
 ### S100

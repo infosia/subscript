@@ -431,6 +431,15 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
+        let pos = self.pos(s.span());
+        // §109.2 rule 2: one statement is one level of the descent.
+        let entered = self.enter_nesting(&pos);
+        let terminates = entered && self.check_stmt_node(s, fx, out);
+        self.leave_nesting();
+        terminates
+    }
+
+    fn check_stmt_node(&mut self, s: &ast::Stmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) -> bool {
         let start = out.len();
         let (terminates, prefix) = fx.with_synthetic_owner(
             super::SyntheticOwnerKind::Statement(self.pos(s.span())),

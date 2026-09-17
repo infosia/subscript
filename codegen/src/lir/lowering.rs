@@ -3,7 +3,7 @@
 use super::*;
 
 impl<'a> Lowering<'a> {
-    pub(super) fn new(module: &'a hir::Module) -> Result<Self, LowerError> {
+    pub(super) fn new(module: &'a hir::Module, budget: u64) -> Result<Self, LowerError> {
         let fallback = || Pos::new("<module>", 1, 1);
         if !module.poisoned_imports.is_empty() {
             return Err(LowerError {
@@ -91,6 +91,8 @@ impl<'a> Lowering<'a> {
 
         let mut lowering = Self {
             hir: module,
+            instructions: 0,
+            instruction_budget: budget,
             free_functions,
             methods,
             foreign_functions,

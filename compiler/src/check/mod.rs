@@ -17,7 +17,7 @@ mod stmt;
 mod tyres;
 
 #[cfg(test)]
-pub(crate) use expr::{absorb_classified_places, take_classified_places, PlaceKind};
+pub(crate) use expr::{take_classified_places, PlaceKind};
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1063,6 +1063,16 @@ pub(crate) struct Checker<'p> {
     /// Monotonic suffix for the storage that holds a binding pattern's
     /// source, which every pattern evaluates one time (§107.2).
     pub next_pattern_id: usize,
+    /// Levels of recursive descent the checker holds right now
+    /// (§109.2 rule 2). One expression, one type, or one statement is one
+    /// level.
+    pub nesting_depth: u32,
+    /// Nodes visited and type instances created so far (§109.2 rule 4).
+    pub work: u64,
+    /// The work budget this check runs under (§109.2 rule 4).
+    pub work_budget: u64,
+    /// True after a §109.2 rule 4 budget stopped the check.
+    pub budget_stopped: bool,
 }
 
 fn normalize_operation_parameter_types(
@@ -1269,6 +1279,10 @@ pub(crate) fn run(
         next_using_switch_id: 0,
         next_compound_local_id: 0,
         next_pattern_id: 0,
+        nesting_depth: 0,
+        work: 0,
+        work_budget: options.budgets.work,
+        budget_stopped: false,
     };
 
     // Parse-time provenance has a fixed shape; this pass binds each record

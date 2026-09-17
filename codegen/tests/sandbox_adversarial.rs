@@ -19,7 +19,9 @@
 //! loop, which must run clean under the profile.
 
 use subscript_codegen::{run_c_aot_configured, run_jit_configured, RunConfig, RunError};
-use subscript_compiler::{check_program_with, CheckOptions, Profile, RuleCode, SourceFile};
+use subscript_compiler::{
+    check_program_with, on_the_compile_thread, CheckOptions, Profile, RuleCode, SourceFile,
+};
 use subscript_runtime::TrapKind;
 
 /// §109.2 S026: the byte limit of one source file.
@@ -33,15 +35,20 @@ fn files(source: String) -> Vec<SourceFile> {
 }
 
 /// Checks `source` under `profile` and returns the first diagnostic code.
+///
+/// §109.2 rule 3: the whole compile runs on the compile thread, so an
+/// adversarial depth is bounded by that thread and not by this one.
 fn check_under(profile: Profile, source: &str) -> Result<(), RuleCode> {
     let options = CheckOptions::with_profile(profile);
-    match check_program_with(&files(source.to_string()), &options) {
-        Ok(_) => Ok(()),
-        Err(diagnostics) => Err(diagnostics
-            .first()
-            .expect("a rejection carries a diagnostic")
-            .code),
-    }
+    on_the_compile_thread(
+        || match check_program_with(&files(source.to_string()), &options) {
+            Ok(_) => Ok(()),
+            Err(diagnostics) => Err(diagnostics
+                .first()
+                .expect("a rejection carries a diagnostic")
+                .code),
+        },
+    )
 }
 
 /// Asserts that the profile rejects `source` with `code`, and that the
@@ -164,13 +171,23 @@ fn a_source_one_byte_over_the_limit_rejects_s026() {
 fn a_source_one_bracket_over_the_limit_rejects_s026() {
     let source = source_of_depth(BRACKET_DEPTH_LIMIT + 1);
     assert_profile_rejects("257-deep bracket source", &source, RuleCode::S026);
-    let at_the_limit = source_of_depth(BRACKET_DEPTH_LIMIT);
+    // §109.2 rule 2: a parenthesis is a bracket token and an expression
+    // node, and the declaration statement and the literal are nodes of
+    // their own, so the nesting guard binds one level before the bracket
+    // count does. 255 is the deepest parenthesis source the profile
+    // accepts.
+    let at_the_limit = source_of_depth(BRACKET_DEPTH_LIMIT - 1);
     assert_eq!(
         check_under(Profile::Sandbox, &at_the_limit),
         Ok(()),
-        "the profile rejected a source of exactly the limit"
+        "the profile rejected the deepest accepted parenthesis source"
     );
-    println!("256-deep bracket source: the profile accepts it");
+    assert_eq!(
+        check_under(Profile::Sandbox, &source_of_depth(BRACKET_DEPTH_LIMIT)),
+        Err(RuleCode::S026),
+        "one level more must report"
+    );
+    println!("255-deep bracket source: the profile accepts it; 256 reports");
 }
 
 #[test]
@@ -261,4 +278,206 @@ export function main(): void {\n\
 \x20 print(`${point.x},${point.y}`);\n\
 }\n";
     assert_profile_rejects("Context.fromBytes of forged bytes", FORGED, RuleCode::S024);
+}
+
+/// §109.2 rule 2: the four shapes the amendment names. None of the first
+/// three opens a bracket token, so S026's bracket count sees nothing.
+///
+/// Each shape is far past the limit, so the guard stops the descent long
+/// before any later stage walks the tree.
+fn nesting_shapes(count: usize) -> [(&'static str, String); 4] {
+    let mut arrows = String::from("1");
+    for _ in 0..count {
+        arrows = format!("((): i32 => {arrows})()");
+    }
+    [
+        (
+            "nested type arguments",
+            format!(
+                "export function main(): void {{\n  const deep: {}i32{} = [];\n  print(`${{deep.length}}`);\n}}\n",
+                "Array<".repeat(count),
+                ">".repeat(count)
+            ),
+        ),
+        (
+            "prefix `!` chain",
+            format!(
+                "export function main(): void {{\n  const flag: boolean = {}true;\n  print(`${{flag}}`);\n}}\n",
+                "!".repeat(count)
+            ),
+        ),
+        (
+            "conditional `? :` chain",
+            format!(
+                "export function main(): void {{\n  const value: i32 = {}1;\n  print(`${{value}}`);\n}}\n",
+                "true ? 1 : ".repeat(count)
+            ),
+        ),
+        (
+            "nested arrow bodies",
+            format!(
+                "export function main(): void {{\n  const value: i32 = {arrows};\n  print(`${{value}}`);\n}}\n"
+            ),
+        ),
+    ]
+}
+
+#[test]
+fn every_nesting_shape_over_the_limit_rejects_s026() {
+    for (shape, source) in nesting_shapes(1_000) {
+        assert_profile_rejects(shape, &source, RuleCode::S026);
+    }
+}
+
+#[test]
+fn every_nesting_shape_at_the_limit_is_accepted() {
+    // The declaration statement and the leaf are levels of their own, and
+    // one arrow level is two, so these counts are the measured deepest
+    // form of each shape.
+    for (deepest, index) in [(254, 0), (254, 1), (254, 2), (127, 3)] {
+        let (shape, source) = &nesting_shapes(deepest)[index];
+        assert_eq!(
+            check_under(Profile::Sandbox, source),
+            Ok(()),
+            "{shape}: the profile rejected its deepest accepted form"
+        );
+        // The firing control: one level more reports.
+        let (_, over) = &nesting_shapes(deepest + 1)[index];
+        assert_eq!(
+            check_under(Profile::Sandbox, over),
+            Err(RuleCode::S026),
+            "{shape}: one level over the limit must report"
+        );
+        println!(
+            "{shape}: {deepest} levels accepted, {} rejected",
+            deepest + 1
+        );
+    }
+}
+
+/// §109.2 S027: the profile lowers the frame limit to 65,536 bytes.
+#[test]
+fn a_frame_over_the_profile_limit_rejects_s027() {
+    let frame = |bytes: usize| {
+        format!(
+            "function probe(input: FixedArray<u8, {bytes}>): u8 {{\n  const block: FixedArray<u8, {bytes}> = input;\n  return block[0];\n}}\n\nexport function main(): void {{\n  print(\"frame\");\n}}\n"
+        )
+    };
+    assert_profile_rejects("a 65,537-byte frame", &frame(65_537), RuleCode::S027);
+    assert_eq!(
+        check_under(Profile::Sandbox, &frame(65_536)),
+        Ok(()),
+        "the profile rejected a frame of exactly the limit"
+    );
+    println!("65,536-byte frame: the profile accepts it");
+}
+
+/// §109.2 S026: the program limit is the byte sum over every file the
+/// entry imports.
+#[test]
+fn a_program_over_the_byte_limit_rejects_s026() {
+    const FIVE_MEBIBYTES: usize = 5 * 1024 * 1024;
+    let sources = vec![
+        SourceFile::new(
+            "adversarial.ts",
+            format!(
+                "export function main(): void {{\n  print(\"program\");\n}}\n// {}\n",
+                "x".repeat(FIVE_MEBIBYTES)
+            ),
+        ),
+        SourceFile::new("other.ts", format!("// {}\n", "y".repeat(FIVE_MEBIBYTES))),
+    ];
+    let options = CheckOptions::with_profile(Profile::Sandbox);
+    let diagnostics = on_the_compile_thread(|| {
+        check_program_with(&sources, &options)
+            .err()
+            .unwrap_or_default()
+    });
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].code, RuleCode::S026);
+    assert_eq!(diagnostics[0].pos.file, "adversarial.ts");
+    println!(
+        "two 5 MiB files: {} at {}",
+        diagnostics[0].message, diagnostics[0].pos
+    );
+}
+
+/// §109.2 rule 3: the compile of a dev-tier run is on the compile
+/// thread, so a depth no caller thread holds still runs. The thread here
+/// is 2 MiB, the size of an ordinary test thread, and the source is the
+/// depth the round-1 test pinned.
+#[test]
+fn a_deep_source_runs_through_the_dev_jit_from_a_two_mebibyte_thread() {
+    let source = format!(
+        "export function main(): void {{\n  const value: i32 = {}7{};\n  print(`${{value}}`);\n}}\n",
+        "(".repeat(2_000),
+        ")".repeat(2_000)
+    );
+    let ran = std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || {
+            run_jit_configured(&files(source), RunConfig::default()).map(|run| run.stdout)
+        })
+        .expect("spawn the 2 MiB caller thread")
+        .join()
+        .expect("the run returns from a 2 MiB caller thread");
+    assert_eq!(ran.expect("the deep source runs"), b"7\n");
+    println!("2,000 nested parentheses: the dev JIT runs it from a 2 MiB caller thread");
+}
+
+/// §109.2 S026: the token limit is the proxy that bounds the parser.
+///
+/// Type arguments and assignment chains open no bracket, so the bracket
+/// count sees nothing and the parser recurses once for each level before
+/// any checker rule can run. At the token limit the deepest either one
+/// reaches costs 44 MB of stack, which the compile thread holds. Each
+/// source here is one token over the limit, so S026 reports before the
+/// parser; each control is one token under it, so the parser runs the
+/// whole nest and the nesting guard reports instead.
+#[test]
+fn a_source_at_the_token_limit_parses_inside_the_compile_thread() {
+    /// §109.2 S026: the token limit of one file.
+    const TOKEN_COUNT_LIMIT: usize = 16_384;
+    // Two tokens for each level, and five tokens for `const deep: … = [];`
+    // outside the nest.
+    let type_arguments = |levels: usize| {
+        format!(
+            "export function main(): void {{\n  const deep: {}i32{} = [];\n  print(`${{deep.length}}`);\n}}\n",
+            "Array<".repeat(levels),
+            ">".repeat(levels)
+        )
+    };
+    let assignments = |levels: usize| {
+        format!(
+            "export function main(): void {{\n  let a: i32 = 0;\n  {}1;\n  print(`${{a}}`);\n}}\n",
+            "a = ".repeat(levels)
+        )
+    };
+    for (shape, source) in [
+        ("type arguments", type_arguments(TOKEN_COUNT_LIMIT)),
+        ("assignment chain", assignments(TOKEN_COUNT_LIMIT)),
+    ] {
+        assert_eq!(
+            check_under(Profile::Sandbox, &source),
+            Err(RuleCode::S026),
+            "{shape}: the token limit must report"
+        );
+        println!("{shape} at {TOKEN_COUNT_LIMIT} levels: S026 before the parser");
+    }
+    // The control: half the levels is under the token limit, so the
+    // parser runs the whole nest and the nesting guard reports.
+    for (shape, source) in [
+        ("type arguments", type_arguments(TOKEN_COUNT_LIMIT / 4)),
+        ("assignment chain", assignments(TOKEN_COUNT_LIMIT / 4)),
+    ] {
+        assert_eq!(
+            check_under(Profile::Sandbox, &source),
+            Err(RuleCode::S026),
+            "{shape}: the nesting guard must report"
+        );
+        println!(
+            "{shape} at {} levels: the parser returns and the nesting guard reports",
+            TOKEN_COUNT_LIMIT / 4
+        );
+    }
 }

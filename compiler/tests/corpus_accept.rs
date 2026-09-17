@@ -8,7 +8,7 @@ mod corpus;
 use std::fs;
 use std::path::PathBuf;
 
-use subscript_compiler::{check_program, hir, SourceFile, Type};
+use subscript_compiler::{check_program, hir, on_the_compile_thread, SourceFile, Type};
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus")
@@ -84,7 +84,10 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
         sources.insert(0, wire_enum_mirror());
         sources.insert(0, wire_enum_aliases());
     }
-    match check_program(&sources) {
+    // §109.2 rule 3: every caller of the checker wraps the compile, so
+    // a corpus entry's depth is the compile thread's fact, not this test
+    // thread's.
+    match on_the_compile_thread(move || check_program(&sources)) {
         Ok(module) => module,
         Err(diags) => {
             let rendered: Vec<String> = diags.iter().map(|d| d.to_string()).collect();

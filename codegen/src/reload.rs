@@ -66,8 +66,8 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::FuncId;
 use subscript_compiler::types::display_type;
 use subscript_compiler::{
-    check_program_with, hir, CheckOptions, ClassId, Diagnostic, EnumId, Pos, Profile, SourceFile,
-    StringAliasId, Type,
+    check_program_with, hir, on_the_compile_thread, CheckOptions, ClassId, Diagnostic, EnumId, Pos,
+    Profile, SourceFile, StringAliasId, Type,
 };
 use subscript_runtime::{Context, Interrupt};
 
@@ -610,14 +610,17 @@ fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation
 
     // A failure past this point must release the module's code pages:
     // a dropped `JITModule` frees nothing by itself.
-    let lowered = match lower_module_with(
-        &mut module,
-        hirm,
-        LowerOptions {
-            reload: true,
-            require_main: false,
-        },
-    ) {
+    // §109.2 rule 3: the lowering recurses over the tree.
+    let lowered = match on_the_compile_thread(|| {
+        lower_module_with(
+            &mut module,
+            hirm,
+            LowerOptions {
+                reload: true,
+                require_main: false,
+            },
+        )
+    }) {
         Ok(l) => l,
         Err(e) => {
             // SAFETY: nothing ran and no pointer into this module
@@ -855,8 +858,11 @@ impl ReloadSession {
         profile: Profile,
         limits: HostLimits,
     ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
-        let hirm = check_program_with(files, &CheckOptions::with_profile(profile))
-            .map_err(RunError::Rejected)?;
+        // §109.2 rule 3: the check recurses over the tree.
+        let hirm = on_the_compile_thread(|| {
+            check_program_with(files, &CheckOptions::with_profile(profile))
+        })
+        .map_err(RunError::Rejected)?;
         let decls = declaration_hash(&hirm);
         let gen = compile(&hirm, libraries)?;
         let globals = match GlobalBlock::new(gen.globals_size, gen.globals_align) {
@@ -1058,8 +1064,12 @@ impl ReloadSession {
         if self.ctx.has_live_workers() {
             return Err(ReloadError::LiveWorkers);
         }
-        let hirm = check_program_with(files, &CheckOptions::with_profile(self.profile))
-            .map_err(ReloadError::Rejected)?;
+        // §109.2 rule 3: the check recurses over the tree.
+        let profile = self.profile;
+        let hirm = on_the_compile_thread(|| {
+            check_program_with(files, &CheckOptions::with_profile(profile))
+        })
+        .map_err(ReloadError::Rejected)?;
         let decls = declaration_hash(&hirm);
         if decls != self.decls {
             return Err(ReloadError::DeclarationChanged {

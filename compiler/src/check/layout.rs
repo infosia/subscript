@@ -9,6 +9,7 @@
 //! members, and final padding are all included in their applicable
 //! bound.
 
+use crate::check::profile::FRAME_BYTE_LIMIT;
 use crate::diag::{Diagnostic, Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::hir;
@@ -129,13 +130,20 @@ fn raw_round_up(value: u64, align: u64) -> Option<u64> {
 struct FrameBudget {
     end: u64,
     exceeded: bool,
+    /// Position of the function this frame belongs to. §109.2 S027 reports
+    /// there, because the limit is a property of the function.
+    owner: Pos,
+    /// True after S027 reported this frame.
+    sandbox_exceeded: bool,
 }
 
 impl FrameBudget {
-    fn new() -> Self {
+    fn new(owner: Pos) -> Self {
         Self {
             end: 0,
             exceeded: false,
+            owner,
+            sandbox_exceeded: false,
         }
     }
 }
@@ -184,16 +192,20 @@ struct Validator<'a> {
     states: Vec<Option<Outcome>>,
     visiting: Vec<bool>,
     diagnostics: Vec<Diagnostic>,
+    /// True under the sandbox profile, where §109.2 S027 lowers the frame
+    /// limit to [`FRAME_BYTE_LIMIT`].
+    sandbox: bool,
 }
 
 impl<'a> Validator<'a> {
-    fn new(classes: &'a [hir::ClassDef], handle_classes: &'a [HandleClass]) -> Self {
+    fn new(classes: &'a [hir::ClassDef], handle_classes: &'a [HandleClass], sandbox: bool) -> Self {
         Self {
             classes,
             handle_classes,
             states: vec![None; classes.len()],
             visiting: vec![false; classes.len()],
             diagnostics: Vec::new(),
+            sandbox,
         }
     }
 
@@ -365,6 +377,22 @@ impl<'a> Validator<'a> {
             raw_round_up(frame.end, align).and_then(|start| start.checked_add(layout.size.max(1)));
         let final_size =
             end.and_then(|end| raw_round_up(end, u64::from(CRANELIFT_FRAME_ALIGNMENT)));
+        // §109.2 S027: the profile lowers the frame limit, so the stack
+        // check at `Enter` sees at most one bounded frame past the budget.
+        if self.sandbox
+            && !frame.sandbox_exceeded
+            && final_size.is_none_or(|size| size > FRAME_BYTE_LIMIT)
+        {
+            self.diagnostics.push(Diagnostic::new(
+                RuleCode::S027,
+                format!(
+                    "the stack frame of this function is over the sandbox profile limit \
+                     of {FRAME_BYTE_LIMIT} bytes"
+                ),
+                frame.owner.clone(),
+            ));
+            frame.sandbox_exceeded = true;
+        }
         if final_size.is_none_or(|size| size > u64::from(MAX_FRAME_BYTES)) {
             self.diagnostics.push(Diagnostic::new(
                 RuleCode::S100,
@@ -584,9 +612,14 @@ impl<'a> Validator<'a> {
         if let Outcome::Layout(layout) = self.type_layout(ty) {
             let before = self.diagnostics.len();
             self.add_frame_slot(frame, layout, description, pos);
-            if self.diagnostics.len() != before && description == "local aggregate storage" {
-                if let Some(diagnostic) = self.diagnostics.last_mut() {
-                    diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
+            if description == "local aggregate storage" {
+                // §109.7: a profile rejection is not a TypeScript
+                // divergence, so S027 carries none. The frame limit of the
+                // default profile is S100 and carries one.
+                for diagnostic in self.diagnostics.iter_mut().skip(before) {
+                    if diagnostic.code == RuleCode::S100 {
+                        diagnostic.divergence = Some(Divergence::AggregateLayoutLimit);
+                    }
                 }
             }
         }
@@ -808,7 +841,7 @@ impl<'a> Validator<'a> {
         pos: &Pos,
         generator: bool,
     ) {
-        let mut frame = FrameBudget::new();
+        let mut frame = FrameBudget::new(pos.clone());
         if !generator {
             let mut words = 0u64;
             for param in params {
@@ -901,7 +934,13 @@ impl<'a> Validator<'a> {
         for (function, receiver) in &class_functions {
             self.validate_function(function, receiver.as_ref());
         }
-        let mut init_frame = FrameBudget::new();
+        // §109.3: the module initializer is a function body, so its frame
+        // carries the same limit. It reports at its first global.
+        let init_pos = globals.first().map_or_else(
+            || Pos::new("<module>", 1, 1),
+            |global| global.init.pos.clone(),
+        );
+        let mut init_frame = FrameBudget::new(init_pos);
         for global in globals {
             self.validate_closures_expr(&global.init);
             self.validate_expr_frame(&global.init, false, &mut init_frame);
@@ -914,12 +953,14 @@ impl<'a> Validator<'a> {
 
 impl Checker<'_> {
     pub(super) fn validate_layouts(&mut self) {
-        let diagnostics = Validator::new(&self.classes, &self.type_handle_classes).validate(
-            &self.pending_layouts,
-            &self.functions,
-            &self.globals,
-            &self.top_level,
-        );
+        let sandbox = self.profile == crate::Profile::Sandbox;
+        let diagnostics = Validator::new(&self.classes, &self.type_handle_classes, sandbox)
+            .validate(
+                &self.pending_layouts,
+                &self.functions,
+                &self.globals,
+                &self.top_level,
+            );
         self.diags.extend(diagnostics);
     }
 }

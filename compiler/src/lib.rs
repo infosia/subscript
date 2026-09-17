@@ -89,6 +89,9 @@ pub struct CheckOptions {
     /// The compile profile (§109.1). [`Profile::Default`] runs no §109.2
     /// rule.
     pub profile: Profile,
+    /// The §109.2 rule 4 budgets. A test lowers them; no source inside
+    /// S026's limits reaches the contract's numbers.
+    pub(crate) budgets: check::profile::Budgets,
 }
 
 impl CheckOptions {
@@ -175,74 +178,132 @@ pub fn check_program_with(
         )]);
     }
     // §109.2 S026 runs before the parser, so a source past a limit never
-    // reaches it.
+    // reaches it. The program limit reports once, at the entry file, and
+    // the per-file limits report after it.
     if options.profile == Profile::Sandbox {
+        if let Some(program) = check::profile::program_limit_diagnostic(files) {
+            return Err(vec![program]);
+        }
         let limits = check::profile::source_limit_diagnostics(files);
         if !limits.is_empty() {
             return Err(limits);
         }
     }
-    on_the_checker_thread(|| {
-        swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-            let parsed = parse::parse_program(files)?;
-            check::run(&parsed, options)
-        })
+    swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
+        let parsed = parse::parse_program(files)?;
+        check::run(&parsed, options)
     })
 }
 
-/// The stack the checker thread gets, in bytes (`specs/blocks/compiler.md`
-/// §109.2).
+/// The stack the compile thread gets, in bytes
+/// (`specs/blocks/compiler.md` §109.2 rule 3).
 ///
-/// The parser and the checker recurse once per nesting level, so the depth
-/// a program can reach is a property of this number and not of the thread
-/// the caller runs on. S026's limit of 256 is far under the capacity this
-/// stack gives.
-const CHECKER_STACK_BYTES: usize = 64 * 1024 * 1024;
+/// The parser, the checker, the warning walk, the lowering, and the
+/// emitters each recurse once per nesting level, so the depth a program
+/// can reach is a property of this number and not of the thread the
+/// caller runs on. S026's nesting limit of 256 is far under the capacity
+/// this stack gives.
+///
+/// The size comes from the measured parser cost: the deepest construct
+/// costs 6,750 stack bytes for each token it nests, so S026's token
+/// limit of 16,384 holds the parser under 111 MB, and this stack holds
+/// that with a margin over 2x.
+pub const COMPILE_THREAD_STACK_BYTES: usize = 256 * 1024 * 1024;
 
-/// Runs `work` on a thread with [`CHECKER_STACK_BYTES`] of stack and
-/// returns its result.
+std::thread_local! {
+    /// True while this thread runs [`on_the_compile_thread`] work.
+    static ON_THE_COMPILE_THREAD: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Marks this thread as the compile thread until it drops.
+///
+/// The previous value returns on drop, so a panic in the work leaves the
+/// caller's thread as it was.
+struct CompileThreadMark(bool);
+
+impl CompileThreadMark {
+    fn enter() -> Self {
+        Self(ON_THE_COMPILE_THREAD.replace(true))
+    }
+}
+
+impl Drop for CompileThreadMark {
+    fn drop(&mut self) {
+        ON_THE_COMPILE_THREAD.set(self.0);
+    }
+}
+
+/// One slot that carries the work to the compile thread and the value back.
+enum CompileWork<T, F> {
+    /// The work has not started.
+    Pending(F),
+    /// The compile thread ran the work and stored its value.
+    Done(T),
+    /// The compile thread took the work and did not return.
+    Taken,
+}
+
+/// Runs `work` on a thread with [`COMPILE_THREAD_STACK_BYTES`] of stack
+/// and returns its result (`specs/blocks/compiler.md` §109.2 rule 3).
+///
+/// Every stage of one compile runs inside one call: the parse, the check,
+/// the warning walk, the lowering, and the emission. A nested call is
+/// already on that thread, so it runs the work inline and spawns nothing.
 ///
 /// A panic on that thread resumes on the caller, so a caller that counts
 /// panics sees exactly what a direct call gives it. If the host refuses
 /// the thread, the caller's own thread runs `work` and the depth a
 /// program can reach becomes a property of the caller's stack.
-fn on_the_checker_thread<T, F>(work: F) -> T
+pub fn on_the_compile_thread<T, F>(work: F) -> T
 where
     T: Send,
-    F: Sync + Fn() -> T,
+    F: Send + FnOnce() -> T,
 {
+    if ON_THE_COMPILE_THREAD.with(std::cell::Cell::get) {
+        return work();
+    }
+    let slot = std::sync::Mutex::new(CompileWork::Pending(work));
     let body = || {
+        let Ok(mut held) = slot.lock() else {
+            return;
+        };
+        let CompileWork::Pending(work) = std::mem::replace(&mut *held, CompileWork::Taken) else {
+            return;
+        };
+        drop(held);
+        let _mark = CompileThreadMark::enter();
         let value = work();
-        // The place record lives in thread-local storage, so it
-        // crosses the join with the value it describes.
-        #[cfg(test)]
-        let value = (value, check::take_classified_places());
-        value
+        if let Ok(mut held) = slot.lock() {
+            *held = CompileWork::Done(value);
+        }
     };
-    // A shared reference to a `Fn` closure is itself callable and is
-    // `Copy`, so the thread takes one and this frame keeps the closure
-    // for the fallback below.
+    // A shared reference to a `Fn` closure is itself callable, so a
+    // refused spawn drops the reference and leaves the work in place.
     let body = &body;
     std::thread::scope(|scope| {
         let spawned = std::thread::Builder::new()
-            .stack_size(CHECKER_STACK_BYTES)
-            .name("subscript-checker".to_owned())
+            .stack_size(COMPILE_THREAD_STACK_BYTES)
+            .name("subscript-compile".to_owned())
             .spawn_scoped(scope, body);
-        let value = match spawned {
-            Ok(handle) => match handle.join() {
-                Ok(value) => value,
-                Err(payload) => std::panic::resume_unwind(payload),
-            },
+        match spawned {
+            Ok(handle) => {
+                if let Err(payload) = handle.join() {
+                    std::panic::resume_unwind(payload);
+                }
+            }
             Err(_) => body(),
-        };
-        #[cfg(test)]
-        let value = {
-            let (value, places) = value;
-            check::absorb_classified_places(places);
-            value
-        };
-        value
-    })
+        }
+    });
+    match slot.into_inner() {
+        Ok(CompileWork::Done(value)) => value,
+        // `Taken` means the work did not return, and the join above then
+        // resumed its panic. A poisoned lock needs a panic while the lock
+        // is held, and the work runs with the lock released.
+        Ok(CompileWork::Pending(_) | CompileWork::Taken) | Err(_) => {
+            unreachable!("the compile thread returns a value or resumes the panic")
+        }
+    }
 }
 
 #[cfg(test)]

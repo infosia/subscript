@@ -6,7 +6,9 @@ mod corpus;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use subscript_compiler::{check_program, check_warnings, SourceFile, WarnCode, Warning};
+use subscript_compiler::{
+    check_program, check_warnings, on_the_compile_thread, SourceFile, WarnCode, Warning,
+};
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
@@ -25,10 +27,15 @@ const EXPECTED: &[(&str, WarnCode, u32)] = &[
 ];
 
 fn checked_warnings(files: Vec<SourceFile>, label: &str) -> Vec<Warning> {
-    let module = check_program(&files).unwrap_or_else(|diagnostics| {
-        panic!("{label} was rejected: {diagnostics:?}");
-    });
-    check_warnings(&module)
+    // §109.2 rule 3: every caller of the checker wraps the compile, so
+    // a corpus entry's depth is the compile thread's fact, not this test
+    // thread's.
+    on_the_compile_thread(move || {
+        let module = check_program(&files).unwrap_or_else(|diagnostics| {
+            panic!("{label} was rejected: {diagnostics:?}");
+        });
+        check_warnings(&module)
+    })
 }
 
 fn read_source(path: &Path, name: impl Into<String>) -> SourceFile {

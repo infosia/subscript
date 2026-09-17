@@ -89,16 +89,6 @@ pub(crate) fn take_classified_places() -> Vec<PlaceKind> {
     CLASSIFIED_PLACES.with(|places| std::mem::take(&mut *places.borrow_mut()))
 }
 
-/// Appends `places` to this thread's record.
-///
-/// The checker runs on its own thread (§109.2), so the record it builds
-/// there must cross the join with the result. Without this the caller
-/// reads an empty record and the observation is lost.
-#[cfg(test)]
-pub(crate) fn absorb_classified_places(places: Vec<PlaceKind>) {
-    CLASSIFIED_PLACES.with(|record| record.borrow_mut().extend(places));
-}
-
 impl Place {
     fn ty(&self) -> &Type {
         match self {

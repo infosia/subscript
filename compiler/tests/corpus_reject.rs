@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use subscript_compiler::language_reference::parse_header;
 use subscript_compiler::{
-    check_program, check_program_with, render_diagnostics, CheckOptions, Profile, RuleCode,
-    SourceFile,
+    check_program, check_program_with, on_the_compile_thread, render_diagnostics, CheckOptions,
+    Profile, RuleCode, SourceFile,
 };
 
 fn corpus_dir() -> PathBuf {
@@ -32,10 +32,15 @@ fn check_entry(
     files: &[SourceFile],
     source: &str,
 ) -> Vec<subscript_compiler::Diagnostic> {
+    // §109.2 rule 3: every caller of the checker wraps the compile, so a
+    // corpus entry's depth is the compile thread's fact, not this test
+    // thread's.
     let options = CheckOptions::with_profile(entry_profile(path, source));
-    check_program_with(files, &options)
-        .err()
-        .unwrap_or_default()
+    on_the_compile_thread(|| {
+        check_program_with(files, &options)
+            .err()
+            .unwrap_or_default()
+    })
 }
 
 /// Expected (entry, rule code, 1-based line of the offending construct).
@@ -341,6 +346,10 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r235-sandbox-worker.ts", RuleCode::S025, 16),
     ("r236-sandbox-source-depth.ts", RuleCode::S026, 9),
     ("r237-sandbox-source-depth-comment.ts", RuleCode::S026, 9),
+    ("r238-sandbox-nesting-generic.ts", RuleCode::S026, 9),
+    ("r239-sandbox-nesting-unary.ts", RuleCode::S026, 9),
+    ("r240-sandbox-frame.ts", RuleCode::S027, 8),
+    ("r241-sandbox-token-count.ts", RuleCode::S026, 10),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -438,7 +447,8 @@ fn divergence_blocks_match_every_reject_entry_tsc_header() {
             files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
         }
         files.push(SourceFile::new(file, source));
-        let diagnostics = check_program(&files).expect_err("reject entry must fail");
+        let diagnostics =
+            on_the_compile_thread(|| check_program(&files)).expect_err("reject entry must fail");
         let rendered = render_diagnostics(&files, &diagnostics[..1]);
         let has_block = rendered.contains("= TypeScript accepts:");
         if has_block != tsc_accepts {

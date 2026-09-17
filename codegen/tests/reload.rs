@@ -640,7 +640,10 @@ fn run_reload_entry(entry: &ReloadEntry) -> Vec<String> {
             return failures;
         }
     };
-    let module = match check_program(sources) {
+    // §109.2 rule 3: every caller of the checker wraps the compile, so a
+    // corpus entry's depth is the compile thread's fact, not this test
+    // thread's.
+    let module = match subscript_compiler::on_the_compile_thread(|| check_program(sources)) {
         Ok(module) => module,
         Err(diagnostics) => {
             failures.push(format!("{id}: checker failed: {diagnostics:?}"));

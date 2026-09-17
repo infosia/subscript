@@ -7,7 +7,8 @@
 
 use subscript_codegen::{ReloadError, ReloadSession, RunConfig, RunError, TrapReport};
 use subscript_compiler::{
-    check_program_with, check_warnings, CheckOptions, Diagnostic, Profile, SourceFile, Warning,
+    check_program_with, check_warnings, on_the_compile_thread, CheckOptions, Diagnostic, Profile,
+    SourceFile, Warning,
 };
 
 /// The output and optional trap from one watched program call.
@@ -125,12 +126,17 @@ impl WatchSession {
         }
         self.last_sources = Some(files.to_vec());
 
+        // §109.2 rule 3: the check and the warning walk both recurse
+        // over the tree, so both run on the compile thread. The checked
+        // module drops there too.
         let options = CheckOptions::with_profile(self.profile);
-        let module = match check_program_with(files, &options) {
-            Ok(module) => module,
+        let checked = on_the_compile_thread(|| {
+            check_program_with(files, &options).map(|module| check_warnings(&module))
+        });
+        let warnings = match checked {
+            Ok(warnings) => warnings,
             Err(diagnostics) => return WatchStep::diagnostics(diagnostics),
         };
-        let warnings = check_warnings(&module);
         if self.deny_warnings && !warnings.is_empty() {
             return WatchStep::outcome(WatchOutcome::WaitingForFix, warnings);
         }

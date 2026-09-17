@@ -205,6 +205,25 @@ impl<'p> Checker<'p> {
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
         let pos = self.pos(e.span());
+        // §109.2 rule 2: one expression is one level of the descent.
+        let entered = self.enter_nesting(&pos);
+        let checked = if entered {
+            self.check_expr_node(e, ctx, fx, allow_embedded_header_receiver, pos)
+        } else {
+            self.err_expr(pos)
+        };
+        self.leave_nesting();
+        checked
+    }
+
+    fn check_expr_node(
+        &mut self,
+        e: &ast::Expr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        allow_embedded_header_receiver: bool,
+        pos: Pos,
+    ) -> hir::Expr {
         let mut checked = match e {
             ast::Expr::Paren(p) => self.check_expr_with_header_receiver(
                 &p.expr,

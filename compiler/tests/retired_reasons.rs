@@ -24,8 +24,8 @@ use std::path::{Path, PathBuf};
 use subscript_compiler::divergence::Divergence;
 use subscript_compiler::language_reference::parse_header;
 use subscript_compiler::{
-    api_reference, check_program_with, render_diagnostics, CheckOptions, Profile, RuleCode,
-    SourceFile, WarnCode,
+    api_reference, check_program_with, on_the_compile_thread, render_diagnostics, CheckOptions,
+    Profile, RuleCode, SourceFile, WarnCode,
 };
 
 /// One retired reason: the phrase, and the record that retired it.
@@ -180,7 +180,8 @@ fn rendered_rejections(root: &Path) -> Vec<(String, String)> {
             },
         ));
         files.push(SourceFile::new(name.clone(), source));
-        let Err(diagnostics) = check_program_with(&files, &options) else {
+        let checked = on_the_compile_thread(|| check_program_with(&files, &options));
+        let Err(diagnostics) = checked else {
             clean.push(name);
             continue;
         };

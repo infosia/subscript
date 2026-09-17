@@ -359,6 +359,18 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let block = self.current.ok_or_else(|| {
             self.error(&pos, "attempted to emit an instruction after a terminator")
         })?;
+        // §109.2 rule 4: the profile bounds the lowered output, so the
+        // lowering stops at the budget instead of building past it.
+        self.lowering.instructions = self.lowering.instructions.saturating_add(1);
+        if self.lowering.hir.profile == subscript_compiler::Profile::Sandbox
+            && self.lowering.instructions > self.lowering.instruction_budget
+        {
+            return Err(super::instruction_budget_error(
+                Some(&pos),
+                self.lowering.instructions,
+                self.lowering.instruction_budget,
+            ));
+        }
         let result = result_type
             .as_ref()
             .map(|ty| self.new_value(ty.clone(), None));

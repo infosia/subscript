@@ -58,15 +58,19 @@ pub enum RuleCode {
     /// (§109.2).
     S025,
     /// The sandbox profile rejects a source over its byte or bracket-depth
-    /// limit (§109.2).
+    /// limit, a tree over its nesting limit, or a check over its work
+    /// budget (§109.2).
     S026,
+    /// The sandbox profile rejects a function whose frame is over the
+    /// profile's frame limit (§109.2).
+    S027,
     /// Catch-all: construct outside the decided language surface.
     S100,
 }
 
 impl RuleCode {
     /// Every stable rule code, in numeric order.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::S001,
         Self::S002,
         Self::S003,
@@ -88,6 +92,7 @@ impl RuleCode {
         Self::S024,
         Self::S025,
         Self::S026,
+        Self::S027,
         Self::S100,
     ];
 
@@ -116,6 +121,7 @@ impl RuleCode {
             RuleCode::S024 => "S024",
             RuleCode::S025 => "S025",
             RuleCode::S026 => "S026",
+            RuleCode::S027 => "S027",
             RuleCode::S100 => "S100",
         }
     }
@@ -159,7 +165,10 @@ impl RuleCode {
                 "The sandbox profile rejects `Worker.spawn`, `Inbox`, and `Outbox`."
             }
             RuleCode::S026 => {
-                "The sandbox profile rejects a source over its byte limit or its bracket-depth limit."
+                "The sandbox profile rejects a source, a tree, or a check over one of its limits."
+            }
+            RuleCode::S027 => {
+                "The sandbox profile rejects a function whose stack frame is over its frame limit."
             }
             RuleCode::S100 => "Constructs outside the decided language surface are rejected.",
         }
@@ -252,7 +261,7 @@ mod tests {
             [
                 "S001", "S002", "S003", "S004", "S005", "S006", "S007", "S008", "S009", "S010",
                 "S011", "S012", "S013", "S014", "S016", "S017", "S018", "S023", "S024", "S025",
-                "S026", "S100",
+                "S026", "S027", "S100",
             ]
         );
         for code in RuleCode::ALL {

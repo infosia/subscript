@@ -3,7 +3,9 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use subscript_compiler::{check_program_with, CheckOptions, Diagnostic, Profile, SourceFile};
+use subscript_compiler::{
+    check_program_with, on_the_compile_thread, CheckOptions, Diagnostic, Profile, SourceFile,
+};
 
 use crate::{aot_entry_for_profile, emit_c, emit_c_without_main};
 
@@ -96,16 +98,21 @@ pub fn emit_c_files(
         path: out_dir.to_path_buf(),
         source,
     })?;
-    let hir = check_program_with(files, &CheckOptions::with_profile(profile))
-        .map_err(EmitCFilesError::Diagnostics)?;
-    // §109.1 rule 2: the checked module is the carrier from here on.
-    let profile = hir.profile;
-    let program = if write_entry {
-        emit_c(&hir)
-    } else {
-        emit_c_without_main(&hir)
-    }
-    .map_err(EmitCFilesError::Emission)?;
+    // §109.2 rule 3: the check and the emission both recurse over the
+    // tree, so both run on the compile thread.
+    let (profile, program) = on_the_compile_thread(|| {
+        let hir = check_program_with(files, &CheckOptions::with_profile(profile))
+            .map_err(EmitCFilesError::Diagnostics)?;
+        // §109.1 rule 2: the checked module is the carrier from here on.
+        let profile = hir.profile;
+        let program = if write_entry {
+            emit_c(&hir)
+        } else {
+            emit_c_without_main(&hir)
+        }
+        .map_err(EmitCFilesError::Emission)?;
+        Ok::<_, EmitCFilesError>((profile, program))
+    })?;
 
     let entry = if write_entry {
         let path = out_dir.join("entry.c");

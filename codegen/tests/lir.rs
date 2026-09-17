@@ -26,7 +26,9 @@ use subscript_compiler::lir::{
 };
 use subscript_compiler::lir_text::print_module;
 use subscript_compiler::Type;
-use subscript_compiler::{check_program, check_program_with, CheckOptions, Profile, SourceFile};
+use subscript_compiler::{
+    check_program, check_program_with, on_the_compile_thread, CheckOptions, Profile, SourceFile,
+};
 
 const MARK_TRACE_MODULE_CHILD: &str = "SUBSCRIPT_MARK_TRACE_MODULE_CHILD";
 
@@ -35,9 +37,14 @@ fn lower_entry(accept: &std::path::Path, id: &str) -> Module {
     // §109.1 rule 3: the entry's header profile reaches the checker, and
     // the checked module carries it into the lowering.
     let options = CheckOptions::with_profile(corpus::entry_profile(accept, id));
-    let hir = check_program_with(&sources, &options)
-        .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
-    lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"))
+    // §109.2 rule 3: the check and the lowering both recurse over the
+    // tree, so both run on the compile thread and a corpus entry's depth
+    // is that thread's fact, not this one's.
+    on_the_compile_thread(|| {
+        let hir = check_program_with(&sources, &options)
+            .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
+        lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"))
+    })
 }
 
 #[test]
@@ -897,10 +904,15 @@ fn every_hir_execution_fact_is_carried_by_lir() {
     let mut findings = Vec::new();
     for id in corpus::entry_ids(&accept) {
         let sources = corpus::entry_sources(&accept, &id);
-        let hir = check_program(&sources)
-            .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
-        let lir = lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"));
-        let dropped = lir_facts::dropped_facts(&hir, &lir);
+        // §109.2 rule 3: the check, the lowering, and the fact walk all
+        // recurse over the tree, so all three run on the compile thread.
+        let dropped = on_the_compile_thread(|| {
+            let hir = check_program(&sources)
+                .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
+            let lir =
+                lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"));
+            lir_facts::dropped_facts(&hir, &lir)
+        });
         findings.extend(
             dropped
                 .into_iter()

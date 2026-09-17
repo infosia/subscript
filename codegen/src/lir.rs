@@ -97,8 +97,48 @@ fn boundary_class_is_embedded_header(module: &hir::Module, header: ClassId) -> b
 /// Returns the first construct whose checked semantics cannot be encoded by
 /// the closed LIR form.
 pub fn lower_module(module: &hir::Module) -> Result<l::Module, LowerError> {
-    let mut lowered = Lowering::new(module)?.run()?;
+    lower_module_within(module, SANDBOX_INSTRUCTION_BUDGET)
+}
+
+/// The largest number of LIR instructions the sandbox profile accepts
+/// (`specs/blocks/compiler.md` §109.2 rule 4).
+///
+/// Nesting bounds the depth of the checked tree; this bounds the width
+/// that lowering and unrolling add.
+pub(crate) const SANDBOX_INSTRUCTION_BUDGET: u64 = 4_194_304;
+
+/// Lowers one module under `budget` LIR instructions.
+///
+/// The budget is a parameter so a test can reach it. No source inside
+/// S026's limits reaches [`SANDBOX_INSTRUCTION_BUDGET`].
+///
+/// # Errors
+///
+/// Returns the same errors as [`lower_module`], plus the §109.2 rule 4
+/// output budget under the sandbox profile.
+pub(crate) fn lower_module_within(
+    module: &hir::Module,
+    budget: u64,
+) -> Result<l::Module, LowerError> {
+    let mut lowered = Lowering::new(module, budget)?.run()?;
     unroll::run(&mut lowered);
+    // The unroller adds instructions after the emission counter stops, so
+    // the total is counted here as well (§109.2 rule 4).
+    if module.profile == subscript_compiler::Profile::Sandbox {
+        let emitted: u64 = lowered
+            .functions
+            .iter()
+            .flat_map(|function| function.blocks.iter())
+            .map(|block| block.instructions.len() as u64)
+            .sum();
+        if emitted > budget {
+            return Err(instruction_budget_error(
+                lowered.functions.first().map(|function| &function.pos),
+                emitted,
+                budget,
+            ));
+        }
+    }
     for function in &mut lowered.functions {
         thread_suspension_live_ins(function)?;
         classify_local_storage(function);
@@ -267,8 +307,23 @@ impl From<&hir::Param> for CallParam {
     }
 }
 
+/// The §109.2 rule 4 output-budget rejection.
+fn instruction_budget_error(pos: Option<&Pos>, emitted: u64, budget: u64) -> LowerError {
+    LowerError {
+        pos: pos.cloned().unwrap_or_else(|| Pos::new("<module>", 1, 1)),
+        message: format!(
+            "lowered output of {emitted} instructions is over the sandbox profile \
+             budget of {budget} instructions"
+        ),
+    }
+}
+
 struct Lowering<'a> {
     hir: &'a hir::Module,
+    /// LIR instructions emitted so far (§109.2 rule 4).
+    instructions: u64,
+    /// The output budget this lowering runs under (§109.2 rule 4).
+    instruction_budget: u64,
     free_functions: HashMap<String, FunctionRecord>,
     methods: HashMap<(usize, String), FunctionRecord>,
     foreign_functions: HashMap<String, l::ForeignFunctionId>,
@@ -1082,6 +1137,50 @@ fn address_base(ty: &l::ValueType) -> Option<l::ValueId> {
     match ty {
         l::ValueType::Address(address) => address.array_base,
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use subscript_compiler::{check_program_with, on_the_compile_thread, CheckOptions, Profile};
+
+    use super::{lower_module, lower_module_within, SANDBOX_INSTRUCTION_BUDGET};
+
+    const SOURCE: &str = "export function main(): void {\n  let total: i32 = 0;\n  for (let index: i32 = 0; index < 8; index = index + 1) {\n    total = total + index;\n  }\n  print(`${total}`);\n}\n";
+
+    fn checked(profile: Profile) -> subscript_compiler::hir::Module {
+        on_the_compile_thread(|| {
+            check_program_with(
+                &[subscript_compiler::SourceFile::new("budget.ts", SOURCE)],
+                &CheckOptions::with_profile(profile),
+            )
+            .expect("the source checks under both profiles")
+        })
+    }
+
+    /// §109.2 rule 4: the profile bounds the lowered output. No source
+    /// inside S026's limits reaches the contract budget, so the test
+    /// lowers the budget instead.
+    #[test]
+    fn the_output_budget_stops_the_lowering_under_the_profile() {
+        let module = checked(Profile::Sandbox);
+        let error = lower_module_within(&module, 4).expect_err("the small budget stops");
+        assert!(
+            error.message.contains("over the sandbox profile budget"),
+            "{}",
+            error.message
+        );
+        // The firing control: the contract budget lowers the same module,
+        // and the default profile ignores the small budget.
+        assert!(lower_module(&module).is_ok());
+        let default = checked(Profile::Default);
+        assert!(lower_module_within(&default, 4).is_ok());
+    }
+
+    /// The contract budget is the one [`lower_module`] applies.
+    #[test]
+    fn the_contract_budget_is_four_million_instructions() {
+        assert_eq!(SANDBOX_INSTRUCTION_BUDGET, 4_194_304);
     }
 }
 
