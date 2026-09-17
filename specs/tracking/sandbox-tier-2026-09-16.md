@@ -536,3 +536,24 @@ charge 3x first; `JSON.parse` charges 40 bytes per node against the
 headroom. `sandbox-cost`: no cell moved. The `callbacks` ratios of the
 criterion 5 table are now 1.62x/3.72x at the pin (the move predates
 M6).
+
+### Security round 4 (landed)
+
+Contract `465d74b`. Gate:
+`gate quick 465d74b8a0b9d082758463d96fa94c6a2088cc2c dirty:21 debug 1571/0/2 skips 2 goldens-moved 0 exit 0`
+
+M9 on arm64 macOS: a 1 GiB compile-thread reservation commits 16 KiB
+untouched; 131,072 type-argument levels parse in 139 ms (smallest
+stack 696,254,464 bytes, 5,312 per level); the unoptimized build
+costs 16,018 per level, so its stack is 4 GiB (commits 128 KiB
+untouched; the deepest admitted nest, 56,160 levels, parses in
+236 ms and 910 MB). The token limit is 131,072 in every build,
+derived by a `const fn` from the stack and the cost of the build; one
+test pins the four numbers and the derivation. A refused spawn under
+the profile is S026. `LowerError` carries a rule code, so the LIR
+budget renders as `error[S026]`. Docs: the five rules and four S026
+limits in README and Step 11; "What the host supplies" and "What is
+excluded" from §109.0. Linux and windows-msvc M9 is the owner's gate
+(§100): the 1 GiB and 4 GiB reservations spawn and commit nothing
+untouched, the 131,072-level nest parses, the unoptimized workspace
+suite passes.
