@@ -115,7 +115,7 @@ diagnostic names the profile in its message.
 | S027 | A function whose frame is over 65,536 bytes, under the profile. The checker already sizes every frame (`MAX_FRAME_BYTES`); the profile lowers the limit so that the stack check at `Enter` sees at most one bounded frame past the budget. |
 | S024 | `Context.fromBytes`, always. `Context.bytesOf` and `Context.bytesInto` stay accepted: the default profile already rejects a layout with a handle, a reference, or a string (S100, the value-class whitelist), so no profile rule is needed. |
 | S025 | `Worker.spawn`, `Inbox`, and `Outbox`. |
-| S026 | Source over a limit, before the parser runs: more than 1,048,576 bytes in one file, more than 8,388,608 bytes in one program (every file the entry imports, mirrors excluded), or a bracket depth over 256. The depth is a count over the **lexer's tokens** of `(`, `[`, `{` against `)`, `]`, `}`: the SWC lexer runs as a plain iterator with no parser, so a bracket inside a comment, a string, a template, or a regular-expression literal is not a bracket. A closer below zero resets to zero. The lexer is a flat loop over the bytes, so its cost does not grow with the depth. |
+| S026 | Source over a limit, before the parser runs: more than 1,048,576 bytes in one file, more than 8,388,608 bytes in one program (every file the entry imports, mirrors excluded), more than the token limit of 109.2a in one file, or a bracket depth over 256. The depth is a count over the **lexer's tokens** of `(`, `[`, `{` against `)`, `]`, `}`: the SWC lexer runs as a plain iterator with no parser, so a bracket inside a comment, a string, a template, or a regular-expression literal is not a bracket. A closer below zero resets to zero. The lexer is a flat loop over the bytes, so its cost does not grow with the depth. |
 
 *(Amended 2026-09-17, after an external review.)* The first text
 counted bytes with no lexing and claimed the count over-approximates
@@ -189,9 +189,78 @@ conditional types, assignment and exponent chains, member and call
 chains, binary chains, template substitutions, unions, array-type
 suffixes), the deepest source under 1,048,576 bytes runs through the
 parser alone on the compile thread. A construct that overflows there
-gets a token-level proxy limit before the parser, recorded here with
-its number. The stack size of the compile thread is set from that
-measurement.
+gets a token-level proxy limit before the parser, recorded in 109.2a
+with its number. The stack size of the compile thread is set from
+that measurement.
+
+*(Measured 2026-09-17, security round 2, at `52373a9`.)* The
+exponential `!` chain was the warning walk: the `Unary`/`Cast` arm of
+`warn_w002_expr_uses` walked its operand and then fell through to the
+loop over `children()`, so each level visited its child twice. The
+rule for that walker: an arm that walks a child returns. The
+main-thread abort at the pin was `program_loader::parse_import_specifiers`,
+which parsed each file on the caller's thread to read its imports
+before the checker's thread existed. Both are closed by rules 1 and
+3. The nesting guard enters at three sites: the expression descent,
+the type descent, and the statement descent. Patterns take no guard
+because every pattern level opens a bracket; a class does not nest;
+a function body nests only through a lambda, which is an expression.
+The depth counts every node on the path, the enclosing statement and
+the leaf included, so a chain of n operators reaches depth n + 2, an
+arrow level is two, and the deepest accepted shapes are: 254 nested
+type arguments, 254 prefix operators, 254 conditional expressions,
+127 nested arrow bodies, and 255 parentheses (the bracket count and
+the nesting guard are two limits of 256 that meet one level apart on
+a parenthesis chain). Neither budget of rule 4 is reachable from a
+source inside S026's limits: the largest work a 1 MiB source produced
+was 187,498 units against 16,777,216, so both budgets are safety
+nets, tested through a test-only budget. The LIR lowering stops at
+its budget, and the CLI renders that stop as S026: `LowerError`
+carries the rule code (closed in the docs round).
+
+### 109.2a The compile thread and the token limit
+
+*(Added 2026-09-17, security round 2.)* The compile thread's stack
+is `COMPILE_THREAD_STACK_BYTES`. The parser's stack cost per nesting
+level, measured on the deepest 1 MiB source of each construct at
+64 MiB and bisected:
+
+| Construct | Bytes per level | Bounded before the parser by |
+|---|---|---|
+| parenthesis | 6,750 | the bracket depth |
+| template substitution | 5,249 | the bracket depth (`${` is a bracket token) |
+| type arguments | 5,313 | the token limit |
+| assignment chain | 2,832 | the token limit |
+| conditional expression | 2,512 | the token limit |
+| prefix operator | 152 | the token limit |
+| conditional type, exponent, member, call, binary chains, unions, array-type suffixes | returns at the 1 MiB maximum | nothing needed |
+
+**The token limit** is one flat pass over the lexer's tokens, beside
+the bracket count. Its number follows from the stack and the worst
+per-level cost of a construct the bracket depth does not bound, with
+a margin: `tokens = stack / (5,313 × margin)`, rounded down to a power
+of two. A construct the bracket depth bounds is not in that
+derivation, because the bracket count rejects it first.
+
+| Field | Value today | Target |
+|---|---|---|
+| stack | 268,435,456 | 1,073,741,824, if M9 shows the reservation succeeds on every gate host |
+| margin | about 3 | 1.5 |
+| token limit per file | 16,384 | 131,072 |
+
+16,384 tokens is about 1,500 lines of ordinary source, which is
+under what a mod can honestly hold, so the target row is the one the
+profile needs; the value today is what round 2 measured safe. M9 in
+the tracking note is the reservation measurement (macOS, Linux,
+windows-msvc), and the next round sets the two numbers from it.
+
+**A refused spawn is a rejection under the profile.** If the compile
+thread cannot be created, `check_program_with` under the profile
+reports S026 "the compile thread is unavailable" and checks nothing,
+because every bound above assumes that stack. Under the default
+profile the work runs on the caller's thread, as before. *(The
+security-round-2 implementation falls back inline under both
+profiles; the docs round closes this.)*
 
 The capability mirror is not a new rule. A script binds only the
 `--mirror` it is given (§7, Step 7 of the host tutorial), and the

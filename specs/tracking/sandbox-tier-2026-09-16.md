@@ -491,6 +491,7 @@ output budgets, the per-program source limit).
 | M6 | resident bytes of a Context holding 64 MiB of 8-byte objects, and of 4 KiB objects, in both memory modes, against the quota | the reserved-bytes charge of §109.0 "Memory, precisely" and its multipliers |
 | M7 | the SWC parser alone on the deepest 1 MiB source per nesting construct, on the compile thread: returns or overflows, and the stack size that suffices | the token-level proxies §109.2 rule 2 needs, if any |
 | M8 | wall time of the checker on a 200-deep `!` chain before and after the one-visit fix | rule 1 |
+| M9 | whether a 1,073,741,824-byte compile-thread stack reserves and runs a 131,072-token type-argument nest on arm64 macOS, x86_64 Linux, and windows-msvc | §109.2a's two numbers |
 
 ### Security round 1 — S026 over lexer tokens; the quota covers temporaries (landed)
 
