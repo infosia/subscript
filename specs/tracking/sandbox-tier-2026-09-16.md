@@ -491,3 +491,20 @@ output budgets, the per-program source limit).
 | M6 | resident bytes of a Context holding 64 MiB of 8-byte objects, and of 4 KiB objects, in both memory modes, against the quota | the reserved-bytes charge of §109.0 "Memory, precisely" and its multipliers |
 | M7 | the SWC parser alone on the deepest 1 MiB source per nesting construct, on the compile thread: returns or overflows, and the stack size that suffices | the token-level proxies §109.2 rule 2 needs, if any |
 | M8 | wall time of the checker on a 200-deep `!` chain before and after the one-visit fix | rule 1 |
+
+### Security round 1 — S026 over lexer tokens; the quota covers temporaries (landed)
+
+Contract `bc1d2ad`, `8a258a1`. Gate:
+`gate quick 32287d1 dirty:12 debug 1544/0/2 skips 2 goldens-moved 0 exit 0`.
+
+| Item | Result |
+|---|---|
+| S026 Red | `(/*)*/` × 257 checked clean at the pin; × 2,000 aborted the process |
+| S026 fix | the scan walks the SWC lexer's tokens (`parse.rs::with_tokens`), `${` is one opener; 12,000 comment levels lex in 0.7 ms release, 1 MiB of source in 26 ms; `r237` Red at the pin, `tsc: accepts` measured |
+| Quota Red | `"x".repeat(268435456)` peaked at 270,123,008 resident bytes before the trap; 7,831,552 after |
+| Quota fix | `Context::check_quota` and `quota_headroom`; `QuotaBuf` bounded by the headroom; `alloc_str_with` for `repeat` |
+| Total check | `runtime/tests/quota_peak.rs`: a counting global allocator over ten entries under a 64 KiB quota with 256 MiB requests; at the pin eight of ten peaked at 268 MB to 805 MB and two recorded no trap; the second test derives the 99 exports from `ffi.rs` and fails on one that is neither covered nor exempt with a reason |
+
+Bounded multiples kept, charged in the M6 round: `toUpperCase` and
+`toLowerCase` (3× the receiver), `JSON.parse` (about 40 bytes per
+node of a quota-held input).
