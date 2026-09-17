@@ -242,17 +242,27 @@ a margin: `tokens = stack / (5,313 × margin)`, rounded down to a power
 of two. A construct the bracket depth bounds is not in that
 derivation, because the bracket count rejects it first.
 
-| Field | Value today | Target |
-|---|---|---|
-| stack | 268,435,456 | 1,073,741,824, if M9 shows the reservation succeeds on every gate host |
-| margin | about 3 | 1.5 |
-| token limit per file | 16,384 | 131,072 |
+**The token limit is a contract number, 131,072 per file, the same
+in every build.** The stack is the implementation's fact and is
+sized per build profile so that the derivation holds with a margin
+of at least 1.5 in each:
 
-16,384 tokens is about 1,500 lines of ordinary source, which is
-under what a mod can honestly hold, so the target row is the one the
-profile needs; the value today is what round 2 measured safe. M9 in
-the tracking note is the reservation measurement (macOS, Linux,
-windows-msvc), and the next round sets the two numbers from it.
+| Build | Bytes per level (type arguments) | Stack | Margin |
+|---|---|---|---|
+| optimized | 5,313 | 1,073,741,824 | 1.54 |
+| unoptimized (the gate's own binaries) | 16,018 | 4,294,967,296 | 2.02 |
+
+A test derives the limit from the stack and the cost of the build it
+runs in and fails if either constant moves alone. *(M9, measured
+2026-09-17 on arm64 macOS: a 1 GiB reservation commits 16,384 bytes
+before the first parsed byte; 131,072 type-argument levels parse in
+139 ms and 723 MB resident; the smallest stack that holds them is
+696,254,464 bytes, 5,312 per level. The unoptimized cost is 3.02x.
+The first text set 256 MiB and 16,384 tokens, about 1,500 lines,
+which is under what a mod can honestly hold.)* The Windows and Linux
+gate hosts run M9's three checks (§100): the reservation spawns and
+commits nothing untouched, the 131,072-level nest parses, and the
+unoptimized workspace suite passes.
 
 **A refused spawn is a rejection under the profile.** If the compile
 thread cannot be created, `check_program_with` under the profile
