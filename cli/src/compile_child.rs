@@ -58,6 +58,17 @@ pub const TIME_BUDGET_VARIABLE: &str = "SUBSCRIPT_COMPILE_TIME_BUDGET_SECONDS";
 /// value, and no value, leaves the child alone.
 pub const CHILD_STOP_VARIABLE: &str = "SUBSCRIPT_COMPILE_CHILD_STOP";
 
+/// The test-only variable that names the file for the compile child's
+/// process group id (§109.2 rule 6).
+///
+/// A test that waits for the end of every process the child started has
+/// no other source for that group: the parent picks the child, and the
+/// group id is the child's own process id, which no other party reads.
+/// The parent writes the id to the named file at the spawn. No value,
+/// an empty value, and a write the host refuses leave the file absent,
+/// and the test that finds no file reports it.
+pub const CHILD_GROUP_FILE_VARIABLE: &str = "SUBSCRIPT_COMPILE_CHILD_GROUP_FILE";
+
 /// The time budget the parent gives the child, in seconds
 /// (§109.2 rule 6).
 pub(crate) const TIME_BUDGET_SECONDS: u64 = 300;
@@ -356,6 +367,7 @@ pub(crate) fn compile_in_child<O: Write, E: Write>(
     let child = spawning
         .spawn()
         .map_err(|error| Failure::usage(format!("start the compile child: {error}")))?;
+    report_child_group(&child);
     // Every path out of this function drops the guard, the parent's own
     // unwind included, and the drop kills the child's whole process
     // group (§109.2 rule 6).
@@ -540,6 +552,28 @@ fn own_process_group(spawning: &mut Command) {
 /// Object the child creates, so the spawn needs nothing here.
 #[cfg(not(unix))]
 fn own_process_group(_spawning: &mut Command) {}
+
+/// Writes the compile child's process group id where
+/// [`CHILD_GROUP_FILE_VARIABLE`] names (§109.2 rule 6).
+///
+/// The id is the child's own process id. On Unix the child leads its
+/// own group, so that id is the group id a kill of the group takes. On
+/// Windows the same id names the process whose Job Object holds every
+/// process the child started.
+fn report_child_group(child: &Child) {
+    write_child_group(std::env::var_os(CHILD_GROUP_FILE_VARIABLE), child.id());
+}
+
+/// Writes `id` to `path`.
+///
+/// No path, and an empty path, write nothing. A write the host refuses
+/// changes no compile: the reader of the file is a test.
+fn write_child_group(path: Option<OsString>, id: u32) {
+    let Some(path) = path.filter(|path| !path.is_empty()) else {
+        return;
+    };
+    let _ = std::fs::write(path, id.to_string());
+}
 
 /// Kills the child and every process it started (§109.2 rule 6).
 #[cfg(unix)]
@@ -1099,6 +1133,33 @@ mod tests {
         assert!(!killed.is_file(), "the killed child writes no marker");
         std::thread::sleep(Duration::from_millis(600));
         assert!(!killed.is_file(), "the killed child writes no marker");
+    }
+
+    /// §109.2 rule 6: the parent writes the child's process group id
+    /// where [`CHILD_GROUP_FILE_VARIABLE`] names, and writes nothing
+    /// without it.
+    ///
+    /// The two facts are derived apart: the writer renders a `u32`, and
+    /// the reader parses the file the host holds. No path and an empty
+    /// path are the firing controls: neither leaves a file.
+    #[test]
+    fn the_parent_records_the_child_group_where_the_variable_names() {
+        let path = std::env::temp_dir().join(format!(
+            "subscript-child-group-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        write_child_group(None, 4242);
+        assert!(!path.exists(), "no path writes no file");
+        write_child_group(Some(OsString::new()), 4242);
+        assert!(!path.exists(), "an empty path writes no file");
+
+        write_child_group(Some(path.clone().into_os_string()), 4242);
+        let recorded = std::fs::read_to_string(&path).expect("read the recorded group");
+        assert_eq!(recorded.parse::<u32>().ok(), Some(4242), "{recorded:?}");
+        let _ = std::fs::remove_file(&path);
     }
 
     /// The rendered line is the one §109.2 rule 6 names.

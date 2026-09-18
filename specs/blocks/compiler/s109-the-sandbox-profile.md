@@ -639,11 +639,30 @@ fixture alone is 686.39 s, and the whole control build is 632.92 s.
 The test then reported S026 where it required the control's exit 0.
 The 67.6 s above is the owner host's figure for a different test, and
 the same class of assumption produced this defect. Owner decision
-2026-09-18: the test stays heavy; the fixture is not made smaller.
-Measured after the fix, `x86_64-unknown-linux-gnu`, unoptimized: the
-control 632.92 s, the killed build 316.01 s on its derived 316-second
-budget, no executable after 632.92 s more, the whole test 1,581.86 s.
-Evidence: `specs/tracking/linux-portability.md`.)*
+2026-09-18: the test stays heavy; the fixture is not made smaller.)*
+
+**Rule: a heavy test does the expensive work once for each fact it
+proves.** *(Added 2026-09-19; CLAUDE.md core principle 15.)* The
+process-group test did it three times: a control, a killed build at
+half the control, and a `sleep` of the control's own wall time. The
+third pass broke §102 rule 3. The wait now ends on the end of the
+child's process group, which is a fact of the host, and the killed
+build's budget is a tenth of the control, not a half. The budget's
+fraction must satisfy two conditions only: the emission finishes
+inside the budget, which the test reads from the emitted `program.c`;
+and the C compile has started, which the fixture makes true for every
+small fraction.
+
+Measured on `x86_64-unknown-linux-gnu`, unoptimized: the control
+666.60 s, the killed build 66.01 s on its derived 66-second budget,
+the wait for the group 50.14 ms, the whole test 733 s against
+1,581.86 s before. The wait is the proof that it tracks a fact: with
+the kill narrowed to the direct child, the same wait held 547 s and
+the test then failed on the executable the surviving compiler wrote.
+The Windows arm reads the child's own exit, because the Job Object
+carries `KILL_ON_JOB_CLOSE` and the child holds the only handle; no
+Windows host measured it. Evidence:
+`specs/tracking/linux-portability.md`.
 
 ### 109.7a The in-repo runners under the profile
 

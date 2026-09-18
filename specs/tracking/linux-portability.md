@@ -889,3 +889,62 @@ only (`tools/gate.sh:286`), and its release step is `cargo test
 shape. This is the §55 lesson in its second form: a profile that only
 tests is not a warning gate. §85 must decide whether the build step
 runs in both profiles.
+
+### The heavy test does the expensive work once for each fact (2026-09-19)
+
+Owner decision 2026-09-19: development iteration time is a first-order
+goal. CLAUDE.md core principle 15 landed from this case.
+
+`a_budget_kill_reaches_the_c_compiler_the_child_started` cost 1,581.86 s
+and did the expensive work three times: a 632.92 s control, a 316.01 s
+killed build at half the control, and a `sleep` of the control's own
+wall time, another 632.92 s. The third pass broke §102 rule 3, "The
+test keeps no wall clock". Nobody measured the cost until the owner
+asked why the test ran the work three times.
+
+**The sleep was load-bearing, so it is replaced, not deleted.** It
+caught the negative case: a kill that misses the process group leaves
+the C compiler running, and the executable appears later. An assertion
+the instant the parent exits passes in that case, because the compiler
+is then still at work.
+
+The fact the wait now ends on is the end of the child's process group.
+The test had no source for that group id, so the parent writes it where
+a new test-only variable names, beside `TIME_BUDGET_VARIABLE` and
+`CHILD_STOP_VARIABLE`, which exist for the same reason. On Unix the
+wait asks `kill(-group, 0)` until `ESRCH`, at a 50 ms poll interval
+that no assertion reads (§102.1). On Windows the child's Job Object
+carries `KILL_ON_JOB_CLOSE` and the child holds the only handle, so the
+child's own exit is the fact; a second handle would hold the job open
+and stop the mechanism. **No Windows host measured that arm.**
+
+The killed build's budget is now a tenth of the control, not a half.
+The fraction must satisfy two conditions only: the emission finishes
+inside the budget, which the `program.c` assertion reads, and the C
+compile has started, which `slow_host_c` makes true for every small
+fraction.
+
+| Pass | Before | After |
+|---|---|---|
+| the control | 632.92 s | 666.60 s |
+| the killed build | 316.01 s on a 316-second budget | 66.01 s on a 66-second budget |
+| the wait | 632.92 s, a `sleep` | 50.14 ms, the group's end |
+| the whole test | 1,581.86 s | 733 s |
+
+**The firing control is the proof that the wait tracks the fact.** With
+the group kill narrowed to the direct child, the same wait held 547 s —
+the surviving compiler's own remaining work — and released when the
+group emptied. The test then failed:
+
+    the killed C compiler wrote /tmp/…/killed/tiny, on a 61-second
+    budget against a whole build of 613.797418106s
+
+50 ms when the kill reaches the group and 547 s when it does not. A
+clock gives neither number.
+
+Gates after the change, measured by the orchestrator: `cargo fmt
+--check` exit 0; the debug `--all-targets` build 0 warnings; the
+`subscript-cli` `commands` suite 32 passed with the three `gate-skip:`
+lines unchanged; the `subscript-cli` lib suite 18 passed, one more than
+before; `tools/hygiene.sh` exit 0. The coding agent measured clippy at
+7 / 18 / 13 with `subscript-cli` at 0, and the heavy test at 1 passed.

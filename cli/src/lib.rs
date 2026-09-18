@@ -7,6 +7,7 @@ mod runtime_paths;
 /// Testable state transitions for `run --watch`.
 pub mod watch;
 
+pub use compile_child::CHILD_GROUP_FILE_VARIABLE as COMPILE_CHILD_GROUP_FILE_VARIABLE;
 pub use compile_child::CHILD_STOP_VARIABLE as COMPILE_CHILD_STOP_VARIABLE;
 pub use compile_child::TIME_BUDGET_VARIABLE as COMPILE_TIME_BUDGET_VARIABLE;
 

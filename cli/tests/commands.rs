@@ -1661,19 +1661,109 @@ int main(void) { return 0; }
     )
 }
 
+/// How long the group poll sleeps between two asks of the host.
+///
+/// No assertion reads this interval (§102.1). It sets how often the
+/// wait asks the host a question, not how long the wait runs.
+const GROUP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// The compile child's process group id, as the parent recorded it
+/// (§109.2 rule 6).
+fn recorded_compile_group(group_file: &Path) -> Result<i32, String> {
+    let recorded = std::fs::read_to_string(group_file).map_err(|error| {
+        format!(
+            "read the compile child's group from {}: {error}; the parent writes it where {} names",
+            group_file.display(),
+            subscript_cli::COMPILE_CHILD_GROUP_FILE_VARIABLE
+        )
+    })?;
+    let group: i32 = recorded.trim().parse().map_err(|error| {
+        format!("the recorded compile group: wanted a process id, received {recorded:?}: {error}")
+    })?;
+    if group > 1 {
+        Ok(group)
+    } else {
+        Err(format!(
+            "the recorded compile group: wanted an id over 1, received {group}"
+        ))
+    }
+}
+
+/// Waits until no process of the compile child's group is alive, and
+/// answers how long the wait took (§102 rule 3, §109.2 rule 6).
+///
+/// The fact is the host's own: the child leads the group, the C
+/// compiler it starts joins the group, and `kill` with signal 0 asks
+/// whether the group still holds a process. The wait keeps no clock, so
+/// a slow C compiler makes the wait longer and never makes it wrong.
+///
+/// # Errors
+///
+/// The parent recorded no group, or the host refuses the question. Each
+/// error names what the wait wanted and what it received.
+#[cfg(unix)]
+fn wait_for_the_compile_group_to_end(group_file: &Path) -> Result<std::time::Duration, String> {
+    let group = recorded_compile_group(group_file)?;
+    let started = std::time::Instant::now();
+    loop {
+        // SAFETY: `kill` takes a negated process group id and signal 0.
+        // Signal 0 sends nothing and answers whether the group holds a
+        // process this caller can signal.
+        let held = unsafe { libc::kill(-group, 0) };
+        if held == 0 {
+            std::thread::sleep(GROUP_POLL_INTERVAL);
+            continue;
+        }
+        let error = std::io::Error::last_os_error();
+        return if error.raw_os_error() == Some(libc::ESRCH) {
+            Ok(started.elapsed())
+        } else {
+            Err(format!(
+                "ask whether process group {group} holds a process: wanted ESRCH or a held group, received {error}"
+            ))
+        };
+    }
+}
+
+/// Waits until no process of the compile child's job is alive, and
+/// answers how long the wait took (§102 rule 3, §109.2 rule 6).
+///
+/// Windows holds the child and every process it starts in one Job
+/// Object that carries `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, and the
+/// child holds the only handle to that job. The end of the child
+/// therefore closes the job, and the host ends every member with it.
+/// The parent reaps the child before the parent exits, so the exit this
+/// test already read is the fact, and the wait is over when it arrives.
+/// A second handle to the job would hold the job open and stop the
+/// mechanism, so this wait opens none.
+///
+/// # Errors
+///
+/// The parent recorded no group. The error names what the wait wanted
+/// and what it received.
+#[cfg(not(unix))]
+fn wait_for_the_compile_group_to_end(group_file: &Path) -> Result<std::time::Duration, String> {
+    recorded_compile_group(group_file)?;
+    Ok(std::time::Duration::ZERO)
+}
+
 /// §109.2 rule 6: a budget kill reaches the child's whole process
 /// group, so the C compiler the child started dies with it.
 ///
 /// The two facts are derived apart: the parent reports one S026, and
 /// the executable is the C compiler's own record of reaching its end.
 /// The firing control uses the budget ceiling (§109.2 rule 6): it
-/// writes the executable. The wait after the killed build is the
-/// control's own wall time, so a slower host waits longer.
+/// writes the executable. The wait after the killed build ends on the
+/// end of the child's process group, which is a fact of the host
+/// (§102 rule 3).
 ///
-/// The budget is half the control's own wall time, not a constant: the
-/// host sets how long the C compile takes, and a constant is one host's
-/// number. `slow_host_c` makes the C compile the larger part of the
-/// build, so half the wall is inside it.
+/// The budget is a fraction of the control's own wall time, not a
+/// constant: the host sets how long the C compile takes, and a constant
+/// is one host's number. The fraction must satisfy two conditions only.
+/// The `.ts` emission must finish inside the budget, which the
+/// `program.c` assertion reads. The C compile must have started, and
+/// `slow_host_c` makes that compile the larger part of the build, so
+/// every small fraction reaches it. A tenth satisfies both.
 #[test]
 fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String> {
     if skipped_as_heavy(concat!(
@@ -1719,16 +1809,24 @@ fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String
     println!("the whole build: {control_wall:?}");
 
     // The budget the killed build gets, in whole seconds, which is all
-    // the variable takes. One second is the floor: a host whose whole
-    // build is under two seconds emits the C well inside it.
-    let budget = (control_wall.as_secs() / 2).max(1);
+    // the variable takes. Two seconds is the floor: a host whose whole
+    // build is under twenty seconds emits the C well inside it.
+    let budget = (control_wall.as_secs() / 10).max(2);
     let killed_out = dir.directory("killed")?;
     let executable = killed_out.join(format!("tiny{}", std::env::consts::EXE_SUFFIX));
+    let group_file = dir.0.join("compile-child-group");
     let started = std::time::Instant::now();
-    let stopped = output(build(&killed_out).env(
-        subscript_cli::COMPILE_TIME_BUDGET_VARIABLE,
-        budget.to_string(),
-    ))?;
+    let stopped = output(
+        build(&killed_out)
+            .env(
+                subscript_cli::COMPILE_TIME_BUDGET_VARIABLE,
+                budget.to_string(),
+            )
+            .env(
+                subscript_cli::COMPILE_CHILD_GROUP_FILE_VARIABLE,
+                &group_file,
+            ),
+    )?;
     let killed_wall = started.elapsed();
     assert_code(&stopped, 1);
     let rendered = String::from_utf8_lossy(&stopped.stderr).into_owned();
@@ -1747,16 +1845,16 @@ fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String
         "the child emitted the C before the {budget}-second budget elapsed, against a whole build of {control_wall:?}"
     );
 
-    // A C compiler that outlived the kill has less work left than the
-    // whole build took, so this wait covers it.
-    std::thread::sleep(control_wall);
+    // A C compiler that outlived the kill holds the child's group open,
+    // so the end of that group is the fact this wait ends on.
+    let waited = wait_for_the_compile_group_to_end(&group_file)?;
     assert!(
         !executable.is_file(),
         "the killed C compiler wrote {}, on a {budget}-second budget against a whole build of {control_wall:?}",
         executable.display()
     );
     println!(
-        "the killed build: {killed_wall:?} on a {budget}-second budget; no executable after {control_wall:?} more"
+        "the killed build: {killed_wall:?} on a {budget}-second budget; the compile group ended after {waited:?} and no executable"
     );
     Ok(())
 }
