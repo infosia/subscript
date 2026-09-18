@@ -305,3 +305,177 @@ MSVC `cl`, so the run proves the canonical list links on this host.
   a corpus entry — replaces the loud error.
 - AAPCS64 has the same two unmodeled cases (register pressure; `f16` HFA);
   fold into the fixes above.
+
+## Three x86-64 Linux defects the 2026-09-18 run exposed
+
+This host last ran the gate at `5ad77fb` (2026-09-05), green. The next
+run is this one, at `0a04232`, 588 commits later. The Windows host and
+the arm64 reference machine report none of the three defects.
+
+Host: Intel Core i5-4308U, 4 threads, 15 GiB; Ubuntu 22.04, glibc 2.35;
+clang 14.0.0, gcc 11.4.0; rustc and cargo 1.95.0; node v24.20.0;
+typescript 5.9.2.
+
+`tools/gate.sh quick` at `0a04232`, record
+`target/gate/20260917T232616Z-quick.md`:
+
+| Step | Result |
+|---|---|
+| `cargo fmt --check` | exit 0 |
+| `cargo build --offline --locked --workspace --all-targets` | 0 warnings |
+| `cargo test --offline --locked --workspace --no-fail-fast` | 1,601 passed, 3 failed, 2 ignored |
+
+Three steps ran outside the quick shape, each green: clippy 7 / 18 / 13,
+the recorded baseline; `node_modules/.bin/tsc -p tsconfig.json` exit 0;
+`tools/hygiene.sh` exit 0. The workspace compiles with no warning. Each
+of the three failures is a run-time failure of a test.
+
+### Defect 1 — the ship-tier interrupt harness loses the POSIX declarations
+
+`codegen/tests/sandbox_interrupt.rs:147`,
+`the_ship_tier_returns_the_interrupt_trap`. The ship build of the
+interrupt program fails to compile its C:
+
+    /tmp/.../entry.c:513:19: error: use of undeclared identifier 'CLOCK_MONOTONIC'
+    /tmp/.../entry.c:528:13: error: use of undeclared identifier 'useconds_t'
+    3 warnings and 3 errors generated.
+
+The harness is `interrupt_thread_c` (`codegen/src/ship.rs:1229`). Its
+non-Windows arm calls `clock_gettime`, reads `CLOCK_MONOTONIC`, and
+calls `usleep` with a `useconds_t` cast. The ship tier compiles with
+`-std=c11` (§11 dialect pin), and glibc hides every POSIX name in a
+strict ISO dialect. Darwin shows them without a macro, so the arm64
+reference machine never met it, and the Windows arm uses
+`QueryPerformanceCounter` and `Sleep`.
+
+Measured on this host, clang 14.0.0 and glibc 2.35, on a probe that
+holds the same four names:
+
+| Command line | Result |
+|---|---|
+| `-std=c11` | `CLOCK_MONOTONIC` and `useconds_t` undeclared |
+| `-std=gnu11` | clean |
+| `-std=c11 -D_POSIX_C_SOURCE=200809L` | `usleep` still implicit |
+| `-std=c11 -D_DEFAULT_SOURCE` | clean |
+| `nanosleep` for `usleep`, `-std=c11 -D_POSIX_C_SOURCE=199309L` | clean |
+
+`_POSIX_C_SOURCE=199309L` is the macro the four `benchmarks/` sites
+already pass. It covers `clock_gettime`, `CLOCK_MONOTONIC`, and
+`nanosleep`. It does not cover `usleep`, which glibc gives to
+`_DEFAULT_SOURCE` and to XOPEN 500 only.
+
+The macro must come from the command line. The harness is inserted at
+`INTERRUPT_THREAD_ANCHOR` inside the host entry, after
+`runtime/include/subscript_runtime.h`, and glibc latches its feature set
+at the first libc header of the unit. §11b records that rule already.
+
+**This is the fifth site of one class.** §11b named the class on
+2026-09-05 and fixed four sites in `benchmarks/`. The fix at each site
+is a copy of one flag. A fifth site appeared in `codegen/src/ship.rs`
+eleven days later, with a fifth name (`usleep`) that the copied flag
+does not even cover. CLAUDE.md: a fix that closes named sites does not
+converge; make the class unreachable, or make a total check report every
+remaining site at once.
+
+### Defect 2 — the process-group test's own control passes the 300 s budget
+
+`cli/tests/commands.rs:1709`,
+`a_budget_kill_reaches_the_c_compiler_the_child_started`. The firing
+control is a `--profile sandbox` build with no budget variable set, so
+the compile child gets the contract's 300 s default (§109.2 rule 6). The
+control does not reach its end here: it stops with
+`error[S026]: the compiler passed its time budget`, and `assert_code`
+reads exit 1 where the control requires 0. The test spends 300.02 s to
+report it.
+
+The control's cost is the C compile of `slow_host_c`, whose 65,536
+unrolled steps are a constant in the test. Measured on this host, the
+same body alone, outside the test:
+
+    $ clang -std=c11 -O2 -fwrapv -ffp-contract=off -c slow.c -o slow.o
+    686.39 s
+
+§109.6a records the time-budget test's control as "67.6 s unoptimized".
+That is one host's number. The test's doc comment states that the budget
+is derived and not a constant, and the budget is; the fixture that sets
+the control's cost is not.
+
+### Defect 3 — a dev-JIT relocation passes the 2 GiB PC-relative range
+
+`codegen/tests/boundary_scratch_breadth.rs:395`,
+`lowered_positions_are_disjoint_and_sibling_content_independent_from_one_through_n`.
+The first of the test's two JIT runs panics inside the JIT:
+
+    panicked at cranelift-jit-0.125.4/src/compiled_blob.rs:61:80:
+    called `Result::unwrap()` on an `Err` value: TryFromIntError(())
+
+Line 61 is the `Reloc::X86PCRel4 | Reloc::X86CallPCRel4` arm of
+`CompiledBlob::perform_relocations`. It narrows the target-minus-site
+displacement to `i32`. The narrowing fails, so the two addresses are
+more than 2 GiB apart. `JITBuilder::with_isa` is not PIC, and a
+non-PIC x86-64 direct call or `lea` carries a 32-bit displacement only.
+The arm64 reference machine and the Windows host do not reach it.
+
+Measured on this host, debug profile:
+
+| Condition | Result |
+|---|---|
+| `cargo test -p subscript-codegen --test boundary_scratch_breadth`, 5 runs | 4 failed, 1 passed |
+| the same binary under `setarch -R`, 3 runs | 3 failed |
+
+ASLR is therefore not the variable; it only moves a distance that is
+already outside the range.
+
+**It is a regression.** Measured in a worktree, the same host, the same
+toolchain:
+
+| Pin | Result |
+|---|---|
+| `5ad77fb` (2026-09-05, this host's last green run) | 1 passed, 1,184.59 s |
+| `0a04232` (2026-09-18) | 1 failed, 34.81 s |
+
+The two pins bracket 588 commits. The fall in wall time is §86's C
+emission (`s86-c-emission.md` records 668 s to 34.5 s), not a variable
+of this defect.
+
+#### The cause of defect 3
+
+`git bisect run`, 7 steps, over `5ac6b01..0a04232`. Each step ran the
+test three times, because the failure is not deterministic. The first
+bad commit is `1a621da` (2026-09-17), "the per-build compile-thread
+stack and the 131,072-token limit (M9)".
+
+That commit raised `COMPILE_THREAD_STACK_BYTES`
+(`compiler/src/lib.rs:239`) from 268,435,456 to 4,294,967,296 in an
+unoptimized build. §109.2a raised it again to 8,589,934,592 on the same
+day. The dev JIT lowers on that thread:
+`on_the_compile_thread(|| lower_module_with(&mut module, …))`
+(`codegen/src/jit/compile.rs:46`). The JIT allocates its code and its
+data while the thread holds a stack reservation larger than the 2 GiB
+a non-PIC PC-relative displacement reaches, so a pair of allocations on
+the two sides of that reservation is out of range.
+
+The control, measured at `0a04232` in a worktree, one variable, the
+same host and toolchain:
+
+| `COMPILE_THREAD_STACK_BYTES`, unoptimized | Runs | Result |
+|---|---|---|
+| 8,589,934,592, as committed | 5 | 4 failed, 1 passed |
+| 268,435,456, the value before `1a621da` | 3 | 3 passed |
+
+The stack size is therefore the variable. The defect is not in the
+stack size: §109.2a derives it from the parser's measured cost per
+nesting level, and the sandbox profile's bounds rest on it. The defect
+is that the dev JIT's own requirement — every JIT allocation within
+2 GiB of every other, which `JITBuilder::with_isa` without PIC assumes
+— is a fact that no form carries. §109.2 rule 3 puts the check and the
+lowering on one thread. The stack that the check needs and the address
+range that the JIT needs are in conflict, and nothing states it.
+
+The optimized build reserves 2,147,483,648 bytes, at the range's own
+boundary, and the test passes there: 5 runs of
+`cargo test --offline --locked --release -p subscript-codegen --test
+boundary_scratch_breadth` at `0a04232`, 5 passed, about 5.07 s each.
+The release profile of the gate therefore reports nothing. A reservation
+at the boundary is not a margin; the optimized build passes because
+2 GiB is the largest reservation the range still holds.
