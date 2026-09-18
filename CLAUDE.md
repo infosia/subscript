@@ -231,6 +231,13 @@ numbered rules do not apply to them.
    the change costs and what else must move. A decided divergence
    still needs a reason that holds today; when the reason does not
    survive measurement, the divergence goes.
+15. **Iteration speed is a goal, so a gate's cost is part of its
+   design.** A test that runs in the gate states what it costs, and
+   the cost is measured. An expensive pass needs a reason the test
+   states; a test that does expensive work twice without one is a
+   defect of the test. A cost that no reason covers comes out before
+   the test lands. Ask what a test costs at the same time as what it
+   proves.
 
 ## Code conventions
 
