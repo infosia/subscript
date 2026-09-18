@@ -83,6 +83,28 @@ and names no command either.
    `gate-skip:` lines; one line is a failure. In `quick` the lines
    are listed, not failed. A test that skips by any other text is a
    defect of that test.
+4a. **A heavy part runs in both profiles only when it checks a fact
+   that the profile changes.** *(Added 2026-09-19; CLAUDE.md core
+   principle 15.)* Every other heavy part runs in the debug profile
+   alone. The release run declares each heavy part it did not run
+   with one line to stdout in this form:
+   `gate-debug-only: <suite> <reason>`. The script counts these lines
+   apart from `gate-skip:` lines, and the record and the verdict hold
+   the count. Rule 4 stands as it reads: the release run still prints
+   zero `gate-skip:` lines.
+
+   The fact the profile changes is the test's own, and the test names
+   it in the line. `MEMORY_BUDGET_BYTES` and
+   `COMPILE_THREAD_STACK_BYTES` each differ by build, so the
+   memory-budget test's heavy part runs in both profiles. The time
+   budget is 300 s in each build, and a process-group kill is one
+   code path in each, so those two heavy parts run in the debug
+   profile alone.
+
+   A declared line, not an absent test, is what rule 4 asks for. A
+   heavy part that vanishes in release under `cfg` leaves the record
+   with nothing to read, which is the silent drop rule 4 exists to
+   stop.
 5. **The record.** Every run writes
    `target/gate/<UTC timestamp>-<shape>.md` and prints its path. The
    record holds, in this order: the shape; the UTC time; `git
@@ -108,9 +130,11 @@ and names no command either.
    no verdict.)*
 6. **The verdict line** is one line, last in the record and last on
    stdout:
-   `gate <shape> <rev> <clean|dirty:N> debug <p>/<f>/<i> [release <p>/<f>/<i>] skips <d>[/<r>] [clippy <c>/<r>/<g>] goldens-moved <m> exit <status>`.
+   `gate <shape> <rev> <clean|dirty:N> debug <p>/<f>/<i> [release <p>/<f>/<i>] skips <d>[/<r>] [debug-only <n>] [clippy <c>/<r>/<g>] goldens-moved <m> exit <status>`.
    `<d>` is the count of `gate-skip:` lines of the debug test
-   command and `<r>` that of the release test command. A bracketed
+   command and `<r>` that of the release test command. `<n>` is the
+   count of `gate-debug-only:` lines of the release test command
+   (rule 4a), and the field appears only when the release step ran. A bracketed
    field appears only when its step ran; a `full` run that stops at
    `fmt` or `build` shows no `release` and no `clippy` field. *(Amended
    2026-09-05, forced: the debug command declares the `perf_gate`

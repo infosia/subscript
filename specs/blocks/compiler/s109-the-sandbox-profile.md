@@ -618,7 +618,14 @@ host C file whose compile is the larger part of the build, and then
 kills that build. Those heavy parts run only when
 `SUBSCRIPT_HEAVY_TESTS=1` is set. Without it each test prints one
 `gate-skip:` line that the gate counts (§85). The quick shape's
-expected skip count is therefore 5 and the full shape's is 2. The
+expected skip count is therefore 5 and the full shape's is 2. Two of
+the three run in the debug profile alone, and the release run
+declares each one with a `gate-debug-only:` line (§85 rule 4a): the
+time budget is 300 s in each build, and a process-group kill is one
+code path in each. The memory-budget test runs in both profiles,
+because `MEMORY_BUDGET_BYTES` and `COMPILE_THREAD_STACK_BYTES` each
+differ by build. The full shape's expected `gate-debug-only:` count
+is therefore 2. The
 time-budget test's 2 s stop runs in every shape. The full gate
 exports the variable for the whole shape; the quick gate does not.
 The gate record names the variable (§85 rule 5). Measured: the
