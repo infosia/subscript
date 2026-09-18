@@ -523,3 +523,116 @@ The heavy run's own figures: the control 632.92 s, the killed build
 632.92 s more.
 
 Defect 3 is open. It is a measurement round, and it lands nothing.
+
+### Defect 3, the measurement round (2026-09-18)
+
+The round built prototypes, recorded the numbers, and reverted every
+change. The tree stayed at `38ef1f9`.
+
+#### A. The two items are the JIT's own code and the JIT's own data
+
+Method: a patched copy of `cranelift-jit` 0.125.4 in a scratch
+directory prints the relocation the library cannot apply, and the
+fixture prints the address of the `observe` function it registers.
+Three runs, two failed.
+
+| End | Region | Item |
+|---|---|---|
+| site | the JIT's generated code | `subscript_export_main`, blob size 1,562,668 |
+| target | the JIT's generated data | `subscript_str0`, size 8 |
+
+The kind is `X86CallPCRel4`. The displacement is −8,567,550,719 in one
+run and −8,573,338,367 in the other. Each is just under 8,589,934,592,
+the unoptimized `COMPILE_THREAD_STACK_BYTES`. The module holds 4
+functions and 1,616 data objects. The registered `observe` function is
+in the test executable's image and is neither end.
+
+The JIT's code mapping and its data mapping fall on the two sides of
+the compile thread's stack reservation. No host symbol takes part.
+
+#### B. `is_pic` is refused by the dependency
+
+`JITModule::new` asserts `!builder.isa.flags().is_pic()`
+(`cranelift-jit-0.125.4/src/backend.rs:355`, "cranelift-jit needs
+is_pic=false"). With the flag set, every dev-JIT construction panics
+before it generates code.
+
+| Profile | Baseline | `is_pic=true` |
+|---|---|---|
+| debug | 504 passed, 0 failed, 1 ignored | 235 passed, 270 failed, 1 ignored |
+| release | 504 passed, 0 failed, 1 ignored | 234 passed, 270 failed, 1 ignored |
+
+The indirection has no measured cost, because no module is built. The
+candidate is closed at this version of the dependency.
+
+#### C. A thread sized from the lowering is still over the range
+
+Method: the same shape as §109.2a. A probe records the stack pointer at
+the entry of `lower_module_with` and the minimum inside
+`lir::expr::lower_expr` and `lir::address_taken::expr`. Levels 64, 512,
+1,024, and 2,048; the slope is constant over every step.
+
+| Construct | Source bytes per level | Debug bytes per level | Release bytes per level |
+|---|---|---|---|
+| `!` logical not | 1 | 32,848 | 2,144 |
+| `~` bitwise complement | 1 | 32,848 | 2,144 |
+| `-` negation | 2 | 32,848 | 2,144 |
+| `+0` left-nested addition | 2 | 32,848 | 2,144 |
+| `(` parenthesis | 1 | 0 | 0 |
+
+The parenthesis costs the lowering nothing, because the HIR carries no
+parenthesis node. The parenthesis is the parser's worst construct
+(31,151 unoptimized). The two stages therefore have different worst
+constructs, and the lowering's own worst is `!` at 1 source byte.
+
+The derived requirement, the byte limit times the cost times the
+contract margin of 1.5:
+
+| Build | Worst file | With margin 1.5 | Present stack |
+|---|---|---|---|
+| debug | 131,072 × 32,848 = 4,305,453,056 | 6,458,179,584 | 8,589,934,592 |
+| release | 131,072 × 2,144 = 281,018,368 | 421,527,552 | 2,147,483,648 |
+
+Unoptimized, the lowering costs 1.05x the parser per level. A thread
+sized from the lowering is 6,458,179,584 bytes, still over the 2 GiB a
+non-PIC displacement reaches. Optimized it is 421,527,552, under it.
+
+The prototype builds the JIT module on a thread of those two sizes and
+leaves the check on the compile thread. Measured:
+
+| Measurement | Result |
+|---|---|
+| `boundary_scratch_breadth`, 3 runs, debug | 3 passed, 56.88–58.91 s each |
+| `-p subscript-codegen --no-fail-fast`, debug | 505 passed, 0 failed, 1 ignored |
+| the same, release | 504 passed, 0 failed, 1 ignored |
+
+The three passes are on a 6,458,179,584-byte reservation, which is over
+the window. They measure this host's mapping placement, not range. The
+candidate does not close the defect in an unoptimized build.
+
+#### The conclusion of the round
+
+Neither candidate resolves the conflict. `is_pic` is refused by the
+dependency, and a thread sized from the lowering's own cost is still
+1.05x the parser's in the build the gate runs. Any reservation over
+2 GiB that lives between two of the JIT's allocations reproduces the
+defect, and the unoptimized requirement of either stage is over 2 GiB.
+
+The form must change, and the round names four ways. Each needs its own
+measurement.
+
+1. **Fork `cranelift-jit` and pin the fork.** CLAUDE.md states forking
+   as this project's way to change a dependency. Two shapes: remove the
+   `is_pic` refusal, or carve the code and the data from one
+   reservation, which bounds the displacement by the module's own size.
+   The second is the smaller change and makes the class unreachable.
+2. **Make the recursive stages iterative.** No thread then needs a
+   stack over 2 GiB. It touches the parser, which §109.2a sizes, and
+   the lowering.
+3. **Lower `SOURCE_BYTE_LIMIT`.** 131,072 × 31,151 × 1.5 is over 6 GB;
+   the limit must fall to about 42,800 bytes to bring the parser's
+   reservation under 2 GiB. That is a language-facing change.
+4. **Size the compile thread by profile.** §109.2a's derivation is a
+   requirement of the sandbox profile. A default-profile compile takes
+   a stack under the window. It does not close the defect for a
+   sandbox-profile dev-JIT module, so it is a narrowing, not a fix.
