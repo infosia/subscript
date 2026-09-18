@@ -479,3 +479,47 @@ boundary_scratch_breadth` at `0a04232`, 5 passed, about 5.07 s each.
 The release profile of the gate therefore reports nothing. A reservation
 at the boundary is not a margin; the optimized build passes because
 2 GiB is the largest reservation the range still holds.
+
+### Defects 1 and 2 fixed (2026-09-18)
+
+The coding agent ran two rounds. The orchestrator measured every gate.
+
+**Defect 1.** `interrupt_thread_c` calls `nanosleep` in place of
+`usleep`, so one feature level covers every POSIX name the emitted C
+holds. `posix_feature_arguments` is the one definition of the macro
+(`codegen/src/ship.rs`), and the non-MSVC arm of
+`add_c11_optimized_flags` adds it. The four `benchmarks/` sites read
+the function and hold no copy. The class is closed for every caller of
+the pinned C11 flags: the first round left the flag opt-in per site,
+and `codegen/tests/host_entry.rs` and
+`codegen/tests/async_cleared_trap.rs` did not pass it. A unit test pins
+the Unix arm and the MSVC arm apart, with the arguments written by
+hand. Contract: §11b, the two paragraphs dated 2026-09-18.
+
+**Defect 2.** The firing control sets the budget variable to the
+ceiling, and the whole test is heavy. Owner decision 2026-09-18: the
+test stays heavy; the 65,536-step fixture is not made smaller. The
+alternative measured and refused was a smaller fixture that keeps the
+test in the quick shape. Contract: §109.6a, the rule and the amendment
+dated 2026-09-18.
+
+Measured on this host after both rounds:
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check` | exit 0 |
+| `cargo build --offline --locked --workspace --all-targets` | 0 warnings |
+| `cargo clippy --offline --locked --workspace --all-targets` | 7 / 18 / 13 |
+| `cargo test -p subscript-codegen --test sandbox_interrupt` | 4 passed |
+| `cargo test -p subscript-codegen --test host_entry` | 5 passed |
+| `cargo test -p subscript-codegen --test async_cleared_trap` | 4 passed |
+| `cargo test -p subscript-codegen --lib` | 219 passed |
+| `cargo test -p subscript-cli --test commands` | 32 passed, 3 gate-skip lines |
+| the same, `SUBSCRIPT_HEAVY_TESTS=1`, the process-group test alone | 1 passed, 1,581.86 s |
+| `tools/hygiene.sh` | exit 0 |
+
+The heavy run's own figures: the control 632.92 s, the killed build
+316.01 s on its derived 316-second budget, and no executable after
+632.92 s more.
+
+Defect 3 is open. It is a measurement round, and it lands nothing.

@@ -81,7 +81,27 @@ The macro must come from the command line. The entry translation unit is
 the runtime header. glibc latches its feature set at that header, and a
 `#define` inside `aot-entry.c` is then too late. The macro is
 Linux-scoped, because Darwin's strict-POSIX mode hides
-`CLOCK_MONOTONIC_RAW`, which `benchmarks/boundary-noop.c` reads. Its gate run is a test target (§3), so `cargo test
+`CLOCK_MONOTONIC_RAW`, which `benchmarks/boundary-noop.c` reads.
+
+**The macro has one definition, and the shared flag function carries
+it.** `subscript_codegen::posix_feature_arguments` returns the macro on
+Linux and nothing on every other host. The non-MSVC arm of
+`add_c11_optimized_flags` adds it, so a C compile that reads the pinned
+C11 flags cannot omit the macro. A site that builds its own command
+line — the four `benchmarks/` harnesses — calls the function. The MSVC
+arm never carries it, and a unit test pins both arms. *(Added
+2026-09-18.)* The rule replaces four private copies of the flag.
+
+**A POSIX name that one feature level does not give is not used.** The
+macro is `_POSIX_C_SOURCE=199309L`, and glibc gives `clock_gettime`,
+`CLOCK_MONOTONIC`, and `nanosleep` at that level. It does not give
+`usleep`, which needs `_DEFAULT_SOURCE`. The emitted interrupt harness
+(`codegen/src/ship.rs`) therefore calls `nanosleep`. Measured on glibc
+2.35 with clang 14.0.0: `-std=c11` alone fails on all four names;
+`-std=c11 -D_POSIX_C_SOURCE=200809L` leaves `usleep` implicit; the
+`nanosleep` form under `-std=c11 -D_POSIX_C_SOURCE=199309L` is clean.
+*(Added 2026-09-18. The harness was the fifth site of this class, and
+the copied flag did not cover it.)* Its gate run is a test target (§3), so `cargo test
 --release` reports a missed threshold; the §3 performance thresholds it reports are
 machine- and toolchain-dependent (the recorded ship-tier figures are the
 reference setup's, §11).

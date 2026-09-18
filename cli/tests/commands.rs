@@ -1666,7 +1666,7 @@ int main(void) { return 0; }
 ///
 /// The two facts are derived apart: the parent reports one S026, and
 /// the executable is the C compiler's own record of reaching its end.
-/// The firing control is the same build under the contract's budget: it
+/// The firing control uses the budget ceiling (§109.2 rule 6): it
 /// writes the executable. The wait after the killed build is the
 /// control's own wall time, so a slower host waits longer.
 ///
@@ -1676,6 +1676,12 @@ int main(void) { return 0; }
 /// build, so half the wall is inside it.
 #[test]
 fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String> {
+    if skipped_as_heavy(concat!(
+        "a_budget_kill_reaches_the_c_compiler_the_child_started ",
+        "measures the C compile control and kills its process group"
+    )) {
+        return Ok(());
+    }
     let dir = TestDir::new()?;
     let source = dir.write("tiny.ts", clean_source())?;
     let host = dir.write("host.c", slow_host_c()?.as_bytes())?;
@@ -1704,7 +1710,9 @@ fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String
     let control_out = dir.directory("control")?;
     let executable = control_out.join(format!("tiny{}", std::env::consts::EXE_SUFFIX));
     let started = std::time::Instant::now();
-    let built = output(&mut build(&control_out))?;
+    // The control measures the host; the default budget is one host's number (§109.6a).
+    let built =
+        output(build(&control_out).env(subscript_cli::COMPILE_TIME_BUDGET_VARIABLE, "86400"))?;
     let control_wall = started.elapsed();
     assert_code(&built, 0);
     assert!(executable.is_file(), "the control writes the executable");

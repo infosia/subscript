@@ -512,11 +512,15 @@ fn msvc_object_directory_arg(directory: &Path) -> OsString {
 /// with error C2124 — deferring it to a runtime infinity instead. It is
 /// at least as conservative as `/fp:precise`, so the byte-exact
 /// differential is preserved.
+///
+/// The Unix arm carries the POSIX feature test on Linux (compiler.md §11b).
+/// The macro comes from the command line because glibc selects its feature set at the unit's first libc header.
 pub fn add_c11_optimized_flags(command: &mut Command, style: CCompilerStyle) {
     if style.is_msvc() {
         command.args(["/nologo", "/std:c11", "/O2", "/utf-8", "/fp:strict"]);
     } else {
         command.args(["-std=c11", "-O2", "-fwrapv", "-ffp-contract=off"]);
+        command.args(posix_feature_arguments());
     }
 }
 
@@ -584,6 +588,19 @@ enum SystemLibraryPlatform {
     Linux,
     MacOs,
     Other,
+}
+
+/// Returns the POSIX feature-test arguments for Linux, or no arguments on other hosts.
+///
+/// The macro comes from the command line (compiler.md §11b).
+/// glibc selects its feature set at the unit's first libc header.
+#[must_use]
+pub fn posix_feature_arguments() -> &'static [&'static str] {
+    if cfg!(target_os = "linux") {
+        &["-D_POSIX_C_SOURCE=199309L"]
+    } else {
+        &[]
+    }
 }
 
 /// Returns the host system-library arguments for `style`.
@@ -1246,7 +1263,11 @@ static void subscript_report_interrupt_latency(void) {
 static pthread_t subscript_interrupt_handle_thread;
 static int subscript_interrupt_thread_started;
 static void *subscript_interrupt_thread(void *argument) {
-    usleep((useconds_t)(SUBSCRIPT_INTERRUPT_AFTER_MILLIS * 1000u));
+    struct timespec delay = {
+        .tv_sec = SUBSCRIPT_INTERRUPT_AFTER_MILLIS / 1000u,
+        .tv_nsec = (SUBSCRIPT_INTERRUPT_AFTER_MILLIS % 1000u) * 1000000u
+    };
+    nanosleep(&delay, NULL);
     subscript_rt_interrupt_set((const subscript_rt_interrupt *)argument);
     subscript_record_interrupt_store();
     return NULL;
@@ -1381,6 +1402,41 @@ fn parse_trap(stderr: &[u8], positions: &[Pos], stdout: &[u8]) -> Option<TrapRep
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn posix_feature_arguments_match_the_host_contract() {
+        let expected: &[&str] = if cfg!(target_os = "linux") {
+            &["-D_POSIX_C_SOURCE=199309L"]
+        } else {
+            &[]
+        };
+        assert_eq!(super::posix_feature_arguments(), expected);
+    }
+
+    #[test]
+    fn c11_optimized_flags_carry_the_posix_feature_test_only_for_unix_on_linux() {
+        let mut unix = Command::new("cc");
+        add_c11_optimized_flags(&mut unix, CCompilerStyle::Unix);
+        let expected: &[&str] = if cfg!(target_os = "linux") {
+            &[
+                "-std=c11",
+                "-O2",
+                "-fwrapv",
+                "-ffp-contract=off",
+                "-D_POSIX_C_SOURCE=199309L",
+            ]
+        } else {
+            &["-std=c11", "-O2", "-fwrapv", "-ffp-contract=off"]
+        };
+        assert_eq!(unix.get_args().collect::<Vec<_>>(), expected);
+
+        let mut msvc = Command::new("cl");
+        add_c11_optimized_flags(&mut msvc, CCompilerStyle::Msvc);
+        assert_eq!(
+            msvc.get_args().collect::<Vec<_>>(),
+            ["/nologo", "/std:c11", "/O2", "/utf-8", "/fp:strict"]
+        );
+    }
 
     fn sources(src: &str) -> Vec<SourceFile> {
         vec![SourceFile::new("test.ts", src)]
@@ -1569,11 +1625,18 @@ mod tests {
         add_c11_optimized_flags(&mut unix, CCompilerStyle::Unix);
         add_object_directory(&mut unix, Path::new("objects"), CCompilerStyle::Unix);
         add_executable_output(&mut unix, Path::new("program"), CCompilerStyle::Unix);
-        assert_eq!(
-            unix.get_args()
-                .map(|arg| arg.to_string_lossy().into_owned())
-                .collect::<Vec<_>>(),
-            [
+        let expected: &[&str] = if cfg!(target_os = "linux") {
+            &[
+                "-std=c11",
+                "-O2",
+                "-fwrapv",
+                "-ffp-contract=off",
+                "-D_POSIX_C_SOURCE=199309L",
+                "-o",
+                "program",
+            ]
+        } else {
+            &[
                 "-std=c11",
                 "-O2",
                 "-fwrapv",
@@ -1581,7 +1644,8 @@ mod tests {
                 "-o",
                 "program",
             ]
-        );
+        };
+        assert_eq!(unix.get_args().collect::<Vec<_>>(), expected);
         assert_eq!(
             include_directory_arg(CCompilerStyle::Unix, Path::new("include")),
             OsString::from("-Iinclude")

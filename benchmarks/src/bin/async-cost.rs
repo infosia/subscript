@@ -15,8 +15,8 @@ use std::process::{Command, ExitCode};
 use std::time::Instant;
 
 use subscript_codegen::{
-    emit_c, host_c_compiler, runtime_staticlib_path, runtime_system_libraries, tool_output_report,
-    CCompilerStyle,
+    emit_c, host_c_compiler, posix_feature_arguments, runtime_staticlib_path,
+    runtime_system_libraries, tool_output_report, CCompilerStyle,
 };
 use subscript_compiler::{check_program, SourceFile};
 
@@ -182,7 +182,7 @@ fn measure(
     let build = compiler
         .command()
         .arg("-std=c11")
-        .args(cfg!(target_os = "linux").then_some("-D_POSIX_C_SOURCE=199309L"))
+        .args(posix_feature_arguments())
         // A revision whose runtime predates `async_unfinished` compiles the
         // same entry without that read, so one driver source measures both.
         .args(

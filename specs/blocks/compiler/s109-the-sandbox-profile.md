@@ -608,20 +608,42 @@ one with a measurement.
 
 ### 109.6a The heavy tests
 
-*(Added 2026-09-17, round 9; measured in round 9b.)* Two CLI tests
+*(Added 2026-09-17, round 9; measured in round 9b.)* Three CLI tests
 drive the compile child to its budgets. The memory-budget test's
 default-profile control reaches about 10 GB of resident memory; its
 profile run stops at the budget (4.35 GB optimized). The time-budget
 test's firing control runs under the 300 s budget (67.6 s
-unoptimized). Those heavy parts run only when
+unoptimized on the owner's host). The process-group test builds a
+host C file whose compile is the larger part of the build, and then
+kills that build. Those heavy parts run only when
 `SUBSCRIPT_HEAVY_TESTS=1` is set. Without it each test prints one
 `gate-skip:` line that the gate counts (§85). The quick shape's
-expected skip count is therefore 4 and the full shape's is 2. The
+expected skip count is therefore 5 and the full shape's is 2. The
 time-budget test's 2 s stop runs in every shape. The full gate
 exports the variable for the whole shape; the quick gate does not.
-The gate record names the variable (§85 rule 5). Measured: the two
-tests take 2.7 s without the variable and 214.6 s with it; the
-debug suite 358 s against 495 s.
+The gate record names the variable (§85 rule 5). Measured: the
+memory-budget and time-budget tests take 2.7 s without the variable
+and 214.6 s with it; the debug suite 358 s against 495 s.
+
+**Rule: a firing control does not run under the contract's default
+budget.** The control measures the host, and the default budget is
+one host's number. A control sets `SUBSCRIPT_COMPILE_TIME_BUDGET_SECONDS`
+to the ceiling; the run under test keeps the budget the test derives
+from the control's own wall time.
+
+*(Amended 2026-09-18, after the x86-64 Linux gate host ran the suite.
+The process-group test joined the heavy set, and the rule above is
+new. That test's control held the contract's 300 s default, and it
+passed the default on that host: the C compile of its 65,536-step
+fixture alone is 686.39 s, and the whole control build is 632.92 s.
+The test then reported S026 where it required the control's exit 0.
+The 67.6 s above is the owner host's figure for a different test, and
+the same class of assumption produced this defect. Owner decision
+2026-09-18: the test stays heavy; the fixture is not made smaller.
+Measured after the fix, `x86_64-unknown-linux-gnu`, unoptimized: the
+control 632.92 s, the killed build 316.01 s on its derived 316-second
+budget, no executable after 632.92 s more, the whole test 1,581.86 s.
+Evidence: `specs/tracking/linux-portability.md`.)*
 
 ### 109.7a The in-repo runners under the profile
 

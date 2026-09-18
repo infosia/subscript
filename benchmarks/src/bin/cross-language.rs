@@ -35,8 +35,8 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 use subscript_codegen::{
-    emit_c, jit_bench, jit_bench_with_warmup_floor, runtime_staticlib_path,
-    runtime_system_libraries, tool_output_report, CCompilerStyle,
+    emit_c, jit_bench, jit_bench_with_warmup_floor, posix_feature_arguments,
+    runtime_staticlib_path, runtime_system_libraries, tool_output_report, CCompilerStyle,
 };
 use subscript_compiler::{check_program, SourceFile};
 
@@ -663,10 +663,7 @@ fn measure_ship(
     }
     let build = Command::new(cc)
         .arg("-std=c11")
-        // Strict C11 hides the POSIX clock declarations in glibc.
-        // AOT_BENCH_ENTRY_C concatenates the runtime header before aot-entry.c.
-        // That header selects glibc features, so a macro inside aot-entry.c is too late.
-        .args(cfg!(target_os = "linux").then_some("-D_POSIX_C_SOURCE=199309L"))
+        .args(posix_feature_arguments())
         .args(BASELINE_CFLAGS)
         .arg("-fwrapv")
         .arg(&src)

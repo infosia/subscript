@@ -56,8 +56,9 @@ use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
 use subscript_codegen::{
-    emit_c, jit_bench_with_warmup_floor, jit_compile_time, runtime_staticlib_path,
-    runtime_system_libraries, tool_output_report, CCompilerStyle, ReloadSession,
+    emit_c, jit_bench_with_warmup_floor, jit_compile_time, posix_feature_arguments,
+    runtime_staticlib_path, runtime_system_libraries, tool_output_report, CCompilerStyle,
+    ReloadSession,
 };
 use subscript_compiler::{check_program, SourceFile};
 
@@ -1477,10 +1478,7 @@ fn measure_ship(
         // flags; this subject stands in for the ship tier, so it tracks
         // the ship tier's `-std`.
         .arg("-std=c11")
-        // Strict C11 hides the POSIX clock declarations in glibc.
-        // SHIP_BENCH_ENTRY_C concatenates the runtime header before aot-entry.c.
-        // That header selects glibc features, so a macro inside aot-entry.c is too late.
-        .args(cfg!(target_os = "linux").then_some("-D_POSIX_C_SOURCE=199309L"))
+        .args(posix_feature_arguments())
         .args(BASELINE_CFLAGS)
         // The emitted ship-tier C requires two's-complement signed
         // wrap; `-fwrapv` makes signed overflow defined (matching the

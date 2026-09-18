@@ -36,7 +36,7 @@ use std::process::{Command, ExitCode};
 use std::time::Duration;
 
 use subscript_codegen::{
-    emit_c, host_c_compiler, jit_bench_configured, runtime_staticlib_path,
+    emit_c, host_c_compiler, jit_bench_configured, posix_feature_arguments, runtime_staticlib_path,
     runtime_system_libraries, tool_output_report, CCompilerStyle, RunConfig, RunError,
     SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES, SANDBOX_DEFAULT_STACK_BUDGET_BYTES,
 };
@@ -507,13 +507,7 @@ fn measure_ship(
         Err(error) => return Outcome::Error(format!("the platform C compiler: {error}")),
     };
     let mut build = compiler.command();
-    build
-        .args(SHIP_CFLAGS)
-        // Strict C11 hides the POSIX clock declarations in glibc.
-        // AOT_BENCH_ENTRY_C puts the runtime header before the entry, and
-        // that header selects the glibc feature set, so the macro belongs
-        // on the command line.
-        .args(cfg!(target_os = "linux").then_some("-D_POSIX_C_SOURCE=199309L"));
+    build.args(SHIP_CFLAGS).args(posix_feature_arguments());
     if sandbox {
         // The entry sets these on every fresh Context, before the first
         // script call (§109.5). The ship entry receives the host's quota
