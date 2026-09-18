@@ -636,3 +636,135 @@ measurement.
    requirement of the sandbox profile. A default-profile compile takes
    a stack under the window. It does not close the defect for a
    sandbox-profile dev-JIT module, so it is a narrowing, not a fix.
+
+### Defect 3, the arena round (2026-09-18)
+
+Owner decision 2026-09-18: take way 1 of the previous round. The round
+then found that no fork is needed. `cranelift-jit` 0.125.4 re-exports
+`ArenaMemoryProvider`, `JITMemoryProvider`, and `SystemMemoryProvider`
+at its crate root, and `JITBuilder::memory_provider` installs one. The
+arena reserves one contiguous region up front and carves its code,
+read-write, and read-only segments from it, so every item of one module
+is within the arena of every other item.
+
+The prototype installs the arena at `codegen/src/jit/compile.rs:41` and
+`codegen/src/reload.rs:606`. It reverted; the tree stayed at `4ec2593`.
+
+#### The defect closes
+
+| Tree | Runs of `boundary_scratch_breadth`, debug | Result |
+|---|---|---|
+| `4ec2593` | 6 | 0 passed, 6 failed |
+| with the arena | 5 | 5 passed, 0 failed |
+
+The displacement of the pair that failed:
+
+| Condition | Displacement |
+|---|---|
+| no arena | −8,567,550,719 and −8,573,338,367 |
+| the arena, 10 modules over 5 runs | −20,480, every run |
+
+Address randomization moves the arena base and nothing else. The
+read-only data sits at the arena base and the code starts five pages
+later. The displacement is bounded by the module's own span, not by the
+address space.
+
+| Suite | Baseline `4ec2593` | With the arena |
+|---|---|---|
+| `-p subscript-codegen`, debug | 504 passed, 1 failed, 1 ignored | 505 passed, 0 failed, 1 ignored |
+| the same, release | 504 passed, 0 failed, 1 ignored | 504 passed, 0 failed, 1 ignored |
+| `--workspace`, debug | 1,605 passed, 1 failed, 2 ignored | 1,606 passed, 0 failed, 2 ignored |
+| `-p subscript-codegen --test reload` | 20 passed | 20 passed |
+
+No committed golden, `.expected` file, corpus output, or
+`benchmarks/results.json` moved.
+
+#### The memory one module takes
+
+584 dev-JIT modules over four subjects, debug. `span` is the distance
+from the lowest to the highest byte one module allocates.
+
+| Subject | Modules | Largest code blob | Read-only total | Span |
+|---|---|---|---|---|
+| `boundary_scratch_breadth` | 2 | 1,562,668 | 17,308 | 1,583,180 |
+| `long_string_constants` | 22 | 609 | 1,048,578 | 1,053,561 |
+| `reload` | 273 | 111,840 | 1,844 | 136,342 |
+| `golden` | 287 | 105,056 | 1,844 | 132,053 |
+
+The measured maximum span is 1,583,180 bytes. The worst density is 3.21
+arena bytes per source byte (`boundary_scratch_breadth`, 1,583,180 over
+493,178).
+
+#### The cost is under this host's noise
+
+`/usr/bin/time` on the built debug binaries, run alone.
+
+| Binary | Baseline | With the arena |
+|---|---|---|
+| `golden` | 169.12 s, 161.32 s | 188.23 s, 170.91 s, 155.23 s |
+| `long_string_constants` | 78.49 s, 75.32 s | 87.58 s, 73.33 s |
+
+One configuration's own spread is wider than the difference between
+configurations, and the two `golden` ranges overlap. A control with the
+arena cut to 4 MiB gave `golden` 159.39 s, inside the baseline range, so
+the reservation itself costs nothing measurable. Peak resident memory of
+`boundary_scratch_breadth` is 390,344 kB with the arena against
+390,152–395,232 kB without, unchanged. The arena is `mmap` PROT_NONE, so
+the reserve costs address space and not resident memory.
+
+#### Two things the candidate breaks
+
+**1. The arena panics where the present provider returns an error.**
+`Segment::set_rw` calls `.expect(...)`
+(`cranelift-jit-0.125.4/src/memory/arena.rs:44`), so an `mprotect`
+failure aborts the process:
+
+    thread 'subscript-compile' panicked at .../memory/arena.rs:44:18:
+    unable to change memory protection for jit memory segment:
+    SystemCall(Os { code: 12, kind: OutOfMemory, ... })
+
+`SystemMemoryProvider` returns `Internal("… unable to make memory
+readonly")` at the same point. Core principle 5 forbids the panic, and
+the panic is in the dependency.
+
+The threshold moves the other way. Each reload generation builds its own
+`JITModule` and its own arena (`codegen/src/reload.rs:606`), and the
+session holds every generation until `Drop`. Measured on one trivial
+program reloaded in a loop, against `vm.max_map_count` 65,530:
+
+| | The arena | `SystemMemoryProvider` |
+|---|---|---|
+| VMA maps per generation | 3 | 4 |
+| Resident bytes per generation | ≈140 kB | ≈140 kB |
+| First failing generation | 21,808 | 16,361 |
+
+The arena reaches the limit later, not sooner, because it uses one fewer
+mapping. Only the failure mode is worse.
+
+**2. The reserve size has no derivation.** 1 GiB against a measured
+worst of 1,583,180 bytes is a margin, not a derivation.
+`SOURCE_BYTE_LIMIT` (131,072) and `PROGRAM_BYTE_LIMIT` (8,388,608) are
+sandbox-profile limits, so under the default profile no language fact
+bounds a module. Against the sandbox program limit the worst density
+gives 8,388,608 × 3.21 × 1.5 = 40,390,905 bytes. Under the default
+profile the reserve is a new cap where none exists today. Exhaustion,
+measured with the arena set to 1 MiB, is not a diagnostic:
+
+    internal lowering error: define LIR function 0: Allocation
+    { message: "unable to alloc function", err: … "pre-allocated jit
+    memory region exhausted" }
+
+It reaches the caller as `RunError::Internal` and names no source
+position.
+
+Both are contract questions. The form must carry the JIT module's memory
+bound, the way §109.2a carries the parser's stack bound.
+
+#### Two corrections to the round's handoff
+
+The handoff said `cranelift_jit::memory` is a public module. It is not;
+`src/lib.rs` declares `mod memory;` and re-exports the items at the
+crate root. The handoff also gave the debug baseline as 504 passed, 0
+failed. The debug suite holds 506 tests, one more than release
+(`lir_interpreter_debug_subset_traps_at_declared_sites`), so a green
+debug run is 505 passed, 1 ignored.
