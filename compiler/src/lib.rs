@@ -435,6 +435,26 @@ mod tests {
         check_on_this_thread(&[SourceFile::new("test.ts", src)], &CheckOptions::default())
     }
 
+    /// The checked module carries the bytes of every source the check
+    /// read (`specs/blocks/compiler.md` §110 rule 3). The dev JIT
+    /// derives one module's one memory reservation from the number.
+    #[test]
+    fn the_checked_module_carries_the_bytes_of_every_source() {
+        let one = "export function main(): void {\n  print(\"one\");\n}\n";
+        let module = check_one(one).expect("one file checks");
+        assert_eq!(module.source_bytes, 49);
+        assert_eq!(module.source_bytes, one.len());
+
+        let other = "export function helper(): i32 {\n  return 7;\n}\n";
+        let two = check_program(&[
+            SourceFile::new("main.ts", one),
+            SourceFile::new("other.ts", other),
+        ])
+        .expect("two files check");
+        assert_eq!(two.source_bytes, 95);
+        assert_eq!(two.source_bytes, one.len() + other.len());
+    }
+
     #[test]
     fn empty_program_list_is_an_error() {
         let err = check_program(&[]).unwrap_err();

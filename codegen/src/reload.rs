@@ -71,7 +71,7 @@ use subscript_compiler::{
 };
 use subscript_runtime::{Context, Interrupt};
 
-use crate::jit::{register_runtime, RunError, TrapReport};
+use crate::jit::{install_reservation, register_runtime, RunError, TrapReport};
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
 use crate::native::{missing_symbol, register_symbols};
 use crate::{HostLimits, NativeLibrary, RunConfig};
@@ -604,6 +604,9 @@ fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation
                 .map_err(|e| RunError::Internal(internal(format!("ISA flags: {e}"))))
         })?;
     let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
+    // §110 rule 1: each generation is one module, and each module gets
+    // one reservation of its own.
+    install_reservation(&mut builder, hirm.source_bytes).map_err(RunError::Internal)?;
     register_runtime(&mut builder);
     register_symbols(&mut builder, libraries);
     let mut module = JITModule::new(builder);

@@ -1355,6 +1355,7 @@ pub(crate) fn run(
             foreign_mirrors: ck.foreign_mirrors,
             top_level: ck.top_level,
             profile: options.profile,
+            source_bytes: prog.source_bytes,
         };
         module.operation_signatures = operation_signatures(&mut module);
         crate::trap_sites::decide_index_checks(&mut module);

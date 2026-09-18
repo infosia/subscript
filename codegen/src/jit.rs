@@ -10,6 +10,7 @@ use subscript_runtime::TrapKind;
 mod bench;
 mod compile;
 mod entry;
+mod memory;
 mod output;
 #[cfg(test)]
 mod probe;
@@ -19,6 +20,7 @@ mod symbols;
 pub use self::bench::{
     jit_bench, jit_bench_configured, jit_bench_with_warmup_floor, jit_compile_time, BenchSamples,
 };
+pub(crate) use self::memory::install_reservation;
 #[cfg(test)]
 pub(crate) use self::probe::{
     allocation_attribution_after_run, live_allocations_after_main_calls,

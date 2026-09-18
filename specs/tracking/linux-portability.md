@@ -768,3 +768,124 @@ crate root. The handoff also gave the debug baseline as 504 passed, 0
 failed. The debug suite holds 506 tests, one more than release
 (`lir_interpreter_debug_subset_traps_at_declared_sites`), so a green
 debug run is 505 passed, 1 ignored.
+
+### Defect 3 closed (2026-09-18)
+
+§110 landed. The contract went first (`1aa502b`), and this round
+implemented it.
+
+The dev JIT installs one `ArenaMemoryProvider` for each module, at the
+JIT runner and at the hot-reload session. `hir::Module` carries
+`source_bytes`, so the form carries the fact §110 rule 3 derives the
+size from, and the JIT does not recompute it. `OneReservation` wraps
+the arena and holds the two numbers rule 4 reports: the dependency's
+error carries no size, so the failing request is observable only inside
+the provider.
+
+#### The derivation, measured
+
+989 dev-JIT modules over 21 test binaries, one record for each finished
+module, from one debug workspace test run.
+
+| Constant | Value | Set by |
+|---|---|---|
+| `floor` | 104,466 | the worst span of the 800 modules whose source is 10,000 bytes or less, from a module of 7,267 source bytes |
+| `slope` | 3 | the worst `(span − floor)` for each source byte over the other 189, 2.998, from a module of 493,178 source bytes with a span of 1,583,180 |
+
+The margin is 1.5, the margin §109.2a holds over the same kind of
+bound. `(floor + 3 × source) × 1.5` covers all 989 modules, and the
+tightest is 1.501x on the module that sets the slope.
+
+The split is not an artefact of where the line falls: the slope is 3.04
+at a split of 7,000, 3.00 at 10,000 and at 40,000, and 2.93 from 50,000
+to 200,000. Under 5,000 the apparent slope rises to 9.5–23, because the
+per-module cost is charged to the source. The extreme points:
+
+| Source bytes | Span | Span for each source byte |
+|---|---|---|
+| 32 | 45 | 1.41 |
+| 51 | 4,308 | 84.5 |
+| 7,267 | 104,466 | 14.4 (sets `floor`) |
+| 12,669 | 25,920 | 2.05 |
+| 43,863 | 136,342 | 3.11 |
+| 131,073 | 4,308 | 0.03 |
+| 493,178 | 1,583,180 | 3.21 (sets `slope`) |
+| 1,648,133 | 1,053,561 | 0.64 |
+
+A source of 131,073 bytes gives a span of 4,308, and a source of 7,267
+gives 104,466. The per-module cost and the source cost are two facts,
+not one. A single slope with no floor under-reserves every small
+module.
+
+#### Rule 4, measured
+
+With `floor` at 1 and `slope` at 0:
+
+    internal lowering error: define LIR function 0: Allocation
+    { message: "unable to alloc function", err: … "the reservation of
+    one dev-JIT module ran out: module source 61 bytes, reservation 1
+    bytes, request 180 bytes; the constant of
+    `specs/blocks/compiler.md` §110 rule 3 is too small: pre-allocated
+    jit memory region exhausted" }
+
+It names the three numbers and stays `RunError::Internal`.
+
+#### Rule 2's test is Red without the reservation
+
+The test compiles a program whose one string literal holds a mebibyte,
+so the module's read-only data is larger than the mapping that holds
+the code. It reads the code address with `get_finalized_function` and
+the data address with `get_name` plus `get_finalized_data`, both from
+the finished module.
+
+| Condition | Runs | Result |
+|---|---|---|
+| the `install_reservation` call deleted | 5 | 5 failed, each at `compiled_blob.rs:61` with `TryFromIntError` |
+| the call restored | 5 | 5 passed |
+
+A small module does not reproduce it. The same test with a short
+literal passed 3 of 3 with no reservation, and a 120,291-byte source of
+many small functions measured a displacement of 8,192. The mebibyte
+datum is what makes the test Red.
+
+#### The gates
+
+The coding agent ran the suites; the orchestrator measured the rest.
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check` | exit 0 |
+| `cargo build --offline --locked --workspace --all-targets`, debug | 0 warnings |
+| `cargo clippy --offline --locked --workspace --all-targets` | 7 / 18 / 13 |
+| `boundary_scratch_breadth`, debug, 5 runs, orchestrator | 5 passed, 56.85–57.64 s each |
+| `-p subscript-codegen --no-fail-fast`, debug | 507 passed, 0 failed, 1 ignored |
+| the same, release | 506 passed, 0 failed, 1 ignored |
+| `--workspace --no-fail-fast`, debug | 1,609 passed, 0 failed, 2 ignored |
+| `tools/hygiene.sh` | exit 0 |
+
+The workspace count moves from 1,605 passed with 1 failed to 1,609
+passed with 0 failed: the defect closes, and three tests are new. No
+committed golden, `.expected` file, corpus entry, or
+`benchmarks/results.json` moved.
+
+#### A gate hole this round found
+
+`cargo build --offline --locked --workspace --all-targets --release`
+warns, and the gate does not see it:
+
+    warning: methods `test_offset_live_bytes_counter` and
+    `test_offset_charged_bytes` are never used
+    --> runtime/src/context.rs:4578:12
+    warning: `subscript-runtime` (lib test) generated 1 warning
+
+The warning is not this round's. `subscript-runtime` is untouched here
+and depends on neither changed crate, and the warning reproduces with
+`-p subscript-runtime --release --all-targets` alone.
+
+`tools/gate.sh` runs `cargo build … --all-targets` in the debug profile
+only (`tools/gate.sh:286`), and its release step is `cargo test
+--release`, whose check is the test count and not the warning count
+(`tools/gate.sh:291`). A release-only warning therefore passes every
+shape. This is the §55 lesson in its second form: a profile that only
+tests is not a warning gate. §85 must decide whether the build step
+runs in both profiles.

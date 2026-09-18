@@ -31,6 +31,11 @@ pub(crate) struct ParsedFile {
 /// A parsed program: all files plus the shared source map.
 pub(crate) struct ParsedProgram {
     pub files: Vec<ParsedFile>,
+    /// Total bytes of the source texts this program was parsed from.
+    /// The checked module carries the number on, and the dev JIT
+    /// derives its one reservation from it
+    /// (`specs/blocks/compiler.md` §110 rule 3).
+    pub source_bytes: usize,
     source_map: SourceMap,
 }
 
@@ -238,7 +243,12 @@ pub(crate) fn parse_program(
     }
 
     if diags.is_empty() {
-        Ok(ParsedProgram { files, source_map })
+        let source_bytes = sources.iter().map(|source| source.source.len()).sum();
+        Ok(ParsedProgram {
+            files,
+            source_bytes,
+            source_map,
+        })
     } else {
         Err(diags)
     }

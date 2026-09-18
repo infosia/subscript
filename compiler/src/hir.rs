@@ -49,6 +49,10 @@ pub struct Module {
     /// (`specs/blocks/compiler.md` §109.1 rule 2). This is the one
     /// carrier: the LIR lowering and each tier runner read it here.
     pub profile: crate::Profile,
+    /// Total bytes of the source texts the check read for this module.
+    /// The dev JIT derives one module's one memory reservation from
+    /// this number (`specs/blocks/compiler.md` §110 rule 3).
+    pub source_bytes: usize,
 }
 
 /// One root that owns expressions in a checked module.
@@ -4664,6 +4668,7 @@ mod tests {
             foreign_mirrors: Vec::new(),
             top_level: Vec::new(),
             profile: crate::Profile::Default,
+            source_bytes: 0,
         };
         assert_eq!(
             function.host_entry_trap_sites(&module),
@@ -5059,6 +5064,7 @@ mod tests {
             foreign_mirrors: Vec::new(),
             top_level: Vec::new(),
             profile: crate::Profile::Default,
+            source_bytes: 0,
         };
         assert!(m.functions.is_empty());
     }

@@ -6,6 +6,7 @@ use subscript_compiler::{
 };
 use subscript_runtime::Context;
 
+use super::memory::install_reservation;
 use super::symbols::register_runtime;
 use super::RunError;
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions, Lowered};
@@ -39,6 +40,10 @@ pub(super) fn compile_jit(
                 .map_err(|e| RunError::Internal(internal(format!("ISA flags: {e}"))))
         })?;
     let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
+    // §110 rule 1: one module holds its code and its data in one
+    // reservation, so the module's own size bounds every displacement
+    // a non-PIC lowering emits.
+    install_reservation(&mut builder, hir.source_bytes).map_err(RunError::Internal)?;
     register_runtime(&mut builder);
     register_symbols(&mut builder, libraries);
     let mut module = JITModule::new(builder);
