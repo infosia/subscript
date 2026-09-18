@@ -270,7 +270,30 @@ that measurement.
    *(Added 2026-09-17, fourth Phase Review: a chain of 65,476 same
    labels in 130,990 bytes takes over 10 GB in the parser's
    duplicate-label path and is killed by the system, with no
-   diagnostic; the parser is external, so the bound is a process.)*
+   diagnostic; the parser is external, so the bound is a process.
+   Superseded 2026-09-19: that path was quadratic and the fork fixed
+   it. `parse_labelled_stmt` built one error for each earlier live
+   copy of the label, so n nested duplicate labels made n(n-1)/2
+   errors; 499 labels made 124,251. The same 130,990-byte source now
+   takes 93,192,192 bytes and 0.76 s in the parser, and the whole
+   profile check of it takes 1.65 s. The bound is still a process:
+   the fix removes one input from the set this rule covers, not the
+   rule. Fork commit `affcb6ee`.)*
+
+   **A test replaces either budget, and a replaced memory budget
+   still holds the compile thread's stack.** *(Added 2026-09-19.)*
+   Each budget has a test-only environment variable, because the stop
+   has no other deterministic source: a test that waits for a real
+   12 GiB compile waits for a host that can host one. The time
+   budget's variable already exists. The memory budget's variable
+   takes the same shape, with one condition the time budget does not
+   have: a value at or under the compile thread's stack reservation
+   refuses the thread itself, and §109.2a then makes the profile
+   check nothing. A replaced memory budget is therefore the
+   reservation plus the heap the test means to refuse, and the test
+   derives that heap from the measured demand of its own source. A
+   value the condition rejects leaves the contract's budget in place,
+   as an unreadable time-budget value does.
 
 *(Measured 2026-09-17, security round 2, at `52373a9`.)* The
 exponential `!` chain was the warning walk: the `Unary`/`Cast` arm of
@@ -608,29 +631,46 @@ one with a measurement.
 
 ### 109.6a The heavy tests
 
-*(Added 2026-09-17, round 9; measured in round 9b.)* Three CLI tests
-drive the compile child to its budgets. The memory-budget test's
-default-profile control reaches about 10 GB of resident memory; its
-profile run stops at the budget (4.35 GB optimized). The time-budget
+*(Added 2026-09-17, round 9; measured in round 9b. Amended
+2026-09-19: the memory-budget test left the heavy set.)* Two CLI tests
+drive the compile child to its budgets. The time-budget
 test's firing control runs under the 300 s budget (67.6 s
 unoptimized on the owner's host). The process-group test builds a
 host C file whose compile is the larger part of the build, and then
 kills that build. Those heavy parts run only when
 `SUBSCRIPT_HEAVY_TESTS=1` is set. Without it each test prints one
 `gate-skip:` line that the gate counts (§85). The quick shape's
-expected skip count is therefore 5 and the full shape's is 2. Two of
-the three run in the debug profile alone, and the release run
-declares each one with a `gate-debug-only:` line (§85 rule 4a): the
-time budget is 300 s in each build, and a process-group kill is one
-code path in each. The memory-budget test runs in both profiles,
-because `MEMORY_BUDGET_BYTES` and `COMPILE_THREAD_STACK_BYTES` each
-differ by build. The full shape's expected `gate-debug-only:` count
-is therefore 2. The
+expected skip count is therefore 4 and the full shape's is 2. Both
+run in the debug profile alone, and the release run declares each one
+with a `gate-debug-only:` line (§85 rule 4a): the time budget is
+300 s in each build, and a process-group kill is one code path in
+each. The full shape's expected `gate-debug-only:` count is
+therefore 2. The
 time-budget test's 2 s stop runs in every shape. The full gate
 exports the variable for the whole shape; the quick gate does not.
-The gate record names the variable (§85 rule 5). Measured: the
-memory-budget and time-budget tests take 2.7 s without the variable
-and 214.6 s with it; the debug suite 358 s against 495 s.
+The gate record names the variable (§85 rule 5). Measured before the
+memory-budget test left the set: the memory-budget and time-budget
+tests take 2.7 s without the variable and 214.6 s with it; the debug
+suite 358 s against 495 s.
+
+**The memory-budget test is not heavy, because its budget is
+replaced.** *(Added 2026-09-19.)* The test drove a real 12 GiB
+compile, and the source that reached it was a chain the parser
+handled in quadratic memory (§109.2 rule 6). The fork made that path
+linear, so the source now completes in 1.65 s and the test's
+assertion failed. A test whose subject is a defect of a dependency
+holds only while the defect does.
+
+The test now replaces the memory budget by the variable §109.2 rule 6
+names, at the compile thread's stack reservation plus a heap under
+what its own source demands, and its firing control is the same
+source under a replaced budget with headroom. It runs in every shape
+and in both profiles, and it checks what it always checked: a compile
+over the budget is one S026 at the entry file, the child's own
+allocation-failure text passes through, and the parent classifies the
+end. The contract's 12 GiB is held by §109.2a's derivation and by the
+`const` assertion that the budget exceeds the stack, not by a test
+that waits for a host able to host one.
 
 **Rule: a firing control does not run under the contract's default
 budget.** The control measures the host, and the default budget is
