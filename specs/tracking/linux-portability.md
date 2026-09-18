@@ -948,3 +948,99 @@ Gates after the change, measured by the orchestrator: `cargo fmt
 lines unchanged; the `subscript-cli` lib suite 18 passed, one more than
 before; `tools/hygiene.sh` exit 0. The coding agent measured clippy at
 7 / 18 / 13 with `subscript-cli` at 0, and the heavy test at 1 passed.
+
+### The parser's per-package optimization level, measured and refused (2026-09-19)
+
+The x86-64 Linux gate host has 15 GiB of RAM and cannot run the
+memory-budget heavy test: the test's control passes 10 GB and the debug
+memory budget is 12 GiB. Both numbers come from the compile child's
+budget, and the budget comes from the parser's measured cost. The round
+asked whether a per-package optimization level on the parser fork
+lowers that cost. It does not. Nothing landed.
+
+#### The baseline on this host is 30,204, not 31,151
+
+The probe parses one construct per source with `swc_ecma_parser` alone,
+on a thread of the contract's stack, and reads `VmHWM` minus the
+resident bytes at the start. That is M12's method.
+
+| Construct | Source bytes for each level | Levels | Stack bytes for each level |
+|---|---|---|---|
+| parenthesis | 1 | 131,071 | **30,204** |
+| template substitution | 3 | 43,690 | 19,926 |
+| type argument | 2 | 65,532 | 15,032 |
+| assignment chain | 2 | 65,535 | 2,919 |
+| conditional expression | 2 | 65,535 | 2,281 |
+| prefix operator | 1 | 131,069 | 1,804 |
+
+Three runs gave 30,204, 30,205, and 30,205. §109.2a records 31,151 from
+the owner's host. This host is 3.0% under it, so the recorded stack
+holds with a margin of 2.170 against the recorded 2.10. The constant
+does not move: §109.2a moves it on a worse figure, and this is a better
+one on a second host.
+
+The probe's template column reads 3 source bytes for each level where
+§109.2a records 2. The probe spells every construct with openers only,
+which is the densest form the byte limit admits.
+
+#### The candidate makes the cost worse
+
+`[profile.dev.package.swc_ecma_parser] opt-level = 2`, the parenthesis
+at 131,072 bytes: **34,839 bytes for each level**, three runs alike.
+That is 15.3% over the baseline. `opt-level = 3` gives 34,840. Every
+construct got worse, and the worst construct does not change.
+
+| Construct | Baseline | opt-level 2 | opt-level 3 |
+|---|---|---|---|
+| parenthesis | 30,204 | 34,839 | 34,840 |
+| template substitution | 19,926 | 22,934 | 22,934 |
+| type argument | 15,032 | 22,195 | 22,192 |
+| assignment chain | 2,919 | 3,122 | 3,118 |
+| conditional expression | 2,281 | 2,354 | 2,352 |
+| prefix operator | 1,804 | 2,408 | 2,406 |
+
+The derived stack and the derived budget are unchanged at every level,
+because the recorded constants already hold the larger figure. The
+margin falls from 2.170 to 1.881.
+
+**The mechanism, measured.** `swc_ecma_parser::Parser<I: Tokens>` is
+generic, so its recursive methods are monomorphized in the crate that
+calls them, and that crate is `subscript-compiler` at `opt-level = 0`.
+`nm -C --defined-only` on `parse_paren_expr_or_arrow_fn`: at the
+baseline the symbol is global in the parser's rlib and in the binary,
+because rustc shares generic instantiations at `opt-level = 0`; at
+`opt-level = 3` it is local in the binary alone, because
+share-generics is off above `opt-level = 0`. The per-package level
+never reaches the recursive frames. It moves where they are emitted,
+and the new site gives 15% larger ones.
+
+The cost is against it as well. `cargo clean -p swc_ecma_parser` then
+`cargo build -p subscript-compiler`: 6.84 s at the baseline, 33.28 s at
+`opt-level = 2`, 4.87x. The `subscript-compiler` lib suite is 0.08 s
+faster. Correctness is unaffected: the compiler suite passes, the
+codegen `golden` suite is 36 passed and 0 failed, and no golden,
+`.expected` file, or corpus output moves.
+
+#### The 10 GB is a quadratic error list, not a frame
+
+The duplicate-label source is `"a:"` repeated 65,494 times in 130,990
+bytes. The probe stops itself at 8 GB of resident memory.
+
+| State | Result | Wall |
+|---|---|---|
+| baseline | stopped at 8,000,692,224 resident | 13.38 s |
+| opt-level 2 | stopped at 8,010,747,904 resident | 10.99 s |
+
+The candidate does not change it. That is the null result the round
+expected: a frame size has no reason to change a heap cost.
+
+The cost is the parser's duplicate-label error list, and it is
+quadratic: **499 labels already make 124,251 errors**, which is
+499 × 498 / 2. The byte limit admits 65,476 labels, so the list the
+parser builds is about 2.1 billion errors. §109.2 rule 6 caps what the
+renderer writes at 200 items; the parser builds the whole list before
+any renderer reads it, so the cap is downstream of the growth.
+
+This is where the 10 GB is, and the parser is this project's own fork
+(`https://github.com/infosia/swc_ecma_parser`, branch
+`subscript-eof-bump`).
