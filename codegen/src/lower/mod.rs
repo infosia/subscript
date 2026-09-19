@@ -54,6 +54,7 @@ use crate::layout::{
     checked_add_size as checked_layout_add, checked_mul_size as checked_layout_mul,
     round_up_layout, Layouts, Repr,
 };
+use crate::position_table::PositionTable;
 
 pub(crate) use func::define_function;
 
@@ -276,8 +277,10 @@ pub(crate) struct Lowered {
     pub main: Option<FuncId>,
     /// The synthesized global initializer; run before `main`.
     pub init: FuncId,
-    /// Trap position table: `pos_id` -> TS position.
-    pub positions: Vec<Pos>,
+    /// Trap position table: `pos_id` -> TS position. Index 0 is the
+    /// reserved entry of §112 rule 1, so the ids of script sites
+    /// start at 1.
+    pub positions: PositionTable,
     /// Every host-callable export in declaration order.
     pub entries: Vec<EntryPoint>,
     /// Function-slot table: slot index -> lowered function, `None` for
@@ -337,7 +340,7 @@ pub(crate) struct ModLower<'a, M: Module> {
     pub foreign_ids: HashMap<String, FuncId>,
     /// Foreign imports in deterministic first-use order.
     pub foreign_symbols: Vec<String>,
-    pub positions: Vec<Pos>,
+    pub positions: PositionTable,
     pub lambda_count: u32,
     pub str_count: u32,
     pub call_conv: CallConv,
@@ -356,10 +359,12 @@ pub(crate) fn internal(msg: impl Into<String>) -> String {
 }
 
 impl<'a, M: Module> ModLower<'a, M> {
-    /// Allocates a position-table entry.
+    /// Allocates a position-table entry for one script site.
+    ///
+    /// The table starts with the reserved entry of §112 rule 1, so the
+    /// first id this returns is 1 and no script site takes id 0.
     pub fn pos_id(&mut self, pos: &Pos) -> u32 {
-        self.positions.push(pos.clone());
-        (self.positions.len() - 1) as u32
+        self.positions.add(pos)
     }
 
     /// Builds the signature for a script function.
@@ -796,8 +801,8 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             A::Reduce | A::ReduceRight => (&[I64, I64, I64, I64, I32, I32, I64, I64, I32], None),
             // (ctx, recv, code, env, kind, indexed) -> i32
             A::Some | A::Every | A::FindIndex => (&[I64, I64, I64, I64, I32, I32], Some(I32)),
-            // (ctx, recv, code, env, kind)
-            A::Sort => (&[I64, I64, I64, I64, I32], None),
+            // (ctx, recv, code, env, kind, pos_id)
+            A::Sort => (&[I64, I64, I64, I64, I32, I32], None),
             // (ctx, recv, start, delete_count, pos_id) -> array handle
             A::Splice => (&[I64, I64, I32, I32, I32], Some(I64)),
             // (ctx, recv, out_ptr, pos_id)
@@ -1020,11 +1025,12 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             &[I64, I64, I64, I32, I32],
             Some(I64),
         )?,
-        // (ctx, code, env, userdata1, userdata2) → binding pointer (§14.4:
-        // two userdata slots).
+        // (ctx, code, env, userdata1, userdata2, pos_id) → binding
+        // pointer (§14.4: two userdata slots; §112 rule 4: the position
+        // of the crossing).
         cb_bind: mk(
             "subscript_rt_cb_bind",
-            &[I64, I64, I64, I64, I64],
+            &[I64, I64, I64, I64, I64, I32],
             Some(I64),
         )?,
         // The generic C-ABI callback trampoline (§14.4). Generated
@@ -1033,11 +1039,12 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         // struct's function-pointer slot; the declared signature (message
         // as two words, then the two userdata slots) is unused.
         cb_trampoline: mk("subscript_rt_cb_trampoline", &[I64, I64, I64, I64], None)?,
-        // (ctx, code, env, userdata1, userdata2) → registration pointer
-        // (§111 rule 4: the parameters of `subscript_rt_cb_bind`).
+        // (ctx, code, env, userdata1, userdata2, pos_id) → registration
+        // pointer (§111 rule 4: the parameters of
+        // `subscript_rt_cb_bind`).
         cb_register: mk(
             "subscript_rt_cb_register",
-            &[I64, I64, I64, I64, I64],
+            &[I64, I64, I64, I64, I64, I32],
             Some(I64),
         )?,
         // The explicit-lifetime trampoline (§111 rule 4). Imported only
@@ -1381,7 +1388,9 @@ fn lower_lir_module_with<M: Module>(
         globals: HashMap::new(),
         foreign_ids: HashMap::new(),
         foreign_symbols: Vec::new(),
-        positions: Vec::new(),
+        // §112 rule 2: the one constructor of the dev-JIT table puts
+        // the reserved entry in place.
+        positions: PositionTable::new(),
         lambda_count: 0,
         str_count: 0,
         call_conv,

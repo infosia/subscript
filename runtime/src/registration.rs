@@ -113,18 +113,22 @@ impl Context {
     /// Both userdata slots (§14.4) are stored and delivered to the
     /// language callback; a one-slot callback-info passes `userdata2` as
     /// null.
+    ///
+    /// `pos_id` is the position of the crossing that creates the
+    /// registration (§112 rule 4). A quota refusal reports that site.
     pub fn register_callback(
         &mut self,
         code: *const u8,
         env: *const u8,
         userdata1: *mut u8,
         userdata2: *mut u8,
+        pos_id: u32,
     ) -> *mut u8 {
         debug_assert!(
             env.is_null(),
             "§111 rule 3 registers a boundary callback, whose env is null"
         );
-        self.check_quota(REGISTRATION_RECORD_BYTES, 0);
+        self.check_quota(REGISTRATION_RECORD_BYTES, pos_id);
         self.binding_charge = self
             .binding_charge
             .saturating_add(REGISTRATION_RECORD_BYTES);
@@ -206,6 +210,9 @@ impl Context {
     /// not hold it, and each of those is a fire through a registration
     /// the host released: the call records the
     /// `callback-registration-ended` trap at position 0 (§111 rule 14).
+    /// The refused fire enters no script code, so no script site exists
+    /// (§112 rule 4). Id 0 is the reserved entry of §112 rule 1, so
+    /// every tier reports the empty position.
     pub(crate) fn registration_enter(
         &mut self,
         registration: *mut u8,
@@ -327,6 +334,7 @@ impl Context {
 /// Shared contract; `code`/`env` are a language function value (a
 /// non-capturing wrapper, so `env` is null); `userdata1`/`userdata2`
 /// outlive every call the host starts through this registration.
+/// `pos_id` is the position of the crossing (§112 rule 4).
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_cb_register(
     ctx: *mut Context,
@@ -334,9 +342,10 @@ pub unsafe extern "C" fn subscript_rt_cb_register(
     env: *const u8,
     userdata1: *mut u8,
     userdata2: *mut u8,
+    pos_id: u32,
 ) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.register_callback(code, env, userdata1, userdata2)
+    unsafe { &mut *ctx }.register_callback(code, env, userdata1, userdata2, pos_id)
 }
 
 /// The explicit-lifetime C-ABI callback trampoline (§111 rule 4).
@@ -694,14 +703,16 @@ mod tests {
         let userdata = std::ptr::from_mut(&mut userdata);
         let code = code_of(counting);
 
-        let first = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let first =
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
         assert!(!first.is_null(), "§111 rule 10 publishes no null");
         assert_eq!(ctx.live_registration_count(), 1);
         assert!(ctx.registration_is_open(first));
         assert_eq!(ctx.registration_active_calls(first), Some(0));
 
         // §111 rule 3: the same (code, userdata) is a second record.
-        let second = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let second =
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
         assert_ne!(first, second, "§111 rule 3 forbids interning");
         assert_eq!(ctx.live_registration_count(), 2);
     }
@@ -715,8 +726,10 @@ mod tests {
         let userdata = ctx.alloc(16, 1, 20);
         assert!(!userdata.is_null());
         let code = code_of(counting);
-        let first = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
-        let second = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let first =
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
+        let second =
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
 
         assert!(ctx.release_callback_registration(first.cast()));
         assert_eq!(ctx.live_registration_count(), 1);
@@ -742,14 +755,14 @@ mod tests {
             "null is not an open registration"
         );
 
-        let binding = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let binding = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
         assert!(
             !ctx.release_callback_registration(binding.cast()),
             "a §14.4a binding is not a registration"
         );
 
         let registration =
-            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
         // The firing control: the same call on the open registration.
         assert!(ctx.release_callback_registration(registration.cast()));
         assert_eq!(ctx.live_registration_count(), 0);
@@ -775,6 +788,7 @@ mod tests {
             std::ptr::null(),
             userdata,
             std::ptr::null_mut(),
+            0,
         );
         SUBJECT.with(|cell| cell.set(registration));
 
@@ -818,6 +832,7 @@ mod tests {
             std::ptr::null(),
             outer,
             std::ptr::null_mut(),
+            0,
         );
         SUBJECT.with(|cell| cell.set(registration));
 
@@ -863,6 +878,7 @@ mod tests {
             std::ptr::null(),
             userdata,
             std::ptr::null_mut(),
+            0,
         );
         SUBJECT.with(|cell| cell.set(registration));
         NESTING_LEFT.with(|cell| cell.set(1));
@@ -897,6 +913,7 @@ mod tests {
             std::ptr::null(),
             userdata,
             std::ptr::null_mut(),
+            0,
         );
 
         fire(registration);
@@ -927,6 +944,7 @@ mod tests {
             std::ptr::null(),
             userdata,
             std::ptr::null_mut(),
+            0,
         );
         ctx.delete(userdata as usize, 31);
 
@@ -966,6 +984,7 @@ mod tests {
             std::ptr::null(),
             userdata,
             std::ptr::null_mut(),
+            0,
         );
         assert_eq!(live_records(), before + 1);
 
@@ -994,6 +1013,7 @@ mod tests {
             std::ptr::null(),
             userdata,
             std::ptr::null_mut(),
+            0,
         );
         SUBJECT.with(|cell| cell.set(registration));
         assert_eq!(live_records(), before + 1);
@@ -1029,7 +1049,7 @@ mod tests {
             let userdata = std::ptr::from_mut(&mut userdata);
             let code = code_of(counting);
             for _ in 0..8 {
-                ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+                ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
             }
             assert_eq!(ctx.live_registration_count(), 8);
             assert_eq!(live_records(), before + 8);
@@ -1041,6 +1061,51 @@ mod tests {
         );
     }
 
+    /// §112 rule 4: the quota refusal of a registration reports the
+    /// position of the crossing that asked for it.
+    ///
+    /// The loop runs two different ids. A body that records a constant
+    /// passes one iteration and fails the other, so the second id is
+    /// the control of the first.
+    ///
+    /// Cost: under 1 ms. Two Contexts and four registrations.
+    #[test]
+    fn a_refused_registration_records_the_position_the_crossing_passed() {
+        reset_observations();
+        let code = code_of(counting);
+        let mut userdata = 1u8;
+        let userdata = std::ptr::from_mut(&mut userdata);
+        for crossing in [23u32, 907u32] {
+            let mut ctx = Context::new();
+            let first = ctx.register_callback(
+                code,
+                std::ptr::null(),
+                userdata,
+                std::ptr::null_mut(),
+                crossing,
+            );
+            assert!(ctx.trap_record().is_none(), "the first record fits");
+            ctx.set_alloc_quota(ctx.charged_bytes() as u64);
+            let refused = ctx.register_callback(
+                code,
+                std::ptr::null(),
+                userdata,
+                std::ptr::null_mut(),
+                crossing,
+            );
+            let record = ctx
+                .trap_record()
+                .expect("the quota refuses the second record");
+            assert_eq!(record.kind, TrapKind::AllocationQuota);
+            assert_eq!(
+                record.pos_id, crossing,
+                "the refusal reports the crossing, not the reserved entry"
+            );
+            assert!(ctx.release_callback_registration(first.cast()));
+            assert!(ctx.release_callback_registration(refused.cast()));
+        }
+    }
+
     #[test]
     fn a_registration_charges_the_quota_and_exists_when_the_quota_refuses() {
         reset_observations();
@@ -1050,9 +1115,11 @@ mod tests {
         let code = code_of(counting);
         let charged = ctx.charged_bytes();
 
-        let first = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let first =
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
         assert_eq!(ctx.charged_bytes(), charged + REGISTRATION_RECORD_BYTES);
-        let second = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let second =
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
         assert_eq!(
             ctx.charged_bytes(),
             charged + 2 * REGISTRATION_RECORD_BYTES,
@@ -1068,7 +1135,8 @@ mod tests {
 
         // The firing control: a quota under the next record refuses it.
         ctx.set_alloc_quota(ctx.charged_bytes() as u64);
-        let refused = ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let refused =
+            ctx.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
         assert_eq!(
             ctx.trap_record().map(|record| record.kind),
             Some(TrapKind::AllocationQuota)
@@ -1091,7 +1159,7 @@ mod tests {
             let second = ctx.alloc(16, 2, 41);
             assert!(!first.is_null() && !second.is_null(), "{tier}");
             let registration =
-                ctx.register_callback(code_of(counting), std::ptr::null(), first, second);
+                ctx.register_callback(code_of(counting), std::ptr::null(), first, second, 0);
 
             ctx.collect();
 
@@ -1125,6 +1193,7 @@ mod tests {
                 std::ptr::null(),
                 freed,
                 std::ptr::null_mut(),
+                0,
             );
             ctx.delete(freed as usize, 43);
 
@@ -1172,6 +1241,7 @@ mod tests {
             std::ptr::null(),
             std::ptr::from_mut(&mut first),
             std::ptr::null_mut(),
+            0,
         );
         assert!(observed.0.is_empty(), "one binding is below the threshold");
 
@@ -1180,6 +1250,7 @@ mod tests {
             std::ptr::null(),
             std::ptr::from_mut(&mut second),
             std::ptr::null_mut(),
+            0,
         );
         assert_eq!(
             observed.0,
@@ -1231,6 +1302,7 @@ mod tests {
             std::ptr::null(),
             unobserved,
             std::ptr::null_mut(),
+            0,
         );
         quiet.delete(unobserved as usize, 51);
         assert!(!quiet.trapped(), "the default free path must not trap");
@@ -1245,6 +1317,7 @@ mod tests {
             std::ptr::null(),
             std::ptr::null_mut(),
             registered,
+            0,
         );
         let mut advisory = Advisory::default();
         ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut advisory).cast());
@@ -1284,6 +1357,7 @@ mod tests {
                 std::ptr::null(),
                 userdata,
                 std::ptr::null_mut(),
+                0,
             );
             assert!(!registration.is_null());
             assert_eq!((*pointer).live_registration_count(), 1);
@@ -1325,9 +1399,10 @@ mod tests {
         let mut userdata = 1u8;
         let userdata = std::ptr::from_mut(&mut userdata);
 
-        let one = first.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let one =
+            first.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
         let other =
-            second.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+            second.register_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
 
         // SAFETY: both registrations are live and were never released.
         unsafe {
@@ -1391,6 +1466,7 @@ mod tests {
             std::ptr::null(),
             userdata,
             std::ptr::null_mut(),
+            0,
         );
         SUBJECT.with(|cell| cell.set(registration));
         NESTING_LEFT.with(|cell| cell.set(1));
@@ -1496,6 +1572,7 @@ mod tests {
             std::ptr::null(),
             userdata,
             std::ptr::null_mut(),
+            0,
         );
 
         fire(registration);
@@ -1540,6 +1617,7 @@ mod tests {
                 std::ptr::null(),
                 object,
                 std::ptr::null_mut(),
+                0,
             ));
         }
         let register = start.elapsed();
@@ -1594,7 +1672,7 @@ mod tests {
 
         let start = Instant::now();
         for &object in &control_userdata {
-            control.bind_callback(code, std::ptr::null(), object, std::ptr::null_mut());
+            control.bind_callback(code, std::ptr::null(), object, std::ptr::null_mut(), 0);
         }
         let control_bind = start.elapsed();
         let record = std::mem::size_of::<CallbackBinding>();

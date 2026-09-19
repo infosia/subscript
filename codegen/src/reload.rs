@@ -66,15 +66,15 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::FuncId;
 use subscript_compiler::types::display_type;
 use subscript_compiler::{
-    check_program_with, hir, on_the_compile_thread, CheckOptions, ClassId, Diagnostic, EnumId, Pos,
+    check_program_with, hir, on_the_compile_thread, CheckOptions, ClassId, Diagnostic, EnumId,
     Profile, SourceFile, StringAliasId, Type,
 };
 use subscript_runtime::{Context, Interrupt};
 
 use crate::jit::{install_reservation, register_runtime, RunError, TrapReport};
-use crate::lir_types::trap_report_position;
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
 use crate::native::{missing_symbol, register_symbols};
+use crate::position_table::PositionTable;
 use crate::{HostLimits, NativeLibrary, RunConfig};
 
 // ----- declaration hash -----
@@ -522,7 +522,7 @@ pub struct ReloadSession {
     table: Vec<*const u8>,
     globals: GlobalBlock,
     entries: HashMap<String, SessionEntry>,
-    positions: Vec<Pos>,
+    positions: PositionTable,
     decls: DeclarationHash,
     native_libraries: Vec<NativeLibrary>,
     // The profile the session's module was checked under (§109.1 rule
@@ -537,7 +537,7 @@ struct Generation {
     table: Vec<*const u8>,
     entries: HashMap<String, SessionEntry>,
     init_slot: Option<usize>,
-    positions: Vec<Pos>,
+    positions: PositionTable,
     globals_size: u32,
     globals_align: u32,
 }
@@ -1128,9 +1128,9 @@ impl ReloadSession {
             Some(r) => Err(RunError::Trap(TrapReport {
                 rule: r.kind,
                 message: r.message.clone(),
-                // §111 rule 14: the kind decides whether a position
-                // table is read at all.
-                pos: trap_report_position(r.kind, r.pos_id, &self.positions),
+                // §112 rule 1: the recorded id resolves through this
+                // session's own table, and id 0 is its reserved entry.
+                pos: self.positions.report_position(r.pos_id),
                 stdout: self.ctx.stdout_bytes().to_vec(),
             })),
         }

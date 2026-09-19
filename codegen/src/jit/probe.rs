@@ -2,13 +2,14 @@
 //! code. Each one runs the entries directly, so a test reads the Context
 //! the run left behind.
 
-use subscript_compiler::{Pos, Profile, SourceFile};
+use subscript_compiler::{Profile, SourceFile};
 use subscript_runtime::{ffi, Context};
 
 use super::compile::{call_script_entry, compile_jit};
 use super::entry::{execute_entry, memory_accounting, EntryOptions};
 use super::RunError;
 use crate::lower::internal;
+use crate::position_table::PositionTable;
 
 pub(crate) fn memory_accounting_after_run(
     files: &[SourceFile],
@@ -51,24 +52,15 @@ pub(crate) fn live_allocations_after_main_calls(
                 let trap = ctx
                     .trap_record()
                     .map(|record| {
-                        // §111 rule 14: a kind with no script site reads
-                        // no position table. Every other kind keeps this
-                        // probe's rendering, which names the recorded id
-                        // when the table does not hold it.
-                        let position = if crate::lir_types::trap_has_no_script_site(record.kind) {
-                            crate::lir_types::trap_report_position(
-                                record.kind,
-                                record.pos_id,
-                                &lowered.positions,
-                            )
-                            .to_string()
-                        } else {
-                            lowered
-                                .positions
-                                .get(record.pos_id as usize)
-                                .map(ToString::to_string)
-                                .unwrap_or_else(|| format!("position {}", record.pos_id))
-                        };
+                        // §112 rules 1 and 3: every recorded id reads the
+                        // table, and id 0 is its reserved entry. An id
+                        // the table does not hold keeps this probe's
+                        // rendering, which names the recorded id.
+                        let position = lowered
+                            .positions
+                            .get(record.pos_id)
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| format!("position {}", record.pos_id));
                         format!("{:?} at {position}: {}", record.kind, record.message)
                     })
                     .unwrap_or_else(|| "unknown trap".to_string());
@@ -87,7 +79,7 @@ pub(crate) fn live_allocations_after_main_calls(
     result
 }
 
-type AllocationAttribution = (Vec<(u32, u32, u64)>, Vec<Pos>);
+type AllocationAttribution = (Vec<(u32, u32, u64)>, PositionTable);
 
 pub(crate) fn allocation_attribution_after_run(
     files: &[SourceFile],

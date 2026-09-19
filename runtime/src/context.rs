@@ -2758,6 +2758,10 @@ impl Context {
     /// Diagnostic retained-dead membership is checked first so a retained
     /// header can attribute the trap to the freed allocation. Every other
     /// absent address receives the best-effort liveness diagnostic.
+    ///
+    /// §14.4b (A), kept by §112 rule 5: the position is the site of the
+    /// freed allocation when the runtime holds it, and the reserved
+    /// entry of §112 rule 1 when it does not.
     pub(crate) fn validate_callback_userdata(&mut self, payload: *mut u8) -> bool {
         if payload.is_null() {
             return true;
@@ -2777,6 +2781,10 @@ impl Context {
         if self.is_live(address) {
             return true;
         }
+        // No script site exists here: the runtime holds no header for
+        // this address, so it holds no position either (§112 rule 5).
+        // Id 0 is the reserved entry, so every tier reports the empty
+        // position.
         self.trap(
             TrapKind::CallbackUserdataFreed,
             "callback userdata is not a live allocation",
@@ -3815,12 +3823,16 @@ impl Context {
     ///
     /// Both userdata slots (§14.4) are stored and delivered to the language
     /// callback; a one-slot callback-info passes `userdata2` as null.
+    ///
+    /// `pos_id` is the position of the crossing that creates the
+    /// binding (§112 rule 4). A quota refusal reports that site.
     pub fn bind_callback(
         &mut self,
         code: *const u8,
         env: *const u8,
         userdata1: *mut u8,
         userdata2: *mut u8,
+        pos_id: u32,
     ) -> *mut u8 {
         debug_assert!(
             env.is_null(),
@@ -3837,7 +3849,7 @@ impl Context {
         // would reach the host through a C `void* userdata` slot, and the
         // recorded trap stops the run at the next checkpoint.
         let record = std::mem::size_of::<CallbackBinding>();
-        self.check_quota(record, 0);
+        self.check_quota(record, pos_id);
         self.binding_charge = self.binding_charge.saturating_add(record);
 
         let ctx: *mut Context = self;
@@ -4827,14 +4839,56 @@ mod tests {
         let userdata2 = std::ptr::from_mut(&mut userdata2);
         let other_userdata2 = std::ptr::from_mut(&mut other_userdata2);
 
-        let first = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2);
-        let repeated = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2);
+        let first = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2, 0);
+        let repeated = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2, 0);
         assert_eq!(first, repeated);
         assert_eq!(ctx.callbacks.len(), 1);
 
-        let second = ctx.bind_callback(code, std::ptr::null(), userdata1, other_userdata2);
+        let second = ctx.bind_callback(code, std::ptr::null(), userdata1, other_userdata2, 0);
         assert_ne!(first, second);
         assert_eq!(ctx.callbacks.len(), 2);
+    }
+
+    /// §112 rule 4: the quota refusal of a binding reports the
+    /// position of the crossing that asked for it.
+    ///
+    /// The loop runs two different ids. A body that records a constant
+    /// passes one iteration and fails the other, so the second id is
+    /// the control of the first.
+    ///
+    /// Cost: under 1 ms. Two Contexts and four bindings.
+    #[test]
+    fn a_refused_binding_records_the_position_the_crossing_passed() {
+        fn callback_code() {}
+
+        let code = callback_code as *const () as *const u8;
+        for crossing in [17u32, 4_213u32] {
+            let mut ctx = Context::new();
+            ctx.bind_callback(
+                code,
+                std::ptr::null(),
+                1 as *mut u8,
+                std::ptr::null_mut(),
+                crossing,
+            );
+            assert!(ctx.trap_record().is_none(), "the first record fits");
+            ctx.set_alloc_quota(ctx.charged_bytes() as u64);
+            ctx.bind_callback(
+                code,
+                std::ptr::null(),
+                2 as *mut u8,
+                std::ptr::null_mut(),
+                crossing,
+            );
+            let record = ctx
+                .trap_record()
+                .expect("the quota refuses the second record");
+            assert_eq!(record.kind, TrapKind::AllocationQuota);
+            assert_eq!(
+                record.pos_id, crossing,
+                "the refusal reports the crossing, not the reserved entry"
+            );
+        }
     }
 
     /// §109.4 rule 2: a new binding record charges its own bytes, and a
@@ -4848,22 +4902,45 @@ mod tests {
         let code = callback_code as *const () as *const u8;
         let charged = ctx.charged_bytes();
 
-        let first = ctx.bind_callback(code, std::ptr::null(), 1 as *mut u8, std::ptr::null_mut());
+        let first = ctx.bind_callback(
+            code,
+            std::ptr::null(),
+            1 as *mut u8,
+            std::ptr::null_mut(),
+            0,
+        );
         assert_eq!(ctx.charged_bytes(), charged + record);
-        let repeated =
-            ctx.bind_callback(code, std::ptr::null(), 1 as *mut u8, std::ptr::null_mut());
+        let repeated = ctx.bind_callback(
+            code,
+            std::ptr::null(),
+            1 as *mut u8,
+            std::ptr::null_mut(),
+            0,
+        );
         assert_eq!(first, repeated);
         assert_eq!(
             ctx.charged_bytes(),
             charged + record,
             "a rebound identity creates no record"
         );
-        ctx.bind_callback(code, std::ptr::null(), 2 as *mut u8, std::ptr::null_mut());
+        ctx.bind_callback(
+            code,
+            std::ptr::null(),
+            2 as *mut u8,
+            std::ptr::null_mut(),
+            0,
+        );
         assert_eq!(ctx.charged_bytes(), charged + 2 * record);
 
         // The firing control: a quota under the next record traps.
         ctx.set_alloc_quota(ctx.charged_bytes() as u64);
-        ctx.bind_callback(code, std::ptr::null(), 3 as *mut u8, std::ptr::null_mut());
+        ctx.bind_callback(
+            code,
+            std::ptr::null(),
+            3 as *mut u8,
+            std::ptr::null_mut(),
+            0,
+        );
         assert_eq!(
             ctx.trap_record().map(|found| found.kind),
             Some(TrapKind::AllocationQuota)
@@ -4906,6 +4983,7 @@ mod tests {
             std::ptr::null(),
             std::ptr::from_mut(&mut first_userdata),
             std::ptr::null_mut(),
+            0,
         );
         assert!(observed.0.is_empty(), "below-threshold binding advised");
 
@@ -4914,6 +4992,7 @@ mod tests {
             std::ptr::null(),
             std::ptr::from_mut(&mut second_userdata),
             std::ptr::null_mut(),
+            0,
         );
         assert_eq!(
             observed.0,
@@ -4934,6 +5013,7 @@ mod tests {
             std::ptr::null(),
             std::ptr::from_mut(&mut first_userdata),
             std::ptr::null_mut(),
+            0,
         );
         assert_eq!(
             zero_observed.0,
@@ -4965,12 +5045,12 @@ mod tests {
         let code = callback_code as *const () as *const u8;
         let mut userdata = 1u8;
         let userdata = std::ptr::from_mut(&mut userdata);
-        let first = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let first = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
 
         let mut calls = 0u32;
         ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut calls).cast());
         ctx.set_binding_count_advisory(1);
-        let repeated = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut());
+        let repeated = ctx.bind_callback(code, std::ptr::null(), userdata, std::ptr::null_mut(), 0);
 
         assert_eq!(first, repeated);
         assert_eq!(ctx.callbacks.len(), 1);
@@ -4987,11 +5067,11 @@ mod tests {
         let mut userdata2 = 2u8;
         let userdata1 = std::ptr::from_mut(&mut userdata1);
         let userdata2 = std::ptr::from_mut(&mut userdata2);
-        let first = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2);
+        let first = ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2, 0);
 
         for _ in 1..10_000 {
             assert_eq!(
-                ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2),
+                ctx.bind_callback(code, std::ptr::null(), userdata1, userdata2, 0),
                 first
             );
         }
@@ -5016,6 +5096,7 @@ mod tests {
                 std::ptr::null(),
                 first,
                 second,
+                0,
             );
 
             ctx.collect();
@@ -5040,6 +5121,7 @@ mod tests {
                 std::ptr::null(),
                 freed,
                 std::ptr::null_mut(),
+                0,
             );
             ctx.delete(freed as usize, 14);
 
@@ -5092,6 +5174,7 @@ mod tests {
             std::ptr::null(),
             std::ptr::null_mut(),
             registered,
+            0,
         );
         let mut advisory = Advisory::default();
         ctx.set_diagnostics_observer(Some(observe), std::ptr::from_mut(&mut advisory).cast());
@@ -5129,6 +5212,7 @@ mod tests {
                 std::ptr::null(),
                 registered,
                 std::ptr::null_mut(),
+                0,
             );
 
             ctx.delete(registered as usize, 92);

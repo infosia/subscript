@@ -4699,13 +4699,14 @@ pub unsafe extern "C" fn subscript_rt_arr_sort(
     code: *const u8,
     env: *const u8,
     kind: u32,
+    pos_id: u32,
 ) {
     // SAFETY: shared contract (forwarded).
     let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
         return;
     };
     // SAFETY: shared contract.
-    unsafe { crate::arrops::sort(ctx, a, code, env, kind) }
+    unsafe { crate::arrops::sort(ctx, a, code, env, kind, pos_id) }
 }
 
 // ----- C-boundary marshaling (compiler.md §12) -----
@@ -4755,7 +4756,8 @@ pub unsafe extern "C" fn subscript_rt_array_data(ctx: *const Context, a: *const 
 ///
 /// Shared contract; `code`/`env` are a language function value (a
 /// non-capturing wrapper, so `env` is null); `userdata1`/`userdata2`
-/// outlive the run.
+/// outlive the run. `pos_id` is the position of the crossing
+/// (§112 rule 4).
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_cb_bind(
     ctx: *mut Context,
@@ -4763,9 +4765,10 @@ pub unsafe extern "C" fn subscript_rt_cb_bind(
     env: *const u8,
     userdata1: *mut u8,
     userdata2: *mut u8,
+    pos_id: u32,
 ) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.bind_callback(code, env, userdata1, userdata2)
+    unsafe { &mut *ctx }.bind_callback(code, env, userdata1, userdata2, pos_id)
 }
 
 /// The generic C-ABI callback trampoline (§14.4). A C API invokes
@@ -5964,6 +5967,7 @@ mod tests {
                 std::ptr::null(),
                 registered,
                 std::ptr::null_mut(),
+                0,
             );
             subscript_rt_delete(ctx, registered, 93);
 
@@ -5987,6 +5991,7 @@ mod tests {
                 std::ptr::null(),
                 after_clear,
                 std::ptr::null_mut(),
+                0,
             );
             subscript_rt_delete(ctx, after_clear, 94);
             assert_eq!(observed.calls, 1, "null observer must clear delivery");
@@ -6022,6 +6027,7 @@ mod tests {
                 std::ptr::null(),
                 std::ptr::from_mut(&mut first_userdata),
                 std::ptr::null_mut(),
+                0,
             );
             assert_eq!(observed.calls, 0, "below-threshold binding advised");
 
@@ -6031,6 +6037,7 @@ mod tests {
                 std::ptr::null(),
                 std::ptr::from_mut(&mut second_userdata),
                 std::ptr::null_mut(),
+                0,
             );
             assert_ne!(first, second);
             assert_eq!(observed.calls, 1);
@@ -6047,6 +6054,7 @@ mod tests {
                 std::ptr::null(),
                 std::ptr::from_mut(&mut second_userdata),
                 std::ptr::null_mut(),
+                0,
             );
             assert_eq!(second, repeated);
             assert_eq!(observed.calls, 1, "same identity re-registration advised");
@@ -7544,7 +7552,7 @@ mod tests {
                 0,
             );
             assert_eq!(ctx.array_data(mapped).cast::<i32>().read_unaligned(), 9);
-            subscript_rt_arr_sort(p, a, cmp_desc_i32 as *const u8, std::ptr::null(), 0);
+            subscript_rt_arr_sort(p, a, cmp_desc_i32 as *const u8, std::ptr::null(), 0, 0);
             assert_eq!(ctx.array_data(a).cast::<i32>().read_unaligned(), 3);
             let b = subscript_rt_arr_slice(p, a, 0, 1, 0);
             let cat = subscript_rt_arr_concat(p, a, b, 0);
@@ -7574,6 +7582,56 @@ mod tests {
             );
         }
         assert_eq!(ctx.trap_record().map(|r| r.kind), Some(TrapKind::Internal));
+    }
+
+    /// §112 rule 4: the quota refusal of a `sort` records the position
+    /// of the `sort` call, which the caller passes after the element
+    /// kind.
+    ///
+    /// The loop runs two call sites. A body that records a constant
+    /// passes one iteration and fails the other, so each site is the
+    /// control of the other. Neither site is the element-kind code of
+    /// the same call, so a caller that exchanges the two adjacent
+    /// `uint32_t` arguments records the wrong kind and fails here.
+    ///
+    /// Cost: under 1 ms. Two Contexts, two arrays of two elements.
+    #[test]
+    fn ffi_arr_sort_quota_refusal_records_the_position_the_call_passed() {
+        // `ElemKind::SignedInt` for a 4-byte element; no call site below
+        // carries this value.
+        const SIGNED_INT: u32 = 5;
+        for call_site in [17u32, 4_213u32] {
+            let mut ctx = Context::new();
+            let p: *mut Context = &mut *ctx;
+            let a = ctx.array_new(4, 0);
+            // SAFETY: valid context; live 4-byte-element array; the
+            // comparator matches the dispatched element ABI.
+            unsafe {
+                for v in [3i32, 1] {
+                    subscript_rt_array_push(p, a, (&v as *const i32).cast(), 0);
+                }
+                // The quota holds the array and refuses the two copies
+                // the sort takes before either copy exists.
+                ctx.set_alloc_quota(ctx.charged_bytes() as u64);
+                subscript_rt_arr_sort(
+                    p,
+                    a,
+                    cmp_desc_i32 as *const u8,
+                    std::ptr::null(),
+                    SIGNED_INT,
+                    call_site,
+                );
+            }
+            let record = ctx.trap_record().expect("the quota refuses the copies");
+            assert_eq!(record.kind, TrapKind::AllocationQuota);
+            assert_eq!(
+                record.pos_id, call_site,
+                "the refusal reports the `sort` call, not the reserved entry"
+            );
+            // SAFETY: `a` is the live array of this Context.
+            let first = unsafe { ctx.array_data(a).cast::<i32>().read_unaligned() };
+            assert_eq!(first, 3, "a refused sort leaves the array untouched");
+        }
     }
 
     /// §18.2d: the host's collect entry reclaims an unreachable

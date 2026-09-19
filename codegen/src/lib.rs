@@ -38,6 +38,7 @@ pub mod lir;
 mod lir_types;
 mod lower;
 mod native;
+mod position_table;
 mod reload;
 mod root_storage;
 mod ship;
@@ -53,6 +54,7 @@ pub use jit::{
     JIT_OUTPUT_FILE_ENV,
 };
 pub use layout::{padding_ranges, value_class_layouts, FieldLayout, StructLayout};
+pub use position_table::PositionTable;
 pub use ship::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, aot_entry_for_profile,
     host_c_compiler, host_entry, include_directory_arg, posix_feature_arguments, run_c_aot,

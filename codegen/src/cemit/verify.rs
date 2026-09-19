@@ -440,7 +440,7 @@ mod empty_aggregate_tests {
     fn the_program_check_names_every_site_and_the_standard() {
         let clean = CProgram {
             source: "struct Frame { int x; };\n".to_string(),
-            positions: Vec::new(),
+            positions: PositionTable::new(),
             allocation_metadata_header: String::new(),
             allocation_metadata_source: String::new(),
             foreign_symbols: Vec::new(),
@@ -474,7 +474,7 @@ mod label_statement_tests {
     fn label_check_reads_the_emitted_text_and_names_the_site() {
         let clean = CProgram {
             source: "resume_b6:\n    ;\n    SubFn t0 = frame->b6_v14;\n".to_string(),
-            positions: Vec::new(),
+            positions: PositionTable::new(),
             allocation_metadata_header: String::new(),
             allocation_metadata_source: String::new(),
             foreign_symbols: Vec::new(),

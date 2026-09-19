@@ -26,38 +26,6 @@ pub(crate) fn runtime_trap_kind(kind: &l::TrapKind) -> Option<TrapKind> {
     })
 }
 
-/// True when the runtime records this trap kind with no script site
-/// (`specs/blocks/compiler.md` §111 rule 14).
-///
-/// The runtime records position 0 for such a kind, because no script
-/// site exists. A tier that resolves that id through its own position
-/// table reports an unrelated site, and the two tiers then disagree,
-/// because the tables are built in different orders. Each tier maps the
-/// kind by name instead, and reports no site.
-pub(crate) fn trap_has_no_script_site(runtime: TrapKind) -> bool {
-    matches!(runtime, TrapKind::CallbackRegistrationEnded)
-}
-
-/// The position one recorded trap carries in a report.
-///
-/// A kind with no script site answers the empty position on every tier.
-/// Every other kind resolves its recorded id through the tier's own
-/// position table, and an id the table does not hold answers the same
-/// empty position.
-pub(crate) fn trap_report_position(
-    runtime: TrapKind,
-    pos_id: u32,
-    positions: &[subscript_compiler::Pos],
-) -> subscript_compiler::Pos {
-    if trap_has_no_script_site(runtime) {
-        return subscript_compiler::Pos::new(String::new(), 0, 0);
-    }
-    positions
-        .get(pos_id as usize)
-        .cloned()
-        .unwrap_or_else(|| subscript_compiler::Pos::new(String::new(), 0, 0))
-}
-
 fn runtime_trap_matches_lir(runtime: TrapKind, lir: &l::TrapKind) -> bool {
     if runtime_trap_kind(lir) == Some(runtime) {
         return true;
@@ -81,15 +49,41 @@ fn runtime_trap_matches_lir(runtime: TrapKind, lir: &l::TrapKind) -> bool {
     }
 }
 
-pub(crate) fn runtime_trap_site(runtime: TrapKind, sites: &[l::Trap]) -> Option<&l::Trap> {
-    // §111 rule 14: a kind with no script site reaches no fallback arm.
-    if trap_has_no_script_site(runtime) {
-        return None;
+/// What [`runtime_trap_site`] answers for one recorded trap kind
+/// (§112 rule 2). The three answers are apart, because the interpreter
+/// reports a different position for each one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TrapSite<'s> {
+    /// The LIR trap site of the running function that carries this
+    /// kind. Its own position is the report.
+    Site(&'s l::Trap),
+    /// This kind has no script site, so the report carries the reserved
+    /// entry of §112 rule 1.
+    NoScriptSite,
+    /// No site of the running function carries this kind, so the report
+    /// keeps the instruction that ran.
+    NoMatch,
+}
+
+/// The LIR trap site the interpreter reports for one recorded runtime
+/// trap kind.
+///
+/// This map is not a position table (§112 rule 2): a LIR trap site
+/// carries its own position, and no recorded id resolves here. A kind
+/// that matches no site by name takes the `Call` site as the fallback
+/// arm.
+pub(crate) fn runtime_trap_site(runtime: TrapKind, sites: &[l::Trap]) -> TrapSite<'_> {
+    if runtime == TrapKind::CallbackRegistrationEnded {
+        // §112 rule 2: a fire through a registration the host released
+        // enters no script code, so this kind has no LIR site. The arm
+        // names the kind, and it answers before the fallback arm.
+        return TrapSite::NoScriptSite;
     }
     sites
         .iter()
         .find(|site| runtime_trap_matches_lir(runtime, &site.kind))
         .or_else(|| sites.iter().find(|site| site.kind == l::TrapKind::Call))
+        .map_or(TrapSite::NoMatch, TrapSite::Site)
 }
 
 pub(crate) fn data_type(ty: &l::ValueType) -> Result<&Type, String> {
@@ -414,64 +408,74 @@ mod tests {
             pos: subscript_compiler::Pos::new("call.ts", 7, 11),
         };
         assert_eq!(
-            runtime_trap_site(TrapKind::UnreachableReached, &[call]).map(|site| site.pos.clone()),
-            Some(subscript_compiler::Pos::new("call.ts", 7, 11))
+            runtime_trap_site(TrapKind::UnreachableReached, &[call]),
+            TrapSite::Site(&l::Trap {
+                kind: l::TrapKind::Call,
+                pos: subscript_compiler::Pos::new("call.ts", 7, 11),
+            })
         );
     }
 
-    /// §111 rule 14: the ended-registration kind reaches no fallback
-    /// arm, and every tier reports the empty position for it.
+    /// §112 rule 2: the map from a recorded kind to a LIR trap site
+    /// answers three ways, and the interpreter reports a different
+    /// position for each. The map is not a position table: each site
+    /// carries its own position, and no recorded id resolves here.
+    ///
+    /// Cost: under 1 ms. The test builds two site lists and reads them.
     #[test]
-    fn a_trap_with_no_script_site_reaches_no_fallback_arm() {
-        let sites = [
-            l::Trap {
+    fn the_trap_site_map_answers_a_site_no_script_site_or_no_match() {
+        let call = l::Trap {
+            kind: l::TrapKind::Call,
+            pos: subscript_compiler::Pos::new("call.ts", 7, 11),
+        };
+        let lifetime = l::Trap {
+            kind: l::TrapKind::DevOnlyLifetime,
+            pos: subscript_compiler::Pos::new("call.ts", 9, 3),
+        };
+        let sites = [call.clone(), lifetime.clone()];
+
+        // (1) A site: the kind matches one by name, not through the
+        // fallback arm.
+        assert_eq!(
+            runtime_trap_site(TrapKind::CallbackUserdataFreed, &sites),
+            TrapSite::Site(&lifetime),
+            "callback-userdata-freed maps by name"
+        );
+        // The firing control for the fallback arm: a kind that matches
+        // no site by name still answers the `Call` site.
+        assert_eq!(
+            runtime_trap_site(TrapKind::EmptyPop, &sites),
+            TrapSite::Site(&call),
+            "a call-only kind reaches the fallback arm"
+        );
+
+        // (2) No script site: the kind answers before the fallback arm,
+        // although this list holds the `Call` site that arm reads.
+        assert!(
+            sites.iter().any(|site| site.kind == l::TrapKind::Call),
+            "the fallback arm has a site to answer with"
+        );
+        assert_eq!(
+            runtime_trap_site(TrapKind::CallbackRegistrationEnded, &sites),
+            TrapSite::NoScriptSite,
+            "§112 rule 2 answers no script site for this kind"
+        );
+
+        // (3) No match: the kind matches no site, and no `Call` site
+        // exists for the fallback arm.
+        assert_eq!(
+            runtime_trap_site(TrapKind::EmptyPop, std::slice::from_ref(&lifetime)),
+            TrapSite::NoMatch,
+            "a kind with no site and no fallback answers no match"
+        );
+        // The firing control: the same kind over the same list with the
+        // `Call` site added answers that site.
+        assert_eq!(
+            runtime_trap_site(TrapKind::EmptyPop, &[lifetime, call]),
+            TrapSite::Site(&l::Trap {
                 kind: l::TrapKind::Call,
                 pos: subscript_compiler::Pos::new("call.ts", 7, 11),
-            },
-            l::Trap {
-                kind: l::TrapKind::DevOnlyLifetime,
-                pos: subscript_compiler::Pos::new("call.ts", 9, 3),
-            },
-        ];
-        assert!(trap_has_no_script_site(TrapKind::CallbackRegistrationEnded));
-        assert_eq!(
-            runtime_trap_site(TrapKind::CallbackRegistrationEnded, &sites)
-                .map(|site| site.pos.clone()),
-            None,
-            "§111 rule 14 forbids a fallback site for this kind"
-        );
-
-        // The position every tier reports, whatever the recorded id and
-        // whatever the tier's own position table holds.
-        let positions = [
-            subscript_compiler::Pos::new("first.ts", 1, 2),
-            subscript_compiler::Pos::new("second.ts", 3, 4),
-        ];
-        assert_eq!(
-            trap_report_position(TrapKind::CallbackRegistrationEnded, 0, &positions),
-            subscript_compiler::Pos::new(String::new(), 0, 0)
-        );
-        assert_eq!(
-            trap_report_position(TrapKind::CallbackRegistrationEnded, 1, &positions),
-            subscript_compiler::Pos::new(String::new(), 0, 0)
-        );
-
-        // The firing control: a kind with a script site still reads the
-        // table, and an id the table does not hold answers the same
-        // empty position.
-        assert!(!trap_has_no_script_site(TrapKind::CallbackUserdataFreed));
-        assert_eq!(
-            runtime_trap_site(TrapKind::CallbackUserdataFreed, &sites).map(|site| site.pos.clone()),
-            Some(subscript_compiler::Pos::new("call.ts", 9, 3)),
-            "callback-userdata-freed maps by name, not through the fallback"
-        );
-        assert_eq!(
-            trap_report_position(TrapKind::CallbackUserdataFreed, 1, &positions),
-            subscript_compiler::Pos::new("second.ts", 3, 4)
-        );
-        assert_eq!(
-            trap_report_position(TrapKind::CallbackUserdataFreed, 9, &positions),
-            subscript_compiler::Pos::new(String::new(), 0, 0)
+            })
         );
     }
 }

@@ -21,6 +21,7 @@ use crate::lir_types::{
     capture_parameters, data_type, explicit_parameters, foreign_parameter_type_matches,
     is_userdata_slot, operand_type, runtime_trap_kind, value_type,
 };
+use crate::position_table::PositionTable;
 use crate::root_storage::{self, RootStoragePlan};
 
 mod access;
@@ -56,8 +57,10 @@ use self::verify::{
 pub struct CProgram {
     /// Complete C source.
     pub source: String,
-    /// Trap position table indexed by generated `pos_id` values.
-    pub positions: Vec<Pos>,
+    /// Trap position table indexed by generated `pos_id` values. Index
+    /// 0 is the reserved entry of §112 rule 1, so the ids of script
+    /// sites start at 1.
+    pub positions: PositionTable,
     /// Generated allocation metadata declarations.
     pub allocation_metadata_header: String,
     /// Generated allocation metadata definitions.
@@ -120,7 +123,7 @@ fn internal(message: impl AsRef<str>) -> String {
 struct Emitter<'m> {
     module: &'m l::Module,
     layouts: Layouts,
-    positions: Vec<Pos>,
+    positions: PositionTable,
     runtime_symbols: BTreeMap<String, (String, Vec<String>)>,
     foreign_symbols: Vec<String>,
     field_owners: HashMap<l::FieldId, (ClassId, usize)>,
@@ -562,7 +565,7 @@ extern const uint64_t subscript_alloc_position_count;
     .into()
 }
 
-fn render_allocation_metadata_definitions(module: &l::Module, positions: &[Pos]) -> String {
+fn render_allocation_metadata_definitions(module: &l::Module, positions: &PositionTable) -> String {
     let mut out = String::from(
         "\n/* Allocation attribution tables. Generated from checked HIR and the\n\
 * exact pos_id sequence above; consume through the generated\n\
@@ -600,19 +603,18 @@ const subscript_alloc_class_info subscript_alloc_classes[] = {\n",
         "}};\nconst uint64_t subscript_alloc_class_count = {}u;\n",
         8 + module.classes.len()
     );
+    // §112 rule 1: index 0 is the reserved entry, which the emitter's
+    // table constructor put in place, so the array is never empty and a
+    // host reads `subscript_alloc_positions[pos_id]` with no arithmetic.
     out.push_str("const subscript_alloc_position_info subscript_alloc_positions[] = {\n");
-    if positions.is_empty() {
-        out.push_str("    { \"\", 0u, 0u },\n");
-    } else {
-        for pos in positions {
-            let _ = writeln!(
-                out,
-                "    {{ {}, {}u, {}u }},",
-                c_string_literal(pos.file.as_bytes()),
-                pos.line,
-                pos.col
-            );
-        }
+    for pos in positions.entries() {
+        let _ = writeln!(
+            out,
+            "    {{ {}, {}u, {}u }},",
+            c_string_literal(pos.file.as_bytes()),
+            pos.line,
+            pos.col
+        );
     }
     let _ = writeln!(
         out,

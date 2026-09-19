@@ -1836,7 +1836,15 @@ unsafe fn merge_sort_by<T: Copy>(
 ///
 /// `h` is a live array of `ctx` (or null); `code`/`env` are a language
 /// comparator of shape `(ctx, env, T, T) -> i32` for the element ABI.
-pub unsafe fn sort(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u8, kind: ElemKind) {
+/// `pos_id` is the position of the `sort` call (§112 rule 4).
+pub unsafe fn sort(
+    ctx: *mut Context,
+    h: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    pos_id: u32,
+) {
     // SAFETY: caller contract.
     if unsafe { cb_blocked(ctx, h, code) } {
         return;
@@ -1857,7 +1865,7 @@ pub unsafe fn sort(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u
     // exists. Over the quota the trap stands and the array is untouched.
     let copies = n.saturating_mul(esz).saturating_mul(2);
     // SAFETY: caller contract.
-    if !unsafe { (*ctx).check_quota(copies, 0) } {
+    if !unsafe { (*ctx).check_quota(copies, pos_id) } {
         return;
     }
     with_abi!(abi, T, {
@@ -2602,12 +2610,26 @@ mod tests {
         // SAFETY: live arrays of `c`; comparators match the ABI.
         unsafe {
             let h = arr_i32(&mut c, &[5, 1, 4, 2, 3]);
-            sort(p, h, cmp_i32 as *const u8, std::ptr::null(), ElemKind::Int);
+            sort(
+                p,
+                h,
+                cmp_i32 as *const u8,
+                std::ptr::null(),
+                ElemKind::Int,
+                0,
+            );
             assert_eq!(i32_items(&c, h), vec![1, 2, 3, 4, 5]);
 
             // Stability: key*10+seq pairs ordered by key keep seq order.
             let s = arr_i32(&mut c, &[20, 11, 22, 13, 14]);
-            sort(p, s, cmp_key as *const u8, std::ptr::null(), ElemKind::Int);
+            sort(
+                p,
+                s,
+                cmp_key as *const u8,
+                std::ptr::null(),
+                ElemKind::Int,
+                0,
+            );
             assert_eq!(i32_items(&c, s), vec![11, 13, 14, 20, 22]);
         }
     }
@@ -2658,6 +2680,7 @@ mod tests {
                 cmp_trapping as *const u8,
                 std::ptr::null(),
                 ElemKind::Int,
+                0,
             );
             assert!(c.trapped());
             assert_eq!(i32_items(&c, s), vec![3, 1, 2]);

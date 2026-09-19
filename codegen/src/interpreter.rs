@@ -17,7 +17,8 @@ use subscript_runtime::context::Context;
 use subscript_runtime::ffi;
 use subscript_runtime::trap::TrapKind as RuntimeTrapKind;
 
-use crate::lir_types::{runtime_trap_kind, runtime_trap_site};
+use crate::lir_types::{runtime_trap_kind, runtime_trap_site, TrapSite};
+use crate::position_table::no_script_site;
 
 /// A failure observed while executing a verified LIR module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1999,8 +2000,15 @@ impl<'m> Interpreter<'m> {
         let Some(trap) = self.context.trap_record() else {
             return Ok(());
         };
-        let pos = runtime_trap_site(trap.kind, &self.active_traps)
-            .map_or_else(|| pos.clone(), |site| site.pos.clone());
+        let pos = match runtime_trap_site(trap.kind, &self.active_traps) {
+            TrapSite::Site(site) => site.pos.clone(),
+            // §112 rule 2: this kind has no script site, so the report
+            // carries the reserved entry every tier answers for id 0.
+            TrapSite::NoScriptSite => no_script_site(),
+            // No site of this function carries the kind, so the report
+            // keeps the instruction that ran.
+            TrapSite::NoMatch => pos.clone(),
+        };
         Err(InterpretError::Trap {
             kind: trap.kind.rule().to_string(),
             pos,

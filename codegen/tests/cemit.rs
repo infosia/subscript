@@ -129,7 +129,39 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         // reaches no script site. Both tiers report the empty position
         // for this kind, and the entry pins their agreement.
         "t60-registration-fire-after-release" => (TrapKind::CallbackRegistrationEnded, 0, 0),
+        // §112 rule 4: a crossing of a callback-info aggregate is a
+        // script site, so the quota refusal there reports the crossing.
+        "t61-sandbox-callback-bind-quota" | "t62-sandbox-registration-quota" => {
+            (TrapKind::AllocationQuota, 18, 3)
+        }
+        // §112 rule 4: the quota charge of the sort's two copies carries
+        // the position of the `sort` call.
+        "t63-sandbox-sort-quota" => (TrapKind::AllocationQuota, 11, 3),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
+    }
+}
+
+/// The host quota a trap entry runs under (§109.5, §112.2).
+///
+/// `check_quota` compares the reserved size of one charge against the
+/// quota, and that size holds the header and the memory mode's record
+/// bytes. 32 bytes are therefore under the reserved size of any charge,
+/// so the first charge of the run passes the quota on every tier. The
+/// two callback entries allocate nothing before the crossing, so the
+/// crossing is that first charge.
+///
+/// The sort entry needs its array to exist first, so its quota holds
+/// the array and refuses the two copies. Measured over the quota, with
+/// each tier's trap position read at one-byte steps: the array's own
+/// charges all pass from 368 bytes on the dev JIT and from 256 bytes on
+/// the ship tier, and the copies pass from 464 and from 448. Both tiers
+/// report the `sort` call from 368 through 447, and 400 is inside that
+/// window.
+fn trap_alloc_quota(id: &str) -> Option<u64> {
+    match id {
+        "t61-sandbox-callback-bind-quota" | "t62-sandbox-registration-quota" => Some(32),
+        "t63-sandbox-sort-quota" => Some(400),
+        _ => None,
     }
 }
 
@@ -697,9 +729,10 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
     let expected = &case.expected;
     let mut failures = Vec::new();
     let (expected_kind, expected_line, expected_column) = trap_expectation(id);
-    // §111 rule 14: a trap with no script site carries the empty
-    // position on every tier, not a site of the entry's own file.
-    let expected_file = if expected_kind == TrapKind::CallbackRegistrationEnded {
+    // §112 rule 1: line 0 and column 0 are the reserved entry of every
+    // position table, and that entry carries the empty file name. The
+    // expectation names no trap kind here (§112 rule 2).
+    let expected_file = if expected_line == 0 && expected_column == 0 {
         String::new()
     } else {
         format!("{id}.ts")
@@ -750,6 +783,11 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
     } else {
         // §109.1 rule 3: the entry's header profile reaches both runners.
         let config = RunConfig::with_profile(case.profile).with_native_libraries(&libraries);
+        // §109.5: a host quota replaces the profile default (§112.2).
+        let config = match trap_alloc_quota(id) {
+            Some(bytes) => config.with_alloc_quota(bytes),
+            None => config,
+        };
         (
             run_jit_configured(files, config).map(|output| output.stdout),
             run_c_aot_configured(files, config).map(|output| output.stdout),
@@ -1213,6 +1251,7 @@ fn wire_alias_entry_wrapper_validates_before_the_internal_call() {
     assert!(
         program
             .positions
+            .entries()
             .iter()
             .any(|position| position.file == "wire-entry.ts" && position.line == 2),
         "wire entry trap position does not point at the parameter declaration"

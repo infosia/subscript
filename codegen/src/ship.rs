@@ -18,14 +18,14 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use subscript_compiler::{
-    check_program_with, on_the_compile_thread, CheckOptions, Pos, Profile, SourceFile,
+    check_program_with, on_the_compile_thread, CheckOptions, Profile, SourceFile,
 };
 use subscript_runtime::TrapKind;
 
 use crate::jit::{AbnormalTermination, RunError, TrapReport};
-use crate::lir_types::trap_report_position;
 use crate::lower::internal;
 use crate::native::missing_symbol;
+use crate::position_table::PositionTable;
 use crate::{HostLimits, NativeLibrary, RunConfig, RunOutput};
 
 #[cfg(unix)]
@@ -927,7 +927,7 @@ fn aot_entry_with_host_hooks(
 struct LinkedProgram {
     directory: TempDir,
     executable: PathBuf,
-    positions: Vec<Pos>,
+    positions: PositionTable,
 }
 
 fn execute_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<Vec<u8>, RunError> {
@@ -1381,7 +1381,7 @@ pub fn run_c_aot_interrupted(
 /// Parses the entry program's `trap <kind> <pos_id> <message>` line
 /// back into a report, resolving the position through the emitted C
 /// position table.
-fn parse_trap(stderr: &[u8], positions: &[Pos], stdout: &[u8]) -> Option<TrapReport> {
+fn parse_trap(stderr: &[u8], positions: &PositionTable, stdout: &[u8]) -> Option<TrapReport> {
     let text = std::str::from_utf8(stderr).ok()?;
     let line = text.lines().find(|l| l.starts_with("trap "))?;
     let mut parts = line.splitn(4, ' ');
@@ -1392,9 +1392,10 @@ fn parse_trap(stderr: &[u8], positions: &[Pos], stdout: &[u8]) -> Option<TrapRep
     Some(TrapReport {
         rule: kind,
         message,
-        // §111 rule 14: the kind decides whether a position table is
-        // read at all, so both tiers report the same position.
-        pos: trap_report_position(kind, pos_id, positions),
+        // §112 rule 1: the recorded id resolves through the emitted
+        // table, and id 0 is its reserved entry, so both tiers report
+        // the same position.
+        pos: positions.report_position(pos_id),
         stdout: stdout.to_vec(),
     })
 }
@@ -2526,24 +2527,28 @@ int main(void) {
             .collect();
         ship.sort_unstable();
 
-        // LIR ids place class members before free functions, so the
-        // constructor's lifetime-check position occupies dev slot 0 before
-        // `main` contributes its allocation positions. The source-resolution
-        // assertion below pins the semantic sites behind these local ids.
+        // §112 rule 1 reserves id 0 on each tier, so the first script
+        // site of each table is id 1. LIR ids place class members before
+        // free functions, so the constructor's lifetime-check position
+        // takes dev slot 1 before `main` contributes its allocation
+        // positions. The source-resolution assertion below pins the
+        // semantic sites behind these local ids.
         assert_eq!(
             dev,
-            vec![(0, 1, 4), (0xFFFF_FF02, 2, 32), (0xFFFF_FF03, 5, 16),],
+            vec![(0, 2, 4), (0xFFFF_FF02, 3, 32), (0xFFFF_FF03, 6, 16),],
             "dev attribution triples changed"
         );
         assert_eq!(
             ship,
-            vec![(0, 0, 16), (0xFFFF_FF02, 1, 48), (0xFFFF_FF03, 2, 16),],
+            vec![(0, 1, 16), (0xFFFF_FF02, 2, 48), (0xFFFF_FF03, 3, 16),],
             "ship attribution triples changed"
         );
         let dev_sites: Vec<(u32, &str, u32)> = dev
             .iter()
             .map(|&(class_id, pos_id, _)| {
-                let pos = &dev_positions[pos_id as usize];
+                let pos = dev_positions
+                    .get(pos_id)
+                    .expect("the dev table holds every recorded id");
                 (class_id, pos.file.as_str(), pos.line)
             })
             .collect();
@@ -2657,12 +2662,16 @@ int main(void) {
 
     #[test]
     fn trap_line_parsing_is_total() {
-        assert!(parse_trap(b"", &[], b"").is_none());
-        assert!(parse_trap(b"something else\n", &[], b"").is_none());
-        assert!(parse_trap(b"trap 999 0 unknown\n", &[], b"").is_none());
+        let table = PositionTable::new();
+        assert!(parse_trap(b"", &table, b"").is_none());
+        assert!(parse_trap(b"something else\n", &table, b"").is_none());
+        assert!(parse_trap(b"trap 999 0 unknown\n", &table, b"").is_none());
         let r =
-            parse_trap(b"trap 2 0 pop() on an empty array\n", &[], b"before\n").expect("parsed");
+            parse_trap(b"trap 2 0 pop() on an empty array\n", &table, b"before\n").expect("parsed");
         assert_eq!(r.rule, TrapKind::EmptyPop);
+        // §112 rule 1: id 0 is the reserved entry of the table this
+        // program carries.
+        assert_eq!(r.pos, crate::position_table::no_script_site());
         assert!(r.message.contains("empty"));
         assert_eq!(r.stdout, b"before\n");
     }

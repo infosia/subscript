@@ -18,7 +18,9 @@ impl<'m> Emitter<'m> {
         Ok(Self {
             module,
             layouts: Layouts::build_lir(module)?,
-            positions: Vec::new(),
+            // §112 rule 2: the one constructor of the ship-C table puts
+            // the reserved entry in place.
+            positions: PositionTable::new(),
             runtime_symbols: BTreeMap::new(),
             foreign_symbols: Vec::new(),
             field_owners,
@@ -57,9 +59,12 @@ impl<'m> Emitter<'m> {
         symbol
     }
 
+    /// Allocates a position-table entry for one script site.
+    ///
+    /// The table starts with the reserved entry of §112 rule 1, so the
+    /// first id this returns is 1 and no script site takes id 0.
     pub(super) fn pos_id(&mut self, pos: &Pos) -> u32 {
-        self.positions.push(pos.clone());
-        (self.positions.len() - 1) as u32
+        self.positions.add(pos)
     }
 
     pub(super) fn runtime_call(

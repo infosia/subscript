@@ -19,8 +19,9 @@ const subscript_alloc_class_info subscript_alloc_classes[] = {
 const uint64_t subscript_alloc_class_count = 9u;
 
 const subscript_alloc_position_info subscript_alloc_positions[] = {
+    { "", 0u, 0u },
     { "a15-manual-lifetime.ts", 19u, 28u },
     { "a15-manual-lifetime.ts", 21u, 20u },
     { "a15-manual-lifetime.ts", 22u, 3u },
 };
-const uint64_t subscript_alloc_position_count = 3u;
+const uint64_t subscript_alloc_position_count = 4u;

@@ -1108,6 +1108,7 @@ fn every_covered_entry_stays_under_the_quota() {
                     descending as *const u8,
                     std::ptr::null(),
                     2,
+                    0,
                 );
             }
         });
@@ -1170,6 +1171,7 @@ fn every_covered_entry_stays_under_the_quota() {
                         std::ptr::null(),
                         index as *mut u8,
                         std::ptr::null_mut(),
+                        0,
                     );
                     (*pointer).trapped()
                 };
@@ -1200,6 +1202,7 @@ fn every_covered_entry_stays_under_the_quota() {
                         std::ptr::null(),
                         index as *mut u8,
                         std::ptr::null_mut(),
+                        0,
                     );
                     (*pointer).trapped()
                 };

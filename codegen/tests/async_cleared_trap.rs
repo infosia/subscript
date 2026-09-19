@@ -43,6 +43,7 @@ fn ship_c_cleared_continuations_never_replay_or_leak() {
         } else {
             program
                 .positions
+                .entries()
                 .iter()
                 .position(|pos| pos.line == line && pos.col == 14)
                 .expect("the independent source position has an emitted entry")

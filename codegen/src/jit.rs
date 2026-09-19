@@ -697,4 +697,113 @@ mod tests {
         );
         assert!(matches!(err, Err(RunError::Trap(_))));
     }
+
+    /// The one-line program both §112.3 criteria read. Every script
+    /// site it holds is on line 1, so the line of an entry states
+    /// whether the entry is a script site or the reserved one.
+    const ONE_LINE_PROGRAM: &str =
+        "export function main(): void { const xs: i32[] = [7]; print(`${xs[0]}`); }\n";
+
+    /// The reserved entry of §112 rule 1, as a table row reads it.
+    fn reserved_entry() -> subscript_compiler::Pos {
+        subscript_compiler::Pos::new(String::new(), 0, 0)
+    }
+
+    /// The position table the ship tier built for `ONE_LINE_PROGRAM`,
+    /// with the rows its `program.alloc.h` table publishes.
+    fn ship_position_table() -> (crate::position_table::PositionTable, Vec<String>) {
+        let hir = subscript_compiler::check_program(&sources(ONE_LINE_PROGRAM))
+            .expect("the one-line program checks");
+        let lir = crate::lir::lower_module(&hir).expect("the one-line program lowers");
+        let program = crate::cemit::CProgram::from_lir(&lir, true).expect("ship-C transcription");
+        let table = program
+            .allocation_metadata_source
+            .split_once("const subscript_alloc_position_info subscript_alloc_positions[] = {\n")
+            .expect("the emitted metadata holds the position table")
+            .1;
+        let rows = table
+            .split_once("\n};")
+            .expect("the position table ends")
+            .0
+            .lines()
+            .map(|line| line.trim().to_string())
+            .collect::<Vec<_>>();
+        (program.positions, rows)
+    }
+
+    /// §112.3 criterion 1: each tier's finished table holds the reserved
+    /// entry at index 0, and the first script site of a one-line program
+    /// has id 1. The test reads the table each tier built.
+    ///
+    /// Cost: 0.01 s measured in the debug profile. One compile for each
+    /// tier, on a program of one line.
+    #[test]
+    fn each_tier_reserves_index_zero_and_gives_the_first_script_site_id_one() {
+        let (module, lowered, _) = compile_jit(&sources(ONE_LINE_PROGRAM), &[], Profile::Default)
+            .expect("compile the one-line program");
+        let dev = lowered.positions.clone();
+        // SAFETY: nothing called the compiled entries, so no pointer
+        // into the JIT memory exists.
+        unsafe { module.free_memory() };
+        let (ship, _) = ship_position_table();
+
+        for (tier, positions) in [("dev-JIT", dev.entries()), ("ship-C", ship.entries())] {
+            assert_eq!(
+                positions.first(),
+                Some(&reserved_entry()),
+                "{tier}: §112 rule 1 reserves index 0"
+            );
+            let first = positions.get(1).unwrap_or_else(|| {
+                panic!("{tier}: the one-line program records at least one script site")
+            });
+            assert_eq!(first.file, "test.ts", "{tier}: the first script site");
+            assert_eq!(first.line, 1, "{tier}: the program is one line");
+            assert!(first.col > 0, "{tier}: a script site has a column");
+            // The firing control: no later entry is the reserved one, so
+            // index 0 is reserved rather than merely absent.
+            assert!(
+                positions[1..].iter().all(|pos| pos != &reserved_entry()),
+                "{tier}: only index 0 carries the reserved entry"
+            );
+        }
+    }
+
+    /// §112.3 criterion 2: the dev-JIT table, the ship-C table, and the
+    /// table `program.alloc.h` publishes carry one reserved entry at
+    /// index 0 for one program.
+    ///
+    /// Cost: 0.01 s measured in the debug profile. One compile for each
+    /// tier, as the test above.
+    #[test]
+    fn the_three_published_tables_agree_on_the_entry_at_index_zero() {
+        let (module, lowered, _) = compile_jit(&sources(ONE_LINE_PROGRAM), &[], Profile::Default)
+            .expect("compile the one-line program");
+        let dev = lowered.positions.clone();
+        // SAFETY: nothing called the compiled entries.
+        unsafe { module.free_memory() };
+        let (ship, rows) = ship_position_table();
+
+        assert_eq!(dev.entries().first(), Some(&reserved_entry()));
+        assert_eq!(ship.entries().first(), Some(&reserved_entry()));
+        // The published table is C text, so it is compared as the row a
+        // host compiles, not as a `Pos` this crate built.
+        assert_eq!(
+            rows.first().map(String::as_str),
+            Some("{ \"\", 0u, 0u },"),
+            "the published table reserves index 0"
+        );
+        assert_eq!(
+            rows.len(),
+            ship.len(),
+            "the published table holds one row for each ship-C entry"
+        );
+        // The firing control: the second published row is a script site,
+        // so the first row is reserved rather than the shape of every
+        // row.
+        assert_ne!(
+            rows.get(1).map(String::as_str),
+            Some("{ \"\", 0u, 0u },"),
+            "the row after the reserved entry is a script site"
+        );
+    }
 }

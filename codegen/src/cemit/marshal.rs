@@ -119,6 +119,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                             ],
                         );
                     }
+                    // §112 rule 4: the crossing is a script site, so the
+                    // quota refusal of the record reports this position.
                     let bind = self.emitter.runtime_call(
                         "void*",
                         crossing,
@@ -128,6 +130,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                             "const void*".into(),
                             "void*".into(),
                             "void*".into(),
+                            "uint32_t".into(),
                         ],
                         &[
                             "ctx".into(),
@@ -138,6 +141,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                                 || "NULL".into(),
                                 |field| format!("{temporary}.d{}", field.id.0),
                             ),
+                            format!("{position}u"),
                         ],
                     );
                     parts.push(format!("({typedef_name})&{trampoline}"));

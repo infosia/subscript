@@ -663,7 +663,7 @@ subscript_rt_ctx_exit_script(ctx);
 ```
 
 ```text
-host: trap kind=1 pos_id=0 message=index 7 out of bounds for array length 3
+host: trap kind=1 pos_id=1 message=index 7 out of bounds for array length 3
 host: live allocations=2
 host: clear_trap=1
 slot=20
@@ -687,9 +687,19 @@ That output pins three facts:
 
 **`pos_id` resolves through `program.alloc.h`.** That header declares
 `subscript_alloc_positions`, and `pos_id` indexes it. The same tables
-name the class of each live allocation. Measured against
-`trapdemo.ts`, whose module global is `let bank: i32[] = [10, 20, 30];`
-at line 1 and whose faulting read is at line 4:
+name the class of each live allocation.
+
+**`pos_id` 0 means that no script site exists**
+(`specs/blocks/compiler.md` §112). Index 0 of
+`subscript_alloc_positions` is a reserved entry: an empty file name,
+line 0, and column 0. The ids of script sites start at 1, so the host
+indexes the table directly and needs no arithmetic. A host that shows
+a position to a user reads an empty file name as "the runtime holds no
+script site for this trap" and prints the kind and the message alone.
+
+Measured against `trapdemo.ts`, whose module global is
+`let bank: i32[] = [10, 20, 30];` at line 1 and whose faulting read is
+at line 4:
 
 ```c
 #include "program.alloc.h"
@@ -698,18 +708,29 @@ at line 1 and whose faulting read is at line 4:
 static void visit(void* userdata, uint32_t class_id, uint32_t pos_id, uint64_t bytes) {
     const subscript_alloc_position_info* p =
         pos_id < subscript_alloc_position_count ? &subscript_alloc_positions[pos_id] : NULL;
-    printf("live: class=%s bytes=%" PRIu64 " site=%s:%" PRIu32 ":%" PRIu32 "\n",
-           className(class_id), bytes,
-           p ? p->file : "?", p ? p->line : 0u, p ? p->column : 0u);
+    if (p == NULL) {
+        printf("live: class=%s bytes=%" PRIu64 " site=unknown id %" PRIu32 "\n",
+               className(class_id), bytes, pos_id);
+    } else if (p->file[0] == '\0') {
+        /* The reserved entry: no script site exists for this record. */
+        printf("live: class=%s bytes=%" PRIu64 " site=none\n",
+               className(class_id), bytes);
+    } else {
+        printf("live: class=%s bytes=%" PRIu64 " site=%s:%" PRIu32 ":%" PRIu32 "\n",
+               className(class_id), bytes, p->file, p->line, p->column);
+    }
 }
 ```
 
 ```text
-positions=8 classes=8
+positions=9 classes=8
 live: class=Array bytes=48 site=trapdemo.ts:1:19
 live: class=ArrayData bytes=16 site=trapdemo.ts:1:20
-trap: kind=1 pos_id=0 site=trapdemo.ts:4:17
+trap: kind=1 pos_id=1 site=trapdemo.ts:4:17
 ```
+
+The count is 9 for eight script sites, because the reserved entry is
+one of the nine.
 
 A host has three coherent answers to a trap, in increasing cost:
 accept the damaged state and continue; detach the failing subsystem,

@@ -123,6 +123,9 @@ showed that they can differ. The class is older than this section, and
 this section closed it for kind 28 only. No golden pins it. It needs a
 section of its own: the form cannot say "no position".
 
+*(2026-09-20: closed by §112. Evidence:
+`specs/tracking/s112-position-id-zero.md`.)*
+
 The same probe showed one more fact. At a quota of 64 the dev tier
 traps at the `print` string and the ship tier runs clean at 128. The
 two memory modes charge different bytes for one allocation (§18.2d),
