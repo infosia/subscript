@@ -966,8 +966,27 @@ A C probe on that host measured the three answers of the question:
 | every member is collected | -1, `ESRCH` |
 
 The probe ran inside the orchestrator's command sandbox, and the first
-row shows that the sandbox does not refuse the question. The Linux
-answer for the second row is not measured here.
+row shows that the sandbox does not refuse the question.
+
+**The Linux answer for the second row is 0, not `EPERM`**
+*(measured 2026-09-19 on `x86_64-unknown-linux-gnu`, Linux
+6.8.0-138-generic, with the same probe shape)*:
+
+| Group | `kill(-group, 0)` on Linux |
+|---|---|
+| a member lives | 0 |
+| every member is dead, and one is not collected | **0** |
+| every member is collected | -1, `ESRCH` |
+
+A zombie is a process the group still holds, so Linux answers 0 where
+macOS answers `EPERM`. The two answers carry one meaning, "ask again",
+so the wait reads both the same way and the `EPERM` arm never fires
+here. The fix is correct on this host and changes nothing on it.
+
+Measured at `99eef14` on this host, the whole test: the control
+648.75 s, the killed build 64.01 s on its derived 64-second budget, the
+wait 50.08 ms, no executable, 712.82 s in all. The wait is one poll
+interval, as it was before the `EPERM` arm.
 
 The wait now polls through `EPERM` (§109.6a). Measured on the same
 host, debug, five runs: the wait is 52.87 ms to 55.03 ms. One more run
