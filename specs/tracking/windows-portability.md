@@ -1462,3 +1462,20 @@ CLI suite is 32 tests in 117.28 s.
 No Linux host and no macOS host ran this change. The Linux arm keeps
 the allocation text, and the macOS arm keeps the resident poll against
 the heap, so each reference host must run the memory-budget test.
+
+**The x86-64 Linux host ran it, 2026-09-19 at `560905c`.**
+`tools/gate.sh full`:
+
+```text
+gate full 560905c128bb84800944d4f4e60c948184a805e5 clean debug 1616/0/2 release 1612/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 2, build 4, debug 1348, release 601, clippy 1,
+tsc 1, hygiene 0. The Linux arm of the memory-budget test reads the
+child's `memory allocation of` text under `RLIMIT_AS` at the heap plus
+the reservation, and both heavy tests pass in the debug profile. No
+golden moved.
+
+The arm64 macOS host has not run it. The macOS arm polls the largest
+resident reading against the heap, and no other host can measure that
+path.
