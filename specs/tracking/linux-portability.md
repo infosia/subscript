@@ -973,8 +973,9 @@ The wait now polls through `EPERM` (§109.6a). Measured on the same
 host, debug, five runs: the wait is 52.87 ms to 55.03 ms. One more run
 carried a temporary print: the `EPERM` arm fires one time, and the
 next question 50 ms later answers `ESRCH`. The whole test is 9.86 s to 10.17 s. `cargo fmt --check`
-exit 0; clippy for `subscript-cli` 0. The full gate did not run after
-the fix.
+exit 0; clippy for `subscript-cli` 0. The full gate at `f9541c5` on the
+same host: `debug 1616/0/2 release 1612/0/2 skips 2/0 debug-only 2
+clippy 7/18/13 goldens-moved 0 exit 0`.
 
 ### The parser's per-package optimization level, measured and refused (2026-09-19)
 
