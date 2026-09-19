@@ -47,6 +47,17 @@ const UNMARKED_CHILD_MESSAGE: &str = "the compile child flag is not a user optio
 /// budget in place.
 pub const TIME_BUDGET_VARIABLE: &str = "SUBSCRIPT_COMPILE_TIME_BUDGET_SECONDS";
 
+/// The environment variable that replaces the compile child's memory
+/// budget, in bytes (§109.2 rule 6).
+///
+/// A test sets it to reach the memory-budget stop with a heap this host
+/// can hold, instead of [`MEMORY_BUDGET_BYTES`]. A value at or under
+/// `subscript_compiler::COMPILE_THREAD_STACK_BYTES` refuses the compile
+/// thread itself, and the profile then checks nothing (§109.2a). Such a
+/// value, a value that is not a count of bytes, and no value each leave
+/// the contract's budget in place.
+pub const MEMORY_BUDGET_VARIABLE: &str = "SUBSCRIPT_COMPILE_MEMORY_BUDGET_BYTES";
+
 /// The test-only variable that ends the compile child at its first line
 /// (§109.2 rule 6).
 ///
@@ -128,12 +139,12 @@ const ALLOCATION_FAILURE_TEXT: &[u8] = b"memory allocation of";
 /// reading at the kill is a small part of the largest reading: measured
 /// on the same-label chain, the largest reading is 9.75 to 9.98 GB
 /// against a reading of 2.1 to 2.3 GB at the kill. The parent therefore
-/// compares the largest reading it took, and one half of the budget is
-/// what separates a child that was holding memory from one that was
-/// not.
+/// compares the largest reading it took, and one half of the resident
+/// budget is what separates a child that was holding memory from one
+/// that was not.
 #[cfg(unix)]
 fn system_memory_kill_floor() -> u64 {
-    MEMORY_BUDGET_BYTES / 2
+    resident_budget() / 2
 }
 
 /// How often the parent asks whether the child has ended.
@@ -152,7 +163,7 @@ pub(crate) enum Role {
 /// What [`apply_memory_budget`] did on this host.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MemoryBudget {
-    /// The host holds this process to [`MEMORY_BUDGET_BYTES`].
+    /// The host holds this process to the memory budget of the run.
     Set,
     /// The host refused the limit. macOS refuses `RLIMIT_AS`, and the
     /// parent holds the budget there: it reads the child's resident
@@ -257,10 +268,11 @@ pub(crate) fn apply_memory_budget() -> MemoryBudget {
 /// limit over the hard one is refused.
 #[cfg(unix)]
 fn budgeted_soft_limit(hard: libc::rlim_t) -> libc::rlim_t {
+    let budget = memory_budget();
     if hard == libc::RLIM_INFINITY {
-        MEMORY_BUDGET_BYTES
+        budget
     } else {
-        MEMORY_BUDGET_BYTES.min(hard)
+        budget.min(hard)
     }
 }
 
@@ -285,7 +297,7 @@ pub(crate) fn apply_memory_budget() -> MemoryBudget {
     };
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
-    let Ok(limit) = usize::try_from(MEMORY_BUDGET_BYTES) else {
+    let Ok(limit) = usize::try_from(memory_budget()) else {
         return MemoryBudget::Refused;
     };
     // SAFETY: an unnamed job with default security attributes.
@@ -672,7 +684,7 @@ enum Stop {
 enum Passed {
     /// The child ran past the time budget.
     Time,
-    /// The child held more than [`MEMORY_BUDGET_BYTES`].
+    /// The child held more than the memory budget of the run.
     Memory,
 }
 
@@ -713,6 +725,47 @@ fn time_budget_of(value: Option<&str>) -> Duration {
     Duration::from_secs(seconds)
 }
 
+/// The memory budget of this run, or the test-only value.
+fn memory_budget() -> u64 {
+    memory_budget_of(std::env::var(MEMORY_BUDGET_VARIABLE).ok().as_deref())
+}
+
+/// The memory budget a `MEMORY_BUDGET_VARIABLE` value asks for.
+///
+/// A value at or under the compile thread's stack reservation refuses
+/// that thread, and the profile then checks nothing (§109.2a). Such a
+/// value, a value that is not a count of bytes, and no value leave
+/// [`MEMORY_BUDGET_BYTES`].
+fn memory_budget_of(value: Option<&str>) -> u64 {
+    value
+        .and_then(|text| text.parse::<u64>().ok())
+        .filter(|bytes| *bytes > subscript_compiler::COMPILE_THREAD_STACK_BYTES as u64)
+        .unwrap_or(MEMORY_BUDGET_BYTES)
+}
+
+/// The resident bytes the parent holds the child to, where the parent
+/// holds the memory budget itself (§109.2 rule 6).
+fn resident_budget() -> u64 {
+    resident_budget_of(memory_budget())
+}
+
+/// The resident bytes `budget` leaves for the heap (§109.2 rule 6).
+///
+/// The budget is the compile thread's stack reservation plus the heap.
+/// Linux and Windows bound address space, so the reservation takes its
+/// own share of the budget. macOS bounds resident bytes, and the
+/// reservation is address space that is never resident, so the poll
+/// there compares the heap term alone.
+///
+/// The difference is never zero and never wraps: the `const` assertion
+/// above holds [`MEMORY_BUDGET_BYTES`] over the reservation, and
+/// [`memory_budget_of`] refuses every replaced value at or under it
+/// (§109.2 rule 6). The saturating subtraction keeps the function total
+/// for a caller that those two facts do not reach.
+fn resident_budget_of(budget: u64) -> u64 {
+    budget.saturating_sub(subscript_compiler::COMPILE_THREAD_STACK_BYTES as u64)
+}
+
 /// The instant the parent stops waiting on a child that it started at
 /// `start`.
 ///
@@ -733,12 +786,14 @@ fn deadline_of(start: Instant, budget: Duration) -> Instant {
 ///
 /// macOS refuses `RLIMIT_AS`, so the parent holds the memory budget
 /// there: at every poll it reads the child's resident bytes, and it
-/// kills a child whose reading passes the budget. On a host that sets
-/// the limit inside the child, [`resident_bytes`] reads nothing and the
-/// loop watches the time budget alone. The largest reading is what
-/// tells the system's own memory kill from every other signal.
+/// kills a child whose reading passes [`resident_budget`]. On a host
+/// that sets the limit inside the child, [`resident_bytes`] reads
+/// nothing and the loop watches the time budget alone. The largest
+/// reading is what tells the system's own memory kill from every other
+/// signal.
 fn wait_within(child: &mut Child, budget: Duration) -> Result<(Stop, Option<u64>), Failure> {
     let deadline = deadline_of(Instant::now(), budget);
+    let resident_limit = resident_budget();
     let pid = child.id();
     let mut largest_resident = None;
     loop {
@@ -753,7 +808,7 @@ fn wait_within(child: &mut Child, budget: Duration) -> Result<(Stop, Option<u64>
         }
         let reading = resident_bytes(pid);
         largest_resident = largest_resident.max(reading);
-        if over_budget(reading, MEMORY_BUDGET_BYTES) {
+        if over_budget(reading, resident_limit) {
             return Ok((kill_child(child, Passed::Memory), largest_resident));
         }
         if Instant::now() >= deadline {
@@ -902,7 +957,8 @@ mod tests {
             MemoryBudget::Refused => assert_eq!(after.rlim_cur, before.rlim_cur),
         }
         println!(
-            "RLIMIT_AS: {outcome:?}, budget {MEMORY_BUDGET_BYTES}, soft {}",
+            "RLIMIT_AS: {outcome:?}, budget {}, soft {}",
+            memory_budget(),
             after.rlim_cur
         );
     }
@@ -922,7 +978,7 @@ mod tests {
             let bytes = resident_bytes(mine).expect("read the resident bytes of this process");
             assert!(bytes > 0);
             assert!(over_budget(resident_bytes(mine), 0));
-            assert!(!over_budget(resident_bytes(mine), MEMORY_BUDGET_BYTES));
+            assert!(!over_budget(resident_bytes(mine), resident_budget()));
             println!("resident bytes of the test process: {bytes}");
         } else {
             assert_eq!(resident_bytes(mine), None);
@@ -965,6 +1021,82 @@ mod tests {
         );
         // The reader takes the same path as the values above.
         assert_eq!(time_budget(), Duration::from_secs(TIME_BUDGET_SECONDS));
+    }
+
+    /// The test-only variable replaces the memory budget, and the
+    /// contract's number stands with no variable, with a value that is
+    /// not a count of bytes, and with a value at or under the compile
+    /// thread's stack reservation (§109.2 rule 6, §109.2a).
+    ///
+    /// The two facts are derived apart: the reservation is the compiler
+    /// crate's constant, and the answer is this module's number.
+    #[test]
+    fn the_memory_budget_reads_the_test_only_variable() {
+        let stack = subscript_compiler::COMPILE_THREAD_STACK_BYTES as u64;
+        // A value over the reservation replaces the budget.
+        assert_eq!(memory_budget_of(Some("9000000000")), 9_000_000_000);
+        assert_eq!(memory_budget_of(Some(&(stack + 1).to_string())), stack + 1);
+        // A value at or under the reservation refuses the compile
+        // thread, so the contract's budget stands. 2,147,483,648 is at
+        // the optimized reservation and under the unoptimized one.
+        assert_eq!(
+            memory_budget_of(Some(&stack.to_string())),
+            MEMORY_BUDGET_BYTES
+        );
+        assert_eq!(memory_budget_of(Some("2147483648")), MEMORY_BUDGET_BYTES);
+        assert_eq!(memory_budget_of(Some("1")), MEMORY_BUDGET_BYTES);
+        assert_eq!(memory_budget_of(Some("0")), MEMORY_BUDGET_BYTES);
+        // A value that is not a count of bytes, and no value.
+        assert_eq!(memory_budget_of(Some("plenty")), MEMORY_BUDGET_BYTES);
+        assert_eq!(memory_budget_of(Some("-1")), MEMORY_BUDGET_BYTES);
+        assert_eq!(memory_budget_of(Some("")), MEMORY_BUDGET_BYTES);
+        assert_eq!(
+            memory_budget_of(Some("18446744073709551616")),
+            MEMORY_BUDGET_BYTES
+        );
+        assert_eq!(memory_budget_of(None), MEMORY_BUDGET_BYTES);
+        // The reader takes the same path as the values above.
+        assert_eq!(memory_budget(), MEMORY_BUDGET_BYTES);
+    }
+
+    /// §109.2 rule 6: the resident budget is the memory budget less the
+    /// compile thread's stack reservation.
+    ///
+    /// The expected values are the contract's own: 12,884,901,888 less
+    /// 8,589,934,592 unoptimized, and 4,294,967,296 less 2,147,483,648
+    /// optimized. Each one is the heap term the rule names, so no
+    /// figure moves. The replaced budget is the reservation plus
+    /// 67,108,864, and the poll then holds the child to that heap.
+    #[test]
+    fn the_resident_budget_drops_the_stack_reservation() {
+        if cfg!(debug_assertions) {
+            assert_eq!(resident_budget_of(12_884_901_888), 4_294_967_296);
+            assert_eq!(resident_budget_of(8_657_043_456), 67_108_864);
+            assert_eq!(resident_budget(), 4_294_967_296);
+        } else {
+            assert_eq!(resident_budget_of(4_294_967_296), 2_147_483_648);
+            assert_eq!(resident_budget_of(2_214_592_512), 67_108_864);
+            assert_eq!(resident_budget(), 2_147_483_648);
+        }
+        // No caller reaches a budget at or under the reservation, and
+        // the subtraction is total for one that did.
+        assert_eq!(resident_budget_of(0), 0);
+    }
+
+    /// §109.2 rule 6: the system-memory-kill floor is one half of the
+    /// resident budget.
+    ///
+    /// The expected values are one half of the heap term the rule
+    /// names: one half of 4,294,967,296 unoptimized, and one half of
+    /// 2,147,483,648 optimized.
+    #[cfg(unix)]
+    #[test]
+    fn the_system_memory_kill_floor_is_half_the_resident_budget() {
+        if cfg!(debug_assertions) {
+            assert_eq!(system_memory_kill_floor(), 2_147_483_648);
+        } else {
+            assert_eq!(system_memory_kill_floor(), 1_073_741_824);
+        }
     }
 
     /// §109.2 rule 6: the deadline is a total function of the budget.

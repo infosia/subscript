@@ -1219,16 +1219,36 @@ const HEAVY_TESTS_VARIABLE: &str = "SUBSCRIPT_HEAVY_TESTS";
 #[cfg(target_os = "macos")]
 const POLL_GROWTH_BYTES: u64 = 268_435_456;
 
-/// The memory budget of this build (§109.2 rule 6).
+/// The heap a replaced memory budget holds beside the compile thread's
+/// stack reservation, for the run under test (§109.2 rule 6, §109.2a).
 ///
-/// The test binary and the CLI binary carry the same build, so the
-/// number here is the number the parent holds the child to.
-#[cfg(target_os = "macos")]
-const MEMORY_BUDGET_BYTES: u64 = if cfg!(debug_assertions) {
-    12_884_901_888
-} else {
-    4_294_967_296
-};
+/// A budget at or under the reservation refuses the compile thread, so
+/// the profile checks nothing. The heap term must therefore stay over
+/// what a clean source needs and under what the same-label source
+/// needs. Measured on `x86_64-unknown-linux-gnu` with the 65,476-label
+/// source below: the source needs between 134,217,728 and 142,606,336
+/// bytes over the reservation unoptimized, and between 100,663,296 and
+/// 134,217,728 optimized; a source that checks clean needs between
+/// 33,554,432 and 37,748,736 unoptimized, and between 16,777,216 and
+/// 25,165,824 optimized. 67,108,864 is under the source's demand by a
+/// factor of 2.0 unoptimized and 1.5 optimized, and over what the clean
+/// source needs by 1.8 unoptimized and 2.7 optimized.
+const BUDGET_HEAP_BYTES: u64 = 67_108_864;
+
+/// The heap a replaced memory budget holds for the firing control.
+///
+/// 1,073,741,824 is over the source's measured demand by a factor of 7
+/// or more in each build, so a control that completes reports the heap
+/// term above, and not the reservation, as what stopped the run under
+/// test.
+const CONTROL_HEAP_BYTES: u64 = 1_073_741_824;
+
+/// The replaced memory budget that holds `heap_bytes` over the compile
+/// thread's stack reservation (§109.2 rule 6).
+fn replaced_memory_budget(heap_bytes: u64) -> String {
+    let reservation = subscript_compiler::COMPILE_THREAD_STACK_BYTES as u64;
+    (reservation + heap_bytes).to_string()
+}
 
 /// The `gate-skip:` line a heavy part prints when `selected` is false
 /// (§109.6a). `part` names the test and what it omits.
@@ -1246,6 +1266,53 @@ fn skipped_as_heavy(part: &str) -> bool {
     // Start a new line after any test harness prefix, outside its capture.
     writeln!(std::io::stdout().lock(), "\n{line}").expect("write the gate skip line");
     true
+}
+
+/// The `gate-debug-only:` line a heavy part prints in the release
+/// profile (§85 rule 4a).
+///
+/// `part` names the test and what it omits. `reason` names the fact
+/// that the profile does not change.
+fn debug_only_line(part: &str, reason: &str, optimized: bool) -> Option<String> {
+    optimized.then(|| format!("gate-debug-only: {part}; {reason}"))
+}
+
+/// True when the caller must omit its heavy part in this profile, and
+/// prints the declaration first (§85 rule 4a).
+fn declared_debug_only(part: &str, reason: &str) -> bool {
+    let Some(line) = debug_only_line(part, reason, !cfg!(debug_assertions)) else {
+        return false;
+    };
+    use std::io::Write;
+    // Start a new line after any test harness prefix, outside its capture.
+    writeln!(std::io::stdout().lock(), "\n{line}").expect("write the gate debug-only line");
+    true
+}
+
+/// §85 rule 4a: the line a heavy part prints in the release profile,
+/// and the profile that removes it.
+#[test]
+fn the_debug_only_line_is_declared() {
+    assert_eq!(
+        debug_only_line(
+            "a_heavy_test reaches a budget",
+            "the budget is one number in each build",
+            true
+        )
+        .as_deref(),
+        Some(concat!(
+            "gate-debug-only: a_heavy_test reaches a budget; ",
+            "the budget is one number in each build"
+        ))
+    );
+    assert_eq!(
+        debug_only_line(
+            "a_heavy_test reaches a budget",
+            "the budget is one number in each build",
+            false
+        ),
+        None
+    );
 }
 
 /// §109.6a: the skip line a heavy part prints, and the variable that
@@ -1278,11 +1345,17 @@ fn largest_child_peak_bytes() -> u64 {
 /// the entry file, and the same source under the default profile keeps
 /// the parser's own outcome with no child.
 ///
+/// The budget is the test-only one: the compile thread's stack
+/// reservation plus a heap under what this source demands. A test that
+/// waits for the contract's own budget waits for a host that can hold
+/// one (§109.6a).
+///
 /// 65,476 labels is 130,990 bytes, inside S026's per-file limit of
-/// 131,072, so the compile runs. The control is what the process
-/// boundary closes: with no child the parser's outcome reaches the
-/// caller, and on a host that kills the process that outcome is no
-/// diagnostic at all.
+/// 131,072, so the compile runs. The firing control is the same source
+/// under a reservation plus a heap over that demand: it reaches the
+/// parser's own diagnostic, so the budget is what stopped the run under
+/// test. The second control is what the process boundary closes: with
+/// no child the parser's outcome reaches the caller.
 ///
 /// The S026 line is not always the first line. Linux and Windows turn
 /// the budget into a failed allocation, so the Rust runtime's own line
@@ -1293,12 +1366,6 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
     /// The labels the chain spells.
     const LABELS: usize = 65_476;
 
-    if skipped_as_heavy(concat!(
-        "a_compile_over_the_memory_budget_reports_one_s026 ",
-        "drives the compile child to the memory budget"
-    )) {
-        return Ok(());
-    }
     let dir = TestDir::new()?;
     let source = dir.write("profile_label.ts", same_label_chain(LABELS).as_bytes())?;
     assert_eq!(
@@ -1311,6 +1378,10 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
     let started = std::time::Instant::now();
     let stopped = output(
         subscript()
+            .env(
+                subscript_cli::COMPILE_MEMORY_BUDGET_VARIABLE,
+                replaced_memory_budget(BUDGET_HEAP_BYTES),
+            )
             .arg("check")
             .arg("--profile")
             .arg("sandbox")
@@ -1343,23 +1414,54 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
     );
 
     // macOS refuses `RLIMIT_AS`, so the parent holds the budget by its
-    // poll. The kernel's own figure for the child that just ended must
-    // then stay under the budget plus one poll's growth. The reading
-    // comes before the control below, which runs with no budget at all.
+    // poll. That poll reads the budget less the compile thread's stack
+    // reservation, because the reservation is never resident
+    // (§109.2 rule 6), and the budget above is the reservation plus
+    // `BUDGET_HEAP_BYTES`. The kernel's own figure for the child that
+    // just ended must then stay under that heap term plus one poll's
+    // growth. The reading comes before the controls below, which run
+    // with more budget.
     #[cfg(target_os = "macos")]
     {
         let peak = largest_child_peak_bytes();
         println!("the budgeted child: {wall:?}, peak {peak} resident bytes");
         assert!(
-            peak < MEMORY_BUDGET_BYTES + POLL_GROWTH_BYTES,
+            peak < BUDGET_HEAP_BYTES + POLL_GROWTH_BYTES,
             "the peak is {peak} resident bytes"
         );
     }
     #[cfg(not(target_os = "macos"))]
     println!("the budgeted child: {wall:?}");
 
-    // The control: the default profile spawns nothing, so the parser's
-    // own outcome reaches the caller and no budget stop is reported.
+    // The firing control: the same source under the same reservation
+    // and a heap over its demand reaches the parser's own diagnostic,
+    // so the heap term above is what stopped the run under test. The
+    // control replaces the budget too, because the contract's own
+    // budget is one host's number (§109.6a).
+    let started = std::time::Instant::now();
+    let parsed = output(
+        subscript()
+            .env(
+                subscript_cli::COMPILE_MEMORY_BUDGET_VARIABLE,
+                replaced_memory_budget(CONTROL_HEAP_BYTES),
+            )
+            .arg("check")
+            .arg("--profile")
+            .arg("sandbox")
+            .arg(&source),
+    )?;
+    let control_wall = started.elapsed();
+    assert_code(&parsed, 1);
+    let rendered = String::from_utf8_lossy(&parsed.stderr).into_owned();
+    assert!(
+        rendered.contains("error[S100]") && !rendered.contains("S026"),
+        "{rendered}"
+    );
+    println!("the control reaches the parser's own diagnostic in {control_wall:?}");
+
+    // The second control: the default profile spawns nothing, so the
+    // parser's own outcome reaches the caller and no budget stop is
+    // reported.
     let unbudgeted = output(subscript().arg("check").arg(&source))?;
     assert_ne!(unbudgeted.status.code(), Some(0));
     let rendered = String::from_utf8_lossy(&unbudgeted.stderr).into_owned();
@@ -1419,7 +1521,19 @@ fn a_compile_over_the_time_budget_reports_one_s026() -> Result<(), String> {
     // reaches the parser's own diagnostic, so the budget is what
     // stopped the run above. The control runs under the 300 s budget,
     // so it is the heavy part of this test (§109.6a); the stop above
-    // keeps its 2 s budget and stays in the quick gate.
+    // keeps its 2 s budget and stays in the quick gate. The control
+    // checks no fact the build profile changes, so the release run
+    // declares it and runs it in the debug profile alone
+    // (§85 rule 4a).
+    if declared_debug_only(
+        concat!(
+            "a_compile_over_the_time_budget_reports_one_s026 ",
+            "omits its firing control under the 300 s budget"
+        ),
+        "the time budget is 300 s in each build",
+    ) {
+        return Ok(());
+    }
     if skipped_as_heavy(concat!(
         "a_compile_over_the_time_budget_reports_one_s026 ",
         "omits its firing control under the 300 s budget"
@@ -1764,8 +1878,21 @@ fn wait_for_the_compile_group_to_end(group_file: &Path) -> Result<std::time::Dur
 /// `program.c` assertion reads. The C compile must have started, and
 /// `slow_host_c` makes that compile the larger part of the build, so
 /// every small fraction reaches it. A tenth satisfies both.
+///
+/// A process-group kill is one code path in each build, so the release
+/// run declares this test and runs it in the debug profile alone
+/// (§85 rule 4a).
 #[test]
 fn a_budget_kill_reaches_the_c_compiler_the_child_started() -> Result<(), String> {
+    if declared_debug_only(
+        concat!(
+            "a_budget_kill_reaches_the_c_compiler_the_child_started ",
+            "measures the C compile control and kills its process group"
+        ),
+        "a process-group kill is one code path in each build",
+    ) {
+        return Ok(());
+    }
     if skipped_as_heavy(concat!(
         "a_budget_kill_reaches_the_c_compiler_the_child_started ",
         "measures the C compile control and kills its process group"

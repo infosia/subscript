@@ -49,6 +49,17 @@ case "$1" in
             *--release*)
                 [ "$SUBSCRIPT_FULL_INTERPRETER_SWEEP" = 1 ] || exit 90
                 echo 'release sweep: 1'
+                case '{case}' in
+                    debug-only|debug-only-with-skip)
+                        echo 'gate-debug-only: stub_suite omits a budget; one number in each build'
+                        ;;
+                esac
+                if [ '{case}' = debug-only ]; then
+                    echo 'gate-debug-only: other_stub_suite omits a kill; one code path in each build'
+                fi
+                if [ '{case}' = debug-only-with-skip ]; then
+                    echo 'gate-skip: stub_suite unset fixture variable'
+                fi
                 ;;
         esac
         if [ '{case}' = failed ]; then
@@ -293,7 +304,7 @@ fn full_fails_on_release_skip() {
     let record = assert_record(
         &output,
         "full",
-        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 1/1 clippy 7/18/13 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 1/1 debug-only 0 clippy 7/18/13 goldens-moved 0 exit 1",
     );
     let release = record.split("## release\n").nth(1).unwrap();
     // §109.6a: the full shape exports the heavy-test variable, and the
@@ -302,6 +313,53 @@ fn full_fails_on_release_skip() {
     assert!(release.contains("tests: 5/0/3\ngate-skip count: 1\n```text\ngate-skip: stub_suite unset fixture variable\n```"));
     assert!(release.contains("release sweep: 1"));
     assert!(release.contains("## hygiene\ncommand: tools/hygiene.sh\n"));
+}
+
+/// §85 rule 4a: the release run declares each heavy part it did not
+/// run, and the script counts those lines apart from the skips.
+#[test]
+fn full_counts_the_release_debug_only_lines() {
+    let _guard = GATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let stubs = Stubs::new("debug-only");
+    let output = stubs.run("full");
+    assert_eq!(output.status.code(), Some(0));
+    let record = assert_record(
+        &output,
+        "full",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0",
+    );
+    let release = record.split("## release\n").nth(1).unwrap();
+    assert!(release.contains(concat!(
+        "gate-skip count: 0\n```text\n```\n",
+        "gate-debug-only count: 2\n```text\n",
+        "gate-debug-only: stub_suite omits a budget; one number in each build\n",
+        "gate-debug-only: other_stub_suite omits a kill; one code path in each build\n```\n"
+    )));
+    // The debug command prints none, so the count is the release
+    // command's own.
+    let debug = record.split("## debug\n").nth(1).unwrap();
+    assert!(debug.contains("gate-debug-only count: 0\n```text\n```\n"));
+}
+
+/// §85 rule 4a: the new count leaves rule 4 as it reads, so a
+/// `gate-skip:` line in the release run is still a failure.
+#[test]
+fn full_fails_on_a_release_skip_beside_a_debug_only_line() {
+    let _guard = GATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let stubs = Stubs::new("debug-only-with-skip");
+    let output = stubs.run("full");
+    assert_eq!(output.status.code(), Some(1));
+    let record = assert_record(
+        &output,
+        "full",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/1 debug-only 1 clippy 7/18/13 goldens-moved 0 exit 1",
+    );
+    let release = record.split("## release\n").nth(1).unwrap();
+    assert!(release.contains(concat!(
+        "gate-skip count: 1\n```text\ngate-skip: stub_suite unset fixture variable\n```\n",
+        "gate-debug-only count: 1\n```text\n",
+        "gate-debug-only: stub_suite omits a budget; one number in each build\n```\n"
+    )));
 }
 
 #[test]
@@ -332,7 +390,7 @@ fn full_continues_after_failed_tests() {
     let record = assert_record(
         &output,
         "full",
-        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 2/1/0 release 2/1/0 skips 0/0 clippy 7/18/13 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 2/1/0 release 2/1/0 skips 0/0 debug-only 0 clippy 7/18/13 goldens-moved 0 exit 1",
     );
     assert!(record.contains("exit status: 1\ntests: 2/1/0\ngate-skip count: 0\n"));
     assert!(record.contains("release sweep: 1"));
@@ -349,7 +407,7 @@ fn full_fails_above_codegen_clippy_baseline() {
     let record = assert_record(
         &output,
         "full",
-        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/14 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 debug-only 0 clippy 7/18/14 goldens-moved 0 exit 1",
     );
     assert!(record
         .contains(" clippy --offline --locked --workspace --all-targets\nenvironment: none\n"));
@@ -396,7 +454,7 @@ fn full_passes_at_all_clippy_baselines() {
     let record = assert_record(
         &output,
         "full",
-        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/13 goldens-moved 0 exit 0",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 debug-only 0 clippy 7/18/13 goldens-moved 0 exit 0",
     );
     assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\nenvironment: none\n"));
     assert!(record.contains("tests: 5/0/3\ngate-skip count: 0\n"));
@@ -411,7 +469,7 @@ fn full_fails_above_compiler_clippy_baseline() {
     let record = assert_record(
         &output,
         "full",
-        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 8/18/13 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 debug-only 0 clippy 8/18/13 goldens-moved 0 exit 1",
     );
     assert!(record.contains("warning: `subscript-compiler` (lib) generated 8 warnings"));
     assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\n"));
@@ -426,7 +484,7 @@ fn full_fails_above_runtime_clippy_baseline() {
     let record = assert_record(
         &output,
         "full",
-        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/19/13 goldens-moved 0 exit 1",
+        "gate full 0123456789abcdef0123456789abcdef01234567 clean debug 5/0/3 release 5/0/3 skips 0/0 debug-only 0 clippy 7/19/13 goldens-moved 0 exit 1",
     );
     assert!(record.contains("warning: `subscript-runtime` (lib) generated 19 warnings"));
     assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\n"));
@@ -441,7 +499,7 @@ fn moved_goldens_are_listed_without_failure() {
     let record = assert_record(
         &output,
         "full",
-        "gate full 0123456789abcdef0123456789abcdef01234567 dirty:4 debug 5/0/3 release 5/0/3 skips 0/0 clippy 7/18/13 goldens-moved 3 exit 0",
+        "gate full 0123456789abcdef0123456789abcdef01234567 dirty:4 debug 5/0/3 release 5/0/3 skips 0/0 debug-only 0 clippy 7/18/13 goldens-moved 3 exit 0",
     );
     assert!(record.contains("dirty: 4\n```text\n M corpus/accept/x.expected\n M examples/e01.expected\nD  codegen/tests/lir-goldens/corpus.txt\n M codegen/src/lib.rs\n```"));
     let goldens = record

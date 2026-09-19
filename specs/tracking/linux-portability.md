@@ -1044,3 +1044,127 @@ any renderer reads it, so the cap is downstream of the growth.
 This is where the 10 GB is, and the parser is this project's own fork
 (`https://github.com/infosia/swc_ecma_parser`, branch
 `subscript-eof-bump`).
+
+### The parser fork, and the test that depended on its defect (2026-09-19)
+
+The x86-64 Linux gate host could not run `tools/gate.sh full`: the
+memory-budget heavy test's control passed 10 GB on a 15 GiB host. The
+10 GB was the parser's duplicate-label path, and the path was
+quadratic.
+
+#### The fork
+
+`parse_labelled_stmt` built one error for each earlier live copy of the
+label, so n nested duplicate labels made n(n-1)/2 errors. The fork now
+makes one error for each labelled statement whose label is already
+live. The span, the variant, and the point of emission are unchanged.
+Fork commit `affcb6ee`, on `subscript-eof-bump`; the pin moved from
+`c603b415`.
+
+| Measurement | Before | After |
+|---|---|---|
+| errors for 499 labels | 124,251 | 498 |
+| the 130,990-byte source, parser alone | stopped at 8,002,441,216 resident, 9.52 s | 93,192,192 resident, 0.76 s |
+| the same source, the whole profile check | over 10 GB, killed | 810 MB peak, 1.65 s |
+
+The fork's own test pins the count at 1, 2, 3, 8, and 499 levels, with
+two controls: a label that leaves scope, and two siblings under one
+live label. It is Red against the code before the fix, at `levels 3`
+with 3 errors against 2.
+
+#### The test that depended on the defect
+
+`a_compile_over_the_memory_budget_reports_one_s026` drove a real
+12 GiB compile, and the source that reached 12 GiB was the quadratic
+path. At the new pin the same source completes and reports S100, so
+the test asserted an S026 that no longer arrives. **A test whose
+subject is a defect of a dependency holds only while the defect does.**
+The quick shape does not run heavy parts, so it stayed green at
+1,610 passed and hid the failure.
+
+The memory budget now takes a test-only variable, the shape the time
+budget already had, with the condition §109.2a forces: a value at or
+under the compile thread's stack reservation refuses the thread, and
+the profile then checks nothing.
+
+The heap term is derived from a measured demand, not chosen. The child
+needs address space over the reservation, bisected on this host:
+
+| Source | Unoptimized | Optimized |
+|---|---|---|
+| 65,476 labels | fires at 134,217,728, completes at 142,606,336 | fires at 100,663,296, completes at 134,217,728 |
+| a source that checks clean | fires at 33,554,432, completes at 37,748,736 | fires at 16,777,216, completes at 25,165,824 |
+
+`BUDGET_HEAP_BYTES` is 67,108,864: under the source's demand by 2.0
+unoptimized and 1.5 optimized, and over what a clean source needs by
+1.8 and 2.7. A term under that second figure stops every compile, and
+the S026 is then not the source's. The firing control is the same
+source at 1,073,741,824, seven times the demand: it reaches S100 and no
+S026.
+
+| | Before | After |
+|---|---|---|
+| the memory-budget test | heavy, 430 s, over 10 GB | not heavy, 3.35 s debug and 1.73 s release |
+| the heavy set | three tests | two |
+| the quick shape's skip count | 5 | 4 |
+
+#### The macOS budget was never the other hosts' budget
+
+The round found that the macOS arm cannot fire under a replaced budget,
+and the cause is older than the round. The budget is the compile
+thread's stack reservation plus the heap. Linux and Windows bound
+address space, so the reservation takes its own share and the heap gets
+the rest: 12 GiB less 8 GiB is 4 GiB unoptimized. macOS bounds resident
+bytes, and the reservation is address space that is never resident, so
+the poll gave the heap the whole 12 GiB. That host allowed about three
+times what the other two allowed.
+
+`resident_budget_of` is the budget less the reservation, and the macOS
+poll and the system-memory-kill floor read it. For the contract's own
+budget it is 4,294,967,296 unoptimized and 2,147,483,648 optimized —
+the heap term §109.2 rule 6 already names — so no figure moves. The
+arithmetic carries no `cfg`, so every host unit-tests it.
+
+**No macOS host ran the poll.** The reference machine must run
+`a_compile_over_the_memory_budget_reports_one_s026`.
+
+#### §85 rule 4a implemented
+
+The two heavy parts that remain check nothing the profile changes, so
+each runs in the debug profile alone and declares a `gate-debug-only:`
+line in release. `tools/gate.sh` counts those lines apart from
+`gate-skip:` lines and adds `debug-only <n>` to the verdict.
+`cli/tests/gate.rs` has 16 cases.
+
+Measured: the release `commands` suite with the heavy variable is 0
+`gate-skip:` lines, 2 `gate-debug-only:` lines, 33 passed in 4.21 s.
+
+#### Gates
+
+Orchestrator: `cargo fmt --check` exit 0; the debug `--all-targets`
+build 0 warnings; the `subscript-cli` suites 21 + 33 + 16 + 9 passed
+with 2 `gate-skip:` lines; `tools/hygiene.sh` exit 0. Coding agent:
+clippy 7 / 18 / 13 with `subscript-cli` at 0; the debug `commands`
+suite with the heavy variable 33 passed in 823.82 s; the quick verdict
+`debug 1616/0/2 skips 4 goldens-moved 0 exit 0`.
+
+#### One finding outside this work
+
+The fork carries a test, `surrogate_escape::an_identifier_surrogate_pair_stays_rejected`,
+that fails at the version this workspace resolves. It asserts that
+`const 𐐀 = 1;` does not parse. The fork's own lock pins
+`unicode-id-start` 1.2.0 and this workspace resolves 1.4.0, which
+accepts the identifier.
+
+Measured: `tsc --strict` accepts `const 𐐀 = 1;` with exit 0, and
+`subscript check` accepts the same identifier with a sized type and
+reports no error. U+10400 is a valid identifier start, so the behaviour
+at the resolved version is right and the fork's expectation is stale.
+Invariant 5 holds; there is no divergence to name.
+
+The finding is not the expectation. It is that **no gate of this
+repository runs the fork's tests**, and the fork's own `cargo test`
+does not build offline here: its dev-dependencies `testing` and
+`swc_ecma_visit` and its `#![feature(test)]` are absent. A fork this
+project owns carries tests nobody runs. This is the §55 lesson in a
+third form, and it is open.
