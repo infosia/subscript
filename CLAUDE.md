@@ -249,6 +249,9 @@ allows only on generated-bindings modules); C↔Rust conversions macro-driven
 in one module; colocate each area's code with its own module. A Rust
 source file has at most 2,000 lines (`specs/blocks/compiler.md` §5.y).
 
+**`cfg` scope**: an item that only a `cfg` item uses is declared inside
+that item. If two `cfg` items share it, it carries the same `cfg`.
+
 **Formatting**: the tree is rustfmt-canonical under the toolchain
 `rust-toolchain.toml` pins. `cargo fmt --check` is a standing gate. Do
 not run a formatter from any other toolchain version.
