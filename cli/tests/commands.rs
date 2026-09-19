@@ -1808,13 +1808,18 @@ fn recorded_compile_group(group_file: &Path) -> Result<i32, String> {
 ///
 /// The fact is the host's own: the child leads the group, the C
 /// compiler it starts joins the group, and `kill` with signal 0 asks
-/// whether the group still holds a process. The wait keeps no clock, so
-/// a slow C compiler makes the wait longer and never makes it wrong.
+/// whether the group still holds a process. The question has three
+/// answers (§109.6a). The answer is 0 while a member lives. It is
+/// `EPERM` while every member is dead and a parent did not collect one
+/// of them yet. It is `ESRCH` after that. The wait polls through
+/// `EPERM` as it polls through 0, and ends on `ESRCH` alone. The wait
+/// keeps no clock (§102 rule 3), so a slow C compiler makes the wait
+/// longer and never makes it wrong.
 ///
 /// # Errors
 ///
-/// The parent recorded no group, or the host refuses the question. Each
-/// error names what the wait wanted and what it received.
+/// The parent recorded no group, or the host answers with a third
+/// error. Each error names what the wait wanted and what it received.
 #[cfg(unix)]
 fn wait_for_the_compile_group_to_end(group_file: &Path) -> Result<std::time::Duration, String> {
     let group = recorded_compile_group(group_file)?;
@@ -1822,18 +1827,25 @@ fn wait_for_the_compile_group_to_end(group_file: &Path) -> Result<std::time::Dur
     loop {
         // SAFETY: `kill` takes a negated process group id and signal 0.
         // Signal 0 sends nothing and answers whether the group holds a
-        // process this caller can signal.
+        // process.
         let held = unsafe { libc::kill(-group, 0) };
         if held == 0 {
+            // A member lives. Ask again.
             std::thread::sleep(GROUP_POLL_INTERVAL);
             continue;
         }
         let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::EPERM) {
+            // Every member is dead, and a parent holds one of them.
+            // The group is still a group, so ask again (§109.6a).
+            std::thread::sleep(GROUP_POLL_INTERVAL);
+            continue;
+        }
         return if error.raw_os_error() == Some(libc::ESRCH) {
             Ok(started.elapsed())
         } else {
             Err(format!(
-                "ask whether process group {group} holds a process: wanted ESRCH or a held group, received {error}"
+                "ask whether process group {group} holds a process: wanted ESRCH, a held group, or EPERM, received {error}"
             ))
         };
     }

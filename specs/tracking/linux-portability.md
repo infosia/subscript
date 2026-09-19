@@ -949,6 +949,33 @@ lines unchanged; the `subscript-cli` lib suite 18 passed, one more than
 before; `tools/hygiene.sh` exit 0. The coding agent measured clippy at
 7 / 18 / 13 with `subscript-cli` at 0, and the heavy test at 1 passed.
 
+#### The group wait on arm64 macOS (2026-09-19)
+
+`tools/gate.sh full` failed twice on the arm64 macOS host at `9f36455`,
+with one verdict: `debug 1615/1/2 release 1612/0/2 skips 2/0
+debug-only 2 clippy 7/18/13 goldens-moved 0 exit 1`. The one failure
+was `a_budget_kill_reaches_the_c_compiler_the_child_started`. The wait
+received `EPERM` from `kill(-group, 0)` and accepted `ESRCH` alone.
+
+A C probe on that host measured the three answers of the question:
+
+| Group | `kill(-group, 0)` |
+|---|---|
+| a member lives | 0 |
+| every member is dead, and one is not collected | -1, `EPERM` |
+| every member is collected | -1, `ESRCH` |
+
+The probe ran inside the orchestrator's command sandbox, and the first
+row shows that the sandbox does not refuse the question. The Linux
+answer for the second row is not measured here.
+
+The wait now polls through `EPERM` (§109.6a). Measured on the same
+host, debug, five runs: the wait is 52.87 ms to 55.03 ms. One more run
+carried a temporary print: the `EPERM` arm fires one time, and the
+next question 50 ms later answers `ESRCH`. The whole test is 9.86 s to 10.17 s. `cargo fmt --check`
+exit 0; clippy for `subscript-cli` 0. The full gate did not run after
+the fix.
+
 ### The parser's per-package optimization level, measured and refused (2026-09-19)
 
 The x86-64 Linux gate host has 15 GiB of RAM and cannot run the
