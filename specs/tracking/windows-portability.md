@@ -1491,3 +1491,116 @@ profile and in the release profile. Both heavy tests pass in the debug
 profile. No golden moved. The x86-64 Linux host and this host agree
 on debug 1616/0/2 and release 1612/0/2. The Windows figure at
 `9a52c61` is debug 1589/0/2 and release 1585/0/2.
+
+## Gate state at `e635b0c`, 2026-09-19 — two build defects, two classes
+
+The pull brought §111, the callback registration with an explicit end.
+The build step failed twice on this host. With both closed, every test
+passes: the debug suite is 1638/0/2 with 4 skips.
+
+### Defect 1: an import whose only user is a unix function
+
+`codegen/src/jit/entry.rs` imported `Pos` at module scope. §111
+removed the one unconditional use, and the use that stayed is in
+`parse_child_protocol`, a `#[cfg(unix)]` function. This host reports
+`unused import: Pos`, and §85's build step fails on one warning.
+
+The class is an item that only a `cfg` item uses, declared outside
+that item. `GROUP_POLL_INTERVAL` at `9a52c61` was the first instance,
+one round before. The import now lives inside `parse_child_protocol`,
+so it ends with its user.
+
+### Defect 2: a fixture call with no exclusion
+
+`codegen/tests/reload.rs` gained
+`a_registration_open_across_a_reload_calls_the_code_it_was_created_with`,
+which calls `native_fixture::library()`. The module does not exist on
+windows-msvc (§11c constraint 2), so the build fails with `E0433`. A
+guard on the test alone leaves `registration_reload_source` and
+`interop_files` unused, so the fix is three copies of the predicate.
+
+§11c constraint 3 closed this class on 2026-08-02 for a test that
+names a corpus entry. This test names none, so it is outside the
+subject of that rule. The fixture calls in the six test targets:
+
+| Target | Calls | Form |
+|---|---|---|
+| `golden.rs` | 6 | copied `#[cfg]`, beside the structural helper |
+| `reload.rs` | 5 | copied `#[cfg]` |
+| `cemit.rs` | 3 | copied `#[cfg]`, with an empty library list on windows-msvc |
+| `lir.rs` | 1 | copied `#[cfg]` |
+| `interop.rs` | 2 | one file-level `#![cfg]` |
+| `boundary_module_invariance.rs` | 2 | one file-level `#![cfg]` |
+
+### No build-time check sees another host family
+
+A cross `cargo check` was the candidate total check for both classes.
+Measured on this host toward the installed unix target:
+
+```text
+cargo check --offline --locked --workspace --lib --bins
+  --exclude subscript-interop-fixture --exclude subscript-archive-fixture
+  --exclude subscript-examples --target aarch64-linux-android
+error: failed to run custom build command for `psm v0.1.31`
+  ToolNotFound: failed to find tool "aarch64-linux-android-clang"
+```
+
+`psm` reaches the workspace through the parser's `stacker` dependency,
+and its build script compiles for the target. The three excluded
+crates fail the same way. A host therefore needs the C toolchain of
+the other family to check that family, and the unix hosts have no
+MSVC. Each host's own build step stays the only detector for its own
+`cfg` arms.
+
+### The decision
+
+Both defects are loud: the build names the item and the line, and
+this round found and diagnosed both in about five minutes. No path to
+a wrong green result was found. The `cemit.rs` empty list fails an
+interop entry at symbol resolution, and the suite is green, so its
+skip predicate holds.
+
+This round therefore restores the gate with the named sites: the
+import moves into its user, and `reload.rs` takes three copies of the
+predicate. A partial migration does not converge, because a copied
+`native_fixture::library()` call still compiles on every unix host.
+The converging form is the whole migration, and §11c constraint 3 now
+states it. That migration is a round of its own, because only a unix
+host can verify the side that keeps the fixture.
+
+`tools/gate.sh full` on this host, at `e635b0c` with the two files
+modified:
+
+```text
+gate full e635b0cf64fcfa56e9a20ea5634c402e945a6cef dirty:2 debug 1638/0/2 release 1634/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 2, build 0, debug 267, release 389, clippy 8,
+tsc 1, hygiene 1. The build step read a warm cache.
+
+### Task plan (handoff — coding agent)
+
+Test code only. No production source, corpus entry, or golden moves.
+
+1. `codegen/tests/support/native_fixture.rs` loses its `#![cfg]`, and
+   it compiles in every configuration. It exposes one entry point,
+   `fixture() -> Option<Fixture>`: `None` on windows-msvc. `library`,
+   `host_owned_state_pre_entry`, `host_owned_state_borrow_and_advance`,
+   and `host_owned_state_post_run` become methods of `Fixture`. On
+   windows-msvc `Fixture` holds a field of an empty enum, and each
+   method body matches on it, so no body panics and none names a
+   fixture symbol. The `extern crate`, the `extern "C"` block, and the
+   method bodies carry the predicate; nothing outside this file does.
+2. `golden.rs`, `reload.rs`, `cemit.rs`, and `lir.rs` drop the `#[cfg]`
+   on `mod native_fixture` and on every call. A test that needs the
+   fixture starts with `let Some(fixture) = native_fixture::fixture()
+   else { ... }`, prints the name of the skipped test, and returns. A
+   branch that gives windows-msvc an empty library list takes the
+   `None` arm instead.
+3. `interop.rs` and `boundary_module_invariance.rs` keep their
+   file-level `#![cfg]` and call the same entry point.
+4. The three copies this round added to `reload.rs` go.
+
+Gate: `tools/gate.sh full` is green on this host with no warning, and
+green on each unix reference host with the same passed counts as
+before the change. No golden byte moves.
