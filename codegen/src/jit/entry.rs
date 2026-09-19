@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use cranelift_jit::JITModule;
-use subscript_compiler::{Pos, Profile};
+use subscript_compiler::Profile;
 #[cfg(unix)]
 use subscript_runtime::TrapKind;
 use subscript_runtime::{
@@ -314,6 +314,10 @@ impl<'a> ProtocolReader<'a> {
 
 #[cfg(unix)]
 fn parse_child_protocol(bytes: &[u8], stdout: Vec<u8>) -> Result<Vec<u8>, RunError> {
+    // The only user of `Pos` in this module is this unix function, so
+    // the import lives here and ends with it.
+    use subscript_compiler::Pos;
+
     let mut protocol = ProtocolReader::new(bytes);
     match protocol.u8()? {
         0 => Ok(stdout),

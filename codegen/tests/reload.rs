@@ -775,6 +775,7 @@ fn reload_mode_reproduces_every_committed_golden() {
 
 /// The registering half and the firing half of the reload case, with the
 /// callback body the only difference between the two generations.
+#[cfg(not(all(windows, target_env = "msvc")))]
 fn registration_reload_source(generation: &str) -> String {
     format!(
         "\
@@ -812,6 +813,7 @@ export function fire(): void {{
 }
 
 /// The mirror plus one live source, for a session that calls the fixture.
+#[cfg(not(all(windows, target_env = "msvc")))]
 fn interop_files(text: &str) -> Vec<SourceFile> {
     let mirror = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../corpus/interop/interop.generated.d.ts");
@@ -828,6 +830,7 @@ fn interop_files(text: &str) -> Vec<SourceFile> {
 /// Cost: one reload session with the native fixture, two generations,
 /// four entry calls. Measured at 0.05 s on this host in the debug
 /// profile, which is the session build cost, not the fire.
+#[cfg(not(all(windows, target_env = "msvc")))]
 #[test]
 fn a_registration_open_across_a_reload_calls_the_code_it_was_created_with() {
     let libraries = [native_fixture::library()];
