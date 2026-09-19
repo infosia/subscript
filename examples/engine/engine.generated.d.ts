@@ -17,6 +17,7 @@
 // @subscript-c-string-view function="engineWorldSetName" parameter="engineName" aggregate="EngineStringView"
 // @subscript-c-descriptor function="engineWorldReplaceEntities" parameter="engineStates" aggregate="EngineEntityStateView" element="EngineEntityState" const=true
 // @subscript-c-descriptor function="engineWorldReadEntities" parameter="engineStates" aggregate="EngineEntityStateOut" element="EngineEntityState" const=false
+// @subscript-c-callback-lifetime aggregate="EngineRequestInfo"
 
 declare enum EngineWorldOptionKind {
   ENGINE_WORLD_OPTION_TICK = 1,
@@ -98,6 +99,19 @@ declare function engineFrameBegin(engineWorld: EngineWorld, engineFixedStep: f32
 declare function engineFrameWorld(): EngineWorld;
 declare function engineFrameFixedStep(): f32;
 declare function engineFrameIndex(): u64;
+
+declare class EngineRequestInfo {
+  engineCallback: EngineEventCallback;
+  engineUserdata1: object | null;
+  engineUserdata2: object | null;
+  constructor(engineCallback: EngineEventCallback, engineUserdata1: object | null, engineUserdata2: object | null);
+}
+
+declare function engineRequestStart(engineWorld: EngineWorld, engineImmediate: boolean, engineInfo: EngineRequestInfo): i32;
+declare function engineRequestPump(engineWorld: EngineWorld): void;
+declare function engineRequestReleaseCount(engineWorld: EngineWorld): i32;
+declare function engineRequestMarkCharge(engineWorld: EngineWorld): void;
+declare function engineRequestChargeFellBy(engineWorld: EngineWorld, engineAtLeast: u32): i32;
 
 type EngineEntityFlags = u64;
 declare const ENGINE_ENTITY_FLAG_NONE = 0;

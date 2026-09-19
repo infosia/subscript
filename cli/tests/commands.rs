@@ -201,6 +201,9 @@ fn unresolved_import_output(specifier: &str) -> Vec<u8> {
     .into_bytes()
 }
 
+/// The committed engine mirror is generated with the explicit callback
+/// lifetime selected for `EngineRequestInfo` (`specs/blocks/compiler.md`
+/// §111 rule 1), so both bind modes pass that selection here.
 #[test]
 fn bind_stdout_and_output_file_match_the_committed_mirror() -> Result<(), String> {
     let root = workspace_root();
@@ -213,7 +216,9 @@ fn bind_stdout_and_output_file_match_the_committed_mirror() -> Result<(), String
             .current_dir(&root)
             .arg("bind")
             .arg("--header")
-            .arg(header),
+            .arg(header)
+            .arg("--explicit-callback-lifetime")
+            .arg("EngineRequestInfo"),
     )?;
     assert_code(&cli_stdout, 0);
     assert_eq!(cli_stdout.stdout, committed);
@@ -226,6 +231,8 @@ fn bind_stdout_and_output_file_match_the_committed_mirror() -> Result<(), String
             .current_dir(&root)
             .arg("bind")
             .arg(header)
+            .arg("--explicit-callback-lifetime")
+            .arg("EngineRequestInfo")
             .arg("-o")
             .arg(&cli_path),
     )?;

@@ -156,3 +156,35 @@ gate full e490079cbd2bde2c83861ec8d88e655db40084e3 dirty:69 debug 1670/0/2 relea
 The `dirty` paths are this section's implementation, which the gate ran
 before the commit. The moved golden is the LIR snapshot above. The
 x86-64 Linux host and the Windows host did not run this section.
+
+## The teaching example, e12 (2026-09-20)
+
+`examples/e12-one-shot-requests` runs on the engine facade, which
+gained `EngineRequestInfo` and five functions. `engine.c` is the
+adapter of §111.2 in its shortest form: two pending slots, the Context
+read at the crossing, one release after the last fire, and a refused
+start that releases at once and answers -1. The host tutorial quotes
+`engine.c`, the example, and its `.expected` as excerpts that
+`codegen/tests/docs.rs` checks against the files. That test read
+excerpts in `ts` fences only; it now reads them in every fence, and the
+tutorial's checked excerpts went from 1 to 5.
+
+Red, with the mirror generated without the option, equal on both
+tiers: each `released` line prints `released 0` and the last line
+prints `reclaimed 0`, 6 of 11 lines. `refused -1` does not move,
+because the engine refuses on its own table and not on the lifetime.
+No output of e09, e10, `host/`, `context-per-scene/`, `sandbox/`, or
+`gate/` moved.
+
+`tools/gate.sh full`, with the example in the tree before its commit:
+
+```text
+gate full 09fc2c38668cbfe65514dbac19f9a9d494da7c92 dirty:10 debug 1677/0/2 release 1673/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Not run on this host: the windows-msvc link of the examples test
+binary. There `engine.c` is the one C unit that references
+`subscript_rt_cb_registration_context`,
+`subscript_rt_ctx_callback_release`, and
+`subscript_rt_ctx_charged_bytes`, because that host excludes the
+interop fixture.

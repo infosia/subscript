@@ -11,8 +11,9 @@ Read the numbered examples in order:
    types, explicit memory management, and nullability.
 2. [`e05`–`e08`](#language-foundations) cover failure values, arrays and
    closures, deterministic APIs, and frame-stepped coroutines.
-3. [`e09`](e09-c-structs-and-slices.ts) and
-   [`e10`](e10-c-callbacks-and-handles.ts) bind the small
+3. [`e09`](e09-c-structs-and-slices.ts),
+   [`e10`](e10-c-callbacks-and-handles.ts), and
+   [`e12`](e12-one-shot-requests.ts) bind the small
    [`engine/`](engine/) C facade.
 4. [`host/`](host/) is the capstone: a C `main` owns the loop and calls the
    script's `init`, `update`, and `shutdown` exports.
@@ -59,6 +60,7 @@ or its governing invariant.
 | [`e09-c-structs-and-slices`](e09-c-structs-and-slices.ts) | Binding `engine.h`: struct by value, slice, string view, enum, flags | The language struct is the C struct; no marshaling copy changes its layout | [Invariant 1](../CLAUDE.md#design-invariants-read-second) |
 | [`e10-c-callbacks-and-handles`](e10-c-callbacks-and-handles.ts) | Opaque-handle lifecycle, callback userdata, deferred pump delivery | Userdata lifetime is explicit; callbacks arrive on the calling thread | Q13, [compiler §14.6](../specs/blocks/compiler/s014-p7-async-future-model-and-remaining-production-shapes.md#146-permanent-non-goal--spontaneous-arbitrary-thread-callbacks) |
 | [`e11-parallel-workers`](e11-parallel-workers.ts) | Four workers count primes over disjoint ranges, then main aggregates in worker order; observe parallel execution with `time subscript run examples/e11-parallel-workers.ts`, with the four-worker count visible in the source | Workers use isolated Contexts and copy-only transferable messages, not shared state | Q35 |
+| [`e12-one-shot-requests`](e12-one-shot-requests.ts) | A registration the host ends: per-request state in userdata, one completion inside the start call and the rest at a pump, a completion that starts the next request, a refused start that ends its registration at once, and the memory that returns after the release | A callback cannot capture, so one request registers one userdata object; the host states when no later call can occur | C5, Q13, [compiler §111](../specs/blocks/compiler/s111-a-callback-registration-with-an-explicit-end.md) |
 
 ## Run the examples
 
@@ -108,7 +110,14 @@ state that must span scenes stays host-side.
 implementation. `subscript bind` generates
 [`engine/engine.generated.d.ts`](engine/engine.generated.d.ts); scripts bind
 that mirror, while both execution tiers call the declared C functions
-directly. The complete host path is
+directly. The facade's `EngineRequestInfo` takes the explicit callback
+lifetime, so the regeneration command carries the selection:
+
+```sh
+subscript bind --header examples/engine/engine.h \
+    --explicit-callback-lifetime EngineRequestInfo \
+    -o examples/engine/engine.generated.d.ts
+``` The complete host path is
 [`host/game.ts`](host/game.ts), [`host/main.c`](host/main.c), and
 [`host/build.sh`](host/build.sh); the Context-lifetime counterpart is
 [`context-per-scene/`](context-per-scene/). [`sandbox/`](sandbox/) binds no

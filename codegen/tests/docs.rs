@@ -323,7 +323,7 @@ fn documentation_blocks() {
         let blocks = blocks(&markdown);
         let expected_ts = match file {
             "README.md" => 1,
-            "docs/tutorial-c-cpp.md" => 11,
+            "docs/tutorial-c-cpp.md" => 12,
             "docs/tutorial-rust.md" => 3,
             "docs/tutorial-typescript.md" => 17,
             _ => panic!("{file}: add the measured TypeScript fence count to the scope table"),
@@ -334,16 +334,18 @@ fn documentation_blocks() {
             "{file}: TypeScript fence count differs from the scope table"
         );
         let (mut programs, mut compared, mut fragments, mut excerpts) = (0, 0, 0, 0);
-        for (index, block) in blocks
-            .iter()
-            .enumerate()
-            .filter(|(_, block)| block.language == "ts")
-        {
+        for (index, block) in blocks.iter().enumerate() {
+            // An excerpt is checked in every fence language. A C adapter
+            // or a committed transcript a document quotes drifts as
+            // easily as its TypeScript.
             if let Some(path) = excerpt_path(&block.source) {
                 excerpts += 1;
                 if let Err(error) = check_excerpt(root, &block.source, path) {
                     failures.push(format!("{file}:{}: {error}", block.line));
                 }
+                continue;
+            }
+            if block.language != "ts" {
                 continue;
             }
             let program = is_program(block);

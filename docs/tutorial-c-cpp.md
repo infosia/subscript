@@ -941,9 +941,16 @@ therefore registers N distinct userdata objects, and each one stays
 rooted until the Context ends.
 
 For that shape, select the explicit lifetime for the callback-info
-struct when you generate the mirror
-(`specs/blocks/compiler.md` §111):
-`subscript bind --header engine.h --explicit-callback-lifetime EngineRequestInfo -o engine.d.ts`.
+struct when you generate the mirror (`specs/blocks/compiler.md` §111).
+The example engine carries one such struct, `EngineRequestInfo`, so its
+mirror is generated with the selection:
+
+```sh
+subscript bind --header examples/engine/engine.h \
+    --explicit-callback-lifetime EngineRequestInfo \
+    -o examples/engine/engine.generated.d.ts
+```
+
 The option can repeat. The script does not change: it fills the same
 struct and passes it to your function. Each crossing of a selected
 struct now creates one registration, and the host ends it:
@@ -960,29 +967,164 @@ int32_t subscript_rt_ctx_callback_release(subscript_rt_context* ctx, void* regis
 
 Your function receives the registration where it receives a binding
 today: in the first userdata field. The callback field holds the
-function pointer to fire, and you pass both back unchanged. This sketch
-shows a one-shot adapter. The names are not from the example engine.
+function pointer to fire, and you pass both back unchanged. The example
+engine is a working adapter of this shape. It holds a small table of
+pending requests, and one helper carries every release, so the count it
+reports is the number of registrations it ended
+([`examples/engine/engine.c`](../examples/engine/engine.c)):
 
 ```c
-int32_t engineRequestStart(EngineWorld world, uint32_t what, EngineRequestInfo info) {
-    EngineRequest *request = engineRequestAlloc(world);
-    request->callback = info.engineCallback;
-    request->registration = info.engineUserdata1;
-    /* A script-called function receives no Context. The registration
-     * answers, and it is certainly live here. */
-    request->ctx = subscript_rt_cb_registration_context(info.engineUserdata1);
-    return engineNativeStart(world, what, request);
+// excerpt of examples/engine/engine.c
+static void engineRequestRelease(
+    struct EngineWorld_T *engineWorld,
+    subscript_rt_context *engineContext,
+    void *engineRegistration) {
+    if (engineContext == NULL || engineRegistration == NULL) {
+        return;
+    }
+    if (subscript_rt_ctx_callback_release(engineContext, engineRegistration) != 1) {
+        return;
+    }
+    if (engineWorld != NULL) {
+        engineWorld->engineReleaseCount += 1;
+    }
 }
 
-/* On the Context's thread, when the native side completes. */
-static void engineRequestComplete(EngineRequest *request, EngineStringView result) {
-    request->callback(result, request->registration, NULL);
-    /* The last fire returned, and the native side holds the request no
-     * more. No later fire can occur, so end the registration. */
-    subscript_rt_ctx_callback_release(request->ctx, request->registration);
-    engineRequestFree(request);
+int32_t engineRequestStart(
+    EngineWorld engineWorld,
+    bool engineImmediate,
+    EngineRequestInfo engineInfo) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    /* 111 rule 5a: a function the script calls receives no Context. The
+     * registration answers, and it is certainly live at this crossing. */
+    subscript_rt_context *engineContext =
+        subscript_rt_cb_registration_context(engineInfo.engineUserdata1);
+    EngineRequestSlot *engineSlot;
+    int32_t engineNumber;
+
+    if (engineContext != NULL) {
+        engineCheckedWorld->engineRequestContext = engineContext;
+    }
+    engineSlot = engineRequestFreeSlot(engineCheckedWorld);
+    if (engineSlot == NULL) {
+        engineRequestRelease(
+            engineCheckedWorld,
+            engineCheckedWorld->engineRequestContext,
+            engineInfo.engineUserdata1);
+        return ENGINE_REQUEST_REFUSED;
+    }
+    engineSlot->engineCallback = engineInfo.engineCallback;
+    engineSlot->engineRegistration = engineInfo.engineUserdata1;
+    engineSlot->enginePending = true;
+    engineCheckedWorld->engineRequestNumber += 1;
+    engineNumber = engineCheckedWorld->engineRequestNumber;
+    if (engineImmediate) {
+        /* The start completes before it returns, through the release
+         * path the pump uses (111.2 one-shot). */
+        engineRequestComplete(engineCheckedWorld, engineSlot);
+    }
+    return engineNumber;
 }
 ```
+
+The completion is the other crossing. It fires one time and then ends
+the registration, because that is the point where no later call can
+occur. The immediate start above reaches it too, so one path serves
+both:
+
+```c
+// excerpt of examples/engine/engine.c
+static void engineRequestComplete(
+    struct EngineWorld_T *engineWorld,
+    EngineRequestSlot *engineSlot) {
+    EngineEventCallback engineCallback = engineSlot->engineCallback;
+    void *engineRegistration = engineSlot->engineRegistration;
+    EngineStringView engineMessage;
+    engineMessage.engineData = engineWorld->engineName;
+    engineMessage.engineLen = engineWorld->engineNameLength;
+    engineSlot->enginePending = false;
+    if (engineCallback != NULL) {
+        /* 111 rule 4: the registration goes back in the first userdata
+         * slot, and the second slot carries the null the marshaling
+         * wrote. */
+        engineCallback(engineMessage, engineRegistration, NULL);
+    }
+    engineSlot->engineCallback = NULL;
+    engineSlot->engineRegistration = NULL;
+    engineRequestRelease(
+        engineWorld,
+        engineWorld->engineRequestContext,
+        engineRegistration);
+}
+```
+
+The script side is one non-capturing lambda and one state class. Nothing
+in the program keeps a reference to that state: the registration holds
+it until the host ends it, and a completion can start the next request
+while its own call runs
+([`examples/e12-one-shot-requests.ts`](../examples/e12-one-shot-requests.ts)):
+
+```ts
+// excerpt of examples/e12-one-shot-requests.ts
+class Request {
+  world: EngineWorld;
+  name: string;
+  follows: i32;
+  steps: i32[];
+
+function startRequest(
+  world: EngineWorld,
+  request: Request,
+  immediate: boolean,
+): i32 {
+  const info: EngineRequestInfo = new EngineRequestInfo(
+    (message, userdata1, userdata2) => {
+      if (userdata1 !== null) {
+        const state = userdata1 as Request;
+        print(`done ${state.name} ${state.steps.length + message.length}`);
+        if (state.follows > 0) {
+          startRequest(
+            state.world,
+            new Request(state.world, `${state.name}-next`, state.follows - 1),
+            false,
+          );
+        }
+      }
+    },
+    request,
+    null,
+  );
+  return engineRequestStart(world, immediate, info);
+```
+
+That program starts one request that completes inside the start call and
+two that complete at a pump, starts a fourth that the engine refuses,
+prints the count the engine reports after each step, and asks for a
+collection at the end. Its committed output on both tiers:
+
+```text
+// excerpt of examples/e12-one-shot-requests.expected
+done alpha 4101
+released 1
+released 1
+refused -1
+released 2
+done beta 4101
+done gamma 4101
+released 4
+done gamma-next 4101
+released 5
+reclaimed 1
+```
+
+`refused -1` is the rule below at work. The refused start crossed the
+boundary, so it created a registration; the engine ended it inside the
+start call, and `released 2` reports that before any pump runs.
+
+`reclaimed 1` is a comparison, not a byte count. The engine reads
+`subscript_rt_ctx_charged_bytes` through the Context it kept and answers
+whether the charge fell by the 8,192 bytes the program named. The byte
+counts differ by tier and by memory mode; the fall does not.
 
 The release is a statement that you make: you start no more calls
 through this registration. It cancels no native work and unregisters
@@ -1013,11 +1155,15 @@ nothing. Do those first. Five rules follow from that.
 
 Stop every notification source and release every registration before
 you destroy the Context. The destruction frees the records and runs no
-callback. For the whole pattern from the script side, read
+callback. Read
+[`e12-one-shot-requests.ts`](../examples/e12-one-shot-requests.ts) whole
+for the teaching path. For a stricter adapter — a subscription with a
+removal that ends at a later pump, a release from inside the callback,
+and a fire after the release — read
 [`a247-registration-one-shot-paths.ts`](../corpus/accept/a247-registration-one-shot-paths.ts)
 and
-[`a249-registration-chained-one-shots.ts`](../corpus/accept/a249-registration-chained-one-shots.ts);
-the adapter they run against is
+[`a249-registration-chained-one-shots.ts`](../corpus/accept/a249-registration-chained-one-shots.ts)
+against
 [`corpus/interop/interop.c`](../corpus/interop/interop.c).
 
 ### Step 8 — a frame loop: exports beyond `main`

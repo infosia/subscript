@@ -314,7 +314,10 @@ fn every_executable_source_has_total_operation_signatures() {
         let source = fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
         let mut files = Vec::new();
-        if source.contains("engineWorld") || source.contains("engineFrame") {
+        if source.contains("engineWorld")
+            || source.contains("engineFrame")
+            || source.contains("engineRequest")
+        {
             files.push(SourceFile::ambient(
                 "engine.generated.d.ts",
                 engine_mirror.clone(),

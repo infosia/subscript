@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 
-use subscript_bindgen::generate_for_header;
+use subscript_bindgen::{generate_with_options, BindOptions};
 use subscript_codegen::{
     run_c_aot_with_native_libraries, run_jit_with_native_libraries, tool_output_report,
     NativeLibrary,
@@ -31,6 +31,10 @@ use subscript_compiler::SourceFile;
 
 const ENGINE_MIRROR_NAME: &str = "engine.generated.d.ts";
 const INTEROP_MIRROR_NAME: &str = "interop.generated.d.ts";
+/// The one engine aggregate that takes the explicit callback lifetime
+/// (`specs/blocks/compiler.md` §111 rule 1). Every regeneration of the
+/// committed mirror passes this selection.
+const ENGINE_EXPLICIT_LIFETIME_AGGREGATE: &str = "EngineRequestInfo";
 
 extern "C" {
     fn engineWorldCreate();
@@ -49,6 +53,11 @@ extern "C" {
     fn engineFrameWorld();
     fn engineFrameFixedStep();
     fn engineFrameIndex();
+    fn engineRequestStart();
+    fn engineRequestPump();
+    fn engineRequestReleaseCount();
+    fn engineRequestMarkCharge();
+    fn engineRequestChargeFellBy();
 }
 
 #[cfg(not(all(windows, target_env = "msvc")))]
@@ -98,7 +107,9 @@ fn load_program(path: &Path, id: String) -> Result<Program, String> {
         .map_err(|error| format!("read golden {}: {error}", expected_path.display()))?;
     Ok(Program {
         id,
-        uses_engine: source.contains("engineWorld") || source.contains("engineFrame"),
+        uses_engine: source.contains("engineWorld")
+            || source.contains("engineFrame")
+            || source.contains("engineRequest"),
         uses_interop: source.contains("subDevice"),
         source,
         expected,
@@ -255,6 +266,26 @@ fn engine_library() -> NativeLibrary {
         (
             "engineFrameIndex".to_string(),
             engineFrameIndex as *const u8,
+        ),
+        (
+            "engineRequestStart".to_string(),
+            engineRequestStart as *const u8,
+        ),
+        (
+            "engineRequestPump".to_string(),
+            engineRequestPump as *const u8,
+        ),
+        (
+            "engineRequestReleaseCount".to_string(),
+            engineRequestReleaseCount as *const u8,
+        ),
+        (
+            "engineRequestMarkCharge".to_string(),
+            engineRequestMarkCharge as *const u8,
+        ),
+        (
+            "engineRequestChargeFellBy".to_string(),
+            engineRequestChargeFellBy as *const u8,
         ),
     ];
     // SAFETY: build.rs links these static-lifetime functions into the test
@@ -491,13 +522,22 @@ fn engine_mirror_regenerates_byte_identically() {
         .unwrap_or_else(|error| panic!("read {}: {error}", header_path.display()));
     let committed = fs::read_to_string(&mirror_path)
         .unwrap_or_else(|error| panic!("read {}: {error}", mirror_path.display()));
-    let regenerated = generate_for_header(&header, "engine.h")
+    let options =
+        BindOptions::new().with_explicit_callback_lifetime(ENGINE_EXPLICIT_LIFETIME_AGGREGATE);
+    let regenerated = generate_with_options(&header, "engine.h", &options)
         .unwrap_or_else(|error| panic!("regenerate {}: {error}", mirror_path.display()));
     assert_eq!(
         regenerated, committed,
         "engine mirror is stale; regenerate with \
          `subscript bind --header examples/engine/engine.h \
+         --explicit-callback-lifetime EngineRequestInfo \
          -o examples/engine/engine.generated.d.ts`"
+    );
+    assert!(
+        committed.contains(&format!(
+            "// @subscript-c-callback-lifetime aggregate=\"{ENGINE_EXPLICIT_LIFETIME_AGGREGATE}\""
+        )),
+        "the committed engine mirror carries no explicit-lifetime directive"
     );
 }
 

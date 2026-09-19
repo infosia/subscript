@@ -180,7 +180,10 @@ fn accept_corpus_and_examples_have_zero_warnings() {
         let source = fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
         let mut files = Vec::new();
-        if source.contains("engineWorld") || source.contains("engineFrame") {
+        if source.contains("engineWorld")
+            || source.contains("engineFrame")
+            || source.contains("engineRequest")
+        {
             files.push(SourceFile::ambient(
                 "engine.generated.d.ts",
                 engine_mirror_source.clone(),
@@ -193,7 +196,7 @@ fn accept_corpus_and_examples_have_zero_warnings() {
             "examples/{name} produced warnings: {warnings:?}"
         );
     }
-    assert_eq!(example_entries.len(), 11, "numbered example count changed");
+    assert_eq!(example_entries.len(), 12, "numbered example count changed");
 
     for relative in ["hot-reload/demo.ts", "rust-host/logic.ts"] {
         let path = examples.join(relative);

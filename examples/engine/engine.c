@@ -20,11 +20,39 @@
 #define ENGINE_THREAD_LOCAL _Thread_local
 #endif
 
+/* The three runtime entries the host adapter of compiler.md 111 calls
+ * below. The source of truth for each signature is the generated
+ * runtime/include/subscript_runtime.h; this facade repeats the three it
+ * needs, with the incomplete Context type, so it depends on no include
+ * path. */
+typedef struct subscript_rt_context subscript_rt_context;
+extern subscript_rt_context *subscript_rt_cb_registration_context(void *registration);
+extern int32_t subscript_rt_ctx_callback_release(
+    subscript_rt_context *ctx,
+    void *registration);
+extern uint64_t subscript_rt_ctx_charged_bytes(const subscript_rt_context *ctx);
+
 enum {
     ENGINE_WORLD_ENTITY_CAPACITY = 32,
     ENGINE_WORLD_NAME_CAPACITY = 64,
-    ENGINE_WORLD_OPTION_LIMIT = 32
+    ENGINE_WORLD_OPTION_LIMIT = 32,
+    /* The requests one world holds at the same time. More than one is
+     * required, because a callback can start the next request while its
+     * own call runs (compiler.md 111.2 one-shot). Two is also small
+     * enough that a short program reaches the refusal. */
+    ENGINE_WORLD_REQUEST_CAPACITY = 2,
+    /* What engineRequestStart returns for a crossing it refuses. */
+    ENGINE_REQUEST_REFUSED = -1
 };
+
+/* One pending request. The slot is free when engineRegistration is NULL.
+ * A slot stays held through its own fire, so a callback that starts the
+ * next request never lands in the slot that fires. */
+typedef struct EngineRequestSlot {
+    EngineEventCallback engineCallback;
+    void *engineRegistration;
+    bool enginePending;
+} EngineRequestSlot;
 
 /* The concrete opaque-world layout owns every per-world mutable byte:
  * lifecycle, simulation state, bounded entities, copied name bytes, and
@@ -44,6 +72,17 @@ struct EngineWorld_T {
     EngineEventKind enginePendingEvent;
     EngineEventKind engineLastEvent;
     bool engineEventPending;
+    /* Host-adapter state of compiler.md 111. engineRequestContext is the
+     * Context this world read at its last crossing (111 rule 5a); every
+     * release goes through it. Every field belongs to one world, so this
+     * adapter keeps no static state and one run leaves none for the
+     * next. */
+    subscript_rt_context *engineRequestContext;
+    EngineRequestSlot engineRequests[ENGINE_WORLD_REQUEST_CAPACITY];
+    int32_t engineRequestNumber;
+    int32_t engineReleaseCount;
+    uint64_t engineChargeMark;
+    bool engineChargeMarked;
 };
 
 /* The frame record is separate from simulation state; thread-local storage
@@ -421,4 +460,181 @@ float engineFrameFixedStep(void) {
  * process-global frame state exists. */
 uint64_t engineFrameIndex(void) {
     return engineFrameRecord.engineFrameIndex;
+}
+
+/*
+ * The host adapter of compiler.md 111.2. The adapter knows when the
+ * native side can no longer fire; the compiler derives that fact from no
+ * name and from no mode value. Each rule is stated where it applies.
+ */
+
+/* Ends one registration one time (111 rule 5) and counts it on the world
+ * that holds it. Every release of this adapter goes through here. The
+ * caller drops its own reference to the registration first. */
+static void engineRequestRelease(
+    struct EngineWorld_T *engineWorld,
+    subscript_rt_context *engineContext,
+    void *engineRegistration) {
+    if (engineContext == NULL || engineRegistration == NULL) {
+        return;
+    }
+    if (subscript_rt_ctx_callback_release(engineContext, engineRegistration) != 1) {
+        return;
+    }
+    if (engineWorld != NULL) {
+        engineWorld->engineReleaseCount += 1;
+    }
+}
+
+/* The free request slot of the lowest index, or NULL when the world
+ * holds its bound of pending requests. */
+static EngineRequestSlot *engineRequestFreeSlot(struct EngineWorld_T *engineWorld) {
+    for (size_t engineIndex = 0u;
+         engineIndex < (size_t)ENGINE_WORLD_REQUEST_CAPACITY;
+         engineIndex += 1u) {
+        if (engineWorld->engineRequests[engineIndex].engineRegistration == NULL) {
+            return &engineWorld->engineRequests[engineIndex];
+        }
+    }
+    return NULL;
+}
+
+/* Completes one request: it fires the callback one time, and then ends
+ * the registration, which is the point where no later call can occur
+ * (111.2 one-shot). The slot is held through the fire and freed here. */
+static void engineRequestComplete(
+    struct EngineWorld_T *engineWorld,
+    EngineRequestSlot *engineSlot) {
+    EngineEventCallback engineCallback = engineSlot->engineCallback;
+    void *engineRegistration = engineSlot->engineRegistration;
+    EngineStringView engineMessage;
+    engineMessage.engineData = engineWorld->engineName;
+    engineMessage.engineLen = engineWorld->engineNameLength;
+    engineSlot->enginePending = false;
+    if (engineCallback != NULL) {
+        /* 111 rule 4: the registration goes back in the first userdata
+         * slot, and the second slot carries the null the marshaling
+         * wrote. */
+        engineCallback(engineMessage, engineRegistration, NULL);
+    }
+    engineSlot->engineCallback = NULL;
+    engineSlot->engineRegistration = NULL;
+    engineRequestRelease(
+        engineWorld,
+        engineWorld->engineRequestContext,
+        engineRegistration);
+}
+
+/* A start crossing creates one registration (111 rule 3). The adapter
+ * either stores it for exactly one completion, or ends it at once. */
+int32_t engineRequestStart(
+    EngineWorld engineWorld,
+    bool engineImmediate,
+    EngineRequestInfo engineInfo) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    /* 111 rule 5a: a function the script calls receives no Context. The
+     * registration answers, and it is certainly live at this crossing. */
+    subscript_rt_context *engineContext =
+        subscript_rt_cb_registration_context(engineInfo.engineUserdata1);
+    EngineRequestSlot *engineSlot;
+    int32_t engineNumber;
+    if (engineCheckedWorld == NULL) {
+        /* A refused crossing still received a registration, so it ends
+         * here and no later call can occur through it. */
+        engineRequestRelease(NULL, engineContext, engineInfo.engineUserdata1);
+        return ENGINE_REQUEST_REFUSED;
+    }
+    if (engineContext != NULL) {
+        engineCheckedWorld->engineRequestContext = engineContext;
+    }
+    engineSlot = engineRequestFreeSlot(engineCheckedWorld);
+    if (engineSlot == NULL) {
+        engineRequestRelease(
+            engineCheckedWorld,
+            engineCheckedWorld->engineRequestContext,
+            engineInfo.engineUserdata1);
+        return ENGINE_REQUEST_REFUSED;
+    }
+    engineSlot->engineCallback = engineInfo.engineCallback;
+    engineSlot->engineRegistration = engineInfo.engineUserdata1;
+    engineSlot->enginePending = true;
+    engineCheckedWorld->engineRequestNumber += 1;
+    engineNumber = engineCheckedWorld->engineRequestNumber;
+    if (engineImmediate) {
+        /* The start completes before it returns, through the release
+         * path the pump uses (111.2 one-shot). */
+        engineRequestComplete(engineCheckedWorld, engineSlot);
+    }
+    return engineNumber;
+}
+
+/* The drain reads which requests are pending before it fires any of
+ * them, so a request that a callback starts during the drain stays
+ * pending for the next pump. */
+void engineRequestPump(EngineWorld engineWorld) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    bool engineDue[ENGINE_WORLD_REQUEST_CAPACITY];
+    size_t engineIndex;
+    if (engineCheckedWorld == NULL) {
+        return;
+    }
+    for (engineIndex = 0u;
+         engineIndex < (size_t)ENGINE_WORLD_REQUEST_CAPACITY;
+         engineIndex += 1u) {
+        engineDue[engineIndex] =
+            engineCheckedWorld->engineRequests[engineIndex].enginePending;
+    }
+    for (engineIndex = 0u;
+         engineIndex < (size_t)ENGINE_WORLD_REQUEST_CAPACITY;
+         engineIndex += 1u) {
+        if (engineDue[engineIndex]) {
+            engineRequestComplete(
+                engineCheckedWorld,
+                &engineCheckedWorld->engineRequests[engineIndex]);
+        }
+    }
+}
+
+/* The release count advances only when the runtime answered 1, so it
+ * counts the registrations this world ended (111 rule 5). */
+int32_t engineRequestReleaseCount(EngineWorld engineWorld) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL) {
+        return 0;
+    }
+    return engineCheckedWorld->engineReleaseCount;
+}
+
+/* The mark reads the Context charge through the kept Context, so the
+ * script observes reclamation without new language surface. */
+void engineRequestMarkCharge(EngineWorld engineWorld) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    if (engineCheckedWorld == NULL ||
+        engineCheckedWorld->engineRequestContext == NULL) {
+        return;
+    }
+    engineCheckedWorld->engineChargeMark =
+        subscript_rt_ctx_charged_bytes(engineCheckedWorld->engineRequestContext);
+    engineCheckedWorld->engineChargeMarked = true;
+}
+
+/* The answer is a comparison against the mark, not a byte count: the
+ * charge is tier- and memory-mode-dependent, and the fall is not. */
+int32_t engineRequestChargeFellBy(
+    EngineWorld engineWorld,
+    uint32_t engineAtLeast) {
+    struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
+    uint64_t engineNow;
+    if (engineCheckedWorld == NULL || !engineCheckedWorld->engineChargeMarked) {
+        return 0;
+    }
+    engineNow =
+        subscript_rt_ctx_charged_bytes(engineCheckedWorld->engineRequestContext);
+    if (engineNow > engineCheckedWorld->engineChargeMark) {
+        return 0;
+    }
+    return (engineCheckedWorld->engineChargeMark - engineNow) >=
+                   (uint64_t)engineAtLeast
+               ? 1
+               : 0;
 }

@@ -8,6 +8,9 @@
  * entity-state element, a length-carrying string view, a two-userdata
  * event sink, an opaque world handle, combinable flags, and an embedded
  * count-first array. No union or bitfield participates in the boundary.
+ *
+ * The facade also carries the explicit-lifetime callback registration of
+ * specs/blocks/compiler.md 111 — the last section of this header.
  */
 
 #ifndef ENGINE_ENGINE_H
@@ -256,5 +259,77 @@ float engineFrameFixedStep(void);
 /* The frame-index accessor reads the calling thread's unsigned host frame
  * counter; before frame begin it returns zero. */
 uint64_t engineFrameIndex(void);
+
+/*
+ * A callback registration with an explicit end (compiler.md 111).
+ *
+ * EngineEventSink above keeps the Context lifetime: one listener lives
+ * as long as the Context. A request does not have that shape. A boundary
+ * callback does not capture, so the state of one request travels in
+ * userdata, and a world that starts N requests registers N distinct
+ * userdata objects.
+ *
+ * EngineRequestInfo carries the field shape of EngineEventSink and is a
+ * distinct C type, so `subscript bind --header engine.h
+ * --explicit-callback-lifetime EngineRequestInfo` selects this one
+ * aggregate and leaves EngineEventSink unchanged (compiler.md 111 rule
+ * 1). Each crossing of the selected aggregate creates one registration,
+ * and the functions below are the host adapter that ends it
+ * (compiler.md 111.2).
+ *
+ * The adapter ends a registration when its request completes, and at no
+ * other time: engineWorldRelease ends none. A host that destroys a
+ * Context therefore completes or abandons its pending requests first,
+ * which is the duty compiler.md 111 rule 12 gives it.
+ */
+
+/* The request info is the explicit-lifetime callback-registration
+ * struct. The marshaling writes the registration into engineUserdata1
+ * and null into engineUserdata2 (compiler.md 111 rule 4), and this
+ * facade passes both back to the callback unchanged. */
+typedef struct EngineRequestInfo {
+    EngineEventCallback engineCallback;
+    void *engineUserdata1;
+    void *engineUserdata2;
+} EngineRequestInfo;
+
+/* Starting a request stores one pending completion and returns its
+ * number, counting from 1 for each world. A true engineImmediate
+ * completes the request inside this call; false completes it at the next
+ * engineRequestPump. Each path fires the callback one time and then ends
+ * the registration one time. The callback's message is the world name,
+ * as the event pump delivers it. A callback can start the next request,
+ * which then completes at a later pump. A world holds two pending
+ * requests; a third one, and a NULL handle, end the received
+ * registration at once and return -1. */
+int32_t engineRequestStart(
+    EngineWorld engineWorld,
+    bool engineImmediate,
+    EngineRequestInfo engineInfo);
+
+/* Pumping completes every request that is pending when the drain starts,
+ * in the fixed order of the world's request table, and ends each
+ * registration one time. A request that a callback starts during the
+ * drain waits for the next pump. A NULL handle is a no-op. */
+void engineRequestPump(EngineWorld engineWorld);
+
+/* The release count is the number of registrations this world ended: one
+ * for each release the runtime answered with 1. It is the observable of
+ * compiler.md 111 rule 5, and a NULL handle returns zero. */
+int32_t engineRequestReleaseCount(EngineWorld engineWorld);
+
+/* Marking records the Context charge this world reads through the
+ * Context of its last registration; engineRequestChargeFellBy compares
+ * against that value. A NULL handle, or a world that received no
+ * registration, is a no-op. */
+void engineRequestMarkCharge(EngineWorld engineWorld);
+
+/* The charge comparison returns 1 when the Context charge is
+ * engineAtLeast bytes or more under the recorded mark, and 0 otherwise.
+ * The comparison is stable on every target and in both memory modes,
+ * where the byte counts are not. An unmarked world returns zero. */
+int32_t engineRequestChargeFellBy(
+    EngineWorld engineWorld,
+    uint32_t engineAtLeast);
 
 #endif
