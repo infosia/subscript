@@ -123,7 +123,24 @@ and names no command either.
    `corpus/` alone, so §95's fourth moved golden,
    `examples/e07-determinism.expected`, was invisible and the verdict
    line said `goldens-moved 3` for four. `examples/tests/gate.rs`
-   holds those goldens to the same dev ≡ ship ≡ golden rule.)* A run that a signal (`HUP`,
+   holds those goldens to the same dev ≡ ship ≡ golden rule.)*
+   *(Corrected 2026-09-20, the second instance of this class. §112
+   moved `codegen/tests/fixtures/p21-allocation-metadata.inc`, and the
+   verdict line said `goldens-moved 0`. The filter also did not see
+   the three `expected.txt` files under `examples/`. The list is now:
+   a `.expected` file, an `expected.txt` file, or a path in which
+   `golden` or `goldens` is a component or the stem of the file name,
+   under `corpus/` or `examples/`;
+   every file under `codegen/tests/lir-goldens/`; and every file under
+   `codegen/tests/fixtures/`. A test in `cli/tests/gate.rs` holds one
+   case for each of those five forms. The list counts a golden that
+   exists at the revision and that the run modified or deleted. A
+   golden that a round adds is not a moved golden, and the verdict
+   line does not count it; the reviewer reads an added golden in the
+   diff. If a review finds a third
+   golden that the filter does not see, do not add a path: the form is
+   the defect, and the goldens then need one root or one manifest.)*
+   A run that a signal (`HUP`,
    `INT`, `TERM`) ends deletes its record and exits non-zero: there
    is no partial record. *(Added 2026-09-05 after review round 2: an
    interrupted run left a record with duplicated command blocks and
@@ -194,10 +211,13 @@ and names no command either.
    (f) an unknown shape argument: exit 2 and a usage line;
    (g) the plain stub in `full`, with no skip, no failure, and the
    baseline counts: `exit 0`, `skips 0/0`, `goldens-moved 0`;
-   (h) a `GIT` stub whose `status --porcelain` prints
-   ` M corpus/accept/x.expected`, `D  codegen/tests/lir-goldens/corpus.txt`,
-   and ` M codegen/src/lib.rs`: `goldens-moved 2` and the two paths in
-   the record, `exit 0`;
+   (h) a `GIT` stub whose `status --porcelain` prints one line for
+   each form of rule 5's list, one `.expected` file under `examples/`,
+   and ` M codegen/src/lib.rs`: `goldens-moved 6`, the six paths in
+   the record, and `exit 0`. The source file is the control that the
+   filter does not count. *(Corrected 2026-09-20: this case named
+   three lines and `goldens-moved 2`, and the test had moved past
+   it.)*
    (i) a stub whose `test` sleeps, and the test sends `TERM` to the
    script during that step: the exit status is non-zero, **the
    record the run reserved is absent**, and its scratch directory is
