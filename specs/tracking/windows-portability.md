@@ -1645,3 +1645,29 @@ No unix host ran this change. The side that keeps the fixture runs
 there only, so each unix reference host must run the full gate. The
 passed counts on a unix host must equal the counts that host measured
 before this change, because no test is excluded there.
+
+### The owed unix run: x86_64-unknown-linux-gnu
+
+The unix reference host ran the full gate at `afd51d7`, with a clean
+tree:
+
+```text
+gate full afd51d7bd71919e471e8c32a94a61adcdc106b1e clean debug 1670/0/2 release 1666/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 2, build 23, debug 1373, release 747, clippy 22,
+tsc 2, hygiene 0. The two full gates before this one on the same host
+measured debug 1349 s and 1348 s, so the change adds no cost.
+
+The before count comes from a separate measurement on the same host.
+The host checked out `051cb7b`, the parent of the migration, and ran
+the debug step command of the gate:
+`SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 SUBSCRIPT_HEAVY_TESTS=1 cargo test
+--offline --locked --workspace --no-fail-fast`. The sum of the
+`test result` lines is 1670 passed, 0 failed, 2 ignored. The gate at
+`afd51d7` measures debug 1670/0/2, so the passed counts are equal, as
+the task plan requires.
+
+No test printed a fixture skip line on this host. The fixture is
+present here, so the `None` arm is unreachable, and each migrated test
+runs the fixture side.
