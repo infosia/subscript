@@ -1476,6 +1476,18 @@ child's `memory allocation of` text under `RLIMIT_AS` at the heap plus
 the reservation, and both heavy tests pass in the debug profile. No
 golden moved.
 
-The arm64 macOS host has not run it. The macOS arm polls the largest
-resident reading against the heap, and no other host can measure that
-path.
+**The arm64 macOS host ran it, 2026-09-19 at `c11d8e0`.**
+`tools/gate.sh full`:
+
+```text
+gate full c11d8e0cdafbfda8b8a4608c02f707110d7a9a26 dirty:4 debug 1616/0/2 release 1612/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+The four paths `dirty` counts are three specification files and one
+untracked note. No Rust source differs from `c11d8e0`. The macOS arm
+of `a_compile_over_the_memory_budget_reports_one_s026` polls the
+resident reading against the heap, and the test passes in the debug
+profile and in the release profile. Both heavy tests pass in the debug
+profile. No golden moved. The x86-64 Linux host and this host agree
+on debug 1616/0/2 and release 1612/0/2. The Windows figure at
+`9a52c61` is debug 1589/0/2 and release 1585/0/2.
