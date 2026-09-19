@@ -71,9 +71,17 @@ alone.
 No `.expected` file moved, the LIR snapshot did not move, and the gate
 reports `goldens-moved 0`.
 
-`p21-allocation-metadata.inc` is a committed generated file with no
-generator of its own. The round took the block from the emitter's
-output. That is a gap against core principle 6, and it is open.
+`p21-allocation-metadata.inc` and `p21-allocation-metadata.h` are
+goldens of `emit_c` for `corpus/accept/a15-manual-lifetime.ts`.
+`allocation_metadata_regenerates_byte_identically` in
+`codegen/tests/cemit.rs` compares them byte for byte with the emitter's
+output, so a hand edit that differs from the generator fails the test.
+The gap is smaller than this note first said: the generator exists, and
+no capture path writes the two files. The LIR snapshot has one,
+`SUBSCRIPT_CAPTURE_LIR_GOLDENS=1`, and its failure message names it.
+The round took the block from the output of `subscript emit`. Open: a
+capture branch in that test, with the next change to
+`codegen/tests/cemit.rs`.
 
 ## Phase Review
 
