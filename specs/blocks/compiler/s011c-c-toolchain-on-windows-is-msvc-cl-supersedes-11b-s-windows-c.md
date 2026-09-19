@@ -82,6 +82,37 @@ Four constraints the `cl` path adds, all measured:
    set. On windows-msvc an excluded entry is compiled and run by neither
    tier, and the run set the test reports counts only what it compared.
 
+   **The subject is every test that uses the fixture.** *(Amended
+   2026-09-19. Not implemented yet; the contract moves first.)* The
+   first form named a test that names a corpus entry. A test that
+   builds its own source and calls the fixture is outside that subject.
+   Such a test still carries a copied `#[cfg]` at the `mod`
+   declaration, at each call, and at each helper that only it uses.
+   Measured 2026-09-19 at `e635b0c` on `x86_64-pc-windows-msvc`: the
+   reload test that §111 added calls `native_fixture::library()` with
+   no guard, and the build fails with `E0433`. A guard on that test
+   alone then leaves two helpers unused, so one omission needs three
+   copies. Four test targets mix fixture tests with other tests, and
+   they hold 15 such calls.
+
+   The fixture support module therefore compiles in every
+   configuration. It has one entry point, and that entry point returns
+   an `Option`: `None` on windows-msvc, the fixture on every other
+   configuration. Every fixture operation is a method of the value
+   inside. The exclusion predicate appears in the support module and
+   nowhere else in a test that mixes. A call site that ignores `None`
+   does not compile on any host, so the host that writes the test
+   reports the omission. A target where every test uses the fixture
+   keeps its one file-level `#![cfg]`: one attribute for the whole file
+   is not a copied guard.
+
+   No build-time check replaces this form. Measured on the same host:
+   `cargo check --target aarch64-linux-android` stops in the build
+   script of the third-party `psm` crate, which needs the C toolchain
+   of the target. A host therefore cannot compile the configuration of
+   another host family. Evidence:
+   `specs/tracking/windows-portability.md`.
+
 4. **A toolchain failure report must carry both streams.** `cl` and
    `link.exe` write their diagnostics to stdout. Unix compilers write
    them to stderr. A report of one stream only is empty on one host
