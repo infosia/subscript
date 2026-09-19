@@ -280,6 +280,20 @@ that measurement.
    the fix removes one input from the set this rule covers, not the
    rule. Fork commit `affcb6ee`.)*
 
+   **The macOS poll reads the budget less the stack reservation.**
+   *(Added 2026-09-19.)* The budget is the reservation plus the heap,
+   and the reservation is address space that is never resident. Linux
+   and Windows bound address space, so the reservation takes its own
+   share and the heap gets the rest. macOS bounds resident bytes, so a
+   poll against the whole budget gives the heap the whole number and
+   the child holds about three times what the other hosts allow. The
+   macOS poll therefore compares the largest resident reading against
+   the budget less `COMPILE_THREAD_STACK_BYTES`. For the contract's
+   own budget that is 4 GiB unoptimized and 2 GiB optimized, the heap
+   term this rule already names, so the figure does not move. The
+   floor that separates a system memory kill from every other
+   `SIGKILL` is one half of the same difference.
+
    **A test replaces either budget, and a replaced memory budget
    still holds the compile thread's stack.** *(Added 2026-09-19.)*
    Each budget has a test-only environment variable, because the stop
