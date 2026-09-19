@@ -1671,3 +1671,19 @@ the task plan requires.
 No test printed a fixture skip line on this host. The fixture is
 present here, so the `None` arm is unreachable, and each migrated test
 runs the fixture side.
+
+### The arm64 macOS run at `75d0073`
+
+The arm64 macOS host ran the full gate at `75d0073`. That commit
+differs from `afd51d7` by one tracking file.
+
+```text
+gate full 75d0073ab5a1f29e31745d06bac7678bf7f13718 dirty:1 debug 1670/0/2 release 1666/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+The one `dirty` path is an untracked note. Step wall seconds: fmt 2,
+build 9, debug 466, release 499, clippy 4, tsc 0, hygiene 2. The same
+host measured debug 1670/0/2 and release 1666/0/2 at `e490079` with the
+§111 implementation in the tree, before the fixture migration, so the
+passed counts are equal on this host too. The two unix hosts agree on
+every count of the verdict.
