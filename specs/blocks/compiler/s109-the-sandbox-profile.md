@@ -725,6 +725,16 @@ carries `KILL_ON_JOB_CLOSE` and the child holds the only handle; no
 Windows host measured it. Evidence:
 `specs/tracking/linux-portability.md`.
 
+**The group wait ends on `ESRCH` alone, and `EPERM` is a held
+group.** *(Added 2026-09-19.)* `kill` with signal 0 on a process group
+has three answers on macOS, measured on arm64. The answer is 0 while
+a member lives. It is `EPERM` while every member is dead and a parent
+did not collect one of them yet. It is `ESRCH` after that. The killed
+compile child and its C compiler stay in that second state for a short
+time, so the wait polls through `EPERM` as it polls through 0. Every
+other error is a failure of the test. The arm carries no `cfg`: the
+rule is the same on each Unix host.
+
 ### 109.7a The in-repo runners under the profile
 
 *(Added 2026-09-17, round 7.)* `subscript run --profile sandbox`, the
