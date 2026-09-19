@@ -266,11 +266,18 @@ run() {
 
 finish() {
     "$GIT" status --porcelain >"$scratch/final-status"
+    # compiler.md section 85 rule 5: the list is a .expected file, an
+    # expected.txt file, or a path with a golden or goldens component,
+    # under corpus/ or examples/; every file under
+    # codegen/tests/lir-goldens/; every file under codegen/tests/fixtures/.
     awk '
         substr($0, 1, 2) ~ /[MD]/ {
             path=substr($0, 4)
-            if (path ~ /^(corpus\/|examples\/|codegen\/tests\/lir-goldens\/)/ &&
-                (path ~ /\.expected$/ || path ~ /(^|\/)golden(s)?(\/|\.|$)/ || path ~ /^codegen\/tests\/lir-goldens\//)) print
+            if (path ~ /^codegen\/tests\/(lir-goldens|fixtures)\//) { print; next }
+            if (path ~ /^(corpus|examples)\// &&
+                (path ~ /\.expected$/ ||
+                 path ~ /(^|\/)expected\.txt$/ ||
+                 path ~ /(^|\/)golden(s)?(\/|\.|$)/)) print
         }
     ' "$scratch/final-status" >"$scratch/goldens"
     moved=$(awk 'END { print NR+0 }' "$scratch/goldens")

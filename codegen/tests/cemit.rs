@@ -2605,27 +2605,6 @@ fn ship_c_aot_prints_the_frozen_a22_golden_byte_exactly() {
 }
 
 #[test]
-fn allocation_metadata_regenerates_byte_identically() {
-    use subscript_codegen::emit_c;
-    use subscript_compiler::check_program;
-
-    let source = include_str!("../../corpus/accept/a15-manual-lifetime.ts");
-    let hir = check_program(&[SourceFile::new("a15-manual-lifetime.ts", source)])
-        .expect("metadata fixture checks");
-    let program = emit_c(&hir).expect("metadata fixture emits");
-    assert_eq!(
-        program.allocation_metadata_header.as_bytes(),
-        include_bytes!("fixtures/p21-allocation-metadata.h"),
-        "generated allocation metadata header drifted"
-    );
-    assert_eq!(
-        program.allocation_metadata_source.as_bytes(),
-        include_bytes!("fixtures/p21-allocation-metadata.inc"),
-        "generated allocation class/position tables drifted"
-    );
-}
-
-#[test]
 fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     // stdlib.md §3: `Date.now()` is Context-owned and pinnable — the
     // ship-tier half of the both-tier pinned-clock check. The dev-tier

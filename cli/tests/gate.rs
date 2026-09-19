@@ -111,7 +111,10 @@ case "$*" in
         if [ '{case}' = moved-goldens ]; then
             echo ' M corpus/accept/x.expected'
             echo ' M examples/e01.expected'
+            echo ' M examples/host/expected.txt'
+            echo ' M corpus/goldens/a99-shape.txt'
             echo 'D  codegen/tests/lir-goldens/corpus.txt'
+            echo ' M codegen/tests/fixtures/p21-allocation-metadata.inc'
             echo ' M codegen/src/lib.rs'
         fi
         ;;
@@ -490,25 +493,43 @@ fn full_fails_above_runtime_clippy_baseline() {
     assert!(record.contains("## hygiene\ncommand: tools/hygiene.sh\n"));
 }
 
+/// §85 rule 5: the moved-golden list is a `.expected` file, an
+/// `expected.txt` file, or a path with a `golden` or `goldens`
+/// component, under `corpus/` or `examples/`; every file under
+/// `codegen/tests/lir-goldens/`; every file under
+/// `codegen/tests/fixtures/`. The stub holds one line for each of the
+/// five forms, and a second `.expected` line for the `examples/` prefix.
+/// `codegen/src/lib.rs` is the negative control.
 #[test]
 fn moved_goldens_are_listed_without_failure() {
     let _guard = GATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let stubs = Stubs::new("moved-goldens");
     let output = stubs.run("full");
     assert_eq!(output.status.code(), Some(0));
+    const MOVED: &str = concat!(
+        " M corpus/accept/x.expected\n",
+        " M examples/e01.expected\n",
+        " M examples/host/expected.txt\n",
+        " M corpus/goldens/a99-shape.txt\n",
+        "D  codegen/tests/lir-goldens/corpus.txt\n",
+        " M codegen/tests/fixtures/p21-allocation-metadata.inc\n"
+    );
     let record = assert_record(
         &output,
         "full",
-        "gate full 0123456789abcdef0123456789abcdef01234567 dirty:4 debug 5/0/3 release 5/0/3 skips 0/0 debug-only 0 clippy 7/18/13 goldens-moved 3 exit 0",
+        "gate full 0123456789abcdef0123456789abcdef01234567 dirty:7 debug 5/0/3 release 5/0/3 skips 0/0 debug-only 0 clippy 7/18/13 goldens-moved 6 exit 0",
     );
-    assert!(record.contains("dirty: 4\n```text\n M corpus/accept/x.expected\n M examples/e01.expected\nD  codegen/tests/lir-goldens/corpus.txt\n M codegen/src/lib.rs\n```"));
+    assert!(record.contains(&format!(
+        "dirty: 7\n```text\n{MOVED} M codegen/src/lib.rs\n```"
+    )));
     let goldens = record
         .split("## Modified or deleted goldens\n")
         .nth(1)
         .unwrap();
-    assert!(goldens.starts_with(
-        "```text\n M corpus/accept/x.expected\n M examples/e01.expected\nD  codegen/tests/lir-goldens/corpus.txt\n```\n"
-    ));
+    assert!(
+        goldens.starts_with(&format!("```text\n{MOVED}```\n")),
+        "| {goldens}"
+    );
     assert!(!goldens.contains("codegen/src/lib.rs"));
 }
 

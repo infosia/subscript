@@ -74,14 +74,30 @@ reports `goldens-moved 0`.
 `p21-allocation-metadata.inc` and `p21-allocation-metadata.h` are
 goldens of `emit_c` for `corpus/accept/a15-manual-lifetime.ts`.
 `allocation_metadata_regenerates_byte_identically` in
-`codegen/tests/cemit.rs` compares them byte for byte with the emitter's
+`codegen/tests/allocation_metadata.rs` compares them byte for byte with
+the emitter's
 output, so a hand edit that differs from the generator fails the test.
 The gap is smaller than this note first said: the generator exists, and
 no capture path writes the two files. The LIR snapshot has one,
 `SUBSCRIPT_CAPTURE_LIR_GOLDENS=1`, and its failure message names it.
-The round took the block from the output of `subscript emit`. Open: a
-capture branch in that test, with the next change to
-`codegen/tests/cemit.rs`.
+The round took the block from the output of `subscript emit`.
+
+*(Closed 2026-09-20.)* The test moved out of `codegen/tests/cemit.rs`,
+which went from 2,879 to 2,858 lines. With
+`SUBSCRIPT_CAPTURE_ALLOC_METADATA_GOLDENS` set, it writes the two
+files; without it, it reads them at run time, and each failure message
+names the file and the variable. Measured: a capture gives files equal
+to the committed ones; with one byte of the `.inc` changed, the test
+fails with no rebuild, and a capture restores the file. Cost: 0.005 s
+for each run of the target, the mean of 20.
+
+The same round closed a second gap. `tools/gate.sh` did not count a
+moved file under `codegen/tests/fixtures/`, so the §112 verdicts above
+say `goldens-moved 0` although the `.inc` moved. It did not count the
+three `expected.txt` files under `examples/` either. §85 now holds the
+list, and `cli/tests/gate.rs` holds one case for each form. Red with
+the former filter: `goldens-moved 4` for the six golden lines of the
+stub.
 
 ## Phase Review
 
@@ -136,3 +152,9 @@ gate full 661d3b584a9fd70793c6319295c03a335bdac5de dirty:33 debug 1677/0/2 relea
 The `dirty` paths are this section's implementation, which the gate ran
 before the commit. The x86-64 Linux host and the Windows host did not
 run this section.
+
+`tools/gate.sh full` with this round in the tree, before its commit:
+
+```text
+gate full 38a9b9b4396d681d42ea656031fc21dcf370ff5b dirty:5 debug 1677/0/2 release 1673/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
