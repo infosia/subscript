@@ -761,7 +761,10 @@ the child's process group; RSS excludes compressed pages; thirteen
 Rust files are over §5.y (`ship.rs` and `context.rs` grew in these
 rounds). *(2026-09-18: M14 is closed on the Windows host, and the
 sections below hold it. M9's and M12's reservations still run on the
-macOS host alone, and the Linux `RLIMIT_AS` path is unmeasured.)*
+macOS host alone.)* *(2026-09-19: the x86-64 Linux host measured the
+`RLIMIT_AS` path under a replaced budget, and the arm64 macOS host ran
+the poll under the same. `specs/tracking/linux-portability.md` holds
+both.)*
 
 ## The Windows host (2026-09-18)
 
@@ -853,3 +856,9 @@ control is the whole of that cost.
 
 Open: nothing from M14. The macOS poll path and the Linux `RLIMIT_AS`
 path each still run on one host only.
+
+*(2026-09-19: the memory test no longer drives the contract's own
+budget, and it is not heavy. The parser fork made the label chain
+linear, so the source completes under 12 GiB. The record is
+`specs/tracking/linux-portability.md`, "The parser fork, and the test
+that depended on its defect".)*
