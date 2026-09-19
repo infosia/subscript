@@ -1322,3 +1322,143 @@ process creation is the cost. The script is the target, not the gate.
 Closed the same day. The script now scans in batches:
 `specs/tracking/repo-hygiene.md`, "The script scans in batches". The
 debug step measures 135 s and the release step 351 s at `d314ce0`.
+
+## Gate state at `9a52c61`, 2026-09-19 — two defects, one of the contract
+
+The pull brought the Linux and macOS portability round to this host.
+The build step fails, so `tools/gate.sh` stops there. Each step ran on
+its own instead. Results:
+
+| Step | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo build --workspace --all-targets` | 1 warning, so the step fails (§85) |
+| `cargo test --workspace` (debug) | 1 test failed, in the CLI commands suite |
+| `cargo test -p subscript-cli --test commands` with `SUBSCRIPT_HEAVY_TESTS=1` | the same 1 failed; both heavy tests pass; the suite 82.39 s |
+| `cargo clippy --workspace --all-targets` | 7/18/13, the baselines |
+| `tsc -p tsconfig.json` | clean |
+| `tools/hygiene.sh` | exit 0 |
+
+The fork pin moved to `affcb6ee` in this pull, so the offline build
+first failed on the dependency. `cargo fetch --locked` closed that.
+
+### Defect 1: a constant of the POSIX arm warns on Windows
+
+`cli/tests/commands.rs` declares `GROUP_POLL_INTERVAL` with no `cfg`,
+and only the `#[cfg(unix)]` group wait reads it. A Windows build
+reports `constant GROUP_POLL_INTERVAL is never used`. §85's build step
+fails on one warning, so this one warning holds the whole gate.
+
+### Defect 2: the Windows memory budget counts committed bytes
+
+`a_compile_over_the_memory_budget_reports_one_s026` fails. It requires
+one S026 that reads "the compiler passed its memory budget", and it
+receives S100, the parser's own duplicate-label diagnostic. The
+replaced budget is the compile thread's stack reservation plus
+67,108,864 bytes, and the compile completes under it.
+
+Two probes measured the cause. Each one is a single Rust file that
+calls `CreateJobObjectW`, `SetInformationJobObject` and
+`AssignProcessToJobObject` through `extern "system"` declarations, and
+each one reverted with the round. The first probe sets a
+`JOB_OBJECT_LIMIT_PROCESS_MEMORY` limit on itself and then starts a
+thread. The second probe sets the limit on itself and then runs
+`subscript check --profile sandbox`, because a child joins its
+parent's job and the limit is per process.
+
+Probe 1, at a commit limit of 209,715,200 bytes and a thread stack
+reserve of 8,589,934,592 bytes: the thread starts, and it touches
+8 MiB of its stack. The heap then fails at 256 MiB of commit, with
+`memory allocation of 67108864 bytes failed`.
+
+`JOB_OBJECT_LIMIT_PROCESS_MEMORY` therefore bounds committed bytes,
+and a reservation commits nothing. The budget `MEMORY_BUDGET_BYTES`
+names is the reservation plus the heap, so a Windows child received the
+whole 12,884,901,888 bytes as heap, three times what the rule intends.
+The test's replaced budget of 8,657,043,456 bytes gave the child
+8.65 GiB of commit, and the peak commit of the whole run is
+828,747,776 bytes at a wall time of 929 ms. `memory_budget_of` also
+refuses every replaced value at or under the reservation, and every
+value a Windows test needs is under it.
+
+Probe 2, with the 65,476-label source of the failing test:
+
+| Commit limit, bytes | Outcome |
+|---|---|
+| 33,554,432 | stack overflow, exit code -1073741571 |
+| 67,108,864 | stack overflow, exit code -1073741571 |
+| 134,217,728 | stack overflow, exit code -1073741571 |
+| 268,435,456 | stack overflow, exit code -1073741571 |
+| 536,870,912 | stack overflow, exit code -1073741571 |
+| 671,088,640 | stack overflow, exit code -1073741571 |
+| 805,306,368 | stack overflow, exit code -1073741571 |
+| 872,415,232 | the compile completes; S100 arrives |
+| 1,073,741,824 | the compile completes; S100 arrives |
+
+A source that checks clean completes at 16,777,216 bytes and above.
+
+So the Windows limit counts the stack the parser's recursion commits,
+and this source commits most of its demand as stack: 65,476 labels
+nest 65,476 levels. The child writes
+`thread 'subscript-compile' has overflowed its stack`, and the host
+ends it with -1073741571, `STATUS_STACK_OVERFLOW`. The parent reads
+that end as "the compiler stopped abnormally (exit code
+-1073741571)". This is the second instance of the class the
+2026-09-18 amendment closed for `__fastfail`: the budget's own end
+reads as an abnormal end. The fix names the set of ends the Job Object
+limit produces, and the parent reads every one of them as the budget.
+
+### The contract moves first
+
+§109.2 rule 6: the memory budget is the heap, 4,294,967,296 bytes
+unoptimized and 2,147,483,648 optimized, and each host builds its own
+limit from that one number. Linux sets `RLIMIT_AS` to the heap plus
+the reservation. Windows sets the Job Object limit to the heap. The
+macOS poll compares the largest resident reading against the heap. The
+test-only variable takes the heap, and the condition on the
+reservation goes, because that condition described the host that
+charges the reservation.
+
+§109.2 rule 6 also names the two ends of a Windows budget stop, and
+the parent reads both as the memory budget. §109.2a sizes the
+reservation so that no source inside S026's byte limit overflows it,
+so the limit the parent set is the only other cause of an overflow.
+
+§109.6a records that the Windows host ran the heavy set: both heavy
+tests pass, and the process-group test's Windows arm has a
+measurement now.
+
+### Both defects are closed, and the full gate is green
+
+`cli/tests/commands.rs` gives `GROUP_POLL_INTERVAL` the `cfg` of its
+only reader. `cli/src/compile_child.rs` makes `MEMORY_BUDGET_BYTES` the
+heap, composes `RLIMIT_AS` from the heap plus the reservation on Linux,
+gives the Windows job limit and the macOS poll the heap itself, drops
+the reservation filter from the test-only variable, and reads exit code
+-1073741571 as the memory budget. `resident_budget_of` held the
+reservation subtraction; it is deleted, because the heap needs no
+subtraction and a name from one host does not describe three. The test
+states the heap directly, and its second assertion reads the child's
+own record for each host: `memory allocation of` on Linux,
+`has overflowed its stack` on Windows, and the kernel's peak on macOS
+through no text.
+
+`tools/gate.sh full` on this host, at `9a52c61` with the five files
+modified:
+
+```text
+gate full 9a52c6196df15e519544a767a9678f3217f73655 dirty:5 debug 1589/0/2 release 1585/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 1, build 2, debug 255, release 453, clippy 1,
+tsc 1, hygiene 1. The build and the clippy steps read a warm cache
+from the same session.
+
+The memory-budget test measures 2.4 s in the debug profile: the
+budgeted child stops in 633.42 ms and reports "the compiler passed its
+memory budget", and the 1 GiB control reaches S100 in 1.01 s. The heavy
+CLI suite is 32 tests in 117.28 s.
+
+No Linux host and no macOS host ran this change. The Linux arm keeps
+the allocation text, and the macOS arm keeps the resident poll against
+the heap, so each reference host must run the memory-budget test.
