@@ -144,6 +144,10 @@ carries the sentence.
    record of ended registrations. Each tier maps the kind to a trap
    site by name, as it maps `callback-userdata-freed`; no tier reaches
    it through a fallback arm.
+   *(Superseded 2026-09-19 for the position: §112 makes id 0 the
+   empty position in every table, so no tier names this kind to find
+   it. The interpreter's mapping of the kind to a trap site stays by
+   name.)*
 
 ### 111.2 What the host adapter owns
 

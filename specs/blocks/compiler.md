@@ -154,3 +154,4 @@ Every section, with its status:
 | §109 | The sandbox profile | active | [`s109-the-sandbox-profile.md`](compiler/s109-the-sandbox-profile.md) |
 | §110 | One dev-JIT module is one reservation | active | [`s110-one-dev-jit-module-is-one-reservation.md`](compiler/s110-one-dev-jit-module-is-one-reservation.md) |
 | §111 | A callback registration with an explicit end | active | [`s111-a-callback-registration-with-an-explicit-end.md`](compiler/s111-a-callback-registration-with-an-explicit-end.md) |
+| §112 | Position id 0 is "no script site" | active | [`s112-position-id-0-is-no-script-site.md`](compiler/s112-position-id-0-is-no-script-site.md) |
