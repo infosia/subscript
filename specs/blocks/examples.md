@@ -47,7 +47,7 @@ examples/
   README.md                        index, build instructions, the divergence table
   e01-<slug>.ts  e01-<slug>.expected
   …
-  e10-<slug>.ts  e10-<slug>.expected
+  e12-<slug>.ts  e12-<slug>.expected
   gate/                            phase-proof programs, not teaching material (§2a)
   engine/
     engine.h                       the host's C facade (§4)
@@ -168,11 +168,20 @@ the synthetic interop fixture, and binding it is what `compiler.md` §23
   `dt` as a parameter: it reads the current world handle and the frame's
   time and index through the facade. That is the idiomatic shape for a
   host-owned loop, and the examples say so rather than working around it.
+- **It carries one explicit-lifetime callback registration**
+  (`compiler.md` §111). *(Added 2026-09-20.)* `EngineRequestInfo` is
+  selected with `--explicit-callback-lifetime`, and `engine.c` is the
+  host adapter of §111.2 in its shortest readable form: it reads the
+  Context at the crossing, it releases one time after the last fire,
+  and a start that it refuses releases the registration at once. The
+  interop fixture carries the stricter adapter; this one is the text a
+  host author copies.
 
 `engine.generated.d.ts` is produced by this project's `bindgen` from
 `engine.h` and is covered by the byte-identical regeneration test
-(`compiler.md` §12.2). Hand edits are a defect in the generator
-(CLAUDE.md core principle 6).
+(`compiler.md` §12.2). The regeneration passes
+`--explicit-callback-lifetime EngineRequestInfo`. Hand edits are a
+defect in the generator (CLAUDE.md core principle 6).
 
 ## 5. The capstone — `examples/host/`
 
@@ -264,6 +273,7 @@ implementer's choice; the committed `.expected` freezes it.
 | `e09-c-structs-and-slices` | binding `engine.h`: struct by value, slice, string view, enum, flags | zero-copy — the language struct **is** the C struct (invariant 1) |
 | `e10-c-callbacks-and-handles` | opaque handle lifecycle; callback with userdata; a deferred fire the host pumps | Q13 userdata lifetime; §14.6 — callbacks arrive on the calling thread |
 | `e11-parallel-workers` | four workers computing one result set; `post`, `wait`, close, join | Q35 — one Context per worker, copy-only messages, nothing shared |
+| `e12-one-shot-requests` | one-shot requests whose state travels in userdata; the host ends each registration; a refused start; a chained start; `Context.collect()` returns the memory | §111 — a callback does not capture, and a registration has an explicit end |
 
 `examples/README.md` carries an index, the build and run instructions,
 and one table row per example naming the divergence — the reader's

@@ -290,7 +290,10 @@ written. The option with no value is a usage failure, exit 2.
 
 1. `subscript bind --header examples/engine/engine.h` output is
    byte-identical to the committed mirror and to `subscript-bindgen`
-   on the same header — both `-o` and stdout modes.
+   on the same header — both `-o` and stdout modes. *(Amended
+   2026-09-20: the committed mirror selects `EngineRequestInfo`, so the
+   command also passes `--explicit-callback-lifetime
+   EngineRequestInfo`, `compiler.md` §111.)*
 2. An unmappable construct: exit 1, message names the construct, no
    output file left behind.
 3. Standalone `subscript-bindgen` behavior byte-unchanged.
