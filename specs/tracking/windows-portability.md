@@ -1604,3 +1604,44 @@ Test code only. No production source, corpus entry, or golden moves.
 Gate: `tools/gate.sh full` is green on this host with no warning, and
 green on each unix reference host with the same passed counts as
 before the change. No golden byte moves.
+
+### Result: the fixture has one entry point
+
+Landed as the task plan states, in eight test files. The support
+module compiles in every configuration, and `fixture()` returns `None`
+on windows-msvc. On that configuration `Fixture` holds a field of an
+empty enum and each method body matches on it. `golden.rs` had two
+`native_libraries` definitions under opposite predicates; it has one,
+and `?` carries `None`. The three empty-list branches of `cemit.rs` are
+gone. `GROUP_POLL_INTERVAL` moved into its unix function (CLAUDE.md,
+`cfg` scope).
+
+The coding agent stopped once, and the stop was correct: a test that
+returns early counts as passed, so the two tests that `cfg` removed
+before join the count here. Each prints its skip line:
+
+```text
+a_registration_open_across_a_reload_calls_the_code_it_was_created_with: skipped: interop fixture excluded here (compiler.md §11c)
+a163_accounts_for_nullable_boundary_boxes: skipped: interop fixture excluded here (compiler.md §11c)
+```
+
+`tools/gate.sh full` on this host, at `1167016` with the eight files
+modified:
+
+```text
+gate full 11670166b136b24e8d2e814ba6ba7505c3ee035b dirty:8 debug 1640/0/2 release 1636/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 2, build 2, debug 283, release 393, clippy 0,
+tsc 0, hygiene 1.
+
+The predicate stays at four places in the mixed targets, and none
+guards a fixture call: the zero-skip assertion of the golden sweep,
+and the host C compiler selection of `cemit.rs`. The trap sweep of
+`cemit.rs` still selects interop entries by its own token list, not by
+`corpus::references_interop`; that form is older than this round.
+
+No unix host ran this change. The side that keeps the fixture runs
+there only, so each unix reference host must run the full gate. The
+passed counts on a unix host must equal the counts that host measured
+before this change, because no test is excluded there.

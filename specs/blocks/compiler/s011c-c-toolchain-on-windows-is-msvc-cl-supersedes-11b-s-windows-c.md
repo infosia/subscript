@@ -83,7 +83,7 @@ Four constraints the `cl` path adds, all measured:
    tier, and the run set the test reports counts only what it compared.
 
    **The subject is every test that uses the fixture.** *(Amended
-   2026-09-19. Not implemented yet; the contract moves first.)* The
+   2026-09-19.)* The
    first form named a test that names a corpus entry. A test that
    builds its own source and calls the fixture is outside that subject.
    Such a test still carries a copied `#[cfg]` at the `mod`
