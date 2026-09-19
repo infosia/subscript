@@ -276,6 +276,16 @@ type is a program-input failure — exit 1, the library's fail-loud
 message naming the construct, and no partial mirror written. Usage
 and IO failures exit 2, as everywhere else.
 
+*(Added 2026-09-19; `compiler.md` §111 rule 1.)*
+`--explicit-callback-lifetime <aggregate>` selects the explicit
+lifetime for one callback-info aggregate of the header. The option can
+repeat. The mirror then carries one
+`// @subscript-c-callback-lifetime aggregate="<aggregate>"` directive
+for each selected aggregate, and no other byte of the mirror changes.
+Each bind error of `compiler.md` §111 rule 1 is a program-input
+failure: exit 1, the message names the aggregate, and no mirror is
+written. The option with no value is a usage failure, exit 2.
+
 ### 10.2 Exit criteria (pre-registered)
 
 1. `subscript bind --header examples/engine/engine.h` output is

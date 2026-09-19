@@ -153,3 +153,4 @@ Every section, with its status:
 | §108 | A field carries a value before a constructor returns | active | [`s108-a-field-carries-a-value-before-a-constructor-returns.md`](compiler/s108-a-field-carries-a-value-before-a-constructor-returns.md) |
 | §109 | The sandbox profile | active | [`s109-the-sandbox-profile.md`](compiler/s109-the-sandbox-profile.md) |
 | §110 | One dev-JIT module is one reservation | active | [`s110-one-dev-jit-module-is-one-reservation.md`](compiler/s110-one-dev-jit-module-is-one-reservation.md) |
+| §111 | A callback registration with an explicit end | active | [`s111-a-callback-registration-with-an-explicit-end.md`](compiler/s111-a-callback-registration-with-an-explicit-end.md) |

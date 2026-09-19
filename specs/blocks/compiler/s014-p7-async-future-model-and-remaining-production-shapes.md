@@ -81,10 +81,12 @@ This converts the growth class rather than capping it: bindings become
 **bounded by distinct (code, userdata) tuples used**, the same
 bounded-by-distinct shape this project already accepts for the astral
 code-point interns (§22.1) and the compiled-pattern cache
-(`stdlib.md` §15.5a). The honest bound is stated the same way those two
-state it: a program that registers a million distinct userdata objects
-allocates a million bindings, and that is not a shape a real host loop
-has.
+(`stdlib.md` §15.5a). The bound is stated the same way those two state
+it: a program that registers a million distinct userdata objects
+allocates a million bindings. *(Corrected 2026-09-19: this section
+called that a shape no real host loop has. A host that starts one-shot
+requests has it. §111 gives that host a registration with an explicit
+end; the rule of this section is unchanged.)*
 
 Observable consequences, pre-registered:
 
