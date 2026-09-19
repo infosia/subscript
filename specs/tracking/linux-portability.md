@@ -1125,8 +1125,20 @@ budget it is 4,294,967,296 unoptimized and 2,147,483,648 optimized —
 the heap term §109.2 rule 6 already names — so no figure moves. The
 arithmetic carries no `cfg`, so every host unit-tests it.
 
-**No macOS host ran the poll.** The reference machine must run
-`a_compile_over_the_memory_budget_reports_one_s026`.
+**The arm64 macOS host ran the poll (2026-09-19, at `aced91b`).**
+`a_compile_over_the_memory_budget_reports_one_s026` passes in both
+profiles. The poll fires under the replaced budget, and the control
+reaches the parser's own diagnostic.
+
+| Profile | Budgeted child | Peak resident bytes | Control | Test wall |
+|---|---|---|---|---|
+| debug | 0.997 s | 100,827,136 | 0.585 s | 2.14 s |
+| release | 0.557 s | 94,060,544 | 0.352 s | 1.24 s |
+
+The test's bound is `BUDGET_HEAP_BYTES + POLL_GROWTH_BYTES`, which is
+335,544,320 bytes. The peak is over the 67,108,864-byte heap term by
+33,718,272 bytes in debug and 26,951,680 in release. That overshoot is
+the growth inside one poll interval.
 
 #### §85 rule 4a implemented
 
