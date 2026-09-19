@@ -69,10 +69,25 @@ impl<'m> Emitter<'m> {
         argument_types: &[String],
         arguments: &[String],
     ) -> String {
+        self.declare_runtime(return_type, name, argument_types);
+        format!("{name}({})", arguments.join(", "))
+    }
+
+    /// Records one runtime symbol the emitted C needs, without a call.
+    ///
+    /// A symbol the generated code only takes the address of reaches the
+    /// declaration block through this (`specs/blocks/compiler.md` §111
+    /// rule 4). A symbol the generated runtime header already declares
+    /// gets no second declaration.
+    pub(super) fn declare_runtime(
+        &mut self,
+        return_type: &str,
+        name: &str,
+        argument_types: &[String],
+    ) {
         self.runtime_symbols
             .entry(name.to_string())
             .or_insert_with(|| (return_type.to_string(), argument_types.to_vec()));
-        format!("{name}({})", arguments.join(", "))
     }
 
     pub(super) fn class(&self, id: ClassId) -> Result<&l::Class, String> {

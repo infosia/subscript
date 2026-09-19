@@ -6,6 +6,7 @@
 use std::fmt::Write;
 
 use crate::lir::{self, Operand};
+use crate::types::CallbackLifetime;
 
 /// Renders a complete LIR module as stable review text.
 #[must_use]
@@ -14,7 +15,7 @@ pub fn print_module(module: &lir::Module) -> String {
     writeln!(&mut out, "module initializer={:?}", module.initializer).unwrap();
 
     for class in &module.classes {
-        writeln!(
+        write!(
             &mut out,
             "class c{} {:?} value={} descriptor={} boundary={} align={:?} @ {}",
             class.id.0,
@@ -26,6 +27,12 @@ pub fn print_module(module: &lir::Module) -> String {
             class.pos
         )
         .unwrap();
+        // §111 rule 2. The Context lifetime is the value of every class
+        // that no directive selects, so only the explicit lifetime prints.
+        if class.callback_lifetime == CallbackLifetime::Explicit {
+            write!(&mut out, " callback-lifetime=explicit").unwrap();
+        }
+        writeln!(&mut out).unwrap();
         if let Some(index) = &class.index_signature {
             writeln!(
                 &mut out,

@@ -240,6 +240,7 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a16-explicit-collect.ts",
             "corpus/accept/a90-callback-userdata-rooted.ts",
             "corpus/accept/a142-bytes-of.ts",
+            "corpus/accept/a244-registration-userdata-reclaimed.ts",
             "corpus/reject/r138-bytes-of-reference-class.ts",
             "corpus/reject/r139-bytes-of-string-element.ts",
             "corpus/warn/w01-loop-allocation-unreleased.ts",
@@ -249,6 +250,7 @@ const FEATURES: &[Feature] = &[
             "corpus/trap/t23-use-after-delete-q6.ts",
             "corpus/trap/t46-callback-userdata-freed.ts",
             "corpus/trap/t51-bytes-into-range.ts",
+            "corpus/trap/t60-registration-fire-after-release.ts",
         ],
     },
 ];

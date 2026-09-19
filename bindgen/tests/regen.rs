@@ -25,17 +25,48 @@ fn wire_enum_header() -> String {
     fs::read_to_string(repo().join("corpus/interop/wire-enum.h")).expect("read wire-enum.h")
 }
 
+/// The aggregate the committed mirror carries with the explicit callback
+/// lifetime (`specs/blocks/compiler.md` §111 rule 1). The binder input
+/// selects it; the header alone never produces the directive.
+const EXPLICIT_CALLBACK_LIFETIME_AGGREGATE: &str = "SubRequestInfo";
+
 #[test]
 fn committed_mirror_is_byte_identical_to_regeneration() {
-    let generated =
-        subscript_bindgen::generate_for_header(&header(), "interop.h").expect("generate mirror");
+    let options = subscript_bindgen::BindOptions::new()
+        .with_explicit_callback_lifetime(EXPLICIT_CALLBACK_LIFETIME_AGGREGATE);
+    let generated = subscript_bindgen::generate_with_options(&header(), "interop.h", &options)
+        .expect("generate mirror");
     let committed = fs::read_to_string(repo().join("corpus/interop/interop.generated.d.ts"))
         .expect("read committed mirror");
     assert_eq!(
         generated, committed,
         "the committed mirror drifted from the generator output; regenerate with \
          `subscript bind --header corpus/interop/interop.h \
+         --explicit-callback-lifetime SubRequestInfo \
          -o corpus/interop/interop.generated.d.ts` (never hand-edit the generated file)"
+    );
+}
+
+/// §111 rule 1: the option is the only source of the directive, and the
+/// language surface does not change. The mirrored class is the same text
+/// with and without it.
+#[test]
+fn the_selection_adds_one_directive_and_moves_no_other_line() {
+    let plain =
+        subscript_bindgen::generate_for_header(&header(), "interop.h").expect("generate mirror");
+    let committed = fs::read_to_string(repo().join("corpus/interop/interop.generated.d.ts"))
+        .expect("read committed mirror");
+    let directive = format!(
+        "// @subscript-c-callback-lifetime aggregate=\"{EXPLICIT_CALLBACK_LIFETIME_AGGREGATE}\"\n"
+    );
+    assert!(
+        !plain.contains(&directive),
+        "a header alone must not produce the directive"
+    );
+    assert_eq!(
+        committed.replacen(&directive, "", 1),
+        plain,
+        "the selection must add the directive line and move no other line"
     );
 }
 

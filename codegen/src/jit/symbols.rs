@@ -4,7 +4,7 @@
 //! at link time, so one list serves both tiers.
 
 use cranelift_jit::JITBuilder;
-use subscript_runtime::ffi;
+use subscript_runtime::{ffi, registration};
 
 macro_rules! runtime_symbols {
     ($($name:ident),+ $(,)?) => {
@@ -259,5 +259,20 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
     );
     for (name, address) in symbols {
         builder.symbol(*name, *address);
+    }
+    // §111 rule 4. These two live with their area in
+    // `subscript_runtime::registration`, so the `ffi::` macro above
+    // cannot name them.
+    for (name, address) in [
+        (
+            "subscript_rt_cb_register",
+            registration::subscript_rt_cb_register as *const u8,
+        ),
+        (
+            "subscript_rt_cb_registration_trampoline",
+            registration::subscript_rt_cb_registration_trampoline as *const u8,
+        ),
+    ] {
+        builder.symbol(name, address);
     }
 }

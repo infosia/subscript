@@ -99,6 +99,16 @@ extern "C" {
     fn subWireModeRecordEchoElement();
     fn subWireModeRecordFill();
     fn subWireModeRecordFillUnknown();
+    fn subRequestStart();
+    fn subRequestSubscribe();
+    fn subRequestNotify();
+    fn subRequestUnsubscribe();
+    fn subRequestPump();
+    fn subRequestReleaseActive();
+    fn subRequestReleaseCount();
+    fn subRequestMarkCharge();
+    fn subRequestChargeFellBy();
+    fn subRequestReleaseAndRefire();
 }
 
 /// Runs the fixture's ship-tier pre-entry hook for a dev-tier session.
@@ -410,6 +420,41 @@ pub fn library() -> NativeLibrary {
         (
             "subWireModeRecordFillUnknown".to_string(),
             subWireModeRecordFillUnknown as *const u8,
+        ),
+        // Callback registrations with an explicit end (compiler.md §111).
+        ("subRequestStart".to_string(), subRequestStart as *const u8),
+        (
+            "subRequestSubscribe".to_string(),
+            subRequestSubscribe as *const u8,
+        ),
+        (
+            "subRequestNotify".to_string(),
+            subRequestNotify as *const u8,
+        ),
+        (
+            "subRequestUnsubscribe".to_string(),
+            subRequestUnsubscribe as *const u8,
+        ),
+        ("subRequestPump".to_string(), subRequestPump as *const u8),
+        (
+            "subRequestReleaseActive".to_string(),
+            subRequestReleaseActive as *const u8,
+        ),
+        (
+            "subRequestReleaseCount".to_string(),
+            subRequestReleaseCount as *const u8,
+        ),
+        (
+            "subRequestMarkCharge".to_string(),
+            subRequestMarkCharge as *const u8,
+        ),
+        (
+            "subRequestChargeFellBy".to_string(),
+            subRequestChargeFellBy as *const u8,
+        ),
+        (
+            "subRequestReleaseAndRefire".to_string(),
+            subRequestReleaseAndRefire as *const u8,
         ),
     ];
     // SAFETY: the test-only fixture crate links these static-lifetime

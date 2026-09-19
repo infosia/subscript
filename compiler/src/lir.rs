@@ -6,7 +6,7 @@
 //! attributes; executable references use ids.
 
 use crate::diag::Pos;
-use crate::types::{ClassId, EnumId, StringAliasId, Type};
+use crate::types::{CallbackLifetime, ClassId, EnumId, StringAliasId, Type};
 
 macro_rules! id_type {
     ($name:ident, $doc:literal) => {
@@ -67,6 +67,10 @@ pub struct Class {
     pub is_boundary: bool,
     /// Whether this boundary value class is an intrusive embedded header.
     pub is_embedded_header: bool,
+    /// The lifetime of the callback registrations this boundary class
+    /// creates (§111 rule 2). The lowering copies the HIR value; it never
+    /// derives the lifetime from the source name.
+    pub callback_lifetime: CallbackLifetime,
     /// Explicit alignment, when declared.
     pub alignment: Option<u32>,
     /// Fields in declaration order.

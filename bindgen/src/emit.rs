@@ -60,20 +60,39 @@ fn header(include_spelling: &str) -> String {
 /// §13.2).
 #[cfg(test)]
 fn emit(parsed: &Parsed) -> Result<String, ParseError> {
-    emit_for_header(parsed, "header.h")
+    emit_for_header(parsed, "header.h", &[])
 }
 
 /// Emits a mirror with provenance naming `include_spelling`.
 ///
+/// `explicit_callback_lifetimes` names the aggregates that take the
+/// explicit callback lifetime (`specs/blocks/compiler.md` §111 rule 1).
+///
 /// # Errors
 ///
-/// Returns [`ParseError`] under the same conditions as [`emit`].
-pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String, ParseError> {
+/// Returns [`ParseError`] under the same conditions as [`emit`], or when
+/// one selected aggregate fails the §111 rule 1 checks.
+pub fn emit_for_header(
+    parsed: &Parsed,
+    include_spelling: &str,
+    explicit_callback_lifetimes: &[String],
+) -> Result<String, ParseError> {
     let registry = classify(parsed);
     validate_nullable_positions(parsed, &registry)?;
     validate_boundary_positions(parsed, &registry)?;
     let reachable_callbacks = reachable_callbacks(parsed, &registry);
     validate_callback_shapes(parsed, &registry, &reachable_callbacks)?;
+    let absorbed: HashSet<String> = registry
+        .iter()
+        .filter(|(_, kind)| matches!(kind, Kind::ArrayPair(_) | Kind::StringView))
+        .map(|(name, _)| name.clone())
+        .collect();
+    let explicit_lifetimes = crate::callback_lifetime::select(
+        parsed,
+        &reachable_callbacks,
+        &absorbed,
+        explicit_callback_lifetimes,
+    )?;
     let mut blocks: Vec<String> = Vec::new();
     let mut pending_fns: Vec<String> = Vec::new();
 
@@ -153,9 +172,13 @@ pub fn emit_for_header(parsed: &Parsed, include_spelling: &str) -> Result<String
     }
 
     let mut out = header(include_spelling);
-    if let Some(provenance) =
-        emit_provenance(parsed, &registry, &reachable_callbacks, include_spelling)?
-    {
+    if let Some(provenance) = emit_provenance(
+        parsed,
+        &registry,
+        &reachable_callbacks,
+        &explicit_lifetimes,
+        include_spelling,
+    )? {
         out.push('\n');
         out.push_str(&provenance);
         out.push('\n');
@@ -990,6 +1013,7 @@ fn emit_provenance(
     parsed: &Parsed,
     registry: &HashMap<String, Kind>,
     reachable_callbacks: &HashSet<String>,
+    explicit_lifetimes: &HashSet<String>,
     include_spelling: &str,
 ) -> Result<Option<String>, ParseError> {
     if parsed.externals.is_empty()
@@ -1023,6 +1047,14 @@ fn emit_provenance(
         match decl {
             Decl::FnPtr { name, .. } if reachable_callbacks.contains(name) => {
                 records.push(format!("// @subscript-c-callback typedef={}", quoted(name)));
+            }
+            // §111 rule 1: one directive for each selected aggregate, at
+            // the position of its C struct declaration.
+            Decl::Struct { name, .. } if explicit_lifetimes.contains(name) => {
+                records.push(format!(
+                    "// @subscript-c-callback-lifetime aggregate={}",
+                    quoted(name)
+                ));
             }
             Decl::Func { name, params, .. } => {
                 emit_parameter_provenance(name, params, parsed, registry, &mut records)?;

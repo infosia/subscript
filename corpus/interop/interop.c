@@ -53,6 +53,49 @@ __attribute__((weak)) void subscript_export_adopt(
     (void)tag;
 }
 
+/* The three runtime entries the §111 host adapter below calls. The
+ * source of truth for each signature is the generated
+ * `runtime/include/subscript_runtime.h`; this fixture repeats the three
+ * it needs, as it repeats the incomplete Context type above, so it
+ * depends on no include path. */
+extern subscript_rt_context *subscript_rt_cb_registration_context(void *registration);
+extern int32_t subscript_rt_ctx_callback_release(
+    subscript_rt_context *ctx,
+    void *registration);
+extern uint64_t subscript_rt_ctx_charged_bytes(const subscript_rt_context *ctx);
+
+/* The notifications one subscription holds before a pump drains them.
+ * A queue that is full drops the notification, so the fixture never
+ * writes outside its own storage. */
+#define SUB_REQUEST_QUEUE_CAPACITY 8
+
+/* The one-shot requests one device holds at the same time. A callback
+ * can start the next request while its own call runs, so the adapter
+ * holds more than one (§111.2 one-shot). */
+#define SUB_REQUEST_ONE_SHOT_CAPACITY 4
+
+/* What subRequestStart and subRequestSubscribe return when the adapter
+ * refuses the crossing. */
+#define SUB_REQUEST_REFUSED (-1)
+
+/* One pending one-shot request. The slot is free when `ticket` is 0. */
+typedef struct SubRequestOneShot {
+    SubLogCallback cb;
+    void *registration;
+    uint32_t payload;
+    /* Names the registration this slot holds. The device counts up from
+     * 1, so a slot that a callback reused is never taken for the one a
+     * fire started on. This holds even when a later registration takes
+     * the address of one that ended (§111 rule 5). */
+    uint32_t ticket;
+    /* The order in which this slot's fire started, counting from 1; 0
+     * when no fire of this slot runs. The greatest value is the
+     * innermost call. */
+    uint32_t firing_seq;
+    /* 1 while the completion did not fire. */
+    int pending;
+} SubRequestOneShot;
+
 /* Concrete layout behind the opaque SubDevice handle. Callers never see
  * it; they hold the pointer only. */
 struct SubDevice_T {
@@ -74,6 +117,25 @@ struct SubDevice_T {
     SubLogCallback async_cb;
     void *async_ud1;
     void *async_ud2;
+    /* §111 host adapter state. `req_ctx` is the Context the adapter read
+     * at the last crossing (§111 rule 5a); every release goes through
+     * it. The one-shot table and the subscription have separate slots,
+     * so one device carries both at the same time. Every field here
+     * belongs to one device, so nothing of this adapter is static and
+     * one run leaks no state into the next. */
+    subscript_rt_context *req_ctx;
+    SubRequestOneShot one_shots[SUB_REQUEST_ONE_SHOT_CAPACITY];
+    uint32_t next_ticket;
+    uint32_t next_firing_seq;
+    SubLogCallback sub_cb;
+    void *sub_registration;
+    uint32_t sub_queue[SUB_REQUEST_QUEUE_CAPACITY];
+    int sub_queued;
+    int sub_removal_requested;
+    int next_request_number;
+    int release_count;
+    int charge_marked;
+    uint64_t charge_mark;
 };
 
 /* Deterministic scratch used to synthesize a callback message of a given
@@ -1324,4 +1386,325 @@ void subByValueI64TripleReport(
     report->a = value.a;
     report->b = value.b;
     report->c = value.c;
+}
+
+/* ==== §111 a callback registration with an explicit end ==============
+ *
+ * This block is the host adapter of §111.2. The runtime marshaling
+ * writes its own trampoline into `info.callback` and the registration
+ * pointer into `info.userdata` (§111 rule 4), so the adapter stores both
+ * and fires through them. It reads the Context of the registration at
+ * the crossing (§111 rule 5a) and keeps it beside its own record,
+ * because a host function that a script calls receives no Context.
+ *
+ * Each registration ends one time, at the point where the adapter knows
+ * that no later call can occur: the one-shot ends after its single
+ * completion, and the subscription ends when a requested removal meets
+ * a drained queue. A crossing the adapter refuses ends at once, because
+ * a refused crossing still received a registration. */
+
+/* Fills the shared scratch and returns a view of `length` bytes. */
+static SubStringView subRequestMessage(uint32_t length) {
+    size_t n = (size_t)length;
+    SubStringView msg;
+    if (n > sizeof(subscript_msgbuf)) {
+        n = sizeof(subscript_msgbuf);
+    }
+    memset(subscript_msgbuf, 'r', n);
+    msg.data = subscript_msgbuf;
+    msg.len = n;
+    return msg;
+}
+
+/* Stores the Context of one crossing. A second crossing on the same
+ * device carries the same Context, because one Context runs one
+ * script. */
+static void subRequestAdoptContext(SubDevice device, void *registration) {
+    subscript_rt_context *ctx = subscript_rt_cb_registration_context(registration);
+    if (ctx != NULL) {
+        device->req_ctx = ctx;
+    }
+}
+
+/* Ends one registration through the Context the adapter read at the
+ * crossing. The caller drops its own reference first, so this is the one
+ * release of that registration. */
+static void subRequestReleaseRegistration(SubDevice device, void *registration) {
+    if (registration == NULL || device->req_ctx == NULL) {
+        return;
+    }
+    if (subscript_rt_ctx_callback_release(device->req_ctx, registration) == 1) {
+        device->release_count += 1;
+    }
+}
+
+/* Ends the subscription registration and clears its slot, so no second
+ * release follows. */
+static void subRequestRelease(SubDevice device, void **slot, SubLogCallback *callback) {
+    void *registration = *slot;
+    *slot = NULL;
+    *callback = NULL;
+    subRequestReleaseRegistration(device, registration);
+}
+
+/* Ends the registration one one-shot slot holds and frees the slot. */
+static void subRequestReleaseSlot(SubDevice device, SubRequestOneShot *slot) {
+    void *registration = slot->registration;
+    slot->registration = NULL;
+    slot->cb = NULL;
+    slot->payload = 0;
+    slot->ticket = 0;
+    slot->firing_seq = 0;
+    slot->pending = 0;
+    subRequestReleaseRegistration(device, registration);
+}
+
+/* The free one-shot slot of the lowest index, or NULL when the table is
+ * full. */
+static SubRequestOneShot *subRequestFreeSlot(SubDevice device) {
+    int index;
+    for (index = 0; index < SUB_REQUEST_ONE_SHOT_CAPACITY; index++) {
+        if (device->one_shots[index].ticket == 0) {
+            return &device->one_shots[index];
+        }
+    }
+    return NULL;
+}
+
+/* The slot that holds `ticket`, or NULL when that registration ended. */
+static SubRequestOneShot *subRequestSlotOfTicket(SubDevice device, uint32_t ticket) {
+    int index;
+    if (ticket == 0) {
+        return NULL;
+    }
+    for (index = 0; index < SUB_REQUEST_ONE_SHOT_CAPACITY; index++) {
+        if (device->one_shots[index].ticket == ticket) {
+            return &device->one_shots[index];
+        }
+    }
+    return NULL;
+}
+
+/* The slot of the innermost one-shot fire that runs now, or NULL when no
+ * fire runs. */
+static SubRequestOneShot *subRequestFiringSlot(SubDevice device) {
+    SubRequestOneShot *found = NULL;
+    int index;
+    for (index = 0; index < SUB_REQUEST_ONE_SHOT_CAPACITY; index++) {
+        SubRequestOneShot *slot = &device->one_shots[index];
+        if (slot->firing_seq == 0) {
+            continue;
+        }
+        if (found == NULL || slot->firing_seq > found->firing_seq) {
+            found = slot;
+        }
+    }
+    return found;
+}
+
+/* Fires one one-shot and then ends its registration, which is the point
+ * where no later call can occur (§111.2 one-shot). The callback can end
+ * it first and can start the next request in this slot, so the ticket
+ * decides whether this fire still owns the slot. */
+static void subRequestFireOneShot(SubDevice device, uint32_t ticket) {
+    SubRequestOneShot *slot = subRequestSlotOfTicket(device, ticket);
+    SubLogCallback cb;
+    void *registration;
+    uint32_t payload;
+    if (slot == NULL || slot->pending == 0) {
+        return;
+    }
+    cb = slot->cb;
+    registration = slot->registration;
+    payload = slot->payload;
+    slot->pending = 0;
+    device->next_firing_seq += 1;
+    slot->firing_seq = device->next_firing_seq;
+    if (cb != NULL) {
+        cb(subRequestMessage(payload), registration, NULL);
+    }
+    slot = subRequestSlotOfTicket(device, ticket);
+    if (slot == NULL) {
+        /* The callback ended this registration itself. */
+        return;
+    }
+    subRequestReleaseSlot(device, slot);
+}
+
+int32_t subRequestStart(
+    SubDevice device,
+    uint32_t payload,
+    int32_t immediate,
+    SubRequestInfo info) {
+    SubRequestOneShot *slot;
+    uint32_t ticket;
+    if (device == NULL) {
+        return 0;
+    }
+    subRequestAdoptContext(device, info.userdata);
+    slot = subRequestFreeSlot(device);
+    if (slot == NULL) {
+        /* The refused crossing received a registration, so it ends here
+         * and no later call can occur through it. */
+        subRequestReleaseRegistration(device, info.userdata);
+        return SUB_REQUEST_REFUSED;
+    }
+    device->next_ticket += 1;
+    ticket = device->next_ticket;
+    slot->cb = info.callback;
+    slot->registration = info.userdata;
+    slot->payload = payload;
+    slot->ticket = ticket;
+    slot->firing_seq = 0;
+    slot->pending = 1;
+    device->next_request_number += 1;
+    if (immediate != 0) {
+        /* The start completes before it returns. The release path is the
+         * one the pump uses (§111.2 one-shot). */
+        subRequestFireOneShot(device, ticket);
+    }
+    return device->next_request_number;
+}
+
+int32_t subRequestSubscribe(SubDevice device, SubRequestInfo info) {
+    if (device == NULL) {
+        return 0;
+    }
+    subRequestAdoptContext(device, info.userdata);
+    if (device->sub_registration != NULL) {
+        /* One subscription at a time. The refused crossing received a
+         * registration, so it ends here. */
+        subRequestReleaseRegistration(device, info.userdata);
+        return SUB_REQUEST_REFUSED;
+    }
+    device->next_request_number += 1;
+    device->sub_cb = info.callback;
+    device->sub_registration = info.userdata;
+    device->sub_queued = 0;
+    device->sub_removal_requested = 0;
+    return device->next_request_number;
+}
+
+void subRequestNotify(SubDevice device, uint32_t payload) {
+    if (device == NULL || device->sub_cb == NULL) {
+        return;
+    }
+    if (device->sub_queued >= SUB_REQUEST_QUEUE_CAPACITY) {
+        return;
+    }
+    device->sub_queue[device->sub_queued] = payload;
+    device->sub_queued += 1;
+}
+
+void subRequestUnsubscribe(SubDevice device) {
+    if (device == NULL) {
+        return;
+    }
+    /* A request to remove does not establish that no notification can
+     * still fire (§111.2 repeated). The pump ends the registration once
+     * the queue is drained. */
+    device->sub_removal_requested = 1;
+}
+
+void subRequestPump(SubDevice device) {
+    uint32_t due[SUB_REQUEST_ONE_SHOT_CAPACITY];
+    uint32_t drain[SUB_REQUEST_QUEUE_CAPACITY];
+    int due_count = 0;
+    int index;
+    int queued;
+    if (device == NULL) {
+        return;
+    }
+    /* The one-shots that are pending when this drain starts, in slot
+     * order. One that a callback starts during the drain fires at the
+     * next pump. */
+    for (index = 0; index < SUB_REQUEST_ONE_SHOT_CAPACITY; index++) {
+        if (device->one_shots[index].pending != 0) {
+            due[due_count] = device->one_shots[index].ticket;
+            due_count += 1;
+        }
+    }
+    for (index = 0; index < due_count; index++) {
+        subRequestFireOneShot(device, due[index]);
+    }
+    /* The notifications that are queued when this drain starts, in
+     * order. The drain reads its own copy, so a notification a callback
+     * queues during the drain overwrites nothing and stays queued for
+     * the next pump. */
+    queued = device->sub_queued;
+    for (index = 0; index < queued; index++) {
+        drain[index] = device->sub_queue[index];
+    }
+    device->sub_queued = 0;
+    for (index = 0; index < queued; index++) {
+        if (device->sub_cb == NULL) {
+            break;
+        }
+        device->sub_cb(subRequestMessage(drain[index]), device->sub_registration, NULL);
+    }
+    if (device->sub_removal_requested != 0 && device->sub_queued == 0) {
+        device->sub_removal_requested = 0;
+        subRequestRelease(device, &device->sub_registration, &device->sub_cb);
+    }
+}
+
+void subRequestReleaseActive(SubDevice device) {
+    SubRequestOneShot *slot;
+    if (device == NULL) {
+        return;
+    }
+    slot = subRequestFiringSlot(device);
+    if (slot == NULL) {
+        return;
+    }
+    /* §111.2: release from inside the callback. Rule 6 keeps the
+     * userdata rooted until this call returns, so the caller reads its
+     * own userdata after this returns. */
+    subRequestReleaseSlot(device, slot);
+}
+
+int32_t subRequestReleaseCount(SubDevice device) {
+    return device == NULL ? 0 : (int32_t)device->release_count;
+}
+
+void subRequestMarkCharge(SubDevice device) {
+    if (device == NULL || device->req_ctx == NULL) {
+        return;
+    }
+    device->charge_mark = subscript_rt_ctx_charged_bytes(device->req_ctx);
+    device->charge_marked = 1;
+}
+
+int32_t subRequestChargeFellBy(SubDevice device, uint32_t atLeast) {
+    uint64_t now;
+    if (device == NULL || device->req_ctx == NULL || device->charge_marked == 0) {
+        return 0;
+    }
+    now = subscript_rt_ctx_charged_bytes(device->req_ctx);
+    if (now > device->charge_mark) {
+        return 0;
+    }
+    return (device->charge_mark - now) >= (uint64_t)atLeast ? 1 : 0;
+}
+
+void subRequestReleaseAndRefire(SubDevice device) {
+    SubRequestOneShot *slot;
+    void *registration;
+    SubLogCallback callback;
+    if (device == NULL || device->req_ctx == NULL) {
+        return;
+    }
+    slot = subRequestFiringSlot(device);
+    if (slot == NULL) {
+        return;
+    }
+    registration = slot->registration;
+    callback = slot->cb;
+    if (registration == NULL || callback == NULL) {
+        return;
+    }
+    subRequestReleaseSlot(device, slot);
+    /* The call this runs inside keeps the closed record, so the second
+     * fire finds it and traps (§111 rule 14, the certain case). */
+    callback(subRequestMessage(1), registration, NULL);
 }

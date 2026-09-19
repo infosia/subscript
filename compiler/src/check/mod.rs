@@ -1987,6 +1987,7 @@ impl<'p> Checker<'p> {
         let parsed = &self.prog.files[file];
         let mut functions = HashMap::new();
         let mut aliases = HashSet::new();
+        let mut classes = HashMap::new();
         for item in &parsed.module.body {
             let Some(decl) = module_decl(item) else {
                 continue;
@@ -1997,6 +1998,9 @@ impl<'p> Checker<'p> {
                 }
                 ast::Decl::TsTypeAlias(alias) => {
                     aliases.insert(alias.id.sym.to_string());
+                }
+                ast::Decl::Class(class) => {
+                    classes.insert(class.ident.sym.to_string(), &class.class);
                 }
                 _ => {}
             }
@@ -2058,6 +2062,42 @@ impl<'p> Checker<'p> {
                     Pos::new(parsed.name.clone(), record.line, 1),
                 );
             }
+        }
+
+        // §111 rule 1: the selected aggregate is a boundary class of this
+        // mirror, and it carries one callback field. The record and the
+        // class declaration are two facts derived apart.
+        let mut lifetime_errors = Vec::new();
+        for (aggregate, record) in &parsed.provenance.callback_lifetimes {
+            let carries_callback = classes.get(aggregate).is_some_and(|class| {
+                class.body.iter().any(|member| {
+                    let ast::ClassMember::ClassProp(prop) = member else {
+                        return false;
+                    };
+                    type_reference_name(
+                        prop.type_ann
+                            .as_deref()
+                            .map(|annotation| annotation.type_ann.as_ref()),
+                    )
+                    .is_some_and(|name| parsed.provenance.callbacks.contains_key(name))
+                })
+            });
+            if !carries_callback {
+                lifetime_errors.push((
+                    format!(
+                        "mirror `{}` has provenance record naming `{}`, which is no boundary \
+                         class with a callback field: `{}`",
+                        parsed.name, aggregate, record.raw
+                    ),
+                    Pos::new(parsed.name.clone(), record.line, 1),
+                ));
+            }
+        }
+        // The record map has no order, so the diagnostics take the mirror's
+        // own line order.
+        lifetime_errors.sort_by_key(|(_, pos)| pos.line);
+        for (message, pos) in lifetime_errors {
+            self.error(RuleCode::S100, message, pos);
         }
     }
 
@@ -2635,6 +2675,9 @@ impl<'p> Checker<'p> {
             alignment_override,
             is_descriptor,
             is_boundary: false,
+            // §111 rule 1: the Context lifetime is the value of every
+            // class that no mirror directive selects.
+            callback_lifetime: crate::types::CallbackLifetime::Context,
             fields: Vec::new(),
             ctor: None,
             methods: Vec::new(),
@@ -3104,6 +3147,15 @@ impl<'p> Checker<'p> {
         let id = self.new_class(&name, true, false, None, pos.clone());
         self.boundary_classes.insert(id);
         self.classes[id.0].is_boundary = true;
+        // §111 rule 2: the form carries the selection. The checker reads
+        // it from the mirror's own directive.
+        if self.prog.files[file]
+            .provenance
+            .callback_lifetimes
+            .contains_key(&name)
+        {
+            self.classes[id.0].callback_lifetime = crate::types::CallbackLifetime::Explicit;
+        }
         self.type_handle_classes[id.0] = crate::types::HandleClass::BoundaryValue;
         self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
     }

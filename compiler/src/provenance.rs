@@ -35,6 +35,10 @@ pub(crate) struct Mirror {
     pub header: Option<Record<String>>,
     pub parameters: HashMap<(String, String), Record<Parameter>>,
     pub callbacks: HashMap<String, Record<String>>,
+    /// Boundary aggregates that take the explicit callback lifetime
+    /// (`specs/blocks/compiler.md` §111 rule 1). An aggregate outside this
+    /// map has the Context lifetime.
+    pub callback_lifetimes: HashMap<String, Record<String>>,
     /// C typedef spelling → ambient CEnum alias name. The checker does not
     /// resolve this mapping itself; retaining it makes the generated mirror's
     /// provenance complete while ordinary ambient type resolution verifies
@@ -192,6 +196,32 @@ pub(crate) fn parse(name: &str, source: &str) -> Result<Mirror, Diagnostic> {
                     },
                 );
             }
+            Parsed::CallbackLifetime(aggregate) => {
+                if aggregate.is_empty() {
+                    return Err(malformed(
+                        name,
+                        line_number,
+                        trimmed,
+                        "callback-lifetime aggregate must be non-empty",
+                    ));
+                }
+                if mirror.callback_lifetimes.contains_key(&aggregate) {
+                    return Err(duplicate(
+                        name,
+                        line_number,
+                        trimmed,
+                        "callback-lifetime aggregate",
+                    ));
+                }
+                mirror.callback_lifetimes.insert(
+                    aggregate.clone(),
+                    Record {
+                        value: aggregate,
+                        line: line_number,
+                        raw: trimmed.to_string(),
+                    },
+                );
+            }
             Parsed::External(type_name) => {
                 if type_name.is_empty() {
                     return Err(malformed(
@@ -274,6 +304,7 @@ enum Parsed {
         element_const: bool,
     },
     Callback(String),
+    CallbackLifetime(String),
     External(String),
     CEnum {
         typedef_name: String,
@@ -305,6 +336,9 @@ fn parse_line(body: &str) -> Result<Parsed, String> {
             element_const: cursor.boolean("const")?,
         },
         "callback" => Parsed::Callback(cursor.string("typedef")?),
+        // §111 rule 1. The record kind token ends at the first space, so
+        // this kind and `callback` never collide.
+        "callback-lifetime" => Parsed::CallbackLifetime(cursor.string("aggregate")?),
         "external" => Parsed::External(cursor.string("type")?),
         "cenum" => Parsed::CEnum {
             typedef_name: cursor.string("typedef")?,

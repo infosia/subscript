@@ -24,6 +24,7 @@ use super::output::{capture_stdout_line, AbortingStdoutGuard, CapturedStdout, Re
 #[cfg(unix)]
 use super::AbnormalTermination;
 use super::{JitMemoryAccounting, RunError, TrapReport};
+use crate::lir_types::trap_report_position;
 #[cfg(unix)]
 use crate::lower::internal;
 use crate::lower::Lowered;
@@ -191,11 +192,9 @@ pub(super) fn execute_entry(
         store.elapsed()
     });
     let trap = ctx.trap_record().map(|r| {
-        let pos = lowered
-            .positions
-            .get(r.pos_id as usize)
-            .cloned()
-            .unwrap_or_else(|| Pos::new(String::new(), 0, 0));
+        // §111 rule 14: the kind decides whether a position table is
+        // read at all, so both tiers report the same position.
+        let pos = trap_report_position(r.kind, r.pos_id, &lowered.positions);
         (r.kind, r.message.clone(), pos)
     });
     if observed {

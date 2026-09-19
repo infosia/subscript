@@ -7,7 +7,7 @@
 //! or more [`PoisonedImport`] records.
 
 use crate::diag::Pos;
-use crate::types::{ClassId, EnumId, HandleClass, HandleKind, IterKind, Type};
+use crate::types::{CallbackLifetime, ClassId, EnumId, HandleClass, HandleKind, IterKind, Type};
 
 /// Names the synchronous disposal hook after the checker lowers `[Symbol.dispose]`.
 pub const DISPOSE_METHOD_NAME: &str = "[[Symbol.dispose]]";
@@ -342,6 +342,11 @@ pub struct ClassDef {
     /// `Struct | null` field). Always `false` for ordinary value classes,
     /// which carry a real [`ClassDef::ctor`].
     pub is_boundary: bool,
+    /// The lifetime of the callback registrations this boundary class
+    /// creates (§111 rule 2). The checker sets it from the mirror's
+    /// `@subscript-c-callback-lifetime` record. Every other class carries
+    /// [`CallbackLifetime::Context`].
+    pub callback_lifetime: CallbackLifetime,
     /// Declared fields, in declaration order (C layout order).
     pub fields: Vec<Field>,
     /// The constructor, when declared.

@@ -460,6 +460,8 @@ impl<'a> Lowering<'a> {
                         self.hir,
                         ClassId(class_index),
                     ),
+                    // §111 rule 2: the lowering copies the checked value.
+                    callback_lifetime: class.callback_lifetime,
                     alignment: class.alignment_override.as_ref().map(|value| value.value),
                     fields,
                     constructor,

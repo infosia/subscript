@@ -4818,23 +4818,59 @@ pub unsafe extern "C" fn subscript_rt_cb_trampoline(
     let env = rec.env;
     let callback_userdata1 = rec.userdata1;
     let callback_userdata2 = rec.userdata2;
-    // SAFETY: `ctx_ptr` is the live Context captured at bind time.
-    let ctx = unsafe { &mut *ctx_ptr };
+    // SAFETY: `ctx_ptr` is the live Context captured at bind time, and
+    // the record carries a language callback of the shared shape.
+    unsafe {
+        fire_callback(
+            ctx_ptr,
+            code,
+            env,
+            callback_userdata1,
+            callback_userdata2,
+            message,
+        );
+    }
+}
+
+/// Runs one fired callback under the trampoline convention (§14.4).
+///
+/// Both trampolines share this body: the Context-lifetime one of
+/// §14.4a and the explicit-lifetime one of §111 rule 4. It returns
+/// without entering script code when the Context already trapped, or
+/// when a userdata slot fails the fire-time liveness check
+/// (§14.4b (A)). Its caller counts the call, so this function starts
+/// and ends no registration.
+///
+/// # Safety
+///
+/// `ctx` is the live Context the record captured; `code` is a language
+/// callback wrapper of the `(ctx, env, message, userdata1, userdata2)`
+/// shape; `message` points at `len` readable bytes (or is null/empty).
+pub(crate) unsafe fn fire_callback(
+    ctx: *mut Context,
+    code: *const u8,
+    env: *const u8,
+    userdata1: *mut u8,
+    userdata2: *mut u8,
+    message: SubStrView,
+) {
+    // SAFETY: the caller supplies the live Context of the record.
+    let context = unsafe { &mut *ctx };
     // A trap already stopped the script (e.g. an earlier callback in the
     // same foreign call trapped): do not run script code — a trap stops
     // the run, even when a C API fires the callback more than once.
-    if ctx.trapped() {
+    if context.trapped() {
         return;
     }
-    if !ctx.validate_callback_userdata(callback_userdata1)
-        || !ctx.validate_callback_userdata(callback_userdata2)
+    if !context.validate_callback_userdata(userdata1)
+        || !context.validate_callback_userdata(userdata2)
     {
         return;
     }
     // SAFETY: the callback ABI guarantees this readable view. Reuse the
     // boundary copy-in implementation so callback parameters and struct
     // fields have exactly the same null/empty semantics.
-    let s = unsafe { alloc_str_from_view(ctx, message.data, message.len as u64, 0) };
+    let s = unsafe { alloc_str_from_view(context, message.data, message.len as u64, 0) };
     // The language function value's wrapper takes `(ctx, env, args...)`
     // with the host C calling convention; here the args are the `string`
     // handle and the two userdata slots (§14.4).
@@ -4842,7 +4878,80 @@ pub unsafe extern "C" fn subscript_rt_cb_trampoline(
     // SAFETY: `code` is a language callback wrapper of this shape.
     let f: LangCb = unsafe { std::mem::transmute::<*const u8, LangCb>(code) };
     // SAFETY: calling generated code that never unwinds across FFI.
-    unsafe { f(ctx_ptr, env, s, callback_userdata1, callback_userdata2) };
+    unsafe { f(ctx, env, s, userdata1, userdata2) };
+}
+
+/// Ends one callback registration (§111 rule 5).
+///
+/// The call states a guarantee: the host starts no more calls through
+/// this registration. Calls that already run can return. The call does
+/// not cancel native work and does not unregister a native callback.
+/// The host adapter does those first.
+///
+/// The call returns 1 when `registration` is an open registration of
+/// `ctx`. For every other pointer it changes nothing and returns 0:
+/// null, a binding of `subscript_rt_cb_bind`, a registration this call
+/// already closed, and a registration that ended. The runtime tests
+/// membership in its live set first, so it never reads a pointer that
+/// the set does not hold.
+///
+/// After a registration ends, a later registration can take its address.
+/// A second release of the old pointer then closes the new registration.
+/// That case is in the best-effort class of §111 rule 14: the host ends
+/// each registration one time, and the runtime keeps no record of the
+/// registrations that ended.
+///
+/// Release removes a collection root and does nothing else (§111 rule
+/// 7). It does not collect, it does not free the userdata, and it does
+/// not walk the userdata graph. The userdata then follows the
+/// reachability rules of the Context: a script reference keeps it, and
+/// the next explicit collection reclaims it when nothing reaches it.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract. `registration` is any
+/// pointer value; the call reads it only as an address.
+#[must_use]
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_callback_release(
+    ctx: *mut Context,
+    registration: *mut std::ffi::c_void,
+) -> i32 {
+    // SAFETY: shared exclusive Context contract.
+    i32::from(unsafe { &mut *ctx }.release_callback_registration(registration))
+}
+
+/// Answers which Context one callback registration belongs to
+/// (§111 rule 5a).
+///
+/// A host function that a script calls receives the mirrored arguments
+/// and no Context. A host that runs more than one Context therefore
+/// cannot name the Context that `subscript_rt_ctx_callback_release`
+/// needs. The registration carries that fact, and this call reads it.
+///
+/// A null `registration` answers null. Every other pointer is read
+/// through, so the host calls this while the registration is certainly
+/// live: at the crossing that delivers the registration, or inside a
+/// fire. A pointer that is not a live registration is a violation of the
+/// host's guarantee, in the class of §111 rule 14.
+///
+/// The call reads one field. It allocates nothing, it changes nothing,
+/// and it starts no call.
+///
+/// # Safety
+///
+/// `registration` is null, or a registration that
+/// `subscript_rt_cb_register` produced and no release ended.
+#[must_use]
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_cb_registration_context(
+    registration: *mut std::ffi::c_void,
+) -> *mut Context {
+    if registration.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: the caller contract supplies a live registration.
+    unsafe { crate::registration::registration_context(registration.cast()) }
 }
 
 // ----- host driver entry points -----

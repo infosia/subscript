@@ -54,6 +54,23 @@ pub enum HandleClass {
     Reference,
 }
 
+/// The lifetime of the callback registrations that one boundary aggregate
+/// creates (`specs/blocks/compiler.md` §111 rule 1).
+///
+/// The binder input selects the value and the mirror carries it as a
+/// provenance directive. A consumer reads this field; it never derives the
+/// lifetime from a class name (§111 rule 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CallbackLifetime {
+    /// The registration lives while the Context lives (§13.3, §14.4a,
+    /// §14.4b). This is the value of every aggregate that the binder input
+    /// does not select.
+    Context,
+    /// The host ends each registration with one release call (§111 rule 5).
+    Explicit,
+}
+
 /// The runtime handle representation of a language type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]

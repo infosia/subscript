@@ -422,3 +422,199 @@ declare function subVec2Make(seed: u32): SubVec2f;
         "expected the HFA guard to fire; got: {msg}"
     );
 }
+
+// ----- §111.2 the host adapter of the fixture -----
+//
+// The adapter must end every registration it receives exactly one time,
+// at the point where no later fire can occur. Each test below drives one
+// shape the adapter must survive and reads the release count, which
+// counts the releases the runtime answered with 1.
+
+/// The userdata every adapter test registers. The class is a reference
+/// class, so each instance is one Context allocation the registration
+/// roots.
+const REQUEST_SINK: &str = "\
+class RequestSink {
+  count: i32;
+  constructor() {
+    this.count = 0;
+  }
+}
+";
+
+/// §111.2: two deferred one-shots live at the same time. The adapter
+/// holds both, fires both at the pump, and ends each one time.
+#[test]
+fn two_deferred_one_shots_each_end_one_time() {
+    let program = format!(
+        "{REQUEST_SINK}\
+function start(device: SubDevice, sink: RequestSink, payload: u32): i32 {{
+  const info: SubRequestInfo = new SubRequestInfo(
+    (message, userdata1, userdata2) => {{
+      if (userdata1 !== null) {{
+        const state = userdata1 as RequestSink;
+        state.count = state.count + message.length;
+        print(`fired ${{state.count}}`);
+      }}
+    }},
+    sink,
+    null,
+  );
+  return subRequestStart(device, payload, 0, info);
+}}
+export function main(): void {{
+  const device: SubDevice = subDeviceCreate(null);
+  const sink: RequestSink = new RequestSink();
+  print(`first ${{start(device, sink, 3)}}`);
+  print(`second ${{start(device, sink, 5)}}`);
+  subRequestPump(device);
+  print(`released ${{subRequestReleaseCount(device)}}`);
+  subDeviceRelease(device);
+}}
+"
+    );
+    assert_eq!(
+        both_tiers(&program),
+        b"first 1\nsecond 2\nfired 3\nfired 8\nreleased 2\n"
+    );
+}
+
+/// §111.2: a start that meets a full table is refused. The refused
+/// crossing still received a registration, so the adapter ends it at
+/// once and answers -1.
+#[test]
+fn a_start_over_the_table_capacity_is_refused_and_released_at_once() {
+    let program = format!(
+        "{REQUEST_SINK}\
+function start(device: SubDevice, sink: RequestSink): i32 {{
+  const info: SubRequestInfo = new SubRequestInfo(
+    (message, userdata1, userdata2) => {{
+      if (userdata1 !== null) {{
+        const state = userdata1 as RequestSink;
+        state.count = state.count + 1;
+      }}
+    }},
+    sink,
+    null,
+  );
+  return subRequestStart(device, 1, 0, info);
+}}
+export function main(): void {{
+  const device: SubDevice = subDeviceCreate(null);
+  const sink: RequestSink = new RequestSink();
+  // The table holds four pending one-shots; the fifth is refused.
+  for (let index: i32 = 0; index < 5; index = index + 1) {{
+    print(`start ${{start(device, sink)}}`);
+  }}
+  // The refused crossing ended at once, and no other did.
+  print(`released ${{subRequestReleaseCount(device)}}`);
+  subRequestPump(device);
+  print(`fired ${{sink.count}}`);
+  print(`released ${{subRequestReleaseCount(device)}}`);
+  subDeviceRelease(device);
+}}
+"
+    );
+    assert_eq!(
+        both_tiers(&program),
+        b"start 1\nstart 2\nstart 3\nstart 4\nstart -1\nreleased 1\nfired 4\nreleased 5\n"
+    );
+}
+
+/// §111.2: one subscription at a time. A second subscribe is refused,
+/// and its registration ends at once instead of leaking.
+#[test]
+fn a_second_subscribe_is_refused_and_released_at_once() {
+    let program = format!(
+        "{REQUEST_SINK}\
+function subscribe(device: SubDevice, sink: RequestSink): i32 {{
+  const info: SubRequestInfo = new SubRequestInfo(
+    (message, userdata1, userdata2) => {{
+      if (userdata1 !== null) {{
+        const state = userdata1 as RequestSink;
+        state.count = state.count + message.length;
+        print(`note ${{state.count}}`);
+      }}
+    }},
+    sink,
+    null,
+  );
+  return subRequestSubscribe(device, info);
+}}
+export function main(): void {{
+  const device: SubDevice = subDeviceCreate(null);
+  const sink: RequestSink = new RequestSink();
+  print(`first ${{subscribe(device, sink)}}`);
+  print(`second ${{subscribe(device, sink)}}`);
+  print(`released ${{subRequestReleaseCount(device)}}`);
+  subRequestNotify(device, 4);
+  subRequestPump(device);
+  subRequestUnsubscribe(device);
+  subRequestPump(device);
+  print(`released ${{subRequestReleaseCount(device)}}`);
+  subDeviceRelease(device);
+}}
+"
+    );
+    assert_eq!(
+        both_tiers(&program),
+        b"first 1\nsecond -1\nreleased 1\nnote 4\nreleased 2\n"
+    );
+}
+
+/// The pump fires what is queued when the drain starts. A notification a
+/// callback queues during the drain overwrites nothing and fires at the
+/// next pump.
+#[test]
+fn a_notification_queued_during_the_drain_fires_at_the_next_pump() {
+    // The callback reaches the device through its own userdata, because
+    // a boundary callback captures nothing (C5).
+    let program = "\
+class NotifySink {
+  device: SubDevice;
+  count: i32;
+  constructor(device: SubDevice) {
+    this.device = device;
+    this.count = 0;
+  }
+}
+export function main(): void {
+  const device: SubDevice = subDeviceCreate(null);
+  const sink: NotifySink = new NotifySink(device);
+  const info: SubRequestInfo = new SubRequestInfo(
+    (message, userdata1, userdata2) => {
+      if (userdata1 !== null) {
+        const state = userdata1 as NotifySink;
+        state.count = state.count + 1;
+        print(`note ${state.count}:${message.length}`);
+        if (state.count === 1) {
+          // The first notification of the drain queues two more. The
+          // drain reads its own copy, so every entry queued before the
+          // pump still fires in this drain, in order, and these two
+          // wait for the next pump.
+          subRequestNotify(state.device, 9);
+          subRequestNotify(state.device, 10);
+        }
+      }
+    },
+    sink,
+    null,
+  );
+  subRequestSubscribe(device, info);
+  subRequestNotify(device, 2);
+  subRequestNotify(device, 3);
+  subRequestNotify(device, 4);
+  subRequestPump(device);
+  print(\"drained\");
+  subRequestPump(device);
+  subRequestUnsubscribe(device);
+  subRequestPump(device);
+  print(`released ${subRequestReleaseCount(device)}`);
+  subDeviceRelease(device);
+}
+";
+    assert_eq!(
+        both_tiers(program),
+        b"note 1:2\nnote 2:3\nnote 3:4\ndrained\nnote 4:9\nnote 5:10\nreleased 1\n"
+    );
+}

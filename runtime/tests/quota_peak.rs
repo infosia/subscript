@@ -9,9 +9,10 @@
 //! Each must record the `AllocationQuota` trap and leave the peak under
 //! the quota plus a fixed slack.
 //!
-//! The second test derives the entry list from `runtime/src/ffi.rs` over
-//! every `subscript_rt_` export, whatever its family. An entry that is
-//! neither covered nor listed with a reason fails it.
+//! The second test derives the entry list from every Rust source file
+//! of the runtime crate, over every `subscript_rt_` export, whatever its
+//! family. An entry that is neither covered nor listed with a reason
+//! fails it.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -227,6 +228,7 @@ const COVERED: &[&str] = &[
     "subscript_rt_boundary_scratch_alloc",
     "subscript_rt_print",
     "subscript_rt_cb_bind",
+    "subscript_rt_cb_register",
 ];
 
 /// Every other `subscript_rt_` export, with the reason a script cannot
@@ -577,6 +579,14 @@ const EXEMPT: &[(&str, &str)] = &[
         "the call releases the scratch scope",
     ),
     (
+        "subscript_rt_cb_registration_context",
+        "the call reads one field of one registration record",
+    ),
+    (
+        "subscript_rt_cb_registration_trampoline",
+        "the call forwards one message to a script callback",
+    ),
+    (
         "subscript_rt_cb_trampoline",
         "the call forwards one message to a script callback",
     ),
@@ -585,6 +595,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "the call releases memory and allocates none",
     ),
     ("subscript_rt_ctx_async_pending", "the result is one scalar"),
+    (
+        "subscript_rt_ctx_callback_release",
+        "the call ends one registration and allocates none",
+    ),
     (
         "subscript_rt_ctx_async_step",
         "the call drains queues the quota already holds",
@@ -1167,6 +1181,36 @@ fn every_covered_entry_stays_under_the_quota() {
         measured.push(peak);
     }
 
+    // `cb_register`: one record for each crossing, with no interning
+    // (§111 rule 3). The quota stops the loop at the first record it
+    // cannot hold (§111 rule 10).
+    {
+        let mut ctx = quota_context();
+        let pointer: *mut Context = &mut *ctx;
+        let record = std::mem::size_of::<subscript_runtime::CallbackRegistration>();
+        let peak = peak_of("subscript_rt_cb_register", &mut ctx, || {
+            for index in 1..=(HUGE / record) {
+                // SAFETY: live exclusive Context; `env` is null, as a
+                // boundary callback's is, and each `userdata1` outlives
+                // the run because no call is ever started.
+                let trapped = unsafe {
+                    subscript_runtime::registration::subscript_rt_cb_register(
+                        pointer,
+                        descending as *const u8,
+                        std::ptr::null(),
+                        index as *mut u8,
+                        std::ptr::null_mut(),
+                    );
+                    (*pointer).trapped()
+                };
+                if trapped {
+                    break;
+                }
+            }
+        });
+        measured.push(peak);
+    }
+
     let names: Vec<&str> = measured.iter().map(|one| one.entry).collect();
     assert_eq!(names, COVERED, "every covered entry needs one case here");
     for one in &measured {
@@ -1267,25 +1311,55 @@ fn an_observed_print_charges_nothing_and_take_stdout_releases_the_charge() {
     );
 }
 
+/// Every Rust source file of the runtime crate.
+///
+/// An export can live in any module, so a reader over one file is not
+/// total. This walk is what makes the list check below cover the crate.
+fn runtime_sources() -> Vec<std::path::PathBuf> {
+    let mut pending = vec![std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src"
+    ))];
+    let mut files = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory).expect("read a runtime source directory") {
+            let path = entry.expect("read a runtime source entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|kind| kind == "rs") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    assert!(files.len() > 10, "the source walk found {}", files.len());
+    files
+}
+
 #[test]
 fn every_exported_entry_is_covered_or_listed_with_a_reason() {
     let _guard = one_at_a_time();
-    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ffi.rs"))
-        .expect("read runtime/src/ffi.rs");
+    let sources: Vec<String> = runtime_sources()
+        .iter()
+        .map(|path| std::fs::read_to_string(path).expect("read a runtime source file"))
+        .collect();
     let mut exported: Vec<&str> = Vec::new();
-    for line in source.lines() {
-        // §109.4 rule 2: every export, whatever its family.
-        let Some(rest) = line
-            .strip_prefix("pub unsafe extern \"C\" fn ")
-            .or_else(|| line.strip_prefix("pub extern \"C\" fn "))
-        else {
-            continue;
-        };
-        let name = rest.split('(').next().unwrap_or_default();
-        if name.starts_with("subscript_rt_") {
-            exported.push(name);
+    for source in &sources {
+        for line in source.lines() {
+            // §109.4 rule 2: every export, whatever its family.
+            let Some(rest) = line
+                .strip_prefix("pub unsafe extern \"C\" fn ")
+                .or_else(|| line.strip_prefix("pub extern \"C\" fn "))
+            else {
+                continue;
+            };
+            let name = rest.split('(').next().unwrap_or_default();
+            if name.starts_with("subscript_rt_") {
+                exported.push(name);
+            }
         }
     }
+    exported.sort_unstable();
     assert!(
         exported.len() > 200,
         "the reader found {} entries; it is wrong",
@@ -1312,14 +1386,14 @@ fn every_exported_entry_is_covered_or_listed_with_a_reason() {
     for (entry, reason) in EXEMPT {
         assert!(
             exported.contains(entry),
-            "{entry} is listed but `ffi.rs` exports no such entry"
+            "{entry} is listed but the runtime exports no such entry"
         );
         assert!(!reason.is_empty(), "{entry} needs a reason");
     }
     for entry in COVERED {
         assert!(
             exported.contains(entry),
-            "{entry} is covered but `ffi.rs` exports no such entry"
+            "{entry} is covered but the runtime exports no such entry"
         );
     }
     assert_eq!(

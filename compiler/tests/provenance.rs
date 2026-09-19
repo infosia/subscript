@@ -2,6 +2,7 @@
 //! §23.3).
 
 use subscript_compiler::hir::{ForeignMirrorId, ForeignTypeProvenance};
+use subscript_compiler::types::CallbackLifetime;
 use subscript_compiler::{check_program, Diagnostic, SourceFile};
 
 fn reject(name: &str, mirror: &str) -> Vec<Diagnostic> {
@@ -356,4 +357,139 @@ fn foreign_direct_callback_return_is_rejected() {
         "callback-return.d.ts",
         "foreign function `engineCallback` returns a direct callback",
     );
+}
+
+/// A mirror with one callback-carrying boundary class. `directive` holds
+/// the `@subscript-c-callback-lifetime` records the case needs, so the
+/// control and the selected case differ in that text only
+/// (`specs/blocks/compiler.md` §111 rule 1).
+fn sink_mirror(directive: &str) -> String {
+    format!(
+        "\
+// @subscript-c-header include=\"engine.h\"
+// @subscript-c-callback typedef=\"EngineCallback\"
+{directive}type EngineCallback = (engineMessage: string, engineUserdata1: object | null, engineUserdata2: object | null) => void;
+declare class EngineItem {{
+  engineValue: u32;
+  constructor(engineValue: u32);
+}}
+declare class EngineSink {{
+  engineCallback: EngineCallback;
+  engineUserdata1: object | null;
+  engineUserdata2: object | null;
+  constructor(engineCallback: EngineCallback, engineUserdata1: object | null, engineUserdata2: object | null);
+}}
+declare function engineUse(engineSink: EngineSink): void;
+"
+    )
+}
+
+fn class_lifetime(module: &subscript_compiler::hir::Module, name: &str) -> CallbackLifetime {
+    module
+        .classes
+        .iter()
+        .find(|class| class.name == name)
+        .unwrap_or_else(|| panic!("class `{name}`"))
+        .callback_lifetime
+}
+
+#[test]
+fn the_callback_lifetime_record_sets_the_hir_class_field() {
+    let selected = check_program(&[SourceFile::ambient(
+        "engine.generated.d.ts",
+        sink_mirror("// @subscript-c-callback-lifetime aggregate=\"EngineSink\"\n"),
+    )])
+    .expect("the callback-lifetime record is ingested");
+    assert_eq!(
+        class_lifetime(&selected, "EngineSink"),
+        CallbackLifetime::Explicit
+    );
+    assert_eq!(
+        class_lifetime(&selected, "EngineItem"),
+        CallbackLifetime::Context
+    );
+
+    // Firing control: the same mirror without the record.
+    let control = check_program(&[SourceFile::ambient(
+        "engine.generated.d.ts",
+        sink_mirror(""),
+    )])
+    .expect("the mirror without the record is ingested");
+    assert_eq!(
+        class_lifetime(&control, "EngineSink"),
+        CallbackLifetime::Context
+    );
+}
+
+#[test]
+fn a_malformed_callback_lifetime_record_is_rejected() {
+    let diagnostics = reject(
+        "malformed-lifetime.d.ts",
+        &sink_mirror("// @subscript-c-callback-lifetime aggregate=EngineSink\n"),
+    );
+    assert_named(
+        &diagnostics,
+        "malformed-lifetime.d.ts",
+        "malformed provenance record",
+    );
+    assert_named(
+        &diagnostics,
+        "malformed-lifetime.d.ts",
+        "`aggregate` must be a quoted string",
+    );
+}
+
+#[test]
+fn an_empty_callback_lifetime_aggregate_is_rejected() {
+    let diagnostics = reject(
+        "empty-lifetime.d.ts",
+        &sink_mirror("// @subscript-c-callback-lifetime aggregate=\"\"\n"),
+    );
+    assert_named(
+        &diagnostics,
+        "empty-lifetime.d.ts",
+        "callback-lifetime aggregate must be non-empty",
+    );
+}
+
+#[test]
+fn duplicate_callback_lifetime_records_for_one_aggregate_are_rejected() {
+    let diagnostics = reject(
+        "duplicate-lifetime.d.ts",
+        &sink_mirror(
+            "// @subscript-c-callback-lifetime aggregate=\"EngineSink\"\n\
+             // @subscript-c-callback-lifetime aggregate=\"EngineSink\"\n",
+        ),
+    );
+    assert_named(
+        &diagnostics,
+        "duplicate-lifetime.d.ts",
+        "duplicate provenance",
+    );
+    assert_named(
+        &diagnostics,
+        "duplicate-lifetime.d.ts",
+        "callback-lifetime aggregate",
+    );
+}
+
+#[test]
+fn a_callback_lifetime_record_without_a_callback_class_is_rejected() {
+    for (name, aggregate) in [
+        ("lifetime-no-callback-field.d.ts", "EngineItem"),
+        ("lifetime-absent-class.d.ts", "EngineAbsent"),
+    ] {
+        let diagnostics = reject(
+            name,
+            &sink_mirror(&format!(
+                "// @subscript-c-callback-lifetime aggregate=\"{aggregate}\"\n"
+            )),
+        );
+        assert_named(&diagnostics, name, aggregate);
+        assert_named(
+            &diagnostics,
+            name,
+            "is no boundary class with a callback field",
+        );
+    }
 }

@@ -257,6 +257,9 @@ fn emit_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failu
 struct BindArguments {
     header: Option<PathBuf>,
     output: Option<PathBuf>,
+    /// Aggregates named by `--explicit-callback-lifetime`, in the order
+    /// the command line gives them (cli.md §10.1, compiler.md §111 rule 1).
+    explicit_callback_lifetimes: Vec<String>,
 }
 
 fn bind_command<O: Write>(args: &[OsString], stdout: &mut O) -> Result<u8, Failure> {
@@ -274,7 +277,14 @@ fn bind_command<O: Write>(args: &[OsString], stdout: &mut O) -> Result<u8, Failu
                 header.display()
             ))
         })?;
-    let mirror = subscript_bindgen::generate_for_header(&source, include_spelling)
+    // cli.md §10.1: a rejected selection is a program-input failure, and
+    // the generator runs before any output path is opened, so a failed run
+    // leaves no mirror behind.
+    let mut options = subscript_bindgen::BindOptions::new();
+    for aggregate in parsed.explicit_callback_lifetimes {
+        options = options.with_explicit_callback_lifetime(aggregate);
+    }
+    let mirror = subscript_bindgen::generate_with_options(&source, include_spelling, &options)
         .map_err(|error| Failure::program(error.to_string()))?;
 
     if let Some(output) = parsed.output {
@@ -300,6 +310,10 @@ fn parse_bind_arguments(args: &[OsString]) -> Result<BindArguments, Failure> {
             Some("-o") => {
                 let value = path_value(args, &mut index, "-o")?;
                 set_once(&mut parsed.output, value, "-o")?;
+            }
+            Some("--explicit-callback-lifetime") => {
+                let value = string_value(args, &mut index, "--explicit-callback-lifetime")?;
+                parsed.explicit_callback_lifetimes.push(value.to_string());
             }
             Some(flag) if flag.starts_with('-') => {
                 return Err(Failure::usage(format!("unknown option `{flag}`")));

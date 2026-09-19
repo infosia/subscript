@@ -1212,4 +1212,88 @@ void subHostOwnedStateDestroy(SubHostOwnedState state);
 SubHostOwnedState subHostOwnedStateBorrow(void);
 int32_t subHostOwnedStateAdvance(SubHostOwnedState state);
 
+/* ==== §111 a callback registration with an explicit end =============
+ *
+ * SubRequestInfo has the field shape of SubCallbackInfo and is a
+ * distinct C type, so the binder selects this one aggregate for the
+ * explicit callback lifetime and leaves SubCallbackInfo unchanged
+ * (compiler.md §111 rule 1).
+ *
+ * The functions below are the host adapter of §111.2. The adapter reads
+ * the Context of the registration at the crossing, stores it with its
+ * own record, and ends each registration one time at the point where it
+ * knows that no later call can occur. A start that completes inside the
+ * call uses the same release path as one that completes at a pump.
+ *
+ * A device holds a small fixed table of pending one-shots and one
+ * subscription. A callback can therefore start the next request while
+ * its own call runs. A crossing that meets a full table, or a second
+ * subscription, is refused: the adapter ends the registration it
+ * received at once and answers -1. A null device answers 0. */
+
+typedef struct SubRequestInfo {
+    SubLogCallback callback;
+    void *userdata;
+    void *userparam;
+} SubRequestInfo;
+
+/* One-shot start. A non-zero `immediate` completes the request inside
+ * this call; 0 queues the completion for the next subRequestPump. Each
+ * path fires the callback one time and then ends the registration one
+ * time. The message length is `payload`, so the callback observes the
+ * request it belongs to. A callback can call this to start the next
+ * request; the new request fires at the next pump. Returns the request
+ * number, counting from 1 for each device, and -1 when the table of
+ * pending one-shots is full. */
+int32_t subRequestStart(
+    SubDevice device,
+    uint32_t payload,
+    int32_t immediate,
+    SubRequestInfo info);
+
+/* Subscription. subRequestNotify queues one notification and
+ * subRequestPump fires what is queued. subRequestUnsubscribe requests
+ * the removal and ends nothing: a notification that is already queued
+ * still fires, and the registration ends when the pump drains the
+ * queue. Returns the subscription number, counting from 1 for each
+ * device, and -1 when a subscription is already live. */
+int32_t subRequestSubscribe(SubDevice device, SubRequestInfo info);
+void subRequestNotify(SubDevice device, uint32_t payload);
+void subRequestUnsubscribe(SubDevice device);
+
+/* Driver: fires what is queued when the drain starts, in order, and ends
+ * every registration whose work is complete. Work that a callback adds
+ * during the drain waits for the next pump: a one-shot that a callback
+ * starts, and a notification that a callback queues, both stay pending
+ * and the drain overwrites neither. */
+void subRequestPump(SubDevice device);
+
+/* Ends the one-shot registration of the innermost call that runs now. A
+ * script callback calls it to release from inside its own callback,
+ * which §111.2 states is legal: the userdata stays rooted until the last
+ * active call returns. It does nothing when no one-shot call runs. */
+void subRequestReleaseActive(SubDevice device);
+
+/* The number of registrations this device ended. The adapter counts one
+ * for each release the runtime answered with 1, so the count is the
+ * observable of §111 rule 5. */
+int32_t subRequestReleaseCount(SubDevice device);
+
+/* Records the Context charge the device reads through the Context of
+ * its last registration. subRequestChargeFellBy compares against it. */
+void subRequestMarkCharge(SubDevice device);
+
+/* Answers 1 when the Context charge is `atLeast` bytes or more under
+ * the value subRequestMarkCharge recorded, and 0 otherwise. The
+ * comparison is stable on every target, where the byte counts are not.
+ * Answers 0 when no mark was recorded. */
+int32_t subRequestChargeFellBy(SubDevice device, uint32_t atLeast);
+
+/* A deliberate violation of the host guarantee (§111 rule 14, the
+ * certain case). A script callback calls this while its own call runs:
+ * the adapter ends the innermost registration and fires it one more time.
+ * The active call keeps the closed record, so the second fire finds it
+ * and traps. Nothing else in this fixture calls it. */
+void subRequestReleaseAndRefire(SubDevice device);
+
 #endif /* SUBSCRIPT_INTEROP_H */

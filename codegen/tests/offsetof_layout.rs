@@ -492,6 +492,16 @@ class Vec3f {
   z: f32 = 0.0;
 }
 
+// §111 explicit-lifetime callback info — the field shape of
+// SubCallbackInfo in a distinct C type, so the two layouts are compared
+// apart.
+@CStruct
+class SubRequestInfo {
+  callback: u64 = 0;
+  userdata: u64 = 0;
+  userparam: u64 = 0;
+}
+
 @CStruct
 class Mixed {
   a: f32 = 0.0;
@@ -593,6 +603,7 @@ fn mirrored_structs() -> Vec<(&'static str, Vec<&'static str>)> {
             "SGPUProbeUnmarkedColorTargetState",
             vec!["format", "blend", "writeMask"],
         ),
+        ("SubRequestInfo", vec!["callback", "userdata", "userparam"]),
         ("Vec3f", vec!["x", "y", "z"]),
         ("Mixed", vec!["a", "p"]),
         ("Mat3x3f", vec!["c0", "c1", "c2"]),

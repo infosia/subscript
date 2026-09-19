@@ -53,6 +53,10 @@ pub fn render() -> Result<String, String> {
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_set_binding_count_advisory",
     )?;
+    let callback_release_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_callback_release",
+    )?;
     let interrupt_handle_docs = docs_for(
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_interrupt_handle",
@@ -83,6 +87,13 @@ pub fn render() -> Result<String, String> {
     )?;
     let mut functions = parse_functions(FFI_SOURCE, "subscript_rt_ctx_")?;
     functions.sort_by(|a, b| a.name.cmp(&b.name));
+    // §111 rule 5a. The registration reader is host API, and its name
+    // carries no `subscript_rt_ctx_` prefix, so the generator names it.
+    // The other `subscript_rt_cb_` entries are generated-code API and
+    // stay out of this header.
+    let mut registration_functions =
+        parse_functions(FFI_SOURCE, "subscript_rt_cb_registration_context")?;
+    registration_functions.sort_by(|a, b| a.name.cmp(&b.name));
     let mut interrupt_functions = parse_functions(FFI_SOURCE, "subscript_rt_interrupt_")?;
     interrupt_functions.sort_by(|a, b| a.name.cmp(&b.name));
     let mut worker_functions = parse_functions(FFI_SOURCE, "subscript_rt_worker_")?;
@@ -197,6 +208,9 @@ pub fn render() -> Result<String, String> {
         if function.name == "subscript_rt_ctx_set_binding_count_advisory" {
             push_comment(&mut out, &binding_count_advisory_setter_docs);
         }
+        if function.name == "subscript_rt_ctx_callback_release" {
+            push_comment(&mut out, &callback_release_docs);
+        }
         if function.name == "subscript_rt_ctx_interrupt_handle" {
             push_comment(&mut out, &interrupt_handle_docs);
         }
@@ -218,6 +232,14 @@ pub fn render() -> Result<String, String> {
         if function.name == "subscript_rt_ctx_async_unfinished" {
             push_comment(&mut out, &async_unfinished_docs);
         }
+        out.push_str(&c_function(&function.name, function)?);
+        out.push_str(";\n");
+    }
+    out.push('\n');
+    for function in &registration_functions {
+        let declaration = format!("pub unsafe extern \"C\" fn {}", function.name);
+        let docs = docs_for(FFI_SOURCE, &declaration)?;
+        push_comment(&mut out, &docs);
         out.push_str(&c_function(&function.name, function)?);
         out.push_str(";\n");
     }
@@ -582,6 +604,44 @@ mod tests {
         assert!(header.contains("registered-binding check entirely"));
         assert!(header.contains("Re-registering an existing\n * binding identity never advises"));
         assert!(header.contains("The threshold has literal semantics"));
+    }
+
+    #[test]
+    fn generated_host_header_declares_the_callback_release_guarantee() {
+        let header = render().expect("render host header");
+        assert!(header.contains(
+            "int32_t subscript_rt_ctx_callback_release(subscript_rt_context* ctx, \
+             void* registration);"
+        ));
+        // The guarantee of §111 rule 5, and the two facts a host needs
+        // beside it: what the call answers, and what it does not do.
+        assert!(header.contains("the host starts no more calls through\n * this registration"));
+        assert!(header.contains("Calls that already run can return"));
+        assert!(
+            header.contains("returns 1 when `registration` is an open registration of\n * `ctx`")
+        );
+        assert!(header.contains("it changes nothing and returns 0"));
+        assert!(header.contains("never reads a pointer that\n * the set does not hold"));
+        assert!(header.contains("does not free the userdata"));
+    }
+
+    /// §111 rule 5: every yes-or-no result of the header is `int32_t`,
+    /// so the header takes no new include.
+    #[test]
+    fn generated_host_header_declares_no_c_bool() {
+        let header = render().expect("render host header");
+        assert!(!header.contains("stdbool"));
+        let tokens: Vec<&str> = header
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .collect();
+        assert!(
+            !tokens.contains(&"bool") && !tokens.contains(&"_Bool"),
+            "the header names a C bool type"
+        );
+        // The firing control: the reader finds the spellings the header
+        // does use, so an empty token list cannot pass this test.
+        assert!(tokens.contains(&"int32_t"));
+        assert!(tokens.contains(&"stdint"));
     }
 
     #[test]

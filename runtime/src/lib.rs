@@ -4,8 +4,10 @@
 //! The single runtime crate shared by both execution tiers: Context
 //! memory (`Context.free`, explicit `Context.collect`), strings, arrays, traps,
 //! coroutine frame storage, and Q14 numeric formatting. Everything
-//! callable from generated code lives in [`ffi`] as `extern "C"`
-//! functions with stable signatures.
+//! callable from generated code is an `extern "C"` function with a
+//! stable signature. [`ffi`] holds them, except the two entries of the
+//! callback registration (§111), which live with their area in
+//! [`registration`].
 //!
 //! # Trap mechanism
 //!
@@ -29,6 +31,7 @@ pub mod json;
 pub mod math;
 pub mod num;
 pub(crate) mod regexops;
+pub mod registration;
 pub mod strops;
 pub mod trap;
 mod valeq;
@@ -39,5 +42,6 @@ pub use context::{
     DIAGNOSTICS_ADVISORY_BINDING_COUNT, DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE,
     FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
 };
+pub use registration::CallbackRegistration;
 pub use trap::{TrapKind, TrapRecord};
 pub use worker::{Worker, WorkerEntry, WorkerInbox, WorkerInit, WorkerOutbox};

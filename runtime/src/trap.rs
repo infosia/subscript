@@ -90,6 +90,9 @@ pub enum TrapKind {
     /// A sandbox-profile function entry passed the Context stack budget
     /// (compiler.md §109.4).
     StackBudget = 27,
+    /// A callback fired through a registration the host released
+    /// (compiler.md §111 rule 14).
+    CallbackRegistrationEnded = 28,
 }
 
 impl TrapKind {
@@ -124,6 +127,7 @@ impl TrapKind {
             25 => TrapKind::Interrupted,
             26 => TrapKind::AllocationQuota,
             27 => TrapKind::StackBudget,
+            28 => TrapKind::CallbackRegistrationEnded,
             _ => return None,
         })
     }
@@ -159,6 +163,7 @@ impl TrapKind {
             TrapKind::Interrupted => "interrupted",
             TrapKind::AllocationQuota => "allocation-quota",
             TrapKind::StackBudget => "stack-budget",
+            TrapKind::CallbackRegistrationEnded => "callback-registration-ended",
         }
     }
 
@@ -226,12 +231,12 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=27u32 {
+        for v in 1..=28u32 {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }
         assert_eq!(TrapKind::from_u32(0), None);
-        assert_eq!(TrapKind::from_u32(28), None);
+        assert_eq!(TrapKind::from_u32(29), None);
         assert_eq!(TrapKind::from_u32(99), None);
     }
 
@@ -288,6 +293,19 @@ mod tests {
             assert_eq!(kind.rule(), rule);
             assert_eq!(kind.message(None), rule);
         }
+    }
+
+    #[test]
+    fn callback_registration_ended_kind_has_stable_number_and_rule() {
+        assert_eq!(TrapKind::CallbackRegistrationEnded as u32, 28);
+        assert_eq!(
+            TrapKind::from_u32(28),
+            Some(TrapKind::CallbackRegistrationEnded)
+        );
+        assert_eq!(
+            TrapKind::CallbackRegistrationEnded.rule(),
+            "callback-registration-ended"
+        );
     }
 
     #[test]

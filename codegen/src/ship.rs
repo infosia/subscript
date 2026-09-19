@@ -23,6 +23,7 @@ use subscript_compiler::{
 use subscript_runtime::TrapKind;
 
 use crate::jit::{AbnormalTermination, RunError, TrapReport};
+use crate::lir_types::trap_report_position;
 use crate::lower::internal;
 use crate::native::missing_symbol;
 use crate::{HostLimits, NativeLibrary, RunConfig, RunOutput};
@@ -1386,15 +1387,14 @@ fn parse_trap(stderr: &[u8], positions: &[Pos], stdout: &[u8]) -> Option<TrapRep
     let mut parts = line.splitn(4, ' ');
     parts.next()?;
     let kind = TrapKind::from_u32(parts.next()?.parse().ok()?)?;
-    let pos_id: usize = parts.next()?.parse().ok()?;
+    let pos_id: u32 = parts.next()?.parse().ok()?;
     let message = parts.next().unwrap_or("").to_string();
     Some(TrapReport {
         rule: kind,
         message,
-        pos: positions
-            .get(pos_id)
-            .cloned()
-            .unwrap_or_else(|| Pos::new(String::new(), 0, 0)),
+        // §111 rule 14: the kind decides whether a position table is
+        // read at all, so both tiers report the same position.
+        pos: trap_report_position(kind, pos_id, positions),
         stdout: stdout.to_vec(),
     })
 }

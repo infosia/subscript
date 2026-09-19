@@ -572,7 +572,7 @@ struct RetainedAllocation {
 /// addresses. Script data cannot choose these keys, so randomized hashing
 /// buys no collision-resistance here.
 #[derive(Default)]
-struct AddressHasher(u64);
+pub(crate) struct AddressHasher(u64);
 
 impl Hasher for AddressHasher {
     fn finish(&self) -> u64 {
@@ -801,10 +801,12 @@ pub struct Context {
     // §109.4 rule 2: the bytes the stdout sink charges to the quota.
     // `take_stdout` releases them.
     stdout_charge: usize,
-    // §109.4 rule 2: the bytes the live callback binding records charge
-    // to the quota. A record lives for the whole Context (Q13), so the
-    // charge goes when the Context does.
-    binding_charge: usize,
+    // §109.4 rule 2: the bytes the live callback binding records and the
+    // live §111 registrations charge to the quota. A binding record
+    // lives for the whole Context (Q13), so its charge goes when the
+    // Context does; a registration returns its charge when it ends
+    // (§111 rule 6).
+    pub(crate) binding_charge: usize,
     // Exact-size live allocations. The dev tier uses this path; a ship
     // Context switches to it when freed-handle diagnostics are enabled.
     // Collection marks and sweeps only this map.
@@ -837,6 +839,9 @@ pub struct Context {
     roots: Vec<(usize, usize)>,
     callbacks: Vec<Box<CallbackBinding>>,
     callback_interns: HashMap<CallbackIdentity, *mut CallbackBinding>,
+    // The live set of §111: the open and the active callback
+    // registrations. `crate::registration` owns every operation on it.
+    pub(crate) registrations: crate::registration::RegistrationSet,
     // Transient JSON output builders (stdlib.md §13). Untracked
     // serializers create no active-reference set; tracked ones do so
     // explicitly.
@@ -964,6 +969,7 @@ impl Context {
             roots: Vec::new(),
             callbacks: Vec::new(),
             callback_interns: HashMap::new(),
+            registrations: crate::registration::RegistrationSet::default(),
             json_builders: crate::json::JsonBuilders::default(),
             json_parsers: crate::json::JsonParsers::default(),
             ship_arena,
@@ -2059,10 +2065,18 @@ impl Context {
         self.binding_count_advisory_threshold = threshold;
     }
 
-    /// Reports a newly interned callback binding when its resulting count is
-    /// at or above the configured threshold.
-    fn advise_binding_count(&mut self) {
-        let count = u64::try_from(self.callbacks.len()).unwrap_or(u64::MAX);
+    /// Reports a newly interned callback binding, or a new §111
+    /// registration, when the resulting count is at or above the
+    /// configured threshold.
+    ///
+    /// The count is the binding records plus the live registrations
+    /// (§111 rule 9).
+    pub(crate) fn advise_binding_count(&mut self) {
+        let records = self
+            .callbacks
+            .len()
+            .saturating_add(self.registrations.len());
+        let count = u64::try_from(records).unwrap_or(u64::MAX);
         let threshold = self.binding_count_advisory_threshold;
         if count < threshold {
             return;
@@ -2091,17 +2105,21 @@ impl Context {
     /// Reports an explicit free of registered callback userdata when the
     /// optional diagnostics observer is installed.
     ///
-    /// The observer-none branch returns before the binding scan, so the
-    /// default path pays neither the scan nor any retained state.
+    /// The scan covers the binding records and the live §111
+    /// registrations (§111 rule 9). The observer-none branch returns
+    /// before it, so the default path pays neither the scan nor any
+    /// retained state.
     fn advise_callback_userdata_free(&mut self, payload: usize, pos_id: u32) {
         let Some(observer) = self.diagnostics_observer else {
             return;
         };
-        if !self.is_live(payload)
-            || !self.callbacks.iter().any(|binding| {
-                binding.userdata1 as usize == payload || binding.userdata2 as usize == payload
-            })
-        {
+        if !self.is_live(payload) {
+            return;
+        }
+        let held = self.callbacks.iter().any(|binding| {
+            binding.userdata1 as usize == payload || binding.userdata2 as usize == payload
+        }) || self.registration_holds_userdata(payload);
+        if !held {
             return;
         }
 
@@ -3381,6 +3399,15 @@ impl Context {
             }
         }
         self.push_root_set(&mut work, &mut tracer, "callbacks", callbacks.into_iter());
+        // §111 rule 8: the live set of registrations is the second root
+        // source of registered userdata.
+        let registrations = self.registration_roots();
+        self.push_root_set(
+            &mut work,
+            &mut tracer,
+            "registrations",
+            registrations.into_iter(),
+        );
 
         if self.uses_ship_arena() {
             // Ship tier (§8.1b): mark state lives in the block header

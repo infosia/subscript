@@ -51,11 +51,24 @@ pub(crate) fn live_allocations_after_main_calls(
                 let trap = ctx
                     .trap_record()
                     .map(|record| {
-                        let position = lowered
-                            .positions
-                            .get(record.pos_id as usize)
-                            .map(ToString::to_string)
-                            .unwrap_or_else(|| format!("position {}", record.pos_id));
+                        // §111 rule 14: a kind with no script site reads
+                        // no position table. Every other kind keeps this
+                        // probe's rendering, which names the recorded id
+                        // when the table does not hold it.
+                        let position = if crate::lir_types::trap_has_no_script_site(record.kind) {
+                            crate::lir_types::trap_report_position(
+                                record.kind,
+                                record.pos_id,
+                                &lowered.positions,
+                            )
+                            .to_string()
+                        } else {
+                            lowered
+                                .positions
+                                .get(record.pos_id as usize)
+                                .map(ToString::to_string)
+                                .unwrap_or_else(|| format!("position {}", record.pos_id))
+                        };
                         format!("{:?} at {position}: {}", record.kind, record.message)
                     })
                     .unwrap_or_else(|| "unknown trap".to_string());

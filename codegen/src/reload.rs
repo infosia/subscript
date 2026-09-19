@@ -72,6 +72,7 @@ use subscript_compiler::{
 use subscript_runtime::{Context, Interrupt};
 
 use crate::jit::{install_reservation, register_runtime, RunError, TrapReport};
+use crate::lir_types::trap_report_position;
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
 use crate::native::{missing_symbol, register_symbols};
 use crate::{HostLimits, NativeLibrary, RunConfig};
@@ -1127,11 +1128,9 @@ impl ReloadSession {
             Some(r) => Err(RunError::Trap(TrapReport {
                 rule: r.kind,
                 message: r.message.clone(),
-                pos: self
-                    .positions
-                    .get(r.pos_id as usize)
-                    .cloned()
-                    .unwrap_or_else(|| Pos::new(String::new(), 0, 0)),
+                // §111 rule 14: the kind decides whether a position
+                // table is read at all.
+                pos: trap_report_position(r.kind, r.pos_id, &self.positions),
                 stdout: self.ctx.stdout_bytes().to_vec(),
             })),
         }

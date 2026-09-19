@@ -31,6 +31,7 @@
 // @subscript-c-scalar-pair function="subDeviceFillBytes" parameter="data" element="uint8_t" const=false
 // @subscript-c-scalar-pair function="subDeviceFillShorts" parameter="data" element="uint16_t" const=false
 // @subscript-c-scalar-pair function="subProbeQueueSubmitCheck" parameter="commands" element="SubDevice" const=true
+// @subscript-c-callback-lifetime aggregate="SubRequestInfo"
 
 declare enum SubChainKind {
   SUB_CHAIN_KIND_BASE = 0,
@@ -751,6 +752,24 @@ interface SubHostOwnedState {
 
 declare function subHostOwnedStateBorrow(): SubHostOwnedState;
 declare function subHostOwnedStateAdvance(state: SubHostOwnedState): i32;
+
+declare class SubRequestInfo {
+  callback: SubLogCallback;
+  userdata: object | null;
+  userparam: object | null;
+  constructor(callback: SubLogCallback, userdata: object | null, userparam: object | null);
+}
+
+declare function subRequestStart(device: SubDevice, payload: u32, immediate: i32, info: SubRequestInfo): i32;
+declare function subRequestSubscribe(device: SubDevice, info: SubRequestInfo): i32;
+declare function subRequestNotify(device: SubDevice, payload: u32): void;
+declare function subRequestUnsubscribe(device: SubDevice): void;
+declare function subRequestPump(device: SubDevice): void;
+declare function subRequestReleaseActive(device: SubDevice): void;
+declare function subRequestReleaseCount(device: SubDevice): i32;
+declare function subRequestMarkCharge(device: SubDevice): void;
+declare function subRequestChargeFellBy(device: SubDevice, atLeast: u32): i32;
+declare function subRequestReleaseAndRefire(device: SubDevice): void;
 
 type SubFloat16 = f16;
 

@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use subscript_compiler::lir as l;
-use subscript_compiler::types::{ClassId, Type};
+use subscript_compiler::types::{CallbackLifetime, ClassId, Type};
 use subscript_compiler::Pos;
 use subscript_runtime::context as rtc;
 use subscript_runtime::TrapKind;

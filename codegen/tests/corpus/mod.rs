@@ -118,6 +118,9 @@ pub(crate) fn references_interop(src: &str) -> bool {
         // Wire-mapped literal-union boundary crossings.
         "subWireMode",
         "subBindTone",
+        // Callback registrations with an explicit end (compiler.md §111).
+        "subRequest",
+        "SubRequestInfo",
     ];
     TOKENS.iter().any(|t| src.contains(t))
 }

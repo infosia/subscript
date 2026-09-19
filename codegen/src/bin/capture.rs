@@ -96,6 +96,16 @@ extern "C" {
     fn subWireModeUnknown();
     fn subBindToneNext();
     fn subBindToneEcho();
+    fn subRequestStart();
+    fn subRequestSubscribe();
+    fn subRequestNotify();
+    fn subRequestUnsubscribe();
+    fn subRequestPump();
+    fn subRequestReleaseActive();
+    fn subRequestReleaseCount();
+    fn subRequestMarkCharge();
+    fn subRequestChargeFellBy();
+    fn subRequestReleaseAndRefire();
 }
 
 fn references_interop(source: &str) -> bool {
@@ -130,6 +140,8 @@ fn references_interop(source: &str) -> bool {
         "subHostOwnedState",
         "subWireMode",
         "subBindTone",
+        "subRequest",
+        "SubRequestInfo",
     ];
     TOKENS.iter().any(|token| source.contains(token))
 }
@@ -385,6 +397,41 @@ fn interop_library() -> NativeLibrary {
         ),
         ("subBindToneNext".to_string(), subBindToneNext as *const u8),
         ("subBindToneEcho".to_string(), subBindToneEcho as *const u8),
+        // Callback registrations with an explicit end (compiler.md §111).
+        ("subRequestStart".to_string(), subRequestStart as *const u8),
+        (
+            "subRequestSubscribe".to_string(),
+            subRequestSubscribe as *const u8,
+        ),
+        (
+            "subRequestNotify".to_string(),
+            subRequestNotify as *const u8,
+        ),
+        (
+            "subRequestUnsubscribe".to_string(),
+            subRequestUnsubscribe as *const u8,
+        ),
+        ("subRequestPump".to_string(), subRequestPump as *const u8),
+        (
+            "subRequestReleaseActive".to_string(),
+            subRequestReleaseActive as *const u8,
+        ),
+        (
+            "subRequestReleaseCount".to_string(),
+            subRequestReleaseCount as *const u8,
+        ),
+        (
+            "subRequestMarkCharge".to_string(),
+            subRequestMarkCharge as *const u8,
+        ),
+        (
+            "subRequestChargeFellBy".to_string(),
+            subRequestChargeFellBy as *const u8,
+        ),
+        (
+            "subRequestReleaseAndRefire".to_string(),
+            subRequestReleaseAndRefire as *const u8,
+        ),
     ];
     // SAFETY: the opt-in fixture dependency links each static-lifetime
     // function above into this capture process, with signatures matching the

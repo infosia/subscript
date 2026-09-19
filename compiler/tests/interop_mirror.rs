@@ -201,6 +201,20 @@ fn using_program_type_checks_against_the_generated_mirror() {
             // pair is host-only and absent from the mirror.
             "subHostOwnedStateBorrow",
             "subHostOwnedStateAdvance",
+            // §111: the host adapter of a callback registration with an
+            // explicit end. The two drivers, the removal request, the
+            // pump, the release from inside a callback, the adapter's
+            // own observables, and the deliberate rule 14 violation.
+            "subRequestStart",
+            "subRequestSubscribe",
+            "subRequestNotify",
+            "subRequestUnsubscribe",
+            "subRequestPump",
+            "subRequestReleaseActive",
+            "subRequestReleaseCount",
+            "subRequestMarkCharge",
+            "subRequestChargeFellBy",
+            "subRequestReleaseAndRefire",
         ]
     );
 

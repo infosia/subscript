@@ -165,6 +165,12 @@ pub(crate) struct RtFns {
     pub set_from_string: FuncId,
     pub cb_bind: FuncId,
     pub cb_trampoline: FuncId,
+    /// `subscript_rt_cb_register` (§111 rule 4): the explicit-lifetime
+    /// crossing, with the parameters of `subscript_rt_cb_bind`.
+    pub cb_register: FuncId,
+    /// `subscript_rt_cb_registration_trampoline` (§111 rule 4): the
+    /// callback field an explicit-lifetime crossing writes.
+    pub cb_registration_trampoline: FuncId,
     /// `subscript_rt_math_*` imports (stdlib.md §1), indexed by
     /// `MathFn as usize` (the [`MathFn::ALL`] order).
     pub math: [FuncId; MathFn::ALL.len()],
@@ -1027,6 +1033,20 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         // struct's function-pointer slot; the declared signature (message
         // as two words, then the two userdata slots) is unused.
         cb_trampoline: mk("subscript_rt_cb_trampoline", &[I64, I64, I64, I64], None)?,
+        // (ctx, code, env, userdata1, userdata2) → registration pointer
+        // (§111 rule 4: the parameters of `subscript_rt_cb_bind`).
+        cb_register: mk(
+            "subscript_rt_cb_register",
+            &[I64, I64, I64, I64, I64],
+            Some(I64),
+        )?,
+        // The explicit-lifetime trampoline (§111 rule 4). Imported only
+        // to take its address, as `cb_trampoline` above is.
+        cb_registration_trampoline: mk(
+            "subscript_rt_cb_registration_trampoline",
+            &[I64, I64, I64, I64],
+            None,
+        )?,
         math,
         num,
         // Date intrinsics (stdlib.md §3): opaque symbols on both tiers.

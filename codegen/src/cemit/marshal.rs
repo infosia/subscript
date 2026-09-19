@@ -91,9 +91,37 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         .fields
                         .get(index + 2)
                         .filter(|field| is_userdata_slot(&field.ty));
+                    // §111 rule 2: the emitter reads the lifetime off the
+                    // class. It never derives it from the source name.
+                    let explicit = definition.callback_lifetime == CallbackLifetime::Explicit;
+                    let (crossing, trampoline) = if explicit {
+                        (
+                            "subscript_rt_cb_register",
+                            "subscript_rt_cb_registration_trampoline",
+                        )
+                    } else {
+                        ("subscript_rt_cb_bind", "subscript_rt_cb_trampoline")
+                    };
+                    if explicit {
+                        // The generated code only takes this address, so
+                        // no call declares it. The preamble declares the
+                        // Context-lifetime trampoline for every program
+                        // with a foreign function; this one is declared
+                        // where it is used, so a program without an
+                        // explicit-lifetime crossing is unchanged.
+                        self.emitter.declare_runtime(
+                            "void",
+                            trampoline,
+                            &[
+                                "subscript_callback_string_view".into(),
+                                "void*".into(),
+                                "void*".into(),
+                            ],
+                        );
+                    }
                     let bind = self.emitter.runtime_call(
                         "void*",
-                        "subscript_rt_cb_bind",
+                        crossing,
                         &[
                             "void*".into(),
                             "const void*".into(),
@@ -112,7 +140,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                             ),
                         ],
                     );
-                    parts.push(format!("({typedef_name})&subscript_rt_cb_trampoline"));
+                    parts.push(format!("({typedef_name})&{trampoline}"));
                     parts.push(bind);
                     if second.is_some() {
                         parts.push("NULL".into());

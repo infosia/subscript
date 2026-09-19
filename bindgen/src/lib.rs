@@ -67,7 +67,15 @@
 //! // @subscript-c-scalar-pair function="engineFillBytes" parameter="engineData" element="uint8_t" const=false
 //! // @subscript-c-string-view function="engineWorldSetName" parameter="engineName" aggregate="EngineStringView"
 //! // @subscript-c-callback typedef="EngineEventCallback"
+//! // @subscript-c-callback-lifetime aggregate="EngineEventInfo"
 //! ```
+//!
+//! The callback-lifetime record names one boundary aggregate that takes
+//! the explicit callback lifetime (`specs/blocks/compiler.md` §111 rule
+//! 1). The binder input selects it; a header alone never produces it. A
+//! mirror carries at most one such record for one aggregate, at the
+//! position of that aggregate's C struct declaration. An aggregate
+//! without the record has the Context lifetime.
 //!
 //! Descriptor, scalar-pair, and string-view records name a foreign
 //! `function` and its absorbed `parameter`. Callback parameters have no
@@ -89,12 +97,42 @@
 //! synthetic (`Sub`-prefixed) or a standard C scalar. It depends only on
 //! `std`. Errors are returned as `Result`, never panics.
 
+mod callback_lifetime;
 mod clangfe;
 mod cparse;
 mod emit;
 
 pub use clangfe::{parse, Alias, CEnumMapping, Constant, Macro, Parsed};
 pub use cparse::{CField, Decl, ParseError};
+
+/// The binder input beyond the header text and its include spelling.
+///
+/// The default value selects nothing, so a default run produces the
+/// mirror that the header alone defines.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct BindOptions {
+    /// Aggregates that take the explicit callback lifetime, in selection
+    /// order (`specs/blocks/compiler.md` §111 rule 1).
+    pub explicit_callback_lifetimes: Vec<String>,
+}
+
+impl BindOptions {
+    /// Returns options that select no aggregate.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds one aggregate to the explicit-lifetime selection.
+    ///
+    /// The binder rejects a name that it receives two times.
+    #[must_use]
+    pub fn with_explicit_callback_lifetime(mut self, aggregate: impl Into<String>) -> Self {
+        self.explicit_callback_lifetimes.push(aggregate.into());
+        self
+    }
+}
 
 /// Generates the ambient `.d.ts` mirror text for a C interop header.
 ///
@@ -127,6 +165,25 @@ pub fn generate(header: &str) -> Result<String, ParseError> {
 /// when `include_spelling` is empty or contains a path separator or control
 /// character.
 pub fn generate_for_header(header: &str, include_spelling: &str) -> Result<String, ParseError> {
+    generate_with_options(header, include_spelling, &BindOptions::new())
+}
+
+/// Generates a mirror from the header, the include spelling, and `options`.
+///
+/// With the default [`BindOptions`] the output equals
+/// [`generate_for_header`] byte for byte.
+///
+/// # Errors
+///
+/// Returns a [`ParseError`] under the same conditions as
+/// [`generate_for_header`], or when one selected explicit-lifetime
+/// aggregate is absent from the header, is absorbed into a boundary type,
+/// carries no callback field, or is selected two times.
+pub fn generate_with_options(
+    header: &str,
+    include_spelling: &str,
+    options: &BindOptions,
+) -> Result<String, ParseError> {
     if include_spelling.is_empty()
         || include_spelling.contains(['/', '\\'])
         || include_spelling.chars().any(char::is_control)
@@ -136,5 +193,9 @@ pub fn generate_for_header(header: &str, include_spelling: &str) -> Result<Strin
         )));
     }
     let parsed = clangfe::parse(header)?;
-    emit::emit_for_header(&parsed, include_spelling)
+    emit::emit_for_header(
+        &parsed,
+        include_spelling,
+        &options.explicit_callback_lifetimes,
+    )
 }

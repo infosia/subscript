@@ -770,3 +770,92 @@ fn reload_mode_reproduces_every_committed_golden() {
         failures.join("\n")
     );
 }
+
+// ----- §111 rule 13: a registration open across a reload -----
+
+/// The registering half and the firing half of the reload case, with the
+/// callback body the only difference between the two generations.
+fn registration_reload_source(generation: &str) -> String {
+    format!(
+        "\
+class Ping {{
+  device: SubDevice;
+  constructor(device: SubDevice) {{
+    this.device = device;
+  }}
+}}
+
+let ping: Ping | null = null;
+
+export function start(): void {{
+  const device: SubDevice = subDeviceCreate(null);
+  const state: Ping = new Ping(device);
+  ping = state;
+  const info: SubRequestInfo = new SubRequestInfo(
+    (message, userdata1, userdata2) => {{
+      print(`{generation} ${{message.length}}`);
+    }},
+    state,
+    null,
+  );
+  subRequestStart(device, 3, 0, info);
+}}
+
+export function fire(): void {{
+  if (ping !== null) {{
+    subRequestPump(ping.device);
+    print(`released ${{subRequestReleaseCount(ping.device)}}`);
+  }}
+}}
+"
+    )
+}
+
+/// The mirror plus one live source, for a session that calls the fixture.
+fn interop_files(text: &str) -> Vec<SourceFile> {
+    let mirror = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../corpus/interop/interop.generated.d.ts");
+    let ambient = std::fs::read_to_string(&mirror).expect("read the committed mirror");
+    vec![
+        SourceFile::ambient("interop.generated.d.ts", ambient),
+        SourceFile::new("live.ts", text.to_string()),
+    ]
+}
+
+/// §111 rule 13: a registration that is open across a hot reload calls
+/// the code it was created with.
+///
+/// Cost: one reload session with the native fixture, two generations,
+/// four entry calls. Measured at 0.05 s on this host in the debug
+/// profile, which is the session build cost, not the fire.
+#[test]
+fn a_registration_open_across_a_reload_calls_the_code_it_was_created_with() {
+    let libraries = [native_fixture::library()];
+    let mut session = ReloadSession::new_with_native_libraries(
+        &interop_files(&registration_reload_source("v1")),
+        &libraries,
+    )
+    .expect("session");
+
+    session.call_export("start").expect("register under v1");
+    assert_eq!(output(&mut session), "");
+
+    session
+        .reload(&interop_files(&registration_reload_source("v2")))
+        .expect("the body edit is accepted");
+
+    // The registration was created by the v1 generation and never fired,
+    // so the pump that follows the reload runs v1's code.
+    session.call_export("fire").expect("fire after the reload");
+    assert_eq!(output(&mut session), "v1 3\nreleased 1\n", "§111 rule 13");
+
+    // The firing control: a registration created after the swap runs the
+    // new generation's code, so the assertion above cannot pass on a
+    // session that ignored the reload. Each `start` builds its own
+    // device, and the release count is that device's own.
+    session.call_export("start").expect("register under v2");
+    session
+        .call_export("fire")
+        .expect("fire the second registration");
+    assert_eq!(output(&mut session), "v2 3\nreleased 1\n");
+}

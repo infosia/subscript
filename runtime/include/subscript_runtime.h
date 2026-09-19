@@ -144,6 +144,39 @@ uint64_t subscript_rt_ctx_async_step(subscript_rt_context* ctx);
  */
 uint64_t subscript_rt_ctx_async_unfinished(const subscript_rt_context* ctx);
 /**
+ * Ends one callback registration (§111 rule 5).
+ *
+ * The call states a guarantee: the host starts no more calls through
+ * this registration. Calls that already run can return. The call does
+ * not cancel native work and does not unregister a native callback.
+ * The host adapter does those first.
+ *
+ * The call returns 1 when `registration` is an open registration of
+ * `ctx`. For every other pointer it changes nothing and returns 0:
+ * null, a binding of `subscript_rt_cb_bind`, a registration this call
+ * already closed, and a registration that ended. The runtime tests
+ * membership in its live set first, so it never reads a pointer that
+ * the set does not hold.
+ *
+ * After a registration ends, a later registration can take its address.
+ * A second release of the old pointer then closes the new registration.
+ * That case is in the best-effort class of §111 rule 14: the host ends
+ * each registration one time, and the runtime keeps no record of the
+ * registrations that ended.
+ *
+ * Release removes a collection root and does nothing else (§111 rule
+ * 7). It does not collect, it does not free the userdata, and it does
+ * not walk the userdata graph. The userdata then follows the
+ * reachability rules of the subscript_rt_context: a script reference keeps it, and
+ * the next explicit collection reclaims it when nothing reaches it.
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract. `registration` is any
+ * pointer value; the call reads it only as an address.
+ */
+int32_t subscript_rt_ctx_callback_release(subscript_rt_context* ctx, void* registration);
+/**
  * Bytes the subscript_rt_context has reserved for its live allocations.
  *
  * This is the counter the allocation quota compares against
@@ -318,6 +351,31 @@ uint32_t subscript_rt_ctx_trap_kind(const subscript_rt_context* ctx);
 const uint8_t* subscript_rt_ctx_trap_message(const subscript_rt_context* ctx, uint64_t* len);
 uint32_t subscript_rt_ctx_trap_pos_id(const subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_visit_live_allocations(const subscript_rt_context* ctx, subscript_rt_alloc_visitor visitor, void* userdata);
+
+/**
+ * Answers which subscript_rt_context one callback registration belongs to
+ * (§111 rule 5a).
+ *
+ * A host function that a script calls receives the mirrored arguments
+ * and no subscript_rt_context. A host that runs more than one subscript_rt_context therefore
+ * cannot name the subscript_rt_context that `subscript_rt_ctx_callback_release`
+ * needs. The registration carries that fact, and this call reads it.
+ *
+ * A null `registration` answers null. Every other pointer is read
+ * through, so the host calls this while the registration is certainly
+ * live: at the crossing that delivers the registration, or inside a
+ * fire. A pointer that is not a live registration is a violation of the
+ * host's guarantee, in the class of §111 rule 14.
+ *
+ * The call reads one field. It allocates nothing, it changes nothing,
+ * and it starts no call.
+ *
+ * # Safety
+ *
+ * `registration` is null, or a registration that
+ * `subscript_rt_cb_register` produced and no release ended.
+ */
+subscript_rt_context* subscript_rt_cb_registration_context(void* registration);
 
 /**
  * Requests that the running script stop at its next sandbox-profile

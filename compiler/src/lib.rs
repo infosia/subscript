@@ -30,7 +30,7 @@ mod warn;
 pub use diag::{Diagnostic, Pos, RuleCode};
 pub use diag_render::{render_diagnostics, render_warnings};
 pub use parse::parse_import_specifiers;
-pub use types::{ClassId, EnumId, FuncType, StringAliasId, Type};
+pub use types::{CallbackLifetime, ClassId, EnumId, FuncType, StringAliasId, Type};
 pub use warn::{check_warnings, WarnCode, Warning};
 
 /// The repository-relative name of `absolute`, always with `/` separators.

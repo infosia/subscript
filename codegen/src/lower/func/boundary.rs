@@ -5,6 +5,7 @@ use super::abi::{
     plan_sysv_struct_return,
 };
 use super::*;
+use subscript_compiler::CallbackLifetime;
 
 impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     pub(super) fn foreign_call(
@@ -819,10 +820,18 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.builder
                             .ins()
                             .load(types::I64, flags(), source, language_offset + 8);
+                    // §111 rule 2: the lowering reads the lifetime off the
+                    // class. It never derives it from the source name.
+                    let explicit = definition.callback_lifetime == CallbackLifetime::Explicit;
+                    let trampoline_id = if explicit {
+                        self.ml.rt.cb_registration_trampoline
+                    } else {
+                        self.ml.rt.cb_trampoline
+                    };
                     let trampoline = self
                         .ml
                         .module
-                        .declare_func_in_func(self.ml.rt.cb_trampoline, self.builder.func);
+                        .declare_func_in_func(trampoline_id, self.builder.func);
                     let trampoline = self.builder.ins().func_addr(types::I64, trampoline);
                     self.builder
                         .ins()
@@ -846,9 +855,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     } else {
                         self.iconst(types::I64, 0)
                     };
+                    // §111 rule 4: an explicit-lifetime crossing creates one
+                    // registration; every other crossing binds as before.
+                    let crossing = if explicit {
+                        self.ml.rt.cb_register
+                    } else {
+                        self.ml.rt.cb_bind
+                    };
                     let binding = self
                         .call_runtime(
-                            self.ml.rt.cb_bind,
+                            crossing,
                             &[self.ctx, code, environment, userdata, userdata2],
                             false,
                         )?

@@ -126,6 +126,13 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         // function body, so the budget trap carries the callee's
         // declaration position, not the call site's.
         "t58-sandbox-stack-budget" => (TrapKind::StackBudget, 8, 10),
+        // §14.4b (A) through a §111 registration: the trap carries the
+        // freed userdata's allocation site, as t46 does.
+        "t59-registration-userdata-freed" => (TrapKind::CallbackUserdataFreed, 42, 40),
+        // §111 rule 14 records position 0, because the refused fire
+        // reaches no script site. Both tiers report the empty position
+        // for this kind, and the entry pins their agreement.
+        "t60-registration-fire-after-release" => (TrapKind::CallbackRegistrationEnded, 0, 0),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -678,13 +685,24 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
     let files = &case.files;
     let expected = &case.expected;
     let mut failures = Vec::new();
-    let expected_file = format!("{id}.ts");
     let (expected_kind, expected_line, expected_column) = trap_expectation(id);
+    // §111 rule 14: a trap with no script site carries the empty
+    // position on every tier, not a site of the entry's own file.
+    let expected_file = if expected_kind == TrapKind::CallbackRegistrationEnded {
+        String::new()
+    } else {
+        format!("{id}.ts")
+    };
     let freed_handle_diagnostic = matches!(
         id.as_str(),
         "t22-double-delete-q6" | "t23-use-after-delete-q6"
     );
-    let callback_userdata_diagnostic = id.as_str() == "t46-callback-userdata-freed";
+    // §14.4b (A) pins its trap with freed-handle diagnostics on, for the
+    // Context-lifetime binding and for the §111 registration alike.
+    let callback_userdata_diagnostic = matches!(
+        id.as_str(),
+        "t46-callback-userdata-freed" | "t59-registration-userdata-freed"
+    );
     // Only the last branch below carries the entry's profile. A profile
     // entry that needs one of the others fails here rather than running
     // under the default profile with no report.
@@ -772,8 +790,11 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
             let freed_handle_message = match id.as_str() {
                 "t22-double-delete-q6" => Some("Context.free of an already-deleted allocation"),
                 "t23-use-after-delete-q6" => Some("use of a deleted allocation"),
-                "t46-callback-userdata-freed" => {
+                "t46-callback-userdata-freed" | "t59-registration-userdata-freed" => {
                     Some("callback userdata points to a freed allocation")
+                }
+                "t60-registration-fire-after-release" => {
+                    Some("a callback fired through a registration the host released")
                 }
                 "t48-wire-enum-unknown-value" => {
                     Some("unknown wire value 12345 for CEnum alias `SubWireMode`")
