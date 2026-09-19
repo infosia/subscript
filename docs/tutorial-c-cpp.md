@@ -1324,18 +1324,22 @@ fact only you hold. The list is short and it is complete
   that a program under the profile runs until it returns or traps.
 - **The compile budgets.** This project's own compiler stages are
   bounded by construction. The parser is not: inside every `S026` limit,
-  26,210 `<i32>` type assertions take 134.3 s in it, and a 130,990-byte
-  chain of one repeated label takes about 10 GB. The CLI therefore
+  26,210 `<i32>` type assertions take 134.3 s in it. The CLI therefore
   compiles in a child process under the profile, with a memory budget
-  and a time budget (§109.2 rule 6): 4,294,967,296 bytes of address
-  space in an optimized build, 12,884,901,888 unoptimized, and 300 s in
-  both. On macOS the system refuses `RLIMIT_AS`, so the parent process
-  holds the memory budget there: it reads the child's resident bytes at
-  every poll and kills a child over the budget. A child that passes
-  either budget is one `S026` at the entry file, so the compile always
-  ends in a diagnostic or an accepted program. If you embed the compiler
-  crate instead of calling the CLI, run it in a child process of your own
-  with the same two budgets.
+  and a time budget (§109.2 rule 6). The memory budget is the heap a
+  compile takes: 2,147,483,648 bytes in an optimized build and
+  4,294,967,296 unoptimized. The time budget is 300 s in both. Each host
+  holds the memory budget its own way. Linux sets `RLIMIT_AS` to that
+  heap plus the compile thread's stack reservation, because `RLIMIT_AS`
+  counts the reservation. Windows sets a Job Object process memory limit
+  of the heap, which counts committed bytes; a reservation commits
+  nothing. macOS refuses `RLIMIT_AS`, so the parent process reads the
+  child's resident bytes at every poll and kills a child whose reading
+  passes the heap. A child that passes either budget is one `S026` at
+  the entry file, so the compile always ends in a diagnostic or an
+  accepted program. If you embed the compiler crate instead of calling
+  the CLI, run it in a child process of your own with the same two
+  budgets.
 - **The process.** Same-process execution trusts the compiler, the
   generated code, and the runtime to be memory-safe. If you must contain
   a defect in those, add an isolation boundary of your own, such as a

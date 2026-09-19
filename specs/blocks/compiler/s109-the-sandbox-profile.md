@@ -225,20 +225,18 @@ that measurement.
 6. **The CLI compiles in a budgeted child under the profile.**
    `check`, `build`, `run`, and the watch loop's compile run the
    compile in a child `subscript` process. The child has a memory
-   budget and a time budget of 300 s. The memory budget is the
-   build's compile-thread stack plus the heap a compile takes.
-   Unoptimized it is 12,884,901,888 bytes (8 GiB of stack plus
-   4 GiB); optimized 4,294,967,296 (2 GiB plus 2 GiB). A budget
-   under the stack reservation refuses every compile, and a `const`
-   assertion holds the order. Each host enforces the budget its own
-   way. On Linux the child sets `RLIMIT_AS` on its first line. On
-   Windows the child creates a Job Object with a process memory
-   limit and joins it on its first line; the job kills every process
-   in it when the parent's handle closes. Linux and Windows both
-   turn the budget into a failed allocation: the Rust runtime writes
-   "memory allocation of n bytes failed" and ends the child. That
-   text is what names the budget on both, because the end itself is
-   a signal on one host and an exit code on the other. On macOS
+   budget and a time budget of 300 s. The memory budget is the heap a
+   compile takes: 4,294,967,296 bytes unoptimized and 2,147,483,648
+   optimized. Each host builds its own limit from that one number,
+   because each host's limit counts a different thing. On Linux the
+   child sets `RLIMIT_AS` to the heap plus the compile thread's stack
+   reservation on its first line. On Windows the child creates a Job
+   Object with a process memory limit of the heap and joins it on its
+   first line; the job kills every process in it when the parent's
+   handle closes. Linux turns the budget into a failed allocation:
+   the Rust runtime writes "memory allocation of n bytes failed" and
+   ends the child. Windows fails a heap allocation or a stack commit,
+   and the paragraph below names both ends. On macOS
    `setrlimit`
    refuses `RLIMIT_AS` (measured `EINVAL`), so the parent reads the
    child's resident bytes at every 10 ms poll through
@@ -280,34 +278,53 @@ that measurement.
    the fix removes one input from the set this rule covers, not the
    rule. Fork commit `affcb6ee`.)*
 
-   **The macOS poll reads the budget less the stack reservation.**
-   *(Added 2026-09-19.)* The budget is the reservation plus the heap,
-   and the reservation is address space that is never resident. Linux
-   and Windows bound address space, so the reservation takes its own
-   share and the heap gets the rest. macOS bounds resident bytes, so a
-   poll against the whole budget gives the heap the whole number and
-   the child holds about three times what the other hosts allow. The
-   macOS poll therefore compares the largest resident reading against
-   the budget less `COMPILE_THREAD_STACK_BYTES`. For the contract's
-   own budget that is 4 GiB unoptimized and 2 GiB optimized, the heap
-   term this rule already names, so the figure does not move. The
-   floor that separates a system memory kill from every other
-   `SIGKILL` is one half of the same difference.
+   **The memory budget is the heap, and each host builds its own
+   limit from it.** *(Added 2026-09-19. It replaces two paragraphs of
+   the same date that made the budget the reservation plus the heap.
+   That sum described one host of three.)* The compile thread's stack
+   reservation is the reason the hosts differ. Linux bounds address
+   space, and the reservation is address space, so the Linux limit is
+   the heap plus the reservation. Windows bounds committed bytes, and
+   a reservation commits nothing, so the Windows limit is the heap
+   alone. macOS bounds resident bytes, and the reservation is never
+   resident, so the poll compares the largest resident reading
+   against the heap alone. The floor that separates a system memory
+   kill from every other `SIGKILL` is one half of the heap.
+   *(Measured 2026-09-19 on `x86_64-pc-windows-msvc`: a Job Object
+   commit limit of 209,715,200 bytes does not refuse a thread that
+   reserves 8,589,934,592 bytes of stack. That thread starts and
+   touches 8 MiB of its stack, and the heap then fails at 256 MiB of
+   commit.)*
 
-   **A test replaces either budget, and a replaced memory budget
-   still holds the compile thread's stack.** *(Added 2026-09-19.)*
-   Each budget has a test-only environment variable, because the stop
-   has no other deterministic source: a test that waits for a real
-   12 GiB compile waits for a host that can host one. The time
-   budget's variable already exists. The memory budget's variable
-   takes the same shape, with one condition the time budget does not
-   have: a value at or under the compile thread's stack reservation
-   refuses the thread itself, and §109.2a then makes the profile
-   check nothing. A replaced memory budget is therefore the
-   reservation plus the heap the test means to refuse, and the test
-   derives that heap from the measured demand of its own source. A
-   value the condition rejects leaves the contract's budget in place,
-   as an unreadable time-budget value does.
+   **A Windows budget stop has two ends, because the limit counts the
+   stack the compile thread commits.** *(Added 2026-09-19.)* The
+   reservation commits nothing at the start, and each recursion level
+   commits the stack pages it touches. A Windows child that passes
+   the budget therefore ends in one of two ways. A heap allocation
+   fails: the runtime writes "memory allocation of n bytes failed",
+   and `__fastfail` ends the child with exit code -1073740791. A
+   stack commit fails: the runtime writes "thread '<name>' has
+   overflowed its stack", and the host ends the child with exit code
+   -1073741571, `STATUS_STACK_OVERFLOW`. The parent reads both ends
+   as the memory budget. §109.2a sizes the reservation so that no
+   source inside S026's byte limit overflows it, so the limit the
+   parent set is the only other cause of an overflow. *(Measured
+   2026-09-19: the 65,476-label source under a commit limit of
+   33,554,432 through 805,306,368 bytes ends in the stack overflow.
+   At 872,415,232 bytes the compile completes, and the parser's own
+   diagnostic arrives.)*
+
+   **A test replaces the memory budget by its heap.** *(Added
+   2026-09-19.)* Each budget has a test-only environment variable,
+   because the stop has no other deterministic source: a test that
+   waits for a real 4 GiB heap waits for a host that can hold one.
+   The variable takes the heap, so one value in a test composes on
+   every host the way the contract's own heap does. A value of zero,
+   and a value that is not a count of bytes, leave the contract's own
+   heap in place, as an unreadable time-budget value does. A test
+   derives its value from the measured demand of its own source: over
+   what a clean source needs, and under what the source under test
+   needs.
 
 *(Measured 2026-09-17, security round 2, at `52373a9`.)* The
 exponential `!` chain was the warning walk: the `Unary`/`Cast` arm of
@@ -676,15 +693,20 @@ assertion failed. A test whose subject is a defect of a dependency
 holds only while the defect does.
 
 The test now replaces the memory budget by the variable §109.2 rule 6
-names, at the compile thread's stack reservation plus a heap under
-what its own source demands, and its firing control is the same
-source under a replaced budget with headroom. It runs in every shape
-and in both profiles, and it checks what it always checked: a compile
-over the budget is one S026 at the entry file, the child's own
-allocation-failure text passes through, and the parent classifies the
-end. The contract's 12 GiB is held by §109.2a's derivation and by the
-`const` assertion that the budget exceeds the stack, not by a test
-that waits for a host able to host one.
+names, at a heap under what its own source demands, and its firing
+control is the same source under a replaced heap with headroom. It
+runs in every shape and in both profiles, and it checks what it always
+checked: a compile over the budget is one S026 at the entry file, the
+child's own record of its end passes through, and the parent
+classifies that end. The contract's own heap is held by §109.2a's
+derivation, not by a test that waits for a host able to host one.
+
+*(Amended 2026-09-19, after the Windows host ran the test: the heap a
+test states composes one limit for each host, and the child's own
+record is the host's. Linux fails a heap allocation. Windows fails the
+stack commit of the parser's recursion, and the record is the
+overflow, not an allocation. §109.2 rule 6 names both ends. Evidence:
+`specs/tracking/windows-portability.md`.)*
 
 **Rule: a firing control does not run under the contract's default
 budget.** The control measures the host, and the default budget is
@@ -721,9 +743,11 @@ the wait for the group 50.14 ms, the whole test 733 s against
 the kill narrowed to the direct child, the same wait held 547 s and
 the test then failed on the executable the surviving compiler wrote.
 The Windows arm reads the child's own exit, because the Job Object
-carries `KILL_ON_JOB_CLOSE` and the child holds the only handle; no
-Windows host measured it. Evidence:
-`specs/tracking/linux-portability.md`.
+carries `KILL_ON_JOB_CLOSE` and the child holds the only handle. The
+Windows host ran the heavy set on 2026-09-19 and both heavy tests
+passed, the whole CLI suite in 82.39 s. Evidence:
+`specs/tracking/linux-portability.md`,
+`specs/tracking/windows-portability.md`.
 
 **The group wait ends on `ESRCH` alone, and `EPERM` is a held
 group.** *(Added 2026-09-19.)* `kill` with signal 0 on a process group
