@@ -1219,36 +1219,29 @@ const HEAVY_TESTS_VARIABLE: &str = "SUBSCRIPT_HEAVY_TESTS";
 #[cfg(target_os = "macos")]
 const POLL_GROWTH_BYTES: u64 = 268_435_456;
 
-/// The heap a replaced memory budget holds beside the compile thread's
-/// stack reservation, for the run under test (§109.2 rule 6, §109.2a).
+/// The test heap exceeds clean-source demand but stays below the
+/// same-label source's demand. Each host composes its own limit from
+/// this heap (§109.2 rule 6).
 ///
-/// A budget at or under the reservation refuses the compile thread, so
-/// the profile checks nothing. The heap term must therefore stay over
-/// what a clean source needs and under what the same-label source
-/// needs. Measured on `x86_64-unknown-linux-gnu` with the 65,476-label
+/// Measured on `x86_64-unknown-linux-gnu` with the 65,476-label
 /// source below: the source needs between 134,217,728 and 142,606,336
-/// bytes over the reservation unoptimized, and between 100,663,296 and
+/// heap bytes unoptimized, and between 100,663,296 and
 /// 134,217,728 optimized; a source that checks clean needs between
 /// 33,554,432 and 37,748,736 unoptimized, and between 16,777,216 and
 /// 25,165,824 optimized. 67,108,864 is under the source's demand by a
 /// factor of 2.0 unoptimized and 1.5 optimized, and over what the clean
 /// source needs by 1.8 unoptimized and 2.7 optimized.
+/// On Windows, the parser's recursion fails a stack commit at limits
+/// from 33,554,432 through 805,306,368 bytes for the same source.
+/// A clean source completes at 16,777,216 bytes.
 const BUDGET_HEAP_BYTES: u64 = 67_108_864;
 
 /// The heap a replaced memory budget holds for the firing control.
 ///
-/// 1,073,741,824 is over the source's measured demand by a factor of 7
-/// or more in each build, so a control that completes reports the heap
-/// term above, and not the reservation, as what stopped the run under
-/// test.
+/// Linux demand is below this heap by a factor of at least seven.
+/// On Windows, the same source completes at 872,415,232 bytes, below
+/// this heap.
 const CONTROL_HEAP_BYTES: u64 = 1_073_741_824;
-
-/// The replaced memory budget that holds `heap_bytes` over the compile
-/// thread's stack reservation (§109.2 rule 6).
-fn replaced_memory_budget(heap_bytes: u64) -> String {
-    let reservation = subscript_compiler::COMPILE_THREAD_STACK_BYTES as u64;
-    (reservation + heap_bytes).to_string()
-}
 
 /// The `gate-skip:` line a heavy part prints when `selected` is false
 /// (§109.6a). `part` names the test and what it omits.
@@ -1345,21 +1338,20 @@ fn largest_child_peak_bytes() -> u64 {
 /// the entry file, and the same source under the default profile keeps
 /// the parser's own outcome with no child.
 ///
-/// The budget is the test-only one: the compile thread's stack
-/// reservation plus a heap under what this source demands. A test that
+/// The test budget is a heap below this source's demand. A test that
 /// waits for the contract's own budget waits for a host that can hold
 /// one (§109.6a).
 ///
 /// 65,476 labels is 130,990 bytes, inside S026's per-file limit of
 /// 131,072, so the compile runs. The firing control is the same source
-/// under a reservation plus a heap over that demand: it reaches the
+/// under a heap over that demand: it reaches the
 /// parser's own diagnostic, so the budget is what stopped the run under
 /// test. The second control is what the process boundary closes: with
 /// no child the parser's outcome reaches the caller.
 ///
-/// The S026 line is not always the first line. Linux and Windows turn
-/// the budget into a failed allocation, so the Rust runtime's own line
-/// passes through ahead of it. The check is therefore that the whole
+/// The S026 line is not always the first line. Linux reports a failed
+/// allocation, and Windows reports a failed stack commit. The runtime's
+/// line passes through ahead of it. The check is that the whole
 /// output holds one S026 and that it is this one.
 #[test]
 fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
@@ -1380,7 +1372,7 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
         subscript()
             .env(
                 subscript_cli::COMPILE_MEMORY_BUDGET_VARIABLE,
-                replaced_memory_budget(BUDGET_HEAP_BYTES),
+                BUDGET_HEAP_BYTES.to_string(),
             )
             .arg("check")
             .arg("--profile")
@@ -1406,21 +1398,23 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
 
     // The two facts are derived apart: the line above is the parent's
     // classification, and this one is the child runtime's own record of
-    // the allocation the budget refused.
-    #[cfg(any(target_os = "linux", windows))]
+    // the operation the budget refused.
+    #[cfg(target_os = "linux")]
     assert!(
         rendered.contains("memory allocation of"),
         "the child's failed allocation passes through: {rendered}"
     );
 
-    // macOS refuses `RLIMIT_AS`, so the parent holds the budget by its
-    // poll. That poll reads the budget less the compile thread's stack
-    // reservation, because the reservation is never resident
-    // (§109.2 rule 6), and the budget above is the reservation plus
-    // `BUDGET_HEAP_BYTES`. The kernel's own figure for the child that
-    // just ended must then stay under that heap term plus one poll's
-    // growth. The reading comes before the controls below, which run
-    // with more budget.
+    #[cfg(windows)]
+    assert!(
+        rendered.contains("has overflowed its stack"),
+        "the child's failed stack commit passes through: {rendered}"
+    );
+    println!("the budgeted child's S026: {}", reported[0]);
+
+    // macOS compares resident bytes with the heap. The kernel's peak
+    // must stay below that heap plus one poll's growth (§109.2 rule 6).
+    // Read the peak before the controls, which use more memory.
     #[cfg(target_os = "macos")]
     {
         let peak = largest_child_peak_bytes();
@@ -1443,7 +1437,7 @@ fn a_compile_over_the_memory_budget_reports_one_s026() -> Result<(), String> {
         subscript()
             .env(
                 subscript_cli::COMPILE_MEMORY_BUDGET_VARIABLE,
-                replaced_memory_budget(CONTROL_HEAP_BYTES),
+                CONTROL_HEAP_BYTES.to_string(),
             )
             .arg("check")
             .arg("--profile")
@@ -1779,6 +1773,7 @@ int main(void) { return 0; }
 ///
 /// No assertion reads this interval (§102.1). It sets how often the
 /// wait asks the host a question, not how long the wait runs.
+#[cfg(unix)]
 const GROUP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// The compile child's process group id, as the parent recorded it
