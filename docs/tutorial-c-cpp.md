@@ -892,7 +892,8 @@ rules govern the round trip:
   form (`W003`), and a host-set threshold
   (`subscript_rt_ctx_set_binding_count_advisory`) reports real binding
   growth through the diagnostics observer for the per-frame form only
-  the host's loop can produce.
+  the host's loop can produce. A request needs fresh userdata each
+  time, and the section "One-shot requests" below is the form for it.
 - **Explicit `Context.free` of registered userdata is the remaining
   hazard, and it is caught twice.** At fire time, the trampoline
   refuses to enter script with dead userdata — a
@@ -909,6 +910,94 @@ rules govern the round trip:
 The callback is how the host reaches script code that is *not* an
 export — a lambda the script registered. An export is the other
 direction, and it now carries parameters (Step 5).
+
+#### One-shot requests: a registration that the host ends
+
+The rules above fit a listener that lives as long as the Context. They
+do not fit a request. A callback does not capture (C5), so the state
+of one request travels in userdata. A host that starts N requests
+therefore registers N distinct userdata objects, and each one stays
+rooted until the Context ends.
+
+For that shape, select the explicit lifetime for the callback-info
+struct when you generate the mirror
+(`specs/blocks/compiler.md` §111):
+`subscript bind --header engine.h --explicit-callback-lifetime EngineRequestInfo -o engine.d.ts`.
+The option can repeat. The script does not change: it fills the same
+struct and passes it to your function. Each crossing of a selected
+struct now creates one registration, and the host ends it:
+
+```c
+/* Read the Context of a registration. Call it at the crossing, or
+ * inside a fire. */
+subscript_rt_context* subscript_rt_cb_registration_context(void* registration);
+
+/* End a registration. Returns 1 for an open registration of ctx.
+ * Returns 0 for every other pointer, and changes nothing. */
+int32_t subscript_rt_ctx_callback_release(subscript_rt_context* ctx, void* registration);
+```
+
+Your function receives the registration where it receives a binding
+today: in the first userdata field. The callback field holds the
+function pointer to fire, and you pass both back unchanged. This sketch
+shows a one-shot adapter. The names are not from the example engine.
+
+```c
+int32_t engineRequestStart(EngineWorld world, uint32_t what, EngineRequestInfo info) {
+    EngineRequest *request = engineRequestAlloc(world);
+    request->callback = info.engineCallback;
+    request->registration = info.engineUserdata1;
+    /* A script-called function receives no Context. The registration
+     * answers, and it is certainly live here. */
+    request->ctx = subscript_rt_cb_registration_context(info.engineUserdata1);
+    return engineNativeStart(world, what, request);
+}
+
+/* On the Context's thread, when the native side completes. */
+static void engineRequestComplete(EngineRequest *request, EngineStringView result) {
+    request->callback(result, request->registration, NULL);
+    /* The last fire returned, and the native side holds the request no
+     * more. No later fire can occur, so end the registration. */
+    subscript_rt_ctx_callback_release(request->ctx, request->registration);
+    engineRequestFree(request);
+}
+```
+
+The release is a statement that you make: you start no more calls
+through this registration. It cancels no native work and unregisters
+nothing. Do those first. Five rules follow from that.
+
+- **Release one time, when no later fire can occur.** For a one-shot,
+  that is after the last callback returns. A start function that
+  completes before it returns uses the same path. If a start fails
+  after the crossing, the registration exists: release it.
+- **A request to cancel is not the end.** For a subscription, ask the
+  native side to remove it, wait until no queued notification can still
+  fire, and release then. If the removal ends later, hold the
+  registration until the native side confirms it.
+- **A release from inside the callback is legal.** The runtime keeps
+  the record and its userdata until the last active call returns.
+- **A fire after the release is your defect, and the runtime reports
+  it.** The fire enters no script code and records the trap
+  `callback-registration-ended`. The trap is certain while a call still
+  runs through that registration. After the registration ends it is
+  best-effort: the runtime keeps no record of ended registrations, so
+  do not rely on it after the address is used again. The same holds for
+  a second release of an old pointer.
+- **The release removes a root and nothing else.** It does not collect
+  and it does not free the userdata. A script reference keeps the
+  object. If nothing reaches it, the next `Context.collect()` reclaims
+  it, so a host that paces collection (Step 11) sees the memory of
+  completed requests return.
+
+Stop every notification source and release every registration before
+you destroy the Context. The destruction frees the records and runs no
+callback. For the whole pattern from the script side, read
+[`a247-registration-one-shot-paths.ts`](../corpus/accept/a247-registration-one-shot-paths.ts)
+and
+[`a249-registration-chained-one-shots.ts`](../corpus/accept/a249-registration-chained-one-shots.ts);
+the adapter they run against is
+[`corpus/interop/interop.c`](../corpus/interop/interop.c).
 
 ### Step 8 — a frame loop: exports beyond `main`
 
