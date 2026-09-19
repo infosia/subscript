@@ -14,10 +14,6 @@
 //! test: the gate machine is the development machine (§8.3).
 
 mod corpus;
-// The fixture is excluded on windows-msvc (compiler.md §11c), and no interop
-// corpus entry is compiled or run there, so this module and its symbols are
-// gated out under the same predicate.
-#[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 #[path = "support/pool.rs"]
@@ -33,7 +29,6 @@ use subscript_codegen::{
     run_c_aot_with_native_libraries_and_host_hooks, run_jit_configured,
     run_jit_with_native_libraries, NativeLibrary, RunConfig, RunError,
 };
-#[cfg(not(all(windows, target_env = "msvc")))]
 use subscript_codegen::{EntryArg, ReloadSession};
 use subscript_compiler::Profile;
 
@@ -114,12 +109,11 @@ fn run_dev_corpus_entry(
         )?
         .stdout);
     }
-    #[cfg(all(windows, target_env = "msvc"))]
-    let _ = id;
-    #[cfg(not(all(windows, target_env = "msvc")))]
     if id == HOST_OWNED_STATE_ID {
+        let fixture =
+            native_fixture::fixture().expect("the caller excludes unavailable fixture entries");
         let mut session = ReloadSession::new_with_native_libraries(sources, libraries)?;
-        native_fixture::host_owned_state_pre_entry();
+        fixture.host_owned_state_pre_entry();
         let run = (|| {
             session.call_main()?;
             session.call_export("secondEntry")?;
@@ -128,23 +122,23 @@ fn run_dev_corpus_entry(
             }
             Ok(session.take_output())
         })();
-        native_fixture::host_owned_state_post_run();
+        fixture.host_owned_state_post_run();
         return run;
     }
-    #[cfg(not(all(windows, target_env = "msvc")))]
     if id == HANDLE_ENTRY_PARAM_ID {
+        let fixture =
+            native_fixture::fixture().expect("the caller excludes unavailable fixture entries");
         let mut session = ReloadSession::new_with_native_libraries(sources, libraries)?;
-        native_fixture::host_owned_state_pre_entry();
+        fixture.host_owned_state_pre_entry();
         let run = (|| {
-            let state = native_fixture::host_owned_state_borrow_and_advance();
+            let state = fixture.host_owned_state_borrow_and_advance();
             session.call_export_with("adopt", &[EntryArg::Handle(state), EntryArg::I32(7)])?;
             session.call_main()?;
             Ok(session.take_output())
         })();
-        native_fixture::host_owned_state_post_run();
+        fixture.host_owned_state_post_run();
         return run;
     }
-    #[cfg(not(all(windows, target_env = "msvc")))]
     if id == WIRE_ENTRY_PARAM_ID {
         let mut session = ReloadSession::new_with_native_libraries(sources, libraries)?;
         session.call_export_with("configure", &[EntryArg::I32(23), EntryArg::I32(5)])?;
@@ -277,29 +271,13 @@ fn r31_using_disposal_matches_the_goldens_across_tiers() {
     }
 }
 
-#[cfg(not(all(windows, target_env = "msvc")))]
 fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<NativeLibrary>> {
     if sources.iter().any(|source| {
         corpus::references_interop(&source.source)
             || source.source.contains("SubWireMode")
             || source.source.contains("SubBindTone")
     }) {
-        Some(vec![native_fixture::library()])
-    } else {
-        Some(Vec::new())
-    }
-}
-
-// On windows-msvc the interop fixture is excluded, so entries that reference
-// it cannot run in this configuration.
-#[cfg(all(windows, target_env = "msvc"))]
-fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<NativeLibrary>> {
-    if sources.iter().any(|source| {
-        corpus::references_interop(&source.source)
-            || source.source.contains("SubWireMode")
-            || source.source.contains("SubBindTone")
-    }) {
-        None
+        Some(vec![native_fixture::fixture()?.library()])
     } else {
         Some(Vec::new())
     }

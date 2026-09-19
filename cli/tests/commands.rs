@@ -1769,13 +1769,6 @@ int main(void) { return 0; }
     )
 }
 
-/// How long the group poll sleeps between two asks of the host.
-///
-/// No assertion reads this interval (§102.1). It sets how often the
-/// wait asks the host a question, not how long the wait runs.
-#[cfg(unix)]
-const GROUP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
-
 /// The compile child's process group id, as the parent recorded it
 /// (§109.2 rule 6).
 fn recorded_compile_group(group_file: &Path) -> Result<i32, String> {
@@ -1817,6 +1810,12 @@ fn recorded_compile_group(group_file: &Path) -> Result<i32, String> {
 /// error. Each error names what the wait wanted and what it received.
 #[cfg(unix)]
 fn wait_for_the_compile_group_to_end(group_file: &Path) -> Result<std::time::Duration, String> {
+    /// How long the group poll sleeps between two asks of the host.
+    ///
+    /// No assertion reads this interval (§102.1). It sets how often the
+    /// wait asks the host a question, not how long the wait runs.
+    const GROUP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
+
     let group = recorded_compile_group(group_file)?;
     let started = std::time::Instant::now();
     loop {

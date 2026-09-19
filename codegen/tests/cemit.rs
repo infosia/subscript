@@ -10,16 +10,12 @@
 //! byte-equality is the real invariant, so these need no committed
 //! golden.
 
-#[path = "support/trap_corpus.rs"]
-mod trap_corpus;
-// The fixture is excluded on windows-msvc (compiler.md §11c), and the two
-// interop trap probes are not run there, so this module and its symbols are
-// gated out under the same predicate.
-#[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 #[path = "support/pool.rs"]
 mod pool;
+#[path = "support/trap_corpus.rs"]
+mod trap_corpus;
 
 use subscript_codegen::{interpreter::interpret, lir::lower_module};
 use subscript_codegen::{
@@ -678,6 +674,21 @@ struct TrapCaseOutcome {
     failures: Vec<String>,
 }
 
+fn trap_native_libraries(files: &[SourceFile]) -> Option<Vec<subscript_codegen::NativeLibrary>> {
+    match native_fixture::fixture() {
+        Some(fixture) => Some(vec![fixture.library()]),
+        None if files.iter().any(|source| {
+            source.source.contains("subDevice")
+                || source.source.contains("subWireMode")
+                || source.source.contains("subBindTone")
+        }) =>
+        {
+            None
+        }
+        None => Some(Vec::new()),
+    }
+}
+
 /// Runs one trap entry on both tiers and compares kind, message,
 /// position, and pre-trap stdout. The caller prints and asserts.
 fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
@@ -714,11 +725,9 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
                 || callback_userdata_diagnostic),
         "{id}: a profile trap entry needs the profile in its own runner branch"
     );
+    let libraries =
+        trap_native_libraries(files).expect("the sweep excludes unavailable fixture entries");
     let (jit, ship) = if id.as_str() == "t50-wire-entry-unknown-value" {
-        #[cfg(not(all(windows, target_env = "msvc")))]
-        let libraries = [native_fixture::library()];
-        #[cfg(all(windows, target_env = "msvc"))]
-        let libraries: [subscript_codegen::NativeLibrary; 0] = [];
         (
             trap_corpus::run_wire_entry_unknown_dev(files, &libraries),
             trap_corpus::run_wire_entry_unknown_ship(files, &libraries),
@@ -734,21 +743,11 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
             run_c_aot(files),
         )
     } else if callback_userdata_diagnostic {
-        #[cfg(not(all(windows, target_env = "msvc")))]
-        let libraries = [native_fixture::library()];
-        #[cfg(all(windows, target_env = "msvc"))]
-        let libraries: [subscript_codegen::NativeLibrary; 0] = [];
         (
             run_jit_with_freed_handle_diagnostics_and_native_libraries(files, &libraries),
             run_c_aot_with_freed_handle_diagnostics_and_native_libraries(files, &libraries),
         )
     } else {
-        #[cfg(not(all(windows, target_env = "msvc")))]
-        let libraries = [native_fixture::library()];
-        // No interop trap runs on windows-msvc, so the remaining entries
-        // need no native library.
-        #[cfg(all(windows, target_env = "msvc"))]
-        let libraries: [subscript_codegen::NativeLibrary; 0] = [];
         // §109.1 rule 3: the entry's header profile reaches both runners.
         let config = RunConfig::with_profile(case.profile).with_native_libraries(&libraries);
         (
@@ -884,15 +883,7 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
             continue;
         }
         let files = trap_corpus::trap_sources(&trap, &id);
-        // On windows-msvc the interop fixture is excluded, so the two
-        // narrowing probes (t20/t21) that make real foreign calls cannot run
-        // there (compiler.md §11c). Every non-interop trap still runs.
-        #[cfg(all(windows, target_env = "msvc"))]
-        if files.iter().any(|source| {
-            source.source.contains("subDevice")
-                || source.source.contains("subWireMode")
-                || source.source.contains("subBindTone")
-        }) {
+        if trap_native_libraries(&files).is_none() {
             continue;
         }
         let expected = trap_corpus::trap_expected(&trap, &id);

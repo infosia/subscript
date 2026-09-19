@@ -9,16 +9,14 @@
 //! revision and JIT stdout live in `corpus/trap`, while this test derives
 //! the body-only replacement that makes the saved coroutine stale.
 
+// This target uses only part of the shared corpus helpers.
 #[allow(dead_code)]
 mod corpus;
-// The fixture is excluded on windows-msvc (compiler.md §11c), and no interop
-// corpus entry is run there, so this module and its symbols are gated out
-// under the same predicate.
-#[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 #[path = "support/pool.rs"]
 mod pool;
+// This target uses only part of the shared trap helpers.
 #[allow(dead_code)]
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
@@ -623,14 +621,13 @@ fn run_reload_entry(entry: &ReloadEntry) -> Vec<String> {
     let uses_fixture = sources
         .iter()
         .any(|source| corpus::references_interop(&source.source));
-    #[cfg(not(all(windows, target_env = "msvc")))]
-    let libraries = uses_fixture
-        .then(native_fixture::library)
-        .into_iter()
-        .collect::<Vec<_>>();
-    #[cfg(all(windows, target_env = "msvc"))]
-    let libraries: Vec<subscript_codegen::NativeLibrary> = {
-        let _ = uses_fixture;
+    let fixture = native_fixture::fixture();
+    let libraries = if uses_fixture {
+        vec![fixture
+            .as_ref()
+            .expect("the sweep excludes unavailable fixture entries")
+            .library()]
+    } else {
         Vec::new()
     };
     let mut session = match ReloadSession::new_with_native_libraries(sources, &libraries) {
@@ -650,26 +647,27 @@ fn run_reload_entry(entry: &ReloadEntry) -> Vec<String> {
             return failures;
         }
     };
-    #[cfg(not(all(windows, target_env = "msvc")))]
     let host_owned_state = matches!(
         id.as_str(),
         "a128-host-owned-state" | "a137-handle-entry-param"
     );
-    #[cfg(not(all(windows, target_env = "msvc")))]
     if host_owned_state {
-        native_fixture::host_owned_state_pre_entry();
+        fixture
+            .as_ref()
+            .expect("host state needs the fixture")
+            .host_owned_state_pre_entry();
     }
-    #[cfg(not(all(windows, target_env = "msvc")))]
     let parameter_entry = if id.as_str() == "a137-handle-entry-param" {
-        let state = native_fixture::host_owned_state_borrow_and_advance();
+        let state = fixture
+            .as_ref()
+            .expect("host state needs the fixture")
+            .host_owned_state_borrow_and_advance();
         session.call_export_with("adopt", &[EntryArg::Handle(state), EntryArg::I32(7)])
     } else if id.as_str() == "a140-wire-entry-param" {
         session.call_export_with("configure", &[EntryArg::I32(23), EntryArg::I32(5)])
     } else {
         Ok(())
     };
-    #[cfg(all(windows, target_env = "msvc"))]
-    let parameter_entry = Ok(());
     let run = parameter_entry
         .and_then(|()| session.call_main())
         .and_then(|()| {
@@ -683,9 +681,11 @@ fn run_reload_entry(entry: &ReloadEntry) -> Vec<String> {
             }
             Ok(())
         });
-    #[cfg(not(all(windows, target_env = "msvc")))]
     if host_owned_state {
-        native_fixture::host_owned_state_post_run();
+        fixture
+            .as_ref()
+            .expect("host state needs the fixture")
+            .host_owned_state_post_run();
     }
     match run {
         Ok(()) => {
@@ -721,10 +721,10 @@ fn reload_mode_reproduces_every_committed_golden() {
         let sources = corpus::entry_sources(&accept, id);
         // On windows-msvc the interop fixture is excluded, so interop entries
         // are not run there; every other golden still is.
-        #[cfg(all(windows, target_env = "msvc"))]
-        if sources
-            .iter()
-            .any(|source| corpus::references_interop(&source.source))
+        if native_fixture::fixture().is_none()
+            && sources
+                .iter()
+                .any(|source| corpus::references_interop(&source.source))
         {
             continue;
         }
@@ -734,13 +734,10 @@ fn reload_mode_reproduces_every_committed_golden() {
             golden: corpus::golden_bytes(&accept, id),
             sources,
         };
-        #[cfg(not(all(windows, target_env = "msvc")))]
         let host_owned_state = matches!(
             id.as_str(),
             "a128-host-owned-state" | "a137-handle-entry-param"
         );
-        #[cfg(all(windows, target_env = "msvc"))]
-        let host_owned_state = false;
         if host_owned_state {
             hooked.push(entry);
         } else {
@@ -775,7 +772,6 @@ fn reload_mode_reproduces_every_committed_golden() {
 
 /// The registering half and the firing half of the reload case, with the
 /// callback body the only difference between the two generations.
-#[cfg(not(all(windows, target_env = "msvc")))]
 fn registration_reload_source(generation: &str) -> String {
     format!(
         "\
@@ -813,7 +809,6 @@ export function fire(): void {{
 }
 
 /// The mirror plus one live source, for a session that calls the fixture.
-#[cfg(not(all(windows, target_env = "msvc")))]
 fn interop_files(text: &str) -> Vec<SourceFile> {
     let mirror = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../corpus/interop/interop.generated.d.ts");
@@ -830,10 +825,13 @@ fn interop_files(text: &str) -> Vec<SourceFile> {
 /// Cost: one reload session with the native fixture, two generations,
 /// four entry calls. Measured at 0.05 s on this host in the debug
 /// profile, which is the session build cost, not the fire.
-#[cfg(not(all(windows, target_env = "msvc")))]
 #[test]
 fn a_registration_open_across_a_reload_calls_the_code_it_was_created_with() {
-    let libraries = [native_fixture::library()];
+    let Some(fixture) = native_fixture::fixture() else {
+        println!("a_registration_open_across_a_reload_calls_the_code_it_was_created_with: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
+    let libraries = [fixture.library()];
     let mut session = ReloadSession::new_with_native_libraries(
         &interop_files(&registration_reload_source("v1")),
         &libraries,

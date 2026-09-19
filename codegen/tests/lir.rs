@@ -1,14 +1,15 @@
 //! §68 step 1: every accepted corpus program lowers to verified LIR.
 
+// This target uses only part of the shared corpus helpers.
 #[allow(dead_code)]
 mod corpus;
 #[path = "support/lir_facts.rs"]
 mod lir_facts;
-#[cfg(not(all(windows, target_env = "msvc")))]
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 #[path = "support/pool.rs"]
 mod pool;
+// This target uses only part of the shared trap helpers.
 #[cfg(debug_assertions)]
 #[allow(dead_code)]
 #[path = "support/trap_corpus.rs"]
@@ -16,7 +17,6 @@ mod trap_corpus;
 
 use subscript_codegen::interpreter::{interpret, interpret_configured};
 use subscript_codegen::lir::{lower_module, verify_module};
-#[cfg(not(all(windows, target_env = "msvc")))]
 use subscript_codegen::run_jit_with_memory_accounting_and_native_libraries;
 use subscript_codegen::RunConfig;
 use subscript_codegen::{run_jit, run_jit_with_memory_accounting};
@@ -853,18 +853,18 @@ fn counted_store_corpus_matches_the_interpreter() {
     }
 }
 
-#[cfg(not(all(windows, target_env = "msvc")))]
 #[test]
 fn a163_accounts_for_nullable_boundary_boxes() {
+    let Some(fixture) = native_fixture::fixture() else {
+        println!("a163_accounts_for_nullable_boundary_boxes: skipped: interop fixture excluded here (compiler.md §11c)");
+        return;
+    };
     let accept = corpus::corpus_accept();
     let id = "a163-address-taken-activation";
     let sources = corpus::entry_sources(&accept, id);
-    let (output, accounting) = run_jit_with_memory_accounting_and_native_libraries(
-        &sources,
-        &[native_fixture::library()],
-        false,
-    )
-    .unwrap_or_else(|error| panic!("{id}: dev JIT failed: {error}"));
+    let (output, accounting) =
+        run_jit_with_memory_accounting_and_native_libraries(&sources, &[fixture.library()], false)
+            .unwrap_or_else(|error| panic!("{id}: dev JIT failed: {error}"));
     assert_eq!(output, corpus::golden_bytes(&accept, id), "{id}");
     assert_eq!(accounting.live_bytes, 2977, "{id}");
     eprintln!(

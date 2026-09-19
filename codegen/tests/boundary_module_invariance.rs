@@ -66,11 +66,12 @@ fn files(padding: usize) -> [SourceFile; 2] {
 
 #[test]
 fn two_pointer_descriptor_output_is_invariant_under_uncalled_function_padding() {
+    let fixture = native_fixture::fixture().expect("this target requires the fixture");
     let mut reference: Option<Vec<u8>> = None;
     for padding in PADDING_COUNTS {
-        let jit = run_jit_with_native_libraries(&files(padding), &[native_fixture::library()])
+        let jit = run_jit_with_native_libraries(&files(padding), &[fixture.library()])
             .unwrap_or_else(|error| panic!("N={padding} dev-JIT run failed: {error}"));
-        let ship = run_c_aot_with_native_libraries(&files(padding), &[native_fixture::library()])
+        let ship = run_c_aot_with_native_libraries(&files(padding), &[fixture.library()])
             .unwrap_or_else(|error| panic!("N={padding} ship-C-AOT run failed: {error}"));
         assert_eq!(jit, EXPECTED, "N={padding} boundary observations are wrong");
         assert_eq!(ship, jit, "N={padding} tier outputs differ");

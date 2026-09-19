@@ -44,7 +44,9 @@ fn both_tiers(program: &str) -> Vec<u8> {
             SourceFile::new("prog.ts", program),
         ]
     };
-    let libraries = [native_fixture::library()];
+    let libraries = [native_fixture::fixture()
+        .expect("this target requires the fixture")
+        .library()];
     let jit = run_jit_with_native_libraries(&files(), &libraries)
         .unwrap_or_else(|e| panic!("dev-JIT run failed: {e}"));
     let ship = run_c_aot_with_native_libraries(&files(), &libraries)
@@ -278,7 +280,9 @@ fn callback_userdata_fire_check_traps_identically_on_both_tiers() {
             ),
         ]
     };
-    let libraries = [native_fixture::library()];
+    let libraries = [native_fixture::fixture()
+        .expect("this target requires the fixture")
+        .library()];
     let jit = run_jit_with_freed_handle_diagnostics_and_native_libraries(&files(), &libraries);
     let ship = run_c_aot_with_freed_handle_diagnostics_and_native_libraries(&files(), &libraries);
 
