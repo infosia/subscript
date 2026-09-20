@@ -1687,3 +1687,39 @@ host measured debug 1670/0/2 and release 1666/0/2 at `e490079` with the
 §111 implementation in the tree, before the fixture migration, so the
 passed counts are equal on this host too. The two unix hosts agree on
 every count of the verdict.
+
+### The Windows runs at `ccfc4f1` and `082657b`
+
+The x86_64-pc-windows-msvc host ran the full gate at `ccfc4f1`, with a
+clean tree. That commit holds §111, §112, and the fixture migration.
+
+```text
+gate full ccfc4f1c1f062a5137c43845b7b4579d4500ef22 clean debug 1647/0/2 release 1643/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 4, build 28, debug 306, release 400, clippy 8,
+tsc 1, hygiene 1.
+
+The same host ran the full gate at `082657b`, with a clean tree. That
+commit holds the §85 rule 5 correction of the moved-golden list.
+
+```text
+gate full 082657b96c483fdff8023280dafab4c3f3d68f98 clean debug 1647/0/2 release 1643/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 2, build 11, debug 266, release 383, clippy 3,
+tsc 1, hygiene 1.
+
+The two skips of each run are the `perf_gate` line and the
+`a22-matrix-propagation` line of the debug profile. The passed counts
+are equal at the two commits, because `082657b` moves one test between
+files and replaces one case of `cli/tests/gate.rs`.
+
+The unix hosts measure debug 1677 and release 1673 for the same tree
+(`specs/tracking/s112-position-id-zero.md`, "Gates"). This host
+measures 30 fewer in each profile. The difference was 30 before §111
+and §112 also: debug 1670 on the unix hosts at `afd51d7`, and debug
+1640 on this host at `1167016`. §111 and §112 therefore add the same
+number of tests to the count on each host. A test that returns early
+at the fixture exclusion counts as passed, so the count does not show
+which tests ran the fixture side.

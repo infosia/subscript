@@ -151,7 +151,9 @@ gate full 661d3b584a9fd70793c6319295c03a335bdac5de dirty:33 debug 1677/0/2 relea
 
 The `dirty` paths are this section's implementation, which the gate ran
 before the commit. The x86-64 Linux host and the Windows host did not
-run this section.
+run this section. The Windows host ran it afterwards
+(`specs/tracking/windows-portability.md`, "The Windows runs at
+`ccfc4f1` and `082657b`").
 
 `tools/gate.sh full` with this round in the tree, before its commit:
 
