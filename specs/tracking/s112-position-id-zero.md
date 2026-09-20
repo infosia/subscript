@@ -181,4 +181,7 @@ tsc 2, hygiene 0. The same host measured debug 1373 s at `afd51d7`,
 where the debug step passed 1670 tests. The range adds 7 tests and
 34 s.
 
-The Windows host did not run this range.
+The Windows host ran the full gate at `ccfc4f1` and at `082657b`, with
+a clean tree each time (`specs/tracking/windows-portability.md`, "The
+Windows runs at `ccfc4f1` and `082657b`"). It measures debug 1647/0/2
+and release 1643/0/2 at each commit.
