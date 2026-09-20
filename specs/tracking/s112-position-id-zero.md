@@ -158,3 +158,25 @@ run this section.
 ```text
 gate full 38a9b9b4396d681d42ea656031fc21dcf370ff5b dirty:5 debug 1677/0/2 release 1673/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
 ```
+
+### The owed unix run: x86_64-unknown-linux-gnu
+
+The unix reference host ran the full gate at `082657b`, the tip of this
+work, with a clean tree:
+
+```text
+gate full 082657b96c483fdff8023280dafab4c3f3d68f98 clean debug 1677/0/2 release 1673/0/2 skips 2/0 debug-only 2 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+One run covers four sections, because each one landed inside this
+range: §112, §111 (`specs/tracking/s111-callback-registration.md`), the
+example e12, and the moved-golden list of §85. The counts equal the
+counts that the arm64 macOS host measured at `661d3b5` and at
+`38a9b9b`, so no test of this range excludes itself on unix.
+
+Step wall seconds: fmt 2, build 49, debug 1407, release 711, clippy 15,
+tsc 2, hygiene 0. The same host measured debug 1373 s at `afd51d7`,
+where the debug step passed 1670 tests. The range adds 7 tests and
+34 s.
+
+The Windows host did not run this range.

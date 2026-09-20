@@ -155,7 +155,9 @@ gate full e490079cbd2bde2c83861ec8d88e655db40084e3 dirty:69 debug 1670/0/2 relea
 
 The `dirty` paths are this section's implementation, which the gate ran
 before the commit. The moved golden is the LIR snapshot above. The
-x86-64 Linux host and the Windows host did not run this section.
+x86-64 Linux host and the Windows host did not run this section. The
+unix host ran the full gate at `082657b`, which holds this section; the
+record is in `specs/tracking/s112-position-id-zero.md`.
 
 ## The teaching example, e12 (2026-09-20)
 
