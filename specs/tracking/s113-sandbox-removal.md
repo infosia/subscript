@@ -105,9 +105,29 @@ the 86 `Sandbox` intrinsic lines, the two renamed `foreign` lines in
 each of four entries, and the column of the parameters on those
 mirror lines. `tools/hygiene.sh` is clean.
 
+## The Windows gate after the landing
+
+The x86_64-pc-windows-msvc host ran the full gate at `c3e8498`, with a
+clean tree. The build step shows no warning.
+
+```text
+gate full c3e8498436ccecc192c17d2916fdf64e62d12b39 clean debug 1518/0/2 release 1515/0/2 skips 2/0 debug-only 0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 2, build 0, debug 211, release 400, clippy 25,
+tsc 0, hygiene 1. A `cargo build` before the gate filled the cache, so
+the build step measures no compile.
+
+The two skips are the `perf_gate` line and the
+`a22-matrix-propagation` line of the debug profile. This host measures
+27 fewer passed tests than the arm64 host in each profile (1,545 and
+1,542). The difference was 30 at `082657b`
+(`specs/tracking/windows-portability.md`). The cause of the change
+from 30 to 27 is not measured.
+
 ## Open
 
-- The Linux and Windows gate runs after the landing (§113.5
-  criterion 4). The `cfg` arms that went are in
+- The Linux gate run after the landing (§113.5 criterion 4). The
+  Windows run is above. The `cfg` arms that went are in
   `cli/src/compile_child.rs` and `cli/tests/commands.rs`; the review
   read `codegen/src/jit/entry.rs` and eight more files by eye.
