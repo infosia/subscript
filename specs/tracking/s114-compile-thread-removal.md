@@ -2,8 +2,8 @@
 
 Contract: `specs/blocks/compiler/s114-the-compile-thread-is-removed.md`.
 Status: **landed 2026-09-21** (contract `0f8221a`, implementation
-`e242ec9`). The Phase Review is closed, and the Linux and arm64 macOS
-hosts ran the full gate. The Windows gate is open.
+`e242ec9`). The Phase Review is closed, and the Linux, arm64 macOS,
+and Windows hosts ran the full gate.
 
 Origin: the x86_64-unknown-linux-gnu full gate at `c72da05`. That run
 is in `specs/tracking/linux-portability.md`, under the 2026-09-21 full
@@ -285,8 +285,45 @@ overflowed its stack`. The unoptimized figures are equal to the Linux
 figures. The Linux optimized row bounds the need under 524,288 bytes,
 and this finer step does not contradict it.
 
+## The Windows full gate at `e3b9819`
+
+The x86_64-pc-windows-msvc host ran the full gate with a clean tree.
+The build step shows no warning.
+
+```text
+gate full e3b9819e7745f8d881e2fbb09385efd95a00130e clean debug 1512/0/2 release 1509/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Record: `target/gate/20260921T112339Z-full.md`. Step wall seconds: fmt
+2, build 19, debug 179, release 396, clippy 6, tsc 1, hygiene 1. The
+two debug skips are the `perf_gate` line and the
+`a22-matrix-propagation` line.
+
+Test counts fall by 6 in each profile from the Windows gate at
+`c3e8498`: 1,518 to 1,512 in debug and 1,515 to 1,509 in release. That
+is the fall the Linux host measures. This host measures 27 fewer
+passed tests than the Linux and arm64 macOS hosts in each profile, as
+at `c3e8498` (`specs/tracking/s113-sandbox-removal.md`).
+
+The margin of the two `compiler/tests/nesting.rs` tests over the
+2,097,152-byte libtest stack, by the method of MAJOR 2, in steps of
+32,768 bytes:
+
+| Build | Stack the pair needs | Margin |
+|---|---|---|
+| unoptimized | over 917,504 and under 950,272 bytes | 2.2 |
+| optimized | over 327,680 and under 360,448 bytes | 5.8 |
+
+Below each lower figure the binary prints `thread
+'a_two_hundred_deep_negation_chain_checks_in_linear_time' … has
+overflowed its stack` and exits 127. The unoptimized figures are equal
+to the figures of the two other hosts. The optimized need is 65,536
+bytes over the arm64 macOS figure, and it is inside the Linux bound of
+524,288 bytes.
+
+The three gate hosts ran the full gate after the landing, and each one
+measured the margin, so §114.5 criterion 5 is discharged.
+
 ## Open
 
-- The Windows full gate after the landing (§114.5 criterion 5). The
-  host must measure the margin of the two `compiler/tests/nesting.rs`
-  tests over the 2,097,152-byte libtest stack.
+Nothing is open.
