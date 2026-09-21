@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use subscript_compiler::{check_program, on_the_compile_thread, SourceFile};
+use subscript_compiler::{check_program, SourceFile};
 
 const SAMPLES: usize = 12;
 const PUNCTUATION: &[u8] = b"{}[]();,:=!?";
@@ -91,7 +91,7 @@ fn corpus_mutations_do_not_panic() {
                 );
                 files.last_mut().expect("mutation source").source = mutation;
                 total += 1;
-                let checked = || on_the_compile_thread(|| check_program(&files));
+                let checked = || check_program(&files);
                 if panic::catch_unwind(AssertUnwindSafe(checked)).is_err() {
                     caught += 1;
                 }

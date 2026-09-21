@@ -86,28 +86,24 @@ fn stem_of(name: &str) -> String {
 /// returned. Import-like text in comments and string literals is not an
 /// import.
 ///
-/// `specs/blocks/compiler.md` §113.2 rule 1: every public entry that
-/// parses runs on the compile thread, so the depth this parse can reach
-/// is the compiler's fact and not the caller's thread. A caller already
-/// on that thread runs inline.
+/// The parse runs on the thread that calls it
+/// (`specs/blocks/compiler.md` §114.2 rule 1).
 ///
 /// # Errors
 ///
 /// Returns parser or ambient-provenance diagnostics for an invalid source.
 pub fn parse_import_specifiers(source: &SourceFile) -> Result<Vec<String>, Vec<Diagnostic>> {
-    crate::on_the_compile_thread(|| {
-        swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-            let program = parse_program(std::slice::from_ref(source))?;
-            let mut specifiers = Vec::new();
-            for file in program.files {
-                for item in file.module.body {
-                    if let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) = item {
-                        specifiers.push(import.src.value.to_string());
-                    }
+    swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
+        let program = parse_program(std::slice::from_ref(source))?;
+        let mut specifiers = Vec::new();
+        for file in program.files {
+            for item in file.module.body {
+                if let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) = item {
+                    specifiers.push(import.src.value.to_string());
                 }
             }
-            Ok(specifiers)
-        })
+        }
+        Ok(specifiers)
     })
 }
 

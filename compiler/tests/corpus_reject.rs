@@ -5,21 +5,15 @@
 use std::fs;
 use std::path::PathBuf;
 
-use subscript_compiler::{
-    check_program, on_the_compile_thread, render_diagnostics, RuleCode, SourceFile,
-};
+use subscript_compiler::{check_program, render_diagnostics, RuleCode, SourceFile};
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus")
 }
 
 /// Checks one reject entry.
-///
-/// §113.2 rule 1: every caller of the checker wraps the compile, so a
-/// corpus entry's depth is the compile thread's fact, not this test
-/// thread's.
 fn check_entry(files: &[SourceFile]) -> Vec<subscript_compiler::Diagnostic> {
-    on_the_compile_thread(|| check_program(files).err().unwrap_or_default())
+    check_program(files).err().unwrap_or_default()
 }
 
 /// Expected (entry, rule code, 1-based line of the offending construct).
@@ -405,8 +399,7 @@ fn divergence_blocks_match_every_reject_entry_tsc_header() {
             files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
         }
         files.push(SourceFile::new(file, source));
-        let diagnostics =
-            on_the_compile_thread(|| check_program(&files)).expect_err("reject entry must fail");
+        let diagnostics = check_program(&files).expect_err("reject entry must fail");
         let rendered = render_diagnostics(&files, &diagnostics[..1]);
         let has_block = rendered.contains("= TypeScript accepts:");
         if has_block != tsc_accepts {

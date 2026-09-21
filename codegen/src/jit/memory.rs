@@ -143,7 +143,7 @@ mod tests {
     /// The literal holds one mebibyte, so the module's read-only data
     /// is too large for the mapping that holds the code. A module
     /// built with no reservation therefore puts the two items in two
-    /// mappings, and the compile thread's stack lies between them.
+    /// mappings, and nothing bounds the distance between them.
     #[test]
     fn two_items_of_one_module_are_inside_that_modules_reservation() {
         let literal = "a".repeat(1 << 20);

@@ -6,9 +6,7 @@ mod corpus;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use subscript_compiler::{
-    check_program, hir, on_the_compile_thread, ClassId, Pos, SourceFile, Type,
-};
+use subscript_compiler::{check_program, hir, ClassId, Pos, SourceFile, Type};
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
@@ -27,10 +25,7 @@ fn read_ambient(path: &Path, name: &str) -> SourceFile {
 }
 
 fn checked_module(label: &str, files: Vec<SourceFile>) -> hir::Module {
-    // §113.2 rule 1: every caller of the checker wraps the compile, so
-    // a corpus entry's depth is the compile thread's fact, not this test
-    // thread's.
-    on_the_compile_thread(move || check_program(&files)).unwrap_or_else(|diagnostics| {
+    check_program(&files).unwrap_or_else(|diagnostics| {
         panic!(
             "{label} rejected with {} diagnostic(s):\n{}",
             diagnostics.len(),

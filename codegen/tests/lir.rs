@@ -25,20 +25,15 @@ use subscript_compiler::lir::{
 };
 use subscript_compiler::lir_text::print_module;
 use subscript_compiler::Type;
-use subscript_compiler::{check_program, on_the_compile_thread, SourceFile};
+use subscript_compiler::{check_program, SourceFile};
 
 const MARK_TRACE_MODULE_CHILD: &str = "SUBSCRIPT_MARK_TRACE_MODULE_CHILD";
 
 fn lower_entry(accept: &std::path::Path, id: &str) -> Module {
     let sources = corpus::entry_sources(accept, id);
-    // §113.2 rule 1: the check and the lowering both recurse over the
-    // tree, so both run on the compile thread and a corpus entry's depth
-    // is that thread's fact, not this one's.
-    on_the_compile_thread(|| {
-        let hir = check_program(&sources)
-            .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
-        lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"))
-    })
+    let hir = check_program(&sources)
+        .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
+    lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"))
 }
 
 #[test]
@@ -898,15 +893,10 @@ fn every_hir_execution_fact_is_carried_by_lir() {
     let mut findings = Vec::new();
     for id in corpus::entry_ids(&accept) {
         let sources = corpus::entry_sources(&accept, &id);
-        // §113.2 rule 1: the check, the lowering, and the fact walk all
-        // recurse over the tree, so all three run on the compile thread.
-        let dropped = on_the_compile_thread(|| {
-            let hir = check_program(&sources)
-                .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
-            let lir =
-                lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"));
-            lir_facts::dropped_facts(&hir, &lir)
-        });
+        let hir = check_program(&sources)
+            .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
+        let lir = lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"));
+        let dropped = lir_facts::dropped_facts(&hir, &lir);
         findings.extend(
             dropped
                 .into_iter()

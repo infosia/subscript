@@ -115,25 +115,14 @@ pub fn check_program(files: &[SourceFile]) -> Result<hir::Module, Vec<Diagnostic
 
 /// Checks a program with the specified options.
 ///
-/// The work runs on the compile thread (`specs/blocks/compiler.md`
-/// §113.2 rule 1): this function spawns it, so a host that embeds this
-/// crate gets the stack bound from the API and not from a wrapper of its
-/// own. A caller already on that thread runs the work inline.
+/// The work runs on the thread that calls it
+/// (`specs/blocks/compiler.md` §114.2 rule 1).
 ///
 /// # Errors
 ///
 /// Returns the diagnostic list when the program parses with errors or
 /// violates any language rule.
 pub fn check_program_with(
-    files: &[SourceFile],
-    options: &CheckOptions,
-) -> Result<hir::Module, Vec<Diagnostic>> {
-    on_the_compile_thread(|| check_on_this_thread(files, options))
-}
-
-/// Checks a program on the thread that calls it (§113.2 rule 1: the
-/// compile thread).
-fn check_on_this_thread(
     files: &[SourceFile],
     options: &CheckOptions,
 ) -> Result<hir::Module, Vec<Diagnostic>> {
@@ -150,129 +139,12 @@ fn check_on_this_thread(
     })
 }
 
-/// The stack the compile thread gets, in bytes
-/// (`specs/blocks/compiler.md` §113.2 rule 1).
-///
-/// The parser and the checker recurse once per nesting level, and a
-/// 2 MiB caller thread overflows at depth 66. A stack overflow aborts
-/// the process, which §90 forbids, so every stage of one compile runs on
-/// a thread of this size. The number is a capacity and not a bound: no
-/// byte limit exists, so a source deep enough passes it.
-pub const COMPILE_THREAD_STACK_BYTES: usize = if cfg!(debug_assertions) {
-    8_589_934_592
-} else {
-    2_147_483_648
-};
-
-std::thread_local! {
-    /// True while this thread runs [`on_the_compile_thread`] work.
-    static ON_THE_COMPILE_THREAD: std::cell::Cell<bool> =
-        const { std::cell::Cell::new(false) };
-}
-
-/// Marks this thread as the compile thread until it drops.
-///
-/// The previous value returns on drop, so a panic in the work leaves the
-/// caller's thread as it was.
-struct CompileThreadMark(bool);
-
-impl CompileThreadMark {
-    fn enter() -> Self {
-        Self(ON_THE_COMPILE_THREAD.replace(true))
-    }
-}
-
-impl Drop for CompileThreadMark {
-    fn drop(&mut self) {
-        ON_THE_COMPILE_THREAD.set(self.0);
-    }
-}
-
-/// One slot that carries the work to the compile thread and the value back.
-enum CompileWork<T, F> {
-    /// The work has not started.
-    Pending(F),
-    /// The compile thread ran the work and stored its value.
-    Done(T),
-    /// The compile thread took the work and did not return.
-    Taken,
-}
-
-/// Runs `work` on a thread with [`COMPILE_THREAD_STACK_BYTES`] of stack
-/// and returns its result (`specs/blocks/compiler.md` §113.2 rule 1).
-///
-/// Every stage of one compile runs inside one call: the parse, the check,
-/// the warning walk, the lowering, and the emission. A nested call is
-/// already on that thread, so it runs the work inline and spawns nothing.
-///
-/// A panic on that thread resumes on the caller, so a caller that counts
-/// panics sees exactly what a direct call gives it. If the spawn fails,
-/// the caller's own thread runs `work`, and the depth a program can
-/// reach becomes a property of the caller's stack.
-pub fn on_the_compile_thread<T, F>(work: F) -> T
-where
-    T: Send,
-    F: Send + FnOnce() -> T,
-{
-    if ON_THE_COMPILE_THREAD.with(std::cell::Cell::get) {
-        return work();
-    }
-    let slot = std::sync::Mutex::new(CompileWork::Pending(work));
-    let body = || {
-        let Ok(mut held) = slot.lock() else {
-            return;
-        };
-        let CompileWork::Pending(work) = std::mem::replace(&mut *held, CompileWork::Taken) else {
-            return;
-        };
-        drop(held);
-        let _mark = CompileThreadMark::enter();
-        let value = work();
-        if let Ok(mut held) = slot.lock() {
-            *held = CompileWork::Done(value);
-        }
-    };
-    // A shared reference to a `Fn` closure is itself callable, so a
-    // refused spawn drops the reference and leaves the work in place.
-    let body = &body;
-    std::thread::scope(|scope| {
-        let spawned = std::thread::Builder::new()
-            .stack_size(COMPILE_THREAD_STACK_BYTES)
-            .name("subscript-compile".to_owned())
-            .spawn_scoped(scope, body)
-            .ok();
-        match spawned {
-            Some(handle) => {
-                if let Err(payload) = handle.join() {
-                    std::panic::resume_unwind(payload);
-                }
-            }
-            None => body(),
-        }
-    });
-    match slot.into_inner() {
-        Ok(CompileWork::Done(value)) => value,
-        // `Taken` means the work did not return, and the join above then
-        // resumed its panic. A poisoned lock needs a panic while the lock
-        // is held, and the work runs with the lock released.
-        Ok(CompileWork::Pending(_) | CompileWork::Taken) | Err(_) => {
-            unreachable!("the compile thread returns a value or resumes the panic")
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn check_one(src: &str) -> Result<hir::Module, Vec<Diagnostic>> {
         check_program(&[SourceFile::new("test.ts", src)])
-    }
-
-    /// Checks one source on this thread, for a test that reads a record
-    /// the checker keeps in a thread-local.
-    fn check_inline(src: &str) -> Result<hir::Module, Vec<Diagnostic>> {
-        check_on_this_thread(&[SourceFile::new("test.ts", src)], &CheckOptions::default())
     }
 
     /// The checked module carries the bytes of every source the check
@@ -312,15 +184,14 @@ mod tests {
     }
 
     /// The classification record is a thread-local of the thread the
-    /// checker runs on, so this test checks inline and reads its own
-    /// thread (§113.2 rule 1 spawns the compile thread for
-    /// [`check_program_with`]).
+    /// checker runs on. A check runs on the thread that calls it
+    /// (§114.2 rule 1), so this test reads its own thread.
     #[test]
     fn assignment_targets_classify_every_place_variant_from_source() {
         use crate::check::{take_classified_places, PlaceKind};
 
         let _ = take_classified_places();
-        check_inline(
+        check_one(
             "let global: i32 = 0;\n\
              class Holder {\n\
                field: i32 = 0;\n\

@@ -20,8 +20,8 @@ use subscript_codegen::{
     EmitCFilesError, RunError,
 };
 use subscript_compiler::{
-    check_program, check_warnings, on_the_compile_thread, render_diagnostics, render_warnings,
-    Diagnostic, SourceFile, Warning,
+    check_program, check_warnings, render_diagnostics, render_warnings, Diagnostic, SourceFile,
+    Warning,
 };
 use watch::{WatchCall, WatchOutcome, WatchSession, WatchStep};
 
@@ -695,11 +695,6 @@ fn loaded_file_paths(entry: &Path, files: &[SourceFile]) -> Result<Vec<PathBuf>,
     Ok(paths)
 }
 
-/// Loads one watched program, on the compile thread.
-fn watch_load(source: &Path) -> Result<Vec<SourceFile>, Failure> {
-    on_the_compile_thread(|| load_program(source, &[]))
-}
-
 fn run_watch<O: Write, E: Write>(
     source: &Path,
     deny_warnings: bool,
@@ -707,7 +702,7 @@ fn run_watch<O: Write, E: Write>(
     stderr: &mut E,
 ) -> Result<u8, Failure> {
     let mut session = WatchSession::new(deny_warnings);
-    let mut watched = match watch_load(source) {
+    let mut watched = match load_program(source, &[]) {
         Ok(initial_files) => {
             let initial_paths = loaded_file_paths(source, &initial_files)?;
             let initial = session.step(&initial_files);
@@ -742,7 +737,7 @@ fn run_watch<O: Write, E: Write>(
         }
         watched.refresh();
 
-        let files = match watch_load(source) {
+        let files = match load_program(source, &[]) {
             Ok(files) => files,
             Err(failure) => {
                 session.invalidate_loaded_sources();
@@ -851,20 +846,14 @@ fn accepted_warnings(files: &[SourceFile]) -> Result<Vec<Warning>, Failure> {
     }
 }
 
-/// Loads one program from disk and checks it, on the compile thread.
-///
-/// The loader parses each file to read its imports, the checker walks the
-/// tree, and the warning walk repeats it, so none of the three runs on the
-/// caller's thread (§113.2 rule 1).
+/// Loads one program from disk and checks it.
 fn load_and_check(
     source: &Path,
     mirrors: &[PathBuf],
 ) -> Result<(Vec<SourceFile>, Vec<Warning>), Failure> {
-    on_the_compile_thread(|| {
-        let files = load_program(source, mirrors)?;
-        let warnings = accepted_warnings(&files)?;
-        Ok((files, warnings))
-    })
+    let files = load_program(source, mirrors)?;
+    let warnings = accepted_warnings(&files)?;
+    Ok((files, warnings))
 }
 
 fn write_warnings<E: Write>(

@@ -16,7 +16,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use subscript_compiler::{check_program, on_the_compile_thread, SourceFile};
+use subscript_compiler::{check_program, SourceFile};
 use subscript_runtime::TrapKind;
 
 use crate::jit::{AbnormalTermination, RunError, TrapReport};
@@ -954,12 +954,8 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
         post_run_hook,
         ..
     } = config;
-    // §113.2 rule 1: the check and the emission both recurse over the
-    // tree, so both run on the compile thread.
-    let program = on_the_compile_thread(|| {
-        let hir = check_program(files).map_err(RunError::Rejected)?;
-        crate::emit_c(&hir).map_err(|error| RunError::Internal(internal(error)))
-    })?;
+    let hir = check_program(files).map_err(RunError::Rejected)?;
+    let program = crate::emit_c(&hir).map_err(|error| RunError::Internal(internal(error)))?;
     require_native_symbols(&program.foreign_symbols, libraries)?;
     let staticlib = runtime_staticlib()?;
     let dir = TempDir::new("crun")?;

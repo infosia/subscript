@@ -83,7 +83,6 @@ debug=0/0/0
 release=0/0/0
 debug_skips=0
 release_skips=0
-release_debug_only=0
 release_ran=0
 clippy_ran=0
 clippy=0/0/0
@@ -189,10 +188,6 @@ run() {
     } END { printf "%d/%d/%d", p, f, n }' "$scratch/stdout")
     grep '^gate-skip:' "$scratch/stdout" >"$scratch/skips" || :
     skip_count=$(awk 'END { print NR+0 }' "$scratch/skips")
-    # compiler.md section 85 rule 4a: a heavy part the release run did
-    # not run declares itself, and this count is apart from the skips.
-    grep '^gate-debug-only:' "$scratch/stdout" >"$scratch/debug-only" || :
-    debug_only_count=$(awk 'END { print NR+0 }' "$scratch/debug-only")
     step_failed=0
     if [ "$command_status" -ne 0 ]; then step_failed=1; fi
     if [ "$step_timed_out" -eq 1 ]; then step_failed=1; fi
@@ -211,7 +206,6 @@ run() {
             else
                 release=$totals
                 release_skips=$skip_count
-                release_debug_only=$debug_only_count
                 if [ "$skip_count" -ne 0 ]; then step_failed=1; fi
             fi
             ;;
@@ -244,8 +238,6 @@ run() {
         fi
         printf 'tests: %s\ngate-skip count: %s\n```text\n' "$totals" "$skip_count"
         cat "$scratch/skips"
-        printf '```\ngate-debug-only count: %s\n```text\n' "$debug_only_count"
-        cat "$scratch/debug-only"
         printf '```\nstdout:\n```text\n'
         cat "$scratch/stdout"
         printf '\n```\nstderr:\n```text\n'
@@ -284,7 +276,7 @@ finish() {
     if [ "$release_ran" -ne 0 ]; then verdict="$verdict release $release"; fi
     verdict="$verdict skips $debug_skips"
     if [ "$release_ran" -ne 0 ]; then
-        verdict="$verdict/$release_skips debug-only $release_debug_only"
+        verdict="$verdict/$release_skips"
     fi
     if [ "$clippy_ran" -ne 0 ]; then verdict="$verdict clippy $clippy"; fi
     verdict="$verdict goldens-moved $moved exit $verdict_status"

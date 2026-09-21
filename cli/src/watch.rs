@@ -6,9 +6,7 @@
 //! `main` after a start or accepted swap.
 
 use subscript_codegen::{ReloadError, ReloadSession, RunError, TrapReport};
-use subscript_compiler::{
-    check_program, check_warnings, on_the_compile_thread, Diagnostic, SourceFile, Warning,
-};
+use subscript_compiler::{check_program, check_warnings, Diagnostic, SourceFile, Warning};
 
 /// The output and optional trap from one watched program call.
 #[derive(Debug, Clone, PartialEq)]
@@ -120,11 +118,7 @@ impl WatchSession {
         }
         self.last_sources = Some(files.to_vec());
 
-        // §113.2 rule 1: the check and the warning walk both recurse
-        // over the tree, so both run on the compile thread. The checked
-        // module drops there too.
-        let checked =
-            on_the_compile_thread(|| check_program(files).map(|module| check_warnings(&module)));
+        let checked = check_program(files).map(|module| check_warnings(&module));
         let warnings = match checked {
             Ok(warnings) => warnings,
             Err(diagnostics) => return WatchStep::diagnostics(diagnostics),

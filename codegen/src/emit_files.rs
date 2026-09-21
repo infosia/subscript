@@ -3,7 +3,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use subscript_compiler::{check_program, on_the_compile_thread, Diagnostic, SourceFile};
+use subscript_compiler::{check_program, Diagnostic, SourceFile};
 
 use crate::{emit_c, emit_c_without_main, AOT_ENTRY_C};
 
@@ -94,17 +94,13 @@ pub fn emit_c_files(
         path: out_dir.to_path_buf(),
         source,
     })?;
-    // §113.2 rule 1: the check and the emission both recurse over the
-    // tree, so both run on the compile thread.
-    let program = on_the_compile_thread(|| {
-        let hir = check_program(files).map_err(EmitCFilesError::Diagnostics)?;
-        if write_entry {
-            emit_c(&hir)
-        } else {
-            emit_c_without_main(&hir)
-        }
-        .map_err(EmitCFilesError::Emission)
-    })?;
+    let hir = check_program(files).map_err(EmitCFilesError::Diagnostics)?;
+    let program = if write_entry {
+        emit_c(&hir)
+    } else {
+        emit_c_without_main(&hir)
+    }
+    .map_err(EmitCFilesError::Emission)?;
 
     let entry = if write_entry {
         let path = out_dir.join("entry.c");
