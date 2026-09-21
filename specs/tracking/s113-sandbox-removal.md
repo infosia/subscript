@@ -125,9 +125,33 @@ The two skips are the `perf_gate` line and the
 (`specs/tracking/windows-portability.md`). The cause of the change
 from 30 to 27 is not measured.
 
+## The Linux gate after the landing
+
+The x86_64-unknown-linux-gnu host ran the full gate at `c72da05`, with
+a clean tree. The build step shows no warning.
+
+```text
+gate full c72da05549d98c469ee60fc1290ff3b42ee0e023 clean debug 1533/12/2 release 1542/0/2 skips 2/0 debug-only 0 clippy 7/18/13 goldens-moved 0 exit 1
+```
+
+Step wall seconds: fmt 1, build 0, debug 154, release 283, clippy 15,
+tsc 0, hygiene 0. The passed and failed counts sum to the arm64 host
+counts, 1,545 and 1,542, so this host measures no test-count skew.
+
+The 12 debug failures all report `fork JIT runner: Cannot allocate
+memory (os error 12)`. §113 does not produce them: the diff of
+`c3e8498` carries `COMPILE_THREAD_STACK_BYTES` and the `stack_size`
+call as context lines. The measurement is in
+`specs/tracking/linux-portability.md`, under the 2026-09-21 full gate.
+The release step, which holds a 2 GiB stack for each compile, reports 0
+failures.
+
+Criterion 4 of §113.5 is discharged. Both hosts ran the gate after the
+landing, and neither run reports a failure of this section.
+
 ## Open
 
-- The Linux gate run after the landing (§113.5 criterion 4). The
-  Windows run is above. The `cfg` arms that went are in
-  `cli/src/compile_child.rs` and `cli/tests/commands.rs`; the review
-  read `codegen/src/jit/entry.rs` and eight more files by eye.
+- The dev-JIT fork refuses the 8 GiB unoptimized compile-thread stack
+  on a Linux host with 37.93 GiB of RAM plus swap
+  (`specs/tracking/linux-portability.md`). It is a contract question
+  over §113.2 rule 1 and §44, and it predates this section.

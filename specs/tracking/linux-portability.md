@@ -1227,3 +1227,100 @@ does not build offline here: its dev-dependencies `testing` and
 `swc_ecma_visit` and its `#![feature(test)]` are absent. A fork this
 project owns carries tests nobody runs. This is the §55 lesson in a
 third form, and it is open.
+
+## The 2026-09-21 full gate — the dev-JIT fork refuses the unoptimized compile-thread stack
+
+The `x86_64-unknown-linux-gnu` host ran the full gate at `c72da05`,
+with a clean tree. The workspace `--all-targets` build shows no
+warning.
+
+```text
+gate full c72da05549d98c469ee60fc1290ff3b42ee0e023 clean debug 1533/12/2 release 1542/0/2 skips 2/0 debug-only 0 clippy 7/18/13 goldens-moved 0 exit 1
+```
+
+Record: `target/gate/20260921T091924Z-full.md`. Step wall seconds: fmt
+1, build 0, debug 154, release 283, clippy 15, tsc 0, hygiene 0. A
+`cargo build` before the gate filled the cache, so the build step
+measures no compile. The two debug skips are the `perf_gate` line and
+the `a22-matrix-propagation` line. The passed and failed counts sum to
+1,545 in debug and to 1,542 in release. Those are the arm64 host counts
+at `963b1c3`, so this host measures no test-count skew.
+
+The 12 debug failures carry one message:
+
+```text
+internal lowering error: fork JIT runner: Cannot allocate memory (os error 12)
+```
+
+One failure is a `subscript-codegen` unit test
+(`tests::fixed_array_oob_traps`), nine are in `codegen/tests/interop.rs`,
+and two are in `codegen/tests/lir.rs`. The release step reports 0
+failures.
+
+### The cause
+
+`COMPILE_THREAD_STACK_BYTES` is 8,589,934,592 bytes unoptimized and
+2,147,483,648 bytes optimized (`compiler/src/lib.rs`, §113.2 rule 1).
+One live compile holds that stack as private anonymous address space.
+`strace` measures the mapping:
+
+```text
+mmap(NULL, 8589938688, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0)
+```
+
+The dev tier forks to retain the output of a run (§44,
+`codegen/src/jit/entry.rs`). This host refuses `fork` when the mapped
+private address space of the parent passes the sum of RAM and swap. The
+host has 31,383,448 kB of RAM and 8,388,604 kB of swap, which is 37.93
+GiB. `vm.overcommit_memory` is 0 and `vm.max_map_count` is 1,048,576.
+
+A C probe measures the refusal without this compiler. It maps 8 GiB of
+`MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK` memory, forks, waits, and repeats.
+
+| Mapped address space | `fork` |
+|---|---|
+| 8 GiB | ok |
+| 16 GiB | ok |
+| 24 GiB | ok |
+| 32 GiB | ok |
+| 40 GiB | `Cannot allocate memory` |
+
+The same threshold governs the test binary. `codegen/tests/interop.rs`
+runs one compile for each test, so the test-thread count sets the count
+of live stacks. The unoptimized binary, run directly:
+
+| `--test-threads` | result | wall |
+|---|---|---|
+| 1 | 22 passed | 13.10 s |
+| 2 | 22 passed | 6.92 s |
+| 3 | 22 passed | 4.46 s |
+| 4 | 22 passed | 3.83 s |
+| 5 | 22 passed | 3.25 s |
+| 6 | 19 passed, 3 failed | 2.00 s |
+| 8 | 21 passed, 1 failed | 2.00 s |
+| 16 | 22 passed | 1.68 s |
+
+The failure is not deterministic. It needs five compiles live at one
+time, and a short test can miss that overlap. Under `strace` the same
+16-thread run takes 21.79 s and passes.
+
+The peak `VmSize` of that binary is 136,381,092 kB unoptimized and
+33,609,276 kB optimized. The optimized peak is 32.05 GiB, which is
+under the threshold by less than one 8 GiB stack.
+
+### The origin
+
+`c3e8498` does not produce this. Its diff carries the constant and the
+`stack_size` call as context lines, and it removes only the test hook
+that refused the spawn. `51ef009` (2026-09-17) raised the unoptimized
+constant from 4,294,967,296 to 8,589,934,592. At 4 GiB the same host
+refuses the tenth live compile, not the fifth. The reproduction at
+`51ef009^` is not measured.
+
+### Consequence
+
+The debug step of the full gate is not reproducible on a Linux host
+with 37.93 GiB of RAM plus swap. Three contract items meet here: the
+stack size (§113.2 rule 1), the dev-tier fork (§44), and the
+parallelism the gate's own `cargo test` selects. The fix is a contract
+question, so this round lands no code.
