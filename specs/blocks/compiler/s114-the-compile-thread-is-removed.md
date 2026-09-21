@@ -24,13 +24,13 @@ optimized (§113.2 rule 1). Three facts stand against the thread.
    nested type arguments, so invariant 5 admits no program that deep.
    The unoptimized stack holds 275,000 levels of the same shape.
 3. **The stack is the measured cause of two defects.** §110 records
-   the first: the lowering runs on that thread, one module's code and
+   the first. The lowering runs on that thread. One module's code and
    its data fell on the two sides of the 8 GiB reservation, and the
-   32-bit displacement could not reach. The Linux full gate at
-   `c72da05` is the second: 12 debug tests report `fork JIT runner:
-   Cannot allocate memory (os error 12)`, because the host refuses
-   `fork` over 37.93 GiB of mapped private address space, and five
-   live compiles pass that sum.
+   32-bit displacement did not reach. The Linux full gate at
+   `c72da05` is the second. 12 debug tests report `fork JIT runner:
+   Cannot allocate memory (os error 12)`. The host refuses `fork`
+   over 37.93 GiB of mapped private address space, and five live
+   compiles pass that sum.
 
 §90 is not the reason for the thread. §90 is older (2026-09-06), and
 its measurement holds no stack overflow: 15,898 runs gave 0 panics and
@@ -75,6 +75,21 @@ pinned parser fork answers it (§90.1 rule 2).
    rule 2). They check that the checker visits each syntax node one
    time, at depth 200. That is a complexity property of honest code,
    not a nesting limit. The file keeps its name.
+
+   The two tests now run on the thread that libtest gives them, which
+   holds 2,097,152 bytes in every build of Rust. Core principle 15
+   asks what a gate test costs, so the cost is measured on the
+   x86-64 Linux host, for one `check_program` and one
+   `check_warnings` at depth 200:
+
+   | Build | Stack the pair needs | Margin over 2,097,152 |
+   |---|---|---|
+   | unoptimized | over 917,504 and under 950,272 | 2.2 |
+   | optimized | over 262,144 and under 524,288 | 4.0 |
+
+   A stack overflow ends the test binary, so the gate reads it as a
+   count that fell, not as one named failure. The margin is the
+   guard, and §114.5 criterion 5 measures it on each other gate host.
 4. **§110.** One dev-JIT module holds its code and its data in one
    reservation. The 8 GiB stack was the measured trigger, and it goes.
    The rule stays, because the assumption it replaced is unstated and
@@ -88,6 +103,9 @@ pinned parser fork answers it (§90.1 rule 2).
 
 - §113.2 rule 1 is deleted. The compile thread and its two constants
   go.
+- §113.2 rule 2 keeps the linear-time tests of
+  `compiler/tests/nesting.rs`. Its compile-thread tests and its depth
+  tests go with the thread.
 - §113.2 rule 3 keeps every number. Its reason is the reader and the
   complexity of the render, not a hostile source.
 - §113.2 rule 9 is deleted with §85 rule 4a.

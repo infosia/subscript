@@ -83,15 +83,10 @@ and names no command either.
    `gate-skip:` lines; one line is a failure. In `quick` the lines
    are listed, not failed. A test that skips by any other text is a
    defect of that test.
-4a. *(Deleted 2026-09-21, §114: no test declares the line, and no
-   test has declared one since §113. The line, its count, and its
-   verdict field go. Core principle 15 holds through rule 4 and
-   through the wall seconds of each step.)*
-
-   A declared line, not an absent test, is what rule 4 asks for. A
-   heavy part that vanishes in release under `cfg` leaves the record
-   with nothing to read, which is the silent drop rule 4 exists to
-   stop.
+4a. *(Deleted 2026-09-21, §114: no test declares the line, and §113
+   removed its last producer. The line, its count, and its verdict
+   field go. Core principle 15 holds through rule 4 and through the
+   wall seconds of each step.)*
 5. **The record.** Every run writes
    `target/gate/<UTC timestamp>-<shape>.md` and prints its path. The
    record holds, in this order: the shape; the UTC time; `git

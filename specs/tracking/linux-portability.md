@@ -1324,3 +1324,9 @@ with 37.93 GiB of RAM plus swap. Three contract items meet here: the
 stack size (§113.2 rule 1), the dev-tier fork (§44), and the
 parallelism the gate's own `cargo test` selects. The fix is a contract
 question, so this round lands no code.
+
+*(Closed 2026-09-21 by §114, at `e242ec9`. The compile thread and its
+two constants are removed. The peak address space of the `interop`
+test binary falls from 136,381,092 kB to 1,179,976 kB unoptimized, and
+the full gate exits 0. Evidence:
+`specs/tracking/s114-compile-thread-removal.md`.)*

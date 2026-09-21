@@ -23,10 +23,10 @@ gate.
 
 The worst file of 131,072 bytes is the S026 byte limit, a rule of the
 sandbox profile. §113.1 rule 2 retired the byte limits. Measured in
-the tree at `c72da05`: `SOURCE_BYTE_LIMIT` is absent, the margin test
-is absent, and the two constants have no test that pins them. The only
-readers of `COMPILE_THREAD_STACK_BYTES` are its own declaration and
-the `stack_size` call.
+the tree at `c72da05`: `SOURCE_BYTE_LIMIT` is absent. The margin test
+is absent. No test pins the two constants. The only readers of
+`COMPILE_THREAD_STACK_BYTES` are its own declaration and the
+`stack_size` call.
 
 ## A trusted script does not reach that depth
 
@@ -70,9 +70,9 @@ program nests 1,000 parentheses. The unoptimized stack holds about
 ## §90 is not the reason
 
 §90 is an owner decision of 2026-09-06, from the question "does any
-API panic". The compile thread landed on 2026-09-17, in `ce9ddbf`,
-whose message groups it with the nesting guard, S027, the work and
-output budgets, and the token and program limits (§109.2, §109.2a).
+API panic". The compile thread landed on 2026-09-17, in `ce9ddbf`.
+That commit message groups it with the nesting guard, S027, the two
+budgets, and the token and program limits (§109.2, §109.2a).
 `51ef009`, the same day, raised the unoptimized constant from
 4,294,967,296 to 8,589,934,592.
 
@@ -108,10 +108,10 @@ report gave the count.)*
 ## The landing
 
 The implementation is `e242ec9`. 20 files moved: the 17 above,
-`tools/gate.sh` and `cli/tests/gate.rs` for §85 rule 4a, and the §110
-test doc comment of `codegen/src/jit/memory.rs`, which named the
-compile thread's stack as what lies between one module's two mappings.
-No golden moved.
+`tools/gate.sh` and `cli/tests/gate.rs` for §85 rule 4a, and
+`codegen/src/jit/memory.rs`. That file holds a §110 test doc comment,
+which named the compile thread's stack as the separator of one
+module's two mappings. No golden moved.
 
 Outside `specs/`, `git grep` answers nothing for
 `on_the_compile_thread`, `COMPILE_THREAD_STACK_BYTES`,
@@ -136,7 +136,7 @@ skips are the `perf_gate` line and the `a22-matrix-propagation` line,
 as before.
 
 Step wall seconds, at the pin and at the landing: fmt 1 / 1, build
-0 / 0, debug 154 / 122, release 283 / 242, clippy 15 / 0, tsc 0 / 1,
+0 / 0, debug 154 / 122, release 283 / 242, clippy 15 / 0, tsc 0 / 0,
 hygiene 0 / 0. The build and clippy steps read a warm `target/` in
 both runs, so those two numbers measure the cache.
 
@@ -169,8 +169,65 @@ The gate before the change reported 3 failures, not the 12 of
 needs five live compiles at one time, so 3 and 12 are two samples of
 one defect.
 
+## Phase Review (2026-09-21)
+
+A fresh no-context reviewer read `c72da05..e649be3`. No CRITICAL. Two
+MAJOR, six MINOR.
+
+**MAJOR 1.** §85 rule 4a carried a second paragraph of its own body
+under the deletion marker, so the section contradicted §114.3. The
+paragraph is deleted.
+
+**MAJOR 2.** The two kept tests of `compiler/tests/nesting.rs` now run
+on the thread libtest gives them, which holds 2,097,152 bytes. No
+document stated that cost (core principle 15). Measured on the x86-64
+Linux host, for one `check_program` and one `check_warnings` at depth
+200:
+
+| Build | Stack the pair needs | Margin |
+|---|---|---|
+| unoptimized | over 917,504 and under 950,272 bytes | 2.2 |
+| optimized | over 262,144 and under 524,288 bytes | 4.0 |
+
+Method: `RUST_MIN_STACK=<n> target/<profile>/deps/nesting-* --test-threads=1`.
+At 917,504 unoptimized the binary prints `thread … has overflowed its
+stack` and aborts; at 950,272 it passes. §114.2 rule 3 carries the
+table.
+
+A stack overflow ends the test binary, so the gate reads the loss as a
+count that fell, not as one named failure. §114.5 criterion 5 measures
+the margin on each other gate host.
+
+**MINOR, fixed:** the direction word of §90.1's premise; the index
+line, which called two deletions an amendment and left rule 2 out; the
+landing `tsc` second, which read 1 against the 0 of the record it
+cites; the `Open` item of `specs/tracking/s113-sandbox-removal.md` and
+the closing line of the 2026-09-21 section of
+`specs/tracking/linux-portability.md`, which both left the question
+open that this arc answered; four sentences over the 25-word limit and
+two words outside the approved set.
+
+**MINOR, open:** see below.
+
+**Verified clean by the reviewer, and re-measured:** exit criteria 1 to
+4; the 27 call sites in 17 files at `c72da05`; the 545 files and the
+bracket depth of 8; every row of the `tsc` table; the three Red
+failures at `0f8221a`; the five moved call sites of `codegen/` and
+`cli/`, for order and error mapping; the two `#[cfg(test)]`
+thread-locals, which drain before use; the panic count of
+`compiler/tests/robustness.rs`, which `resume_unwind` did not change;
+`bash -n tools/gate.sh`; `cargo test -p subscript-cli --test gate`, 14
+passed.
+
 ## Open
 
+- **The firing control of `two_items_of_one_module_are_inside_that_modules_reservation`**
+  (`codegen/src/jit/memory.rs`). Its doc comment states that a module
+  with no reservation puts its code and its data in two mappings that
+  nothing bounds. The 8 GiB stack was the measured separator, and it
+  is gone. The test builds the conforming form only, so core principle
+  9 asks whether the check can still fail. Measure the no-reservation
+  form on this host, and report the displacement. §110 rule 1 does not
+  change on this alone.
 - The Windows and arm64 macOS full gates after the landing (§114.5
   criterion 5).
-- The Phase Review (§114.5 criterion 6).

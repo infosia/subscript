@@ -154,5 +154,5 @@ Every section, with its status:
 | §110 | One dev-JIT module is one reservation | active; the problem amended by §114 | [`s110-one-dev-jit-module-is-one-reservation.md`](compiler/s110-one-dev-jit-module-is-one-reservation.md) |
 | §111 | A callback registration with an explicit end | active | [`s111-a-callback-registration-with-an-explicit-end.md`](compiler/s111-a-callback-registration-with-an-explicit-end.md) |
 | §112 | Position id 0 is "no script site" | active; rule 4 and 112.2 amended by §113 | [`s112-position-id-0-is-no-script-site.md`](compiler/s112-position-id-0-is-no-script-site.md) |
-| §113 | The sandbox profile is removed | active; 113.2 rules 1, 3, and 9 amended by §114 | [`s113-the-sandbox-profile-is-removed.md`](compiler/s113-the-sandbox-profile-is-removed.md) |
+| §113 | The sandbox profile is removed | active; §114 deletes 113.2 rules 1 and 9, and amends rules 2 and 3 | [`s113-the-sandbox-profile-is-removed.md`](compiler/s113-the-sandbox-profile-is-removed.md) |
 | §114 | The compile thread is removed | active | [`s114-the-compile-thread-is-removed.md`](compiler/s114-the-compile-thread-is-removed.md) |

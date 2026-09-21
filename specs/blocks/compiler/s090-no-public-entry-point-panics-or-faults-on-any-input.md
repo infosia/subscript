@@ -41,7 +41,7 @@ in release it is not a panic.
 invariant 6: the input is first-party source, and the mistakes in it.
 A source that is built to defeat the compiler is not in scope, and no
 rule of this section is a reason to spend work on one. The measurement
-below is of that first form: a truncation, a replaced byte, a deleted
+above is of that first form: a truncation, a replaced byte, a deleted
 line, and a malformed argument list.
 
 1. **A public entry returns.** On any byte sequence, any argument

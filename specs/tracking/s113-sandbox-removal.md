@@ -151,7 +151,7 @@ landing, and neither run reports a failure of this section.
 
 ## Open
 
-- The dev-JIT fork refuses the 8 GiB unoptimized compile-thread stack
-  on a Linux host with 37.93 GiB of RAM plus swap
-  (`specs/tracking/linux-portability.md`). It is a contract question
-  over §113.2 rule 1 and §44, and it predates this section.
+None. The one item was the dev-JIT fork against the 8 GiB unoptimized
+compile-thread stack. §114 answers it: the thread and its constants
+are removed, and 113.2 rule 1 is deleted
+(`specs/tracking/s114-compile-thread-removal.md`).
