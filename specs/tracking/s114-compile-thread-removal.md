@@ -207,7 +207,29 @@ the closing line of the 2026-09-21 section of
 open that this arc answered; four sentences over the 25-word limit and
 two words outside the approved set.
 
-**MINOR, open:** see below.
+**MINOR 6, closed by measurement.** The §110 test
+(`two_items_of_one_module_are_inside_that_modules_reservation`) builds
+the conforming form only, and its doc comment claimed that nothing
+bounds the distance between one module's two mappings. The 8 GiB stack
+was the measured separator, and §114 removed it, so core principle 9
+asks whether the check can still fail.
+
+A reverted prototype built the same module with no reservation.
+`reservation_bytes(source.len())` is 4,875,498 bytes on that source.
+
+| Build | No-reservation displacement | Runs |
+|---|---|---|
+| unoptimized | 67,952,640 to 128,765,952 bytes | 6 |
+| optimized | 121,409,536 to 121,585,664 bytes | 5 |
+
+Every run passes the reservation by 14x to 26x, and the test fails on
+6 of 6 runs against a `compile_jit` with no reservation. **The check
+can still fail**, so core principle 9 holds.
+
+Every run is also 16x to 31x under the 2,147,483,648 bytes a 32-bit
+displacement carries. The test therefore reads the reservation, and it
+does not witness the distance of §110's problem. The 8 GiB stack made
+that distance. The doc comment now states both facts.
 
 **Verified clean by the reviewer, and re-measured:** exit criteria 1 to
 4; the 27 call sites in 17 files at `c72da05`; the 545 files and the
@@ -219,15 +241,25 @@ thread-locals, which drain before use; the panic count of
 `bash -n tools/gate.sh`; `cargo test -p subscript-cli --test gate`, 14
 passed.
 
+### The gate after the review fixes
+
+Two test doc comments carry the two measurements above (`93a4041`).
+The x86_64-unknown-linux-gnu host ran the full gate again, with a
+clean tree.
+
+```text
+gate full 93a40417e48395de1fdb2b28bae921d46c741e2e clean debug 1539/0/2 release 1536/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Record: `target/gate/20260921T105118Z-full.md`. Step wall seconds: fmt
+1, build 0, debug 126, release 252, clippy 2, tsc 1, hygiene 0.
+
+No CRITICAL and no MAJOR is open, so §114.5 criterion 6 is
+discharged.
+
 ## Open
 
-- **The firing control of `two_items_of_one_module_are_inside_that_modules_reservation`**
-  (`codegen/src/jit/memory.rs`). Its doc comment states that a module
-  with no reservation puts its code and its data in two mappings that
-  nothing bounds. The 8 GiB stack was the measured separator, and it
-  is gone. The test builds the conforming form only, so core principle
-  9 asks whether the check can still fail. Measure the no-reservation
-  form on this host, and report the displacement. §110 rule 1 does not
-  change on this alone.
 - The Windows and arm64 macOS full gates after the landing (§114.5
-  criterion 5).
+  criterion 5). Each host must measure the margin of the two
+  `compiler/tests/nesting.rs` tests over the 2,097,152-byte libtest
+  stack.
