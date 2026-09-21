@@ -126,12 +126,12 @@ Every section, with its status:
 | §82 | R39 — six requests decided at `e1c2be1` | active | [`s082-r39-six-requests-decided-at-e1c2be1.md`](compiler/s082-r39-six-requests-decided-at-e1c2be1.md) |
 | §83 | The operation-signature table is a total function of the HIR | active | [`s083-the-operation-signature-table-is-a-total-function-of-the-hir.md`](compiler/s083-the-operation-signature-table-is-a-total-function-of-the-hir.md) |
 | §84 | Worker messages carry `string` fields by copy | active | [`s084-worker-messages-carry-string-fields-by-copy.md`](compiler/s084-worker-messages-carry-string-fields-by-copy.md) |
-| §85 | One gate command, two shapes | active | [`s085-one-gate-command-two-shapes.md`](compiler/s085-one-gate-command-two-shapes.md) |
+| §85 | One gate command, two shapes | active; rule 4a deleted and rule 6 amended by §114 | [`s085-one-gate-command-two-shapes.md`](compiler/s085-one-gate-command-two-shapes.md) |
 | §86 | C emission is linear in the function it emits | active | [`s086-c-emission-is-linear-in-the-function-it-emits.md`](compiler/s086-c-emission-is-linear-in-the-function-it-emits.md) |
 | §87 | A synthetic owner is one scoped operation | active | [`s087-a-synthetic-owner-is-one-scoped-operation.md`](compiler/s087-a-synthetic-owner-is-one-scoped-operation.md) |
 | §88 | The corpus index is the inventory | active | [`s088-the-corpus-index-is-the-inventory.md`](compiler/s088-the-corpus-index-is-the-inventory.md) |
 | §89 | R40 — a long string constant is adjacent C literals | active; rule 3 superseded by §99 | [`s089-r40-a-long-string-constant-is-adjacent-c-literals.md`](compiler/s089-r40-a-long-string-constant-is-adjacent-c-literals.md) |
-| §90 | No public entry point panics or faults on any input | active | [`s090-no-public-entry-point-panics-or-faults-on-any-input.md`](compiler/s090-no-public-entry-point-panics-or-faults-on-any-input.md) |
+| §90 | No public entry point panics or faults on any input | active; rule 1 amended by §114 | [`s090-no-public-entry-point-panics-or-faults-on-any-input.md`](compiler/s090-no-public-entry-point-panics-or-faults-on-any-input.md) |
 | §91 | The tutorials' programs run in the gate | active | [`s091-the-tutorials-programs-run-in-the-gate.md`](compiler/s091-the-tutorials-programs-run-in-the-gate.md) |
 | §92 | An async call starts its body at the call | active | [`s092-an-async-call-starts-its-body-at-the-call.md`](compiler/s092-an-async-call-starts-its-body-at-the-call.md) |
 | §93 | An async method declares type parameters | active | [`s093-an-async-method-declares-type-parameters.md`](compiler/s093-an-async-method-declares-type-parameters.md) |
@@ -151,7 +151,8 @@ Every section, with its status:
 | §107 | Binding patterns, by source type and position | active | [`s107-binding-patterns-by-source-type-and-position.md`](compiler/s107-binding-patterns-by-source-type-and-position.md) |
 | §108 | A field carries a value before a constructor returns | active | [`s108-a-field-carries-a-value-before-a-constructor-returns.md`](compiler/s108-a-field-carries-a-value-before-a-constructor-returns.md) |
 | §109 | The sandbox profile — SUPERSEDED 2026-09-21 | history — `compiler-history.md` §109 (superseded by §113) | [`s109-the-sandbox-profile.md`](compiler/s109-the-sandbox-profile.md) |
-| §110 | One dev-JIT module is one reservation | active | [`s110-one-dev-jit-module-is-one-reservation.md`](compiler/s110-one-dev-jit-module-is-one-reservation.md) |
+| §110 | One dev-JIT module is one reservation | active; the problem amended by §114 | [`s110-one-dev-jit-module-is-one-reservation.md`](compiler/s110-one-dev-jit-module-is-one-reservation.md) |
 | §111 | A callback registration with an explicit end | active | [`s111-a-callback-registration-with-an-explicit-end.md`](compiler/s111-a-callback-registration-with-an-explicit-end.md) |
 | §112 | Position id 0 is "no script site" | active; rule 4 and 112.2 amended by §113 | [`s112-position-id-0-is-no-script-site.md`](compiler/s112-position-id-0-is-no-script-site.md) |
-| §113 | The sandbox profile is removed | active | [`s113-the-sandbox-profile-is-removed.md`](compiler/s113-the-sandbox-profile-is-removed.md) |
+| §113 | The sandbox profile is removed | active; 113.2 rules 1, 3, and 9 amended by §114 | [`s113-the-sandbox-profile-is-removed.md`](compiler/s113-the-sandbox-profile-is-removed.md) |
+| §114 | The compile thread is removed | active | [`s114-the-compile-thread-is-removed.md`](compiler/s114-the-compile-thread-is-removed.md) |

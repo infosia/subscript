@@ -19,6 +19,11 @@ Measured on `x86_64-unknown-linux-gnu`: the pair was
 −8,567,550,719 in one run and −8,573,338,367 in another. Neither end
 was a host symbol.
 
+*(Amended 2026-09-21, §114: the compile thread and its reservation are
+removed, so this trigger is gone. The rule stays. The assumption it
+replaced is unstated and unsound, because separate mappings put no
+bound on a 32-bit displacement.)*
+
 ### 110.1 The rule
 
 1. **A dev-JIT module holds its code and its data in one

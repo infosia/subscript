@@ -41,7 +41,11 @@ in release it is not a panic.
    list, and any well-typed value, a public entry of this table
    returns its `Result` or its exit code. A parse failure is an S100
    diagnostic. A panic reaching a public entry is a defect of this
-   section; so is a fault.
+   section; so is a fault. *(Amended 2026-09-21, §114: the guarantee
+   covers the input that invariant 6 admits, which is first-party
+   source and the mistakes in it. It is not a guarantee against a
+   source that is built to exhaust the stack. The measurement of this
+   section holds no stack overflow.)*
 2. **The parser is a fork, pinned.** `swc_ecma_parser` is the
    project's fork of 6.0.2 with one change: in
    `parse_ts_enum_member`, the error-recovery branch tests `eof!`

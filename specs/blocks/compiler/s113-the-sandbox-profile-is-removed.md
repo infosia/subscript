@@ -108,24 +108,20 @@ Each item below landed in a §109 round and is not a profile rule. It
 holds under the one accepted form, and its reason is stated here
 because §109 no longer states it.
 
-1. **The compile thread.** `check_program_with`, every public entry
-   that parses, and every tier's lowering and emission run on a
-   thread the compiler spawns, with `COMPILE_THREAD_STACK_BYTES` of
-   stack. Reason: the parser and the checker recurse once per nesting
-   level, and a 2 MiB caller thread overflows at depth 66 (measured,
-   §109 round 1). A stack overflow aborts the process, which §90
-   forbids. The constants keep their values: 2,147,483,648 bytes
-   optimized and 8,589,934,592 unoptimized. They are a capacity, not
-   a bound: no byte limit exists, so a source deep enough passes them.
-   If the spawn fails, the work runs on the caller's thread. The
-   refused-spawn diagnostic and its test hook go. §110 stays as it is.
+1. *(Deleted 2026-09-21, §114: the size had no input after 113.1
+   rule 2, and the stack is the measured cause of two defects. A
+   compile runs on the thread that calls it. §110 stays as it is.)*
 2. **The checker visits each syntax node once**, and an arm of
    `warn_w002_expr_uses` that walks a child returns. The linear-time
-   tests of `compiler/tests/nesting.rs` and its compile-thread tests
-   stay. A test there that selects the profile goes.
+   tests of `compiler/tests/nesting.rs` stay. A test there that
+   selects the profile goes. *(Amended 2026-09-21, §114: the
+   compile-thread tests and the depth tests of that file go with the
+   thread. The linear-time tests stay.)*
 3. **The diagnostic renderer's limits** (§109.2, M10): one line index
    per file, a window of at most 240 bytes, at most 200 items, and
-   the total in the summary line.
+   the total in the summary line. *(Amended 2026-09-21, §114: every
+   number stays. The reason is the reader and the complexity of the
+   render, not a hostile source.)*
 4. **`live_bytes` is a maintained counter** (§18.2d). Its debug
    assertion against the walk and its tests stay. The reason is now
    the host: a per-frame read must not walk the live set.
@@ -137,8 +133,8 @@ because §109 no longer states it.
 7. **The parser fork's duplicate-label fix** (fork commit `affcb6ee`).
 8. **`MAX_FRAME_BYTES` and S100.** Only the 65,536-byte profile limit
    goes.
-9. **§85 rule 4a.** The `gate-debug-only:` line stays a form of the
-   gate with no current producer.
+9. *(Deleted 2026-09-21, §114: a form with no producer. §85 rule 4a
+   goes with it.)*
 
 ### 113.3 Sections this one amends
 
