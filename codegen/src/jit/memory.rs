@@ -143,7 +143,17 @@ mod tests {
     /// The literal holds one mebibyte, so the module's read-only data
     /// is too large for the mapping that holds the code. A module
     /// built with no reservation therefore puts the two items in two
-    /// mappings, and nothing bounds the distance between them.
+    /// mappings. The measured displacement of that form on the x86-64
+    /// Linux host is 67,952,640 to 128,765,952 bytes unoptimized, over
+    /// 6 runs of this module. Each run passes
+    /// `reservation_bytes(source.len())`, which is 4,875,498 bytes, so
+    /// the assertion below fails without the reservation. The
+    /// reservation is the bound this test reads.
+    ///
+    /// §110's problem is the 2,147,483,648 bytes a 32-bit displacement
+    /// carries, and the compile thread's 8 GiB stack produced that
+    /// distance. §114 removed that stack (§114.2 rule 4), so this test
+    /// no longer witnesses that distance.
     #[test]
     fn two_items_of_one_module_are_inside_that_modules_reservation() {
         let literal = "a".repeat(1 << 20);
