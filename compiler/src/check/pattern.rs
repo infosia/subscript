@@ -263,11 +263,9 @@ mod tests {
     fn with_pattern<R>(source: &str, body: impl FnOnce(&ast::Pat) -> R) -> R {
         let text = format!("const {source} = value;\n");
         swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-            let program = crate::parse::parse_program(
-                &[crate::SourceFile::new("pattern.ts", text)],
-                crate::Profile::Default,
-            )
-            .expect("the pattern parses");
+            let program =
+                crate::parse::parse_program(&[crate::SourceFile::new("pattern.ts", text)])
+                    .expect("the pattern parses");
             let ast::ModuleItem::Stmt(ast::Stmt::Decl(ast::Decl::Var(declaration))) =
                 &program.files[0].module.body[0]
             else {

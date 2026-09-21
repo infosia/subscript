@@ -620,15 +620,6 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        // §109.2 S025: the sandbox profile has no worker surface.
-        if self.profile == crate::Profile::Sandbox {
-            self.error(
-                RuleCode::S025,
-                "`Worker.spawn` is rejected under the sandbox profile",
-                pos.clone(),
-            );
-            return self.err_expr(pos);
-        }
         if c.args.len() != 1
             || c.args
                 .first()

@@ -3,11 +3,10 @@
 use super::*;
 
 impl<'a> Lowering<'a> {
-    pub(super) fn new(module: &'a hir::Module, budget: u64) -> Result<Self, LowerError> {
+    pub(super) fn new(module: &'a hir::Module) -> Result<Self, LowerError> {
         let fallback = || Pos::new("<module>", 1, 1);
         if !module.poisoned_imports.is_empty() {
             return Err(LowerError {
-                code: None,
                 pos: module
                     .poisoned_imports
                     .first()
@@ -42,7 +41,6 @@ impl<'a> Lowering<'a> {
                     .is_some()
                 {
                     return Err(LowerError {
-                        code: None,
                         pos: method.pos.clone(),
                         message: format!(
                             "class `{}` has duplicate checked method `{}`",
@@ -63,7 +61,6 @@ impl<'a> Lowering<'a> {
                 .is_some()
             {
                 return Err(LowerError {
-                    code: None,
                     pos: function.pos.clone(),
                     message: format!("duplicate checked function `{}`", function.name),
                 });
@@ -94,8 +91,6 @@ impl<'a> Lowering<'a> {
 
         let mut lowering = Self {
             hir: module,
-            instructions: 0,
-            instruction_budget: budget,
             free_functions,
             methods,
             foreign_functions,
@@ -146,7 +141,6 @@ impl<'a> Lowering<'a> {
                 .get(&function.name)
                 .cloned()
                 .ok_or_else(|| LowerError {
-                    code: None,
                     pos: function.pos.clone(),
                     message: format!("missing id for function `{}`", function.name),
                 })?;
@@ -185,9 +179,6 @@ impl<'a> Lowering<'a> {
                 None,
                 Vec::new(),
             )?;
-            // §109.3: the module initializer is a function body, so the
-            // checkpoint is its first instruction.
-            builder.emit_sandbox_checkpoint(SandboxCheckpoint::Enter, &pos)?;
             let top_level = builder.function.body.clone();
             if let Some(global) = globals
                 .iter()
@@ -246,7 +237,6 @@ impl<'a> Lowering<'a> {
             .enumerate()
             .map(|(index, function)| {
                 function.ok_or_else(|| LowerError {
-                    code: None,
                     pos: Pos::new("<module>", 1, 1),
                     message: format!("function id {index} was allocated but not lowered"),
                 })
@@ -263,7 +253,6 @@ impl<'a> Lowering<'a> {
                     .get(&entry.function)
                     .map(|record| record.id)
                     .ok_or_else(|| LowerError {
-                        code: None,
                         pos: Pos::new("<worker entry>", 1, 1),
                         message: format!(
                             "worker entry names unresolved function `{}`",
@@ -300,7 +289,6 @@ impl<'a> Lowering<'a> {
                     .get(&function.name)
                     .map(|record| record.id)
                     .ok_or_else(|| LowerError {
-                        code: None,
                         pos: function.pos.clone(),
                         message: "async root has no function id".to_string(),
                     })
@@ -338,9 +326,6 @@ impl<'a> Lowering<'a> {
                 }
             }
             row.signatures.extend(signatures);
-            // §109.3: the checkpoints are lowering-emitted, so the
-            // checker contributes no row for them.
-            row.signatures.extend(super::sandbox_call_signatures());
         }
         Ok(l::Module {
             entry,
@@ -432,7 +417,6 @@ impl<'a> Lowering<'a> {
                             .get(&(class_index, field.name.clone()))
                             .copied()
                             .ok_or_else(|| LowerError {
-                                code: None,
                                 pos: field.pos.clone(),
                                 message: format!("missing id for field `{}`", field.name),
                             })?;
@@ -491,7 +475,6 @@ impl<'a> Lowering<'a> {
                     .get(function.mirror.0)
                     .map(|mirror| mirror.include.clone())
                     .ok_or_else(|| LowerError {
-                        code: None,
                         pos: function.pos.clone(),
                         message: format!(
                             "foreign function `{}` has an invalid mirror id",
@@ -532,7 +515,6 @@ impl<'a> Lowering<'a> {
             .get(&(class, name.to_string()))
             .cloned()
             .ok_or_else(|| LowerError {
-                code: None,
                 pos: pos.clone(),
                 message: format!("missing method id for class #{class} `{name}`"),
             })
@@ -550,13 +532,11 @@ impl<'a> Lowering<'a> {
             .functions
             .get_mut(id.0 as usize)
             .ok_or_else(|| LowerError {
-                code: None,
                 pos: function.pos.clone(),
                 message: format!("function id {} is outside the module table", id.0),
             })?;
         if slot.is_some() {
             return Err(LowerError {
-                code: None,
                 pos: function.pos.clone(),
                 message: format!("function id {} has two bodies", id.0),
             });
@@ -590,10 +570,6 @@ impl<'a> Lowering<'a> {
         captures: Vec<hir::Capture>,
     ) -> Result<(), LowerError> {
         let mut builder = FunctionBuilder::new(self, id, function, kind, receiver, captures)?;
-        // §109.3: the checkpoint is the first instruction of the body,
-        // after the parameter binds.
-        let entry_pos = builder.function.pos.clone();
-        builder.emit_sandbox_checkpoint(SandboxCheckpoint::Enter, &entry_pos)?;
         builder.lower_statements(&builder.function.body.clone())?;
         let lowered = builder.finish()?;
         self.set_function(id, lowered)

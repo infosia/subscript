@@ -6,7 +6,7 @@ use std::fmt;
 
 use subscript_compiler::hir;
 use subscript_compiler::lir as l;
-use subscript_compiler::{ClassId, Diagnostic, Pos, RuleCode, Type};
+use subscript_compiler::{ClassId, Pos, Type};
 
 use crate::lir_types::boundary_box_class;
 
@@ -33,27 +33,10 @@ use self::verify::verify_function;
 /// LIR without guessing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LowerError {
-    /// The rule that stopped the lowering, when a §109.2 rule did.
-    /// `None` for every stop that no rule names, which the CLI reports
-    /// as an internal failure.
-    pub code: Option<RuleCode>,
     /// Source position of the construct.
     pub pos: Pos,
     /// Exact reason lowering stopped.
     pub message: String,
-}
-
-impl LowerError {
-    /// The diagnostic this stop renders as, when a rule code names it
-    /// (`specs/blocks/compiler.md` §109.2 rule 4).
-    ///
-    /// The CLI renders the answer with the checker's diagnostics, so a
-    /// budget stop prints `error[S026]` and not an internal failure.
-    #[must_use]
-    pub fn diagnostic(&self) -> Option<Diagnostic> {
-        self.code
-            .map(|code| Diagnostic::new(code, self.message.clone(), self.pos.clone()))
-    }
 }
 
 impl fmt::Display for LowerError {
@@ -114,55 +97,14 @@ fn boundary_class_is_embedded_header(module: &hir::Module, header: ClassId) -> b
 /// Returns the first construct whose checked semantics cannot be encoded by
 /// the closed LIR form.
 pub fn lower_module(module: &hir::Module) -> Result<l::Module, LowerError> {
-    lower_module_within(module, SANDBOX_INSTRUCTION_BUDGET)
-}
-
-/// The largest number of LIR instructions the sandbox profile accepts
-/// (`specs/blocks/compiler.md` §109.2 rule 4).
-///
-/// Nesting bounds the depth of the checked tree; this bounds the width
-/// that lowering and unrolling add.
-pub(crate) const SANDBOX_INSTRUCTION_BUDGET: u64 = 4_194_304;
-
-/// Lowers one module under `budget` LIR instructions.
-///
-/// The budget is a parameter so a test can reach it. No source inside
-/// S026's limits reaches [`SANDBOX_INSTRUCTION_BUDGET`].
-///
-/// # Errors
-///
-/// Returns the same errors as [`lower_module`], plus the §109.2 rule 4
-/// output budget under the sandbox profile.
-pub(crate) fn lower_module_within(
-    module: &hir::Module,
-    budget: u64,
-) -> Result<l::Module, LowerError> {
-    let mut lowered = Lowering::new(module, budget)?.run()?;
+    let mut lowered = Lowering::new(module)?.run()?;
     unroll::run(&mut lowered);
-    // The unroller adds instructions after the emission counter stops, so
-    // the total is counted here as well (§109.2 rule 4).
-    if module.profile == subscript_compiler::Profile::Sandbox {
-        let emitted: u64 = lowered
-            .functions
-            .iter()
-            .flat_map(|function| function.blocks.iter())
-            .map(|block| block.instructions.len() as u64)
-            .sum();
-        if emitted > budget {
-            return Err(instruction_budget_error(
-                lowered.functions.first().map(|function| &function.pos),
-                emitted,
-                budget,
-            ));
-        }
-    }
     for function in &mut lowered.functions {
         thread_suspension_live_ins(function)?;
         classify_local_storage(function);
     }
     if let Err(errors) = verify_module(&lowered) {
         return Err(LowerError {
-            code: None,
             pos: lowered.functions.first().map_or_else(
                 || Pos::new("<module>", 1, 1),
                 |function| function.pos.clone(),
@@ -325,24 +267,8 @@ impl From<&hir::Param> for CallParam {
     }
 }
 
-/// The §109.2 rule 4 output-budget rejection.
-fn instruction_budget_error(pos: Option<&Pos>, emitted: u64, budget: u64) -> LowerError {
-    LowerError {
-        code: Some(RuleCode::S026),
-        pos: pos.cloned().unwrap_or_else(|| Pos::new("<module>", 1, 1)),
-        message: format!(
-            "lowered output of {emitted} instructions is over the sandbox profile \
-             budget of {budget} instructions"
-        ),
-    }
-}
-
 struct Lowering<'a> {
     hir: &'a hir::Module,
-    /// LIR instructions emitted so far (§109.2 rule 4).
-    instructions: u64,
-    /// The output budget this lowering runs under (§109.2 rule 4).
-    instruction_budget: u64,
     free_functions: HashMap<String, FunctionRecord>,
     methods: HashMap<(usize, String), FunctionRecord>,
     foreign_functions: HashMap<String, l::ForeignFunctionId>,
@@ -419,81 +345,11 @@ fn intrinsic_operations() -> Vec<l::IntrinsicOperation> {
                 }
             }),
     );
-    for (operation, name) in SANDBOX_OPERATIONS.iter().enumerate() {
-        table.push(l::IntrinsicOperation {
-            family: l::IntrinsicFamily::Sandbox,
-            operation: operation as u16,
-            semantic_name: (*name).to_string(),
-            runtime_symbol: intrinsic_runtime_symbol(l::IntrinsicFamily::Sandbox, name)
-                .map(str::to_string),
-            signatures: Vec::new(),
-        });
-    }
     table
-}
-
-/// The sandbox-profile checkpoints, in operation order
-/// (`specs/blocks/compiler.md` §109.3). The index is the family-local
-/// operation number.
-pub(crate) const SANDBOX_OPERATIONS: [&str; 2] = ["Enter", "Poll"];
-
-/// The checkpoint a lowered call names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SandboxCheckpoint {
-    /// Runs first in every function body.
-    Enter,
-    /// Runs on every loop iteration edge, before the condition.
-    Poll,
-}
-
-impl SandboxCheckpoint {
-    /// The family-local operation number of this checkpoint.
-    fn operation(self) -> u16 {
-        match self {
-            SandboxCheckpoint::Enter => 0,
-            SandboxCheckpoint::Poll => 1,
-        }
-    }
-
-    /// The LIR call target of this checkpoint.
-    pub(crate) fn target(self) -> l::CallTarget {
-        l::CallTarget {
-            kind: l::CallTargetKind::Intrinsic(l::Intrinsic {
-                family: l::IntrinsicFamily::Sandbox,
-                operation: self.operation(),
-                type_argument: None,
-                worker_entry: None,
-            }),
-            parameter_types: Vec::new(),
-            return_type: None,
-        }
-    }
-}
-
-/// The two signature-table rows the sandbox checkpoints need.
-///
-/// Both take no LIR operand and return nothing: the Context and the
-/// position id are implicit arguments the tiers add (§109.3).
-pub(crate) fn sandbox_call_signatures() -> Vec<l::CallSignature> {
-    [SandboxCheckpoint::Enter, SandboxCheckpoint::Poll]
-        .into_iter()
-        .map(|checkpoint| l::CallSignature {
-            target: match checkpoint.target().kind {
-                l::CallTargetKind::Intrinsic(intrinsic) => {
-                    l::CallSignatureTarget::Intrinsic(intrinsic)
-                }
-                _ => unreachable!("a sandbox checkpoint target is an intrinsic"),
-            },
-            parameter_types: Vec::new(),
-            return_type: None,
-        })
-        .collect()
 }
 
 fn intrinsic_runtime_symbol(family: l::IntrinsicFamily, name: &str) -> Option<&'static str> {
     Some(match (family, name) {
-        (l::IntrinsicFamily::Sandbox, "Enter") => "subscript_rt_sandbox_enter",
-        (l::IntrinsicFamily::Sandbox, "Poll") => "subscript_rt_sandbox_poll",
         (l::IntrinsicFamily::Ambient, "Print") => "subscript_rt_print",
         (l::IntrinsicFamily::Ambient, "Collect") => "subscript_rt_collect",
         (l::IntrinsicFamily::Ambient, "UnsafeDelete") => "subscript_rt_delete",
@@ -1057,14 +913,12 @@ fn convert_binary(value: hir::BinOp) -> Result<l::BinaryOp, LowerError> {
         hir::BinOp::UShr => l::BinaryOp::UShr,
         hir::BinOp::And | hir::BinOp::Or => {
             return Err(LowerError {
-                code: None,
                 pos: Pos::new("<operator>", 1, 1),
                 message: "short-circuit operator reached scalar instruction lowering".to_string(),
             });
         }
         _ => {
             return Err(LowerError {
-                code: None,
                 pos: Pos::new("<operator>", 1, 1),
                 message: format!("unrecognized binary operator {value:?}"),
             });
@@ -1158,88 +1012,6 @@ fn address_base(ty: &l::ValueType) -> Option<l::ValueId> {
     match ty {
         l::ValueType::Address(address) => address.array_base,
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod budget_tests {
-    use subscript_compiler::{check_program_with, on_the_compile_thread, CheckOptions, Profile};
-
-    use super::{lower_module, lower_module_within, SANDBOX_INSTRUCTION_BUDGET};
-
-    const SOURCE: &str = "export function main(): void {\n  let total: i32 = 0;\n  for (let index: i32 = 0; index < 8; index = index + 1) {\n    total = total + index;\n  }\n  print(`${total}`);\n}\n";
-
-    fn checked(profile: Profile) -> subscript_compiler::hir::Module {
-        on_the_compile_thread(|| {
-            check_program_with(
-                &[subscript_compiler::SourceFile::new("budget.ts", SOURCE)],
-                &CheckOptions::with_profile(profile),
-            )
-            .expect("the source checks under both profiles")
-        })
-    }
-
-    /// §109.2 rule 4: the profile bounds the lowered output. No source
-    /// inside S026's limits reaches the contract budget, so the test
-    /// lowers the budget instead.
-    #[test]
-    fn the_output_budget_stops_the_lowering_under_the_profile() {
-        let module = checked(Profile::Sandbox);
-        let error = lower_module_within(&module, 4).expect_err("the small budget stops");
-        assert!(
-            error.message.contains("over the sandbox profile budget"),
-            "{}",
-            error.message
-        );
-        // The firing control: the contract budget lowers the same module,
-        // and the default profile ignores the small budget.
-        assert!(lower_module(&module).is_ok());
-        let default = checked(Profile::Default);
-        assert!(lower_module_within(&default, 4).is_ok());
-    }
-
-    /// The contract budget is the one [`lower_module`] applies.
-    #[test]
-    fn the_contract_budget_is_four_million_instructions() {
-        assert_eq!(SANDBOX_INSTRUCTION_BUDGET, 4_194_304);
-    }
-
-    /// §109.2 rule 4: the budget stop reaches the CLI as the rule's
-    /// rejection. The stop carries S026, every carrier to the renderer
-    /// keeps it, and the rendered line is the rule's.
-    #[test]
-    fn the_budget_stop_renders_as_the_rule_it_reports() {
-        use crate::{EmitCFilesError, EmitError, RunError};
-        use subscript_compiler::{render_diagnostics, RuleCode, SourceFile};
-
-        let module = checked(Profile::Sandbox);
-        let stop = lower_module_within(&module, 4).expect_err("the small budget stops");
-        assert_eq!(stop.code, Some(RuleCode::S026));
-
-        let files = [SourceFile::new("budget.ts", SOURCE)];
-        let diagnostic = stop.diagnostic().expect("the stop carries a diagnostic");
-        let rendered = render_diagnostics(&files, &[diagnostic]);
-        assert!(
-            rendered.starts_with("error[S026]"),
-            "the renderer answered: {rendered}"
-        );
-
-        // The two carriers between the lowering and the CLI: the build
-        // path reports diagnostics, and the run path reports a rejection.
-        let emit = EmitError::lowering(&stop);
-        assert!(matches!(
-            EmitCFilesError::from(emit.clone()),
-            EmitCFilesError::Diagnostics(_)
-        ));
-        assert!(matches!(RunError::from(emit), RunError::Rejected(_)));
-
-        // The firing control: a stop that no rule names stays internal.
-        let internal = EmitError::internal("no rule names this stop");
-        assert!(matches!(
-            EmitCFilesError::from(internal.clone()),
-            EmitCFilesError::Emission(_)
-        ));
-        assert!(matches!(RunError::from(internal), RunError::Internal(_)));
     }
 }
 

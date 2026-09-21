@@ -113,15 +113,6 @@ int main(int argc, char **argv) {
             free(first);
             return 2;
         }
-        /* The run-time limits of a compile profile (specs/blocks/compiler.md
-         * section 109.5). The driver passes both values on the command line,
-         * so this file holds no copy of them, and a driver that passes
-         * neither compiles the same entry with no limit set. The calls are
-         * outside the timed span, which is the exported workload call. */
-#if defined(SUBSCRIPT_BENCH_ALLOC_QUOTA) && defined(SUBSCRIPT_BENCH_STACK_BUDGET)
-        subscript_rt_ctx_set_alloc_quota(ctx, (uint64_t)SUBSCRIPT_BENCH_ALLOC_QUOTA);
-        subscript_rt_ctx_set_stack_budget(ctx, (uint64_t)SUBSCRIPT_BENCH_STACK_BUDGET);
-#endif
         subscript_rt_ctx_enter_script(ctx);
         subscript_init(ctx);
         subscript_rt_ctx_exit_script(ctx);

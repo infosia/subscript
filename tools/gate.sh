@@ -13,12 +13,6 @@ if [ "$#" -ne 1 ]; then
     echo 'usage: tools/gate.sh <quick|full>'
     exit 2
 fi
-# compiler.md section 109.6a: the heavy CLI tests run in the full shape.
-# The quick shape prints one gate-skip line for each of them.
-if [ "$shape" = full ]; then
-    SUBSCRIPT_HEAVY_TESTS=1
-    export SUBSCRIPT_HEAVY_TESTS
-fi
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
 CARGO=${CARGO:-cargo}
@@ -168,7 +162,7 @@ run() {
     command_status=0
     if [ "$step" = release ]; then
         release_ran=1
-        step_env='SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 SUBSCRIPT_HEAVY_TESTS=1'
+        step_env='SUBSCRIPT_FULL_INTERPRETER_SWEEP=1'
         SUBSCRIPT_FULL_INTERPRETER_SWEEP=1 run_bounded "$@" || command_status=$?
     else
         if [ "$step" = clippy ]; then clippy_ran=1; fi

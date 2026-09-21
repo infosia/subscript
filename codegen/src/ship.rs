@@ -14,19 +14,16 @@
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::process::Command;
 
-use subscript_compiler::{
-    check_program_with, on_the_compile_thread, CheckOptions, Profile, SourceFile,
-};
+use subscript_compiler::{check_program, on_the_compile_thread, SourceFile};
 use subscript_runtime::TrapKind;
 
 use crate::jit::{AbnormalTermination, RunError, TrapReport};
 use crate::lower::internal;
 use crate::native::missing_symbol;
 use crate::position_table::PositionTable;
-use crate::{HostLimits, NativeLibrary, RunConfig, RunOutput};
+use crate::{NativeLibrary, RunConfig, RunOutput};
 
 #[cfg(unix)]
 #[path = "../clang_resolver.rs"]
@@ -731,8 +728,7 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 /// # Errors
 ///
 /// Returns the same [`RunError`] variants as [`run_c_aot`]. A request for
-/// development-tier memory accounting, or for the interrupt handle,
-/// produces [`RunError::Internal`].
+/// development-tier memory accounting produces [`RunError::Internal`].
 pub fn run_c_aot_configured(
     files: &[SourceFile],
     config: RunConfig<'_>,
@@ -950,33 +946,19 @@ fn execute_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<Vec<u8>,
 }
 
 fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProgram, RunError> {
-    // §109.4 rule 1: the linked program owns its Context in another
-    // process, so no ship-tier run can answer a handle request.
-    if config.interrupt_handle.is_some() {
-        return Err(RunError::Internal(internal(
-            "the interrupt handle is not available in the shipping tier",
-        )));
-    }
     let RunConfig {
         native_libraries: libraries,
         fail_alloc_after,
         freed_handle_diagnostics,
         pre_entry_hook,
         post_run_hook,
-        profile,
-        interrupt_after_millis,
         ..
     } = config;
-    let limits = config.host_limits();
-    // §109.2 rule 3: the check and the emission both recurse over the
+    // §113.2 rule 1: the check and the emission both recurse over the
     // tree, so both run on the compile thread.
-    let (profile, program) = on_the_compile_thread(|| {
-        let hir = check_program_with(files, &CheckOptions::with_profile(profile))
-            .map_err(RunError::Rejected)?;
-        // §109.1 rule 2: the checked module is the carrier from here on.
-        let profile = hir.profile;
-        let program = crate::emit_c(&hir).map_err(RunError::from)?;
-        Ok::<_, RunError>((profile, program))
+    let program = on_the_compile_thread(|| {
+        let hir = check_program(files).map_err(RunError::Rejected)?;
+        crate::emit_c(&hir).map_err(|error| RunError::Internal(internal(error)))
     })?;
     require_native_symbols(&program.foreign_symbols, libraries)?;
     let staticlib = runtime_staticlib()?;
@@ -990,12 +972,6 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
     write_file(&src_path, program.source.as_bytes())?;
     let anchor = "    call_script_entry(ctx, subscript_init);";
     let mut entry = aot_entry_with_host_hooks(pre_entry_hook, post_run_hook)?;
-    // §109.7a: under the profile the ship runner's entry installs no
-    // print observer, and the Context sink it already reads after the
-    // run is its capture.
-    if profile == Profile::Sandbox {
-        entry = without_print_observer(&entry).map_err(RunError::Internal)?;
-    }
     if !entry.contains(anchor) {
         return Err(RunError::Internal(internal(
             "AOT entry Context-configuration anchor moved",
@@ -1016,31 +992,6 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
         setup.push_str(&format!(
             "    subscript_rt_ctx_fail_alloc_after(ctx, {n}u);\n"
         ));
-    }
-    // §109.5: the ship runner emits the run-time limits into the entry,
-    // before the first `call_script_entry`.
-    setup.push_str(&run_limits_c(profile, limits));
-    if let Some(millis) = interrupt_after_millis {
-        const REPORT_ANCHOR: &str = "    uint64_t len = 0;";
-        if !AOT_ENTRY_C.contains(REPORT_ANCHOR) {
-            return Err(RunError::Internal(internal(
-                "AOT entry post-run anchor moved",
-            )));
-        }
-        entry = entry.replacen(
-            INTERRUPT_THREAD_ANCHOR,
-            &format!("{INTERRUPT_THREAD_ANCHOR}{}", interrupt_thread_c(millis)),
-            1,
-        );
-        entry = entry.replacen(
-            REPORT_ANCHOR,
-            &format!(
-                "    subscript_join_interrupt_thread();\n\
-                 \x20   subscript_report_interrupt_latency();\n{REPORT_ANCHOR}"
-            ),
-            1,
-        );
-        setup.push_str("    subscript_start_interrupt_thread(ctx);\n");
     }
     if !setup.is_empty() {
         setup.push_str(anchor);
@@ -1094,288 +1045,6 @@ fn build_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<LinkedProg
         executable: exe_path,
         positions: program.positions,
     })
-}
-
-/// The Context-configuration lines one profile and one host record
-/// contribute to the host entry (`specs/blocks/compiler.md` §109.5).
-///
-/// The ship entry receives a host-set limit the way it receives the
-/// profile default: one call, before the first script call. Where the
-/// host sets neither limit, the default profile contributes nothing.
-fn run_limits_c(profile: Profile, limits: HostLimits) -> String {
-    let sandbox = profile == Profile::Sandbox;
-    let mut lines = String::new();
-    if let Some(bytes) = limits
-        .alloc_quota
-        .or_else(|| sandbox.then_some(crate::SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES))
-    {
-        lines.push_str(&format!(
-            "    subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C({bytes}));\n"
-        ));
-    }
-    if let Some(bytes) = limits
-        .stack_budget
-        .or_else(|| sandbox.then_some(crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES))
-    {
-        lines.push_str(&format!(
-            "    subscript_rt_ctx_set_stack_budget(ctx, UINT64_C({bytes}));\n"
-        ));
-    }
-    lines
-}
-
-/// The print-observer callback of the host entry, with the blank line
-/// that follows it (`specs/blocks/compiler.md` §109.7a).
-const PRINT_OBSERVER_C: &str = "\
-static void write_stdout_line(void *userdata, const uint8_t *line, uint64_t line_len) {
-    FILE *stream = (FILE *)userdata;
-    if (line_len > 0) {
-        fwrite(line, 1, (size_t)line_len, stream);
-    }
-    fputc('\\n', stream);
-    fflush(stream);
-}
-
-";
-
-/// The line of the host entry that installs [`PRINT_OBSERVER_C`].
-const PRINT_OBSERVER_INSTALL_C: &str =
-    "    subscript_rt_ctx_set_print_observer(ctx, write_stdout_line, stdout);\n";
-
-/// `entry` with the print observer removed (`specs/blocks/compiler.md`
-/// §109.7a).
-///
-/// The entry reads the Context sink after the run in either form. With
-/// no observer the sink holds every line, and the quota charges it.
-///
-/// # Errors
-///
-/// Returns an error when the observer's definition or its install line
-/// moved.
-fn without_print_observer(entry: &str) -> Result<String, String> {
-    for anchor in [PRINT_OBSERVER_C, PRINT_OBSERVER_INSTALL_C] {
-        if !entry.contains(anchor) {
-            return Err(internal("AOT entry print-observer anchor moved"));
-        }
-    }
-    Ok(entry
-        .replacen(PRINT_OBSERVER_C, "", 1)
-        .replacen(PRINT_OBSERVER_INSTALL_C, "", 1))
-}
-
-/// The generated host entry for one compile profile
-/// (`specs/blocks/compiler.md` §109.5, §109.7a).
-///
-/// The default profile returns [`AOT_ENTRY_C`] unchanged. The sandbox
-/// profile returns it with the quota and the stack budget set before the
-/// first script call, and with no print observer.
-///
-/// # Errors
-///
-/// Returns an error when the entry's Context-configuration anchor or its
-/// print-observer anchor moved.
-pub fn aot_entry_for_profile(profile: Profile) -> Result<String, String> {
-    if profile != Profile::Sandbox {
-        return Ok(AOT_ENTRY_C.to_string());
-    }
-    let defaults = run_limits_c(profile, HostLimits::default());
-    const ANCHOR: &str = "    call_script_entry(ctx, subscript_init);";
-    if !AOT_ENTRY_C.contains(ANCHOR) {
-        return Err(internal("AOT entry Context-configuration anchor moved"));
-    }
-    let entry = AOT_ENTRY_C.replacen(ANCHOR, &format!("{defaults}{ANCHOR}"), 1);
-    without_print_observer(&entry)
-}
-
-/// The anchor the emitted interrupt thread follows in the host entry.
-const INTERRUPT_THREAD_ANCHOR: &str =
-    "extern void subscript_kick_async_exports(subscript_rt_context *ctx);";
-
-/// The C source of the second thread that sets the interrupt flag after
-/// `millis` milliseconds, and of the report of the time from that store
-/// to the end of the run (`specs/blocks/compiler.md` §109.7).
-///
-/// The entry holds the thread handle and joins the thread after the
-/// script entry returns, so no thread outlives the run. A program that
-/// is shorter than `millis` waits for the thread.
-///
-/// The host obtains the interrupt handle on the owning thread and passes
-/// it to the thread (§109.4 rule 1). The report goes to stderr, so the
-/// program's stdout stays the bytes the goldens compare.
-fn interrupt_thread_c(millis: u64) -> String {
-    let body = r#"
-
-#include <stdio.h>
-#if defined(_WIN32)
-#include <windows.h>
-static LARGE_INTEGER subscript_interrupt_store;
-static void subscript_record_interrupt_store(void) {
-    QueryPerformanceCounter(&subscript_interrupt_store);
-}
-static void subscript_report_interrupt_latency(void) {
-    LARGE_INTEGER now;
-    LARGE_INTEGER frequency;
-    if (subscript_interrupt_store.QuadPart == 0) {
-        return;
-    }
-    QueryPerformanceCounter(&now);
-    QueryPerformanceFrequency(&frequency);
-    fprintf(stderr, "interrupt-latency-ns %llu\n",
-            (unsigned long long)((now.QuadPart - subscript_interrupt_store.QuadPart) *
-                                 1000000000LL / frequency.QuadPart));
-}
-static HANDLE subscript_interrupt_handle_thread;
-static DWORD WINAPI subscript_interrupt_thread(LPVOID argument) {
-    Sleep(SUBSCRIPT_INTERRUPT_AFTER_MILLIS);
-    subscript_rt_interrupt_set((const subscript_rt_interrupt *)argument);
-    subscript_record_interrupt_store();
-    return 0;
-}
-static void subscript_start_interrupt_thread(subscript_rt_context *ctx) {
-    const subscript_rt_interrupt *handle = subscript_rt_ctx_interrupt_handle(ctx);
-    subscript_interrupt_handle_thread =
-        CreateThread(NULL, 0, subscript_interrupt_thread, (LPVOID)handle, 0, NULL);
-}
-static void subscript_join_interrupt_thread(void) {
-    if (subscript_interrupt_handle_thread != NULL) {
-        WaitForSingleObject(subscript_interrupt_handle_thread, INFINITE);
-        CloseHandle(subscript_interrupt_handle_thread);
-        subscript_interrupt_handle_thread = NULL;
-    }
-}
-#else
-#include <pthread.h>
-#include <time.h>
-#include <unistd.h>
-static struct timespec subscript_interrupt_store;
-static void subscript_record_interrupt_store(void) {
-    clock_gettime(CLOCK_MONOTONIC, &subscript_interrupt_store);
-}
-static void subscript_report_interrupt_latency(void) {
-    struct timespec now;
-    if (subscript_interrupt_store.tv_sec == 0 && subscript_interrupt_store.tv_nsec == 0) {
-        return;
-    }
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    fprintf(stderr, "interrupt-latency-ns %lld\n",
-            (long long)((now.tv_sec - subscript_interrupt_store.tv_sec) * 1000000000LL +
-                        (now.tv_nsec - subscript_interrupt_store.tv_nsec)));
-}
-static pthread_t subscript_interrupt_handle_thread;
-static int subscript_interrupt_thread_started;
-static void *subscript_interrupt_thread(void *argument) {
-    struct timespec delay = {
-        .tv_sec = SUBSCRIPT_INTERRUPT_AFTER_MILLIS / 1000u,
-        .tv_nsec = (SUBSCRIPT_INTERRUPT_AFTER_MILLIS % 1000u) * 1000000u
-    };
-    nanosleep(&delay, NULL);
-    subscript_rt_interrupt_set((const subscript_rt_interrupt *)argument);
-    subscript_record_interrupt_store();
-    return NULL;
-}
-static void subscript_start_interrupt_thread(subscript_rt_context *ctx) {
-    const subscript_rt_interrupt *handle = subscript_rt_ctx_interrupt_handle(ctx);
-    subscript_interrupt_thread_started =
-        pthread_create(&subscript_interrupt_handle_thread, NULL, subscript_interrupt_thread,
-                       (void *)handle) == 0;
-}
-static void subscript_join_interrupt_thread(void) {
-    if (subscript_interrupt_thread_started) {
-        pthread_join(subscript_interrupt_handle_thread, NULL);
-        subscript_interrupt_thread_started = 0;
-    }
-}
-#endif
-"#;
-    body.replace("SUBSCRIPT_INTERRUPT_AFTER_MILLIS", &format!("{millis}u"))
-}
-
-/// The stderr line the emitted report writes.
-const INTERRUPT_LATENCY_PREFIX: &str = "interrupt-latency-ns ";
-
-/// Reads the emitted latency report out of the linked program's stderr.
-fn interrupt_latency(stderr: &[u8]) -> Option<Duration> {
-    let text = std::str::from_utf8(stderr).ok()?;
-    let line = text
-        .lines()
-        .find_map(|line| line.strip_prefix(INTERRUPT_LATENCY_PREFIX))?;
-    Some(Duration::from_nanos(line.trim().parse().ok()?))
-}
-
-/// What one interrupted ship-tier run produced
-/// (`specs/blocks/compiler.md` §109.7).
-#[derive(Debug)]
-#[non_exhaustive]
-pub struct InterruptedRun {
-    /// The run's exact stdout bytes, or the error that stopped it.
-    pub outcome: Result<Vec<u8>, RunError>,
-    /// The time the linked program measured from the flag store to the
-    /// end of its run. `None` when the program reported none.
-    pub latency: Option<Duration>,
-}
-
-/// Runs the shipping tier with a second thread that sets the Context
-/// interrupt flag (`specs/blocks/compiler.md` §109.7).
-///
-/// `config.interrupt_after_millis` is the delay the emitted thread sleeps
-/// before the flag store. `None` emits no thread, so a program with an
-/// endless loop never stops: that shape is the firing control, and
-/// `deadline` bounds it. The linked program is killed when it passes the
-/// deadline, and the call then returns `None`.
-///
-/// A completed run returns its outcome and the time the linked program
-/// measured from the flag store to the end of its run.
-///
-/// # Errors
-///
-/// Returns the same [`RunError`] variants as [`run_c_aot`].
-pub fn run_c_aot_interrupted(
-    files: &[SourceFile],
-    config: RunConfig<'_>,
-    deadline: Duration,
-) -> Result<Option<InterruptedRun>, RunError> {
-    let program = build_c_aot(files, config)?;
-    let started = Instant::now();
-    let mut child = Command::new(&program.executable)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| RunError::Internal(internal(format!("run linked program: {e}"))))?;
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) => {}
-            Err(e) => {
-                return Err(RunError::Internal(internal(format!(
-                    "wait for linked program: {e}"
-                ))));
-            }
-        }
-        if started.elapsed() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok(None);
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    let run = child
-        .wait_with_output()
-        .map_err(|e| RunError::Internal(internal(format!("read linked program output: {e}"))))?;
-    drop(program.directory);
-    let latency = interrupt_latency(&run.stderr);
-    let outcome = if run.status.success() {
-        Ok(run.stdout)
-    } else {
-        match parse_trap(&run.stderr, &program.positions, &run.stdout) {
-            Some(report) => Err(RunError::Trap(report)),
-            None => Err(RunError::AbnormalTermination(AbnormalTermination {
-                status: format!("linked C program exited with {}", run.status),
-                stdout: run.stdout,
-                stderr: run.stderr,
-            })),
-        }
-    };
-    Ok(Some(InterruptedRun { outcome, latency }))
 }
 
 /// Parses the entry program's `trap <kind> <pos_id> <message>` line
@@ -1447,78 +1116,6 @@ mod tests {
     fn aot_entry_without_host_hooks_is_byte_identical_to_the_standing_entry() {
         let generated = aot_entry_with_host_hooks(None, None).expect("generate entry");
         assert_eq!(generated.as_bytes(), AOT_ENTRY_C.as_bytes());
-    }
-
-    /// §109.5: the generated entry carries the profile defaults, and the
-    /// default profile leaves the standing entry unchanged.
-    #[test]
-    fn the_generated_entry_carries_the_profile_defaults() {
-        let default = aot_entry_for_profile(Profile::Default).expect("generate entry");
-        assert_eq!(default.as_bytes(), AOT_ENTRY_C.as_bytes());
-        let sandbox = aot_entry_for_profile(Profile::Sandbox).expect("generate entry");
-        assert_ne!(sandbox, default);
-        for call in [
-            &format!(
-                "subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C({}));",
-                crate::SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES
-            ),
-            &format!(
-                "subscript_rt_ctx_set_stack_budget(ctx, UINT64_C({}));",
-                crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES
-            ),
-        ] {
-            assert!(sandbox.contains(call.as_str()), "missing `{call}`");
-            assert!(!default.contains(call.as_str()), "unexpected `{call}`");
-        }
-        let defaults = sandbox
-            .find("subscript_rt_ctx_set_alloc_quota")
-            .expect("the quota call");
-        let entry = sandbox
-            .find("    call_script_entry(ctx, subscript_init);")
-            .expect("the first script call");
-        assert!(
-            defaults < entry,
-            "the defaults precede the first script call"
-        );
-    }
-
-    /// §109.7a: the ship runner's emitted entry installs no print
-    /// observer under the profile, and the default profile keeps it.
-    ///
-    /// The entry reads the Context sink after the run in either form, so
-    /// the removal leaves the report of the run's bytes in place.
-    #[test]
-    fn the_generated_entry_installs_no_print_observer_under_the_profile() {
-        let default = aot_entry_for_profile(Profile::Default).expect("generate entry");
-        let sandbox = aot_entry_for_profile(Profile::Sandbox).expect("generate entry");
-        // The header the entry carries declares the observer API, so the
-        // check reads the install line and the callback, not the name.
-        for spelling in [PRINT_OBSERVER_INSTALL_C, "write_stdout_line"] {
-            assert!(default.contains(spelling), "missing `{spelling}`");
-            assert!(!sandbox.contains(spelling), "unexpected `{spelling}`");
-        }
-        // The sink report is the capture of the unobserved run, so it
-        // stays in both forms.
-        for spelling in ["subscript_rt_ctx_stdout(ctx, &len)", "fwrite(out, 1,"] {
-            assert!(default.contains(spelling), "missing `{spelling}`");
-            assert!(sandbox.contains(spelling), "missing `{spelling}`");
-        }
-        // The removal takes the observer and nothing else.
-        assert_eq!(
-            sandbox.len() + PRINT_OBSERVER_C.len() + PRINT_OBSERVER_INSTALL_C.len(),
-            default.len() + run_limits_c(Profile::Sandbox, HostLimits::default()).len()
-        );
-    }
-
-    /// §109.7a: a moved anchor is an error, not a silent pass.
-    ///
-    /// The subject is a C source with no entry, because §100.2 reserves
-    /// every C entry body in this workspace for `host_entry`.
-    #[test]
-    fn a_moved_print_observer_anchor_reports() {
-        let error = without_print_observer("static void nothing(void) {}\n")
-            .expect_err("a source without the observer must report");
-        assert!(error.contains("print-observer anchor moved"), "{error}");
     }
 
     #[test]
@@ -1751,7 +1348,7 @@ mod tests {
     /// The compile/link flags and runtime inputs are exactly the ones used
     /// by `run_c_aot`; only the host driver source differs.
     fn run_c_aot_with_entry(files: &[SourceFile], entry: &str) -> std::process::Output {
-        let hir = check_program_with(files, &CheckOptions::default()).expect("test program checks");
+        let hir = check_program(files).expect("test program checks");
         let program = crate::emit_c(&hir).expect("emit ship C");
         let staticlib = runtime_staticlib().expect("runtime staticlib");
         let dir = TempDir::new("host-api-test").expect("temp dir");

@@ -35,8 +35,7 @@ const RESERVATION_FLOOR_BYTES: u64 = 104_466;
 const RESERVATION_SLOPE: u64 = 3;
 
 /// The margin the reservation holds over the derived size, as a
-/// numerator over a denominator (§110 rule 3: 1.5). It is the margin
-/// §109.2a holds over the same kind of measured bound.
+/// numerator over a denominator (§110 rule 3: 1.5).
 const MARGIN_NUMERATOR: u64 = 3;
 
 /// The denominator of the §110 rule 3 margin.
@@ -130,7 +129,7 @@ pub(crate) fn install_reservation(
 #[cfg(test)]
 mod tests {
     use cranelift_module::{FuncOrDataId, Module};
-    use subscript_compiler::{Profile, SourceFile};
+    use subscript_compiler::SourceFile;
 
     use super::reservation_bytes;
     use crate::jit::compile::compile_jit;
@@ -151,8 +150,7 @@ mod tests {
         let source = format!("export function main(): void {{\n  print(\"{literal}\");\n}}\n");
         let source = source.as_str();
         let files = [SourceFile::new("main.ts", source)];
-        let (module, lowered, _) =
-            compile_jit(&files, &[], Profile::Default).expect("the dev JIT compiles the module");
+        let (module, lowered) = compile_jit(&files, &[]).expect("the dev JIT compiles the module");
         let main = lowered.main_id().expect("the module exports `main`");
         let code = module.get_finalized_function(main) as usize;
         let data_id = match module.get_name("subscript_str0") {

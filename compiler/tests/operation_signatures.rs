@@ -27,7 +27,7 @@ fn read_ambient(path: &Path, name: &str) -> SourceFile {
 }
 
 fn checked_module(label: &str, files: Vec<SourceFile>) -> hir::Module {
-    // §109.2 rule 3: every caller of the checker wraps the compile, so
+    // §113.2 rule 1: every caller of the checker wraps the compile, so
     // a corpus entry's depth is the compile thread's fact, not this test
     // thread's.
     on_the_compile_thread(move || check_program(&files)).unwrap_or_else(|diagnostics| {

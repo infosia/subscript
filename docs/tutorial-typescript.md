@@ -812,7 +812,7 @@ subscript link-flags                 # what a host links against
 
 ## Reading on
 
-- [`examples/README.md`](../examples/README.md) — eleven single-concept
+- [`examples/README.md`](../examples/README.md) — twelve single-concept
   examples, each with its divergence stated, plus the C-host capstones.
 - [`docs/tutorial-c-cpp.md`](tutorial-c-cpp.md) — the same language
   from the host's side, with the embedding walkthrough.

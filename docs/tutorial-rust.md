@@ -72,12 +72,10 @@ let files = vec![
 ];
 ```
 
-That program prints `42`. `parse_import_specifiers(&file,
-Profile::Default)` returns one file's import specifiers with the same
-parser the checker uses, so a host walks the import graph itself. The
-second argument is the compile profile ("The run entry points beside
-`run_jit`" below). `cli/src/program_loader.rs` is the reference
-implementation for on-disk loading.
+That program prints `42`. `parse_import_specifiers(&file)` returns one
+file's import specifiers with the same parser the checker uses, so a
+host walks the import graph itself. `cli/src/program_loader.rs` is the
+reference implementation for on-disk loading.
 
 ## A frame-loop host in four steps
 
@@ -409,13 +407,6 @@ Development tier, all in `subscript_codegen`:
 - `jit_compile_time`, `jit_bench`, `jit_bench_with_warmup_floor`,
   `jit_bench_configured` — measurement entry points for the
   performance gate, not host API.
-- `run_jit_interrupted(&files, config)` — runs in this process and
-  sets the Context interrupt flag from a second thread after
-  `RunConfig::interrupt_after_millis`. It returns the outcome and the
-  time from the flag to the return. It also stores the run's interrupt
-  handle in `RunConfig::interrupt_handle`, so a caller on another
-  thread stops the run itself. `run_c_aot_interrupted` is the
-  ship-tier form, with a bound on the run.
 - `JIT_OUTPUT_FILE_ENV` — an optional environment override that names
   a parent-owned output file for a JIT run.
 
@@ -443,40 +434,9 @@ Ship tier, same crate:
   `RunError::Internal` here.
 
 `RunConfig` holds `native_libraries`, `fail_alloc_after`,
-`freed_handle_diagnostics`, `memory_accounting`, `pre_entry_hook`,
-`post_run_hook`, `profile`, `interrupt_after_millis`,
-`interrupt_handle`, `alloc_quota`, and `stack_budget`. `RunOutput`
-holds `stdout` and an optional `memory_accounting`.
-
-`interrupt_handle` is a `&OnceLock<Arc<Interrupt>>` the in-process
-development runner fills before the first script call. The handle owns
-the Context's interrupt cell, so `handle.set()` from any thread stops
-the run at its next checkpoint. A `run_jit*` helper that forks the run
-fills nothing, because the child's Context is in another process; the
-shipping tier refuses the option for the same reason.
-
-`profile` is the compile profile (`Profile::Default` or
-`Profile::Sandbox`). The runner passes it to the checker, the checked
-module carries it, and each runner reads the profile's run-time
-defaults from there: under `Profile::Sandbox` a run starts with a
-67,108,864-byte allocation quota and a 524,288-byte stack budget.
-
-`alloc_quota` and `stack_budget` are those two limits in bytes, each
-an `Option<u64>`, and each set through `RunConfig::with_alloc_quota`
-or `RunConfig::with_stack_budget`. A set value replaces the profile
-default for that limit. A set value applies under `Profile::Default`
-too: a limit is your fact, and it does not depend on the profile. The
-four runners apply both — `run_jit_configured`, `run_c_aot_configured`
-(through the entry it emits), `ReloadSession::new_configured`, and
-`interpret_configured`. A host that drives the Context itself calls
-`subscript_rt_ctx_set_alloc_quota` and
-`subscript_rt_ctx_set_stack_budget` instead.
-
-The third limit is the interrupt. `ReloadSession::interrupt_handle`
-returns the session's `Arc<Interrupt>`, and `RunConfig::interrupt_handle`
-takes the handle of a one-shot dev-tier run. A second thread calls
-`set` on the handle, and the run stops at its next checkpoint with the
-`Interrupted` trap.
+`freed_handle_diagnostics`, `memory_accounting`, `pre_entry_hook`, and
+`post_run_hook`. `RunOutput` holds `stdout` and an optional
+`memory_accounting`.
 
 `NativeLibrary::new(include_directories, c_sources, symbols)` is
 `unsafe`: every symbol address must stay valid for every run that

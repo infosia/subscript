@@ -19,7 +19,6 @@ extern "C" {
 #endif
 
 typedef struct subscript_rt_context subscript_rt_context;
-typedef struct subscript_rt_interrupt subscript_rt_interrupt;
 
 typedef struct subscript_rt_worker subscript_rt_worker;
 typedef struct subscript_rt_worker_inbox subscript_rt_worker_inbox;
@@ -176,64 +175,17 @@ uint64_t subscript_rt_ctx_async_unfinished(const subscript_rt_context* ctx);
  * pointer value; the call reads it only as an address.
  */
 int32_t subscript_rt_ctx_callback_release(subscript_rt_context* ctx, void* registration);
-/**
- * Bytes the subscript_rt_context has reserved for its live allocations.
- *
- * This is the counter the allocation quota compares against
- * (compiler.md 109.0): the payload rounded to its size class plus the
- * block header in the arena mode, and the payload plus the header
- * plus the per-record constant in the exact-size mode. A host that
- * sets a quota paces on this figure (compiler.md 109.8a);
- * `subscript_rt_ctx_live_bytes` is the payload figure and does not
- * predict the trap. Like `live_bytes`, the value is tier-dependent.
- *
- * # Safety
- *
- * `ctx` follows the shared subscript_rt_context contract.
- */
-uint64_t subscript_rt_ctx_charged_bytes(const subscript_rt_context* ctx);
 int32_t subscript_rt_ctx_clear_trap(subscript_rt_context* ctx);
 void subscript_rt_ctx_collect(subscript_rt_context* ctx);
 void subscript_rt_ctx_enter_script(subscript_rt_context* ctx);
 void subscript_rt_ctx_exit_script(subscript_rt_context* ctx);
 void subscript_rt_ctx_fail_alloc_after(subscript_rt_context* ctx, uint64_t n);
-/**
- * Returns the interrupt handle of `ctx` (compiler.md 109.4).
- *
- * Call it on the owning thread, before or between runs. The handle
- * addresses one heap cell outside the subscript_rt_context's bytes, and it is valid
- * until the subscript_rt_context is released. `subscript_rt_interrupt_set` is the
- * call another thread makes on it while the owning thread runs script
- * code. `subscript_rt_ctx_clear_trap` clears the flag together with the
- * trap.
- *
- * # Safety
- *
- * `ctx` follows the exclusive subscript_rt_context contract.
- */
-const subscript_rt_interrupt* subscript_rt_ctx_interrupt_handle(const subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_live_allocations(const subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context* ctx);
 subscript_rt_context* subscript_rt_ctx_new(void);
 void subscript_rt_ctx_release(subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_reserved_bytes(const subscript_rt_context* ctx);
 void subscript_rt_ctx_seed_random(subscript_rt_context* ctx, uint64_t seed);
-/**
- * Sets the subscript_rt_context allocation quota in bytes (compiler.md 109.4).
- *
- * The quota charges the bytes the allocator reserves for an allocation
- * (compiler.md 109.0). The arena mode reserves the payload rounded to
- * its size class, plus the block header. The exact-size mode reserves
- * the payload, the header, and the per-allocation record. A request
- * that passes the quota records the `allocation-quota` trap (kind 26)
- * at the allocation site, and returns no storage. Zero removes the
- * quota, which is the default.
- *
- * # Safety
- *
- * `ctx` follows the exclusive subscript_rt_context contract.
- */
-void subscript_rt_ctx_set_alloc_quota(subscript_rt_context* ctx, uint64_t bytes);
 /**
  * Sets the callback-binding count advisory threshold.
  *
@@ -331,20 +283,6 @@ void subscript_rt_ctx_set_now(subscript_rt_context* ctx, int64_t ms);
  */
 void subscript_rt_ctx_set_print_observer(subscript_rt_context* ctx, subscript_rt_print_observer observer, void* userdata);
 void subscript_rt_ctx_set_regex_budget(subscript_rt_context* ctx, uint64_t budget);
-/**
- * Sets the script stack budget in bytes (compiler.md 109.4).
- *
- * The entry call at script depth zero records the stack floor. A
- * sandbox-profile function entry below the floor minus `bytes` records
- * the `stack-budget` trap (kind 27). Set a budget below the stack size
- * of the thread that calls the script. Zero removes the budget, which
- * is the default.
- *
- * # Safety
- *
- * `ctx` follows the exclusive subscript_rt_context contract.
- */
-void subscript_rt_ctx_set_stack_budget(subscript_rt_context* ctx, uint64_t bytes);
 void subscript_rt_ctx_set_trap_observer(subscript_rt_context* ctx, subscript_rt_trap_observer observer, void* userdata);
 const uint8_t* subscript_rt_ctx_stdout(const subscript_rt_context* ctx, uint64_t* len);
 uint32_t subscript_rt_ctx_trap_kind(const subscript_rt_context* ctx);
@@ -376,24 +314,6 @@ uint64_t subscript_rt_ctx_visit_live_allocations(const subscript_rt_context* ctx
  * `subscript_rt_cb_register` produced and no release ended.
  */
 subscript_rt_context* subscript_rt_cb_registration_context(void* registration);
-
-/**
- * Requests that the running script stop at its next sandbox-profile
- * checkpoint (compiler.md 109.4).
- *
- * Any thread can call this while the owning thread runs script code: it
- * sets one atomic flag in the cell `handle` addresses and reads no
- * subscript_rt_context field. A script compiled under the sandbox profile reads the
- * flag at every function entry and on every loop edge, and records the
- * `interrupted` trap (kind 25) there. A script compiled under the
- * default profile has no checkpoint, so the flag has no effect on it.
- *
- * # Safety
- *
- * `handle` is a handle from `subscript_rt_ctx_interrupt_handle` whose
- * subscript_rt_context is not released.
- */
-void subscript_rt_interrupt_set(const subscript_rt_interrupt* handle);
 
 /**
  * Closes a worker's parent-to-worker queue.

@@ -862,21 +862,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     } else {
                         self.ml.rt.cb_bind
                     };
-                    // §112 rule 4: the crossing is a script site, so the
-                    // quota refusal of the record reports this position.
-                    let crossing_pos = self.ml.pos_id(pos);
-                    let crossing_pos = self.iconst(types::I32, i64::from(crossing_pos));
                     let binding = self
                         .call_runtime(
                             crossing,
-                            &[
-                                self.ctx,
-                                code,
-                                environment,
-                                userdata,
-                                userdata2,
-                                crossing_pos,
-                            ],
+                            &[self.ctx, code, environment, userdata, userdata2],
                             false,
                         )?
                         .ok_or_else(|| internal("callback binding has no result"))?;

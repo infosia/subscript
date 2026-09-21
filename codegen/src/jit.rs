@@ -27,7 +27,7 @@ pub(crate) use self::probe::{
     memory_accounting_after_run,
 };
 pub use self::run::{
-    run_jit, run_jit_configured, run_jit_interrupted, run_jit_with_alloc_failure,
+    run_jit, run_jit_configured, run_jit_with_alloc_failure,
     run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_memory_accounting,
     run_jit_with_memory_accounting_and_native_libraries, run_jit_with_native_libraries,
 };
@@ -109,17 +109,6 @@ pub enum RunError {
     Internal(String),
 }
 
-impl From<crate::EmitError> for RunError {
-    /// A stop a compile-profile rule produced is the rule's rejection
-    /// (§109.2 rule 4); every other stop is an internal failure.
-    fn from(error: crate::EmitError) -> Self {
-        error.diagnostic.map_or_else(
-            || RunError::Internal(error.message.clone()),
-            |diagnostic| RunError::Rejected(vec![diagnostic]),
-        )
-    }
-}
-
 impl std::fmt::Display for RunError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -150,11 +139,10 @@ impl std::fmt::Display for RunError {
 impl std::error::Error for RunError {}
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, OnceLock};
     use std::time::Duration;
 
-    use subscript_compiler::{Profile, SourceFile};
-    use subscript_runtime::{ffi, Context, Interrupt, TrapKind};
+    use subscript_compiler::SourceFile;
+    use subscript_runtime::{ffi, Context};
 
     use super::compile::compile_jit;
     use super::*;
@@ -228,8 +216,7 @@ mod tests {
              }\n\
              export function main(): void {}\n",
         );
-        let (module, lowered, _) =
-            compile_jit(&program, &[], Profile::Default).expect("compile allocation probe");
+        let (module, lowered) = compile_jit(&program, &[]).expect("compile allocation probe");
         let init = module.get_finalized_function(lowered.init);
         let populate = lowered
             .entries
@@ -310,8 +297,7 @@ mod tests {
              }\n\
              export function main(): void {}\n",
         );
-        let (module, lowered, _) =
-            compile_jit(&program, &[], Profile::Default).expect("compile allocation probe");
+        let (module, lowered) = compile_jit(&program, &[]).expect("compile allocation probe");
         let init = module.get_finalized_function(lowered.init);
         let entry = |name: &str| {
             lowered
@@ -383,8 +369,7 @@ mod tests {
                print(\"done\");\n\
              }\n",
         );
-        let (module, lowered, _) =
-            compile_jit(&program, &[], Profile::Default).expect("compile observer program");
+        let (module, lowered) = compile_jit(&program, &[]).expect("compile observer program");
         let init = module.get_finalized_function(lowered.init);
         let main = module.get_finalized_function(lowered.main_id().expect("main entry"));
         let mut ctx = Context::new();
@@ -462,8 +447,7 @@ mod tests {
     fn jit_corpus_output_is_byte_identical_with_an_observer_registered() {
         let source = include_str!("../../corpus/accept/a01-hello.ts");
         let program = [SourceFile::new("a01-hello.ts", source)];
-        let (module, lowered, _) =
-            compile_jit(&program, &[], Profile::Default).expect("compile a01");
+        let (module, lowered) = compile_jit(&program, &[]).expect("compile a01");
         let init = module.get_finalized_function(lowered.init);
         let main = module.get_finalized_function(lowered.main_id().expect("main entry"));
 
@@ -601,12 +585,11 @@ mod tests {
         // ship-tier half of the both-tier check is
         // `tests/cemit.rs::date_now_reads_the_pinned_context_clock_in_the_ship_tier`
         // — the same program, pinned ms, and expected bytes.
-        let (module, lowered, _) = compile_jit(
+        let (module, lowered) = compile_jit(
             &sources(
                 "export function main(): void {\n  const t: i64 = Date.now();\n  print(`${t}`);\n  print(new Date(Date.now()).toISOString());\n}\n",
             ),
             &[],
-            Profile::Default,
         )
         .expect("compile");
         let init_ptr = module.get_finalized_function(lowered.init);
@@ -633,42 +616,14 @@ mod tests {
         unsafe { module.free_memory() };
     }
 
-    /// §109.5: the bench runner applies the profile defaults, so a
-    /// sandbox-profile run stops at the stack budget. The same program with
-    /// a base case is the firing control: it runs clean under the profile.
-    #[test]
-    fn jit_bench_configured_applies_the_profile_defaults() {
-        const ENDLESS: &str = "function descend(depth: i32): i32 {\n                                 return descend(depth + 1) + 1;\n}\n                               export function main(): void {\n                                 print(`${descend(0)}`);\n}\n";
-        const BOUNDED: &str = "function descend(depth: i32): i32 {\n                                 if (depth > 8) {\n    return depth;\n  }\n                                 return descend(depth + 1) + 1;\n}\n                               export function main(): void {\n                                 print(`${descend(0)}`);\n}\n";
-        let config = RunConfig::with_profile(Profile::Sandbox);
-        let trapped = jit_bench_configured(&sources(ENDLESS), config, 0, 1, Duration::ZERO);
-        match trapped {
-            Err(RunError::Trap(report)) => assert_eq!(report.rule, TrapKind::StackBudget),
-            other => panic!("expected the stack-budget trap, got {other:?}"),
-        }
-        let clean = jit_bench_configured(&sources(BOUNDED), config, 0, 2, Duration::ZERO)
-            .expect("the bounded program runs under the profile");
-        assert_eq!(clean.stdout, b"18\n");
-        assert_eq!(clean.samples.len(), 2);
-    }
-
     /// A benchmark reports timed samples only, so the options with no
     /// channel here are refused rather than ignored.
     #[test]
     fn jit_bench_configured_refuses_an_option_it_cannot_report() {
         let files = sources("export function main(): void {\n  print(\"tick\");\n}\n");
-        let sink: OnceLock<Arc<Interrupt>> = OnceLock::new();
         for config in [
             RunConfig {
                 memory_accounting: true,
-                ..RunConfig::default()
-            },
-            RunConfig {
-                interrupt_after_millis: Some(1),
-                ..RunConfig::default()
-            },
-            RunConfig {
-                interrupt_handle: Some(&sink),
                 ..RunConfig::default()
             },
             RunConfig {
@@ -739,8 +694,8 @@ mod tests {
     /// tier, on a program of one line.
     #[test]
     fn each_tier_reserves_index_zero_and_gives_the_first_script_site_id_one() {
-        let (module, lowered, _) = compile_jit(&sources(ONE_LINE_PROGRAM), &[], Profile::Default)
-            .expect("compile the one-line program");
+        let (module, lowered) =
+            compile_jit(&sources(ONE_LINE_PROGRAM), &[]).expect("compile the one-line program");
         let dev = lowered.positions.clone();
         // SAFETY: nothing called the compiled entries, so no pointer
         // into the JIT memory exists.
@@ -776,8 +731,8 @@ mod tests {
     /// tier, as the test above.
     #[test]
     fn the_three_published_tables_agree_on_the_entry_at_index_zero() {
-        let (module, lowered, _) = compile_jit(&sources(ONE_LINE_PROGRAM), &[], Profile::Default)
-            .expect("compile the one-line program");
+        let (module, lowered) =
+            compile_jit(&sources(ONE_LINE_PROGRAM), &[]).expect("compile the one-line program");
         let dev = lowered.positions.clone();
         // SAFETY: nothing called the compiled entries.
         unsafe { module.free_memory() };

@@ -50,59 +50,12 @@ pub fn repository_relative(root: &std::path::Path, absolute: &std::path::Path) -
     )
 }
 
-/// The compile profile (`specs/blocks/compiler.md` §109.1).
-///
-/// The profile narrows the accepted language. It adds no form, so a
-/// program under a profile stays a program of the accepted language.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Profile {
-    /// The default profile. The script is trusted, and no §109.2 rule runs.
-    #[default]
-    Default,
-    /// The sandbox profile, for content the host did not write. Every
-    /// §109.2 rule runs.
-    Sandbox,
-}
-
-/// The name the CLI and the corpus header use to select a profile.
-///
-/// The default profile has no name (§109.1 rule 1), so only
-/// [`Profile::Sandbox`] answers a name.
-impl Profile {
-    /// Parses a profile selector. Returns `None` for an unknown name.
-    #[must_use]
-    pub fn parse(name: &str) -> Option<Self> {
-        match name {
-            "sandbox" => Some(Profile::Sandbox),
-            _ => None,
-        }
-    }
-}
-
 /// Options that control program checking.
 #[non_exhaustive]
 #[derive(Debug, Clone, Default)]
 pub struct CheckOptions {
     /// Import specifiers to bind as poisoned when absent.
     pub poison_missing_modules: Vec<String>,
-    /// The compile profile (§109.1). [`Profile::Default`] runs no §109.2
-    /// rule.
-    pub profile: Profile,
-    /// The §109.2 rule 4 budgets. A test lowers them; no source inside
-    /// S026's limits reaches the contract's numbers.
-    pub(crate) budgets: check::profile::Budgets,
-}
-
-impl CheckOptions {
-    /// Builds the default options for one compile profile (§109.1).
-    #[must_use]
-    pub fn with_profile(profile: Profile) -> Self {
-        CheckOptions {
-            profile,
-            ..CheckOptions::default()
-        }
-    }
 }
 
 /// One source file of a program.
@@ -162,10 +115,10 @@ pub fn check_program(files: &[SourceFile]) -> Result<hir::Module, Vec<Diagnostic
 
 /// Checks a program with the specified options.
 ///
-/// The work runs on the compile thread (§109.2 rule 3): this function
-/// spawns it, so a host that embeds this crate gets the stack bound from
-/// the API and not from a wrapper of its own. A caller already on that
-/// thread runs the work inline.
+/// The work runs on the compile thread (`specs/blocks/compiler.md`
+/// §113.2 rule 1): this function spawns it, so a host that embeds this
+/// crate gets the stack bound from the API and not from a wrapper of its
+/// own. A caller already on that thread runs the work inline.
 ///
 /// # Errors
 ///
@@ -178,7 +131,7 @@ pub fn check_program_with(
     on_the_compile_thread(|| check_on_this_thread(files, options))
 }
 
-/// Checks a program on the thread that calls it (§109.2 rule 3: the
+/// Checks a program on the thread that calls it (§113.2 rule 1: the
 /// compile thread).
 fn check_on_this_thread(
     files: &[SourceFile],
@@ -191,51 +144,20 @@ fn check_on_this_thread(
             Pos::new(String::new(), 1, 1),
         )]);
     }
-    // §109.2 S026: the program limit is a fact of the file set, so it
-    // reports once, at the entry file, before any source is parsed. The
-    // per-file limits belong to the parser's entry (rule 5).
-    if options.profile == Profile::Sandbox {
-        // §109.2a: every bound of the profile assumes the compile
-        // thread's stack, so a refused thread checks nothing.
-        if compile_thread_refused() {
-            let entry = files
-                .iter()
-                .find(|file| !file.dts)
-                .or_else(|| files.first())
-                .map_or_else(String::new, |file| file.name.clone());
-            return Err(vec![Diagnostic::new(
-                RuleCode::S026,
-                "the compile thread is unavailable, so the sandbox profile \
-                 checks nothing",
-                Pos::new(entry, 1, 1),
-            )]);
-        }
-        if let Some(program) = check::profile::program_limit_diagnostic(files) {
-            return Err(vec![program]);
-        }
-    }
     swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-        let parsed = parse::parse_program(files, options.profile)?;
+        let parsed = parse::parse_program(files)?;
         check::run(&parsed, options)
     })
 }
 
 /// The stack the compile thread gets, in bytes
-/// (`specs/blocks/compiler.md` §109.2 rule 3).
+/// (`specs/blocks/compiler.md` §113.2 rule 1).
 ///
-/// The parser, the checker, the warning walk, the lowering, and the
-/// emitters each recurse once per nesting level, so the depth a program
-/// can reach is a property of this number and not of the thread the
-/// caller runs on. S026's nesting limit of 256 is far under the capacity
-/// this stack gives.
-///
-/// S026's byte limit is one contract number in every build. This size is
-/// the implementation's fact: the worst product of parser stack cost and
-/// source density is the parenthesis, at one source byte for one level,
-/// so each build gets the stack that holds the deepest nesting a file of
-/// the byte limit can spell, with a margin of at least 1.5 (§109.2a).
-/// `check::profile` holds the measured cost of one level in each build
-/// and the test that pins this size to it.
+/// The parser and the checker recurse once per nesting level, and a
+/// 2 MiB caller thread overflows at depth 66. A stack overflow aborts
+/// the process, which §90 forbids, so every stage of one compile runs on
+/// a thread of this size. The number is a capacity and not a bound: no
+/// byte limit exists, so a source deep enough passes it.
 pub const COMPILE_THREAD_STACK_BYTES: usize = if cfg!(debug_assertions) {
     8_589_934_592
 } else {
@@ -246,21 +168,6 @@ std::thread_local! {
     /// True while this thread runs [`on_the_compile_thread`] work.
     static ON_THE_COMPILE_THREAD: std::cell::Cell<bool> =
         const { std::cell::Cell::new(false) };
-
-    /// True while this thread runs the work that a refused compile
-    /// thread left to it (§109.2a).
-    static COMPILE_THREAD_REFUSED: std::cell::Cell<bool> =
-        const { std::cell::Cell::new(false) };
-}
-
-/// True when the host refused the compile thread and this thread runs
-/// the work instead (§109.2a).
-///
-/// Every bound the sandbox profile holds assumes the compile thread's
-/// stack, so the profile checks nothing when the answer is true. The
-/// default profile runs the work on the caller's thread, as before.
-pub(crate) fn compile_thread_refused() -> bool {
-    COMPILE_THREAD_REFUSED.with(std::cell::Cell::get)
 }
 
 /// Marks this thread as the compile thread until it drops.
@@ -281,63 +188,6 @@ impl Drop for CompileThreadMark {
     }
 }
 
-/// Marks this thread as the one that runs a refused compile thread's
-/// work, until it drops (§109.2a).
-struct RefusedMark(bool);
-
-impl RefusedMark {
-    fn enter() -> Self {
-        Self(COMPILE_THREAD_REFUSED.replace(true))
-    }
-}
-
-impl Drop for RefusedMark {
-    fn drop(&mut self) {
-        COMPILE_THREAD_REFUSED.set(self.0);
-    }
-}
-
-// The test-only hook that refuses the compile thread (§109.2a). A stack
-// size the platform rejects is a host fact that no test can arrange on
-// every host, so the refusal is a flag. It is thread-local, so one test
-// forces it while the tests beside it spawn as usual.
-#[cfg(test)]
-std::thread_local! {
-    /// True while this thread refuses the compile thread.
-    static REFUSE_COMPILE_THREAD: std::cell::Cell<bool> =
-        const { std::cell::Cell::new(false) };
-}
-
-/// Refuses the compile thread for the rest of this thread's work.
-#[cfg(test)]
-pub(crate) struct ForcedRefusal(bool);
-
-#[cfg(test)]
-impl ForcedRefusal {
-    pub(crate) fn enter() -> Self {
-        Self(REFUSE_COMPILE_THREAD.replace(true))
-    }
-}
-
-#[cfg(test)]
-impl Drop for ForcedRefusal {
-    fn drop(&mut self) {
-        REFUSE_COMPILE_THREAD.set(self.0);
-    }
-}
-
-/// True when the test-only hook refuses the compile thread.
-fn refuse_compile_thread() -> bool {
-    #[cfg(test)]
-    {
-        REFUSE_COMPILE_THREAD.with(std::cell::Cell::get)
-    }
-    #[cfg(not(test))]
-    {
-        false
-    }
-}
-
 /// One slot that carries the work to the compile thread and the value back.
 enum CompileWork<T, F> {
     /// The work has not started.
@@ -349,19 +199,16 @@ enum CompileWork<T, F> {
 }
 
 /// Runs `work` on a thread with [`COMPILE_THREAD_STACK_BYTES`] of stack
-/// and returns its result (`specs/blocks/compiler.md` §109.2 rule 3).
+/// and returns its result (`specs/blocks/compiler.md` §113.2 rule 1).
 ///
 /// Every stage of one compile runs inside one call: the parse, the check,
 /// the warning walk, the lowering, and the emission. A nested call is
 /// already on that thread, so it runs the work inline and spawns nothing.
 ///
 /// A panic on that thread resumes on the caller, so a caller that counts
-/// panics sees exactly what a direct call gives it. If the host refuses
-/// the thread, the caller's own thread runs `work` and the depth a
-/// program can reach becomes a property of the caller's stack. The
-/// sandbox profile does not accept that, so the refusal is recorded for
-/// the work and [`check_program_with`] reports S026 under the profile
-/// (§109.2a). The default profile keeps the fallback.
+/// panics sees exactly what a direct call gives it. If the spawn fails,
+/// the caller's own thread runs `work`, and the depth a program can
+/// reach becomes a property of the caller's stack.
 pub fn on_the_compile_thread<T, F>(work: F) -> T
 where
     T: Send,
@@ -389,25 +236,18 @@ where
     // refused spawn drops the reference and leaves the work in place.
     let body = &body;
     std::thread::scope(|scope| {
-        let spawned = if refuse_compile_thread() {
-            None
-        } else {
-            std::thread::Builder::new()
-                .stack_size(COMPILE_THREAD_STACK_BYTES)
-                .name("subscript-compile".to_owned())
-                .spawn_scoped(scope, body)
-                .ok()
-        };
+        let spawned = std::thread::Builder::new()
+            .stack_size(COMPILE_THREAD_STACK_BYTES)
+            .name("subscript-compile".to_owned())
+            .spawn_scoped(scope, body)
+            .ok();
         match spawned {
             Some(handle) => {
                 if let Err(payload) = handle.join() {
                     std::panic::resume_unwind(payload);
                 }
             }
-            None => {
-                let _refused = RefusedMark::enter();
-                body();
-            }
+            None => body(),
         }
     });
     match slot.into_inner() {
@@ -473,7 +313,7 @@ mod tests {
 
     /// The classification record is a thread-local of the thread the
     /// checker runs on, so this test checks inline and reads its own
-    /// thread (§109.2 rule 3 spawns the compile thread for
+    /// thread (§113.2 rule 1 spawns the compile thread for
     /// [`check_program_with`]).
     #[test]
     fn assignment_targets_classify_every_place_variant_from_source() {

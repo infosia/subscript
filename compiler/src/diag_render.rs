@@ -5,16 +5,16 @@ use std::fmt::Write as _;
 use crate::divergence::Divergence;
 use crate::{Diagnostic, Pos, SourceFile, Warning};
 
-/// The most bytes of a source line that one snippet carries (§109.2).
+/// The most bytes of a source line that one snippet carries (§113.2 rule 3).
 const WINDOW_BYTES: usize = 240;
 
-/// The bytes of the window on each side of the column (§109.2).
+/// The bytes of the window on each side of the column (§113.2 rule 3).
 const WINDOW_HALF: usize = WINDOW_BYTES / 2;
 
-/// The marker that stands for the bytes a window cut away (§109.2).
+/// The marker that stands for the bytes a window cut away (§113.2 rule 3).
 const CUT: &str = "…";
 
-/// The most items that one render writes (§109.2). The summary line
+/// The most items that one render writes (§113.2 rule 3). The summary line
 /// carries the total.
 const MAX_ITEMS: usize = 200;
 
@@ -28,7 +28,7 @@ struct RenderItem<'a> {
 
 /// The byte offset where each line of one source starts.
 ///
-/// §109.2: the renderer indexes the lines of a file once. A scan from
+/// §113.2 rule 3: the renderer indexes the lines of a file once. A scan from
 /// byte zero for each item is quadratic in the item count.
 struct LineIndex<'a> {
     source: &'a str,
@@ -84,7 +84,7 @@ struct Snippet {
 }
 
 /// Builds the window of at most [`WINDOW_BYTES`] bytes around the
-/// column (§109.2).
+/// column (§113.2 rule 3).
 ///
 /// The column is a 1-based character count, so the window holds the
 /// bytes from [`WINDOW_HALF`] before that character to [`WINDOW_HALF`]
@@ -124,7 +124,7 @@ fn snippet(line: &str, col: u32) -> Snippet {
 /// cannot be found, or whose 1-based line is outside that file, degrades to
 /// its `error[...]` header and location line without a source snippet.
 /// Columns are rendered as character counts; tabs and earlier multi-byte
-/// characters can therefore shift visual alignment. §109.2 bounds the
+/// characters can therefore shift visual alignment. §113.2 rule 3 bounds the
 /// output: a snippet carries at most [`WINDOW_BYTES`] bytes of its line
 /// around the column, and the render stops after [`MAX_ITEMS`] items.
 /// The summary line carries the total count.

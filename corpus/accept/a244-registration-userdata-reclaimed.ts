@@ -49,12 +49,12 @@ export function main(): void {
   payload = null;
   Context.collect();
 
-  // The mark reads the charge while the rooted graph is live.
-  subRequestMarkCharge(device);
+  // The mark reads the live bytes while the rooted graph is live.
+  subRequestMarkLiveBytes(device);
   subRequestPump(device);
   Context.collect();
 
   print(`released ${subRequestReleaseCount(device)}`);
-  print(`reclaimed ${subRequestChargeFellBy(device, 8192)}`);
+  print(`reclaimed ${subRequestLiveBytesFellBy(device, 8192)}`);
   subDeviceRelease(device);
 }

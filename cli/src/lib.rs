@@ -1,16 +1,10 @@
 #![warn(missing_docs)]
 //! Implementation of the `subscript` developer command.
 
-mod compile_child;
 mod program_loader;
 mod runtime_paths;
 /// Testable state transitions for `run --watch`.
 pub mod watch;
-
-pub use compile_child::CHILD_GROUP_FILE_VARIABLE as COMPILE_CHILD_GROUP_FILE_VARIABLE;
-pub use compile_child::CHILD_STOP_VARIABLE as COMPILE_CHILD_STOP_VARIABLE;
-pub use compile_child::MEMORY_BUDGET_VARIABLE as COMPILE_MEMORY_BUDGET_VARIABLE;
-pub use compile_child::TIME_BUDGET_VARIABLE as COMPILE_TIME_BUDGET_VARIABLE;
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -18,17 +12,16 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime};
 
-use compile_child::Role;
 use program_loader::load_program;
 use runtime_paths::{resolve_runtime_paths, RuntimeEnvironment, RuntimeOverrides, RuntimePaths};
 use subscript_codegen::{
     add_c11_optimized_flags, add_executable_output, add_object_directory, emit_c_files,
-    host_c_compiler, include_directory_arg, run_jit_configured, runtime_system_libraries,
-    CCompilerStyle, EmitCFilesError, RunConfig, RunError,
+    host_c_compiler, include_directory_arg, run_jit, runtime_system_libraries, CCompilerStyle,
+    EmitCFilesError, RunError,
 };
 use subscript_compiler::{
-    check_program_with, check_warnings, on_the_compile_thread, render_diagnostics, render_warnings,
-    CheckOptions, Diagnostic, Profile, SourceFile, Warning,
+    check_program, check_warnings, on_the_compile_thread, render_diagnostics, render_warnings,
+    Diagnostic, SourceFile, Warning,
 };
 use watch::{WatchCall, WatchOutcome, WatchSession, WatchStep};
 
@@ -74,26 +67,14 @@ impl Failure {
 /// `args` excludes the executable name. Requested answers and program
 /// output are written to `stdout`; diagnostics, compiler output, and
 /// environment errors are written to `stderr`.
-///
-/// Under the sandbox profile the compile runs in a budgeted child
-/// process, and the child's output reaches the same two writers
-/// (§109.2 rule 6).
 pub fn execute<I, O, E>(args: I, stdout: &mut O, stderr: &mut E) -> u8
 where
     I: IntoIterator<Item = OsString>,
     O: Write,
     E: Write,
 {
-    let mut args = args.into_iter().collect::<Vec<_>>();
-    let result = compile_child::take_role(&mut args).and_then(|role| {
-        // §109.2 rule 6: the child's own first line sets its memory
-        // budget, before it reads an argument or a source.
-        if role == Role::Child {
-            let _ = compile_child::apply_memory_budget();
-            compile_child::apply_test_only_stop();
-        }
-        dispatch(&args, role, stdout, stderr)
-    });
+    let args = args.into_iter().collect::<Vec<_>>();
+    let result = dispatch(&args, stdout, stderr);
     match result {
         Ok(code) => code,
         Err(failure) => {
@@ -109,7 +90,6 @@ where
 
 fn dispatch<O: Write, E: Write>(
     args: &[OsString],
-    role: Role,
     stdout: &mut O,
     stderr: &mut E,
 ) -> Result<u8, Failure> {
@@ -117,12 +97,12 @@ fn dispatch<O: Write, E: Write>(
         return Err(Failure::usage(usage()));
     };
     match command {
-        "check" => check_command(&args[1..], role, stdout, stderr),
+        "check" => check_command(&args[1..], stderr),
         "emit" => emit_command(&args[1..], stderr),
         "bind" => bind_command(&args[1..], stdout),
         "link-flags" => link_flags_command(&args[1..], stdout),
-        "build" => build_command(&args[1..], role, stdout, stderr),
-        "run" => run_command(&args[1..], role, stdout, stderr),
+        "build" => build_command(&args[1..], stdout, stderr),
+        "run" => run_command(&args[1..], stdout, stderr),
         _ => Err(Failure::usage(format!(
             "unknown subcommand `{command}`; {}",
             usage()
@@ -139,26 +119,15 @@ struct SourceArguments {
     source: Option<PathBuf>,
     mirrors: Vec<PathBuf>,
     deny_warnings: bool,
-    profile: Option<Profile>,
 }
 
-fn check_command<O: Write, E: Write>(
-    args: &[OsString],
-    role: Role,
-    stdout: &mut O,
-    stderr: &mut E,
-) -> Result<u8, Failure> {
+fn check_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failure> {
     let parsed = parse_source_arguments(args)?;
     let source = parsed
         .source
         .as_ref()
         .ok_or_else(|| Failure::usage("check requires <file.ts>"))?;
-    let profile = parsed.profile.unwrap_or_default();
-    // §109.2 rule 6: under the profile the compile is the child's.
-    if compile_child::spawns(role, profile) {
-        return compile_child::compile_in_child("check", args, source, stdout, stderr);
-    }
-    let (files, warnings) = load_and_check(source, &parsed.mirrors, profile)?;
+    let (files, warnings) = load_and_check(source, &parsed.mirrors)?;
     if warnings.is_empty() {
         writeln!(stderr, "check: {}: no errors", source.to_string_lossy())
             .map_err(|error| Failure::usage(format!("write check result: {error}")))?;
@@ -187,10 +156,6 @@ fn parse_source_arguments(args: &[OsString]) -> Result<SourceArguments, Failure>
                 parsed
                     .mirrors
                     .push(path_value(args, &mut index, "--mirror")?);
-            }
-            Some("--profile") => {
-                let value = profile_value(args, &mut index)?;
-                set_once(&mut parsed.profile, value, "--profile")?;
             }
             Some(flag) if flag.starts_with('-') => {
                 return Err(Failure::usage(format!("unknown option `{flag}`")));
@@ -241,14 +206,14 @@ fn emit_command<E: Write>(args: &[OsString], stderr: &mut E) -> Result<u8, Failu
     }
     let source = source.ok_or_else(|| Failure::usage("emit requires <file.ts>"))?;
     let output = output.ok_or_else(|| Failure::usage("emit requires -o <dir>"))?;
-    let (files, warnings) = load_and_check(&source, &mirrors, Profile::default())?;
+    let (files, warnings) = load_and_check(&source, &mirrors)?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if deny_warnings {
             return Ok(PROGRAM_ERROR);
         }
     }
-    emit_c_files(&files, &output, "program", write_entry, Profile::default())
+    emit_c_files(&files, &output, "program", write_entry)
         .map(|_| SUCCESS)
         .map_err(|error| map_emit_error(error, &files))
 }
@@ -412,12 +377,10 @@ struct BuildArguments {
     run: bool,
     deny_warnings: bool,
     runtime: RuntimeOverrides,
-    profile: Option<Profile>,
 }
 
 fn build_command<O: Write, E: Write>(
     args: &[OsString],
-    role: Role,
     stdout: &mut O,
     stderr: &mut E,
 ) -> Result<u8, Failure> {
@@ -428,11 +391,6 @@ fn build_command<O: Write, E: Write>(
         .source
         .clone()
         .ok_or_else(|| Failure::usage("build requires --source <file.ts>"))?;
-    // §109.2 rule 6: under the profile the compile is the child's, and
-    // the budgets then cover the C compile the child runs after it.
-    if compile_child::spawns(role, parsed.profile.unwrap_or_default()) {
-        return compile_child::compile_in_child("build", args, &source_given, stdout, stderr);
-    }
     let source = absolute(&source_given, &current);
     let mirrors = parsed
         .mirrors
@@ -448,11 +406,7 @@ fn build_command<O: Write, E: Write>(
         || source.parent().unwrap_or(&current).join("subscript-build"),
         |path| absolute(&path, &current),
     );
-    let (files, warnings) = load_and_check(
-        &source_given,
-        &parsed.mirrors,
-        parsed.profile.unwrap_or_default(),
-    )?;
+    let (files, warnings) = load_and_check(&source_given, &parsed.mirrors)?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if parsed.deny_warnings {
@@ -461,15 +415,8 @@ fn build_command<O: Write, E: Write>(
     }
     let runtime = resolve_runtime_paths(parsed.runtime, RuntimeEnvironment::current(), &current)
         .map_err(Failure::usage)?;
-    // §109.5: the entry the build writes carries the profile defaults.
-    let emitted = emit_c_files(
-        &files,
-        &output,
-        "program",
-        hosts.is_empty(),
-        parsed.profile.unwrap_or_default(),
-    )
-    .map_err(|error| map_emit_error(error, &files))?;
+    let emitted = emit_c_files(&files, &output, "program", hosts.is_empty())
+        .map_err(|error| map_emit_error(error, &files))?;
     let executable = executable_path(&output, &source)?;
     compile_build(
         &emitted.source,
@@ -500,10 +447,6 @@ fn parse_build_arguments(args: &[OsString]) -> Result<BuildArguments, Failure> {
                 .mirrors
                 .push(path_value(args, &mut index, "--mirror")?),
             Some("--host") => parsed.hosts.push(path_value(args, &mut index, "--host")?),
-            Some("--profile") => {
-                let value = profile_value(args, &mut index)?;
-                set_once(&mut parsed.profile, value, "--profile")?;
-            }
             Some("-o") => {
                 let value = path_value(args, &mut index, "-o")?;
                 set_once(&mut parsed.output, value, "-o")?;
@@ -631,17 +574,14 @@ fn executable_path(output: &Path, source: &Path) -> Result<PathBuf, Failure> {
 
 fn run_command<O: Write, E: Write>(
     args: &[OsString],
-    role: Role,
     stdout: &mut O,
     stderr: &mut E,
 ) -> Result<u8, Failure> {
     let mut source = None;
     let mut deny_warnings = false;
     let mut watch = false;
-    let mut profile = None;
-    let mut index = 0;
-    while index < args.len() {
-        match args[index].to_str() {
+    for arg in args {
+        match arg.to_str() {
             Some("--deny-warnings") if !deny_warnings => deny_warnings = true,
             Some("--deny-warnings") => {
                 return Err(Failure::usage("--deny-warnings may be supplied only once"));
@@ -650,41 +590,25 @@ fn run_command<O: Write, E: Write>(
             Some("--watch") => {
                 return Err(Failure::usage("--watch may be supplied only once"));
             }
-            Some("--profile") => {
-                let value = profile_value(args, &mut index)?;
-                set_once(&mut profile, value, "--profile")?;
-            }
             Some(flag) if flag.starts_with('-') => {
                 return Err(Failure::usage(format!("unknown option `{flag}`")));
             }
-            _ if source.is_none() => source = Some(PathBuf::from(&args[index])),
+            _ if source.is_none() => source = Some(PathBuf::from(arg)),
             _ => return Err(Failure::usage("run requires exactly one <file.ts>")),
         }
-        index += 1;
     }
     let source = source.ok_or_else(|| Failure::usage("run requires exactly one <file.ts>"))?;
-    let profile = profile.unwrap_or_default();
     if watch {
-        // The watch loop keeps the live reload session, so it bounds
-        // each cycle's compile with its own child (§109.2 rule 6).
-        return run_watch(&source, deny_warnings, role, profile, stdout, stderr);
+        return run_watch(&source, deny_warnings, stdout, stderr);
     }
-    // §109.2 rule 6: under the profile the child compiles and runs, so
-    // the budgets cover the run as well. The run's own bounds are the
-    // Context's (§109.4).
-    if compile_child::spawns(role, profile) {
-        return compile_child::compile_in_child("run", args, &source, stdout, stderr);
-    }
-    let (files, warnings) = load_and_check(&source, &[], profile)?;
+    let (files, warnings) = load_and_check(&source, &[])?;
     if !warnings.is_empty() {
         write_warnings(&files, &warnings, stderr)?;
         if deny_warnings {
             return Ok(PROGRAM_ERROR);
         }
     }
-    // §109.5: the runner applies the profile defaults before the entry.
-    let config = RunConfig::with_profile(profile);
-    match run_jit_configured(&files, config).map(|output| output.stdout) {
+    match run_jit(&files) {
         Ok(output) => {
             stdout
                 .write_all(&output)
@@ -771,28 +695,19 @@ fn loaded_file_paths(entry: &Path, files: &[SourceFile]) -> Result<Vec<PathBuf>,
     Ok(paths)
 }
 
-/// Loads one watched program, with the profile's budgeted child first.
-///
-/// §109.2 rule 6: the child bounds the parser's work and memory, so the
-/// parent never parses a source the budgets refuse. A budget stop is
-/// the same S026 the other subcommands report.
-fn watch_load(source: &Path, role: Role, profile: Profile) -> Result<Vec<SourceFile>, Failure> {
-    if compile_child::spawns(role, profile) {
-        compile_child::guard_watch_compile(source)?;
-    }
-    on_the_compile_thread(|| load_program(source, &[], profile))
+/// Loads one watched program, on the compile thread.
+fn watch_load(source: &Path) -> Result<Vec<SourceFile>, Failure> {
+    on_the_compile_thread(|| load_program(source, &[]))
 }
 
 fn run_watch<O: Write, E: Write>(
     source: &Path,
     deny_warnings: bool,
-    role: Role,
-    profile: Profile,
     stdout: &mut O,
     stderr: &mut E,
 ) -> Result<u8, Failure> {
-    let mut session = WatchSession::new(deny_warnings, profile);
-    let mut watched = match watch_load(source, role, profile) {
+    let mut session = WatchSession::new(deny_warnings);
+    let mut watched = match watch_load(source) {
         Ok(initial_files) => {
             let initial_paths = loaded_file_paths(source, &initial_files)?;
             let initial = session.step(&initial_files);
@@ -827,7 +742,7 @@ fn run_watch<O: Write, E: Write>(
         }
         watched.refresh();
 
-        let files = match watch_load(source, role, profile) {
+        let files = match watch_load(source) {
             Ok(files) => files,
             Err(failure) => {
                 session.invalidate_loaded_sources();
@@ -929,8 +844,8 @@ fn rejection(files: &[SourceFile], diagnostics: Vec<Diagnostic>) -> Failure {
     Failure::rejection(render_diagnostics(files, &diagnostics))
 }
 
-fn accepted_warnings(files: &[SourceFile], profile: Profile) -> Result<Vec<Warning>, Failure> {
-    match check_program_with(files, &CheckOptions::with_profile(profile)) {
+fn accepted_warnings(files: &[SourceFile]) -> Result<Vec<Warning>, Failure> {
+    match check_program(files) {
         Ok(module) => Ok(check_warnings(&module)),
         Err(diagnostics) => Err(rejection(files, diagnostics)),
     }
@@ -940,27 +855,15 @@ fn accepted_warnings(files: &[SourceFile], profile: Profile) -> Result<Vec<Warni
 ///
 /// The loader parses each file to read its imports, the checker walks the
 /// tree, and the warning walk repeats it, so none of the three runs on the
-/// caller's thread (§109.2 rule 3).
+/// caller's thread (§113.2 rule 1).
 fn load_and_check(
     source: &Path,
     mirrors: &[PathBuf],
-    profile: Profile,
 ) -> Result<(Vec<SourceFile>, Vec<Warning>), Failure> {
     on_the_compile_thread(|| {
-        let files = load_program(source, mirrors, profile)?;
-        let warnings = accepted_warnings(&files, profile)?;
+        let files = load_program(source, mirrors)?;
+        let warnings = accepted_warnings(&files)?;
         Ok((files, warnings))
-    })
-}
-
-/// Reads `--profile <name>` (§109.1 rule 1). An unknown name is a usage
-/// error, and the default profile has no name.
-fn profile_value(args: &[OsString], index: &mut usize) -> Result<Profile, Failure> {
-    let value = string_value(args, index, "--profile")?;
-    Profile::parse(value).ok_or_else(|| {
-        Failure::usage(format!(
-            "unknown profile `{value}`; the one name is `sandbox`"
-        ))
     })
 }
 

@@ -8,7 +8,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
 use subscript_cli::watch::{WatchOutcome, WatchSession};
-use subscript_compiler::{check_program, render_diagnostics, Profile, SourceFile};
+use subscript_compiler::{check_program, render_diagnostics, SourceFile};
 
 fn files(source: &str) -> Vec<SourceFile> {
     vec![SourceFile::new("live.ts", source)]
@@ -51,7 +51,7 @@ export function main(): void {
 
 #[test]
 fn body_edit_runs_new_behavior_with_the_live_context() -> Result<(), String> {
-    let mut watch = WatchSession::new(false, Profile::default());
+    let mut watch = WatchSession::new(false);
     let started = watch.step(&files(COUNTER_V1));
     assert!(started.diagnostics.is_empty());
     assert!(started.warnings.is_empty());
@@ -101,7 +101,7 @@ export function main(): void {
 
 #[test]
 fn declaration_refusal_names_the_declaration_then_a_body_edit_swaps() -> Result<(), String> {
-    let mut watch = WatchSession::new(false, Profile::default());
+    let mut watch = WatchSession::new(false);
     assert_eq!(
         call_output(watch.step(&files(SHAPE_V1)).outcome)?,
         b"old 1\n"
@@ -122,7 +122,7 @@ fn declaration_refusal_names_the_declaration_then_a_body_edit_swaps() -> Result<
 
 #[test]
 fn diagnostics_leave_the_old_program_live_and_a_fix_runs() -> Result<(), String> {
-    let mut watch = WatchSession::new(false, Profile::default());
+    let mut watch = WatchSession::new(false);
     assert_eq!(
         call_output(watch.step(&files(COUNTER_V1)).outcome)?,
         b"1:old=10\n"
@@ -162,7 +162,7 @@ export function main(): void {
   print(`recovered ${calls}`);
 }
 ";
-    let mut watch = WatchSession::new(false, Profile::default());
+    let mut watch = WatchSession::new(false);
     match watch.step(&files(trapping)).outcome {
         WatchOutcome::Started(call) => {
             assert!(call.output.is_empty());
@@ -198,7 +198,7 @@ export function main(): void {
         "  for (let i: i32 = 0; i < 2; i += 1) {\n    const token: Token = new Token(i);\n    print(`${token.value}`);\n  }",
         "  print(\"clean\");",
     );
-    let mut watch = WatchSession::new(true, Profile::default());
+    let mut watch = WatchSession::new(true);
     let denied = watch.step(&files(warned));
     assert!(matches!(denied.outcome, WatchOutcome::WaitingForFix));
     assert!(!denied.warnings.is_empty());

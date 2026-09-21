@@ -1279,15 +1279,15 @@ void subRequestReleaseActive(SubDevice device);
  * observable of §111 rule 5. */
 int32_t subRequestReleaseCount(SubDevice device);
 
-/* Records the Context charge the device reads through the Context of
- * its last registration. subRequestChargeFellBy compares against it. */
-void subRequestMarkCharge(SubDevice device);
+/* Records the Context live bytes the device reads through the Context
+ * of its last registration. subRequestLiveBytesFellBy compares against it. */
+void subRequestMarkLiveBytes(SubDevice device);
 
-/* Answers 1 when the Context charge is `atLeast` bytes or more under
- * the value subRequestMarkCharge recorded, and 0 otherwise. The
+/* Answers 1 when the Context live bytes are `atLeast` bytes or more
+ * under the value subRequestMarkLiveBytes recorded, and 0 otherwise. The
  * comparison is stable on every target, where the byte counts are not.
  * Answers 0 when no mark was recorded. */
-int32_t subRequestChargeFellBy(SubDevice device, uint32_t atLeast);
+int32_t subRequestLiveBytesFellBy(SubDevice device, uint32_t atLeast);
 
 /* A deliberate violation of the host guarantee (§111 rule 14, the
  * certain case). A script callback calls this while its own call runs:

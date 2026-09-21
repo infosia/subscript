@@ -15,10 +15,9 @@ mod pool;
 #[path = "support/trap_corpus.rs"]
 mod trap_corpus;
 
-use subscript_codegen::interpreter::{interpret, interpret_configured};
+use subscript_codegen::interpreter::interpret;
 use subscript_codegen::lir::{lower_module, verify_module};
 use subscript_codegen::run_jit_with_memory_accounting_and_native_libraries;
-use subscript_codegen::RunConfig;
 use subscript_codegen::{run_jit, run_jit_with_memory_accounting};
 use subscript_compiler::lir::{
     self as lir, BlockId, ForOfKind, InstructionKind, IteratorBoundKind, Module, Operand,
@@ -26,22 +25,17 @@ use subscript_compiler::lir::{
 };
 use subscript_compiler::lir_text::print_module;
 use subscript_compiler::Type;
-use subscript_compiler::{
-    check_program, check_program_with, on_the_compile_thread, CheckOptions, Profile, SourceFile,
-};
+use subscript_compiler::{check_program, on_the_compile_thread, SourceFile};
 
 const MARK_TRACE_MODULE_CHILD: &str = "SUBSCRIPT_MARK_TRACE_MODULE_CHILD";
 
 fn lower_entry(accept: &std::path::Path, id: &str) -> Module {
     let sources = corpus::entry_sources(accept, id);
-    // §109.1 rule 3: the entry's header profile reaches the checker, and
-    // the checked module carries it into the lowering.
-    let options = CheckOptions::with_profile(corpus::entry_profile(accept, id));
-    // §109.2 rule 3: the check and the lowering both recurse over the
+    // §113.2 rule 1: the check and the lowering both recurse over the
     // tree, so both run on the compile thread and a corpus entry's depth
     // is that thread's fact, not this one's.
     on_the_compile_thread(|| {
-        let hir = check_program_with(&sources, &options)
+        let hir = check_program(&sources)
             .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
         lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"))
     })
@@ -904,7 +898,7 @@ fn every_hir_execution_fact_is_carried_by_lir() {
     let mut findings = Vec::new();
     for id in corpus::entry_ids(&accept) {
         let sources = corpus::entry_sources(&accept, &id);
-        // §109.2 rule 3: the check, the lowering, and the fact walk all
+        // §113.2 rule 1: the check, the lowering, and the fact walk all
         // recurse over the tree, so all three run on the compile thread.
         let dropped = on_the_compile_thread(|| {
             let hir = check_program(&sources)
@@ -1361,20 +1355,6 @@ const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
         15,
         3,
     ),
-    (
-        "t57-sandbox-alloc-quota",
-        "the sandbox-profile allocation quota stops the run at the allocation site",
-        "allocation-quota",
-        16,
-        17,
-    ),
-    (
-        "t58-sandbox-stack-budget",
-        "the sandbox-profile stack budget stops the run at the function entry checkpoint",
-        "stack-budget",
-        8,
-        10,
-    ),
 ];
 
 fn interpreter_entries() -> Vec<(String, subscript_compiler::language_reference::CorpusHeader)> {
@@ -1465,8 +1445,7 @@ fn lir_interpreter_profile_matches_corpus_goldens() {
         let id = *id;
         let module = lower_entry(&accept, id);
         let golden = corpus::golden_bytes(&accept, id);
-        let config = RunConfig::with_profile(corpus::entry_profile(&accept, id));
-        match interpret_configured(&module, config) {
+        match interpret(&module) {
             Ok(output) if output == golden => None,
             Ok(output) => Some(format!(
                 "{id}: output mismatch\n  interpreter: {:?}\n  golden:      {:?}",
@@ -1519,14 +1498,11 @@ fn lir_interpreter_debug_subset_traps_at_declared_sites() {
             "debug trap subset {id} has no trap corpus entry"
         );
         let sources = trap_corpus::trap_sources(&trap, id);
-        // §109.1 rule 3: the entry's header profile reaches the checker.
-        let profile = trap_corpus::trap_profile(&trap, id);
-        let hir = check_program_with(&sources, &CheckOptions::with_profile(profile))
+        let hir = check_program(&sources)
             .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
         let module =
             lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"));
-        let error = interpret_configured(&module, RunConfig::with_profile(profile))
-            .expect_err("debug trap entry must trap");
+        let error = interpret(&module).expect_err("debug trap entry must trap");
         assert_eq!(
             error.output(),
             trap_corpus::trap_expected(&trap, id),
@@ -1698,355 +1674,6 @@ fn every_corpus_entry_lowers_to_verified_lir() {
     eprintln!(
         "storage metrics: instructions={instruction_count}, local_traffic={local_traffic}, locals={local_count}, block_parameters={block_parameters}, coroutine_functions={coroutine_functions}, coroutine_local_after_resume={coroutine_local_after_resume}, coroutine_creation_allocations={coroutine_creation_allocations}, missing_coroutine_creation_allocations=0, checked_index_addresses={checked_index_addresses}, checked_index_addresses_without_traps=0"
     );
-}
-
-/// The source both profiles lower in
-/// [`the_sandbox_profile_emits_the_checkpoints_and_the_default_profile_emits_none`].
-/// It holds one `while`, one `for`, and one `for-of`, each with a bound
-/// the unroller cannot fold. One module global and one top-level
-/// statement make the lowering build the module initializer, which
-/// §109.3 counts as a function body.
-const CHECKPOINT_SOURCE: &str = "\
-let seed: i32 = 1;\n\
-seed = seed + 1;\n\
-function fold(values: i32[]): i32 {\n\
-\x20 let total: i32 = 0;\n\
-\x20 let index: i32 = 0;\n\
-\x20 while (index < values.length) {\n\
-\x20   total = total + values[index];\n\
-\x20   index = index + 1;\n\
-\x20 }\n\
-\x20 for (let step: i32 = 0; step < values.length; step = step + 1) {\n\
-\x20   total = total + step;\n\
-\x20 }\n\
-\x20 for (const value of values) {\n\
-\x20   total = total + value;\n\
-\x20 }\n\
-\x20 return total;\n\
-}\n\
-export function main(): void {\n\
-\x20 const values: i32[] = [1, 2, 3];\n\
-\x20 print(`${fold(values)}`);\n\
-}\n";
-
-fn lower_profiled(name: &str, source: &str, profile: Profile) -> Module {
-    let hir = check_program_with(
-        &[SourceFile::new(name, source)],
-        &CheckOptions::with_profile(profile),
-    )
-    .expect("source checks clean under both profiles");
-    lower_module(&hir).expect("source lowers to LIR")
-}
-
-/// The family-local operation number of a sandbox checkpoint call, or
-/// `None` for every other instruction.
-fn sandbox_operation(instruction: &lir::Instruction) -> Option<u16> {
-    let InstructionKind::Call(target) = &instruction.kind else {
-        return None;
-    };
-    let lir::CallTargetKind::Intrinsic(intrinsic) = &target.kind else {
-        return None;
-    };
-    (intrinsic.family == lir::IntrinsicFamily::Sandbox).then_some(intrinsic.operation)
-}
-
-fn instruction_count(module: &Module) -> usize {
-    module
-        .functions
-        .iter()
-        .flat_map(|function| &function.blocks)
-        .map(|block| block.instructions.len())
-        .sum()
-}
-
-/// §109.3: the lowering emits `Sandbox.Enter` first in every function
-/// body and `Sandbox.Poll` first in every loop header, and emits neither
-/// under the default profile.
-///
-/// The two lowerings of one source are derived separately, so the
-/// instruction-count difference is an independent fact from the
-/// checkpoint count.
-#[test]
-fn the_sandbox_profile_emits_the_checkpoints_and_the_default_profile_emits_none() {
-    let default = lower_profiled("checkpoints.ts", CHECKPOINT_SOURCE, Profile::Default);
-    let sandbox = lower_profiled("checkpoints.ts", CHECKPOINT_SOURCE, Profile::Sandbox);
-
-    let default_checkpoints = default
-        .functions
-        .iter()
-        .flat_map(|function| &function.blocks)
-        .flat_map(|block| &block.instructions)
-        .filter_map(sandbox_operation)
-        .count();
-    assert_eq!(
-        default_checkpoints, 0,
-        "the default profile emits no checkpoint"
-    );
-
-    let initializer = sandbox
-        .initializer
-        .expect("the source carries a module initializer");
-    assert!(
-        sandbox
-            .functions
-            .iter()
-            .any(|function| function.id == initializer),
-        "the module initializer is one of the lowered function bodies"
-    );
-
-    let mut enters = 0usize;
-    let mut polls = 0usize;
-    let mut loop_headers = 0usize;
-    for function in &sandbox.functions {
-        let entry = function
-            .blocks
-            .iter()
-            .find(|block| block.id == function.entry)
-            .expect("entry block");
-        assert_eq!(
-            entry.instructions.first().and_then(sandbox_operation),
-            Some(0),
-            "f{}: Sandbox.Enter is the first instruction of the body",
-            function.id.0
-        );
-        for block in &function.blocks {
-            let header = block.source_name.as_deref().is_some_and(|name| {
-                name == "while.cond" || name == "for.cond" || name == "for-of.cond"
-            });
-            if header {
-                loop_headers += 1;
-                assert_eq!(
-                    block.instructions.first().and_then(sandbox_operation),
-                    Some(1),
-                    "f{}: Sandbox.Poll is the first instruction of {}",
-                    function.id.0,
-                    block.source_name.as_deref().unwrap_or_default()
-                );
-            }
-            for instruction in &block.instructions {
-                match sandbox_operation(instruction) {
-                    Some(0) => enters += 1,
-                    Some(1) => polls += 1,
-                    Some(other) => panic!("unknown Sandbox operation {other}"),
-                    None => {}
-                }
-            }
-        }
-    }
-    assert_eq!(
-        enters,
-        sandbox.functions.len(),
-        "one Enter per function body, the module initializer included"
-    );
-    assert_eq!(loop_headers, 3, "the source holds three loops");
-    assert_eq!(polls, loop_headers, "one Poll per loop header");
-    assert_eq!(
-        instruction_count(&sandbox) - instruction_count(&default),
-        enters + polls,
-        "the profile adds the checkpoints and nothing else"
-    );
-}
-
-/// §109.3: both checkpoints carry the pending-trap check every runtime
-/// call gets, so a trap they record stops the run.
-#[test]
-fn every_sandbox_checkpoint_carries_the_call_trap() {
-    let sandbox = lower_profiled("checkpoints.ts", CHECKPOINT_SOURCE, Profile::Sandbox);
-    let mut checked = 0usize;
-    for function in &sandbox.functions {
-        for block in &function.blocks {
-            for instruction in &block.instructions {
-                if sandbox_operation(instruction).is_none() {
-                    continue;
-                }
-                assert_eq!(
-                    instruction.traps.len(),
-                    1,
-                    "a checkpoint carries exactly one trap site"
-                );
-                assert_eq!(instruction.traps[0].kind, TrapKind::Call);
-                checked += 1;
-            }
-        }
-    }
-    assert!(checked > 0, "the profile emitted no checkpoint");
-}
-
-/// The source of [`a_static_array_callback_loop_polls_on_its_iteration_edge`].
-/// `map` over a dynamic array with a known callback is the fused form the
-/// lowering builds in place of the runtime call.
-const STATIC_ARRAY_CALLBACK_SOURCE: &str = "\
-export function main(): void {\n\
-\x20 const values: i32[] = [1, 2, 3];\n\
-\x20 const doubled: i32[] = values.map((value: i32): i32 => value * 2);\n\
-\x20 print(`${doubled.length}`);\n\
-}\n";
-
-/// The source of [`a_for_each_loop_polls_on_its_iteration_edge`]. `Set`
-/// `forEach` is the second fused form the lowering builds.
-const FOR_EACH_SOURCE: &str = "\
-export function main(): void {\n\
-\x20 const seen: Set<i32> = new Set<i32>();\n\
-\x20 seen.add(1);\n\
-\x20 seen.add(2);\n\
-\x20 seen.forEach((value: i32): void => {\n\
-\x20   print(`${value}`);\n\
-\x20 });\n\
-}\n";
-
-/// The number of blocks named `header` in `module`, and how many of them
-/// carry `Sandbox.Poll` as their first instruction.
-fn fused_loop_headers(module: &Module, header: &str) -> (usize, usize) {
-    let mut blocks = 0usize;
-    let mut polls = 0usize;
-    for function in &module.functions {
-        for block in &function.blocks {
-            if block.source_name.as_deref() != Some(header) {
-                continue;
-            }
-            blocks += 1;
-            if block.instructions.first().and_then(sandbox_operation) == Some(1) {
-                polls += 1;
-            }
-        }
-    }
-    (blocks, polls)
-}
-
-/// Asserts that the one block named `header` starts with `Sandbox.Poll`
-/// under the sandbox profile and with no checkpoint under the default
-/// profile (§109.3).
-///
-/// The default lowering builds the same block, so the block count is the
-/// control: a source that stops building the fused loop fails here rather
-/// than passing with zero polls.
-fn assert_fused_loop_polls(name: &str, source: &str, header: &str) {
-    let sandbox = lower_profiled(name, source, Profile::Sandbox);
-    let (sandbox_blocks, sandbox_polls) = fused_loop_headers(&sandbox, header);
-    assert_eq!(
-        sandbox_blocks, 1,
-        "{header}: the source builds one fused loop"
-    );
-    assert_eq!(
-        sandbox_polls, 1,
-        "{header}: the fused loop polls on its iteration edge"
-    );
-
-    let default = lower_profiled(name, source, Profile::Default);
-    let (default_blocks, default_polls) = fused_loop_headers(&default, header);
-    assert_eq!(
-        default_blocks, 1,
-        "{header}: the default profile builds the same fused loop"
-    );
-    assert_eq!(
-        default_polls, 0,
-        "{header}: the default profile emits no checkpoint"
-    );
-}
-
-/// §109.3: the fused loop the lowering builds for a static Array callback
-/// polls on its iteration edge.
-#[test]
-fn a_static_array_callback_loop_polls_on_its_iteration_edge() {
-    assert_fused_loop_polls(
-        "array-callback.ts",
-        STATIC_ARRAY_CALLBACK_SOURCE,
-        "array-callback.cond",
-    );
-}
-
-/// §109.3: the fused loop the lowering builds for `forEach` polls on its
-/// iteration edge.
-#[test]
-fn a_for_each_loop_polls_on_its_iteration_edge() {
-    assert_fused_loop_polls("for-each.ts", FOR_EACH_SOURCE, "for-each.cond");
-}
-
-/// A profile source with one async body, one generator, and one await, so
-/// every `Suspend` shape the lowering builds has a resume block.
-const RESUME_SOURCE: &str = "\
-function* counter(bound: i32): Generator<i32> {\n\
-\x20 let index: i32 = 0;\n\
-\x20 while (index < bound) {\n\
-\x20   yield index;\n\
-\x20   index = index + 1;\n\
-\x20 }\n\
-}\n\
-async function inner(seed: i32): Promise<i32> {\n\
-\x20 return seed + 1;\n\
-}\n\
-export async function outer(): Promise<void> {\n\
-\x20 let total: i32 = await inner(1);\n\
-\x20 for (const value of counter(3)) {\n\
-\x20   total = total + value;\n\
-\x20 }\n\
-\x20 print(`${total}`);\n\
-}\n\
-export function main(): void {}\n";
-
-/// §109.3 rule 4: a resume enters a function body, so the entry
-/// checkpoint is the first instruction of every resume block.
-#[test]
-fn the_sandbox_profile_emits_the_entry_checkpoint_at_every_resume() {
-    let default = lower_profiled("resume.ts", RESUME_SOURCE, Profile::Default);
-    let sandbox = lower_profiled("resume.ts", RESUME_SOURCE, Profile::Sandbox);
-
-    let resume_blocks = |module: &Module| -> Vec<(u32, u32)> {
-        let mut blocks = Vec::new();
-        for function in &module.functions {
-            for block in &function.blocks {
-                if let Terminator::Suspend { successor, .. } = &block.terminator {
-                    blocks.push((function.id.0, successor.0));
-                }
-            }
-        }
-        blocks
-    };
-    let expected = resume_blocks(&default);
-    assert!(
-        !expected.is_empty(),
-        "the source builds no resume block; the probe is wrong"
-    );
-    assert_eq!(
-        resume_blocks(&sandbox),
-        expected,
-        "the profile changes no control flow"
-    );
-
-    for (function_id, block_id) in resume_blocks(&sandbox) {
-        let function = sandbox
-            .functions
-            .iter()
-            .find(|function| function.id.0 == function_id)
-            .expect("the suspending function");
-        let block = function
-            .blocks
-            .iter()
-            .find(|block| block.id.0 == block_id)
-            .expect("the resume block");
-        assert_eq!(
-            block.instructions.first().and_then(sandbox_operation),
-            Some(0),
-            "f{function_id} b{block_id}: Sandbox.Enter is the first instruction of the resume"
-        );
-    }
-    for (function_id, block_id) in resume_blocks(&default) {
-        let function = default
-            .functions
-            .iter()
-            .find(|function| function.id.0 == function_id)
-            .expect("the suspending function");
-        let block = function
-            .blocks
-            .iter()
-            .find(|block| block.id.0 == block_id)
-            .expect("the resume block");
-        assert_eq!(
-            block.instructions.first().and_then(sandbox_operation),
-            None,
-            "the default profile emits no checkpoint at a resume"
-        );
-    }
 }
 
 fn lower_source(name: &str, source: &str) -> Module {

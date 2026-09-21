@@ -138,7 +138,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
 
     pub(super) fn error(&self, pos: &Pos, message: impl Into<String>) -> LowerError {
         LowerError {
-            code: None,
             pos: pos.clone(),
             message: message.into(),
         }
@@ -320,34 +319,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(operand)
     }
 
-    /// Emits one sandbox-profile checkpoint call (§109.3) into the
-    /// current block, followed by the pending-trap check every runtime
-    /// call gets.
-    ///
-    /// Emits nothing under the default profile, so a program that does
-    /// not select the profile gets no new instruction.
-    pub(super) fn emit_sandbox_checkpoint(
-        &mut self,
-        checkpoint: SandboxCheckpoint,
-        pos: &Pos,
-    ) -> Result<(), LowerError> {
-        if self.lowering.hir.profile != subscript_compiler::Profile::Sandbox {
-            return Ok(());
-        }
-        self.emit(
-            l::InstructionKind::Call(checkpoint.target()),
-            Vec::new(),
-            None,
-            false,
-            vec![l::Trap {
-                kind: l::TrapKind::Call,
-                pos: pos.clone(),
-            }],
-            pos.clone(),
-        )?;
-        Ok(())
-    }
-
     pub(super) fn emit(
         &mut self,
         kind: l::InstructionKind,
@@ -360,18 +331,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let block = self.current.ok_or_else(|| {
             self.error(&pos, "attempted to emit an instruction after a terminator")
         })?;
-        // §109.2 rule 4: the profile bounds the lowered output, so the
-        // lowering stops at the budget instead of building past it.
-        self.lowering.instructions = self.lowering.instructions.saturating_add(1);
-        if self.lowering.hir.profile == subscript_compiler::Profile::Sandbox
-            && self.lowering.instructions > self.lowering.instruction_budget
-        {
-            return Err(super::instruction_budget_error(
-                Some(&pos),
-                self.lowering.instructions,
-                self.lowering.instruction_budget,
-            ));
-        }
         let result = result_type
             .as_ref()
             .map(|ty| self.new_value(ty.clone(), None));

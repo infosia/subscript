@@ -125,33 +125,6 @@ pub(crate) fn references_interop(src: &str) -> bool {
     TOKENS.iter().any(|t| src.contains(t))
 }
 
-/// The compile profile an entry's header selects (`specs/blocks/compiler.md`
-/// §109.1 rule 3).
-///
-/// Every harness that compiles a corpus entry reads this and passes it to
-/// the checker, so an entry runs under the profile its header names.
-pub fn entry_profile(arm: &Path, id: &str) -> subscript_compiler::Profile {
-    let directory = arm.join(id);
-    let path = if directory.is_dir() {
-        directory.join("main.ts")
-    } else {
-        arm.join(format!("{id}.ts"))
-    };
-    header_profile(&path)
-}
-
-/// The compile profile the header of one corpus source selects.
-pub fn header_profile(path: &Path) -> subscript_compiler::Profile {
-    let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let header = subscript_compiler::language_reference::parse_header(path, &text)
-        .unwrap_or_else(|e| panic!("read the header of {}: {e}", path.display()));
-    match header.profile.as_deref() {
-        None => subscript_compiler::Profile::Default,
-        Some(name) => subscript_compiler::Profile::parse(name)
-            .unwrap_or_else(|| panic!("{}: unknown profile `{name}`", path.display())),
-    }
-}
-
 /// Every entry id present in `accept`, single- and multi-file.
 pub fn entry_ids(accept: &Path) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();

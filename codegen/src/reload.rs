@@ -60,22 +60,21 @@
 use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::Arc;
 
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::FuncId;
 use subscript_compiler::types::display_type;
 use subscript_compiler::{
-    check_program_with, hir, on_the_compile_thread, CheckOptions, ClassId, Diagnostic, EnumId,
-    Profile, SourceFile, StringAliasId, Type,
+    check_program, hir, on_the_compile_thread, ClassId, Diagnostic, EnumId, SourceFile,
+    StringAliasId, Type,
 };
-use subscript_runtime::{Context, Interrupt};
+use subscript_runtime::Context;
 
 use crate::jit::{install_reservation, register_runtime, RunError, TrapReport};
 use crate::lower::{dev_flags, internal, lower_module_with, LowerOptions};
 use crate::native::{missing_symbol, register_symbols};
 use crate::position_table::PositionTable;
-use crate::{HostLimits, NativeLibrary, RunConfig};
+use crate::NativeLibrary;
 
 // ----- declaration hash -----
 
@@ -525,9 +524,6 @@ pub struct ReloadSession {
     positions: PositionTable,
     decls: DeclarationHash,
     native_libraries: Vec<NativeLibrary>,
-    // The profile the session's module was checked under (§109.1 rule
-    // 2). Every reload checks the new sources under the same profile.
-    profile: Profile,
 }
 
 /// One compiled generation: the module plus what the driver needs from
@@ -614,7 +610,7 @@ fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation
 
     // A failure past this point must release the module's code pages:
     // a dropped `JITModule` frees nothing by itself.
-    // §109.2 rule 3: the lowering recurses over the tree.
+    // §113.2 rule 1: the lowering recurses over the tree.
     let lowered = match on_the_compile_thread(|| {
         lower_module_with(
             &mut module,
@@ -630,7 +626,7 @@ fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation
             // SAFETY: nothing ran and no pointer into this module
             // escaped; the partially built module is unreachable.
             unsafe { module.free_memory() };
-            return Err(RunError::from(e));
+            return Err(RunError::Internal(e));
         }
     };
     if let Some(name) = missing_symbol(&lowered.foreign_symbols, libraries) {
@@ -773,65 +769,7 @@ impl ReloadSession {
     pub fn new_capturing_initializer_trap(
         files: &[SourceFile],
     ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
-        Self::build(files, &[], Profile::Default, HostLimits::default())
-    }
-
-    /// Compiles `files` under one complete option record, runs the
-    /// module-global initializer, and returns the live session together
-    /// with any trap raised by that initializer.
-    ///
-    /// The session applies the §109.5 limits before the initializer
-    /// call: the defaults of the profile the checked module carries,
-    /// with `config.alloc_quota` and `config.stack_budget` in place of
-    /// the default each one sets.
-    ///
-    /// # Errors
-    ///
-    /// Returns the same [`RunError`] variants as
-    /// [`ReloadSession::new_capturing_initializer_trap`].
-    pub fn new_capturing_initializer_trap_configured(
-        files: &[SourceFile],
-        config: RunConfig<'_>,
-    ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
-        Self::build(
-            files,
-            config.native_libraries,
-            config.profile,
-            config.host_limits(),
-        )
-    }
-
-    /// Compiles `files` under one complete option record and returns the
-    /// live session.
-    ///
-    /// # Errors
-    ///
-    /// Returns the same [`RunError`] variants as [`ReloadSession::new`].
-    pub fn new_configured(
-        files: &[SourceFile],
-        config: RunConfig<'_>,
-    ) -> Result<ReloadSession, RunError> {
-        let (session, trap) = Self::build(
-            files,
-            config.native_libraries,
-            config.profile,
-            config.host_limits(),
-        )?;
-        match trap {
-            Some(trap) => Err(RunError::Trap(trap)),
-            None => Ok(session),
-        }
-    }
-
-    /// The interrupt handle of this session's Context
-    /// (`specs/blocks/compiler.md` §109.4 rule 1).
-    ///
-    /// A host obtains it on this thread and passes it to a second
-    /// thread, which calls [`subscript_runtime::Interrupt::set`] on it.
-    /// No Context call is safe from that thread.
-    #[must_use]
-    pub fn interrupt_handle(&self) -> Arc<Interrupt> {
-        self.ctx.interrupt_handle()
+        Self::build(files, &[])
     }
 
     /// Compiles `files` in reload mode with caller-supplied native
@@ -848,8 +786,7 @@ impl ReloadSession {
         files: &[SourceFile],
         libraries: &[NativeLibrary],
     ) -> Result<ReloadSession, RunError> {
-        let (session, trap) =
-            Self::build(files, libraries, Profile::Default, HostLimits::default())?;
+        let (session, trap) = Self::build(files, libraries)?;
         match trap {
             Some(trap) => Err(RunError::Trap(trap)),
             None => Ok(session),
@@ -859,14 +796,9 @@ impl ReloadSession {
     fn build(
         files: &[SourceFile],
         libraries: &[NativeLibrary],
-        profile: Profile,
-        limits: HostLimits,
     ) -> Result<(ReloadSession, Option<TrapReport>), RunError> {
-        // §109.2 rule 3: the check recurses over the tree.
-        let hirm = on_the_compile_thread(|| {
-            check_program_with(files, &CheckOptions::with_profile(profile))
-        })
-        .map_err(RunError::Rejected)?;
+        // §113.2 rule 1: the check recurses over the tree.
+        let hirm = on_the_compile_thread(|| check_program(files)).map_err(RunError::Rejected)?;
         let decls = declaration_hash(&hirm);
         let gen = compile(&hirm, libraries)?;
         let globals = match GlobalBlock::new(gen.globals_size, gen.globals_align) {
@@ -886,13 +818,9 @@ impl ReloadSession {
             positions: gen.positions,
             decls,
             native_libraries: libraries.to_vec(),
-            profile: hirm.profile,
         };
         session.ctx.set_fn_table(session.table.as_ptr());
         session.ctx.set_globals(session.globals.ptr);
-        // §109.5: the runner reads the profile the checked module carries
-        // and applies the run-time limits before the first `enter_script`.
-        crate::apply_run_limits(&mut session.ctx, hirm.profile, limits);
         let init_slot = gen
             .init_slot
             .ok_or_else(|| RunError::Internal(internal("no initializer slot")))?;
@@ -1031,10 +959,8 @@ impl ReloadSession {
 
     /// Takes the stdout bytes produced since the last take.
     ///
-    /// The session installs no print observer, under either profile, so
-    /// the Context sink is its capture. Under the sandbox profile the
-    /// quota charges the sink until this call releases it
-    /// (`specs/blocks/compiler.md` §109.7a, §109.4 rule 2).
+    /// The session installs no print observer, so the Context sink is
+    /// its capture.
     #[must_use]
     pub fn take_output(&mut self) -> Vec<u8> {
         self.ctx.take_stdout()
@@ -1073,12 +999,8 @@ impl ReloadSession {
         if self.ctx.has_live_workers() {
             return Err(ReloadError::LiveWorkers);
         }
-        // §109.2 rule 3: the check recurses over the tree.
-        let profile = self.profile;
-        let hirm = on_the_compile_thread(|| {
-            check_program_with(files, &CheckOptions::with_profile(profile))
-        })
-        .map_err(ReloadError::Rejected)?;
+        // §113.2 rule 1: the check recurses over the tree.
+        let hirm = on_the_compile_thread(|| check_program(files)).map_err(ReloadError::Rejected)?;
         let decls = declaration_hash(&hirm);
         if decls != self.decls {
             return Err(ReloadError::DeclarationChanged {
@@ -1172,7 +1094,7 @@ mod tests {
     }
 
     fn hash_of(text: &str) -> DeclarationHash {
-        let m = check_program_with(&src(text), &CheckOptions::default()).expect("checks");
+        let m = check_program(&src(text)).expect("checks");
         declaration_hash(&m)
     }
 
@@ -1522,117 +1444,6 @@ mod tests {
         assert_eq!(session.take_output(), b"echo=37\n");
         assert!(session.ctx.trap_record().is_none());
         assert!(!session.ctx.has_live_workers());
-    }
-
-    /// §109.5: a session built under the profile applies the defaults
-    /// before the initializer call, and a default-profile session sets
-    /// neither limit.
-    #[test]
-    fn a_profile_session_applies_the_run_time_defaults() {
-        let source = "export function main(): void {\n\x20 print(\"profiled\");\n}\n";
-        let default = ReloadSession::new(&src(source)).expect("default session");
-        assert_eq!(default.ctx.alloc_quota(), 0);
-        assert_eq!(default.ctx.stack_budget(), 0);
-
-        let mut sandbox =
-            ReloadSession::new_configured(&src(source), RunConfig::with_profile(Profile::Sandbox))
-                .expect("sandbox session");
-        assert_eq!(
-            sandbox.ctx.alloc_quota(),
-            crate::SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES
-        );
-        assert_eq!(
-            sandbox.ctx.stack_budget(),
-            crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES
-        );
-        sandbox.call_main().expect("the profile program runs");
-        assert_eq!(sandbox.take_output(), b"profiled\n");
-    }
-
-    /// §109.4 rule 1: the session hands out a handle on its own Context
-    /// cell, and a second thread sets the flag through it.
-    #[test]
-    fn a_session_hands_out_the_interrupt_handle_of_its_context() {
-        let source = "export function main(): void {\n\x20 print(\"profiled\");\n}\n";
-        let session = ReloadSession::new(&src(source)).expect("session");
-        let handle = session.interrupt_handle();
-        assert!(!handle.is_set(), "a fresh session starts with a clear flag");
-        assert!(!session.ctx.interrupted());
-        let setter = std::thread::spawn(move || handle.set());
-        setter.join().expect("the setter thread");
-        assert!(
-            session.ctx.interrupted(),
-            "the handle addresses the session's cell"
-        );
-    }
-
-    /// §109.5: a session takes the host's quota, and it replaces the
-    /// profile default. The same program under the default quota is the
-    /// firing control.
-    #[test]
-    fn a_session_applies_a_host_quota() {
-        let source = "export function main(): void {\n\
-                      \x20 let seed: u8[] = [1];\n\
-                      \x20 for (let step: i32 = 0; step < 12; step = step + 1) {\n\
-                      \x20   seed = seed.concat(seed);\n\
-                      \x20 }\n\
-                      \x20 print(`${seed.length}`);\n\
-                      }\n";
-        let config = RunConfig::with_profile(Profile::Sandbox);
-        let mut limited =
-            ReloadSession::new_configured(&src(source), config.with_alloc_quota(1_024))
-                .expect("sandbox session");
-        assert_eq!(limited.ctx.alloc_quota(), 1_024);
-        assert_eq!(
-            limited.ctx.stack_budget(),
-            crate::SANDBOX_DEFAULT_STACK_BUDGET_BYTES
-        );
-        match limited.call_main() {
-            Err(RunError::Trap(report)) => {
-                assert_eq!(report.rule, subscript_runtime::TrapKind::AllocationQuota);
-            }
-            other => panic!("the host quota must stop the call: {other:?}"),
-        }
-
-        let mut clean =
-            ReloadSession::new_configured(&src(source), config).expect("sandbox session");
-        assert_eq!(
-            clean.ctx.alloc_quota(),
-            crate::SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES
-        );
-        clean
-            .call_main()
-            .expect("the default quota admits the call");
-        assert_eq!(clean.take_output(), b"4096\n");
-    }
-
-    /// §109.2: a session built under the profile keeps it, so a reload
-    /// that violates a profile rule is rejected rather than swapped in.
-    #[test]
-    fn a_profile_session_reloads_under_the_same_profile() {
-        let clean = "export function main(): void {\n\x20 print(\"one\");\n}\n";
-        let freeing = "export function main(): void {\n\
-                       \x20 const values: i32[] = [1];\n\
-                       \x20 print(\"one\");\n\
-                       \x20 Context.free(values);\n\
-                       }\n";
-        let (mut session, trap) = ReloadSession::new_capturing_initializer_trap_configured(
-            &src(clean),
-            RunConfig::with_profile(Profile::Sandbox),
-        )
-        .expect("sandbox session");
-        assert!(trap.is_none());
-        match session.reload(&src(freeing)) {
-            Err(ReloadError::Rejected(diagnostics)) => {
-                assert!(
-                    diagnostics
-                        .iter()
-                        .any(|diagnostic| diagnostic.message.contains("sandbox")),
-                    "{diagnostics:?}"
-                );
-            }
-            other => panic!("the reload must keep the session's profile: {other:?}"),
-        }
     }
 
     #[test]

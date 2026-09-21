@@ -212,8 +212,8 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subRequestPump",
             "subRequestReleaseActive",
             "subRequestReleaseCount",
-            "subRequestMarkCharge",
-            "subRequestChargeFellBy",
+            "subRequestMarkLiveBytes",
+            "subRequestLiveBytesFellBy",
             "subRequestReleaseAndRefire",
         ]
     );

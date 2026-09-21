@@ -30,7 +30,7 @@ extern subscript_rt_context *subscript_rt_cb_registration_context(void *registra
 extern int32_t subscript_rt_ctx_callback_release(
     subscript_rt_context *ctx,
     void *registration);
-extern uint64_t subscript_rt_ctx_charged_bytes(const subscript_rt_context *ctx);
+extern uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context *ctx);
 
 enum {
     ENGINE_WORLD_ENTITY_CAPACITY = 32,
@@ -81,8 +81,8 @@ struct EngineWorld_T {
     EngineRequestSlot engineRequests[ENGINE_WORLD_REQUEST_CAPACITY];
     int32_t engineRequestNumber;
     int32_t engineReleaseCount;
-    uint64_t engineChargeMark;
-    bool engineChargeMarked;
+    uint64_t engineLiveBytesMark;
+    bool engineLiveBytesMarked;
 };
 
 /* The frame record is separate from simulation state; thread-local storage
@@ -605,35 +605,35 @@ int32_t engineRequestReleaseCount(EngineWorld engineWorld) {
     return engineCheckedWorld->engineReleaseCount;
 }
 
-/* The mark reads the Context charge through the kept Context, so the
- * script observes reclamation without new language surface. */
-void engineRequestMarkCharge(EngineWorld engineWorld) {
+/* The mark reads the Context live bytes through the kept Context, so
+ * the script observes reclamation without new language surface. */
+void engineRequestMarkLiveBytes(EngineWorld engineWorld) {
     struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
     if (engineCheckedWorld == NULL ||
         engineCheckedWorld->engineRequestContext == NULL) {
         return;
     }
-    engineCheckedWorld->engineChargeMark =
-        subscript_rt_ctx_charged_bytes(engineCheckedWorld->engineRequestContext);
-    engineCheckedWorld->engineChargeMarked = true;
+    engineCheckedWorld->engineLiveBytesMark =
+        subscript_rt_ctx_live_bytes(engineCheckedWorld->engineRequestContext);
+    engineCheckedWorld->engineLiveBytesMarked = true;
 }
 
 /* The answer is a comparison against the mark, not a byte count: the
- * charge is tier- and memory-mode-dependent, and the fall is not. */
-int32_t engineRequestChargeFellBy(
+ * live bytes are tier- and memory-mode-dependent, and the fall is not. */
+int32_t engineRequestLiveBytesFellBy(
     EngineWorld engineWorld,
     uint32_t engineAtLeast) {
     struct EngineWorld_T *engineCheckedWorld = engineWorldChecked(engineWorld);
     uint64_t engineNow;
-    if (engineCheckedWorld == NULL || !engineCheckedWorld->engineChargeMarked) {
+    if (engineCheckedWorld == NULL || !engineCheckedWorld->engineLiveBytesMarked) {
         return 0;
     }
     engineNow =
-        subscript_rt_ctx_charged_bytes(engineCheckedWorld->engineRequestContext);
-    if (engineNow > engineCheckedWorld->engineChargeMark) {
+        subscript_rt_ctx_live_bytes(engineCheckedWorld->engineRequestContext);
+    if (engineNow > engineCheckedWorld->engineLiveBytesMark) {
         return 0;
     }
-    return (engineCheckedWorld->engineChargeMark - engineNow) >=
+    return (engineCheckedWorld->engineLiveBytesMark - engineNow) >=
                    (uint64_t)engineAtLeast
                ? 1
                : 0;

@@ -277,9 +277,6 @@ pub struct CorpusHeader {
     pub interpreter_exclusion: Option<String>,
     /// Whether the debug interpreter sweep omits this cost benchmark.
     pub benchmark: bool,
-    /// The compile profile this entry selects (§109.1 rule 3), if any.
-    /// `None` is the default profile.
-    pub profile: Option<String>,
     corpus: String,
     purpose: String,
     exercises: String,
@@ -299,7 +296,6 @@ impl CorpusHeader {
                     | "warning"
                     | "interpreter"
                     | "cost"
-                    | "profile"
             )
         })
     }
@@ -716,7 +712,7 @@ pub fn parse_header(path: &Path, source: &str) -> io::Result<CorpusHeader> {
         for segment in content.split(" // ") {
             if matches!(
                 segment.split_whitespace().next(),
-                Some("interpreter" | "cost" | "profile")
+                Some("interpreter" | "cost")
             ) {
                 return Err(invalid(format!(
                     "{}:{}: malformed execution header key",
@@ -759,7 +755,6 @@ pub fn parse_header(path: &Path, source: &str) -> io::Result<CorpusHeader> {
 
     let mut interpreter_exclusion = None;
     let mut benchmark = false;
-    let mut profile = None;
     for field in &fields {
         let malformed = || {
             invalid(format!(
@@ -783,12 +778,6 @@ pub fn parse_header(path: &Path, source: &str) -> io::Result<CorpusHeader> {
                 }
                 benchmark = true;
             }
-            "profile" => {
-                if field.value != "sandbox" || profile.is_some() {
-                    return Err(malformed());
-                }
-                profile = Some(field.value.clone());
-            }
             _ => {}
         }
     }
@@ -796,7 +785,6 @@ pub fn parse_header(path: &Path, source: &str) -> io::Result<CorpusHeader> {
     Ok(CorpusHeader {
         interpreter_exclusion,
         benchmark,
-        profile,
         corpus: required("corpus")?,
         purpose: required("purpose")?,
         exercises: required("exercises")?,
@@ -898,16 +886,9 @@ mod tests {
             Some("needs a host")
         );
         assert!(header.benchmark);
-        let sandbox = parse_header(path, &format!("{source}// profile: sandbox\n"))
-            .expect("parse the profile fact");
-        assert_eq!(sandbox.profile.as_deref(), Some("sandbox"));
-        // §109.1 rule 3: `profile` is not guidance, so it stays out of the
-        // generated reference.
-        assert!(sandbox.guidance().all(|field| field.key != "profile"));
         let defaults = parse_header(path, source).expect("parse optional defaults");
         assert_eq!(defaults.interpreter_exclusion, None);
         assert!(!defaults.benchmark);
-        assert_eq!(defaults.profile, None);
         let continuation = parse_header(
             path,
             "// corpus: accept/test\n// purpose: Test headers.\n// costly operations need a host.\n// exercises: headers\n// questions: none\n",
@@ -923,18 +904,12 @@ mod tests {
             "interpreter no — needs a host",
             "cost: cheap",
             "cost benchmark",
-            "profile: default",
-            "profile sandbox",
         ] {
             let error = parse_header(path, &format!("{source}// {malformed}\n"))
                 .expect_err("reject malformed execution fact");
             assert!(error.to_string().contains("test.ts:5:"), "{error}");
         }
-        for duplicate in [
-            "interpreter: no — needs a host",
-            "cost: benchmark",
-            "profile: sandbox",
-        ] {
+        for duplicate in ["interpreter: no — needs a host", "cost: benchmark"] {
             let error = parse_header(path, &format!("{source}// {duplicate}\n// {duplicate}\n"))
                 .expect_err("reject duplicate execution fact");
             assert!(error.to_string().contains("test.ts:6:"), "{error}");

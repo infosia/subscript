@@ -101,8 +101,6 @@ pub(crate) enum FnKey {
 pub(crate) struct RtFns {
     pub print: FuncId,
     pub collect: FuncId,
-    pub sandbox_enter: FuncId,
-    pub sandbox_poll: FuncId,
     pub alloc: FuncId,
     pub globals_init: FuncId,
     pub root_add: FuncId,
@@ -801,8 +799,8 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             A::Reduce | A::ReduceRight => (&[I64, I64, I64, I64, I32, I32, I64, I64, I32], None),
             // (ctx, recv, code, env, kind, indexed) -> i32
             A::Some | A::Every | A::FindIndex => (&[I64, I64, I64, I64, I32, I32], Some(I32)),
-            // (ctx, recv, code, env, kind, pos_id)
-            A::Sort => (&[I64, I64, I64, I64, I32, I32], None),
+            // (ctx, recv, code, env, kind)
+            A::Sort => (&[I64, I64, I64, I64, I32], None),
             // (ctx, recv, start, delete_count, pos_id) -> array handle
             A::Splice => (&[I64, I64, I32, I32, I32], Some(I64)),
             // (ctx, recv, out_ptr, pos_id)
@@ -901,8 +899,6 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
     Ok(RtFns {
         print: mk("subscript_rt_print", &[I64, I64], None)?,
         collect: mk("subscript_rt_collect", &[I64], None)?,
-        sandbox_enter: mk("subscript_rt_sandbox_enter", &[I64, I32], None)?,
-        sandbox_poll: mk("subscript_rt_sandbox_poll", &[I64, I32], None)?,
         alloc: mk("subscript_rt_alloc", &[I64, I64, I32, I32], Some(I64))?,
         globals_init: mk("subscript_rt_globals_init", &[I64, I64, I64], Some(I64))?,
         root_add: mk("subscript_rt_root_add", &[I64, I64, I64], None)?,
@@ -1025,12 +1021,11 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             &[I64, I64, I64, I32, I32],
             Some(I64),
         )?,
-        // (ctx, code, env, userdata1, userdata2, pos_id) → binding
-        // pointer (§14.4: two userdata slots; §112 rule 4: the position
-        // of the crossing).
+        // (ctx, code, env, userdata1, userdata2) → binding pointer
+        // (§14.4: two userdata slots).
         cb_bind: mk(
             "subscript_rt_cb_bind",
-            &[I64, I64, I64, I64, I64, I32],
+            &[I64, I64, I64, I64, I64],
             Some(I64),
         )?,
         // The generic C-ABI callback trampoline (§14.4). Generated
@@ -1039,12 +1034,11 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         // struct's function-pointer slot; the declared signature (message
         // as two words, then the two userdata slots) is unused.
         cb_trampoline: mk("subscript_rt_cb_trampoline", &[I64, I64, I64, I64], None)?,
-        // (ctx, code, env, userdata1, userdata2, pos_id) → registration
-        // pointer (§111 rule 4: the parameters of
-        // `subscript_rt_cb_bind`).
+        // (ctx, code, env, userdata1, userdata2) → registration pointer
+        // (§111 rule 4: the parameters of `subscript_rt_cb_bind`).
         cb_register: mk(
             "subscript_rt_cb_register",
-            &[I64, I64, I64, I64, I64, I32],
+            &[I64, I64, I64, I64, I64],
             Some(I64),
         )?,
         // The explicit-lifetime trampoline (§111 rule 4). Imported only
@@ -1326,26 +1320,20 @@ fn define_reload_entry_adapter<M: Module>(
 }
 
 /// Lowers a checked program into `module`.
-///
-/// A stop that a compile-profile rule produced carries that rule's
-/// diagnostic (§109.2 rule 4), so the caller renders it as the rule's
-/// rejection and not as an internal failure.
 pub(crate) fn lower_module_with<M: Module>(
     module: &mut M,
     hirm: &HirModule,
     opts: LowerOptions,
-) -> Result<Lowered, crate::EmitError> {
+) -> Result<Lowered, String> {
     if let Some(import) = hirm.poisoned_imports.first() {
-        return Err(crate::EmitError::internal(format!(
+        return Err(format!(
             "cannot lower discovery HIR: poisoned import `{}`",
             import.module
-        )));
+        ));
     }
-    let lirm = crate::lir::lower_module(hirm).map_err(|error| crate::EmitError {
-        message: internal(format!("LIR construction failed: {error}")),
-        diagnostic: error.diagnostic(),
-    })?;
-    lower_lir_module_with(module, &lirm, opts).map_err(crate::EmitError::internal)
+    let lirm = crate::lir::lower_module(hirm)
+        .map_err(|error| internal(format!("LIR construction failed: {error}")))?;
+    lower_lir_module_with(module, &lirm, opts)
 }
 
 fn lower_lir_module_with<M: Module>(
@@ -1906,7 +1894,7 @@ mod tests {
         };
 
         assert_eq!(
-            error.message,
+            error,
             "cannot lower discovery HIR: poisoned import `./p.typegpu`"
         );
     }

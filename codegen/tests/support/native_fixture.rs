@@ -123,8 +123,8 @@ extern "C" {
     fn subRequestPump();
     fn subRequestReleaseActive();
     fn subRequestReleaseCount();
-    fn subRequestMarkCharge();
-    fn subRequestChargeFellBy();
+    fn subRequestMarkLiveBytes();
+    fn subRequestLiveBytesFellBy();
     fn subRequestReleaseAndRefire();
 }
 
@@ -493,12 +493,12 @@ impl Fixture {
                     subRequestReleaseCount as *const u8,
                 ),
                 (
-                    "subRequestMarkCharge".to_string(),
-                    subRequestMarkCharge as *const u8,
+                    "subRequestMarkLiveBytes".to_string(),
+                    subRequestMarkLiveBytes as *const u8,
                 ),
                 (
-                    "subRequestChargeFellBy".to_string(),
-                    subRequestChargeFellBy as *const u8,
+                    "subRequestLiveBytesFellBy".to_string(),
+                    subRequestLiveBytesFellBy as *const u8,
                 ),
                 (
                     "subRequestReleaseAndRefire".to_string(),

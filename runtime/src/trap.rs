@@ -81,15 +81,6 @@ pub enum TrapKind {
     /// A foreign function returned an integer not present in the
     /// `CEnum` alias's wire mapping (compiler.md §50).
     WireEnumUnknownValue = 24,
-    /// The host set the Context interrupt flag and the script reached a
-    /// sandbox-profile checkpoint (compiler.md §109.4).
-    Interrupted = 25,
-    /// An allocation request passed the Context allocation quota
-    /// (compiler.md §109.4).
-    AllocationQuota = 26,
-    /// A sandbox-profile function entry passed the Context stack budget
-    /// (compiler.md §109.4).
-    StackBudget = 27,
     /// A callback fired through a registration the host released
     /// (compiler.md §111 rule 14).
     CallbackRegistrationEnded = 28,
@@ -124,9 +115,6 @@ impl TrapKind {
             22 => TrapKind::WorkerTrapped,
             23 => TrapKind::UnreachableReached,
             24 => TrapKind::WireEnumUnknownValue,
-            25 => TrapKind::Interrupted,
-            26 => TrapKind::AllocationQuota,
-            27 => TrapKind::StackBudget,
             28 => TrapKind::CallbackRegistrationEnded,
             _ => return None,
         })
@@ -160,9 +148,6 @@ impl TrapKind {
             TrapKind::WorkerTrapped => "worker-trapped",
             TrapKind::UnreachableReached => "unreachable-reached",
             TrapKind::WireEnumUnknownValue => "wire-enum-unknown-value",
-            TrapKind::Interrupted => "interrupted",
-            TrapKind::AllocationQuota => "allocation-quota",
-            TrapKind::StackBudget => "stack-budget",
             TrapKind::CallbackRegistrationEnded => "callback-registration-ended",
         }
     }
@@ -231,13 +216,23 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in 1..=28u32 {
+        for v in (1..=24u32).chain([28]) {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }
         assert_eq!(TrapKind::from_u32(0), None);
         assert_eq!(TrapKind::from_u32(29), None);
         assert_eq!(TrapKind::from_u32(99), None);
+    }
+
+    /// `specs/blocks/compiler.md` §113.1 rule 5: the numbers 25, 26, and
+    /// 27 stay unassigned, so `from_u32` answers them as it answers every
+    /// unknown number.
+    #[test]
+    fn retired_kind_numbers_name_no_kind() {
+        for v in [25u32, 26, 27] {
+            assert_eq!(TrapKind::from_u32(v), None);
+        }
     }
 
     #[test]
@@ -279,20 +274,6 @@ mod tests {
         assert_eq!(TrapKind::UnreachableReached as u32, 23);
         assert_eq!(TrapKind::from_u32(23), Some(TrapKind::UnreachableReached));
         assert_eq!(TrapKind::UnreachableReached.rule(), "unreachable-reached");
-    }
-
-    #[test]
-    fn sandbox_profile_kinds_have_stable_numbers_and_rules() {
-        for (kind, number, rule) in [
-            (TrapKind::Interrupted, 25u32, "interrupted"),
-            (TrapKind::AllocationQuota, 26, "allocation-quota"),
-            (TrapKind::StackBudget, 27, "stack-budget"),
-        ] {
-            assert_eq!(kind as u32, number);
-            assert_eq!(TrapKind::from_u32(number), Some(kind));
-            assert_eq!(kind.rule(), rule);
-            assert_eq!(kind.message(None), rule);
-        }
     }
 
     #[test]

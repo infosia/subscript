@@ -13,8 +13,6 @@
 //! documents a harmless total fallback instead of a panic (CLAUDE.md
 //! core principle 5).
 
-use crate::context::QuotaBuf;
-
 /// True for exactly ECMA's WhiteSpace + LineTerminator code points
 /// (Q21). This intentionally includes U+FEFF and excludes U+0085,
 /// unlike Rust's [`char::is_whitespace`].
@@ -180,7 +178,7 @@ pub fn split<'a>(hay: &'a [u8], sep: &[u8]) -> Vec<&'a [u8]> {
 ///
 /// `visit` answers whether the scan continues, so a caller that
 /// allocates each piece through the Context stops at the first trap and
-/// holds no list of pieces outside the allocation quota (§109.4 rule 2).
+/// holds no list of pieces of its own (§113.2 rule 5).
 pub fn split_each<'a>(hay: &'a [u8], sep: &[u8], mut visit: impl FnMut(&'a [u8]) -> bool) {
     if sep.is_empty() {
         match std::str::from_utf8(hay) {
@@ -238,9 +236,9 @@ pub fn trim(s: &[u8]) -> &[u8] {
 /// `repeat(n)`: writes `n` copies of `s` into an exact-size buffer.
 ///
 /// The caller computes `s.len() * n` and allocates that many bytes
-/// through the Context, so no copy of the result exists outside the
-/// allocation quota (§109.4 rule 2). `out.len()` must be a whole
-/// multiple of `s.len()`; an empty `s` writes nothing.
+/// through the Context, so no second copy of the result exists
+/// (§113.2 rule 5). `out.len()` must be a whole multiple of `s.len()`;
+/// an empty `s` writes nothing.
 pub fn repeat_into(s: &[u8], out: &mut [u8]) {
     if s.is_empty() {
         return;
@@ -318,10 +316,6 @@ fn fill_cyclic(out: &mut [u8], pattern: &[u8]) {
 /// `toUpperCase()`: Unicode Default Case Conversion (Q21). Invalid
 /// UTF-8 is returned unchanged as a total fallback; language strings
 /// are always valid UTF-8.
-///
-/// The result is at most three bytes for each input byte, so the C
-/// entry charges that bounded multiple before it calls this
-/// (`specs/blocks/compiler.md` §109.4 rule 2).
 #[must_use]
 pub fn to_upper(s: &[u8]) -> Vec<u8> {
     match std::str::from_utf8(s) {
@@ -333,10 +327,6 @@ pub fn to_upper(s: &[u8]) -> Vec<u8> {
 /// `toLowerCase()`: Unicode Default Case Conversion (Q21). Invalid
 /// UTF-8 is returned unchanged as a total fallback; language strings
 /// are always valid UTF-8.
-///
-/// The result is at most three bytes for each input byte, so the C
-/// entry charges that bounded multiple before it calls this
-/// (`specs/blocks/compiler.md` §109.4 rule 2).
 #[must_use]
 pub fn to_lower(s: &[u8]) -> Vec<u8> {
     match std::str::from_utf8(s) {
@@ -353,7 +343,7 @@ pub fn to_lower(s: &[u8]) -> Vec<u8> {
 /// surfaces share the exact parser for `$$`, `$&`, ``$` ``, `$'`,
 /// `$1`–`$99`, and `$<name>`.
 pub(crate) fn append_replacement(
-    out: &mut QuotaBuf,
+    out: &mut Vec<u8>,
     source: &[u8],
     match_start: usize,
     match_end: usize,
@@ -377,15 +367,15 @@ pub(crate) fn append_replacement(
                 at += 2;
             }
             b'&' => {
-                out.extend(&source[match_start..match_end]);
+                out.extend_from_slice(&source[match_start..match_end]);
                 at += 2;
             }
             b'`' => {
-                out.extend(&source[..match_start]);
+                out.extend_from_slice(&source[..match_start]);
                 at += 2;
             }
             b'\'' => {
-                out.extend(&source[match_end..]);
+                out.extend_from_slice(&source[match_end..]);
                 at += 2;
             }
             b'0'..=b'9' => {
@@ -406,7 +396,7 @@ pub(crate) fn append_replacement(
                     };
                 if let Some(index) = capture {
                     if let Some(range) = numbered(index) {
-                        out.extend(&source[range]);
+                        out.extend_from_slice(&source[range]);
                     }
                     at += consumed;
                 } else {
@@ -425,7 +415,7 @@ pub(crate) fn append_replacement(
                 let name_end = at + 2 + relative_end;
                 let name = std::str::from_utf8(&replacement[at + 2..name_end]).unwrap_or_default();
                 if let Some(range) = named(name) {
-                    out.extend(&source[range]);
+                    out.extend_from_slice(&source[range]);
                 }
                 at = name_end + 1;
             }
@@ -443,16 +433,15 @@ pub(crate) fn append_replacement(
 /// index 0.
 ///
 /// The result size is not known before the bytes exist, so the caller
-/// supplies a quota-bounded buffer (§109.4 rule 2) and reads
-/// [`QuotaBuf::over_quota`] afterwards.
-pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8], out: &mut QuotaBuf) {
+/// supplies a growing buffer and reads it afterwards.
+pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8], out: &mut Vec<u8>) {
     match find_from(s, pat, 0) {
         Some(i) => {
-            out.extend(&s[..i]);
+            out.extend_from_slice(&s[..i]);
             append_replacement(out, s, i, i + pat.len(), repl, 0, false, |_| None, |_| None);
-            out.extend(&s[i + pat.len()..]);
+            out.extend_from_slice(&s[i + pat.len()..]);
         }
-        None => out.extend(s),
+        None => out.extend_from_slice(s),
     }
 }
 
@@ -465,13 +454,11 @@ pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8], out: &mut QuotaBuf) {
 /// appends the receiver unchanged as a total fallback.
 ///
 /// The result size is not known before the bytes exist, so the caller
-/// supplies a quota-bounded buffer (§109.4 rule 2) and reads
-/// [`QuotaBuf::over_quota`] afterwards. The pass stops at the first
-/// append that takes the total past the bound.
-pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8], out: &mut QuotaBuf) {
+/// supplies a growing buffer and reads it afterwards.
+pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8], out: &mut Vec<u8>) {
     if pat.is_empty() {
         let Ok(text) = std::str::from_utf8(s) else {
-            out.extend(s);
+            out.extend_from_slice(s);
             return;
         };
         let mut previous = 0;
@@ -480,10 +467,7 @@ pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8], out: &mut QuotaBuf) {
             .map(|(at, _)| at)
             .chain(std::iter::once(s.len()))
         {
-            if out.over_quota() {
-                return;
-            }
-            out.extend(&s[previous..at]);
+            out.extend_from_slice(&s[previous..at]);
             append_replacement(out, s, at, at, repl, 0, false, |_| None, |_| None);
             previous = at;
         }
@@ -491,34 +475,29 @@ pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8], out: &mut QuotaBuf) {
     }
     let mut at = 0usize;
     while let Some(i) = find_from(s, pat, at) {
-        if out.over_quota() {
-            return;
-        }
-        out.extend(&s[at..i]);
+        out.extend_from_slice(&s[at..i]);
         append_replacement(out, s, i, i + pat.len(), repl, 0, false, |_| None, |_| None);
         at = i + pat.len();
     }
-    out.extend(&s[at..]);
+    out.extend_from_slice(&s[at..]);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// `replace(pat, repl)` into an unbounded buffer, as a value.
+    /// `replace(pat, repl)` into a fresh buffer, as a value.
     fn replaced_first(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
-        let mut out = QuotaBuf::new(usize::MAX);
+        let mut out = Vec::new();
         replace_first(s, pat, repl, &mut out);
-        assert!(!out.over_quota());
-        out.bytes().to_vec()
+        out
     }
 
-    /// `replaceAll(pat, repl)` into an unbounded buffer, as a value.
+    /// `replaceAll(pat, repl)` into a fresh buffer, as a value.
     fn replaced_all(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
-        let mut out = QuotaBuf::new(usize::MAX);
+        let mut out = Vec::new();
         replace_all(s, pat, repl, &mut out);
-        assert!(!out.over_quota());
-        out.bytes().to_vec()
+        out
     }
 
     #[test]

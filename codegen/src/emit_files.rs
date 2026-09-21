@@ -3,11 +3,9 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use subscript_compiler::{
-    check_program_with, on_the_compile_thread, CheckOptions, Diagnostic, Profile, SourceFile,
-};
+use subscript_compiler::{check_program, on_the_compile_thread, Diagnostic, SourceFile};
 
-use crate::{aot_entry_for_profile, emit_c, emit_c_without_main};
+use crate::{emit_c, emit_c_without_main, AOT_ENTRY_C};
 
 /// Files written by [`emit_c_files`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,18 +60,6 @@ impl fmt::Display for EmitCFilesError {
     }
 }
 
-impl From<crate::EmitError> for EmitCFilesError {
-    /// A stop a compile-profile rule produced is the rule's rejection
-    /// (§109.2 rule 4), which the CLI renders with the checker's
-    /// diagnostics; every other stop is an emission failure.
-    fn from(error: crate::EmitError) -> Self {
-        error.diagnostic.map_or_else(
-            || Self::Emission(error.message.clone()),
-            |diagnostic| Self::Diagnostics(vec![diagnostic]),
-        )
-    }
-}
-
 impl std::error::Error for EmitCFilesError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -83,15 +69,14 @@ impl std::error::Error for EmitCFilesError {
     }
 }
 
-/// Checks `files` under `profile`, emits ship-tier C, and writes its
-/// complete artifact set.
+/// Checks `files`, emits ship-tier C, and writes its complete artifact
+/// set.
 ///
 /// The program translation unit is `<label>.c`, allocation metadata is
 /// `<label>.alloc.h`, and the optional generated host entry is `entry.c`.
-/// The entry carries the §109.5 defaults of the profile the checked
-/// module carries. The directory is created when absent. Existing files
-/// with those names are replaced; no path outside `out_dir` is written
-/// when `label` is a plain file stem.
+/// The directory is created when absent. Existing files with those names
+/// are replaced; no path outside `out_dir` is written when `label` is a
+/// plain file stem.
 ///
 /// # Errors
 ///
@@ -103,33 +88,27 @@ pub fn emit_c_files(
     out_dir: &Path,
     label: &str,
     write_entry: bool,
-    profile: Profile,
 ) -> Result<EmittedCFiles, EmitCFilesError> {
     std::fs::create_dir_all(out_dir).map_err(|source| EmitCFilesError::Io {
         action: "create",
         path: out_dir.to_path_buf(),
         source,
     })?;
-    // §109.2 rule 3: the check and the emission both recurse over the
+    // §113.2 rule 1: the check and the emission both recurse over the
     // tree, so both run on the compile thread.
-    let (profile, program) = on_the_compile_thread(|| {
-        let hir = check_program_with(files, &CheckOptions::with_profile(profile))
-            .map_err(EmitCFilesError::Diagnostics)?;
-        // §109.1 rule 2: the checked module is the carrier from here on.
-        let profile = hir.profile;
-        let program = if write_entry {
+    let program = on_the_compile_thread(|| {
+        let hir = check_program(files).map_err(EmitCFilesError::Diagnostics)?;
+        if write_entry {
             emit_c(&hir)
         } else {
             emit_c_without_main(&hir)
         }
-        .map_err(EmitCFilesError::from)?;
-        Ok::<_, EmitCFilesError>((profile, program))
+        .map_err(EmitCFilesError::Emission)
     })?;
 
     let entry = if write_entry {
         let path = out_dir.join("entry.c");
-        let source = aot_entry_for_profile(profile).map_err(EmitCFilesError::Emission)?;
-        write(&path, source.as_bytes())?;
+        write(&path, AOT_ENTRY_C.as_bytes())?;
         Some(path)
     } else {
         None
@@ -192,7 +171,7 @@ mod tests {
             "main.ts",
             "export function main(): void {\n  print(\"shared\");\n}\n",
         )];
-        let hir = check_program_with(&files, &CheckOptions::default()).map_err(|diagnostics| {
+        let hir = check_program(&files).map_err(|diagnostics| {
             diagnostics
                 .iter()
                 .map(ToString::to_string)
@@ -200,8 +179,8 @@ mod tests {
                 .join("\n")
         })?;
         let direct = emit_c(&hir)?;
-        let written = emit_c_files(&files, &directory.0, "program", true, Profile::Default)
-            .map_err(|e| e.to_string())?;
+        let written =
+            emit_c_files(&files, &directory.0, "program", true).map_err(|e| e.to_string())?;
 
         let source = std::fs::read(&written.source)
             .map_err(|error| format!("read {}: {error}", written.source.display()))?;
@@ -215,7 +194,7 @@ mod tests {
                     .ok_or_else(|| "entry path missing".to_string())?
             )
             .map_err(|error| format!("read entry: {error}"))?,
-            crate::AOT_ENTRY_C.as_bytes()
+            AOT_ENTRY_C.as_bytes()
         );
         assert_eq!(
             std::fs::read(&written.allocation_metadata)
@@ -229,7 +208,7 @@ mod tests {
     fn shared_emitter_reports_diagnostics() -> Result<(), String> {
         let directory = TestDir::new()?;
         let files = [SourceFile::new("bad.ts", "const bad: number = 1;\n")];
-        let error = emit_c_files(&files, &directory.0, "program", false, Profile::Default)
+        let error = emit_c_files(&files, &directory.0, "program", false)
             .expect_err("invalid program must be rejected");
         assert!(matches!(error, EmitCFilesError::Diagnostics(_)));
         Ok(())
@@ -245,8 +224,8 @@ mod tests {
             "main.ts",
             "export function main(): void {}\n",
         )];
-        let error = emit_c_files(&files, &file, "program", false, Profile::Default)
-            .expect_err("file is not a directory");
+        let error =
+            emit_c_files(&files, &file, "program", false).expect_err("file is not a directory");
         assert!(matches!(error, EmitCFilesError::Io { .. }));
         Ok(())
     }

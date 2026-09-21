@@ -47,7 +47,7 @@ pub use cemit::CProgram;
 pub use emit_files::{emit_c_files, EmitCFilesError, EmittedCFiles};
 pub use jit::{
     jit_bench, jit_bench_configured, jit_bench_with_warmup_floor, jit_compile_time, run_jit,
-    run_jit_configured, run_jit_interrupted, run_jit_with_alloc_failure,
+    run_jit_configured, run_jit_with_alloc_failure,
     run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_memory_accounting,
     run_jit_with_memory_accounting_and_native_libraries, run_jit_with_native_libraries,
     AbnormalTermination, BenchSamples, JitMemoryAccounting, RunError, TrapReport,
@@ -56,19 +56,14 @@ pub use jit::{
 pub use layout::{padding_ranges, value_class_layouts, FieldLayout, StructLayout};
 pub use position_table::PositionTable;
 pub use ship::{
-    add_c11_optimized_flags, add_executable_output, add_object_directory, aot_entry_for_profile,
-    host_c_compiler, host_entry, include_directory_arg, posix_feature_arguments, run_c_aot,
-    run_c_aot_configured, run_c_aot_interrupted, run_c_aot_with_alloc_failure,
-    run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
-    run_c_aot_with_native_libraries_and_host_hooks, runtime_staticlib_name, runtime_staticlib_path,
-    runtime_system_libraries, tool_output_report, CCompilerStyle, HostCCompiler, AOT_ENTRY_C,
-    HOST_HEADER_C, RUNTIME_STATICLIB_ENV, WINDOWS_SYSTEM_LIBRARIES,
+    add_c11_optimized_flags, add_executable_output, add_object_directory, host_c_compiler,
+    host_entry, include_directory_arg, posix_feature_arguments, run_c_aot, run_c_aot_configured,
+    run_c_aot_with_alloc_failure, run_c_aot_with_freed_handle_diagnostics_and_native_libraries,
+    run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
+    runtime_staticlib_name, runtime_staticlib_path, runtime_system_libraries, tool_output_report,
+    CCompilerStyle, HostCCompiler, AOT_ENTRY_C, HOST_HEADER_C, RUNTIME_STATICLIB_ENV,
+    WINDOWS_SYSTEM_LIBRARIES,
 };
-
-use std::sync::{Arc, OnceLock};
-
-use subscript_compiler::Profile;
-use subscript_runtime::Interrupt;
 
 /// Options shared by the development and shipping tier runners.
 #[derive(Debug, Clone, Copy, Default)]
@@ -86,138 +81,14 @@ pub struct RunConfig<'a> {
     pub pre_entry_hook: Option<&'a str>,
     /// Shipping-tier hook called after the run and before Context release.
     pub post_run_hook: Option<&'a str>,
-    /// The compile profile (`specs/blocks/compiler.md` §109.1). The
-    /// runner passes it to the checker; the checked module then carries
-    /// it, and the runner reads the §109.5 defaults from there.
-    pub profile: Profile,
-    /// Sets the Context interrupt flag from a second thread after this
-    /// many milliseconds (§109.7). `None` starts no thread.
-    pub interrupt_after_millis: Option<u64>,
-    /// Where the development tier stores the interrupt handle of the
-    /// run's Context (`specs/blocks/compiler.md` §109.4 rule 1), before
-    /// the first script call. A caller that starts a run on its own
-    /// thread reads the handle here and stops the run with it.
-    ///
-    /// [`run_jit_interrupted`] runs in this process and stores the
-    /// handle. A `run_jit*` helper that forks the run stores nothing,
-    /// because the child's Context is in another process. The shipping
-    /// tier stores nothing for the same reason.
-    pub interrupt_handle: Option<&'a OnceLock<Arc<Interrupt>>>,
-    /// The allocation quota this run starts with, in bytes
-    /// (`specs/blocks/compiler.md` §109.5). A set value replaces
-    /// [`SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES`] under the sandbox profile,
-    /// and applies under the default profile as well: the limit is the
-    /// host's fact and does not depend on the profile (§109.4 rule 5).
-    /// `None` keeps the profile's default, and the default profile keeps
-    /// no quota.
-    pub alloc_quota: Option<u64>,
-    /// The stack budget this run starts with, in bytes
-    /// (`specs/blocks/compiler.md` §109.5). It replaces
-    /// [`SANDBOX_DEFAULT_STACK_BUDGET_BYTES`] under the same rule as
-    /// `alloc_quota`.
-    pub stack_budget: Option<u64>,
 }
 
 impl<'a> RunConfig<'a> {
-    /// Builds the default options for one compile profile (§109.1).
-    #[must_use]
-    pub fn with_profile(profile: Profile) -> Self {
-        RunConfig {
-            profile,
-            ..RunConfig::default()
-        }
-    }
-
     /// Makes `libraries` available to foreign calls.
     #[must_use]
     pub fn with_native_libraries(mut self, libraries: &'a [NativeLibrary]) -> Self {
         self.native_libraries = libraries;
         self
-    }
-
-    /// Sets the Context interrupt flag from a second thread after
-    /// `millis` milliseconds (§109.7).
-    #[must_use]
-    pub fn with_interrupt_after_millis(mut self, millis: u64) -> Self {
-        self.interrupt_after_millis = Some(millis);
-        self
-    }
-
-    /// Stores the interrupt handle of the run's Context in `handle`
-    /// (§109.4 rule 1).
-    #[must_use]
-    pub fn with_interrupt_handle(mut self, handle: &'a OnceLock<Arc<Interrupt>>) -> Self {
-        self.interrupt_handle = Some(handle);
-        self
-    }
-
-    /// Starts the run with an allocation quota of `bytes` (§109.5).
-    #[must_use]
-    pub fn with_alloc_quota(mut self, bytes: u64) -> Self {
-        self.alloc_quota = Some(bytes);
-        self
-    }
-
-    /// Starts the run with a stack budget of `bytes` (§109.5).
-    #[must_use]
-    pub fn with_stack_budget(mut self, bytes: u64) -> Self {
-        self.stack_budget = Some(bytes);
-        self
-    }
-
-    /// The two host-set limits of this record (§109.4 rule 5).
-    pub(crate) fn host_limits(&self) -> HostLimits {
-        HostLimits {
-            alloc_quota: self.alloc_quota,
-            stack_budget: self.stack_budget,
-        }
-    }
-}
-
-/// The two limits a host sets on the Context of a run
-/// (`specs/blocks/compiler.md` §109.4 rule 5). `None` leaves the limit
-/// to the profile.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct HostLimits {
-    /// The allocation quota in bytes.
-    pub(crate) alloc_quota: Option<u64>,
-    /// The stack budget in bytes.
-    pub(crate) stack_budget: Option<u64>,
-}
-
-/// The allocation quota a sandbox-profile run starts with, in bytes
-/// (`specs/blocks/compiler.md` §109.5). A host that embeds the runtime
-/// sets its own.
-pub const SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES: u64 = 67_108_864;
-
-/// The stack budget a sandbox-profile run starts with, in bytes
-/// (`specs/blocks/compiler.md` §109.5).
-pub const SANDBOX_DEFAULT_STACK_BUDGET_BYTES: u64 = 524_288;
-
-/// Applies the run-time limits of `profile` and `limits` to `ctx`
-/// (`specs/blocks/compiler.md` §109.5).
-///
-/// A limit `limits` sets replaces the profile's default for that limit,
-/// under either profile. Where `limits` sets neither, the default
-/// profile sets nothing, so a trusted program keeps the Context it had
-/// before this section.
-pub(crate) fn apply_run_limits(
-    ctx: &mut subscript_runtime::Context,
-    profile: Profile,
-    limits: HostLimits,
-) {
-    let sandbox = profile == Profile::Sandbox;
-    if let Some(bytes) = limits
-        .alloc_quota
-        .or_else(|| sandbox.then_some(SANDBOX_DEFAULT_ALLOC_QUOTA_BYTES))
-    {
-        ctx.set_alloc_quota(bytes);
-    }
-    if let Some(bytes) = limits
-        .stack_budget
-        .or_else(|| sandbox.then_some(SANDBOX_DEFAULT_STACK_BUDGET_BYTES))
-    {
-        ctx.set_stack_budget(bytes);
     }
 }
 
@@ -231,61 +102,13 @@ pub struct RunOutput {
     pub memory_accounting: Option<JitMemoryAccounting>,
 }
 
-/// A stop from the shared lowering or from an emitter.
-///
-/// A stop that a compile-profile rule produced carries that rule's
-/// diagnostic (`specs/blocks/compiler.md` §109.2 rule 4), so every
-/// consumer to the CLI renders it as the rule's rejection. Every other
-/// stop is an internal failure, and carries its message alone.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct EmitError {
-    /// The exact reason the emission stopped.
-    pub message: String,
-    /// The rule diagnostic, when a rule stopped the lowering.
-    pub diagnostic: Option<subscript_compiler::Diagnostic>,
-}
-
-impl EmitError {
-    /// A stop that no rule names.
-    #[must_use]
-    pub fn internal(message: impl Into<String>) -> Self {
-        EmitError {
-            message: message.into(),
-            diagnostic: None,
-        }
-    }
-
-    /// The stop one LIR lowering error carries, with its rule code.
-    fn lowering(error: &lir::LowerError) -> Self {
-        EmitError {
-            message: format!("internal error: LIR construction failed: {error}"),
-            diagnostic: error.diagnostic(),
-        }
-    }
-}
-
-impl std::fmt::Display for EmitError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for EmitError {}
-
-impl From<EmitError> for String {
-    fn from(error: EmitError) -> Self {
-        error.message
-    }
-}
-
 /// Lowers checked HIR to verified LIR and emits ship-tier C.
 ///
 /// # Errors
 ///
 /// Returns an error for discovery HIR, invalid LIR, unsupported target
 /// transcription, or a missing exported `main(): void`.
-pub fn emit_c(module: &subscript_compiler::hir::Module) -> Result<CProgram, EmitError> {
+pub fn emit_c(module: &subscript_compiler::hir::Module) -> Result<CProgram, String> {
     emit_c_program(module, true)
 }
 
@@ -297,27 +120,26 @@ pub fn emit_c(module: &subscript_compiler::hir::Module) -> Result<CProgram, Emit
 ///
 /// Returns an error for discovery HIR, invalid LIR, or unsupported target
 /// transcription.
-pub fn emit_c_without_main(
-    module: &subscript_compiler::hir::Module,
-) -> Result<CProgram, EmitError> {
+pub fn emit_c_without_main(module: &subscript_compiler::hir::Module) -> Result<CProgram, String> {
     emit_c_program(module, false)
 }
 
 fn emit_c_program(
     module: &subscript_compiler::hir::Module,
     with_main: bool,
-) -> Result<CProgram, EmitError> {
+) -> Result<CProgram, String> {
     reject_discovery_hir_for_c(module)?;
-    let lir = lir::lower_module(module).map_err(|error| EmitError::lowering(&error))?;
-    cemit::emit_lir_c(&lir, with_main).map_err(EmitError::internal)
+    let lir = lir::lower_module(module)
+        .map_err(|error| format!("internal error: LIR construction failed: {error}"))?;
+    cemit::emit_lir_c(&lir, with_main)
 }
 
-fn reject_discovery_hir_for_c(module: &subscript_compiler::hir::Module) -> Result<(), EmitError> {
+fn reject_discovery_hir_for_c(module: &subscript_compiler::hir::Module) -> Result<(), String> {
     if let Some(import) = module.poisoned_imports.first() {
-        return Err(EmitError::internal(format!(
+        return Err(format!(
             "cannot emit discovery HIR: poisoned import `{}`",
             import.module
-        )));
+        ));
     }
     Ok(())
 }
@@ -345,15 +167,14 @@ mod tests {
         assert!(ship.memory_accounting.is_none());
     }
 
-    /// §109.1 rule 2 and §109.3: one source under both profiles runs to
-    /// the same bytes on the reference interpreter. The profile adds
-    /// checkpoints, never an observable effect of its own.
+    /// The reference interpreter runs one lowered module and answers
+    /// its captured stdout.
     #[test]
-    fn the_configured_interpreter_runs_a_module_of_either_profile() {
-        use subscript_compiler::{check_program_with, CheckOptions, Profile};
+    fn the_interpreter_runs_a_lowered_module() {
+        use subscript_compiler::check_program;
 
         let files = [SourceFile::new(
-            "profiled.ts",
+            "interpreted.ts",
             "function step(value: i32): i32 {\n\
              \x20 return value + 1;\n\
              }\n\
@@ -365,232 +186,39 @@ mod tests {
              \x20 print(`${total}`);\n\
              }\n",
         )];
-        let mut outputs = Vec::new();
-        for profile in [Profile::Default, Profile::Sandbox] {
-            let hir = check_program_with(&files, &CheckOptions::with_profile(profile))
-                .expect("the source checks under both profiles");
-            let lir = lir::lower_module(&hir).expect("the source lowers");
-            let output = interpreter::interpret_configured(&lir, RunConfig::with_profile(profile))
-                .expect("the interpreter runs the module");
-            outputs.push(output);
-        }
-        assert_eq!(outputs[0], b"4\n");
-        assert_eq!(outputs[0], outputs[1]);
+        let hir = check_program(&files).expect("the source checks");
+        let lir = lir::lower_module(&hir).expect("the source lowers");
+        let output = interpreter::interpret(&lir).expect("the interpreter runs the module");
+        assert_eq!(output, b"4\n");
     }
 
-    /// Every [`RunConfig`] builder sets its own field and leaves the rest
+    /// The [`RunConfig`] builder sets its own field and leaves the rest
     /// at the default contract.
     #[test]
     fn run_config_builders_set_one_field_each() {
-        use subscript_compiler::Profile;
-
         let default = RunConfig::default();
-        assert_eq!(default.profile, Profile::Default);
-        assert_eq!(default.interrupt_after_millis, None);
         assert!(default.native_libraries.is_empty());
+        assert_eq!(default.fail_alloc_after, None);
 
-        let profiled = RunConfig::with_profile(Profile::Sandbox);
-        assert_eq!(profiled.profile, Profile::Sandbox);
-        assert_eq!(profiled.interrupt_after_millis, None);
-
-        let interrupted = profiled.with_interrupt_after_millis(50);
-        assert_eq!(interrupted.profile, Profile::Sandbox);
-        assert_eq!(interrupted.interrupt_after_millis, Some(50));
-
-        let libraries: [NativeLibrary; 0] = [];
-        let with_libraries = interrupted.with_native_libraries(&libraries);
-        assert_eq!(with_libraries.interrupt_after_millis, Some(50));
-        assert!(with_libraries.native_libraries.is_empty());
-
-        assert_eq!(default.alloc_quota, None);
-        assert_eq!(default.stack_budget, None);
-        let quota = default.with_alloc_quota(1_024);
-        assert_eq!(quota.alloc_quota, Some(1_024));
-        assert_eq!(quota.stack_budget, None);
-        let both = quota.with_stack_budget(65_536);
-        assert_eq!(both.alloc_quota, Some(1_024));
-        assert_eq!(both.stack_budget, Some(65_536));
-        assert_eq!(both.profile, Profile::Default);
-
-        let sink: OnceLock<Arc<Interrupt>> = OnceLock::new();
-        assert!(default.interrupt_handle.is_none());
-        let with_handle = default.with_interrupt_handle(&sink);
-        assert!(with_handle.interrupt_handle.is_some());
-        assert_eq!(with_handle.interrupt_after_millis, None);
-    }
-
-    /// §109.4 rule 1: the in-process dev-tier runner stores the interrupt
-    /// handle of the run's Context. The same run with no sink is the
-    /// control: it stores nothing.
-    #[test]
-    fn the_dev_runner_stores_the_interrupt_handle_of_its_context() {
-        let files = [SourceFile::new(
-            "handle.ts",
-            "export function main(): void {\n\x20 print(\"ran\");\n}\n",
-        )];
-        let sink: OnceLock<Arc<Interrupt>> = OnceLock::new();
-        let config = RunConfig::with_profile(Profile::Sandbox).with_interrupt_handle(&sink);
-        let (outcome, latency) = run_jit_interrupted(&files, config);
-        assert_eq!(outcome.expect("the profiled run completes"), b"ran\n");
-        assert!(latency.is_none(), "the run started no interrupt thread");
-        let handle = sink.get().expect("the runner stored the handle");
-        assert!(!handle.is_set(), "the run set no flag");
-
-        let empty: OnceLock<Arc<Interrupt>> = OnceLock::new();
-        let (control, _) = run_jit_interrupted(&files, RunConfig::with_profile(Profile::Sandbox));
-        assert_eq!(control.expect("the control run completes"), b"ran\n");
-        assert!(empty.get().is_none(), "a run with no sink stores nothing");
-    }
-
-    /// §109.4 rule 1: the shipping tier owns its Context in another
-    /// process, so it refuses a handle request rather than ignoring it.
-    /// The same record with no sink is the firing control.
-    #[test]
-    fn the_ship_runner_refuses_an_interrupt_handle() {
-        let files = [SourceFile::new(
-            "handle.ts",
-            "export function main(): void {\n\x20 print(\"ran\");\n}\n",
-        )];
-        let sink: OnceLock<Arc<Interrupt>> = OnceLock::new();
-        let refused =
-            run_c_aot_configured(&files, RunConfig::default().with_interrupt_handle(&sink));
-        assert!(
-            matches!(refused, Err(RunError::Internal(_))),
-            "the ship runner accepted a handle request"
+        // SAFETY: the library declares no symbol, so no run reads an
+        // address of it.
+        let library = unsafe {
+            NativeLibrary::new(
+                vec![std::path::PathBuf::from("include")],
+                Vec::new(),
+                Vec::new(),
+            )
+        };
+        let libraries = [library];
+        let with_libraries = default.with_native_libraries(&libraries);
+        assert_eq!(with_libraries.native_libraries.len(), 1);
+        assert_eq!(
+            with_libraries.native_libraries[0]
+                .include_directories()
+                .collect::<Vec<_>>(),
+            [std::path::Path::new("include")]
         );
-        let ran = run_c_aot_configured(&files, RunConfig::default())
-            .expect("the same record with no sink runs");
-        assert_eq!(ran.stdout, b"ran\n");
-    }
-
-    /// The program every host-quota test runs: it allocates 4,096 bytes
-    /// of array elements, which is over the 1,024-byte quota the tests
-    /// set and far under the §109.5 default.
-    const QUOTA_PROGRAM: &str = "export function main(): void {\n\
-         \x20 let seed: u8[] = [1];\n\
-         \x20 for (let step: i32 = 0; step < 12; step = step + 1) {\n\
-         \x20   seed = seed.concat(seed);\n\
-         \x20 }\n\
-         \x20 print(`${seed.length}`);\n\
-         }\n";
-
-    /// §109.5: the dev-tier runner takes the host's quota, and it
-    /// replaces the profile default. The same program under the default
-    /// quota is the firing control.
-    #[test]
-    fn the_jit_runner_applies_a_host_quota() {
-        use subscript_compiler::Profile;
-
-        let files = [SourceFile::new("host-quota.ts", QUOTA_PROGRAM)];
-        let config = RunConfig::with_profile(Profile::Sandbox);
-        match run_jit_configured(&files, config.with_alloc_quota(1_024)) {
-            Err(RunError::Trap(report)) => assert_eq!(report.rule, TrapKind::AllocationQuota),
-            other => panic!("the host quota must stop the run: {other:?}"),
-        }
-        let clean = run_jit_configured(&files, config).expect("the default quota admits the run");
-        assert_eq!(clean.stdout, b"4096\n");
-    }
-
-    /// §109.5: a set limit applies under the default profile as well.
-    /// The limit is the host's fact and does not depend on the profile
-    /// (§109.4 rule 5). The same record without the quota is the firing
-    /// control.
-    #[test]
-    fn the_default_profile_takes_a_host_quota() {
-        let files = [SourceFile::new("host-quota.ts", QUOTA_PROGRAM)];
-        let config = RunConfig::default();
-        assert_eq!(config.profile, Profile::Default);
-        match run_jit_configured(&files, config.with_alloc_quota(1_024)) {
-            Err(RunError::Trap(report)) => assert_eq!(report.rule, TrapKind::AllocationQuota),
-            other => panic!("the host quota must stop the run: {other:?}"),
-        }
-        let clean = run_jit_configured(&files, config).expect("no quota admits the run");
-        assert_eq!(clean.stdout, b"4096\n");
-    }
-
-    /// §109.5: the ship entry receives the host's quota the way it
-    /// receives the default, with the same firing control.
-    #[test]
-    fn the_ship_runner_applies_a_host_quota() {
-        use subscript_compiler::Profile;
-
-        let files = [SourceFile::new("host-quota.ts", QUOTA_PROGRAM)];
-        let config = RunConfig::with_profile(Profile::Sandbox);
-        match run_c_aot_configured(&files, config.with_alloc_quota(1_024)) {
-            Err(RunError::Trap(report)) => assert_eq!(report.rule, TrapKind::AllocationQuota),
-            other => panic!("the host quota must stop the run: {other:?}"),
-        }
-        let clean = run_c_aot_configured(&files, config).expect("the default quota admits the run");
-        assert_eq!(clean.stdout, b"4096\n");
-    }
-
-    /// §109.5: the reference interpreter takes the same two fields from
-    /// the same record, with the same firing control.
-    #[test]
-    fn the_interpreter_applies_a_host_quota() {
-        use subscript_compiler::{check_program_with, CheckOptions, Profile};
-
-        let files = [SourceFile::new("host-quota.ts", QUOTA_PROGRAM)];
-        let hir = check_program_with(&files, &CheckOptions::with_profile(Profile::Sandbox))
-            .expect("the program checks under the profile");
-        let lir = lir::lower_module(&hir).expect("the program lowers");
-        let config = RunConfig::with_profile(Profile::Sandbox);
-        match interpreter::interpret_configured(&lir, config.with_alloc_quota(1_024)) {
-            Err(error) => match &error {
-                interpreter::InterpretError::Execution { source, .. } => match source.as_ref() {
-                    interpreter::InterpretError::Trap { kind, .. } => {
-                        assert_eq!(kind, "allocation-quota");
-                    }
-                    other => panic!("the host quota must trap: {other:?}"),
-                },
-                interpreter::InterpretError::Trap { kind, .. } => {
-                    assert_eq!(kind, "allocation-quota");
-                }
-                other => panic!("the host quota must trap: {other:?}"),
-            },
-            Ok(output) => panic!(
-                "the host quota must stop the run: {:?}",
-                String::from_utf8_lossy(&output)
-            ),
-        }
-        let clean = interpreter::interpret_configured(&lir, config)
-            .expect("the default quota admits the run");
-        assert_eq!(clean, b"4096\n");
-    }
-
-    /// §109.5: the tier runners apply the profile defaults, and a default
-    /// profile sets neither limit. The sandbox program allocates past the
-    /// quota; the same source completes under the default profile.
-    #[test]
-    fn the_tier_runners_apply_the_profile_defaults() {
-        use subscript_compiler::Profile;
-
-        let files = [SourceFile::new(
-            "quota.ts",
-            "export function main(): void {\n\
-             \x20 print(\"start\");\n\
-             \x20 let seed: u8[] = [1];\n\
-             \x20 for (let step: i32 = 0; step < 18; step = step + 1) {\n\
-             \x20   seed = seed.concat(seed);\n\
-             \x20 }\n\
-             \x20 const blocks: u8[][] = [];\n\
-             \x20 for (let block: i32 = 0; block < 300; block = block + 1) {\n\
-             \x20   blocks.push(seed.slice(0, seed.length));\n\
-             \x20 }\n\
-             \x20 print(`${blocks.length}`);\n\
-             }\n",
-        )];
-        let completed = run_jit_configured(&files, RunConfig::default())
-            .expect("the default profile sets no quota");
-        assert_eq!(completed.stdout, b"start\n300\n");
-
-        match run_jit_configured(&files, RunConfig::with_profile(Profile::Sandbox)) {
-            Err(RunError::Trap(report)) => {
-                assert_eq!(report.rule, TrapKind::AllocationQuota);
-                assert_eq!(report.stdout, b"start\n");
-            }
-            other => panic!("the profile quota must stop the run: {other:?}"),
-        }
+        assert_eq!(with_libraries.fail_alloc_after, None);
     }
 
     fn run(src: &str) -> Result<Vec<u8>, RunError> {

@@ -767,8 +767,8 @@ declare function subRequestUnsubscribe(device: SubDevice): void;
 declare function subRequestPump(device: SubDevice): void;
 declare function subRequestReleaseActive(device: SubDevice): void;
 declare function subRequestReleaseCount(device: SubDevice): i32;
-declare function subRequestMarkCharge(device: SubDevice): void;
-declare function subRequestChargeFellBy(device: SubDevice, atLeast: u32): i32;
+declare function subRequestMarkLiveBytes(device: SubDevice): void;
+declare function subRequestLiveBytesFellBy(device: SubDevice, atLeast: u32): i32;
 declare function subRequestReleaseAndRefire(device: SubDevice): void;
 
 type SubFloat16 = f16;

@@ -318,17 +318,17 @@ void engineRequestPump(EngineWorld engineWorld);
  * compiler.md 111 rule 5, and a NULL handle returns zero. */
 int32_t engineRequestReleaseCount(EngineWorld engineWorld);
 
-/* Marking records the Context charge this world reads through the
- * Context of its last registration; engineRequestChargeFellBy compares
+/* Marking records the Context live bytes this world reads through the
+ * Context of its last registration; engineRequestLiveBytesFellBy compares
  * against that value. A NULL handle, or a world that received no
  * registration, is a no-op. */
-void engineRequestMarkCharge(EngineWorld engineWorld);
+void engineRequestMarkLiveBytes(EngineWorld engineWorld);
 
-/* The charge comparison returns 1 when the Context charge is
+/* The comparison returns 1 when the Context live bytes are
  * engineAtLeast bytes or more under the recorded mark, and 0 otherwise.
  * The comparison is stable on every target and in both memory modes,
  * where the byte counts are not. An unmarked world returns zero. */
-int32_t engineRequestChargeFellBy(
+int32_t engineRequestLiveBytesFellBy(
     EngineWorld engineWorld,
     uint32_t engineAtLeast);
 

@@ -22,10 +22,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use subscript_compiler::divergence::Divergence;
-use subscript_compiler::language_reference::parse_header;
 use subscript_compiler::{
-    api_reference, check_program_with, on_the_compile_thread, render_diagnostics, CheckOptions,
-    Profile, RuleCode, SourceFile, WarnCode,
+    api_reference, check_program, on_the_compile_thread, render_diagnostics, RuleCode, SourceFile,
+    WarnCode,
 };
 
 /// One retired reason: the phrase, and the record that retired it.
@@ -168,19 +167,8 @@ fn rendered_rejections(root: &Path) -> Vec<(String, String)> {
             .expect("read the interop mirror for r169");
             files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
         }
-        // §109.1 rule 3: a profile entry rejects only under its profile,
-        // so the sweep reads its header before it checks.
-        let header = parse_header(&path, &source)
-            .unwrap_or_else(|error| panic!("read the header of {name}: {error}"));
-        let options = CheckOptions::with_profile(header.profile.as_deref().map_or(
-            Profile::Default,
-            |profile| {
-                Profile::parse(profile)
-                    .unwrap_or_else(|| panic!("{name}: unknown profile `{profile}`"))
-            },
-        ));
         files.push(SourceFile::new(name.clone(), source));
-        let checked = on_the_compile_thread(|| check_program_with(&files, &options));
+        let checked = on_the_compile_thread(|| check_program(&files));
         let Err(diagnostics) = checked else {
             clean.push(name);
             continue;

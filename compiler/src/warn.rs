@@ -546,8 +546,8 @@ impl WarningChecker<'_> {
     /// The tail loop visits every expression child, so an arm that walks
     /// a child itself must return. An arm that walks a child and then
     /// falls through visits that child twice, which costs `2^n` on a
-    /// chain of `n` such nodes (`specs/blocks/compiler.md` §109.2
-    /// rule 1: each syntax node is visited one time). A node whose
+    /// chain of `n` such nodes (`specs/blocks/compiler.md` §113.2
+    /// rule 2: each syntax node is visited one time). A node whose
     /// children all take the default walk needs no arm.
     fn warn_w002_expr_uses(&mut self, expr: &Expr, freed: &HashSet<String>) {
         match &expr.kind {

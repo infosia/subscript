@@ -1,11 +1,6 @@
 //! The dev-tier run entry points the crate exports.
 //!
-//! Every entry point here returns the stdout bytes of one run. Under the
-//! sandbox profile those bytes come from the Context sink, which the
-//! quota charges, because the runner installs no print observer
-//! (`specs/blocks/compiler.md` §109.7a).
-
-use std::time::Duration;
+//! Every entry point here returns the stdout bytes of one run.
 
 use subscript_compiler::SourceFile;
 
@@ -52,22 +47,16 @@ pub fn run_jit_configured(
             "host hooks are not available in the development tier",
         )));
     }
-    let (module, lowered, profile) = compile_jit(files, config.native_libraries, config.profile)?;
+    let (module, lowered) = compile_jit(files, config.native_libraries)?;
     let options = EntryOptions {
         fail_alloc_after: config.fail_alloc_after,
         freed_handle_diagnostics: config.freed_handle_diagnostics,
-        profile,
-        interrupt_after_millis: config.interrupt_after_millis,
-        interrupt_handle: config.interrupt_handle,
-        limits: config.host_limits(),
     };
     let outcome = if config.memory_accounting {
-        execute_entry(&module, &lowered, options, None)
-            .run
-            .map(|run| RunOutput {
-                memory_accounting: Some(memory_accounting(&run.ctx)),
-                stdout: run.stdout,
-            })
+        execute_entry(&module, &lowered, options, None).map(|run| RunOutput {
+            memory_accounting: Some(memory_accounting(&run.ctx)),
+            stdout: run.stdout,
+        })
     } else {
         execute_entry_retained(&module, &lowered, options).map(|stdout| RunOutput {
             stdout,
@@ -204,44 +193,4 @@ pub fn run_jit_with_alloc_failure(files: &[SourceFile], n: u64) -> Result<Vec<u8
         },
     )?
     .stdout)
-}
-
-/// Runs the development tier in this process and sets the Context
-/// interrupt flag from a second thread (`specs/blocks/compiler.md`
-/// §109.7).
-///
-/// `config.interrupt_after_millis` is the delay before the flag store.
-/// `None` starts no thread, so a program with an endless loop never
-/// returns: that shape is the firing control, and the caller bounds it.
-///
-/// The run is in process, because the thread that sets the flag and the
-/// Context must belong to one process. The second return value is the
-/// time from the flag store to this function's return.
-pub fn run_jit_interrupted(
-    files: &[SourceFile],
-    config: RunConfig<'_>,
-) -> (Result<Vec<u8>, RunError>, Option<Duration>) {
-    let compiled = compile_jit(files, config.native_libraries, config.profile);
-    let (module, lowered, profile) = match compiled {
-        Ok(compiled) => compiled,
-        Err(error) => return (Err(error), None),
-    };
-    let outcome = execute_entry(
-        &module,
-        &lowered,
-        EntryOptions {
-            fail_alloc_after: config.fail_alloc_after,
-            freed_handle_diagnostics: config.freed_handle_diagnostics,
-            profile,
-            interrupt_after_millis: config.interrupt_after_millis,
-            interrupt_handle: config.interrupt_handle,
-            limits: config.host_limits(),
-        },
-        None,
-    );
-    let run = outcome.run.map(|run| run.stdout);
-    // SAFETY: the execution above returned and no pointer into JIT memory
-    // survives.
-    unsafe { module.free_memory() };
-    (run, outcome.interrupt_latency)
 }

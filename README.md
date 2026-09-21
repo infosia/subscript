@@ -86,12 +86,10 @@ gaps to be closed later:
   grows in *computation* — numbers, strings, collections — while access to
   the outside world stays the host's to grant. That is a division of
   responsibility, not a capability ceiling.
-- **Not a sandbox by default.** A script is first-party code, and the
-  compiler spends its effort on early, precise diagnostics for honest
-  mistakes rather than on containing hostile ones. For content the host
-  did not write, `--profile sandbox` narrows the accepted language and
-  adds run-time limits the host sets, and a program that does not select
-  the profile pays nothing.
+- **Not a sandbox.** A script is first-party code, and the compiler
+  spends its effort on early, precise diagnostics for honest mistakes
+  rather than on containing hostile ones. A host that runs content it
+  did not write adds an isolation boundary of its own.
 
 ## Tutorials
 
@@ -219,90 +217,10 @@ The tiers are held to **byte-identical output**: a standing
 differential gate runs every corpus program under the dev tier and the
 ship tier and compares both against a committed golden, on every test
 run. The interpreter runs the entries that need no host C library, as
-the third witness: 180 of them in the debug profile, and 181 under
-`SUBSCRIPT_FULL_INTERPRETER_SWEEP=1` (56 entries declare an
-exclusion, 50 of them for a foreign call). The language's behaviour
+the third witness: 176 of them in the debug profile, and 177 under
+`SUBSCRIPT_FULL_INTERPRETER_SWEEP=1` (62 entries declare an
+exclusion, 56 of them for a foreign call). The language's behaviour
 is defined by that corpus, not by any one backend.
-
-## The sandbox profile
-
-Everything above assumes you wrote the script. Content you did not
-write — a mod, a shared level, a plugin — compiles under the **sandbox
-profile**: `subscript check|build|run --profile sandbox`. The profile
-is a compile profile, not a second tier. The same development JIT and
-the same emitted C run it, the same goldens check it, and a program
-that does not select the profile gets no new instruction and no new
-check. Contract: `specs/blocks/compiler.md` §109.
-
-**What the profile rejects.** Five rules, each with a stable diagnostic
-code. The same source checks clean under the default profile, so a
-profile rejection is not a TypeScript divergence and `tsc` still
-accepts it.
-
-| Code | Rejects |
-|---|---|
-| `S023` | `Context.free`. Memory is allocate-only. |
-| `S024` | `Context.fromBytes`. Bytes the content supplies cannot become an object. |
-| `S025` | `Worker.spawn`, `Inbox`, and `Outbox`. |
-| `S026` | A source over 131,072 bytes in one file, a program over 8,388,608 bytes, or a nesting depth over 256. The byte counts run before the parser; the nesting limit is a depth guard in the checker. |
-| `S027` | A function whose frame is over 65,536 bytes. The stack check at the function entry then sees at most one bounded frame past the budget. |
-
-The whole compile — parse, check, warnings, lowering, and emission —
-runs on one thread the compiler spawns, with a 2 GiB stack in an
-optimized build and 8 GiB in an unoptimized one, so the depth a source
-reaches is the compiler's fact and not the calling thread's. That stack
-holds the deepest nesting a file of the byte limit can spell, with a
-margin. The parser is external, so under the profile the CLI runs the
-whole compile in a child process with a memory budget and a 300-second
-time budget, and a child that passes either budget is one `S026`.
-
-Your header mirror is the other half of the boundary: a script binds
-only the `--mirror` you give it, so you build one mirror per trust
-level and pass the narrow one to content you did not write.
-
-**What the profile adds at run time.** The compiler places a checkpoint
-at every function entry and on every loop edge, and the host sets three
-limits through the C API. Each limit stops the script with an ordinary
-trap that the host reads back, and the Context survives.
-
-| Limit | C API | Trap |
-|---|---|---|
-| interrupt | `subscript_rt_ctx_interrupt_handle` on the owning thread, then `subscript_rt_interrupt_set` from any thread | `interrupted` |
-| allocation quota | `subscript_rt_ctx_set_alloc_quota(ctx, bytes)` | `allocation-quota` |
-| stack budget | `subscript_rt_ctx_set_stack_budget(ctx, bytes)` | `stack-budget` |
-
-`run` and `build --profile sandbox` set a 64 MiB quota and a 512 KiB
-stack budget by default; a host that links the emitted C sets its own.
-The cost is the checkpoints: on the benchmark matrix the profile runs
-at 1.0× to 4.4× the default profile, tracking how often a workload
-calls a function or takes a loop edge.
-
-**Memory under the profile.** The profile rejects `Context.free`, so
-collection is the one way memory returns, and nothing collects unbidden.
-The quota is a stop, not a pacer. Two patterns keep a long-running
-program under it:
-
-1. **The host paces.** `subscript_rt_ctx_charged_bytes` is a counter and
-   is the figure the quota compares against, so the host reads it at
-   every frame boundary for free and calls `subscript_rt_ctx_collect`
-   there when the value passes the fraction of the quota it chose —
-   outside any script call, at a moment it picked. `live_bytes` reports
-   the payload alone and does not predict the trap.
-2. **The script collects at its own boundary.** `Context.collect()`
-   stays callable under the profile. A script that calls it at the end
-   of its frame function keeps its own live set bounded, and the host's
-   pacer is the backstop.
-
-A collect is a stop-the-world mark-sweep, proportional to the live set
-plus the dead set. There is no incremental collector and no bound on a
-collect's length; a host that needs one measures at its own live set.
-
-**What it is not.** The profile does not load source at run time: you
-compile the content with `subscript build --profile sandbox` and link
-it as you link your own scripts. It hardens nothing outside the profile.
-The host tutorial's Step 11 walks a complete C host through all of
-this with a measured run, and [`examples/sandbox/`](examples/sandbox/)
-is that host.
 
 ## Performance
 

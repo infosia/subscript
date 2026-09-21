@@ -12,7 +12,6 @@ mod fallthrough;
 mod json;
 mod layout;
 pub(crate) mod pattern;
-pub(crate) mod profile;
 mod stmt;
 mod tyres;
 
@@ -32,7 +31,7 @@ use crate::hir;
 use crate::parse::ParsedProgram;
 use crate::provenance;
 use crate::types::{ClassId, EnumId, StringAliasId, Type};
-use crate::{CheckOptions, Profile};
+use crate::CheckOptions;
 
 fn normalize_module_specifier(specifier: &str) -> String {
     specifier
@@ -961,9 +960,6 @@ impl FnCtx {
 /// The checker.
 pub(crate) struct Checker<'p> {
     pub prog: &'p ParsedProgram,
-    /// The compile profile (§109.1). Every §109.2 rule runs only under
-    /// [`Profile::Sandbox`].
-    pub profile: Profile,
     pub diags: DiagnosticSink,
     pub classes: Vec<hir::ClassDef>,
     pub class_sigs: Vec<ClassSig>,
@@ -1063,16 +1059,6 @@ pub(crate) struct Checker<'p> {
     /// Monotonic suffix for the storage that holds a binding pattern's
     /// source, which every pattern evaluates one time (§107.2).
     pub next_pattern_id: usize,
-    /// Levels of recursive descent the checker holds right now
-    /// (§109.2 rule 2). One expression, one type, or one statement is one
-    /// level.
-    pub nesting_depth: u32,
-    /// Nodes visited and type instances created so far (§109.2 rule 4).
-    pub work: u64,
-    /// The work budget this check runs under (§109.2 rule 4).
-    pub work_budget: u64,
-    /// True after a §109.2 rule 4 budget stopped the check.
-    pub budget_stopped: bool,
 }
 
 fn normalize_operation_parameter_types(
@@ -1228,7 +1214,6 @@ pub(crate) fn run(
 ) -> Result<hir::Module, Vec<Diagnostic>> {
     let mut ck = Checker {
         prog,
-        profile: options.profile,
         diags: DiagnosticSink::default(),
         classes: Vec::new(),
         class_sigs: Vec::new(),
@@ -1279,10 +1264,6 @@ pub(crate) fn run(
         next_using_switch_id: 0,
         next_compound_local_id: 0,
         next_pattern_id: 0,
-        nesting_depth: 0,
-        work: 0,
-        work_budget: options.budgets.work,
-        budget_stopped: false,
     };
 
     // Parse-time provenance has a fixed shape; this pass binds each record
@@ -1354,7 +1335,6 @@ pub(crate) fn run(
             foreign_fns: ck.foreign_defs,
             foreign_mirrors: ck.foreign_mirrors,
             top_level: ck.top_level,
-            profile: options.profile,
             source_bytes: prog.source_bytes,
         };
         module.operation_signatures = operation_signatures(&mut module);
@@ -2624,9 +2604,6 @@ impl<'p> Checker<'p> {
                     );
                 }
             }
-            // §109.2 rule 4: the nesting guard covers the types of the
-            // declaration, which no resolution walks.
-            self.guard_type_parameters(tp);
             let type_params: Vec<String> =
                 tp.params.iter().map(|p| p.name.sym.to_string()).collect();
             self.generic_classes.insert(
@@ -2750,9 +2727,6 @@ impl<'p> Checker<'p> {
         &mut self,
         params: &ast::TsTypeParamDecl,
     ) -> (Vec<String>, bool) {
-        // §109.2 rule 4: the nesting guard covers the types of the
-        // declaration, which no resolution walks.
-        self.guard_type_parameters(params);
         let mut names = HashSet::new();
         let mut duplicate = false;
         let names = params
@@ -5955,10 +5929,6 @@ impl<'p> Checker<'p> {
         if self.fn_sigs.contains_key(&name) {
             return Some(name);
         }
-        // §109.2 rule 4: one unit for the instance this site creates.
-        if !self.spend_work(1, &pos) {
-            return None;
-        }
         let saved_file = self.cur_file;
         let saved_subst = std::mem::take(&mut self.subst);
         self.cur_file = template.file;
@@ -6024,10 +5994,6 @@ impl<'p> Checker<'p> {
         };
         if known {
             return Some(instance);
-        }
-        // §109.2 rule 4: one unit for the instance this site creates.
-        if !self.spend_work(1, &pos) {
-            return None;
         }
         let saved_file = self.cur_file;
         let saved_subst = std::mem::take(&mut self.subst);
@@ -6101,10 +6067,6 @@ impl<'p> Checker<'p> {
         let name = self.mono_name(key, args);
         if let Some(&id) = self.class_ids.get(&name) {
             return Some(id);
-        }
-        // §109.2 rule 4: one unit for the instance this site creates.
-        if !self.spend_work(1, &pos) {
-            return None;
         }
         let saved_file = self.cur_file;
         let saved_subst = std::mem::take(&mut self.subst);
@@ -6322,28 +6284,6 @@ impl<'p> Checker<'p> {
 #[cfg(test)]
 mod tests {
     use crate::{check_program, RuleCode, SourceFile};
-
-    /// §109.1 rule 2: the checked module carries the profile it was
-    /// checked under, and it is the only carrier downstream.
-    #[test]
-    fn the_checked_module_carries_the_profile_it_was_checked_under() {
-        use crate::{check_program_with, CheckOptions, Profile};
-
-        let files = [SourceFile::new(
-            "profile.ts",
-            "export function main(): void {\n  print(\"p\");\n}\n",
-        )];
-        for profile in [Profile::Default, Profile::Sandbox] {
-            let module = check_program_with(&files, &CheckOptions::with_profile(profile))
-                .expect("the source checks under both profiles");
-            assert_eq!(module.profile, profile);
-        }
-        assert_eq!(
-            check_program(&files).expect("clean check").profile,
-            Profile::Default,
-            "no selector is the default profile"
-        );
-    }
 
     #[test]
     fn synthetic_owner_returns_its_prefix_after_question_mark() {

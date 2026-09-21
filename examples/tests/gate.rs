@@ -56,8 +56,8 @@ extern "C" {
     fn engineRequestStart();
     fn engineRequestPump();
     fn engineRequestReleaseCount();
-    fn engineRequestMarkCharge();
-    fn engineRequestChargeFellBy();
+    fn engineRequestMarkLiveBytes();
+    fn engineRequestLiveBytesFellBy();
 }
 
 #[cfg(not(all(windows, target_env = "msvc")))]
@@ -280,12 +280,12 @@ fn engine_library() -> NativeLibrary {
             engineRequestReleaseCount as *const u8,
         ),
         (
-            "engineRequestMarkCharge".to_string(),
-            engineRequestMarkCharge as *const u8,
+            "engineRequestMarkLiveBytes".to_string(),
+            engineRequestMarkLiveBytes as *const u8,
         ),
         (
-            "engineRequestChargeFellBy".to_string(),
-            engineRequestChargeFellBy as *const u8,
+            "engineRequestLiveBytesFellBy".to_string(),
+            engineRequestLiveBytesFellBy as *const u8,
         ),
     ];
     // SAFETY: build.rs links these static-lifetime functions into the test
@@ -480,14 +480,6 @@ fn capstone_host_builds_runs_and_matches_golden() {
 #[test]
 fn context_per_scene_host_builds_runs_and_matches_golden() {
     assert_host_program_matches_golden("context-per-scene", "Context-per-scene host");
-}
-
-/// The sandbox-profile host (`specs/blocks/compiler.md` §109): the script
-/// never returns on its own, so the golden output proves the host's
-/// interrupt stopped it.
-#[test]
-fn sandbox_host_builds_runs_and_matches_golden() {
-    assert_host_program_matches_golden("sandbox", "sandbox-profile host");
 }
 
 #[test]

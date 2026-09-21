@@ -19,18 +19,11 @@ mod native_fixture;
 #[path = "support/pool.rs"]
 mod pool;
 
-use std::fs;
-use std::path::{Path, PathBuf};
-
-use subscript_compiler::language_reference::parse_header;
-
 use subscript_codegen::{
-    run_c_aot_configured, run_c_aot_with_native_libraries,
-    run_c_aot_with_native_libraries_and_host_hooks, run_jit_configured,
-    run_jit_with_native_libraries, NativeLibrary, RunConfig, RunError,
+    run_c_aot_with_native_libraries, run_c_aot_with_native_libraries_and_host_hooks,
+    run_jit_with_native_libraries, NativeLibrary, RunError,
 };
 use subscript_codegen::{EntryArg, ReloadSession};
-use subscript_compiler::Profile;
 
 const HOST_OWNED_STATE_ID: &str = "a128-host-owned-state";
 const HOST_OWNED_STATE_PRE_ENTRY: &str = "subHostOwnedStatePreEntry";
@@ -62,53 +55,16 @@ fn run_ship_corpus_entry(
     id: &str,
     sources: &[subscript_compiler::SourceFile],
     libraries: &[NativeLibrary],
-    profile: Profile,
 ) -> Result<Vec<u8>, RunError> {
     let (pre_entry, post_run) = host_hooks(id);
-    if profile == Profile::Default {
-        return run_c_aot_with_native_libraries_and_host_hooks(
-            sources, libraries, pre_entry, post_run,
-        );
-    }
-    // The option record below carries the profile but no hook, so a
-    // profile entry that grows a hook fails here rather than losing it.
-    assert!(
-        pre_entry.is_none() && post_run.is_none(),
-        "{id}: a profile entry with a host hook needs both in one option record"
-    );
-    // §109.1 rule 3: a profile entry reaches the ship runner through the
-    // complete option record, so the checker and the lowering see it.
-    Ok(run_c_aot_configured(
-        sources,
-        RunConfig::with_profile(profile).with_native_libraries(libraries),
-    )?
-    .stdout)
+    run_c_aot_with_native_libraries_and_host_hooks(sources, libraries, pre_entry, post_run)
 }
 
 fn run_dev_corpus_entry(
     id: &str,
     sources: &[subscript_compiler::SourceFile],
     libraries: &[NativeLibrary],
-    profile: Profile,
 ) -> Result<Vec<u8>, RunError> {
-    if profile != Profile::Default {
-        // The plain runner below drives no host-entry session, so a
-        // profile entry that needs one fails here rather than losing it.
-        assert!(
-            !matches!(
-                id,
-                HOST_OWNED_STATE_ID | HANDLE_ENTRY_PARAM_ID | WIRE_ENTRY_PARAM_ID
-            ),
-            "{id}: a profile entry with a host-entry driver needs the profile in that driver"
-        );
-        // §109.1 rule 3: a profile entry reaches the dev runner through
-        // the complete option record.
-        return Ok(run_jit_configured(
-            sources,
-            RunConfig::with_profile(profile).with_native_libraries(libraries),
-        )?
-        .stdout);
-    }
     if id == HOST_OWNED_STATE_ID {
         let fixture =
             native_fixture::fixture().expect("the caller excludes unavailable fixture entries");
@@ -155,12 +111,10 @@ fn r27_field_initializer_entries_match_across_tiers() {
     for id in ["a133-field-init-no-ctor", "a134-field-init-order"] {
         let sources = corpus::entry_sources(&accept, id);
         let libraries = native_libraries(&sources).expect("R27 entries have no native dependency");
-        let jit =
-            run_dev_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
-                .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
-        let ship =
-            run_ship_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
-                .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+        let jit = run_dev_corpus_entry(id, &sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+        let ship = run_ship_corpus_entry(id, &sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
         if jit != ship {
             failures.push(format!(
                 "{id}: dev-JIT output {:?} != ship-C-AOT output {:?}",
@@ -179,9 +133,9 @@ fn r28_binary32_bit_access_matches_the_golden_across_tiers() {
     let sources = corpus::entry_sources(&accept, id);
     let libraries = native_libraries(&sources).expect("R28 has no native dependency");
     let golden = corpus::golden_bytes(&accept, id);
-    let jit = run_dev_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
+    let jit = run_dev_corpus_entry(id, &sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
-    let ship = run_ship_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
+    let ship = run_ship_corpus_entry(id, &sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
     assert_eq!(jit, golden, "{id}: dev-JIT output differs from the golden");
     assert_eq!(
@@ -197,9 +151,9 @@ fn r29_class_index_signature_matches_the_golden_across_tiers() {
     let sources = corpus::entry_sources(&accept, id);
     let libraries = native_libraries(&sources).expect("R29 has no native dependency");
     let golden = corpus::golden_bytes(&accept, id);
-    let jit = run_dev_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
+    let jit = run_dev_corpus_entry(id, &sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
-    let ship = run_ship_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
+    let ship = run_ship_corpus_entry(id, &sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
     assert_eq!(jit, golden, "{id}: dev-JIT output differs from the golden");
     assert_eq!(
@@ -218,9 +172,9 @@ fn r30_handle_entry_parameters_match_the_golden_across_tiers() {
         return;
     };
     let golden = corpus::golden_bytes(&accept, id);
-    let jit = run_dev_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
+    let jit = run_dev_corpus_entry(id, &sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
-    let ship = run_ship_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
+    let ship = run_ship_corpus_entry(id, &sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
     assert_eq!(jit, golden, "{id}: dev-JIT output differs from the golden");
     assert_eq!(
@@ -239,9 +193,9 @@ fn r32_wire_entry_parameters_match_the_golden_across_tiers() {
         return;
     };
     let golden = corpus::golden_bytes(&accept, id);
-    let jit = run_dev_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
+    let jit = run_dev_corpus_entry(id, &sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
-    let ship = run_ship_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
+    let ship = run_ship_corpus_entry(id, &sources, &libraries)
         .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
     assert_eq!(jit, golden, "{id}: dev-JIT output differs from the golden");
     assert_eq!(
@@ -257,12 +211,10 @@ fn r31_using_disposal_matches_the_goldens_across_tiers() {
         let sources = corpus::entry_sources(&accept, id);
         let libraries = native_libraries(&sources).expect("R31 entries have no native dependency");
         let golden = corpus::golden_bytes(&accept, id);
-        let jit =
-            run_dev_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
-                .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
-        let ship =
-            run_ship_corpus_entry(id, &sources, &libraries, corpus::entry_profile(&accept, id))
-                .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
+        let jit = run_dev_corpus_entry(id, &sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: dev-JIT run failed: {error}"));
+        let ship = run_ship_corpus_entry(id, &sources, &libraries)
+            .unwrap_or_else(|error| panic!("{id}: ship-C-AOT run failed: {error}"));
         assert_eq!(jit, golden, "{id}: dev-JIT output differs from the golden");
         assert_eq!(
             ship, golden,
@@ -874,7 +826,6 @@ struct SweepEntry {
     id: String,
     golden: Vec<u8>,
     sources: Vec<subscript_compiler::SourceFile>,
-    profile: Profile,
 }
 
 /// What one entry contributes to the sweep's counts and failure list.
@@ -891,7 +842,7 @@ fn compare_sweep_entry(entry: &SweepEntry) -> SweepOutcome {
     let libraries =
         native_libraries(&entry.sources).expect("the selection step drops every excluded entry");
     let mut failures = Vec::new();
-    let jit = match run_dev_corpus_entry(id, &entry.sources, &libraries, entry.profile) {
+    let jit = match run_dev_corpus_entry(id, &entry.sources, &libraries) {
         Ok(bytes) => bytes,
         Err(e) => {
             failures.push(format!("{id}: dev-JIT run failed: {e}"));
@@ -903,7 +854,7 @@ fn compare_sweep_entry(entry: &SweepEntry) -> SweepOutcome {
     };
     // The ship tier: emit C, compile at -O2 -ffp-contract=off, link
     // with the runtime, run, capture stdout.
-    let ship = match run_ship_corpus_entry(id, &entry.sources, &libraries, entry.profile) {
+    let ship = match run_ship_corpus_entry(id, &entry.sources, &libraries) {
         Ok(bytes) => bytes,
         Err(e) => {
             failures.push(format!("{id}: ship-C-AOT run failed: {e}"));
@@ -964,7 +915,6 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
             id: id.clone(),
             golden,
             sources,
-            profile: corpus::entry_profile(&accept, id),
         };
         if matches!(host_hooks(id), (None, None)) {
             pooled.push(entry);
@@ -1026,97 +976,4 @@ fn every_corpus_entry_with_a_golden_ends_in_a_newline() {
             "{id}: golden has no final newline"
         );
     }
-}
-
-/// §109.1 rule 3: every accept entry with a profile header runs under
-/// that profile on both tiers.
-///
-/// The check derives the expected set from the headers and the observed
-/// set from a run of each tier runner, so it compares two facts that were
-/// derived separately. An entry whose runner dropped the profile fails,
-/// because the run under the default profile disagrees with the golden or
-/// with the profile run.
-///
-/// The reject corpus is the firing control for the header reader: it
-/// holds profile entries, so a reader that finds nothing is wrong, not
-/// clean.
-#[test]
-fn every_accept_entry_with_a_profile_header_runs_under_that_profile() {
-    let accept = corpus::corpus_accept();
-    let reject = accept.with_file_name("reject");
-    assert!(
-        !profile_entry_ids(&reject).is_empty(),
-        "the reject corpus holds no profile entry; the header reader is wrong"
-    );
-    let selected = profile_entry_ids(&accept);
-    assert!(
-        !selected.is_empty(),
-        "the accept corpus holds no profile entry; §109.7 names one"
-    );
-    let mut failures = Vec::new();
-    for id in &selected {
-        let sources = corpus::entry_sources(&accept, id);
-        let Some(libraries) = native_libraries(&sources) else {
-            println!("{id}: skipped: interop fixture excluded here (compiler.md §11c)");
-            continue;
-        };
-        let profile = corpus::entry_profile(&accept, id);
-        assert_ne!(profile, Profile::Default, "{id}: header selects no profile");
-        let golden = corpus::golden_bytes(&accept, id);
-        for (tier, run) in [
-            (
-                "dev-JIT",
-                run_dev_corpus_entry(id, &sources, &libraries, profile),
-            ),
-            (
-                "ship-C-AOT",
-                run_ship_corpus_entry(id, &sources, &libraries, profile),
-            ),
-        ] {
-            match run {
-                Ok(stdout) if stdout == golden => {}
-                Ok(stdout) => failures.push(format!(
-                    "{id}: {tier} under {profile:?} printed {:?}, golden {:?}",
-                    String::from_utf8_lossy(&stdout),
-                    String::from_utf8_lossy(&golden)
-                )),
-                Err(error) => {
-                    failures.push(format!("{id}: {tier} under {profile:?} failed: {error}"));
-                }
-            }
-        }
-    }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
-}
-
-/// Every entry id in `arm` whose header selects a compile profile
-/// (§109.1 rule 3), sorted. A multi-file entry reports the id when any of
-/// its files carries the header.
-fn profile_entry_ids(arm: &Path) -> Vec<String> {
-    let mut ids: Vec<String> = Vec::new();
-    for id in corpus::entry_ids(arm) {
-        let dir = arm.join(&id);
-        let paths: Vec<PathBuf> = if dir.is_dir() {
-            fs::read_dir(&dir)
-                .expect("read entry dir")
-                .filter_map(|entry| entry.ok())
-                .map(|entry| entry.path())
-                .filter(|path| path.extension().is_some_and(|ext| ext == "ts"))
-                .collect()
-        } else {
-            vec![arm.join(format!("{id}.ts"))]
-        };
-        if paths.iter().any(|path| {
-            let text =
-                fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-            parse_header(path, &text)
-                .unwrap_or_else(|e| panic!("read the header of {}: {e}", path.display()))
-                .profile
-                .is_some()
-        }) {
-            ids.push(id);
-        }
-    }
-    ids.sort();
-    ids
 }

@@ -69,19 +69,6 @@ impl<'p> Checker<'p> {
     /// diagnostics for banned spellings. Errors resolve to
     /// [`Type::Error`] so one bad annotation does not cascade.
     pub(crate) fn resolve_type(&mut self, ty: &ast::TsType) -> Type {
-        let pos = self.pos(ty.span());
-        // §109.2 rule 2: one type annotation is one level of the descent.
-        let entered = self.enter_nesting(&pos);
-        let resolved = if entered {
-            self.resolve_type_node(ty)
-        } else {
-            Type::Error
-        };
-        self.leave_nesting();
-        resolved
-    }
-
-    fn resolve_type_node(&mut self, ty: &ast::TsType) -> Type {
         match ty {
             ast::TsType::TsKeywordType(kw) => self.resolve_keyword(kw),
             ast::TsType::TsTypeRef(r) => self.resolve_type_ref(r),
@@ -206,17 +193,6 @@ impl<'p> Checker<'p> {
         }
         match name {
             "Worker" | "Inbox" | "Outbox" if self.scope_item(name).is_none() => {
-                // §109.2 S025: the sandbox profile has no worker surface.
-                // `Worker.spawn` is the only source of a `Worker<In, Out>`
-                // value, so S025 at `Worker.spawn` covers that name.
-                if matches!(name, "Inbox" | "Outbox") && self.profile == crate::Profile::Sandbox {
-                    self.error(
-                        RuleCode::S025,
-                        format!("`{name}` is rejected under the sandbox profile"),
-                        pos,
-                    );
-                    return Type::Error;
-                }
                 let expected = if name == "Worker" { 2 } else { 1 };
                 let Some(args) = &r.type_params else {
                     self.error(

@@ -101,9 +101,9 @@ export function main(): void {
   // of a call that returned, and no lambda captured it. The two open
   // registrations are the only roots left, so this collection keeps
   // their state (invariant 2: a collection runs when the program asks
-  // for it). The mark then reads the charge of the rooted graphs.
+  // for it). The mark then reads the live bytes of the rooted graphs.
   Context.collect();
-  engineRequestMarkCharge(world);
+  engineRequestMarkLiveBytes(world);
 
   engineRequestPump(world);
   print(`released ${engineRequestReleaseCount(world)}`);
@@ -116,7 +116,7 @@ export function main(): void {
   // host promises no later call, and the memory of the completed
   // requests returns at the next collection this program asks for.
   Context.collect();
-  print(`reclaimed ${engineRequestChargeFellBy(world, 8192)}`);
+  print(`reclaimed ${engineRequestLiveBytesFellBy(world, 8192)}`);
 
   engineWorldRelease(world);
 }

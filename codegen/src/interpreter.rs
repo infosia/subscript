@@ -124,31 +124,7 @@ impl InterpretError {
 /// Returns a semantic trap, malformed-LIR finding, provenance error, or an
 /// explicitly unsupported external dependency.
 pub fn interpret(module: &l::Module) -> Result<Vec<u8>, InterpretError> {
-    interpret_configured(module, crate::RunConfig::default())
-}
-
-/// Executes a complete LIR module under one option record and returns the
-/// program's captured stdout.
-///
-/// The interpreter takes LIR, which the checker's profile already shaped
-/// (`specs/blocks/compiler.md` §109.3). `config.profile` is the value the
-/// caller read from the checked module, and it selects the §109.5
-/// Context defaults this run starts with. `config.alloc_quota` and
-/// `config.stack_budget` replace those defaults, one limit each.
-///
-/// # Errors
-///
-/// Returns the same variants as [`interpret`].
-pub fn interpret_configured(
-    module: &l::Module,
-    config: crate::RunConfig<'_>,
-) -> Result<Vec<u8>, InterpretError> {
     let mut interpreter = Interpreter::new(module)?;
-    crate::apply_run_limits(
-        &mut interpreter.context,
-        config.profile,
-        config.host_limits(),
-    );
     match interpreter.run() {
         Ok(output) => Ok(output),
         Err(source) => Err(InterpretError::Execution {
@@ -403,9 +379,6 @@ impl<'m> Interpreter<'m> {
 
     fn run(&mut self) -> Result<Vec<u8>, InterpretError> {
         self.clear_trap();
-        // §109.4 rule 3: the entry at script depth zero records the stack
-        // floor, which the sandbox-profile function entry compares
-        // against. The interpreter recurses on this same native stack.
         self.context.enter_script();
         let outcome = self.run_entries();
         self.context.exit_script();
@@ -2274,29 +2247,6 @@ impl<'m> Interpreter<'m> {
             l::IntrinsicFamily::Worker => Err(InterpretError::Unsupported {
                 reason: format!("Worker.{operation} requires a runtime worker adapter"),
             }),
-            l::IntrinsicFamily::Sandbox => self.intrinsic_sandbox(operation),
-        }
-    }
-
-    /// The sandbox-profile checkpoints (§109.3). The interpreter calls the
-    /// same runtime entry points the other two tiers call, so the limits
-    /// are one implementation.
-    ///
-    /// The position id is zero: the interpreter has no position table, and
-    /// `dispatch_instruction_traps` reports the LIR trap site instead.
-    fn intrinsic_sandbox(&mut self, operation: &str) -> Result<Value, InterpretError> {
-        match operation {
-            "Enter" => {
-                // SAFETY: this interpreter exclusively owns the Context.
-                unsafe { ffi::subscript_rt_sandbox_enter(&mut *self.context, 0) };
-                Ok(Value::Void)
-            }
-            "Poll" => {
-                // SAFETY: this interpreter exclusively owns the Context.
-                unsafe { ffi::subscript_rt_sandbox_poll(&mut *self.context, 0) };
-                Ok(Value::Void)
-            }
-            other => Err(self.invalid(None, format!("unknown Sandbox intrinsic {other}"))),
         }
     }
 

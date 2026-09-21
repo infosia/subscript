@@ -39,7 +39,6 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
     for successor in suspend_successors {
         let Some(destination) = function.blocks.get(successor.0 as usize) else {
             return Err(LowerError {
-                code: None,
                 pos: function.pos.clone(),
                 message: format!("suspend successor block {} is missing", successor.0),
             });
@@ -55,7 +54,6 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
                 .get(original.0 as usize)
                 .cloned()
                 .ok_or_else(|| LowerError {
-                    code: None,
                     pos: function.pos.clone(),
                     message: format!("live-in value {} is missing", original.0),
                 })?;
@@ -259,7 +257,6 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
                 .any(|(candidate, _)| *candidate == origin)
             {
                 let version = version.ok_or_else(|| LowerError {
-                    code: None,
                     pos: function.pos.clone(),
                     message: format!(
                         "value {} is live at suspend in block {} but has no reaching definition",

@@ -35,7 +35,7 @@
 //! generated code never unwinds (the trap-flag discipline), so no
 //! unwind crosses these calls.
 
-use crate::context::{Context, QuotaBuf};
+use crate::context::Context;
 use crate::trap::TrapKind;
 use crate::valeq::{read_uint, value_eq, ValueKind};
 
@@ -542,16 +542,10 @@ pub unsafe fn join(
     let sep_bytes = unsafe { (*ctx).str_view(sep) };
     // SAFETY: caller contract.
     let (n, esz) = unsafe { (len_of(ctx, h, pos_id), (*ctx).array_elem_size(h)) };
-    // §109.4 rule 2: the result size is the element count times the
-    // separator, so the buffer holds at most the quota headroom and the
-    // trap replaces the copy that would not fit.
-    let mut out: QuotaBuf = unsafe { (*ctx).quota_buf() };
+    let mut out: Vec<u8> = Vec::new();
     for i in 0..n {
-        if out.over_quota() {
-            break;
-        }
         if i > 0 {
-            out.extend(sep_bytes);
+            out.extend_from_slice(sep_bytes);
         }
         // SAFETY: `i < n`; caller contract.
         let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
@@ -559,40 +553,40 @@ pub unsafe fn join(
             // SAFETY (each arm): element storage is `esz` readable bytes
             // of the arm's type; widths are fixed by the kind except the
             // integer-read arms, which read the tier's own width.
-            FmtKind::I32 => out.extend(
+            FmtKind::I32 => out.extend_from_slice(
                 crate::fmt::fmt_i32(unsafe { p.cast::<i32>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::U32 => out.extend(
+            FmtKind::U32 => out.extend_from_slice(
                 crate::fmt::fmt_u32(unsafe { p.cast::<u32>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::I64 => out.extend(
+            FmtKind::I64 => out.extend_from_slice(
                 crate::fmt::fmt_i64(unsafe { p.cast::<i64>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::U64 => out.extend(
+            FmtKind::U64 => out.extend_from_slice(
                 crate::fmt::fmt_u64(unsafe { p.cast::<u64>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::F32 => out.extend(
+            FmtKind::F32 => out.extend_from_slice(
                 crate::fmt::fmt_f32(unsafe { p.cast::<f32>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::F64 => out.extend(
+            FmtKind::F64 => out.extend_from_slice(
                 crate::fmt::fmt_f64(unsafe { p.cast::<f64>().read_unaligned() }).as_bytes(),
             ),
-            FmtKind::I8 => out.extend(
+            FmtKind::I8 => out.extend_from_slice(
                 crate::fmt::fmt_i32(i32::from(unsafe { p.cast::<i8>().read_unaligned() }))
                     .as_bytes(),
             ),
-            FmtKind::U8 => {
-                out.extend(crate::fmt::fmt_u32(u32::from(unsafe { p.read_unaligned() })).as_bytes())
-            }
-            FmtKind::I16 => out.extend(
+            FmtKind::U8 => out.extend_from_slice(
+                crate::fmt::fmt_u32(u32::from(unsafe { p.read_unaligned() })).as_bytes(),
+            ),
+            FmtKind::I16 => out.extend_from_slice(
                 crate::fmt::fmt_i32(i32::from(unsafe { p.cast::<i16>().read_unaligned() }))
                     .as_bytes(),
             ),
-            FmtKind::U16 => out.extend(
+            FmtKind::U16 => out.extend_from_slice(
                 crate::fmt::fmt_u32(u32::from(unsafe { p.cast::<u16>().read_unaligned() }))
                     .as_bytes(),
             ),
-            FmtKind::F16 => out.extend(
+            FmtKind::F16 => out.extend_from_slice(
                 crate::fmt::fmt_f64(crate::half::to_f64(unsafe {
                     p.cast::<u16>().read_unaligned()
                 }))
@@ -600,9 +594,9 @@ pub unsafe fn join(
             ),
             // Booleans are 1 byte under the dev JIT and 4 under the
             // ship-C emitter; read the tier's own width.
-            FmtKind::Bool => {
-                out.extend(crate::fmt::fmt_bool(unsafe { read_uint(p, esz) } != 0).as_bytes())
-            }
+            FmtKind::Bool => out.extend_from_slice(
+                crate::fmt::fmt_bool(unsafe { read_uint(p, esz) } != 0).as_bytes(),
+            ),
             FmtKind::Str => {
                 // SAFETY: an 8-byte string handle.
                 let s = unsafe { p.cast::<*const u8>().read_unaligned() };
@@ -610,18 +604,14 @@ pub unsafe fn join(
                     // SAFETY: live string handle. Context string allocations
                     // keep immutable input allocation addresses stable.
                     let bytes = unsafe { (*ctx).str_view(s) };
-                    out.extend(bytes);
+                    out.extend_from_slice(bytes);
                 }
             }
         }
     }
     // SAFETY: caller contract.
     let ctx = unsafe { &mut *ctx };
-    if out.over_quota() {
-        ctx.check_quota(out.wanted(), pos_id);
-        return std::ptr::null_mut();
-    }
-    ctx.alloc_str(out.bytes(), pos_id)
+    ctx.alloc_str(&out, pos_id)
 }
 
 // ----- slice / fill / reverse / concat / structural mutation -----
@@ -1836,15 +1826,7 @@ unsafe fn merge_sort_by<T: Copy>(
 ///
 /// `h` is a live array of `ctx` (or null); `code`/`env` are a language
 /// comparator of shape `(ctx, env, T, T) -> i32` for the element ABI.
-/// `pos_id` is the position of the `sort` call (§112 rule 4).
-pub unsafe fn sort(
-    ctx: *mut Context,
-    h: *mut u8,
-    code: *const u8,
-    env: *const u8,
-    kind: ElemKind,
-    pos_id: u32,
-) {
+pub unsafe fn sort(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u8, kind: ElemKind) {
     // SAFETY: caller contract.
     if unsafe { cb_blocked(ctx, h, code) } {
         return;
@@ -1858,14 +1840,6 @@ pub unsafe fn sort(
     // SAFETY: caller contract.
     let n = unsafe { len_of(ctx, h, 0) };
     if n < 2 {
-        return;
-    }
-    // §109.4 rule 2: the sort holds two copies of the receiver while it
-    // runs, so the quota takes that bounded multiple before either copy
-    // exists. Over the quota the trap stands and the array is untouched.
-    let copies = n.saturating_mul(esz).saturating_mul(2);
-    // SAFETY: caller contract.
-    if !unsafe { (*ctx).check_quota(copies, pos_id) } {
         return;
     }
     with_abi!(abi, T, {
@@ -2610,26 +2584,12 @@ mod tests {
         // SAFETY: live arrays of `c`; comparators match the ABI.
         unsafe {
             let h = arr_i32(&mut c, &[5, 1, 4, 2, 3]);
-            sort(
-                p,
-                h,
-                cmp_i32 as *const u8,
-                std::ptr::null(),
-                ElemKind::Int,
-                0,
-            );
+            sort(p, h, cmp_i32 as *const u8, std::ptr::null(), ElemKind::Int);
             assert_eq!(i32_items(&c, h), vec![1, 2, 3, 4, 5]);
 
             // Stability: key*10+seq pairs ordered by key keep seq order.
             let s = arr_i32(&mut c, &[20, 11, 22, 13, 14]);
-            sort(
-                p,
-                s,
-                cmp_key as *const u8,
-                std::ptr::null(),
-                ElemKind::Int,
-                0,
-            );
+            sort(p, s, cmp_key as *const u8, std::ptr::null(), ElemKind::Int);
             assert_eq!(i32_items(&c, s), vec![11, 13, 14, 20, 22]);
         }
     }
@@ -2680,7 +2640,6 @@ mod tests {
                 cmp_trapping as *const u8,
                 std::ptr::null(),
                 ElemKind::Int,
-                0,
             );
             assert!(c.trapped());
             assert_eq!(i32_items(&c, s), vec![3, 1, 2]);

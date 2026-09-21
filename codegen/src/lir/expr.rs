@@ -424,9 +424,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     &expr.pos,
                 )?;
                 self.current = Some(successor);
-                // §109.3 rule 4: a resume enters the body here, so the
-                // entry checkpoint runs here too.
-                self.emit_sandbox_checkpoint(SandboxCheckpoint::Enter, &expr.pos)?;
                 None
             }
             K::AsyncSuspend => {
@@ -444,9 +441,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     &expr.pos,
                 )?;
                 self.current = Some(successor);
-                // §109.3 rule 4: a resume enters the body here, so the
-                // entry checkpoint runs here too.
-                self.emit_sandbox_checkpoint(SandboxCheckpoint::Enter, &expr.pos)?;
                 None
             }
             K::AsyncCall { callee, args } => self.lower_async_call(callee, args, expr)?,

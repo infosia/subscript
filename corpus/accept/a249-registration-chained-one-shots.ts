@@ -13,7 +13,7 @@ class Link {
     this.device = device;
     this.left = left;
     this.items = [];
-    // The graph of one link is large enough that the fall in charged
+    // The graph of one link is large enough that the fall in live
     // bytes below cannot come from the strings this entry allocates.
     for (let index: i32 = 0; index < 4096; index = index + 1) {
       this.items.push(index);
@@ -49,8 +49,8 @@ export function main(): void {
   startLink(device, new Link(device, 3));
   Context.collect();
 
-  // The mark reads the charge while one rooted link graph is live.
-  subRequestMarkCharge(device);
+  // The mark reads the live bytes while one rooted link graph is live.
+  subRequestMarkLiveBytes(device);
 
   subRequestPump(device);
   print(`released ${subRequestReleaseCount(device)}`);
@@ -60,6 +60,6 @@ export function main(): void {
   print(`released ${subRequestReleaseCount(device)}`);
 
   Context.collect();
-  print(`reclaimed ${subRequestChargeFellBy(device, 8192)}`);
+  print(`reclaimed ${subRequestLiveBytesFellBy(device, 8192)}`);
   subDeviceRelease(device);
 }

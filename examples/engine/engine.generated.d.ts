@@ -110,8 +110,8 @@ declare class EngineRequestInfo {
 declare function engineRequestStart(engineWorld: EngineWorld, engineImmediate: boolean, engineInfo: EngineRequestInfo): i32;
 declare function engineRequestPump(engineWorld: EngineWorld): void;
 declare function engineRequestReleaseCount(engineWorld: EngineWorld): i32;
-declare function engineRequestMarkCharge(engineWorld: EngineWorld): void;
-declare function engineRequestChargeFellBy(engineWorld: EngineWorld, engineAtLeast: u32): i32;
+declare function engineRequestMarkLiveBytes(engineWorld: EngineWorld): void;
+declare function engineRequestLiveBytesFellBy(engineWorld: EngineWorld, engineAtLeast: u32): i32;
 
 type EngineEntityFlags = u64;
 declare const ENGINE_ENTITY_FLAG_NONE = 0;

@@ -38,7 +38,7 @@ mod valeq;
 pub mod worker;
 
 pub use context::{
-    CallbackBinding, Context, DiagnosticsObserver, Interrupt, ScriptMainEntry, TrapObserver,
+    CallbackBinding, Context, DiagnosticsObserver, ScriptMainEntry, TrapObserver,
     DIAGNOSTICS_ADVISORY_BINDING_COUNT, DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE,
     FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
 };

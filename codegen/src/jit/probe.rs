@@ -2,7 +2,7 @@
 //! code. Each one runs the entries directly, so a test reads the Context
 //! the run left behind.
 
-use subscript_compiler::{Profile, SourceFile};
+use subscript_compiler::SourceFile;
 use subscript_runtime::{ffi, Context};
 
 use super::compile::{call_script_entry, compile_jit};
@@ -14,22 +14,20 @@ use crate::position_table::PositionTable;
 pub(crate) fn memory_accounting_after_run(
     files: &[SourceFile],
 ) -> Result<(u64, u64, u64), RunError> {
-    let (module, lowered, _) = compile_jit(files, &[], Profile::Default)?;
-    let result = execute_entry(&module, &lowered, EntryOptions::default(), None)
-        .run
-        .map(|run| {
-            let p: *const Context = &*run.ctx;
-            let accounting = memory_accounting(&run.ctx);
-            // SAFETY: shared host accessors over a live Context after every
-            // script entry returned.
-            unsafe {
-                (
-                    ffi::subscript_rt_ctx_live_allocations(p),
-                    accounting.live_bytes,
-                    accounting.reserved_bytes,
-                )
-            }
-        });
+    let (module, lowered) = compile_jit(files, &[])?;
+    let result = execute_entry(&module, &lowered, EntryOptions::default(), None).map(|run| {
+        let p: *const Context = &*run.ctx;
+        let accounting = memory_accounting(&run.ctx);
+        // SAFETY: shared host accessors over a live Context after every
+        // script entry returned.
+        unsafe {
+            (
+                ffi::subscript_rt_ctx_live_allocations(p),
+                accounting.live_bytes,
+                accounting.reserved_bytes,
+            )
+        }
+    });
     // SAFETY: all entries returned and no code pointer survives.
     unsafe { module.free_memory() };
     result
@@ -39,7 +37,7 @@ pub(crate) fn live_allocations_after_main_calls(
     files: &[SourceFile],
     calls: usize,
 ) -> Result<Vec<u64>, RunError> {
-    let (module, lowered, _) = compile_jit(files, &[], Profile::Default)?;
+    let (module, lowered) = compile_jit(files, &[])?;
     let init = module.get_finalized_function(lowered.init);
     let main = module.get_finalized_function(lowered.main_id().map_err(RunError::Internal)?);
     let mut ctx = Context::new();
@@ -95,7 +93,7 @@ pub(crate) fn allocation_attribution_after_run(
         triples.push((class_id, pos_id, payload_bytes));
     }
 
-    let (module, lowered, _) = compile_jit(files, &[], Profile::Default)?;
+    let (module, lowered) = compile_jit(files, &[])?;
     let init = module.get_finalized_function(lowered.init);
     let main_id = lowered.main_id().map_err(RunError::Internal)?;
     let main = module.get_finalized_function(main_id);

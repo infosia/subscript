@@ -5,10 +5,9 @@
 //! applies the warning policy, delegates swaps to [`ReloadSession`], and calls
 //! `main` after a start or accepted swap.
 
-use subscript_codegen::{ReloadError, ReloadSession, RunConfig, RunError, TrapReport};
+use subscript_codegen::{ReloadError, ReloadSession, RunError, TrapReport};
 use subscript_compiler::{
-    check_program_with, check_warnings, on_the_compile_thread, CheckOptions, Diagnostic, Profile,
-    SourceFile, Warning,
+    check_program, check_warnings, on_the_compile_thread, Diagnostic, SourceFile, Warning,
 };
 
 /// The output and optional trap from one watched program call.
@@ -89,21 +88,16 @@ pub struct WatchSession {
     session: Option<ReloadSession>,
     last_sources: Option<Vec<SourceFile>>,
     deny_warnings: bool,
-    profile: Profile,
 }
 
 impl WatchSession {
     /// Creates an empty watch state.
-    ///
-    /// `profile` is the compile profile (§109.1); every reload checks
-    /// under it.
     #[must_use]
-    pub fn new(deny_warnings: bool, profile: Profile) -> Self {
+    pub fn new(deny_warnings: bool) -> Self {
         Self {
             session: None,
             last_sources: None,
             deny_warnings,
-            profile,
         }
     }
 
@@ -126,13 +120,11 @@ impl WatchSession {
         }
         self.last_sources = Some(files.to_vec());
 
-        // §109.2 rule 3: the check and the warning walk both recurse
+        // §113.2 rule 1: the check and the warning walk both recurse
         // over the tree, so both run on the compile thread. The checked
         // module drops there too.
-        let options = CheckOptions::with_profile(self.profile);
-        let checked = on_the_compile_thread(|| {
-            check_program_with(files, &options).map(|module| check_warnings(&module))
-        });
+        let checked =
+            on_the_compile_thread(|| check_program(files).map(|module| check_warnings(&module)));
         let warnings = match checked {
             Ok(warnings) => warnings,
             Err(diagnostics) => return WatchStep::diagnostics(diagnostics),
@@ -148,10 +140,7 @@ impl WatchSession {
     }
 
     fn start(&mut self, files: &[SourceFile], warnings: Vec<Warning>) -> WatchStep {
-        // §109.5: the session applies the profile defaults before the
-        // initializer call.
-        let config = RunConfig::with_profile(self.profile);
-        match ReloadSession::new_capturing_initializer_trap_configured(files, config) {
+        match ReloadSession::new_capturing_initializer_trap(files) {
             Ok((mut session, Some(trap))) => {
                 // The initializer output is available in `trap.stdout`.
                 let _ = session.take_output();

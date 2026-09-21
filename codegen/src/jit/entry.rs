@@ -3,19 +3,16 @@
 
 use std::ffi::c_void;
 use std::fs::File;
+#[cfg(unix)]
 use std::io::Write;
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
-use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use cranelift_jit::JITModule;
-use subscript_compiler::Profile;
 #[cfg(unix)]
 use subscript_runtime::TrapKind;
-use subscript_runtime::{
-    ffi, Context, Interrupt, FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,
-};
+use subscript_runtime::{ffi, Context, FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES};
 
 use super::compile::call_script_entry;
 #[cfg(unix)]
@@ -27,7 +24,6 @@ use super::{JitMemoryAccounting, RunError, TrapReport};
 #[cfg(unix)]
 use crate::lower::internal;
 use crate::lower::Lowered;
-use crate::HostLimits;
 
 pub(super) struct CompletedRun {
     pub(super) ctx: Box<Context>,
@@ -35,32 +31,13 @@ pub(super) struct CompletedRun {
     pub(super) elapsed: Duration,
 }
 
-/// What one dev-tier entry run produced: its outcome, and the measured
-/// interrupt latency when the run set the flag from a second thread.
-pub(super) struct EntryOutcome {
-    pub(super) run: Result<CompletedRun, RunError>,
-    pub(super) interrupt_latency: Option<Duration>,
-}
-
 /// What one dev-tier entry run needs beyond the finalized code.
 #[derive(Debug, Clone, Copy, Default)]
-pub(super) struct EntryOptions<'a> {
+pub(super) struct EntryOptions {
     /// Object-level Context allocation number to reject.
     pub(super) fail_alloc_after: Option<u64>,
     /// Enables retained freed-handle diagnostics.
     pub(super) freed_handle_diagnostics: bool,
-    /// The profile the module was checked under (§109.1 rule 2). The
-    /// runner reads the §109.5 defaults from it.
-    pub(super) profile: Profile,
-    /// Sets the Context interrupt flag from a second thread after this
-    /// many milliseconds (§109.7). `None` starts no thread.
-    pub(super) interrupt_after_millis: Option<u64>,
-    /// Where this runner stores the interrupt handle of the run's
-    /// Context, before the first script call (§109.4 rule 1).
-    pub(super) interrupt_handle: Option<&'a OnceLock<Arc<Interrupt>>>,
-    /// The limits the host set, each replacing the profile's default
-    /// for that limit (§109.5).
-    pub(super) limits: HostLimits,
 }
 
 /// Runs the module initializer and then the exported `main` on a fresh
@@ -74,50 +51,33 @@ pub(super) struct EntryOptions<'a> {
 pub(super) fn execute_entry(
     module: &JITModule,
     lowered: &Lowered,
-    options: EntryOptions<'_>,
+    options: EntryOptions,
     write_through: Option<File>,
-) -> EntryOutcome {
+) -> Result<CompletedRun, RunError> {
     let EntryOptions {
         fail_alloc_after,
         freed_handle_diagnostics,
-        profile,
-        interrupt_after_millis,
-        interrupt_handle,
-        limits,
     } = options;
     let init_ptr = module.get_finalized_function(lowered.init);
     let main = match lowered.main_id() {
         Ok(main) => main,
-        Err(message) => {
-            return EntryOutcome {
-                run: Err(RunError::Internal(message)),
-                interrupt_latency: None,
-            };
-        }
+        Err(message) => return Err(RunError::Internal(message)),
     };
     let main_ptr = module.get_finalized_function(main);
 
     let needs_panic_stdout_fallback = write_through.is_none();
-    // §109.7a: under the profile this runner installs no print observer.
-    // The Context sink, which charges the quota, is its capture, and the
-    // run reads the sink where an observed run reads the buffer below.
-    let observed = profile != Profile::Sandbox;
     let mut ctx = Context::new();
     let mut stdout = Box::new(CapturedStdout {
         bytes: Vec::new(),
         write_through,
     });
-    if observed {
-        ctx.set_print_observer(
-            Some(capture_stdout_line),
-            (&mut *stdout as *mut CapturedStdout).cast::<c_void>(),
-        );
-    }
-    // The hook flushes the buffer the observer fills. An unobserved run
-    // holds its bytes in the Context sink, which this runner reads after
-    // the run returns, so a run that ends abnormally returns none.
-    let aborting_stdout = (observed && needs_panic_stdout_fallback)
-        .then(|| AbortingStdoutGuard::install(&stdout.bytes));
+    ctx.set_print_observer(
+        Some(capture_stdout_line),
+        (&mut *stdout as *mut CapturedStdout).cast::<c_void>(),
+    );
+    // The hook flushes the buffer the observer fills.
+    let aborting_stdout =
+        needs_panic_stdout_fallback.then(|| AbortingStdoutGuard::install(&stdout.bytes));
     let diagnostics_set = ctx.set_freed_handle_diagnostics(
         freed_handle_diagnostics,
         0,
@@ -130,22 +90,6 @@ pub(super) fn execute_entry(
     if let Some(n) = fail_alloc_after {
         ctx.fail_alloc_after(n);
     }
-    // §109.5: the runner applies the run-time limits before the first
-    // `enter_script`, so the module initializer already runs under them.
-    crate::apply_run_limits(&mut ctx, profile, limits);
-    // §109.4 rule 1: the handle is obtained on the owner thread, before
-    // the first script call, and it owns the cell with the Context.
-    if let Some(sink) = interrupt_handle {
-        let _ = sink.set(ctx.interrupt_handle());
-    }
-    let interrupter = interrupt_after_millis.map(|millis| {
-        let handle = ctx.interrupt_handle();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(millis));
-            handle.set();
-            Instant::now()
-        })
-    });
     let mut elapsed = Duration::ZERO;
     {
         // SAFETY: `init_ptr`/`main_ptr` are finalized JIT code for
@@ -184,12 +128,6 @@ pub(super) fn execute_entry(
         }
     }
 
-    // §109.7: the recorded number is the time from the flag store to this
-    // runner's return.
-    let interrupt_latency = interrupter.map(|handle| {
-        let store = handle.join().unwrap_or_else(|_| Instant::now());
-        store.elapsed()
-    });
     let trap = ctx.trap_record().map(|r| {
         // §112 rule 1: the recorded id resolves through the lowered
         // table, and id 0 is its reserved entry, so both tiers report
@@ -197,38 +135,21 @@ pub(super) fn execute_entry(
         let pos = lowered.positions.report_position(r.pos_id);
         (r.kind, r.message.clone(), pos)
     });
-    if observed {
-        ctx.set_print_observer(None, std::ptr::null_mut());
-    }
+    ctx.set_print_observer(None, std::ptr::null_mut());
     drop(aborting_stdout);
-    // §109.7a: the sink is the capture of an unobserved run. The
-    // retained file receives it once, here, because no line-by-line
-    // callback wrote to that file during the run.
-    let stdout = if observed {
-        stdout.bytes
-    } else {
-        let bytes = ctx.take_stdout();
-        if let Some(file) = &mut stdout.write_through {
-            let _ = file.write_all(&bytes);
-            let _ = file.flush();
-        }
-        bytes
-    };
-    EntryOutcome {
-        run: match trap {
-            Some((rule, message, pos)) => Err(RunError::Trap(TrapReport {
-                rule,
-                message,
-                pos,
-                stdout,
-            })),
-            None => Ok(CompletedRun {
-                ctx,
-                stdout,
-                elapsed,
-            }),
-        },
-        interrupt_latency,
+    let stdout = stdout.bytes;
+    match trap {
+        Some((rule, message, pos)) => Err(RunError::Trap(TrapReport {
+            rule,
+            message,
+            pos,
+            stdout,
+        })),
+        None => Ok(CompletedRun {
+            ctx,
+            stdout,
+            elapsed,
+        }),
     }
 }
 
@@ -350,11 +271,8 @@ fn parse_child_protocol(bytes: &[u8], stdout: Vec<u8>) -> Result<Vec<u8>, RunErr
 pub(super) fn execute_entry_retained(
     module: &JITModule,
     lowered: &Lowered,
-    mut options: EntryOptions<'_>,
+    options: EntryOptions,
 ) -> Result<Vec<u8>, RunError> {
-    // The child's Context is in another process, so the parent reads
-    // nothing a child stores (§109.4 rule 1).
-    options.interrupt_handle = None;
     let mut output = RetainedOutput::new()?;
     let writer = output.writer()?;
     let mut protocol = TemporaryFile::new("protocol")?;
@@ -386,7 +304,7 @@ pub(super) fn execute_entry_retained(
         let outcome = execute_entry(module, lowered, options, Some(writer));
         let written = write_child_protocol(
             protocol.file.as_mut().expect("live JIT child protocol"),
-            &outcome.run,
+            &outcome,
         )
         .is_ok();
         // SAFETY: this is the forked child. `_exit` avoids running inherited
@@ -441,23 +359,19 @@ pub(super) fn execute_entry_retained(
 pub(super) fn execute_entry_retained(
     module: &JITModule,
     lowered: &Lowered,
-    options: EntryOptions<'_>,
+    options: EntryOptions,
 ) -> Result<Vec<u8>, RunError> {
     let output = RetainedOutput::new()?;
     let writer = output.writer()?;
-    execute_entry(module, lowered, options, Some(writer))
-        .run
-        .map(|run| run.stdout)
+    execute_entry(module, lowered, options, Some(writer)).map(|run| run.stdout)
 }
 
 pub(super) fn run_entry(
     module: &JITModule,
     lowered: &Lowered,
-    options: EntryOptions<'_>,
+    options: EntryOptions,
 ) -> Result<(Vec<u8>, Duration), RunError> {
-    execute_entry(module, lowered, options, None)
-        .run
-        .map(|run| (run.stdout, run.elapsed))
+    execute_entry(module, lowered, options, None).map(|run| (run.stdout, run.elapsed))
 }
 
 pub(super) fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {

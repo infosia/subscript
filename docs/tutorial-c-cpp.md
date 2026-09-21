@@ -5,9 +5,8 @@ native application. Its syntax is a subset of TypeScript; its execution
 and memory model are C-compatible: every language-visible struct has
 the layout the platform C ABI gives the equivalent C struct, no garbage
 collector runs behind your code, and the host owns the main loop.
-Scripts are trusted first-party logic by default. For content you did
-not write, the sandbox profile narrows the language and adds the
-limits you set (Step 11).
+Scripts are trusted first-party logic. A host that runs content it did
+not write adds an isolation boundary of its own.
 
 This tutorial assumes C, not TypeScript. Every command and every output
 below comes from a run against the repository as committed. The host of
@@ -301,18 +300,16 @@ warning[W001]: `token` is allocated in each loop iteration but neither escapes t
 warning: 1 warning(s)
 ```
 
-At runtime, the host can watch the same quantities:
-`subscript_rt_ctx_live_bytes` / `_live_allocations` / `_charged_bytes` /
-`_reserved_bytes` report the Context's memory — `_charged_bytes` is the
-counter the allocation quota compares against (§109.0), and the one a
-host paces on — and
-`subscript_rt_ctx_visit_live_allocations` walks every live allocation
-with its class and allocation-site ids (`specs/blocks/compiler.md`
-§18.2d, §21.2), and `subscript_rt_ctx_collect` runs the same collection
-that `Context.collect()` reaches, between script calls (Step 11 shows
-when a host wants that). The count is comparable across the two tiers;
-the byte figures are not, because the tiers have different allocators. "Step 6"
-below resolves those ids to names and source positions.
+At runtime, the host can watch the same quantities.
+`subscript_rt_ctx_live_bytes` / `_live_allocations` / `_reserved_bytes`
+report the Context's memory. `subscript_rt_ctx_visit_live_allocations`
+walks every live allocation with its class and allocation-site ids
+(`specs/blocks/compiler.md` §18.2d, §21.2). Between script calls,
+`subscript_rt_ctx_collect` runs the same collection that
+`Context.collect()` reaches. The count is comparable across the two
+tiers; the byte figures are not, because the tiers have different
+allocators. "Step 6" below resolves those ids to names and source
+positions.
 
 ## Embedding subscript in your host, step by step
 
@@ -1122,9 +1119,9 @@ boundary, so it created a registration; the engine ended it inside the
 start call, and `released 2` reports that before any pump runs.
 
 `reclaimed 1` is a comparison, not a byte count. The engine reads
-`subscript_rt_ctx_charged_bytes` through the Context it kept and answers
-whether the charge fell by the 8,192 bytes the program named. The byte
-counts differ by tier and by memory mode; the fall does not.
+`subscript_rt_ctx_live_bytes` through the Context it kept and answers
+whether the live bytes fell by the 8,192 bytes the program named. The
+byte counts differ by tier and by memory mode; the fall does not.
 
 The release is a statement that you make: you start no more calls
 through this registration. It cancels no native work and unregisters
@@ -1150,8 +1147,8 @@ nothing. Do those first. Five rules follow from that.
 - **The release removes a root and nothing else.** It does not collect
   and it does not free the userdata. A script reference keeps the
   object. If nothing reaches it, the next `Context.collect()` reclaims
-  it, so a host that paces collection (Step 11) sees the memory of
-  completed requests return.
+  it, so a host that paces collection sees the memory of completed
+  requests return.
 
 Stop every notification source and release every registration before
 you destroy the Context. The destruction frees the records and runs no
@@ -1378,15 +1375,9 @@ contract.
   observer (`subscript_rt_ctx_set_print_observer`): each line reaches
   your callback and nothing is retained (§18.2f).
 - **An entry that never returns is yours to contain.** Calls are
-  synchronous. A default-profile entry carries no checkpoint, so an
-  accidental endless loop freezes the calling thread, and isolation
-  against it is yours to supply. An entry compiled under the sandbox
-  profile (Step 11) reads the interrupt flag at every function entry and
-  on every loop edge. Take the handle with
-  `subscript_rt_ctx_interrupt_handle(ctx)` on the owning thread;
-  `subscript_rt_interrupt_set(handle)` from a second thread then stops
-  the entry with the `interrupted` trap. Outside the profile the one
-  bounded subsystem is regular expressions, through
+  synchronous. An entry carries no checkpoint, so an accidental endless
+  loop freezes the calling thread, and isolation against it is yours to
+  supply. The one bounded subsystem is regular expressions, through
   `subscript_rt_ctx_set_regex_budget`.
 - **Async scripts complete only if you step them.** An exported `async`
   entry runs to its first `await` and parks; your frame loop calls
@@ -1483,271 +1474,10 @@ there and shipping C safe.
 `subscript run` covers programs without host C bindings. A program that
 binds your header goes through `subscript build` (Step 7).
 
-### Step 11 — the sandbox profile
-
-Every step above assumes you wrote the script. For content you did not
-write — a mod, a shared level, a plugin — compile it under the **sandbox
-profile**. The profile is a compile profile, not a second tier: the same
-dev JIT and the same emitted C run it. `check`, `build`, and `run` accept
-`--profile sandbox`. The default profile has no name and no flag, and a
-program that does not select the profile gets no new instruction and no
-new check.
-
-**What the profile rejects.** Five rules, each with a stable code:
-
-| Code | Rejects |
-|---|---|
-| `S023` | `Context.free`. Memory is allocate-only. `Context.collect()` stays callable. |
-| `S024` | `Context.fromBytes`. Bytes the content supplies carry no layout proof. |
-| `S025` | `Worker.spawn`, `Inbox`, and `Outbox`. |
-| `S026` | A source over 131,072 bytes in one file, a program over 8,388,608 bytes, or a nesting depth over 256. The byte counts run before the parser; the nesting limit is a depth guard in the checker. |
-| `S027` | A function whose frame is over 65,536 bytes. The stack check at the function entry then sees at most one bounded frame past your budget. |
-
-The whole compile — parse, check, warnings, lowering, and emission —
-runs on one thread the compiler spawns, with a 2 GiB stack in an
-optimized build and 8 GiB in an unoptimized one. The depth a source
-reaches is therefore the compiler's fact, not a property of the thread
-you call it from. That stack holds the deepest nesting a file of the
-byte limit can spell, with a margin.
-
-The same source checks clean under the default profile, so a profile
-rejection is not a TypeScript divergence:
-
-```text
-$ subscript check --profile sandbox plugin.ts
-error[S023]: `Context.free` is rejected under the sandbox profile
- --> plugin.ts:11:3
-   |
-11 |   Context.free(node);
-   |   ^
-   = rule: The sandbox profile rejects `Context.free`; memory is allocate-only there.
-error: 1 error(s)
-
-$ subscript check plugin.ts
-check: plugin.ts: no errors
-```
-
-Your header mirror is the other half. A script binds only the `--mirror`
-you give it (Step 7), so build one mirror per trust level with
-`subscript bind` and pass the narrow one to content you did not write.
-
-**What the profile adds at run time.** Three limits. Each is one C call,
-and each is yours to set:
-
-| Limit | C API | Trap |
-|---|---|---|
-| interrupt | `subscript_rt_ctx_interrupt_handle(ctx)`, then `subscript_rt_interrupt_set(handle)` | `interrupted`, kind 25 |
-| allocation quota | `subscript_rt_ctx_set_alloc_quota(ctx, bytes)`; 0 is none | `allocation-quota`, kind 26 |
-| stack budget | `subscript_rt_ctx_set_stack_budget(ctx, bytes)`; 0 is none | `stack-budget`, kind 27 |
-
-The compiler puts a checkpoint at every function entry and on every loop
-edge, and each checkpoint reads the interrupt flag. The flag lives in its
-own heap cell, outside the Context. Take a handle on it with
-`subscript_rt_ctx_interrupt_handle` on the owning thread, before or
-between runs; the handle is valid until you release the Context.
-`subscript_rt_interrupt_set` is the one call another thread makes while
-the owning thread runs script: it sets one atomic in that cell and reads
-no Context field. Each of the three raises an ordinary trap — the first
-trap wins, the Context survives, and `subscript_rt_ctx_clear_trap` clears
-the interrupt flag together with the trap.
-
-**Set a stack budget at least 131,072 bytes below your thread's stack
-size.** `enter_script` records the stack address it runs at, and each
-checkpoint compares its own address against that floor minus your
-budget. The check runs after the entered function's frame exists, so the
-overshoot past the budget is that one frame, which `S027` holds under
-65,536 bytes, plus the runtime's own call depth, which is under 65,536
-bytes. The runtime cannot read the real size of your thread, so the
-headroom is your fact to supply. `examples/sandbox/main.c` sets a
-262,144-byte budget and calls script on the process's main thread: that
-budget plus the headroom is 393,216 bytes, and a main thread starts with
-at least 1 MiB on every host this project builds for *(docs)*. The
-budget traps first, so the thread never overflows. A budget above the
-real size lets the thread overflow first.
-
-**What the host supplies.** Each guarantee of the profile rests on a
-fact only you hold. The list is short and it is complete
-(`specs/blocks/compiler.md` §109.0):
-
-- **The thread.** Give the thread that runs script more stack than your
-  budget plus the 131,072 bytes above.
-- **The mirror.** Every function in the mirror is part of the trusted
-  boundary. It validates the arguments a script controls — pointer and
-  count pairs, handles, indices, lengths — bounds its own work, and does
-  not block. A mirror function that does none of those is a hole the
-  profile cannot close.
-- **The interrupt.** The profile arms no interrupt. Arm one, or accept
-  that a program under the profile runs until it returns or traps.
-- **The compile budgets.** This project's own compiler stages are
-  bounded by construction. The parser is not: inside every `S026` limit,
-  26,210 `<i32>` type assertions take 134.3 s in it. The CLI therefore
-  compiles in a child process under the profile, with a memory budget
-  and a time budget (§109.2 rule 6). The memory budget is the heap a
-  compile takes: 2,147,483,648 bytes in an optimized build and
-  4,294,967,296 unoptimized. The time budget is 300 s in both. Each host
-  holds the memory budget its own way. Linux sets `RLIMIT_AS` to that
-  heap plus the compile thread's stack reservation, because `RLIMIT_AS`
-  counts the reservation. Windows sets a Job Object process memory limit
-  of the heap, which counts committed bytes; a reservation commits
-  nothing. macOS refuses `RLIMIT_AS`, so the parent process reads the
-  child's resident bytes at every poll and kills a child whose reading
-  passes the heap. A child that passes either budget is one `S026` at
-  the entry file, so the compile always ends in a diagnostic or an
-  accepted program. If you embed the compiler crate instead of calling
-  the CLI, run it in a child process of your own with the same two
-  budgets.
-- **The process.** Same-process execution trusts the compiler, the
-  generated code, and the runtime to be memory-safe. If you must contain
-  a defect in those, add an isolation boundary of your own, such as a
-  separate process. The profile does not provide one.
-
-**What is excluded, by name.** `Context.collect()` has no interior
-checkpoint: an interrupt you set during a collect is read at the next
-checkpoint after it, not inside it. Its work is proportional to the live
-set plus the dead set, which your quota bounds. A runtime operation has
-no interior checkpoint either, so the work between two checkpoints is
-the straight-line code plus one runtime operation in flight. A host
-function's work is yours, as above.
-
-**The defaults.** `--profile sandbox` on `run`, and on a `build` that
-writes the generated entry, set the quota to 67,108,864 bytes and the
-stack budget to 524,288 bytes before the entry runs. Recursion with no
-base case then stops at the budget instead of taking the process down:
-
-```text
-$ subscript build --profile sandbox --source deep.ts -o out --run
-start
-trap 27 0 stack-budget
-$ echo $?
-3
-```
-
-`out/entry.c` carries the two calls that did it:
-
-```c
-    subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C(67108864));
-    subscript_rt_ctx_set_stack_budget(ctx, UINT64_C(524288));
-```
-
-With `--host`, `build` writes no entry, so the limits are yours to set —
-which is the whole of the example below.
-
-**A complete host.** [`examples/sandbox/`](../examples/sandbox/) is four
-files. [`mod.ts`](../examples/sandbox/mod.ts) exports `tick(): void`,
-which prints one line and then loops forever, and the two memory exports
-the next part uses. [`main.c`](../examples/sandbox/main.c) creates the
-Context, sets a 16 MiB quota and a 256 KiB stack budget, takes the
-interrupt handle, starts a thread that calls `subscript_rt_interrupt_set`
-after 20 ms, calls `tick`, and reads the trap back.
-[`build.sh`](../examples/sandbox/build.sh) is one command:
-
-```sh
-subscript build \
-    --profile sandbox \
-    --source mod.ts \
-    --host main.c \
-    -o out \
-    --run
-```
-
-The host holds the endless call for 20 ms and then gets it back:
-
-```text
-$ sh examples/sandbox/build.sh
-host:limits quota=16777216 stack-budget=262144
-host:interrupt armed after 20ms
-script:tick running
-host:trap kind=25 message=interrupted
-host:cleared trap kind=0
-```
-
-The run then goes on into the two memory phases below.
-[`expected.txt`](../examples/sandbox/expected.txt) holds every line of
-it, and `cargo test -p subscript-examples` compares them on every run.
-
-#### Reclaiming memory under the profile
-
-The profile rejects `Context.free` (`S023`), so collection is the one way
-memory returns. The quota is a stop, not a pacer: it traps the program,
-so something must collect first.
-
-**Pattern 1 — you pace it.** Three calls, and the last one is the part
-Step 11 adds:
-
-```c
-subscript_rt_ctx_set_alloc_quota(ctx, UINT64_C(1048576));
-uint64_t charged = subscript_rt_ctx_charged_bytes(ctx); /* a counter */
-subscript_rt_ctx_collect(ctx);                          /* depth 0 only */
-```
-
-`subscript_rt_ctx_charged_bytes` reads a counter, so you read it at every
-frame boundary for free. It reports the bytes the quota charges: the
-payload plus the allocator's own per-allocation bytes (§109.0).
-`subscript_rt_ctx_live_bytes` reports the payload alone, which is a
-smaller figure, so it does not predict the trap; pace on the charged
-bytes. Pick a fraction of your quota, and collect above it.
-`examples/sandbox/` picks three quarters of 1 MiB, calls `frame` 24
-times, and collects outside the script call:
-
-```text
-host:memory quota=1048576 threshold=786432
-host:collect frame=6 charged=890048 -> 322256
-host:collect frame=10 charged=915472 -> 322256
-host:collect frame=14 charged=915472 -> 322256
-host:collect frame=18 charged=915472 -> 322256
-host:collect frame=22 charged=915472 -> 322256
-host:phase-a frames=24 collects=5 charged=618864
-```
-
-`frame` allocates a batch of 1,280 objects and keeps the last three
-batches, so it drops about one batch per frame and never collects. The
-charged bytes climb 148,304 per frame, pass the threshold on frame 6,
-and fall back to the window each time. The peak is 915,472 bytes, under
-the 1,048,576-byte quota.
-
-**Call `subscript_rt_ctx_collect` at script depth 0, between script
-calls.** A call from inside a host callback aliases the Context that
-generated code holds.
-
-**Pattern 2 — the script collects at its own boundary.**
-`Context.collect()` stays callable under the profile. In
-[`mod.ts`](../examples/sandbox/mod.ts) the export `frameAndCollect` is
-`frame` plus one statement: `Context.collect()` as its last. The host
-sets the quota and collects nothing for the whole phase:
-
-```text
-host:phase-b frames=24 collects=0 charged=322256
-```
-
-24 frames end at the same 322,256 bytes that Phase A falls back to. The
-two patterns hold the same bound. Phase A reaches it five times; Phase B
-holds it at every frame. Keep your pacer as the backstop: a script you
-did not write can drop that line.
-
-**What a collect costs.** It is stop-the-world mark-sweep, proportional
-to the live set plus the dead set. The two phases above measure one
-program on one live set, so they give you no bound on the pause. If you
-need a bound, measure it at your own live set. This project has no rule
-for it yet (`specs/blocks/compiler.md` §109.8a).
-
-**`subscript emit` takes no `--profile`.**
-
-```text
-$ subscript emit --profile sandbox plugin.ts -o out
-subscript: unknown option `--profile`
-```
-
-For Step 4's path, run `build --profile sandbox -o gen/` instead: it
-writes the same `program.c` and `program.alloc.h` into `gen/`, beside the
-program it links. Whichever path you take, what you embed is the ship
-tier — the runtime has no API that compiles source at run time, so
-content that arrives after you ship is content you compile and link like
-your own.
-
 ## Reading on
 
-- [`examples/README.md`](../examples/README.md) — eleven single-concept
-  examples with expected output, and the three C host programs.
+- [`examples/README.md`](../examples/README.md) — twelve single-concept
+  examples with expected output, and the two C host programs.
 - [`generated-docs/language-reference.md`](../generated-docs/language-reference.md)
   — every rejection rule with its pinned corpus entry.
 - [`generated-docs/api-reference.md`](../generated-docs/api-reference.md)

@@ -116,16 +116,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 }
                 other => return Err(internal(format!("unknown Ambient intrinsic {other}"))),
             },
-            l::IntrinsicFamily::Sandbox => {
-                let entry = match name.as_str() {
-                    "Enter" => self.ml.rt.sandbox_enter,
-                    "Poll" => self.ml.rt.sandbox_poll,
-                    other => {
-                        return Err(internal(format!("unknown Sandbox intrinsic {other}")));
-                    }
-                };
-                self.simple_runtime_intrinsic(entry, operands, Some(pos), checked, false)?
-            }
             l::IntrinsicFamily::Math => {
                 let function = *self
                     .ml
@@ -537,13 +527,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let (code, environment) = callback(self)?;
                 let kind = array_element_kind(self.ml.lir, &element)?;
                 let kind = self.iconst(types::I32, i64::from(kind));
-                // §112 rule 4: the quota charge of the sort's two copies
-                // reports the `sort` call.
-                let position = self.position_id(pos);
-                let position = self.iconst(types::I32, position);
                 self.call_runtime(
                     function,
-                    &[self.ctx, receiver, code, environment, kind, position],
+                    &[self.ctx, receiver, code, environment, kind],
                     checked,
                 )?;
                 Ok(RV::Scalar(receiver))

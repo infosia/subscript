@@ -19,19 +19,11 @@ Read the numbered examples in order:
    script's `init`, `update`, and `shutdown` exports.
 5. [`context-per-scene/`](context-per-scene/) runs two scenes with fresh
    Contexts, showing script state reset while host frame state continues.
-6. [`sandbox/`](sandbox/) runs content the host did not write: the script
-   is built with `subscript build --profile sandbox`, the host sets an
-   allocation quota and a stack budget, and a second thread stops an
-   endless entry with `subscript_rt_interrupt_set`. Two memory phases
-   follow. Phase A paces the collect from the host: it reads
-   `subscript_rt_ctx_charged_bytes`, the figure the quota compares
-   against, and calls `subscript_rt_ctx_collect` above three quarters of
-   it; Phase B lets the script collect at the end of its own frame.
-7. [`hot-reload/`](hot-reload/) is interactive: `sh run.sh` starts
+6. [`hot-reload/`](hot-reload/) is interactive: `sh run.sh` starts
    `subscript run --watch`, and editing `demo.ts` demonstrates live
    body swaps with surviving module state, refusal of declaration
    edits, and diagnostics while the old program keeps running.
-8. [`rust-host/`](rust-host/) embeds through the Rust crates directly
+7. [`rust-host/`](rust-host/) embeds through the Rust crates directly
    (`cargo run -p subscript-example-rust-host`): a frame loop, a
    mid-run body swap with surviving state, and a refused declaration
    edit, with the exact output pinned by its integration test.
@@ -73,7 +65,7 @@ cargo test --offline -p subscript-examples
 This derives the numbered set from the directory, runs every example and the
 phase-proof program under both dev-JIT and ship-C-AOT, compares both outputs
 byte-for-byte with their committed goldens, regenerates the engine mirror,
-and builds and runs the three host programs. It needs the repository's Rust
+and builds and runs the two host programs. It needs the repository's Rust
 dependencies available offline and the platform C compiler already required
 by the ship tier.
 
@@ -89,7 +81,6 @@ To build and run a host program directly:
 ```sh
 sh examples/host/build.sh
 sh examples/context-per-scene/build.sh
-sh examples/sandbox/build.sh
 ```
 
 Each script is a thin wrapper over the developer CLI
@@ -120,13 +111,10 @@ subscript bind --header examples/engine/engine.h \
 ``` The complete host path is
 [`host/game.ts`](host/game.ts), [`host/main.c`](host/main.c), and
 [`host/build.sh`](host/build.sh); the Context-lifetime counterpart is
-[`context-per-scene/`](context-per-scene/). [`sandbox/`](sandbox/) binds no
-header: a host gives untrusted content one narrow mirror, or none.
+[`context-per-scene/`](context-per-scene/).
 
 These examples deliberately contain no device build and no benchmark. Device
-linkage and performance measurement have their own tooling. The sandbox host
-traps on purpose, because the interrupt is what it teaches; it clears that
-trap and then runs its two memory phases. Every other intentional trap
-lives in [`corpus/trap/`](../corpus/trap/). The accept and
+linkage and performance measurement have their own tooling. Every
+intentional trap lives in [`corpus/trap/`](../corpus/trap/). The accept and
 reject [corpus](../corpus/) is the executable language definition.
 `examples/` is a maintained introduction to that defined behavior.

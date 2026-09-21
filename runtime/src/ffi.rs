@@ -18,8 +18,8 @@
 //! result from a trapping function is never fed into another call.
 
 use crate::context::{
-    AllocationVisitor, AsyncResume, CallbackBinding, Context, DiagnosticsObserver, Interrupt,
-    PrintObserver, TrapObserver,
+    AllocationVisitor, AsyncResume, CallbackBinding, Context, DiagnosticsObserver, PrintObserver,
+    TrapObserver,
 };
 use crate::trap::TrapKind;
 use crate::worker::{Worker, WorkerEntry, WorkerInbox, WorkerInit, WorkerOutbox};
@@ -55,11 +55,6 @@ pub struct SubStrView {
 /// observer, or appends them and a newline to the Context stdout sink when
 /// no observer is installed.
 ///
-/// With no observer the sink is Context memory that script output sizes,
-/// so the line charges the allocation quota before the append (§109.4
-/// rule 2). Over the quota the line is dropped and the run stops with
-/// the `AllocationQuota` trap.
-///
 /// # Safety
 ///
 /// Shared contract; `s` is a live string handle.
@@ -71,7 +66,7 @@ pub unsafe extern "C" fn subscript_rt_print(ctx: *mut Context, s: *const u8) {
         return;
     }
     // SAFETY: `s` is a live string handle of this context.
-    unsafe { ctx.print_str(s, 0) };
+    unsafe { ctx.print_str(s) };
 }
 
 /// `Context.collect()`: explicitly invoked collection (Q7).
@@ -174,15 +169,7 @@ pub unsafe extern "C" fn subscript_rt_boundary_scratch_alloc(
 ) -> *mut u8 {
     // SAFETY: shared contract.
     let runtime = unsafe { &mut *ctx };
-    // §109.4 rule 2: the boundary marshal sizes this block from the
-    // length of the array it lowers, so a script sizes it. The block
-    // lives outside the Context, so the quota takes its bytes before it
-    // exists.
-    let size = size as usize;
-    if !runtime.check_quota(size, pos_id) {
-        return std::ptr::null_mut();
-    }
-    runtime.boundary_scratch_alloc(size, pos_id)
+    runtime.boundary_scratch_alloc(size as usize, pos_id)
 }
 
 /// Releases every boundary scratch block allocated since `mark`.
@@ -1591,9 +1578,9 @@ pub unsafe extern "C" fn subscript_rt_str_split(
     if arr.is_null() {
         return std::ptr::null_mut();
     }
-    // §109.4 rule 2: every piece is a Context allocation the quota
-    // checks, and the scan holds no list of pieces of its own, so the
-    // first piece over the quota stops it.
+    // §113.2 rule 5: every piece is a Context allocation, and the scan
+    // holds no list of pieces of its own, so the first failed piece
+    // stops it.
     let mut failed = false;
     crate::strops::split_each(hay, sep, |piece| {
         let handle = ctx.alloc_str(piece, pos_id);
@@ -1719,9 +1706,8 @@ pub unsafe extern "C" fn subscript_rt_str_repeat(
         let bytes = unsafe { ctx.str_bytes(s) };
         (bytes.as_ptr(), bytes.len())
     };
-    // §109.4 rule 2: the result size is `len * n`, so the result goes
-    // straight into the Context allocation that the quota checks. No
-    // copy of it exists outside the quota.
+    // §113.2 rule 5: the result size is `len * n`, so the result goes
+    // straight into the Context allocation. No second copy of it exists.
     let Some(result_len) = bytes_len.checked_mul(n as usize) else {
         ctx.trap(
             TrapKind::AllocationFailure,
@@ -1844,12 +1830,6 @@ unsafe fn str_case_with(
     // SAFETY: live string handle. Context string allocations keep immutable
     // input allocation addresses stable.
     let bytes = unsafe { ctx.str_view(s) };
-    // §109.4 rule 2: the standard library's locale-free case mapping
-    // writes at most three bytes for each receiver byte, so the quota
-    // takes that bounded multiple before the build.
-    if !ctx.check_quota(bytes.len().saturating_mul(3), pos_id) {
-        return std::ptr::null_mut();
-    }
     ctx.alloc_str(&map(bytes), pos_id)
 }
 
@@ -1909,16 +1889,9 @@ pub unsafe extern "C" fn subscript_rt_str_replace(
     let pat = unsafe { ctx.str_view(pat) };
     // SAFETY: live string handles.
     let repl = unsafe { ctx.str_view(repl) };
-    // §109.4 rule 2: a `$'` or `` $` `` substitution makes the result
-    // size a product of the inputs, so the buffer holds at most the
-    // quota headroom and the trap replaces the copy that would not fit.
-    let mut out = ctx.quota_buf();
+    let mut out: Vec<u8> = Vec::new();
     crate::strops::replace_first(bytes, pat, repl, &mut out);
-    if out.over_quota() {
-        ctx.check_quota(out.wanted(), pos_id);
-        return std::ptr::null_mut();
-    }
-    ctx.alloc_str(out.bytes(), pos_id)
+    ctx.alloc_str(&out, pos_id)
 }
 
 /// `replaceAll(pat, repl)`: every occurrence in one left-to-right pass
@@ -1949,16 +1922,9 @@ pub unsafe extern "C" fn subscript_rt_str_replace_all(
     let pat = unsafe { ctx.str_view(pat) };
     // SAFETY: live string handles.
     let repl = unsafe { ctx.str_view(repl) };
-    // §109.4 rule 2: the result size is the match count times the
-    // replacement, so the buffer holds at most the quota headroom and
-    // the trap replaces the copy that would not fit.
-    let mut out = ctx.quota_buf();
+    let mut out: Vec<u8> = Vec::new();
     crate::strops::replace_all(bytes, pat, repl, &mut out);
-    if out.over_quota() {
-        ctx.check_quota(out.wanted(), pos_id);
-        return std::ptr::null_mut();
-    }
-    ctx.alloc_str(out.bytes(), pos_id)
+    ctx.alloc_str(&out, pos_id)
 }
 
 // ----- RegExp (stdlib.md §15, Q31) -----
@@ -2186,34 +2152,18 @@ pub unsafe extern "C" fn subscript_rt_fmt_bool(ctx: *mut Context, v: u32, pos_id
 
 // ----- JSON.stringify (stdlib.md §13, Q28) -----
 
-fn json_builder_result(
-    ctx: &mut Context,
-    appended: crate::json::Append,
-    operation: &str,
-    pos_id: u32,
-) {
-    match appended {
-        crate::json::Append::Ok => {}
-        crate::json::Append::Unknown => ctx.trap(
+fn json_builder_result(ctx: &mut Context, ok: bool, operation: &str, pos_id: u32) {
+    if !ok {
+        ctx.trap(
             TrapKind::Internal,
             format!("unknown JSON builder in {operation}"),
             pos_id,
-        ),
-        // §109.4 rule 2: the builder never grows past the quota
-        // headroom, so the trap replaces the bytes that would not fit.
-        crate::json::Append::OverQuota => ctx.trap(
-            TrapKind::AllocationQuota,
-            TrapKind::AllocationQuota.message(None),
-            pos_id,
-        ),
+        );
     }
 }
 
 fn json_begin(ctx: &mut Context, tracked: bool, pos_id: u32) -> u64 {
-    // §109.4 rule 2: the builder bytes are a buffer a script sizes, so
-    // the quota headroom at the start bounds them.
-    let limit = ctx.quota_headroom();
-    match ctx.json_builders().begin(tracked, limit) {
+    match ctx.json_builders().begin(tracked) {
         Some(id) => id,
         None => {
             ctx.trap(
@@ -2335,7 +2285,7 @@ fn json_float<T>(
     builder: u64,
     value: T,
     finite: bool,
-    append: impl FnOnce(&mut crate::json::JsonBuilders, u64, T) -> crate::json::Append,
+    append: impl FnOnce(&mut crate::json::JsonBuilders, u64, T) -> bool,
     operation: &str,
     pos_id: u32,
 ) {
@@ -2545,23 +2495,12 @@ fn parsed<T>(ctx: &mut Context, value: Option<T>, default: T, operation: &str, p
 pub unsafe extern "C" fn subscript_rt_json_parse_begin(
     ctx: *mut Context,
     text: *const u8,
-    pos_id: u32,
+    _pos_id: u32,
 ) -> u64 {
     // SAFETY: shared contract and live string handle.
     let ctx = unsafe { &mut *ctx };
     let bytes = unsafe { ctx.str_view(text) };
-    // §109.4 rule 2: the transient document is a buffer the script
-    // sizes, so the quota headroom bounds it and the trap replaces the
-    // nodes that would not fit.
-    let limit = ctx.quota_headroom();
-    match ctx.json_parsers().begin(bytes, limit) {
-        crate::json::ParseBegin::Document(parser) => parser,
-        crate::json::ParseBegin::Malformed => 0,
-        crate::json::ParseBegin::OverQuota(wanted) => {
-            ctx.check_quota(wanted, pos_id);
-            0
-        }
-    }
+    ctx.json_parsers().begin(bytes)
 }
 
 /// Removes one transient parsed document.
@@ -4699,14 +4638,13 @@ pub unsafe extern "C" fn subscript_rt_arr_sort(
     code: *const u8,
     env: *const u8,
     kind: u32,
-    pos_id: u32,
 ) {
     // SAFETY: shared contract (forwarded).
     let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
         return;
     };
     // SAFETY: shared contract.
-    unsafe { crate::arrops::sort(ctx, a, code, env, kind, pos_id) }
+    unsafe { crate::arrops::sort(ctx, a, code, env, kind) }
 }
 
 // ----- C-boundary marshaling (compiler.md §12) -----
@@ -4756,8 +4694,7 @@ pub unsafe extern "C" fn subscript_rt_array_data(ctx: *const Context, a: *const 
 ///
 /// Shared contract; `code`/`env` are a language function value (a
 /// non-capturing wrapper, so `env` is null); `userdata1`/`userdata2`
-/// outlive the run. `pos_id` is the position of the crossing
-/// (§112 rule 4).
+/// outlive the run.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_cb_bind(
     ctx: *mut Context,
@@ -4765,10 +4702,9 @@ pub unsafe extern "C" fn subscript_rt_cb_bind(
     env: *const u8,
     userdata1: *mut u8,
     userdata2: *mut u8,
-    pos_id: u32,
 ) -> *mut u8 {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.bind_callback(code, env, userdata1, userdata2, pos_id)
+    unsafe { &mut *ctx }.bind_callback(code, env, userdata1, userdata2)
 }
 
 /// The generic C-ABI callback trampoline (§14.4). A C API invokes
@@ -5419,109 +5355,6 @@ pub unsafe extern "C" fn subscript_rt_ctx_exit_script(ctx: *mut Context) {
     unsafe { &mut *ctx }.exit_script();
 }
 
-/// Returns the interrupt handle of `ctx` (compiler.md 109.4).
-///
-/// Call it on the owning thread, before or between runs. The handle
-/// addresses one heap cell outside the Context's bytes, and it is valid
-/// until the Context is released. `subscript_rt_interrupt_set` is the
-/// call another thread makes on it while the owning thread runs script
-/// code. `subscript_rt_ctx_clear_trap` clears the flag together with the
-/// trap.
-///
-/// # Safety
-///
-/// `ctx` follows the exclusive Context contract.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_ctx_interrupt_handle(
-    ctx: *const Context,
-) -> *const Interrupt {
-    // SAFETY: exclusive Context contract.
-    unsafe { &*ctx }.interrupt_cell()
-}
-
-/// Requests that the running script stop at its next sandbox-profile
-/// checkpoint (compiler.md 109.4).
-///
-/// Any thread can call this while the owning thread runs script code: it
-/// sets one atomic flag in the cell `handle` addresses and reads no
-/// Context field. A script compiled under the sandbox profile reads the
-/// flag at every function entry and on every loop edge, and records the
-/// `interrupted` trap (kind 25) there. A script compiled under the
-/// default profile has no checkpoint, so the flag has no effect on it.
-///
-/// # Safety
-///
-/// `handle` is a handle from `subscript_rt_ctx_interrupt_handle` whose
-/// Context is not released.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_interrupt_set(handle: *const Interrupt) {
-    // SAFETY: the caller supplies a live cell; the call touches one
-    // atomic, which is defined across threads.
-    unsafe { &*handle }.set();
-}
-
-/// Sets the Context allocation quota in bytes (compiler.md 109.4).
-///
-/// The quota charges the bytes the allocator reserves for an allocation
-/// (compiler.md 109.0). The arena mode reserves the payload rounded to
-/// its size class, plus the block header. The exact-size mode reserves
-/// the payload, the header, and the per-allocation record. A request
-/// that passes the quota records the `allocation-quota` trap (kind 26)
-/// at the allocation site, and returns no storage. Zero removes the
-/// quota, which is the default.
-///
-/// # Safety
-///
-/// `ctx` follows the exclusive Context contract.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_ctx_set_alloc_quota(ctx: *mut Context, bytes: u64) {
-    // SAFETY: exclusive Context contract.
-    unsafe { &mut *ctx }.set_alloc_quota(bytes);
-}
-
-/// Sets the script stack budget in bytes (compiler.md 109.4).
-///
-/// The entry call at script depth zero records the stack floor. A
-/// sandbox-profile function entry below the floor minus `bytes` records
-/// the `stack-budget` trap (kind 27). Set a budget below the stack size
-/// of the thread that calls the script. Zero removes the budget, which
-/// is the default.
-///
-/// # Safety
-///
-/// `ctx` follows the exclusive Context contract.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_ctx_set_stack_budget(ctx: *mut Context, bytes: u64) {
-    // SAFETY: exclusive Context contract.
-    unsafe { &mut *ctx }.set_stack_budget(bytes);
-}
-
-/// The sandbox-profile function-entry checkpoint (compiler.md 109.3).
-///
-/// # Safety
-///
-/// Shared contract.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_sandbox_enter(ctx: *mut Context, pos_id: u32) {
-    // The address of this local is the probe: it sits in the frame of
-    // the script function that just started.
-    let probe = 0u8;
-    let probe = std::ptr::addr_of!(probe) as usize;
-    // SAFETY: shared contract.
-    unsafe { &mut *ctx }.sandbox_enter(probe, pos_id);
-}
-
-/// The sandbox-profile loop-edge checkpoint (compiler.md 109.3).
-///
-/// # Safety
-///
-/// Shared contract.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_sandbox_poll(ctx: *mut Context, pos_id: u32) {
-    // SAFETY: shared contract.
-    unsafe { &mut *ctx }.sandbox_poll(pos_id);
-}
-
 /// Clears the pending trap reporting state when no script call is live.
 ///
 /// Returns 1 after clearing. Returns 0, without changing the Context,
@@ -5604,25 +5437,6 @@ pub unsafe extern "C" fn subscript_rt_ctx_live_bytes(ctx: *const Context) -> u64
     unsafe { &*ctx }.live_bytes() as u64
 }
 
-/// Bytes the Context has reserved for its live allocations.
-///
-/// This is the counter the allocation quota compares against
-/// (compiler.md 109.0): the payload rounded to its size class plus the
-/// block header in the arena mode, and the payload plus the header
-/// plus the per-record constant in the exact-size mode. A host that
-/// sets a quota paces on this figure (compiler.md 109.8a);
-/// `subscript_rt_ctx_live_bytes` is the payload figure and does not
-/// predict the trap. Like `live_bytes`, the value is tier-dependent.
-///
-/// # Safety
-///
-/// `ctx` follows the shared Context contract.
-#[no_mangle]
-pub unsafe extern "C" fn subscript_rt_ctx_charged_bytes(ctx: *const Context) -> u64 {
-    // SAFETY: shared Context contract.
-    unsafe { &*ctx }.charged_bytes() as u64
-}
-
 /// Bytes currently reserved from the system for Context allocations.
 ///
 /// # Safety
@@ -5677,63 +5491,6 @@ pub unsafe extern "C" fn subscript_rt_ctx_visit_live_allocations(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// §109.4: the three C calls reach the three Context limits, and the
-    /// two checkpoints record the traps the contract names.
-    #[test]
-    fn the_sandbox_c_api_sets_each_limit_and_both_checkpoints_trap() {
-        let mut ctx = Context::new();
-        let pointer: *mut Context = &mut *ctx;
-        // SAFETY: `pointer` addresses the live Context this test owns, and
-        // every call below runs on this one thread.
-        unsafe {
-            subscript_rt_ctx_enter_script(pointer);
-            subscript_rt_ctx_set_alloc_quota(pointer, 4096);
-            subscript_rt_ctx_set_stack_budget(pointer, 524_288);
-        }
-        assert_eq!(ctx.alloc_quota(), 4096);
-        assert_eq!(ctx.stack_budget(), 524_288);
-
-        // A checkpoint with no flag and a shallow frame records nothing.
-        // SAFETY: as above.
-        unsafe {
-            subscript_rt_sandbox_enter(pointer, 5);
-            subscript_rt_sandbox_poll(pointer, 6);
-        }
-        assert!(!ctx.trapped(), "neither checkpoint fires unbidden");
-
-        // SAFETY: as above; the handle is valid while this Context is.
-        unsafe {
-            let handle = subscript_rt_ctx_interrupt_handle(pointer);
-            subscript_rt_interrupt_set(handle);
-        }
-        assert!(ctx.interrupted());
-        // SAFETY: as above.
-        unsafe { subscript_rt_sandbox_poll(pointer, 7) };
-        let record = ctx.trap_record().expect("the interrupt trap is recorded");
-        assert_eq!(record.kind, TrapKind::Interrupted);
-        assert_eq!(record.pos_id, 7);
-    }
-
-    /// §109.4 rule 2: the quota refuses the request that passes it,
-    /// through the C allocation entry point.
-    #[test]
-    fn the_allocation_quota_refuses_a_request_through_the_c_entry_point() {
-        let mut ctx = Context::new();
-        let pointer: *mut Context = &mut *ctx;
-        // SAFETY: `pointer` addresses the live Context this test owns.
-        unsafe { subscript_rt_ctx_set_alloc_quota(pointer, 4096) };
-        // SAFETY: as above; the allocation entry point takes the same
-        // contract as generated code.
-        let inside = unsafe { subscript_rt_alloc(pointer, 1024, 1, 11) };
-        assert!(!inside.is_null(), "a request under the quota allocates");
-        // SAFETY: as above.
-        let outside = unsafe { subscript_rt_alloc(pointer, 8192, 1, 12) };
-        assert!(outside.is_null(), "a request over the quota allocates none");
-        let record = ctx.trap_record().expect("the quota trap is recorded");
-        assert_eq!(record.kind, TrapKind::AllocationQuota);
-        assert_eq!(record.pos_id, 12);
-    }
 
     #[test]
     fn globals_init_conversion_failures_trap_before_returning_null() {
@@ -5967,7 +5724,6 @@ mod tests {
                 std::ptr::null(),
                 registered,
                 std::ptr::null_mut(),
-                0,
             );
             subscript_rt_delete(ctx, registered, 93);
 
@@ -5991,7 +5747,6 @@ mod tests {
                 std::ptr::null(),
                 after_clear,
                 std::ptr::null_mut(),
-                0,
             );
             subscript_rt_delete(ctx, after_clear, 94);
             assert_eq!(observed.calls, 1, "null observer must clear delivery");
@@ -6027,7 +5782,6 @@ mod tests {
                 std::ptr::null(),
                 std::ptr::from_mut(&mut first_userdata),
                 std::ptr::null_mut(),
-                0,
             );
             assert_eq!(observed.calls, 0, "below-threshold binding advised");
 
@@ -6037,7 +5791,6 @@ mod tests {
                 std::ptr::null(),
                 std::ptr::from_mut(&mut second_userdata),
                 std::ptr::null_mut(),
-                0,
             );
             assert_ne!(first, second);
             assert_eq!(observed.calls, 1);
@@ -6054,7 +5807,6 @@ mod tests {
                 std::ptr::null(),
                 std::ptr::from_mut(&mut second_userdata),
                 std::ptr::null_mut(),
-                0,
             );
             assert_eq!(second, repeated);
             assert_eq!(observed.calls, 1, "same identity re-registration advised");
@@ -6101,44 +5853,6 @@ mod tests {
 
             subscript_rt_ctx_release(releasing);
             subscript_rt_ctx_release(diagnosing);
-        }
-    }
-
-    // §18.2d: the C reader answers the bytes the quota charges, in both
-    // memory modes, and agrees with the Rust accessor. The empty
-    // Context is the control: a reader that answered a constant would
-    // fail there.
-    #[test]
-    fn the_charged_bytes_reader_answers_the_documented_reservation() {
-        for (mode, mut ctx, reserved) in [
-            ("exact-size", Context::new(), 88u64),
-            ("arena", Context::new_releasing(), 32u64),
-        ] {
-            let empty: *const Context = &*ctx;
-            // SAFETY: `empty` addresses the live Context this test owns.
-            assert_eq!(
-                unsafe { subscript_rt_ctx_charged_bytes(empty) },
-                0,
-                "{mode}: an empty Context charges nothing"
-            );
-
-            assert!(!ctx.alloc(8, 1, 0).is_null(), "{mode}");
-
-            let filled: *const Context = &*ctx;
-            // SAFETY: `filled` addresses the same live Context.
-            let charged = unsafe { subscript_rt_ctx_charged_bytes(filled) };
-            assert_eq!(charged, reserved, "{mode}: the reservation of 8 bytes");
-            assert_eq!(
-                charged,
-                ctx.charged_bytes() as u64,
-                "{mode}: the C reader and the Rust accessor read one counter"
-            );
-            assert_eq!(
-                // SAFETY: `filled` addresses the same live Context.
-                unsafe { subscript_rt_ctx_live_bytes(filled) },
-                ctx.live_bytes() as u64,
-                "{mode}: the payload figure is a different quantity"
-            );
         }
     }
 
@@ -6405,7 +6119,7 @@ mod tests {
     fn ffi_clear_trap_checks_depth_and_preserves_state_on_both_tier_policies() {
         for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {
             let kept = ctx.alloc(8, 1, 0);
-            ctx.print_line(b"before", 0);
+            ctx.print_line(b"before");
             ctx.bump_reload_epoch();
             let live_before = ctx.live_count();
             let epoch_before = ctx.reload_epoch();
@@ -7552,7 +7266,7 @@ mod tests {
                 0,
             );
             assert_eq!(ctx.array_data(mapped).cast::<i32>().read_unaligned(), 9);
-            subscript_rt_arr_sort(p, a, cmp_desc_i32 as *const u8, std::ptr::null(), 0, 0);
+            subscript_rt_arr_sort(p, a, cmp_desc_i32 as *const u8, std::ptr::null(), 0);
             assert_eq!(ctx.array_data(a).cast::<i32>().read_unaligned(), 3);
             let b = subscript_rt_arr_slice(p, a, 0, 1, 0);
             let cat = subscript_rt_arr_concat(p, a, b, 0);
@@ -7582,56 +7296,6 @@ mod tests {
             );
         }
         assert_eq!(ctx.trap_record().map(|r| r.kind), Some(TrapKind::Internal));
-    }
-
-    /// §112 rule 4: the quota refusal of a `sort` records the position
-    /// of the `sort` call, which the caller passes after the element
-    /// kind.
-    ///
-    /// The loop runs two call sites. A body that records a constant
-    /// passes one iteration and fails the other, so each site is the
-    /// control of the other. Neither site is the element-kind code of
-    /// the same call, so a caller that exchanges the two adjacent
-    /// `uint32_t` arguments records the wrong kind and fails here.
-    ///
-    /// Cost: under 1 ms. Two Contexts, two arrays of two elements.
-    #[test]
-    fn ffi_arr_sort_quota_refusal_records_the_position_the_call_passed() {
-        // `ElemKind::SignedInt` for a 4-byte element; no call site below
-        // carries this value.
-        const SIGNED_INT: u32 = 5;
-        for call_site in [17u32, 4_213u32] {
-            let mut ctx = Context::new();
-            let p: *mut Context = &mut *ctx;
-            let a = ctx.array_new(4, 0);
-            // SAFETY: valid context; live 4-byte-element array; the
-            // comparator matches the dispatched element ABI.
-            unsafe {
-                for v in [3i32, 1] {
-                    subscript_rt_array_push(p, a, (&v as *const i32).cast(), 0);
-                }
-                // The quota holds the array and refuses the two copies
-                // the sort takes before either copy exists.
-                ctx.set_alloc_quota(ctx.charged_bytes() as u64);
-                subscript_rt_arr_sort(
-                    p,
-                    a,
-                    cmp_desc_i32 as *const u8,
-                    std::ptr::null(),
-                    SIGNED_INT,
-                    call_site,
-                );
-            }
-            let record = ctx.trap_record().expect("the quota refuses the copies");
-            assert_eq!(record.kind, TrapKind::AllocationQuota);
-            assert_eq!(
-                record.pos_id, call_site,
-                "the refusal reports the `sort` call, not the reserved entry"
-            );
-            // SAFETY: `a` is the live array of this Context.
-            let first = unsafe { ctx.array_data(a).cast::<i32>().read_unaligned() };
-            assert_eq!(first, 3, "a refused sort leaves the array untouched");
-        }
     }
 
     /// §18.2d: the host's collect entry reclaims an unreachable

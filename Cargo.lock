@@ -972,11 +972,9 @@ dependencies = [
 name = "subscript-cli"
 version = "0.1.0"
 dependencies = [
- "libc",
  "subscript-bindgen",
  "subscript-codegen",
  "subscript-compiler",
- "windows-sys 0.60.2",
 ]
 
 [[package]]

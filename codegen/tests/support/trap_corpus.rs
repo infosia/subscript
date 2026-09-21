@@ -92,20 +92,6 @@ pub fn trap_sources(trap: &Path, id: &str) -> Vec<SourceFile> {
     sources
 }
 
-/// The compile profile a trap entry's header selects (§109.1 rule 3).
-pub fn trap_profile(trap: &Path, id: &str) -> subscript_compiler::Profile {
-    let path = trap.join(format!("{id}.ts"));
-    let text = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read trap entry {}: {e}", path.display()));
-    let header = subscript_compiler::language_reference::parse_header(&path, &text)
-        .unwrap_or_else(|e| panic!("read the header of {}: {e}", path.display()));
-    match header.profile.as_deref() {
-        None => subscript_compiler::Profile::Default,
-        Some(name) => subscript_compiler::Profile::parse(name)
-            .unwrap_or_else(|| panic!("{}: unknown profile `{name}`", path.display())),
-    }
-}
-
 /// Loads the exact dev-tier stdout expected before a trap.
 pub fn trap_expected(trap: &Path, id: &str) -> Vec<u8> {
     let path = trap.join(format!("{id}.expected"));

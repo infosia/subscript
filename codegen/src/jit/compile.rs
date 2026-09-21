@@ -1,9 +1,7 @@
 //! Compilation of one dev-tier module and the call into a finalized entry.
 
 use cranelift_jit::{JITBuilder, JITModule};
-use subscript_compiler::{
-    check_program_with, on_the_compile_thread, CheckOptions, Profile, SourceFile,
-};
+use subscript_compiler::{check_program, on_the_compile_thread, SourceFile};
 use subscript_runtime::Context;
 
 use super::memory::install_reservation;
@@ -17,20 +15,15 @@ use crate::NativeLibrary;
 /// lowering, and finalizes the code in a live JIT module.
 ///
 /// The check and the lowering each recurse over the tree, so each one
-/// runs on the compile thread (§109.2 rule 3). A native library holds
+/// runs on the compile thread (§113.2 rule 1). A native library holds
 /// raw symbol addresses and is therefore not `Send`, so the symbol
 /// registration, which does not recurse, stays on the caller's thread
 /// and separates the two.
 pub(super) fn compile_jit(
     files: &[SourceFile],
     libraries: &[NativeLibrary],
-    profile: Profile,
-) -> Result<(JITModule, Lowered, Profile), RunError> {
-    let hir =
-        on_the_compile_thread(|| check_program_with(files, &CheckOptions::with_profile(profile)))
-            .map_err(RunError::Rejected)?;
-    // §109.1 rule 2: the checked module is the carrier from here on.
-    let profile = hir.profile;
+) -> Result<(JITModule, Lowered), RunError> {
+    let hir = on_the_compile_thread(|| check_program(files)).map_err(RunError::Rejected)?;
 
     let flags = dev_flags().map_err(RunError::Internal)?;
     let isa = cranelift_native::builder()
@@ -50,7 +43,7 @@ pub(super) fn compile_jit(
 
     let lowered =
         on_the_compile_thread(|| lower_module_with(&mut module, &hir, LowerOptions::default()))
-            .map_err(RunError::from)?;
+            .map_err(RunError::Internal)?;
     if let Some(name) = missing_symbol(&lowered.foreign_symbols, libraries) {
         // Cranelift-JIT retains a platform symbol-lookup fallback and
         // exposes only an API for appending more lookup functions. The
@@ -65,7 +58,7 @@ pub(super) fn compile_jit(
     module
         .finalize_definitions()
         .map_err(|e| RunError::Internal(internal(format!("finalize: {e}"))))?;
-    Ok((module, lowered, profile))
+    Ok((module, lowered))
 }
 
 /// Calls one finalized `(subscript_rt_context*) -> void` script entry under the host

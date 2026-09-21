@@ -114,14 +114,6 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
             (TrapKind::IndexOutOfBounds, 9, 18)
         }
         "t56-pattern-short-array" => (TrapKind::IndexOutOfBounds, 10, 17),
-        // §109.7: the quota trap is at the allocation site. The iteration
-        // that passes the quota is tier-specific, so the entry prints
-        // nothing that depends on it.
-        "t57-sandbox-alloc-quota" => (TrapKind::AllocationQuota, 16, 17),
-        // §109.3 places `Sandbox.Enter` at the first instruction of the
-        // function body, so the budget trap carries the callee's
-        // declaration position, not the call site's.
-        "t58-sandbox-stack-budget" => (TrapKind::StackBudget, 8, 10),
         // §14.4b (A) through a §111 registration: the trap carries the
         // freed userdata's allocation site, as t46 does.
         "t59-registration-userdata-freed" => (TrapKind::CallbackUserdataFreed, 42, 40),
@@ -129,39 +121,7 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         // reaches no script site. Both tiers report the empty position
         // for this kind, and the entry pins their agreement.
         "t60-registration-fire-after-release" => (TrapKind::CallbackRegistrationEnded, 0, 0),
-        // §112 rule 4: a crossing of a callback-info aggregate is a
-        // script site, so the quota refusal there reports the crossing.
-        "t61-sandbox-callback-bind-quota" | "t62-sandbox-registration-quota" => {
-            (TrapKind::AllocationQuota, 18, 3)
-        }
-        // §112 rule 4: the quota charge of the sort's two copies carries
-        // the position of the `sort` call.
-        "t63-sandbox-sort-quota" => (TrapKind::AllocationQuota, 11, 3),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
-    }
-}
-
-/// The host quota a trap entry runs under (§109.5, §112.2).
-///
-/// `check_quota` compares the reserved size of one charge against the
-/// quota, and that size holds the header and the memory mode's record
-/// bytes. 32 bytes are therefore under the reserved size of any charge,
-/// so the first charge of the run passes the quota on every tier. The
-/// two callback entries allocate nothing before the crossing, so the
-/// crossing is that first charge.
-///
-/// The sort entry needs its array to exist first, so its quota holds
-/// the array and refuses the two copies. Measured over the quota, with
-/// each tier's trap position read at one-byte steps: the array's own
-/// charges all pass from 368 bytes on the dev JIT and from 256 bytes on
-/// the ship tier, and the copies pass from 464 and from 448. Both tiers
-/// report the `sort` call from 368 through 447, and 400 is inside that
-/// window.
-fn trap_alloc_quota(id: &str) -> Option<u64> {
-    match id {
-        "t61-sandbox-callback-bind-quota" | "t62-sandbox-registration-quota" => Some(32),
-        "t63-sandbox-sort-quota" => Some(400),
-        _ => None,
     }
 }
 
@@ -696,7 +656,6 @@ struct TrapCase {
     id: String,
     files: Vec<SourceFile>,
     expected: Vec<u8>,
-    profile: subscript_compiler::Profile,
 }
 
 /// What one trap entry contributes: the line the caller prints and the
@@ -747,17 +706,6 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
         id.as_str(),
         "t46-callback-userdata-freed" | "t59-registration-userdata-freed"
     );
-    // Only the last branch below carries the entry's profile. A profile
-    // entry that needs one of the others fails here rather than running
-    // under the default profile with no report.
-    assert!(
-        case.profile == subscript_compiler::Profile::Default
-            || !(id.as_str() == "t50-wire-entry-unknown-value"
-                || allocation_failure_count(id).is_some()
-                || freed_handle_diagnostic
-                || callback_userdata_diagnostic),
-        "{id}: a profile trap entry needs the profile in its own runner branch"
-    );
     let libraries =
         trap_native_libraries(files).expect("the sweep excludes unavailable fixture entries");
     let (jit, ship) = if id.as_str() == "t50-wire-entry-unknown-value" {
@@ -781,13 +729,7 @@ fn check_trap_case(case: &TrapCase) -> TrapCaseOutcome {
             run_c_aot_with_freed_handle_diagnostics_and_native_libraries(files, &libraries),
         )
     } else {
-        // §109.1 rule 3: the entry's header profile reaches both runners.
-        let config = RunConfig::with_profile(case.profile).with_native_libraries(&libraries);
-        // §109.5: a host quota replaces the profile default (§112.2).
-        let config = match trap_alloc_quota(id) {
-            Some(bytes) => config.with_alloc_quota(bytes),
-            None => config,
-        };
+        let config = RunConfig::default().with_native_libraries(&libraries);
         (
             run_jit_configured(files, config).map(|output| output.stdout),
             run_c_aot_configured(files, config).map(|output| output.stdout),
@@ -925,12 +867,10 @@ fn trap_corpus_entries_match_dev_stdout_on_both_tiers() {
             continue;
         }
         let expected = trap_corpus::trap_expected(&trap, &id);
-        let profile = trap_corpus::trap_profile(&trap, &id);
         cases.push(TrapCase {
             id,
             files,
             expected,
-            profile,
         });
     }
 
@@ -1672,9 +1612,9 @@ fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
         .expect("string parameter");
     parameter.foreign_provenance = None;
     let error = emit_c(&missing_parameter).expect_err("missing string provenance must fail");
-    assert!(error.message.contains("internal error"), "{error}");
-    assert!(error.message.contains("engineUse"), "{error}");
-    assert!(error.message.contains("engineLabel"), "{error}");
+    assert!(error.contains("internal error"), "{error}");
+    assert!(error.contains("engineUse"), "{error}");
+    assert!(error.contains("engineLabel"), "{error}");
 
     let mut missing_descriptor = provenance_fixture();
     let parameter = missing_descriptor
@@ -1690,9 +1630,9 @@ fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
         .expect("descriptor parameter");
     parameter.foreign_provenance = None;
     let error = emit_c(&missing_descriptor).expect_err("missing descriptor provenance must fail");
-    assert!(error.message.contains("internal error"), "{error}");
-    assert!(error.message.contains("engineUse"), "{error}");
-    assert!(error.message.contains("engineWrite"), "{error}");
+    assert!(error.contains("internal error"), "{error}");
+    assert!(error.contains("engineUse"), "{error}");
+    assert!(error.contains("engineWrite"), "{error}");
 
     let mut missing_callback = provenance_fixture();
     let field = missing_callback
@@ -1708,16 +1648,16 @@ fn missing_emission_site_provenance_is_an_internal_error_naming_the_site() {
         .expect("callback field");
     field.foreign_provenance = None;
     let error = emit_c(&missing_callback).expect_err("missing callback provenance must fail");
-    assert!(error.message.contains("internal error"), "{error}");
-    assert!(error.message.contains("EngineSink"), "{error}");
-    assert!(error.message.contains("engineCallback"), "{error}");
+    assert!(error.contains("internal error"), "{error}");
+    assert!(error.contains("EngineSink"), "{error}");
+    assert!(error.contains("engineCallback"), "{error}");
 
     let mut missing_mirror = provenance_fixture();
     missing_mirror.foreign_mirrors.clear();
     let error = emit_c(&missing_mirror).expect_err("missing mirror provenance must fail");
-    assert!(error.message.contains("internal error"), "{error}");
-    assert!(error.message.contains("engineUse"), "{error}");
-    assert!(error.message.contains("invalid mirror id"), "{error}");
+    assert!(error.contains("internal error"), "{error}");
+    assert!(error.contains("engineUse"), "{error}");
+    assert!(error.contains("invalid mirror id"), "{error}");
 }
 
 #[test]

@@ -27,7 +27,7 @@ const EXPECTED: &[(&str, WarnCode, u32)] = &[
 ];
 
 fn checked_warnings(files: Vec<SourceFile>, label: &str) -> Vec<Warning> {
-    // §109.2 rule 3: every caller of the checker wraps the compile, so
+    // §113.2 rule 1: every caller of the checker wraps the compile, so
     // a corpus entry's depth is the compile thread's fact, not this test
     // thread's.
     on_the_compile_thread(move || {

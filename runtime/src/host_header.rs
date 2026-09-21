@@ -57,22 +57,6 @@ pub fn render() -> Result<String, String> {
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_callback_release",
     )?;
-    let interrupt_handle_docs = docs_for(
-        FFI_SOURCE,
-        "pub unsafe extern \"C\" fn subscript_rt_ctx_interrupt_handle",
-    )?;
-    let alloc_quota_docs = docs_for(
-        FFI_SOURCE,
-        "pub unsafe extern \"C\" fn subscript_rt_ctx_set_alloc_quota",
-    )?;
-    let charged_bytes_docs = docs_for(
-        FFI_SOURCE,
-        "pub unsafe extern \"C\" fn subscript_rt_ctx_charged_bytes",
-    )?;
-    let stack_budget_docs = docs_for(
-        FFI_SOURCE,
-        "pub unsafe extern \"C\" fn subscript_rt_ctx_set_stack_budget",
-    )?;
     let async_pending_docs = docs_for(
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_async_pending",
@@ -94,8 +78,6 @@ pub fn render() -> Result<String, String> {
     let mut registration_functions =
         parse_functions(FFI_SOURCE, "subscript_rt_cb_registration_context")?;
     registration_functions.sort_by(|a, b| a.name.cmp(&b.name));
-    let mut interrupt_functions = parse_functions(FFI_SOURCE, "subscript_rt_interrupt_")?;
-    interrupt_functions.sort_by(|a, b| a.name.cmp(&b.name));
     let mut worker_functions = parse_functions(FFI_SOURCE, "subscript_rt_worker_")?;
     worker_functions.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -130,8 +112,7 @@ pub fn render() -> Result<String, String> {
     out.push_str("#ifdef __cplusplus\n");
     out.push_str("extern \"C\" {\n");
     out.push_str("#endif\n\n");
-    out.push_str("typedef struct subscript_rt_context subscript_rt_context;\n");
-    out.push_str("typedef struct subscript_rt_interrupt subscript_rt_interrupt;\n\n");
+    out.push_str("typedef struct subscript_rt_context subscript_rt_context;\n\n");
     out.push_str("typedef struct subscript_rt_worker subscript_rt_worker;\n");
     out.push_str("typedef struct subscript_rt_worker_inbox subscript_rt_worker_inbox;\n");
     out.push_str("typedef struct subscript_rt_worker_outbox subscript_rt_worker_outbox;\n\n");
@@ -211,18 +192,6 @@ pub fn render() -> Result<String, String> {
         if function.name == "subscript_rt_ctx_callback_release" {
             push_comment(&mut out, &callback_release_docs);
         }
-        if function.name == "subscript_rt_ctx_interrupt_handle" {
-            push_comment(&mut out, &interrupt_handle_docs);
-        }
-        if function.name == "subscript_rt_ctx_set_alloc_quota" {
-            push_comment(&mut out, &alloc_quota_docs);
-        }
-        if function.name == "subscript_rt_ctx_charged_bytes" {
-            push_comment(&mut out, &charged_bytes_docs);
-        }
-        if function.name == "subscript_rt_ctx_set_stack_budget" {
-            push_comment(&mut out, &stack_budget_docs);
-        }
         if function.name == "subscript_rt_ctx_async_pending" {
             push_comment(&mut out, &async_pending_docs);
         }
@@ -237,14 +206,6 @@ pub fn render() -> Result<String, String> {
     }
     out.push('\n');
     for function in &registration_functions {
-        let declaration = format!("pub unsafe extern \"C\" fn {}", function.name);
-        let docs = docs_for(FFI_SOURCE, &declaration)?;
-        push_comment(&mut out, &docs);
-        out.push_str(&c_function(&function.name, function)?);
-        out.push_str(";\n");
-    }
-    out.push('\n');
-    for function in &interrupt_functions {
         let declaration = format!("pub unsafe extern \"C\" fn {}", function.name);
         let docs = docs_for(FFI_SOURCE, &declaration)?;
         push_comment(&mut out, &docs);
@@ -451,7 +412,6 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "u64" => Ok("uint64_t"),
         "*mut Context" => Ok("subscript_rt_context*"),
         "*const Context" => Ok("const subscript_rt_context*"),
-        "*const Interrupt" => Ok("const subscript_rt_interrupt*"),
         "*mut Worker" => Ok("subscript_rt_worker*"),
         "*mut WorkerInbox" => Ok("subscript_rt_worker_inbox*"),
         "*mut WorkerOutbox" => Ok("subscript_rt_worker_outbox*"),

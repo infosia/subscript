@@ -62,7 +62,7 @@ extern subscript_rt_context *subscript_rt_cb_registration_context(void *registra
 extern int32_t subscript_rt_ctx_callback_release(
     subscript_rt_context *ctx,
     void *registration);
-extern uint64_t subscript_rt_ctx_charged_bytes(const subscript_rt_context *ctx);
+extern uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context *ctx);
 
 /* The notifications one subscription holds before a pump drains them.
  * A queue that is full drops the notification, so the fixture never
@@ -134,8 +134,8 @@ struct SubDevice_T {
     int sub_removal_requested;
     int next_request_number;
     int release_count;
-    int charge_marked;
-    uint64_t charge_mark;
+    int live_bytes_marked;
+    uint64_t live_bytes_mark;
 };
 
 /* Deterministic scratch used to synthesize a callback message of a given
@@ -1667,24 +1667,24 @@ int32_t subRequestReleaseCount(SubDevice device) {
     return device == NULL ? 0 : (int32_t)device->release_count;
 }
 
-void subRequestMarkCharge(SubDevice device) {
+void subRequestMarkLiveBytes(SubDevice device) {
     if (device == NULL || device->req_ctx == NULL) {
         return;
     }
-    device->charge_mark = subscript_rt_ctx_charged_bytes(device->req_ctx);
-    device->charge_marked = 1;
+    device->live_bytes_mark = subscript_rt_ctx_live_bytes(device->req_ctx);
+    device->live_bytes_marked = 1;
 }
 
-int32_t subRequestChargeFellBy(SubDevice device, uint32_t atLeast) {
+int32_t subRequestLiveBytesFellBy(SubDevice device, uint32_t atLeast) {
     uint64_t now;
-    if (device == NULL || device->req_ctx == NULL || device->charge_marked == 0) {
+    if (device == NULL || device->req_ctx == NULL || device->live_bytes_marked == 0) {
         return 0;
     }
-    now = subscript_rt_ctx_charged_bytes(device->req_ctx);
-    if (now > device->charge_mark) {
+    now = subscript_rt_ctx_live_bytes(device->req_ctx);
+    if (now > device->live_bytes_mark) {
         return 0;
     }
-    return (device->charge_mark - now) >= (uint64_t)atLeast ? 1 : 0;
+    return (device->live_bytes_mark - now) >= (uint64_t)atLeast ? 1 : 0;
 }
 
 void subRequestReleaseAndRefire(SubDevice device) {

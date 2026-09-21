@@ -4,19 +4,12 @@ use std::collections::{HashSet, VecDeque};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use subscript_compiler::{parse_import_specifiers, Profile, SourceFile};
+use subscript_compiler::{parse_import_specifiers, SourceFile};
 
 use crate::{read_text, rejection, Failure};
 
 /// Loads the entry, its transitive relative imports, and ambient mirrors.
-///
-/// `profile` reaches the import parse, so under the sandbox profile the
-/// §109.2 rule 5 scan runs on each file before the loader parses it.
-pub(super) fn load_program(
-    entry: &Path,
-    mirrors: &[PathBuf],
-    profile: Profile,
-) -> Result<Vec<SourceFile>, Failure> {
+pub(super) fn load_program(entry: &Path, mirrors: &[PathBuf]) -> Result<Vec<SourceFile>, Failure> {
     let mut files = Vec::with_capacity(mirrors.len() + 1);
     for path in mirrors {
         let text = read_text(path, "mirror")?;
@@ -34,7 +27,7 @@ pub(super) fn load_program(
     let mut pending = VecDeque::from([(entry_index, entry_path)]);
 
     while let Some((file_index, disk_path)) = pending.pop_front() {
-        let imports = parse_import_specifiers(&files[file_index], profile)
+        let imports = parse_import_specifiers(&files[file_index])
             .map_err(|diagnostics| rejection(&files, diagnostics))?;
         if file_index == entry_index && !imports.is_empty() {
             files[entry_index].name = file_name(entry);

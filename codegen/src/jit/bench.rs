@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use subscript_compiler::{Profile, SourceFile};
+use subscript_compiler::SourceFile;
 
 use super::compile::compile_jit;
 use super::entry::{run_entry, EntryOptions};
@@ -48,7 +48,7 @@ pub struct BenchSamples {
 /// errors as [`run_jit`].
 pub fn jit_compile_time(files: &[SourceFile]) -> Result<Duration, RunError> {
     let started = Instant::now();
-    let (module, _lowered, _) = compile_jit(files, &[], Profile::Default)?;
+    let (module, _lowered) = compile_jit(files, &[])?;
     let elapsed = started.elapsed();
     // SAFETY: the finalized module was not executed and no pointer into its
     // code or data escaped this function.
@@ -103,15 +103,8 @@ pub fn jit_bench_with_warmup_floor(
 /// Measures the dev-JIT tier like [`jit_bench_with_warmup_floor`], with one
 /// complete option record.
 ///
-/// The checked module carries the compile profile
-/// (`specs/blocks/compiler.md` §109.1 rule 2), and this runner applies that
-/// profile's §109.5 defaults to the Context of every run, before the first
-/// `enter_script`. The measured span is the `main` call alone, so the two
-/// limit calls are outside it.
-///
-/// A benchmark reports timed samples only, so `memory_accounting`, the
-/// interrupt thread, the interrupt handle, and the shipping-tier host
-/// hooks are unavailable here.
+/// A benchmark reports timed samples only, so `memory_accounting` and
+/// the shipping-tier host hooks are unavailable here.
 ///
 /// # Errors
 ///
@@ -134,25 +127,18 @@ pub fn jit_bench_configured(
             "host hooks are not available in the development tier",
         )));
     }
-    if config.memory_accounting
-        || config.interrupt_after_millis.is_some()
-        || config.interrupt_handle.is_some()
-    {
+    if config.memory_accounting {
         return Err(RunError::Internal(internal(
-            "a benchmark reports timed samples only: memory accounting, \
-             the interrupt thread, and the interrupt handle are not available",
+            "a benchmark reports timed samples only: memory accounting is \
+             not available",
         )));
     }
     let started = Instant::now();
-    let (module, lowered, profile) = compile_jit(files, config.native_libraries, config.profile)?;
+    let (module, lowered) = compile_jit(files, config.native_libraries)?;
     let compile = started.elapsed();
     let options = EntryOptions {
         fail_alloc_after: config.fail_alloc_after,
         freed_handle_diagnostics: config.freed_handle_diagnostics,
-        profile,
-        interrupt_after_millis: None,
-        interrupt_handle: None,
-        limits: config.host_limits(),
     };
 
     let mut samples = Vec::with_capacity(timed);

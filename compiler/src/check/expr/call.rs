@@ -10,7 +10,6 @@ use crate::hir::{
     self, AmbientFn, AsyncCallee, Callee, ContextBytesFn, ExprKind, MapFn, NumFn, SetFn, WorkerFn,
 };
 use crate::types::{ClassId, Type};
-use crate::Profile;
 
 impl<'p> Checker<'p> {
     pub(super) fn check_call(
@@ -264,16 +263,6 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        // §109.2 S023: the sandbox profile makes memory allocate-only.
-        // `Context.collect()` stays callable.
-        if ambient == AmbientFn::UnsafeDelete && self.profile == Profile::Sandbox {
-            self.error(
-                RuleCode::S023,
-                "`Context.free` is rejected under the sandbox profile",
-                pos.clone(),
-            );
-            return self.err_expr(pos);
-        }
         let params: Vec<ParamSig> = crate::ambient::ambient_params(ambient)
             .iter()
             .map(|t| ParamSig::positional(t.clone()))
@@ -357,16 +346,6 @@ impl<'p> Checker<'p> {
         member_pos: Pos,
     ) -> hir::Expr {
         let name = function.name();
-        // §109.2 S024: forged bytes carry no layout proof, so the sandbox
-        // profile rejects every `Context.fromBytes` call.
-        if function == ContextBytesFn::FromBytes && self.profile == Profile::Sandbox {
-            self.error(
-                RuleCode::S024,
-                "`Context.fromBytes` is rejected under the sandbox profile",
-                member_pos,
-            );
-            return self.err_expr(pos);
-        }
         let Some(type_args) = &call.type_args else {
             self.error(
                 RuleCode::S014,
@@ -740,10 +719,6 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> Option<String> {
         if self.class_sigs[class.0].generic_method_is_rejected(name, is_static) {
-            return None;
-        }
-        // §109.2 rule 4: one unit for the instance this call site asks for.
-        if !self.spend_work(1, &pos) {
             return None;
         }
         let Some(type_args) = &call.type_args else {

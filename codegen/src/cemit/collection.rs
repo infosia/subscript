@@ -239,9 +239,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             "Sort" => {
                 let callback = argument(1)?;
-                // §112 rule 4: the quota charge of the sort's two copies
-                // reports the `sort` call.
-                let position = self.emitter.pos_id(&instruction.pos);
                 let call = self.emitter.runtime_call(
                     "void",
                     symbol,
@@ -251,7 +248,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         "const void*".into(),
                         "const void*".into(),
                         "uint32_t".into(),
-                        "uint32_t".into(),
                     ],
                     &[
                         "ctx".into(),
@@ -259,7 +255,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         format!("{callback}.code"),
                         format!("{callback}.env"),
                         format!("{}u", array_element_kind(self.emitter.module, element)?),
-                        format!("{position}u"),
                     ],
                 );
                 let _ = writeln!(out, "    {call};");
