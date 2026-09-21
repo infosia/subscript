@@ -37,15 +37,18 @@ in release it is not a panic.
 
 ### 90.1 Rule
 
+*(Premise, added 2026-09-21 by §114.)* This section holds under
+invariant 6: the input is first-party source, and the mistakes in it.
+A source that is built to defeat the compiler is not in scope, and no
+rule of this section is a reason to spend work on one. The measurement
+below is of that first form: a truncation, a replaced byte, a deleted
+line, and a malformed argument list.
+
 1. **A public entry returns.** On any byte sequence, any argument
    list, and any well-typed value, a public entry of this table
    returns its `Result` or its exit code. A parse failure is an S100
    diagnostic. A panic reaching a public entry is a defect of this
-   section; so is a fault. *(Amended 2026-09-21, §114: the guarantee
-   covers the input that invariant 6 admits, which is first-party
-   source and the mistakes in it. It is not a guarantee against a
-   source that is built to exhaust the stack. The measurement of this
-   section holds no stack overflow.)*
+   section; so is a fault.
 2. **The parser is a fork, pinned.** `swc_ecma_parser` is the
    project's fork of 6.0.2 with one change: in
    `parse_ts_enum_member`, the error-recovery branch tests `eof!`

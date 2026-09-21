@@ -92,10 +92,11 @@ pinned parser fork answers it (§90.1 rule 2).
   complexity of the render, not a hostile source.
 - §113.2 rule 9 is deleted with §85 rule 4a.
 - §85 rule 4a is deleted. §85 rule 6 loses the `debug-only` field.
-- §90.1 rule 1 states the scope of its guarantee: the byte sequences
-  that invariant 6 admits, which are first-party source and the
-  mistakes in it. It is not a guarantee against a source that is
-  built to exhaust the stack.
+- §90.1 carries a premise before its rules: the section holds under
+  invariant 6. Its rules do not change. The premise is the form,
+  because an exception for each hostile shape does not converge
+  (CLAUDE.md, two review rounds). §113.2 rule 1 cited §90 as the
+  reason for an 8 GiB stack, and an unqualified "any" was the lever.
 - §110's problem paragraph records that its trigger is removed. The
   rule and its constants do not change.
 

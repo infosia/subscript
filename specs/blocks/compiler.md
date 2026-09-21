@@ -131,7 +131,7 @@ Every section, with its status:
 | §87 | A synthetic owner is one scoped operation | active | [`s087-a-synthetic-owner-is-one-scoped-operation.md`](compiler/s087-a-synthetic-owner-is-one-scoped-operation.md) |
 | §88 | The corpus index is the inventory | active | [`s088-the-corpus-index-is-the-inventory.md`](compiler/s088-the-corpus-index-is-the-inventory.md) |
 | §89 | R40 — a long string constant is adjacent C literals | active; rule 3 superseded by §99 | [`s089-r40-a-long-string-constant-is-adjacent-c-literals.md`](compiler/s089-r40-a-long-string-constant-is-adjacent-c-literals.md) |
-| §90 | No public entry point panics or faults on any input | active; rule 1 amended by §114 | [`s090-no-public-entry-point-panics-or-faults-on-any-input.md`](compiler/s090-no-public-entry-point-panics-or-faults-on-any-input.md) |
+| §90 | No public entry point panics or faults on any input | active; a premise added by §114 | [`s090-no-public-entry-point-panics-or-faults-on-any-input.md`](compiler/s090-no-public-entry-point-panics-or-faults-on-any-input.md) |
 | §91 | The tutorials' programs run in the gate | active | [`s091-the-tutorials-programs-run-in-the-gate.md`](compiler/s091-the-tutorials-programs-run-in-the-gate.md) |
 | §92 | An async call starts its body at the call | active | [`s092-an-async-call-starts-its-body-at-the-call.md`](compiler/s092-an-async-call-starts-its-body-at-the-call.md) |
 | §93 | An async method declares type parameters | active | [`s093-an-async-method-declares-type-parameters.md`](compiler/s093-an-async-method-declares-type-parameters.md) |

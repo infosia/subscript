@@ -80,6 +80,14 @@ output budgets, and the token and program limits (§109.2, §109.2a).
 `parse_ts_enum_member` of `swc_ecma_parser`, and the pinned fork
 answers it. No run of that measurement overflowed a stack.
 
+The defect is not §90's words. §90 is older than the profile, and its
+words were right when it was written. §113.2 rule 1 cited it — "A
+stack overflow aborts the process, which §90 forbids" — and the
+unqualified "any byte sequence" carried an adversarial reading. §90.1
+therefore carries a premise before its rules, and the rules do not
+change. An exception for each hostile shape does not converge
+(CLAUDE.md, two review rounds).
+
 ## §85 rule 4a has no producer
 
 The only `gate-debug-only:` producers in the tree are the stub suites
