@@ -1,7 +1,8 @@
 # §114 — the compile thread is removed
 
 Contract: `specs/blocks/compiler/s114-the-compile-thread-is-removed.md`.
-Status: **contract landed 2026-09-21**; the implementation round is
+Status: **landed 2026-09-21** (contract `0f8221a`, implementation
+`e242ec9`). The Windows and arm64 macOS gates and the Phase Review are
 open.
 
 Origin: the x86_64-unknown-linux-gnu full gate at `c72da05`. That run
@@ -89,12 +90,79 @@ step at `c72da05` counts 0.
 
 ## The sites the round must move
 
-`on_the_compile_thread` has 27 call sites in 16 files: `compiler/src`
+`on_the_compile_thread` has 27 call sites in 17 files: `compiler/src`
 (`lib.rs`, `parse.rs`), `codegen/src` (`jit/compile.rs`,
 `emit_files.rs`, `reload.rs`, `ship.rs`), `cli/src` (`lib.rs`,
-`watch.rs`), and eight test files.
+`watch.rs`), and nine test files. *(Corrected 2026-09-21: the first
+form of this paragraph said 16 files and eight test files. The round's
+report gave the count.)*
+
+## The landing
+
+The implementation is `e242ec9`. 20 files moved: the 17 above,
+`tools/gate.sh` and `cli/tests/gate.rs` for §85 rule 4a, and the §110
+test doc comment of `codegen/src/jit/memory.rs`, which named the
+compile thread's stack as what lies between one module's two mappings.
+No golden moved.
+
+Outside `specs/`, `git grep` answers nothing for
+`on_the_compile_thread`, `COMPILE_THREAD_STACK_BYTES`,
+`gate-debug-only`, `113.2 rule 1`, and `compile thread`.
+
+Two calls held the wrapper alone, so each one goes:
+`check_on_this_thread` is inlined into `check_program_with`, and
+`watch_load` into its two callers.
+
+### The Linux full gate
+
+The x86_64-unknown-linux-gnu host ran the full gate at `e242ec9`, with
+a clean tree.
+
+```text
+gate full e242ec9b96fc2bc8c712c825c15bbeea292ba131 clean debug 1539/0/2 release 1536/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Record: `target/gate/20260921T102159Z-full.md`. The verdict line holds
+no `debug-only` field. No test reports `fork JIT runner`. The two debug
+skips are the `perf_gate` line and the `a22-matrix-propagation` line,
+as before.
+
+Step wall seconds, at the pin and at the landing: fmt 1 / 1, build
+0 / 0, debug 154 / 122, release 283 / 242, clippy 15 / 0, tsc 0 / 1,
+hygiene 0 / 0. The build and clippy steps read a warm `target/` in
+both runs, so those two numbers measure the cache.
+
+Test counts fall by 6 in each profile: 1,545 to 1,539 in debug and
+1,542 to 1,536 in release. The four capacity tests of
+`compiler/tests/nesting.rs` and the two gate cases of
+`cli/tests/gate.rs` account for all six. The ignored count stays 2.
+
+### The address space
+
+Peak `VmPeak` of the `subscript-codegen` `interop` test binary, at the
+default 16-thread parallelism:
+
+| Profile | At the pin (kB) | At the landing (kB) | Factor |
+|---|---|---|---|
+| unoptimized | 136,381,092 | 1,179,976 | 115.6 |
+| optimized | 33,609,276 | 1,103,012 | 30.5 |
+
+The round measured 1,245,464 kB unoptimized on its own run. The
+unoptimized figure moves between runs; both are under 1.2 GiB, and the
+fork threshold of that host is 37.93 GiB.
+
+### The Red state
+
+The gate before the change reported 3 failures, not the 12 of
+`c72da05`: `array_empty_shift_reports_identically_across_tiers`,
+`trap_corpus_entries_match_dev_stdout_on_both_tiers`, and
+`async_start_array_growth_matches_all_three_witnesses`. Each one is
+`fork JIT runner: Cannot allocate memory (os error 12)`. The failure
+needs five live compiles at one time, so 3 and 12 are two samples of
+one defect.
 
 ## Open
 
-- The implementation round. The exit criteria are §114.5. The Linux
-  full gate at the landing is the measurement that passes or kills it.
+- The Windows and arm64 macOS full gates after the landing (§114.5
+  criterion 5).
+- The Phase Review (§114.5 criterion 6).
