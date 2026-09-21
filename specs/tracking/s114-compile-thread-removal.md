@@ -2,8 +2,8 @@
 
 Contract: `specs/blocks/compiler/s114-the-compile-thread-is-removed.md`.
 Status: **landed 2026-09-21** (contract `0f8221a`, implementation
-`e242ec9`). The Windows and arm64 macOS gates and the Phase Review are
-open.
+`e242ec9`). The Phase Review is closed, and the Linux and arm64 macOS
+hosts ran the full gate. The Windows gate is open.
 
 Origin: the x86_64-unknown-linux-gnu full gate at `c72da05`. That run
 is in `specs/tracking/linux-portability.md`, under the 2026-09-21 full
@@ -257,9 +257,36 @@ Record: `target/gate/20260921T105118Z-full.md`. Step wall seconds: fmt
 No CRITICAL and no MAJOR is open, so §114.5 criterion 6 is
 discharged.
 
+## The arm64 macOS full gate at `11f94e6`
+
+The owner's aarch64-apple-darwin host ran the full gate with a clean
+tree.
+
+```text
+gate full 11f94e6d6255a488d1a39df3d199b05594d2be2f clean debug 1539/0/2 release 1536/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0
+```
+
+Record: `target/gate/20260921T110316Z-full.md`. Step wall seconds: fmt
+1, build 14, debug 372, release 496, clippy 5, tsc 0, hygiene 2. The
+passed counts are equal to the counts of the Linux host at `93a4041`.
+
+The margin of the two `compiler/tests/nesting.rs` tests over the
+2,097,152-byte libtest stack, by the method of MAJOR 2, in steps of
+32,768 bytes:
+
+| Build | Stack the pair needs | Margin |
+|---|---|---|
+| unoptimized | over 917,504 and under 950,272 bytes | 2.2 |
+| optimized | over 262,144 and under 294,912 bytes | 7.1 |
+
+Below each lower figure the binary prints `thread
+'a_two_hundred_deep_negation_chain_checks_in_linear_time' … has
+overflowed its stack`. The unoptimized figures are equal to the Linux
+figures. The Linux optimized row bounds the need under 524,288 bytes,
+and this finer step does not contradict it.
+
 ## Open
 
-- The Windows and arm64 macOS full gates after the landing (§114.5
-  criterion 5). Each host must measure the margin of the two
-  `compiler/tests/nesting.rs` tests over the 2,097,152-byte libtest
-  stack.
+- The Windows full gate after the landing (§114.5 criterion 5). The
+  host must measure the margin of the two `compiler/tests/nesting.rs`
+  tests over the 2,097,152-byte libtest stack.
