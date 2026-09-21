@@ -27,7 +27,6 @@ The stages of the current form and the sections that hold their rules:
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
 | reference interpreter | §68.7 |
-| the sandbox profile (compile rules, `Sandbox` intrinsics, host limits) | §109 |
 | runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
 | workers | §38–§40, §84 |
@@ -151,7 +150,8 @@ Every section, with its status:
 | §106 | The reference interpreter stores a generator | active | [`s106-the-reference-interpreter-stores-a-generator.md`](compiler/s106-the-reference-interpreter-stores-a-generator.md) |
 | §107 | Binding patterns, by source type and position | active | [`s107-binding-patterns-by-source-type-and-position.md`](compiler/s107-binding-patterns-by-source-type-and-position.md) |
 | §108 | A field carries a value before a constructor returns | active | [`s108-a-field-carries-a-value-before-a-constructor-returns.md`](compiler/s108-a-field-carries-a-value-before-a-constructor-returns.md) |
-| §109 | The sandbox profile | active | [`s109-the-sandbox-profile.md`](compiler/s109-the-sandbox-profile.md) |
+| §109 | The sandbox profile — SUPERSEDED 2026-09-21 | history — `compiler-history.md` §109 (superseded by §113) | [`s109-the-sandbox-profile.md`](compiler/s109-the-sandbox-profile.md) |
 | §110 | One dev-JIT module is one reservation | active | [`s110-one-dev-jit-module-is-one-reservation.md`](compiler/s110-one-dev-jit-module-is-one-reservation.md) |
 | §111 | A callback registration with an explicit end | active | [`s111-a-callback-registration-with-an-explicit-end.md`](compiler/s111-a-callback-registration-with-an-explicit-end.md) |
-| §112 | Position id 0 is "no script site" | active | [`s112-position-id-0-is-no-script-site.md`](compiler/s112-position-id-0-is-no-script-site.md) |
+| §112 | Position id 0 is "no script site" | active; rule 4 and 112.2 amended by §113 | [`s112-position-id-0-is-no-script-site.md`](compiler/s112-position-id-0-is-no-script-site.md) |
+| §113 | The sandbox profile is removed | active | [`s113-the-sandbox-profile-is-removed.md`](compiler/s113-the-sandbox-profile-is-removed.md) |

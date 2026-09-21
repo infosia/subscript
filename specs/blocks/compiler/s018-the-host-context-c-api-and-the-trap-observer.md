@@ -255,19 +255,12 @@ uint64_t subscript_rt_ctx_live_allocations(const subscript_rt_context*);
 uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context*);
 uint64_t subscript_rt_ctx_reserved_bytes(const subscript_rt_context*);
 void     subscript_rt_ctx_collect(subscript_rt_context*);
-uint64_t subscript_rt_ctx_charged_bytes(const subscript_rt_context*);
 ```
 
-*(Added 2026-09-17, M6.)* `subscript_rt_ctx_charged_bytes` reads the
-bytes the Context has reserved for its live allocations: the payload
-rounded to its size class plus the block header in the arena mode,
-the payload plus the header plus the per-record constant in the
-exact-size mode (§109.0). It is the counter the allocation quota
-compares against, so a host that sets a quota paces on it (§109.8a).
-It is a counter, maintained with `live_bytes`, and tier-dependent as
-`live_bytes` is.
+*(Amended 2026-09-21, §113.)* `subscript_rt_ctx_charged_bytes` is
+removed with the allocation quota that read it.
 
-*(Added 2026-09-17, §109.8a.)* `subscript_rt_ctx_collect` is the host's
+*(Added 2026-09-17.)* `subscript_rt_ctx_collect` is the host's
 explicit collection (invariant 2): the same `Context::collect` that
 `Context.collect()` reaches from script, callable only at script depth
 0, between script calls. The script intrinsic keeps its own symbol,
@@ -323,14 +316,15 @@ cheap, but not O(1). `live_allocations` and `reserved_bytes` walk live
 blocks on the ship tier and are **O(live blocks)** — they are
 diagnostics, not per-frame counters. `live_bytes` is a counter the
 runtime maintains at every allocation, release, retention, and
-collection, in both memory modes, because the §109.4 allocation quota
-reads it on every allocation (§109.4 rule 2). The invariant that a
+collection, in both memory modes, because a host reads it at every
+frame and a walk of the live set measured quadratic (§113.2 rule 4).
+The invariant that a
 maintained counter must hold across delete, chunk reuse, and
 `Context.collect()` is checked: a debug assertion compares the counter
 against the walk at every collection, and one test per kind of change
 compares the two. *(Amended 2026-09-16: the first text kept all three
-as walks and refused a maintained counter; the quota made `live_bytes`
-a per-allocation read, and the walk measured quadratic.)*
+as walks and refused a maintained counter. Amended 2026-09-21: the
+allocation quota that first needed the counter is removed, §113.)*
 
 Read-only: none of the three can change script-visible output, so
 §0.3 determinism and the golden corpus are unaffected. A host that

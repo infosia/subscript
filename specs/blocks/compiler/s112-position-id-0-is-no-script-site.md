@@ -55,12 +55,10 @@ The form is the defect: a position id cannot say "no position".
 3. **Every tier reports id 0 as the empty position**, with the text it
    gives §111's second trap entry today. An id outside the table keeps
    its present report on each tier.
-4. **A runtime path records 0 only when no script site exists.** A
-   crossing of a callback-info aggregate is a script site.
-   `subscript_rt_cb_bind` and `subscript_rt_cb_register` take the
-   position id of the crossing as their last parameter, and a quota
-   refusal there reports the crossing. The quota check of the array
-   sort takes the id of the `sort` call in the same way. The two
+4. **A runtime path records 0 only when no script site exists.**
+   *(Amended 2026-09-21, §113: the quota refusals of a binding, a
+   registration, and a sort are removed with the quota, and the
+   position parameter that each call took for them goes.)* The two
    paths that keep 0 state in one comment why no site exists: the
    fire-time userdata check with no header for the address, and the
    refused fire of §111 rule 14. Every other literal 0 in the runtime
@@ -76,22 +74,9 @@ The form is the defect: a position id cannot say "no position".
 
 ### 112.2 Corpus
 
-One new trap entry under the sandbox profile: the quota is set so that
-the callback-info crossing is the first charge to pass it on every
-tier, and the trap reports `allocation-quota` at the crossing. The
-trap harness holds the quota of an entry in a table by entry id, as it
-holds the allocation-failure count; a corpus header carries no quota
-key. At the
-contract pin the entry is Red: the tiers report the first entry of
-their tables. The entry runs for the Context lifetime and for the
-explicit lifetime, as two crossings in two entries if one entry cannot
-hold both.
-
-One more entry pins the sort: a quota that holds the array and
-refuses the copies of `sort` on every tier, with the trap at the `sort`
-call. The two memory modes charge different bytes for one allocation,
-so the quota comes from a measurement on both tiers, and the harness
-records the window.
+*(Amended 2026-09-21, §113: the two quota trap entries, `t61` to
+`t63`, are removed with the quota. §111's second trap entry pins
+rule 3.)*
 
 No `.expected` file of an existing entry moves. A listing that prints a
 position id moves by one for each id; with the ids normalised it does
@@ -107,12 +92,9 @@ existing test table, stop and report.
 2. A test compares the entry at index 0 of the dev-JIT table, the
    ship-C table, and the published `program.alloc.h` table for one
    program: all three are the reserved entry.
-3. The new trap entries pass on every tier that runs their gating
-   class, with the position of the crossing.
+3. *(Deleted 2026-09-21, §113.)*
 4. §111's second trap entry passes with no edit of its expectation,
    and no code names a trap kind to decide a position.
-5. The runtime unit tests of the binding, the registration, and the
-   sort quota refusal read the position id that the caller passed. One
-   trap entry pins that each tier passes the site of the `sort` call.
+5. *(Deleted 2026-09-21, §113.)*
 6. The standing gate is green. Each new test states its measured cost
    (core principle 15).

@@ -9,7 +9,7 @@ Problem: the dev JIT built each module's code and its data from
 separate mappings, and it assumed without stating it that every item
 stays within 2 GiB of every other. `JITModule::new` refuses
 `is_pic`, so a call the module makes to its own data carries a 32-bit
-displacement. §109.2a then gave the compile thread a stack
+displacement. §109.2a (history) then gave the compile thread a stack
 reservation of 8,589,934,592 bytes unoptimized. The lowering runs on
 that thread, the two mappings fell on the two sides of the
 reservation, and the JIT failed to connect them.
@@ -44,8 +44,7 @@ was a host symbol.
    `floor` is the worst reservation of a module whose source is too
    small for the slope to reach — the per-module cost that does not
    scale with the source. A round that measures a worse figure moves
-   the constant and records the measurement. The margin is 1.5, the
-   margin §109.2a uses for the same kind of bound.
+   the constant and records the measurement. The margin is 1.5.
 4. **A reservation that runs out names what to change.** The message
    states the module's source bytes, the reservation the derivation
    gave, and the bytes the module asked for. It is an internal error,

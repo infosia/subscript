@@ -64,9 +64,8 @@ Normative copies live in `CLAUDE.md`; the plan restates them for context.
    direct C++ binding. Decided at founding to prevent incremental C++
    coupling.
 5. **Valid-TS-subset syntax** — `tsc`-clean with the ambient prelude.
-6. **Scripts are trusted, except under the sandbox profile** *(Rev 3)*.
-   The sandbox profile is a compile profile for content the host did
-   not write. Contract: compiler block §109.
+6. **Scripts are trusted** *(Rev 4; Rev 3 added a sandbox profile,
+   and Rev 4 removes it)*.
 
 ## 4. C interop patterns
 
@@ -132,13 +131,9 @@ hosts `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`, and
   assertion suite, a headless end-to-end slice on both forms, and the
   corpus entries for the five patterns.
 
-- **P26 — the sandbox profile** *(Rev 3)*. Contract §109. A compile
-  profile that rejects `Context.free`, `Context.fromBytes`, workers, and
-  over-limit source, and lowers an interrupt poll and a stack check that
-  every tier executes. The host sets an allocation quota, a stack
-  budget, and an interrupt flag through the runtime C API. Exit: every
-  §109.7 corpus entry Red at the contract pin and Green after; the
-  full gate green; the §109.8 measurements recorded; hygiene clean.
+- **P26 — the sandbox profile** *(Rev 3)*. Removed by P27.
+- **P27 — the sandbox profile is removed** *(Rev 4)*. Contract §113.
+  Exit: §113.5.
 
 Beyond P5 (unscheduled): language surface growth, host scene data through
 a C facade, editor debugging depth.
@@ -229,3 +224,18 @@ memory.
   needs it, with the 437x figure as the number it must beat. The
   run-time source-loading host API is deferred to its own evidence
   (§109.6).
+
+**Rev 4 (2026-09-21) — the sandbox profile is removed.**
+
+- What changed: §3 item 6 reads "Scripts are trusted", its form before
+  Rev 3. §6 gains P27, which removes what P26 built.
+- Evidence: the profile did not give the guarantee its name states.
+  Same-process execution trusts the compiler, the generated code, and
+  the runtime, and the compile bound was a process boundary that the
+  CLI added around an external parser. The profile's cost was the
+  largest of any contract section (compiler block §113, measured at
+  `8f0a0c2`).
+- Consequence: a host that runs content it did not write adds an
+  isolation boundary of its own. The defect fixes that the P26 rounds
+  found stay (compiler block §113.2). The Rev 3 measurements stay in
+  `specs/tracking/sandbox-tier-2026-09-16.md`.

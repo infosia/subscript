@@ -94,12 +94,9 @@ and names no command either.
    zero `gate-skip:` lines.
 
    The fact the profile changes is the test's own, and the test names
-   it in the line. `MEMORY_BUDGET_BYTES` and
-   `COMPILE_THREAD_STACK_BYTES` each differ by build, so the
-   memory-budget test's heavy part runs in both profiles. The time
-   budget is 300 s in each build, and a process-group kill is one
-   code path in each, so those two heavy parts run in the debug
-   profile alone.
+   it in the line. *(Amended 2026-09-21, §113: the three examples this
+   paragraph named were tests of the compile child, which is removed.
+   No test declares the line now.)*
 
    A declared line, not an absent test, is what rule 4 asks for. A
    heavy part that vanishes in release under `cfg` leaves the record

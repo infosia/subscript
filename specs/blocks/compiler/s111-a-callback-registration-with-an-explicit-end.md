@@ -115,11 +115,9 @@ carries the sentence.
    live registration holds is advised (B). The count of §14.4b (B2) is
    the binding records plus the live registrations, and the message
    text of (B2) does not change.
-10. **A new registration charges the quota as a binding record does**
-   (§109.4 rule 2). The charge is the size of the registration record.
-   The record exists when the quota refuses it, and
-   the recorded trap stops the run at the next checkpoint. A null in a
-   C `void *` slot is never published.
+10. *(Deleted 2026-09-21, §113: the rule charged a registration to
+   the allocation quota, which is removed. The number is not assigned
+   again.)*
 11. **Everything runs on the Context owner thread.** The counter is
    not atomic. The host brings a notification from another thread to
    the owner thread before it fires, and its release guarantee counts
@@ -180,7 +178,7 @@ fires what is queued when the drain starts.
 The fixture is the adapter of 111.2. It reads the Context at the
 crossing (rule 5a) and calls the release itself. An entry observes
 reclamation through the fixture: the fixture reads
-`subscript_rt_ctx_charged_bytes` and returns a comparison, and the
+`subscript_rt_ctx_live_bytes` and returns a comparison, and the
 script prints the result. No script-visible accounting is added. The
 entries follow `a90-callback-userdata-rooted` and carry
 `// interpreter: no`, as every interop callback entry does.
@@ -188,7 +186,7 @@ entries follow `a90-callback-userdata-rooted` and carry
 Accept entries, each with a committed golden on both tiers:
 
 1. Register, drop the script references, collect, fire: the callback
-   reads its userdata fields. Release, collect: the charged bytes fall
+   reads its userdata fields. Release, collect: the live bytes fall
    by the userdata graph.
 2. Register the same userdata two times. Release one. Collect and
    fire the other: the read is valid.
@@ -221,13 +219,14 @@ lines.
 1. Runtime unit tests, one for each public item: create, release,
    release of a pointer that is not an open registration, the nested
    call counter, release during an active call, a trap inside the
-   callback, quota refusal.
+   callback.
 2. Retention, measured by a runtime test at N = 10,000 distinct
    userdata objects. After N registrations and N releases, with no
-   collection, the live registration count is 0 and the binding charge
-   equals its value at N = 0. After one `collect()`, `charged_bytes`
-   equals its value at N = 0. The same workload on the Context-lifetime
-   path is the firing control: its charge grows by N records.
+   collection, the live registration count is 0. After one `collect()`,
+   `live_bytes` equals its value at N = 0. The same workload on the
+   Context-lifetime path is the firing control: its binding record
+   count grows by N. *(Amended 2026-09-21, §113: the first text
+   compared the binding charge and `charged_bytes`.)*
 3. The Context-lifetime path is unchanged: the §14.4a and §14.4b tests
    and every existing golden pass without an edit.
 4. `subscript bind` with the option regenerates the fixture mirror
