@@ -427,40 +427,48 @@ pub(crate) fn append_replacement(
     }
 }
 
-/// `replace(pat, repl)`: appends the receiver with its first
-/// occurrence replaced, using ECMA's string-pattern `$` substitutions.
-/// No match appends the bytes unchanged; an empty `pat` matches at
-/// index 0.
-///
-/// The result size is not known before the bytes exist, so the caller
-/// supplies a growing buffer and reads it afterwards.
-pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8], out: &mut Vec<u8>) {
+/// `replace(pat, repl)`: returns the result of replacing the first
+/// occurrence with ECMA's string-pattern `$` substitutions.
+/// No match returns the bytes
+/// unchanged; an empty `pat` matches at index 0.
+#[must_use]
+pub fn replace_first(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
     match find_from(s, pat, 0) {
         Some(i) => {
+            let mut out = Vec::with_capacity(s.len() - pat.len() + repl.len());
             out.extend_from_slice(&s[..i]);
-            append_replacement(out, s, i, i + pat.len(), repl, 0, false, |_| None, |_| None);
+            append_replacement(
+                &mut out,
+                s,
+                i,
+                i + pat.len(),
+                repl,
+                0,
+                false,
+                |_| None,
+                |_| None,
+            );
             out.extend_from_slice(&s[i + pat.len()..]);
+            out
         }
-        None => out.extend_from_slice(s),
+        None => s.to_vec(),
     }
 }
 
-/// `replaceAll(pat, repl)`: replaces every occurrence in one
-/// left-to-right pass over the original — a `pat` that reappears
+/// `replaceAll(pat, repl)`: returns the result of replacing every
+/// occurrence in one left-to-right pass over the original. A `pat` that reappears
 /// inside a replacement is **not** rescanned (JS semantics:
 /// `"aa".replaceAll("a", "aa")` is `"aaaa"`). Each replacement uses
 /// ECMA's string-pattern `$` substitutions. An empty pattern matches
 /// every UTF-8 code-point boundary, including both ends. Invalid UTF-8
-/// appends the receiver unchanged as a total fallback.
-///
-/// The result size is not known before the bytes exist, so the caller
-/// supplies a growing buffer and reads it afterwards.
-pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8], out: &mut Vec<u8>) {
+/// returns the receiver unchanged as a total fallback.
+#[must_use]
+pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
     if pat.is_empty() {
         let Ok(text) = std::str::from_utf8(s) else {
-            out.extend_from_slice(s);
-            return;
+            return s.to_vec();
         };
+        let mut out = Vec::new();
         let mut previous = 0;
         for at in text
             .char_indices()
@@ -468,37 +476,35 @@ pub fn replace_all(s: &[u8], pat: &[u8], repl: &[u8], out: &mut Vec<u8>) {
             .chain(std::iter::once(s.len()))
         {
             out.extend_from_slice(&s[previous..at]);
-            append_replacement(out, s, at, at, repl, 0, false, |_| None, |_| None);
+            append_replacement(&mut out, s, at, at, repl, 0, false, |_| None, |_| None);
             previous = at;
         }
-        return;
+        return out;
     }
+    let mut out = Vec::new();
     let mut at = 0usize;
     while let Some(i) = find_from(s, pat, at) {
         out.extend_from_slice(&s[at..i]);
-        append_replacement(out, s, i, i + pat.len(), repl, 0, false, |_| None, |_| None);
+        append_replacement(
+            &mut out,
+            s,
+            i,
+            i + pat.len(),
+            repl,
+            0,
+            false,
+            |_| None,
+            |_| None,
+        );
         at = i + pat.len();
     }
     out.extend_from_slice(&s[at..]);
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `replace(pat, repl)` into a fresh buffer, as a value.
-    fn replaced_first(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
-        let mut out = Vec::new();
-        replace_first(s, pat, repl, &mut out);
-        out
-    }
-
-    /// `replaceAll(pat, repl)` into a fresh buffer, as a value.
-    fn replaced_all(s: &[u8], pat: &[u8], repl: &[u8]) -> Vec<u8> {
-        let mut out = Vec::new();
-        replace_all(s, pat, repl, &mut out);
-        out
-    }
 
     #[test]
     fn empty_patterns_use_utf8_boundaries_and_both_ends() {
@@ -514,20 +520,17 @@ mod tests {
             assert!(actual
                 .iter()
                 .all(|piece| std::str::from_utf8(piece).is_ok()));
-            assert_eq!(
-                replaced_all(text.as_bytes(), b"", b"-"),
-                replaced.as_bytes()
-            );
+            assert_eq!(replace_all(text.as_bytes(), b"", b"-"), replaced.as_bytes());
         }
-        assert_eq!(replaced_first(b"", b"", b"-"), b"-");
-        assert_eq!(replaced_first("aé".as_bytes(), b"", b"-"), "-aé".as_bytes());
+        assert_eq!(replace_first(b"", b"", b"-"), b"-");
+        assert_eq!(replace_first("aé".as_bytes(), b"", b"-"), "-aé".as_bytes());
         assert_eq!(
-            replaced_all("aé".as_bytes(), b"", b"<$`|$&|$'>"),
+            replace_all("aé".as_bytes(), b"", b"<$`|$&|$'>"),
             "<||aé>a<a||é>é<aé||>".as_bytes()
         );
-        assert_eq!(replaced_all(b"", b"", b"<$`|$&|$'>"), b"<||>");
+        assert_eq!(replace_all(b"", b"", b"<$`|$&|$'>"), b"<||>");
         assert_eq!(split("aé".as_bytes(), "é".as_bytes()), vec![&b"a"[..], b""]);
-        assert_eq!(replaced_all(b"ab", b"b", b"-"), b"a-");
+        assert_eq!(replace_all(b"ab", b"b", b"-"), b"a-");
     }
 
     #[test]
@@ -676,32 +679,32 @@ mod tests {
 
     #[test]
     fn replace_first_substitutes_ecma_string_patterns() {
-        assert_eq!(replaced_first(b"aaa", b"a", b"b"), b"baa");
-        assert_eq!(replaced_first(b"abc", b"z", b"y"), b"abc");
+        assert_eq!(replace_first(b"aaa", b"a", b"b"), b"baa");
+        assert_eq!(replace_first(b"abc", b"z", b"y"), b"abc");
         assert_eq!(
-            replaced_first(b"a-b", b"-", b"[$$][$&][$`][$'][$1]"),
+            replace_first(b"a-b", b"-", b"[$$][$&][$`][$'][$1]"),
             b"a[$][-][a][b][$1]b"
         );
-        assert_eq!(replaced_first(b"x=1", b"1", b"$&"), b"x=1");
+        assert_eq!(replace_first(b"x=1", b"1", b"$&"), b"x=1");
         // Empty pattern matches at 0 (ECMA-262): repl + s.
-        assert_eq!(replaced_first(b"abc", b"", b"X"), b"Xabc");
-        assert_eq!(replaced_first(b"abc", b"", b"$'"), b"abcabc");
+        assert_eq!(replace_first(b"abc", b"", b"X"), b"Xabc");
+        assert_eq!(replace_first(b"abc", b"", b"$'"), b"abcabc");
     }
 
     #[test]
     fn replace_all_never_rescans_a_replacement() {
-        assert_eq!(replaced_all(b"abcabc", b"bc", b"X"), b"aXaX");
+        assert_eq!(replace_all(b"abcabc", b"bc", b"X"), b"aXaX");
         // The replacement contains the pattern; one pass, no rescan.
-        assert_eq!(replaced_all(b"aa", b"a", b"aa"), b"aaaa");
-        assert_eq!(replaced_all(b"abc", b"z", b"y"), b"abc");
-        assert_eq!(replaced_all(b"x=1", b"1", b"$&"), b"x=1");
+        assert_eq!(replace_all(b"aa", b"a", b"aa"), b"aaaa");
+        assert_eq!(replace_all(b"abc", b"z", b"y"), b"abc");
+        assert_eq!(replace_all(b"x=1", b"1", b"$&"), b"x=1");
         assert_eq!(
-            replaced_all(b"a-b-c", b"-", b"<$`|$&|$'>"),
+            replace_all(b"a-b-c", b"-", b"<$`|$&|$'>"),
             b"a<a|-|b-c>b<a-b|-|c>c"
         );
-        assert_eq!(replaced_all(b"a-b", b"-", b"[$1]"), b"a[$1]b");
+        assert_eq!(replace_all(b"a-b", b"-", b"[$1]"), b"a[$1]b");
         // An empty pattern matches both ends and each code-point boundary.
-        assert_eq!(replaced_all(b"ab", b"", b"X"), b"XaXbX");
+        assert_eq!(replace_all(b"ab", b"", b"X"), b"XaXbX");
     }
 
     #[test]

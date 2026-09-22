@@ -324,6 +324,32 @@ bytes over the arm64 macOS figure, and it is inside the Linux bound of
 The three gate hosts ran the full gate after the landing, and each one
 measured the margin, so §114.5 criterion 5 is discharged.
 
+## Residue audit at `5bd50f7`
+
+An audit compared the tree at `5bd50f7` with the sandbox introduction
+(`2cf8778`, `30c12a0`, `b3a27c0`) and removal (`c3e8498`, `e242ec9`)
+commits. It found no remaining profile, limit, quota, or compile-thread
+mechanism. It found two MINOR leftovers of `b3a27c0`. No contract
+changes; the fix restores the `c2745e6` shape of each item.
+
+| Finding | Evidence | Fix |
+|---|---|---|
+| `strops::replace_first` lost its initial capacity; `replace_all` and it kept the caller-owned buffer of `QuotaBuf` | Probe: 65,536-byte input, one match. `c2745e6`: 1 alloc, 0 realloc. `5bd50f7`: 1 alloc, 1 realloc. | Both return `Vec<u8>` again; the matched `replace_first` path reserves `s.len() - pat.len() + repl.len()`. The probe on the fix measures 1 alloc, 0 realloc. |
+| `parse::syntax_of` and `parse::lookup_at` stayed split for the removed token scan | Each has one caller | Both fold back into their one caller. |
+
+The probe counts `alloc` and `realloc` calls through a `GlobalAlloc`
+wrapper around the call only, with the module built by `rustc -O`.
+It excludes the Context string allocation, which both shapes make.
+
+The arm64 macOS quick gate on the fix, with the three source files
+dirty:
+
+```text
+gate quick 5bd50f71f0a5302c4701f870e86c90047a1c39b0 dirty:3 debug 1539/0/2 skips 2 goldens-moved 0 exit 0
+```
+
+Record: `target/gate/20260922T233510Z-quick.md`.
+
 ## Open
 
 Nothing is open.

@@ -1889,8 +1889,7 @@ pub unsafe extern "C" fn subscript_rt_str_replace(
     let pat = unsafe { ctx.str_view(pat) };
     // SAFETY: live string handles.
     let repl = unsafe { ctx.str_view(repl) };
-    let mut out: Vec<u8> = Vec::new();
-    crate::strops::replace_first(bytes, pat, repl, &mut out);
+    let out = crate::strops::replace_first(bytes, pat, repl);
     ctx.alloc_str(&out, pos_id)
 }
 
@@ -1922,8 +1921,7 @@ pub unsafe extern "C" fn subscript_rt_str_replace_all(
     let pat = unsafe { ctx.str_view(pat) };
     // SAFETY: live string handles.
     let repl = unsafe { ctx.str_view(repl) };
-    let mut out: Vec<u8> = Vec::new();
-    crate::strops::replace_all(bytes, pat, repl, &mut out);
+    let out = crate::strops::replace_all(bytes, pat, repl);
     ctx.alloc_str(&out, pos_id)
 }
 

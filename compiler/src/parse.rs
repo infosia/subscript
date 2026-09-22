@@ -107,19 +107,6 @@ pub fn parse_import_specifiers(source: &SourceFile) -> Result<Vec<String>, Vec<D
     })
 }
 
-/// The syntax every lexer of this compiler reads.
-///
-/// `dts` selects the ambient dialect for a `.d.ts` source.
-fn syntax_of(dts: bool) -> Syntax {
-    Syntax::Typescript(TsSyntax {
-        tsx: false,
-        decorators: true,
-        dts,
-        no_early_errors: false,
-        disallow_ambiguous_jsx_like: false,
-    })
-}
-
 /// Parses every source file. Parse failures become `S100` diagnostics;
 /// the parser never panics on malformed input.
 pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec<Diagnostic>> {
@@ -143,8 +130,15 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
             FileName::Custom(source.name.clone()).into(),
             source.source.clone(),
         );
+        let syntax = Syntax::Typescript(TsSyntax {
+            tsx: false,
+            decorators: true,
+            dts: source.dts,
+            no_early_errors: false,
+            disallow_ambiguous_jsx_like: false,
+        });
         let lexer = Lexer::new(
-            syntax_of(source.dts),
+            syntax,
             ast::EsVersion::Es2022,
             StringInput::from(&*fm),
             None,
@@ -207,19 +201,13 @@ fn parser_diagnostic(err: &swc_ecma_parser::error::Error, pos: Pos) -> Diagnosti
     }
 }
 
+/// Maps a span start to a position; dummy `BytePos(0)` maps to line 1,
+/// column 1 of `fallback_file`.
 fn lookup(source_map: &SourceMap, fallback_file: &str, span: Span) -> Pos {
-    lookup_at(source_map, fallback_file, span.lo)
-}
-
-/// Converts a byte position to the `Pos` the parser reports for it.
-///
-/// `BytePos(0)` is SWC's dummy position; it maps to the first position
-/// of `fallback_file`.
-fn lookup_at(source_map: &SourceMap, fallback_file: &str, at: BytePos) -> Pos {
-    if at == BytePos(0) {
+    if span.lo == BytePos(0) {
         return Pos::new(fallback_file, 1, 1);
     }
-    let loc = source_map.lookup_char_pos(at);
+    let loc = source_map.lookup_char_pos(span.lo);
     let file = match &*loc.file.name {
         FileName::Custom(name) => name.clone(),
         other => other.to_string(),
