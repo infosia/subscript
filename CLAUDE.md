@@ -25,7 +25,8 @@ orchestrates** — it authors `specs/`, emits task handoffs, reviews the
 coding agent's diffs against acceptance criteria, runs builds and tests,
 and manages git (`init`/`add`/`commit`). Claude does not write production
 code; the coding agent does not plan, edit `specs/`, change scope, or
-commit.
+commit. A Claude subagent that runs as the coding agent has the coding
+agent's role and follows the coding agent's rules.
 
 ## Design invariants (read second)
 
@@ -177,12 +178,11 @@ numbered rules do not apply to them.
    executable definition. A syntax or semantics decision without a corpus
    entry is not decided. A sound language is defined as much by what it
    rejects as by what it accepts.
-3. **Differential testing.** From the moment the second execution form
-   exists (plan P3), the same corpus program runs under both execution
-   forms (the fast-iteration development tier and the AOT tier —
-   invariant 3) with byte-identical output, checked against the committed
-   golden outputs, on every test run. Before that point goldens are
-   provisional (`specs/blocks/compiler.md` §2).
+3. **Differential testing.** The same corpus program runs under both
+   execution forms (the fast-iteration development tier and the AOT
+   tier — invariant 3) with byte-identical output, checked against the
+   committed golden outputs, on every test run
+   (`specs/blocks/compiler.md` §2).
 4. **Headless-first.** Every gate passes with no GPU, no window, and no
    external device. Device-dependent runs are gated, never required for
    CI.
