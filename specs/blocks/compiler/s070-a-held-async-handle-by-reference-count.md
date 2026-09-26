@@ -76,6 +76,9 @@ because an arbitrary class's allocation has no spare word.)*
 
 ### 70.3 The rules
 
+*(2026-09-27, §116.1 rule 4c: a lambda borrows a captured handle; the
+capture takes no count and no lambda exit releases it.)*
+
 1. **A handle's count starts at one**, held by the value the call
    returns.
 2. **A copy increments; a scope exit decrements.** The compiler emits
@@ -159,7 +162,9 @@ because an arbitrary class's allocation has no spare word.)*
    Context memory for an async-heavy program falls, and the fall is
    the point, not a side effect. §70.4 item 6 pins it.
 4. **`await` consumes a handle's completion, not its ownership.** A
-   second holder still holds it after the first awaits.
+   second holder still holds it after the first awaits. *(2026-09-26, §116: a completion is a value or an
+   exception. Each `await` of an exception completion raises the same
+   object.)*
 5. **A handle is not a `Promise`.** It has no `then`, no combinator,
    and no constructor. C8's rejections stand.
 6. **A cycle leaks**, and a program that leaks is correct, merely

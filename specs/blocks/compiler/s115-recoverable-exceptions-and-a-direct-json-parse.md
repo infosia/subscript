@@ -95,6 +95,7 @@ word is nonzero.
 3. A `try` block that holds `await` or `yield` fails with S010 and a
    message that names the suspension. The rule reads the `try` block
    only. A `catch` block can hold a suspension.
+   *(Retired 2026-09-26 by §116.1 rule 7.)*
 4. The catch binding has a checker-internal type, "caught". It has
    two legal uses: the left operand of `instanceof`, and the operand
    of `throw`. Any other use fails with S010. `catch (e) { }` with no
@@ -127,7 +128,9 @@ the Context records `TrapKind::UncaughtException` with the Error's
 2. The body of an `async` function, at its completion or at the exit
    that the exception takes. The awaiting caller observes a trap, not
    an exception. This includes the part of the body that runs at the
-   call (§92).
+   call (§92). *(Replaced 2026-09-26 by §116.1 rules 1–5: the
+   exception completes the handle, and an `await` raises it. Only an
+   async body with no holder traps.)*
 3. The body of a generator.
 4. A Worker entry. The trap is the Worker Context's trap, reported as
    a Worker trap is reported today.

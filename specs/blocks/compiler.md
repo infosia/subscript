@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
@@ -111,7 +111,7 @@ Every section, with its status:
 | §67 | Checker scoping, and state that must survive a suspension | active | [`s067-checker-scoping-and-state-that-must-survive-a-suspension.md`](compiler/s067-checker-scoping-and-state-that-must-survive-a-suspension.md) |
 | §68 | One ordered IR between the checker and the two tiers | active | [`s068-one-ordered-ir-between-the-checker-and-the-two-tiers.md`](compiler/s068-one-ordered-ir-between-the-checker-and-the-two-tiers.md) |
 | §69 | The language definition, checked instead of asserted | active | [`s069-the-language-definition-checked-instead-of-asserted.md`](compiler/s069-the-language-definition-checked-instead-of-asserted.md) |
-| §70 | A held async handle, by reference count | active | [`s070-a-held-async-handle-by-reference-count.md`](compiler/s070-a-held-async-handle-by-reference-count.md) |
+| §70 | A held async handle, by reference count | active; rule 4 amended by §116 | [`s070-a-held-async-handle-by-reference-count.md`](compiler/s070-a-held-async-handle-by-reference-count.md) |
 | §71 | Static members | active | [`s071-static-members.md`](compiler/s071-static-members.md) |
 | §72 | One integer-literal reader, and one HIR walk | active | [`s072-one-integer-literal-reader-and-one-hir-walk.md`](compiler/s072-one-integer-literal-reader-and-one-hir-walk.md) |
 | §73 | The LIR terminator walks itself | active | [`s073-the-lir-terminator-walks-itself.md`](compiler/s073-the-lir-terminator-walks-itself.md) |
@@ -156,4 +156,5 @@ Every section, with its status:
 | §112 | Position id 0 is "no script site" | active; rule 4 and 112.2 amended by §113 | [`s112-position-id-0-is-no-script-site.md`](compiler/s112-position-id-0-is-no-script-site.md) |
 | §113 | The sandbox profile is removed | active; §114 deletes 113.2 rules 1 and 9, and amends rules 2 and 3 | [`s113-the-sandbox-profile-is-removed.md`](compiler/s113-the-sandbox-profile-is-removed.md) |
 | §114 | The compile thread is removed | active | [`s114-the-compile-thread-is-removed.md`](compiler/s114-the-compile-thread-is-removed.md) |
-| §115 | Recoverable exceptions, and `JSON.parse` returns `T` | active; revises C6, C8, C11, stdlib §13.4, §20.3 | [`s115-recoverable-exceptions-and-a-direct-json-parse.md`](compiler/s115-recoverable-exceptions-and-a-direct-json-parse.md) |
+| §115 | Recoverable exceptions, and `JSON.parse` returns `T` | active; rule 3.3 and item 4.2 replaced by §116; revises C6, C8, C11, stdlib §13.4, §20.3 | [`s115-recoverable-exceptions-and-a-direct-json-parse.md`](compiler/s115-recoverable-exceptions-and-a-direct-json-parse.md) |
+| §116 | An `await` delivers the exception of its handle | active; amends §115, §70, C6, C8 | [`s116-an-await-delivers-the-exception-of-its-handle.md`](compiler/s116-an-await-delivers-the-exception-of-its-handle.md) |

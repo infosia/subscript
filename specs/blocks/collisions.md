@@ -116,9 +116,11 @@ lambda; `tsc`-clean).
 language. A thrown value is an `Error`, `SyntaxError`, or `TypeError`;
 the language has no other thrown type and no user error class. The
 catch binding has two legal uses: `instanceof` and `throw`. `finally`
-is rejected, and a `try` block that holds `await` or `yield` is
-rejected. An exception that leaves a host entry, an async body, a
-generator body, a Worker entry, or a host-called callback becomes the
+is rejected. An exception that leaves an async body completes its
+handle, and an `await` of the handle raises it (`compiler.md` §116,
+2026-09-26); a `try` block can hold `await` and `yield`. An exception
+that leaves a host entry, a generator body, a Worker entry, a
+host-called callback, or an async body with no holder becomes the
 trap `UncaughtException`. Runtime faults (index out of bounds, failed
 narrowing, allocation failure) still trap, and a trap is still not
 catchable in-language.
@@ -235,7 +237,9 @@ call. Measured before the revision: `node` printed
 `yield` is rejected (`r234`, `r235`). An exception that leaves an async body
 or a generator body traps with `UncaughtException`; the awaiting
 caller observes a trap, not an exception (`t63`, `t64`). Accept adds
-`a256`.
+`a256`. *Revised 2026-09-26 (§116):* the `try` rejection
+retires. An exception that leaves an async body completes its handle,
+and the `await` raises it; a generator body still traps.
 
 ### C9. Field initializers — every construction, no `this`
 
