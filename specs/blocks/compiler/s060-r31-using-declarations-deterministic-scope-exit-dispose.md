@@ -70,6 +70,8 @@ Measurements at the pin, on this host:
    inserted at the scope exits; the HIR contains only forms that
    exist today. No new HIR node, no codegen, runtime, or prelude
    change; the tiers agree by construction.
+   *(Retired 2026-09-26 by §115.5 rule 5: a `using` scope is one HIR
+   node, and the shared HIR-to-LIR lowering places the hooks.)*
 9. The language adds no aliasing or use-after-dispose rule. The
    hook is an ordinary method call; the class owns its behavior
    after disposal.

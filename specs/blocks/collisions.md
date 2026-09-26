@@ -109,14 +109,27 @@ Accept: `a03`. Reject: `r09-int-literal-overflow` (`const x: i32 =
 Accept: `a13`, `a14`. Reject: `r10-escaping-capture` (returns a capturing
 lambda; `tsc`-clean).
 
-### C6. Exceptions (Q9) — out
+### C6. Exceptions (Q9) — `Error`-family only, uncatchable traps
 
-`throw`, `try`/`catch`/`finally` are not in the language. Fallible
-operations return result values (`a18` pattern). Runtime faults (index out
-of bounds, failed narrowing, allocation failure) trap: the Context stops
-with a diagnostic carrying a source position; the host decides what
-happens next. Trapping is not catchable in-language.
-Accept: `a18`. Reject: `r11-throw` (`throw` statement; `tsc`-clean).
+*(Revised 2026-09-26 by `compiler.md` §115, owner decision.)*
+`throw`, `try`/`catch`, and `instanceof` narrowing are in the
+language. A thrown value is an `Error`, `SyntaxError`, or `TypeError`;
+the language has no other thrown type and no user error class. The
+catch binding has two legal uses: `instanceof` and `throw`. `finally`
+is rejected, and a `try` block that holds `await` or `yield` is
+rejected. An exception that leaves a host entry, an async body, a
+generator body, a Worker entry, or a host-called callback becomes the
+trap `UncaughtException`. Runtime faults (index out of bounds, failed
+narrowing, allocation failure) still trap, and a trap is still not
+catchable in-language.
+
+Divergences from JS: `throw` of a non-Error value is rejected
+(`tsc`-clean); `finally` is rejected; the `JSON.parse` messages are
+this project's, so an entry that prints one is not `js-comparable`.
+*(Until 2026-09-26 this entry held "exceptions — out", with fallible
+operations returning result values. `a18` keeps that pattern as one
+accepted style.)*
+Accept: `a18`. Reject: `r11-throw` (a non-Error operand).
 
 ### C7. Unions, `null`, `undefined` (Q8) — `T | null` only
 
@@ -217,6 +230,10 @@ JavaScript's timing. A callee that never suspends completes at the
 call. Measured before the revision: `node` printed
 `start1 start2 end1 end2` where this language printed
 `start1 end1 start2 end2`. Accept adds `a184`.
+*Revised 2026-09-26 (§115):* a `try` block that holds `await` or
+`yield` is rejected. An exception that leaves an async body or a generator
+body traps with `UncaughtException`; the awaiting caller observes a
+trap, not an exception.
 
 ### C9. Field initializers — every construction, no `this`
 
@@ -286,9 +303,11 @@ Two divergences from JS, both narrowings or subtractions:
   The entry rejected a nullable initializer from 2026-08-16 to that
   date. `undefined` is absent from the language for its own reasons
   (C1), not this one.
-- JS runs disposal during throw-unwind. subscript has no
-  exceptions (C6), and a trap does not run dispose (§18.1b, no
-  rollback; owner decision, 2026-08-16).
+- JS runs disposal during throw-unwind, and so does this language
+  (`compiler.md` §115.5, 2026-09-26). If a hook raises while another
+  exception propagates, JS builds a `SuppressedError`; this language
+  traps with `DisposeRaisedDuringExit`. A trap does not run dispose
+  (§18.1b, no rollback; owner decision, 2026-08-16).
 
 `await using` is rejected (S100). The explicit spelling
 `x[Symbol.dispose]()` stays rejected; the manual cleanup call is

@@ -1066,6 +1066,12 @@ the program reads the sign three other ways: `1.0 / x`,
 
 ### 13.4 `parse` — the failure channel (owner, 2026-07-26)
 
+*(Superseded for the failure channel 2026-09-26 by `compiler.md`
+§115.7: `JSON.parse<T>` returns `T` and raises `SyntaxError` or
+`TypeError`. `JsonResult<T>` and `TrapKind::JsonResultValue` retire.
+The target rules, the depth limit, and the numeric rules below stay.
+The text below that describes `JsonResult` is history.)*
+
 `JSON.parse<T>(text: string): JsonResult<T>`.
 
 `JsonResult<T>` is an ambient **generic reference class**, the same

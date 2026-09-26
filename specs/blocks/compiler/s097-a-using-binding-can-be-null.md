@@ -57,7 +57,8 @@ the fix for only one of them.
    disposal in a loop, a suspension is not an exit, a trap runs no
    disposal, `await using` is rejected, and a value class or a
    descriptor class that declares the hook is rejected.
-9. §60.1 rule 8 stands, and it is the constraint on the
+9. *(Retired 2026-09-26 with §60.1 rule 8 by §115.5 rule 5. The
+   guard rule of this section holds in the lowering.)* §60.1 rule 8 stands, and it is the constraint on the
    implementation. The rewrite stays checker-complete: the guard is
    an `If` over a null comparison that the HIR already has, with the
    receiver narrowed through the established representation. No new
@@ -165,7 +166,11 @@ recorded on this host with their exit codes.
 
    **A loop needs nothing**, measured: `while (true) { … }` and a
    `for` with no condition each keep the trailing statement in the
-   LIR, so the walk and the LIR already agree.
+   LIR, so the walk and the LIR already agree. *(Amended 2026-09-26 by §115: a
+   `for` with no condition and no `break` stops a sequence, as a
+   `switch` does. Measured before the change: `if (flag) { for (;;)
+   {} }` followed by a read failed to lower with "use of value 1 in
+   block 7 is not dominated", with no `using` in the program.)*
 
    This is the second instance of the class item 8 named. The fix is
    the class: every statement kind answers the question, and the

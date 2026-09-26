@@ -128,7 +128,7 @@ the table stands as the corpus spelling reference.
 | Manual delete | prelude function `Context.free(x)` — TS strict mode forbids `delete x` on non-properties, so a delete statement has no TS spelling | Q6 |
 | Explicit collection | prelude function `Context.collect()` (host-invoked op exposed to script for the corpus) | Q7 |
 | Null story | `T \| null` only; `undefined` never appears in the corpus | Q8 |
-| Error handling | return values / result objects; no `throw` in accept corpus | Q9 |
+| Error handling | `throw` / `try` / `catch` of the `Error` family (`compiler.md` §115); result values stay one accepted style | Q9 |
 | Closure capture | non-capturing function values freely; capturing lambda appears only in `a14` as the policy probe | Q10 |
 | Coroutines | `function*` generators, host-driven via `.next()` | Q11 |
 | Entry point | exported `function main(): void` | Q12 |

@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
@@ -101,7 +101,7 @@ Every section, with its status:
 | §57 | R27 — field initializers run on every construction | active | [`s057-r27-field-initializers-run-on-every-construction.md`](compiler/s057-r27-field-initializers-run-on-every-construction.md) |
 | §58 | R29 — a class index signature is accessor sugar | active | [`s058-r29-a-class-index-signature-is-accessor-sugar.md`](compiler/s058-r29-a-class-index-signature-is-accessor-sugar.md) |
 | §59 | R30 — host-called entries take handle and scalar parameters | active | [`s059-r30-host-called-entries-take-handle-and-scalar-parameters.md`](compiler/s059-r30-host-called-entries-take-handle-and-scalar-parameters.md) |
-| §60 | R31 — `using` declarations: deterministic scope-exit dispose | active | [`s060-r31-using-declarations-deterministic-scope-exit-dispose.md`](compiler/s060-r31-using-declarations-deterministic-scope-exit-dispose.md) |
+| §60 | R31 — `using` declarations: deterministic scope-exit dispose | active; rule 8 retired by §115 | [`s060-r31-using-declarations-deterministic-scope-exit-dispose.md`](compiler/s060-r31-using-declarations-deterministic-scope-exit-dispose.md) |
 | §61 | R32 — a wire-mapped alias in an entry signature | active | [`s061-r32-a-wire-mapped-alias-in-an-entry-signature.md`](compiler/s061-r32-a-wire-mapped-alias-in-an-entry-signature.md) |
 | §62 | R33 — an alignment override on `@CStruct` value classes | active | [`s062-r33-an-alignment-override-on-cstruct-value-classes.md`](compiler/s062-r33-an-alignment-override-on-cstruct-value-classes.md) |
 | §63 | R35 — a discovery check for one unresolved import | active | [`s063-r35-a-discovery-check-for-one-unresolved-import.md`](compiler/s063-r35-a-discovery-check-for-one-unresolved-import.md) |
@@ -138,7 +138,7 @@ Every section, with its status:
 | §94 | Host-driven async continuation queue | active | [`s094-host-driven-async-continuation-queue.md`](compiler/s094-host-driven-async-continuation-queue.md) |
 | §95 | Three unearned divergences from TypeScript | active | [`s095-three-unearned-divergences-from-typescript.md`](compiler/s095-three-unearned-divergences-from-typescript.md) |
 | §96 | A surrogate escape denotes its code point | active | [`s096-a-surrogate-escape-denotes-its-code-point.md`](compiler/s096-a-surrogate-escape-denotes-its-code-point.md) |
-| §97 | A `using` binding can be null | active | [`s097-a-using-binding-can-be-null.md`](compiler/s097-a-using-binding-can-be-null.md) |
+| §97 | A `using` binding can be null | active; rule 9 retired by §115 | [`s097-a-using-binding-can-be-null.md`](compiler/s097-a-using-binding-can-be-null.md) |
 | §98 | One shift-count rule, whatever the spelling | active | [`s098-one-shift-count-rule-whatever-the-spelling.md`](compiler/s098-one-shift-count-rule-whatever-the-spelling.md) |
 | §99 | A long string constant is static C byte data | active | [`s099-a-long-string-constant-is-static-c-byte-data.md`](compiler/s099-a-long-string-constant-is-static-c-byte-data.md) |
 | §100 | The Windows host runs the standing gate | active | [`s100-the-windows-host-runs-the-standing-gate.md`](compiler/s100-the-windows-host-runs-the-standing-gate.md) |
@@ -156,3 +156,4 @@ Every section, with its status:
 | §112 | Position id 0 is "no script site" | active; rule 4 and 112.2 amended by §113 | [`s112-position-id-0-is-no-script-site.md`](compiler/s112-position-id-0-is-no-script-site.md) |
 | §113 | The sandbox profile is removed | active; §114 deletes 113.2 rules 1 and 9, and amends rules 2 and 3 | [`s113-the-sandbox-profile-is-removed.md`](compiler/s113-the-sandbox-profile-is-removed.md) |
 | §114 | The compile thread is removed | active | [`s114-the-compile-thread-is-removed.md`](compiler/s114-the-compile-thread-is-removed.md) |
+| §115 | Recoverable exceptions, and `JSON.parse` returns `T` | active; revises C6, C8, C11, stdlib §13.4, §20.3 | [`s115-recoverable-exceptions-and-a-direct-json-parse.md`](compiler/s115-recoverable-exceptions-and-a-direct-json-parse.md) |

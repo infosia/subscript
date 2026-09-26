@@ -69,6 +69,9 @@ A boolean cannot express these; each was found in the P19 work.
 
 ### 20.3 Sites in scope
 
+*(2026-09-26: the `JsonResult.value` site retires with `JsonResult`,
+§115.7 rule 8.)*
+
 The non-call sites P19 left in two places: integer div/rem, index read,
 index write, `JsonResult.value`, narrowing `as` (null and class
 mismatch), the `Context.free` lifetime checks, stale-coroutine,

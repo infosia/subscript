@@ -266,7 +266,7 @@ implementer's choice; the committed `.expected` freezes it.
 | `e02-value-and-reference` | `@CStruct class` beside a plain `class`; copy on assign and on pass | C2 value types; C1 nominal identity — structurally identical is not interchangeable |
 | `e03-memory` | Context allocation, `Context.free`, explicit `Context.collect()` | invariant 2 — nothing collects unbidden; a program that never collects is correct, merely larger |
 | `e04-null` | `T \| null`, narrowing by `!== null` | C7 — no `undefined`, no general unions |
-| `e05-no-exceptions` | result-shaped returns; `JsonResult` for parsing; what a trap is | C6 — no `throw`, no `try` |
+| `e05-errors` | `throw`/`try`/`catch` of the `Error` family; `JSON.parse` failures; a result-shaped return; what a trap is | C6 — only `Error`-family values are thrown, `finally` is rejected, and a trap is not catchable *(renamed from `e05-no-exceptions` 2026-09-26, `compiler.md` §115)* |
 | `e06-arrays-and-closures` | fixed vs growable arrays, bounds checks, `map`/`filter`/`reduce` | C5 — non-escaping capture only |
 | `e07-determinism` | seeded `Math.random`, UTC-only `Date`, deterministic number formatting | Q20/Q26 — locale- and clock-dependent APIs are rejected, not silently approximated |
 | `e08-coroutines` | `function*` stepped once per frame | C8 — coroutines, not `async` |
