@@ -73,9 +73,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             l::ForOfKind::ArrayValues
             | l::ForOfKind::ArrayKeys
             | l::ForOfKind::ArrayValuesReverse
-            | l::ForOfKind::ArrayKeysReverse => self
-                .call_runtime(self.ml.rt.array_len, &[self.ctx, subject], false)?
-                .ok_or_else(|| internal("array iterator bound has no result"))?,
+            | l::ForOfKind::ArrayKeysReverse => {
+                self.builder
+                    .ins()
+                    .load(types::I64, flags(), subject, ARRAY_LEN_OFFSET)
+            }
             l::ForOfKind::FixedArrayValues => {
                 self.builder.ins().load(types::I64, flags(), cursor, 16)
             }
@@ -343,5 +345,92 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         };
         self.builder.ins().store(flags(), next, next_cursor, 8);
         Ok(RV::Aggregate(next_cursor))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cranelift_jit::{JITBuilder, JITModule};
+    use cranelift_module::{default_libcall_names, FuncOrDataId, Module};
+    use subscript_compiler::{check_program, lir as l, SourceFile};
+
+    use crate::lower::func::take_defined_function_texts;
+    use crate::lower::{dev_flags, lower_lir_module_with, LowerOptions};
+
+    #[test]
+    fn array_iterator_bounds_read_the_header_and_string_bounds_call_runtime() {
+        // Lower two small modules; no native execution or external compiler is required.
+        for (source, kinds, runtime_name, expected_call) in [
+            (
+                r#"
+export function main(): void {}
+export function probe(values: i32[]): i32 {
+  let total: i32 = 0;
+  for (const value of values) { total += value; }
+  for (const key of values.keys()) { total += key; }
+  return values.reduceRight(
+    (acc: i32, value: i32, index: i32): i32 => acc + value + index, total);
+}
+"#,
+                vec![
+                    l::ForOfKind::ArrayValues,
+                    l::ForOfKind::ArrayKeys,
+                    l::ForOfKind::ArrayValuesReverse,
+                    l::ForOfKind::ArrayKeysReverse,
+                ],
+                "subscript_rt_array_len",
+                false,
+            ),
+            (
+                r#"
+export function main(): void {}
+export function probe(value: string): i32 {
+  let count: i32 = 0;
+  for (const point of value) { count += 1; }
+  return count;
+}
+"#,
+                vec![l::ForOfKind::StringCodePoints],
+                "subscript_rt_str_len",
+                true,
+            ),
+        ] {
+            let hir = check_program(&[SourceFile::new("iterator-bound.ts", source)])
+                .expect("iterator probe checks");
+            let lir = crate::lir::lower_module(&hir).expect("iterator probe LIR");
+            for kind in kinds {
+                assert!(lir.functions.iter().any(|function| {
+                    function.blocks.iter().flat_map(|block| &block.instructions).any(
+                        |instruction| matches!(instruction.kind,
+                            l::InstructionKind::IteratorCreate { kind: actual, .. } if actual == kind),
+                    )
+                }), "missing iterator {kind:?}");
+            }
+            let isa = cranelift_native::builder()
+                .expect("host ISA")
+                .finish(dev_flags().expect("dev flags"))
+                .expect("ISA flags");
+            let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
+            let _ = take_defined_function_texts();
+            lower_lir_module_with(&mut module, &lir, LowerOptions::default())
+                .expect("iterator probe JIT lowering");
+            let functions = take_defined_function_texts();
+            let Some(FuncOrDataId::Func(id)) = module.declarations().get_name(runtime_name) else {
+                panic!("missing runtime declaration {runtime_name}");
+            };
+            let external = format!("u0:{} ", id.as_u32());
+            let has_call = functions.iter().any(|(_, text)| {
+                text.lines().any(|line| {
+                    let Some((reference, declaration)) = line.trim().split_once(" = ") else {
+                        return false;
+                    };
+                    declaration.starts_with(&external)
+                        && text.contains(&format!("call {reference}("))
+                })
+            });
+            // SAFETY: no finalized function address escapes this test.
+            unsafe { module.free_memory() };
+            assert_eq!(has_call, expected_call, "{runtime_name}: {functions:#?}");
+        }
     }
 }

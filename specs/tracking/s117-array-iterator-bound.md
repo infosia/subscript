@@ -42,3 +42,18 @@ Checksum `-662567840` in every run. The benchmark path
 with freed-handle diagnostics off. Per element, the dev-JIT loop calls
 `subscript_rt_array_len` for the bound and `subscript_rt_array_data`
 for the value; 55 million element visits.
+
+## Landing
+
+The dev JIT loads the header `len` (`u64`, `ARRAY_LEN_OFFSET`, the same
+read as its indexed access) for the four array iterator kinds. A test in
+`codegen/src/lower/func/iterator.rs` lowers the four kinds with no call
+to `subscript_rt_array_len`; its firing control is the string iterator,
+which calls `subscript_rt_str_len`. It failed before the change.
+
+`cross-language --only callbacks`, two runs: `subscript-jit` 249.643 and
+249.626 ms, `subscript-ship` 37.165 and 37.103 ms. The dev JIT is 11%
+faster than the pre-regression 281 ms, because the bound also lost the
+call that `0bd3a19` made.
+
+`gate full b5c0a2b dirty:1 debug 1658/0/2 release 1655/0/2 skips 2/0 clippy 7/18/13 goldens-moved 0 exit 0`.
