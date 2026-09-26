@@ -304,10 +304,11 @@ This is one benchmark set on one machine; treat the ratios as indicative,
 not a leaderboard. The table above is the arm64 / macOS snapshot (the
 shipping target), captured 2026-09-26. The shipping tier's `tree` median
 has two modes on one binary (about 1.55× and 2.01× of C in consecutive
-runs); this snapshot caught the upper one. An older x86_64 / Windows snapshot
-(2026-07-24) — four subjects, since LuaJIT and JSC are not built there — is
-in
+runs); this snapshot caught the upper one. An x86_64 / Windows snapshot
+(2026-09-26, at 0a066c9) is in
 [`benchmarks/README.windows-x86_64.md`](benchmarks/README.windows-x86_64.md).
+It has four subjects, because LuaJIT and JSC are not built there. The runner
+withheld two `subscript-jit` cells (`fib-recursive`, `collect`) as noise.
 
 ## How it works
 

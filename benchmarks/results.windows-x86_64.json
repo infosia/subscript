@@ -1,6 +1,6 @@
 {
-  "generated": "2026-07-24",
-  "procedure": "20 warm-up runs discarded, 21 timed runs, median reported",
+  "generated": "2026-09-26",
+  "procedure": "3 minimum warm-up iterations and 200 ms measured warm-up execution, 11 timed runs, median reported",
   "machine": {
     "arch": "x86_64",
     "os": "windows",
@@ -10,7 +10,7 @@
   },
   "versions": {
     "C": "clang version 22.1.6 (https://github.com/llvm/llvm-project fc4aad7b5db3fff421df9a9637605b9ca5667881)",
-    "subscript": "subscript @ 3dc3695 (dev-JIT: Cranelift; ship: HIR->C->clang)",
+    "subscript": "subscript @ 0a066c9 (dev-JIT: Cranelift; ship: HIR->C->clang)",
     "LuaJIT": "absent",
     "JSC": "absent",
     "V8 (Node.js)": "Node.js v24.16.0"
@@ -23,12 +23,52 @@
       "checksum": 1346269,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.002363000,
-        "subscript-ship": 0.002442500,
-        "subscript-jit": 0.003648200,
+        "C": 0.002303400,
+        "subscript-ship": 0.002619400,
+        "subscript-jit": null,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.006800100
+        "V8 (Node.js)": 0.006575800
+      },
+      "warmups_s": {
+        "C": 0.201191600,
+        "subscript-ship": 0.201330400,
+        "subscript-jit": 0.201512300,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.205001000
+      },
+      "warmup_iterations": {
+        "C": 85,
+        "subscript-ship": 71,
+        "subscript-jit": 51,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 30
+      },
+      "samples_s": {
+        "C": [0.002295000, 0.002414200, 0.002381400, 0.002290400, 0.002293800, 0.002295500, 0.002308900, 0.002425000, 0.002385500, 0.002303400, 0.002291700],
+        "subscript-ship": [0.002595700, 0.002700800, 0.002721500, 0.002768400, 0.002656200, 0.002619400, 0.002548300, 0.002679700, 0.002571900, 0.002617300, 0.002578500],
+        "subscript-jit": [0.003822800, 0.003920900, 0.003848300, 0.005013400, 0.005359900, 0.003815900, 0.003819800, 0.004098200, 0.003969100, 0.003844900, 0.003828100],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.006903400, 0.006506100, 0.007609800, 0.006603300, 0.006575800, 0.006606600, 0.006661700, 0.006261700, 0.006182100, 0.006530100, 0.006329800]
+      },
+      "ranges_s": {
+        "C": [0.002290400, 0.002425000],
+        "subscript-ship": [0.002548300, 0.002768400],
+        "subscript-jit": [0.003815900, 0.005359900],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.006182100, 0.007609800]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": "lua runtime is not installed",
+        "JSC": "js runtime is not installed",
+        "V8 (Node.js)": null
       }
     },
     {
@@ -37,12 +77,52 @@
       "checksum": 973132000,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.021757700,
-        "subscript-ship": 0.021865500,
-        "subscript-jit": 0.050347400,
+        "C": 0.021871200,
+        "subscript-ship": 0.021721200,
+        "subscript-jit": 0.052026500,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.036866600
+        "V8 (Node.js)": 0.036662100
+      },
+      "warmups_s": {
+        "C": 0.200110800,
+        "subscript-ship": 0.215253800,
+        "subscript-jit": 0.201517300,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.222277400
+      },
+      "warmup_iterations": {
+        "C": 9,
+        "subscript-ship": 10,
+        "subscript-jit": 4,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 6
+      },
+      "samples_s": {
+        "C": [0.021887200, 0.022769000, 0.021751800, 0.020750700, 0.022743500, 0.022187200, 0.021871200, 0.020766200, 0.021919900, 0.021147600, 0.020726900],
+        "subscript-ship": [0.021778400, 0.021772000, 0.024343300, 0.020932100, 0.021192600, 0.020867700, 0.021766000, 0.020813300, 0.020766500, 0.021721200, 0.022763900],
+        "subscript-jit": [0.054600300, 0.050494100, 0.051429200, 0.052816000, 0.052026500, 0.053852600, 0.049977100, 0.049934600, 0.051973700, 0.052362300, 0.052437500],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.035984300, 0.036792400, 0.034645100, 0.037964700, 0.034653400, 0.035612400, 0.037378200, 0.037992200, 0.036662100, 0.035812200, 0.038935800]
+      },
+      "ranges_s": {
+        "C": [0.020726900, 0.022769000],
+        "subscript-ship": [0.020766500, 0.024343300],
+        "subscript-jit": [0.049934600, 0.054600300],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.034645100, 0.038935800]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": "lua runtime is not installed",
+        "JSC": "js runtime is not installed",
+        "V8 (Node.js)": null
       }
     },
     {
@@ -51,12 +131,52 @@
       "checksum": 43027996,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.079207800,
-        "subscript-ship": 0.079819100,
-        "subscript-jit": 0.080191100,
+        "C": 0.078569500,
+        "subscript-ship": 0.075881600,
+        "subscript-jit": 0.074348500,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.078566000
+        "V8 (Node.js)": 0.074099500
+      },
+      "warmups_s": {
+        "C": 0.234391000,
+        "subscript-ship": 0.229843800,
+        "subscript-jit": 0.223433500,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.219283700
+      },
+      "warmup_iterations": {
+        "C": 3,
+        "subscript-ship": 3,
+        "subscript-jit": 3,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 3
+      },
+      "samples_s": {
+        "C": [0.080247700, 0.079394000, 0.078569500, 0.079448100, 0.078030400, 0.079037700, 0.079362400, 0.076851300, 0.076861300, 0.076593300, 0.074790500],
+        "subscript-ship": [0.075887400, 0.074571700, 0.075648500, 0.075881600, 0.074454700, 0.074533000, 0.073552800, 0.079547500, 0.076307500, 0.076179400, 0.078273300],
+        "subscript-jit": [0.073332100, 0.073222300, 0.073734200, 0.075621200, 0.073097300, 0.073426400, 0.078215100, 0.078924500, 0.075019500, 0.074348500, 0.075125200],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.071841800, 0.071821500, 0.072584900, 0.075015600, 0.071915900, 0.074099500, 0.077271900, 0.074429300, 0.074507900, 0.074263900, 0.073277900]
+      },
+      "ranges_s": {
+        "C": [0.074790500, 0.080247700],
+        "subscript-ship": [0.073552800, 0.079547500],
+        "subscript-jit": [0.073097300, 0.078924500],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.071821500, 0.077271900]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": "lua runtime is not installed",
+        "JSC": "js runtime is not installed",
+        "V8 (Node.js)": null
       }
     },
     {
@@ -65,12 +185,52 @@
       "checksum": 41538,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.034292900,
-        "subscript-ship": 0.033786300,
-        "subscript-jit": 0.033418800,
+        "C": 0.031384200,
+        "subscript-ship": 0.032973000,
+        "subscript-jit": 0.031898700,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.033410700
+        "V8 (Node.js)": 0.031334700
+      },
+      "warmups_s": {
+        "C": 0.229903100,
+        "subscript-ship": 0.227402800,
+        "subscript-jit": 0.227182100,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.233151700
+      },
+      "warmup_iterations": {
+        "C": 7,
+        "subscript-ship": 7,
+        "subscript-jit": 7,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 7
+      },
+      "samples_s": {
+        "C": [0.031433400, 0.031703500, 0.031295200, 0.032995900, 0.031239100, 0.031222300, 0.033330300, 0.031010700, 0.031384200, 0.031383400, 0.033150700],
+        "subscript-ship": [0.033327300, 0.035305400, 0.033147700, 0.032973000, 0.033229300, 0.032904400, 0.031600300, 0.031379400, 0.033961400, 0.031286900, 0.031572300],
+        "subscript-jit": [0.032307300, 0.031690400, 0.031703700, 0.033657000, 0.032484700, 0.032041600, 0.031422000, 0.032052800, 0.031591100, 0.031619800, 0.031898700],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.032424000, 0.031119000, 0.031205300, 0.033321300, 0.031306300, 0.032535200, 0.031524500, 0.031334700, 0.033288200, 0.031016700, 0.030649100]
+      },
+      "ranges_s": {
+        "C": [0.031010700, 0.033330300],
+        "subscript-ship": [0.031286900, 0.035305400],
+        "subscript-jit": [0.031422000, 0.033657000],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.030649100, 0.033321300]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": "lua runtime is not installed",
+        "JSC": "js runtime is not installed",
+        "V8 (Node.js)": null
       }
     },
     {
@@ -79,12 +239,52 @@
       "checksum": 3672124540,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.014434400,
-        "subscript-ship": 0.026551100,
-        "subscript-jit": 0.049965700,
+        "C": 0.013607900,
+        "subscript-ship": 0.022963500,
+        "subscript-jit": 0.028245200,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.024814200
+        "V8 (Node.js)": 0.024281100
+      },
+      "warmups_s": {
+        "C": 0.212939500,
+        "subscript-ship": 0.221044000,
+        "subscript-jit": 0.205164300,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.223624400
+      },
+      "warmup_iterations": {
+        "C": 15,
+        "subscript-ship": 10,
+        "subscript-jit": 7,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 9
+      },
+      "samples_s": {
+        "C": [0.013488000, 0.013607900, 0.014841800, 0.013366900, 0.014928800, 0.013455300, 0.013716300, 0.013318300, 0.014328000, 0.014474700, 0.013327100],
+        "subscript-ship": [0.023394000, 0.022963500, 0.022041800, 0.023100300, 0.023657100, 0.021614700, 0.021497500, 0.023116600, 0.021475500, 0.023255400, 0.021863200],
+        "subscript-jit": [0.027718400, 0.027876800, 0.028388200, 0.027956000, 0.029150400, 0.027700100, 0.027920400, 0.030126200, 0.028875000, 0.029901200, 0.028245200],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.025301300, 0.024281100, 0.023372700, 0.024230100, 0.026385300, 0.024251100, 0.025256800, 0.024248600, 0.023886000, 0.024376300, 0.025921200]
+      },
+      "ranges_s": {
+        "C": [0.013318300, 0.014928800],
+        "subscript-ship": [0.021475500, 0.023657100],
+        "subscript-jit": [0.027700100, 0.030126200],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.023372700, 0.026385300]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": "lua runtime is not installed",
+        "JSC": "js runtime is not installed",
+        "V8 (Node.js)": null
       }
     },
     {
@@ -93,12 +293,52 @@
       "checksum": 3932130,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.117662300,
-        "subscript-ship": 0.095081100,
-        "subscript-jit": 1.470042500,
+        "C": 0.148768100,
+        "subscript-ship": 0.100166900,
+        "subscript-jit": 0.591520900,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.070510100
+        "V8 (Node.js)": 0.043047100
+      },
+      "warmups_s": {
+        "C": 0.472447800,
+        "subscript-ship": 0.306606200,
+        "subscript-jit": 1.880946900,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.203668000
+      },
+      "warmup_iterations": {
+        "C": 3,
+        "subscript-ship": 3,
+        "subscript-jit": 3,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 4
+      },
+      "samples_s": {
+        "C": [0.148417800, 0.148768100, 0.150708500, 0.151406900, 0.149588900, 0.177553500, 0.154765400, 0.144282700, 0.143583800, 0.140608500, 0.127697500],
+        "subscript-ship": [0.102599400, 0.101145000, 0.102779400, 0.100091300, 0.109699800, 0.099315000, 0.098830800, 0.102079100, 0.099314100, 0.099817700, 0.100166900],
+        "subscript-jit": [0.605424200, 0.590982200, 0.617909200, 0.599060500, 0.614126600, 0.598876900, 0.591520900, 0.574422500, 0.564689400, 0.548073400, 0.563477300],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.041778400, 0.043158500, 0.043336900, 0.041955400, 0.046266500, 0.040145800, 0.043047100, 0.044029600, 0.046917000, 0.038985700, 0.042910900]
+      },
+      "ranges_s": {
+        "C": [0.127697500, 0.177553500],
+        "subscript-ship": [0.098830800, 0.109699800],
+        "subscript-jit": [0.548073400, 0.617909200],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.038985700, 0.046917000]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": "lua runtime is not installed",
+        "JSC": "js runtime is not installed",
+        "V8 (Node.js)": null
       }
     },
     {
@@ -107,12 +347,52 @@
       "checksum": 73712,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.022901700,
-        "subscript-ship": 0.022671000,
-        "subscript-jit": 0.038222800,
+        "C": 0.021302000,
+        "subscript-ship": 0.023441900,
+        "subscript-jit": 0.034773800,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.030682800
+        "V8 (Node.js)": 0.029409000
+      },
+      "warmups_s": {
+        "C": 0.219038600,
+        "subscript-ship": 0.202104700,
+        "subscript-jit": 0.210789900,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.216372800
+      },
+      "warmup_iterations": {
+        "C": 10,
+        "subscript-ship": 8,
+        "subscript-jit": 6,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 7
+      },
+      "samples_s": {
+        "C": [0.022219900, 0.022264200, 0.021097000, 0.021299300, 0.021146200, 0.021136700, 0.021315800, 0.021277800, 0.021529400, 0.021759200, 0.021302000],
+        "subscript-ship": [0.023441900, 0.022958500, 0.026453900, 0.023342700, 0.023000800, 0.022857800, 0.025340200, 0.023716300, 0.023854500, 0.023326100, 0.023658100],
+        "subscript-jit": [0.034403400, 0.034779400, 0.034329200, 0.034383000, 0.036692100, 0.034773800, 0.034168100, 0.034353800, 0.036199700, 0.035829900, 0.038443000],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.032187500, 0.030180900, 0.029896300, 0.029282100, 0.029248300, 0.029409000, 0.029320000, 0.030259700, 0.030119100, 0.028860000, 0.028590600]
+      },
+      "ranges_s": {
+        "C": [0.021097000, 0.022264200],
+        "subscript-ship": [0.022857800, 0.026453900],
+        "subscript-jit": [0.034168100, 0.038443000],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.028590600, 0.032187500]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": "lua runtime is not installed",
+        "JSC": "js runtime is not installed",
+        "V8 (Node.js)": null
       }
     },
     {
@@ -121,12 +401,160 @@
       "checksum": 1712845248,
       "checksum_match": true,
       "medians_s": {
-        "C": 0.039806400,
-        "subscript-ship": 0.093980000,
-        "subscript-jit": 0.321079000,
+        "C": 0.035979300,
+        "subscript-ship": 0.077274500,
+        "subscript-jit": 0.249351600,
         "LuaJIT": null,
         "JSC": null,
-        "V8 (Node.js)": 0.112950800
+        "V8 (Node.js)": 0.105945700
+      },
+      "warmups_s": {
+        "C": 0.227205500,
+        "subscript-ship": 0.239969200,
+        "subscript-jit": 0.762801400,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.321113200
+      },
+      "warmup_iterations": {
+        "C": 6,
+        "subscript-ship": 3,
+        "subscript-jit": 3,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 3
+      },
+      "samples_s": {
+        "C": [0.035483400, 0.036435500, 0.037664600, 0.035597600, 0.036318400, 0.036671600, 0.035818700, 0.035227000, 0.035598200, 0.035979300, 0.037733200],
+        "subscript-ship": [0.084112400, 0.076114900, 0.074891000, 0.077698800, 0.075960100, 0.077803000, 0.076227700, 0.074154300, 0.077417100, 0.077274500, 0.077377500],
+        "subscript-jit": [0.250167400, 0.248599200, 0.253129200, 0.249078800, 0.253737300, 0.251098400, 0.249351600, 0.249959000, 0.245700400, 0.247918500, 0.244989000],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.105945700, 0.108591700, 0.107073200, 0.106401400, 0.100514600, 0.106144800, 0.102712700, 0.103322600, 0.114578300, 0.103377600, 0.098904200]
+      },
+      "ranges_s": {
+        "C": [0.035227000, 0.037733200],
+        "subscript-ship": [0.074154300, 0.084112400],
+        "subscript-jit": [0.244989000, 0.253737300],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.098904200, 0.114578300]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": "lua runtime is not installed",
+        "JSC": "js runtime is not installed",
+        "V8 (Node.js)": null
+      }
+    },
+    {
+      "id": "callbacks",
+      "params": "i32[1000000] from LCG state=state*1664525+1013904223 (seed 0x12345678), K=20 rounds; map(value,index)=(value+index) i32; filter(value,index)=((value^index)&3)!=0 (removes exactly 250000 elements per round); reduce(acc,value,index)=(acc+value+index) i32 from 0; checksum=checksum+round_result (i32 wrap)",
+      "checksum": -662567840,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.013343600,
+        "subscript-ship": 0.048070000,
+        "subscript-jit": 0.364732800,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.410528700
+      },
+      "warmups_s": {
+        "C": 0.202905600,
+        "subscript-ship": 0.240630500,
+        "subscript-jit": 1.120180500,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 1.310315500
+      },
+      "warmup_iterations": {
+        "C": 15,
+        "subscript-ship": 5,
+        "subscript-jit": 3,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 3
+      },
+      "samples_s": {
+        "C": [0.013506200, 0.013343600, 0.015676900, 0.013307700, 0.013020500, 0.013070100, 0.013472600, 0.013663900, 0.013511800, 0.013134300, 0.012918100],
+        "subscript-ship": [0.048410700, 0.043582000, 0.046838800, 0.044642300, 0.050325200, 0.044221700, 0.047072600, 0.048070000, 0.057544900, 0.055885400, 0.056520100],
+        "subscript-jit": [0.365814800, 0.371494300, 0.369104900, 0.362452400, 0.362176600, 0.365639800, 0.362653800, 0.364732800, 0.360971600, 0.362629500, 0.365595300],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.403014500, 0.417464400, 0.391621100, 0.411015800, 0.401848000, 0.404405500, 0.416902800, 0.413285500, 0.409278900, 0.412907500, 0.410528700]
+      },
+      "ranges_s": {
+        "C": [0.012918100, 0.015676900],
+        "subscript-ship": [0.043582000, 0.057544900],
+        "subscript-jit": [0.360971600, 0.371494300],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.391621100, 0.417464400]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": "lua runtime is not installed",
+        "JSC": "js runtime is not installed",
+        "V8 (Node.js)": null
+      }
+    },
+    {
+      "id": "collect",
+      "params": "N=20000 nodes x K=6 rounds from LCG state=state*1664525+1013904223 (seed 0x12345678); each 48-byte node owns unique strings of lengths 9/41/105/233 bytes (subscript requests 17/49/113/241 bytes, one byte past size-class payload capacities 16/48/112/240); keep exactly the nodes with (state&3)!=0 (15000 survivors/round), drop the rest, force collection (C: explicitly free), then traverse the surviving reverse-built chain; checksum per survivor in traversal order is checksum=(checksum*31+state+9+41+105+233) with i32 wrap; final checksum=1332546592",
+      "checksum": 1332546592,
+      "checksum_match": true,
+      "medians_s": {
+        "C": 0.036811700,
+        "subscript-ship": 0.052329000,
+        "subscript-jit": null,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.102178900
+      },
+      "warmups_s": {
+        "C": 0.234679400,
+        "subscript-ship": 0.249805900,
+        "subscript-jit": 0.374222900,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 0.344019400
+      },
+      "warmup_iterations": {
+        "C": 6,
+        "subscript-ship": 5,
+        "subscript-jit": 3,
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": 3
+      },
+      "samples_s": {
+        "C": [0.036456300, 0.036811700, 0.035533100, 0.036260400, 0.036315100, 0.040375800, 0.036320500, 0.042590900, 0.039953600, 0.036835300, 0.040351600],
+        "subscript-ship": [0.048352600, 0.050553500, 0.054261100, 0.062126200, 0.058571600, 0.058959500, 0.057370800, 0.051052100, 0.050990600, 0.052329000, 0.050096700],
+        "subscript-jit": [0.120778500, 0.159433600, 0.158921500, 0.129284000, 0.121185000, 0.128374700, 0.129350600, 0.124023900, 0.139322000, 0.128906800, 0.121800800],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.103612200, 0.096228800, 0.102231600, 0.100574400, 0.097487000, 0.102178900, 0.108848700, 0.100727400, 0.102767300, 0.096489800, 0.104531600]
+      },
+      "ranges_s": {
+        "C": [0.035533100, 0.042590900],
+        "subscript-ship": [0.048352600, 0.062126200],
+        "subscript-jit": [0.120778500, 0.159433600],
+        "LuaJIT": null,
+        "JSC": null,
+        "V8 (Node.js)": [0.096228800, 0.108848700]
+      },
+      "unavailable_reasons": {
+        "C": null,
+        "subscript-ship": null,
+        "subscript-jit": null,
+        "LuaJIT": "lua runtime is not installed",
+        "JSC": "JavaScriptCore is not installed",
+        "V8 (Node.js)": null
       }
     }
   ]
