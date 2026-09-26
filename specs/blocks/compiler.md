@@ -24,7 +24,7 @@ The stages of the current form and the sections that hold their rules:
 |---|---|
 | parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
-| dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70 |
+| dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
 | reference interpreter | §68.7 |
 | runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84 |
@@ -158,3 +158,4 @@ Every section, with its status:
 | §114 | The compile thread is removed | active | [`s114-the-compile-thread-is-removed.md`](compiler/s114-the-compile-thread-is-removed.md) |
 | §115 | Recoverable exceptions, and `JSON.parse` returns `T` | active; rule 3.3 and item 4.2 replaced by §116; revises C6, C8, C11, stdlib §13.4, §20.3 | [`s115-recoverable-exceptions-and-a-direct-json-parse.md`](compiler/s115-recoverable-exceptions-and-a-direct-json-parse.md) |
 | §116 | An `await` delivers the exception of its handle | active; amends §115, §70, C6, C8 | [`s116-an-await-delivers-the-exception-of-its-handle.md`](compiler/s116-an-await-delivers-the-exception-of-its-handle.md) |
+| §117 | An array iterator reads its bound from the header | active | [`s117-an-array-iterator-reads-its-bound-from-the-header.md`](compiler/s117-an-array-iterator-reads-its-bound-from-the-header.md) |
