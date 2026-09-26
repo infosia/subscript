@@ -40,11 +40,11 @@ control step in an embedded system — who want:
 - **Fast iteration** — a hot-reload development tier (edit a function
   body, see it swap at the next loop boundary) without giving up native
   performance when shipping. A changed function body reaches a running
-  program in **0.30 ms**, and a changed whole program in **3.3 ms**; the
-  shipping tier needs **118 ms** to check, emit C, compile, and link the
+  program in **0.33 ms**, and a changed whole program in **3.6 ms**; the
+  shipping tier needs **114 ms** to check, emit C, compile, and link the
   same program.
 - **Native ship performance** — the shipping tier compiles to a native
-  binary. On the project's matrix-propagation gate it runs at **1.35× of
+  binary. On the project's matrix-propagation gate it runs at **1.33× of
   an equivalent hand-written C program** (`clang -O2`, same machine, same
   session); on compute-bound benchmark workloads it reaches **1.00×**. The
   shipping tier emits C and hands it to the platform C compiler
@@ -236,51 +236,51 @@ machine/runtime versions is in [`benchmarks/`](benchmarks/README.md).
 
 | Workload | C | subscript&#8209;ship | subscript&#8209;jit | LuaJIT | JSC | V8 |
 |---|---|---|---|---|---|---|
-| mandelbrot | 1.00× | **0.98×** | 1.02× | 2.80× | 0.98× | 1.01× |
-| fib-recursive | 1.00× | **0.97×** | 2.16× | 1.77× | 1.44× | 2.48× |
-| primes | 1.00× | **1.02×** | 1.44× | 2.10× | 0.92× | 1.76× |
-| fib-loop | 1.00× | **1.01×** | 2.44× | 1.44× | 1.06× | 1.55× |
-| queen | 1.00× | 1.12× | 1.51× | 1.51× | 1.23× | 1.77× |
-| sort | 1.00× | 1.12× | 2.15× | 2.17× | 1.44× | 1.74× |
-| tree | 1.00× | 1.55× | 6.27× | 2.26× | 0.33× | 0.46× |
-| particles | 1.00× | 2.18× | 12.02× | 3.95× | 1.90× | 3.68× |
-| collect | 1.00× | **0.99×** | 3.21× | 3.71× | 1.01× | 2.59× |
-| callbacks | 1.00× | 2.88× | 21.21× | 8.95× | 4.89× | 29.88× |
+| mandelbrot | 1.00× | **1.00×** | 1.04× | 2.76× | 1.00× | 1.00× |
+| fib-recursive | 1.00× | **1.02×** | 2.19× | 1.96× | 1.49× | 2.66× |
+| primes | 1.00× | **0.97×** | 1.46× | 2.12× | 0.93× | 1.73× |
+| fib-loop | 1.00× | **1.02×** | 2.40× | 1.46× | 1.08× | 1.56× |
+| queen | 1.00× | 1.10× | 1.53× | 1.37× | 1.24× | 1.78× |
+| sort | 1.00× | 1.15× | 2.17× | 2.26× | 1.44× | 1.84× |
+| tree | 1.00× | 2.01× | 6.31× | 2.26× | 0.33× | 0.48× |
+| particles | 1.00× | 1.92× | 12.02× | 3.84× | 1.90× | 3.59× |
+| collect | 1.00× | 1.11× | 3.62× | 3.67× | 0.96× | 2.62× |
+| callbacks | 1.00× | 2.83× | 35.17× | 9.72× | 5.22× | 30.32× |
 
-For what the language looks like at these speeds — ten commented programs,
+For what the language looks like at these speeds — twelve commented programs,
 a C host facade, and a C host that owns the loop — see
 [`examples/`](examples/README.md).
 
 What the numbers show:
 
 - **On compute-bound work the shipping tier is C** — mandelbrot
-  0.98×, fib-recursive 0.97×, primes 1.02×, fib-loop
-  1.01×, queen 1.12×. The shipping tier *is* the emitted C compiled
+  1.00×, fib-recursive 1.02×, primes 0.97×, fib-loop
+  1.02×, queen 1.10×. The shipping tier *is* the emitted C compiled
   by the same `clang -O2`, and pure-numeric code has almost no array
   traffic to check.
 - **The cost is checked memory traffic and value copies** — `sort`
-  (bounds-checked growable arrays) at 1.12×, `tree` (per-node allocate and
-  free through the Context's size-class arena) at 1.55×, `particles`
-  (value-struct arrays) at 2.18×. These are the language's real costs — an
+  (bounds-checked growable arrays) at 1.15×, `tree` (per-node allocate and
+  free through the Context's size-class arena) at 2.01×, `particles`
+  (value-struct arrays) at 1.92×. These are the language's real costs — an
   emitted bounds check per element, value-copy semantics, a 16-byte
   allocation header — not a measurement artifact.
-- **`callbacks` (2.88×) is the widest gap**, and it is the idiom's:
+- **`callbacks` (2.83×) is the widest gap**, and it is the idiom's:
   `map`/`filter`/`reduce` over a 1000000-element array 20 times allocates a
   fresh output array per stage, while the C baseline reuses three buffers
   it allocates once. A callback that names a function compiles to a plain
   loop with a direct call; the allocation is what remains. Every runtime
-  pays for the idiom (JSC 4.89×, LuaJIT 8.95×, V8 29.88×).
-- **`collect` lands on C.** It allocates 20000 string-owning nodes per
+  pays for the idiom (JSC 5.22×, LuaJIT 9.72×, V8 30.32×).
+- **`collect` is near C.** It allocates 20000 string-owning nodes per
   round, drops one quarter of them, and reclaims those through an
-  explicit collection: 0.99× of C on the shipping tier, level with JSC
-  (1.01×) and ahead of V8 (2.59×) and LuaJIT (3.71×).
+  explicit collection: 1.11× of C on the shipping tier, behind JSC
+  (0.96×) and ahead of V8 (2.62×) and LuaJIT (3.67×).
 - **Against the JITs**, the shipping tier is ahead of LuaJIT on every row,
-  level with JSC/V8 on the compute-bound rows and on `collect`, and
-  behind JSC on `particles` and `callbacks`. JSC/V8 lead on `tree`, where
-  garbage-collected bump allocation beats even C.
+  level with JSC on the compute-bound rows and on `particles`, ahead of
+  JSC and V8 on `callbacks`, and behind JSC on `collect`. JSC/V8 lead on
+  `tree`, where garbage-collected bump allocation beats even C.
 - **The development tier trades execution speed for iteration speed** —
   the Cranelift JIT is tuned for compile speed and hot reload, not peak
-  codegen, and runs 1.02×–21.21×. That is the trade the tier exists to
+  codegen, and runs 1.04×–35.17×. That is the trade the tier exists to
   make; the next section measures the side it is paid on.
 
 ### Iteration speed
@@ -290,19 +290,21 @@ matrix-propagation gate, median of 11 timed runs:
 
 | What changed | Development tier | Shipping tier |
 |---|---|---|
-| one function body (hot reload) | **0.295 ms** | — |
-| the whole program | **3.267 ms** | 117.7 ms (3.7 ms check and emit C, 114.0 ms `cc` compile and link) |
+| one function body (hot reload) | **0.325 ms** | — |
+| the whole program | **3.567 ms** | 114.2 ms (4.4 ms check and emit C, 109.8 ms `cc` compile and link) |
 
-The development tier reaches a running program **36× faster** than the
-shipping tier, and a hot reload of one function is **400× faster**. On the
-same gate the shipping tier executes at 1.35× of C and the development
-tier at 19.6×. All four figures are gated: `specs/blocks/compiler.md` §3
+The development tier reaches a running program **32× faster** than the
+shipping tier, and a hot reload of one function is **350× faster**. On the
+same gate the shipping tier executes at 1.33× of C and the development
+tier at 19.7×. All four figures are gated: `specs/blocks/compiler.md` §3
 requires the shipping tier within 1.5× of C, either kind of iteration
 within 20 ms, and development-tier execution below a 25× ceiling.
 
 This is one benchmark set on one machine; treat the ratios as indicative,
 not a leaderboard. The table above is the arm64 / macOS snapshot (the
-shipping target), captured 2026-08-29. An older x86_64 / Windows snapshot
+shipping target), captured 2026-09-26. The shipping tier's `tree` median
+has two modes on one binary (about 1.55× and 2.01× of C in consecutive
+runs); this snapshot caught the upper one. An older x86_64 / Windows snapshot
 (2026-07-24) — four subjects, since LuaJIT and JSC are not built there — is
 in
 [`benchmarks/README.windows-x86_64.md`](benchmarks/README.windows-x86_64.md).
