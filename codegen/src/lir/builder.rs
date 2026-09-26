@@ -35,6 +35,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             moved_async_owners: HashSet::new(),
             handlers: Vec::new(),
             usings: Vec::new(),
+            exit_return: None,
         };
         let entry = builder.new_block(Vec::new(), Some("entry".to_string()));
         builder.entry = entry;
@@ -90,7 +91,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             if self.blocks[block.0 as usize].terminator.is_none() {
                 if self.function.ret == Type::Void || self.function.is_generator {
                     let pos = self.function.pos.clone();
-                    self.release_scopes_from(0, &pos)?;
+                    self.exit_actions(0, 0, &pos)?;
                     self.blocks[block.0 as usize].terminator = Some(l::Terminator::Return {
                         value: None,
                         pos: self.function.pos.clone(),
@@ -337,7 +338,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let block = self.current.ok_or_else(|| {
             self.error(&pos, "attempted to emit an instruction after a terminator")
         })?;
-        self.resolve_raise_edges(&mut traps);
+        self.resolve_raise_edges(&mut traps)?;
         let result = result_type
             .as_ref()
             .map(|ty| self.new_value(ty.clone(), None));
@@ -427,7 +428,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         if let Some(value) = &value {
             self.acquire_owner(hir::AsyncCopySite::Return, value, &ty, pos)?;
         }
-        self.release_scopes_from(0, pos)?;
+        self.exit_return = value
+            .as_ref()
+            .filter(|_| is_async_owner_type(&ty))
+            .map(|value| (value.clone(), ty));
+        let actions = self.exit_actions(0, 0, pos);
+        self.exit_return = None;
+        actions?;
         self.terminate(
             l::Terminator::Return {
                 value,
@@ -515,7 +522,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
             _ => return Ok(()),
         };
-        self.emit(kind, vec![value], None, false, Vec::new(), pos.clone())?;
+        // compiler.md §116.1 rule 4: a release that frees a frame holding an
+        // unobserved exception traps, so the release checks the word.
+        let traps = vec![l::Trap {
+            kind: l::TrapKind::Call,
+            pos: pos.clone(),
+        }];
+        self.emit(kind, vec![value], None, false, traps, pos.clone())?;
         Ok(())
     }
 
@@ -560,7 +573,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         bindings.reverse();
         for binding in bindings {
             let entry = self.bindings[binding.0].clone();
-            if is_async_owner_type(&entry.ty) {
+            // compiler.md §116.1 rule 4c: capture parameters borrow their handles.
+            let capture = self.parameters.iter().any(|parameter| {
+                parameter.kind == l::ParameterKind::Capture
+                    && self
+                        .scopes
+                        .first()
+                        .is_some_and(|scope| scope.get(&parameter.source_name) == Some(&binding))
+            });
+            if is_async_owner_type(&entry.ty) && !capture {
                 let value = self.read_binding(binding, pos)?;
                 self.release_owner(value, &entry.ty, pos)?;
             }

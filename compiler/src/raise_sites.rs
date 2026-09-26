@@ -11,11 +11,17 @@
 //! holds the `throw` of each parse failure (`compiler.md` §115.7), so the
 //! rule makes it a raise site of its caller with no case of its own.
 //!
-//! An `async` function and a generator never raise to a caller. Their
-//! bodies are boundaries: an exception that leaves the body becomes the
-//! uncaught-exception trap there (§115.4 items 2 and 3). So an async call,
-//! a held-handle creation, an `await`, and a generator `next()` are not
-//! raise sites, and each keeps only the trap check it has.
+//! An exception that leaves an `async` body completes its handle, and an
+//! `await` of the handle raises it (§116.1 rules 1 and 2). So an `await`
+//! is a raise site of its function: the `await` of a held handle always,
+//! and the `await` of a direct call when its callee can raise. An async
+//! function can raise by the same rule as any other function. The call
+//! that creates the handle is not a raise site (§116.2 rule 4).
+//!
+//! A generator never raises to its consumer. Its body is a boundary: an
+//! exception that leaves it becomes the uncaught-exception trap there
+//! (§115.4 item 3, §116.1 rule 7). So a generator `next()` is not a raise
+//! site.
 //!
 //! A lambda body is a separate function. Its `throw` makes the lambda
 //! raise, not the function that creates the lambda: the lambda runs only
@@ -23,8 +29,8 @@
 //! sites of their own.
 
 use crate::hir::{
-    Callee, ClassDef, Expr, ExprKind, ExpressionOwner, ExpressionOwnerMut, Function, HirChild,
-    HirChildMut, Module, Stmt,
+    AsyncCallee, Callee, ClassDef, Expr, ExprKind, ExpressionOwner, ExpressionOwnerMut, Function,
+    HirChild, HirChildMut, Module, Stmt,
 };
 use crate::types::Type;
 
@@ -156,10 +162,10 @@ fn set_lambda_facts_in_statement(statement: &mut Stmt, facts: &mut impl Iterator
     }
 }
 
-/// Whether the body of `function` is an exception boundary: an `async`
-/// body or a generator body (`compiler.md` §115.4 items 2 and 3).
+/// Whether the body of `function` is an exception boundary: a generator
+/// body (`compiler.md` §115.4 item 3).
 fn is_boundary(function: &Function) -> bool {
-    function.is_async || function.is_generator
+    function.is_generator
 }
 
 #[derive(Clone, Copy)]
@@ -195,6 +201,8 @@ impl Module {
                 .classes
                 .get(class.0)
                 .is_some_and(|class| self.construction_can_raise(class)),
+            ExprKind::AsyncCall { callee, .. } => async_callee_can_raise(self, callee),
+            ExprKind::AsyncHandleAwait(_) => true,
             ExprKind::Lambda { .. } => return false,
             _ => false,
         };
@@ -288,10 +296,28 @@ impl Module {
     }
 }
 
+/// Whether the `await` of a direct call to `callee` is a raise site
+/// (`compiler.md` §116.1 rule 2): its target async function can raise.
+pub(crate) fn async_callee_can_raise(module: &Module, callee: &AsyncCallee) -> bool {
+    match callee {
+        AsyncCallee::Function(name) => module
+            .functions
+            .iter()
+            .find(|function| function.name == *name)
+            .is_some_and(|function| function.can_raise),
+        AsyncCallee::Method { class, name, .. } => module
+            .classes
+            .get(class.0)
+            .and_then(|class| class.methods.iter().find(|method| method.name == *name))
+            .is_some_and(|method| method.can_raise),
+    }
+}
+
 /// Whether a call to `callee` with `args` is a raise site
 /// (`compiler.md` §115.6 rule 3).
 ///
-/// A direct call or a method call raises when its target can raise. An
+/// A direct call or a method call raises when its target can raise. A call
+/// that creates an async handle never raises (§116.2 rule 4). An
 /// indirect call always raises. A built-in call raises when an argument
 /// is a script callback, because the callback's exception propagates to
 /// the caller of the built-in (§115.4). A foreign call never raises: a
@@ -303,10 +329,10 @@ pub(crate) fn call_can_raise(module: &Module, callee: &Callee, args: &[Expr]) ->
             .functions
             .iter()
             .find(|function| function.name == *name)
-            .is_some_and(|function| function.can_raise),
+            .is_some_and(|function| function.can_raise && !function.is_async),
         Callee::Method { recv, name } => module
             .method(&recv.ty, name)
-            .is_some_and(|method| method.can_raise),
+            .is_some_and(|method| method.can_raise && !method.is_async),
         Callee::Value(_) => true,
         Callee::Foreign(_) | Callee::Worker(_) | Callee::Json(_) => false,
         Callee::Ambient(_)
@@ -377,36 +403,69 @@ mod tests {
     }
 
     #[test]
-    fn an_async_function_and_a_generator_never_raise_to_a_caller() {
-        let module = module(
+    fn an_await_raises_and_a_generator_never_raises_to_its_consumer() {
+        let raising = module(
             "async function load(): Promise<i32> { throw new Error(\"x\"); }\n\
+             async function quiet(): Promise<i32> { return 1; }\n\
              function* numbers(): Generator<i32> { throw new Error(\"y\"); }\n\
-             function thrower(): void { throw new Error(\"z\"); }\n\
-             async function caller(): Promise<i32> { thrower(); return await load(); }\n\
+             async function direct(): Promise<i32> { return await load(); }\n\
+             async function directQuiet(): Promise<i32> { return await quiet(); }\n\
+             async function held(): Promise<i32> {\n\
+             \x20 const h: Promise<i32> = quiet();\n\
+             \x20 return await h;\n\
+             }\n\
+             async function creates(): Promise<i32> {\n\
+             \x20 const h: Promise<i32> = load();\n\
+             \x20 await Context.suspend();\n\
+             \x20 return 1 + await h;\n\
+             }\n\
              function consumer(): void { for (const n of numbers()) { print(`${n}`); } }\n\
              export async function main(): Promise<void> {\n\
-             \x20 const value: i32 = await caller();\n\
+             \x20 print(`${await direct()} ${await directQuiet()} ${await held()} ${await creates()}`);\n\
              \x20 consumer();\n\
-             \x20 print(`${value}`);\n\
              }\n",
         );
-        assert!(!function(&module, "load").can_raise);
-        assert!(!function(&module, "numbers").can_raise);
         assert!(
-            !function(&module, "caller").can_raise,
-            "an async body that calls a raising function is still a boundary"
+            function(&raising, "load").can_raise,
+            "compiler.md §116.1 rule 1: an async body that throws can raise"
         );
         assert!(
-            function(&module, "thrower").can_raise,
-            "the firing control: a plain function with the same body raises"
+            !function(&raising, "quiet").can_raise,
+            "the control: an async body with no raise site"
         );
-        assert!(!function(&module, "consumer").can_raise);
-        assert!(!function(&module, "main").can_raise);
-        let caller = function(&module, "caller");
         assert!(
-            module.statements_can_raise(&caller.body),
-            "the body itself can raise; the boundary converts it"
+            function(&raising, "direct").can_raise,
+            "the await of a direct call to a raising target is a raise site"
         );
+        assert!(
+            !function(&raising, "directQuiet").can_raise,
+            "the await of a direct call to a quiet target is not"
+        );
+        assert!(
+            function(&raising, "held").can_raise,
+            "the await of a held handle is a raise site"
+        );
+        assert!(function(&raising, "creates").can_raise);
+        assert!(!function(&raising, "numbers").can_raise);
+        assert!(
+            !function(&raising, "consumer").can_raise,
+            "a generator body stays a boundary"
+        );
+        assert!(function(&raising, "main").can_raise);
+        let quiet_creation = module(
+            "async function load(): Promise<i32> { throw new Error(\"x\"); }\n\
+             class Holder { job: Promise<i32>; constructor(job: Promise<i32>) { this.job = job; } }\n\
+             function keep(): Holder { return new Holder(load()); }\n\
+             export async function main(): Promise<void> {\n\
+             \x20 const holder: Holder = keep();\n\
+             \x20 print(`${await holder.job}`);\n\
+             }\n",
+        );
+        assert!(
+            !function(&quiet_creation, "keep").can_raise,
+            "compiler.md §116.2 rule 4: the call that creates a handle is not a raise site"
+        );
+        assert!(function(&quiet_creation, "main").can_raise);
     }
 
     #[test]

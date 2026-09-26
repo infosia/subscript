@@ -403,17 +403,6 @@ impl Checker<'_> {
         };
         let base = fx.narrowed.clone();
         let (body, body_terminates) = self.check_block(&t.block.stmts, fx);
-        if let Some((what, suspension)) = first_suspension(&body) {
-            self.error_diverging(
-                RuleCode::S010,
-                format!(
-                    "a `try` block that holds `{what}` is outside the decided exception \
-                     surface; move the `{what}` out of the `try` block"
-                ),
-                suspension,
-                Divergence::Exceptions,
-            );
-        }
         let mut assigned = HashSet::new();
         for statement in &t.block.stmts {
             super::stmt::assigned_roots_stmt(statement, &mut assigned);
@@ -580,29 +569,4 @@ impl Checker<'_> {
             pos,
         }
     }
-}
-
-/// The first `await` or `yield` in `statements`, outside a lambda body.
-fn first_suspension(statements: &[hir::Stmt]) -> Option<(&'static str, Pos)> {
-    fn in_statement(statement: &hir::Stmt) -> Option<(&'static str, Pos)> {
-        statement.children().into_iter().find_map(child)
-    }
-    fn in_expression(expression: &hir::Expr) -> Option<(&'static str, Pos)> {
-        match &expression.kind {
-            ExprKind::Lambda { .. } => return None,
-            ExprKind::Yield(_) => return Some(("yield", expression.pos.clone())),
-            ExprKind::AsyncSuspend | ExprKind::AsyncCall { .. } | ExprKind::AsyncHandleAwait(_) => {
-                return Some(("await", expression.pos.clone()));
-            }
-            _ => {}
-        }
-        expression.children().into_iter().find_map(child)
-    }
-    fn child(child: hir::HirChild<'_>) -> Option<(&'static str, Pos)> {
-        match child {
-            hir::HirChild::Expr(expression) => in_expression(expression),
-            hir::HirChild::Stmt(statement) => in_statement(statement),
-        }
-    }
-    statements.iter().find_map(in_statement)
 }

@@ -101,3 +101,48 @@ check). Quick gate:
 deep-chains 16.533 vs 16.532 ms (+0.00%). `fib-recursive` ship
 3.714 ms. The owner accepted `held-handles` at +8.4% on 2026-09-27
 (§116.6 criterion 3).
+
+## Phase Reviews
+
+Five fresh reviews ran on this section. Each MAJOR changed the contract
+first, then the code:
+
+- An `await` that waits on a held handle took no count; freeing the
+  last holder before the resume trapped 29 as unobserved, where `node`
+  printed `caught late`. Rule 4a.
+- An exception exit did not release the handles its scopes owned, so an
+  unobserved exception was never reported: exit 0 where `node` exits 1.
+  Rule 4b.
+- A lambda released a captured handle that it did not own, on every
+  exit; two calls freed a live frame (dev: `internal: async resume
+  without completion`; ship: signal 11). Rule 4c.
+- The cost fixes (rule 4a's last sentence, §116.2 rules 1 and 6):
+  no CRITICAL or MAJOR; three MINOR, recorded below.
+
+## Landing gate
+
+`gate full fc82c2c dirty:56 debug 1657/0/2 release 1654/0/2 skips 2/0 clippy 7/18/13 goldens-moved 2 exit 0`.
+The moved goldens are the LIR text snapshot and the rewritten `t63`.
+`r234` and `r235` retire.
+
+## Open items
+
+- **C5 escape (pre-existing, outside this section).** A capturing
+  lambda passed downward escapes when the callee stores its
+  function-typed parameter: the C5 check
+  (`compiler/src/check/mod.rs` `is_capturing_value`) never taints a
+  parameter. Measured with a lambda that returns a captured handle,
+  stored by a callee and called after the defining async function
+  completed: dev `trap [internal]: async resume without completion`,
+  ship `trap 11`, where `node` prints `late 7`. The same escape with an
+  `i32` capture printed `late 550780944` on dev, `late 1` on ship, and
+  `late 5` on `node`. Rule 4c's borrow and rule 6's unguarded inline
+  count both rest on C5; since rule 6, the handle form faults on the
+  ship tier (signal 10) instead of a silent no-op. Closing it is a
+  language decision (reject the store, or restate C5).
+- The release walk's ambiguity finding and edge-count finding
+  (`codegen/tests/support/lir_facts_release.rs`) have no firing test.
+- Files past 2,000 lines grew again: `codegen/src/interpreter.rs`
+  (7,196), `runtime/src/context.rs` (6,499), `runtime/src/ffi.rs`
+  (7,399).
+- `held-handles` is +8.4% over `154cc3d` (owner accepted).

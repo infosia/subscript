@@ -858,6 +858,8 @@ struct FunctionBuilder<'a, 'm> {
     moved_async_owners: HashSet<l::ValueId>,
     handlers: Vec<exception::HandlerFrame>,
     usings: Vec<using::UsingFrame>,
+    /// The returned owner to release if an exit hook raises.
+    exit_return: Option<(l::Operand, l::ValueType)>,
 }
 
 type CallResolution = (

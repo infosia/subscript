@@ -562,7 +562,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .first()
                         .ok_or_else(|| internal("async retain has no handle"))?,
                 )?;
-                self.call_runtime(self.ml.rt.async_retain, &[self.ctx, frame], false)?;
+                self.async_count(frame, None)?;
                 None
             }
             l::InstructionKind::AsyncHandleRelease => {
@@ -571,9 +571,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .first()
                         .ok_or_else(|| internal("async release has no handle"))?,
                 )?;
-                let pos = self.position_id(&instruction.pos);
-                let pos = self.iconst(types::I32, pos);
-                self.call_runtime(self.ml.rt.async_release, &[self.ctx, frame, pos], false)?;
+                self.async_count(frame, Some((&instruction.pos, &instruction.traps)))?;
                 None
             }
             l::InstructionKind::AsyncHandleArrayRetain => {
@@ -598,6 +596,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     &[self.ctx, array, pos],
                     false,
                 )?;
+                // compiler.md §116.1 rule 4: the release can trap.
+                for trap in &instruction.traps {
+                    self.emit_trap(trap, TrapOperand::Pending)?;
+                }
                 None
             }
             l::InstructionKind::IteratorCreate { kind, bound } => {
@@ -720,6 +722,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             l::InstructionKind::ExceptionResume => {
                 self.call_runtime(self.ml.rt.exception_resume, &[self.ctx], true)?;
+                None
+            }
+            // compiler.md §116.2 rule 3: the resume made the exception of an
+            // exception completion pending; the raise site checks it.
+            l::InstructionKind::AwaitRaise => {
+                self.trap_check();
                 None
             }
         };

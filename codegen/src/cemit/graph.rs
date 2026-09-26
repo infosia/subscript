@@ -88,6 +88,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::InstructionKind::CatchEntry => self.emit_catch_entry(out, result),
             l::InstructionKind::ExceptionPark => self.emit_exception_park(out),
             l::InstructionKind::ExceptionResume => self.emit_exception_resume(out),
+            // compiler.md §116.2 rule 3: the resume made the exception of
+            // an exception completion pending; the raise site checks it.
+            l::InstructionKind::AwaitRaise => {
+                self.emit_pending_check(out);
+                Ok(())
+            }
             l::InstructionKind::Copy => {
                 if let Some(id) = instruction.result {
                     if self.is_function_value(id)? {
@@ -329,26 +335,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 let _ = writeln!(out, "    if ({done}) {complete};");
                 Ok(())
             }
-            l::InstructionKind::AsyncHandleRetain => {
-                let call = self.emitter.runtime_call(
-                    "void",
-                    "subscript_rt_async_retain",
-                    &["void*".into(), "void*".into()],
-                    &["ctx".into(), operands[0].clone()],
-                );
-                let _ = writeln!(out, "    {call};");
-                Ok(())
-            }
+            l::InstructionKind::AsyncHandleRetain => self.emit_async_count(out, &operands[0], None),
             l::InstructionKind::AsyncHandleRelease => {
                 let pos = self.emitter.pos_id(&instruction.pos);
-                let call = self.emitter.runtime_call(
-                    "void",
-                    "subscript_rt_async_release",
-                    &["void*".into(), "void*".into(), "uint32_t".into()],
-                    &["ctx".into(), operands[0].clone(), format!("{pos}u")],
-                );
-                let _ = writeln!(out, "    {call};");
-                Ok(())
+                self.emit_async_count(out, &operands[0], Some((pos, &instruction.traps)))
             }
             l::InstructionKind::AsyncHandleArrayRetain => {
                 let call = self.emitter.runtime_call(
@@ -369,7 +359,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     &["ctx".into(), operands[0].clone(), format!("{pos}u")],
                 );
                 let _ = writeln!(out, "    {call};");
-                Ok(())
+                // compiler.md §116.1 rule 4: the release can trap.
+                self.consume_runtime_traps(out, &instruction.traps, true, false)
             }
             l::InstructionKind::IteratorCreate { kind, bound } => {
                 let iterator_type = instruction
@@ -507,15 +498,25 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         out.push_str("unwind:\n    ;\n");
         self.emit_pop(out);
         if self.coroutine {
-            // compiler.md §115.4 items 2 and 3: an `async` body and a
-            // generator body are exception boundaries. The unwind exit is
-            // cold, so the success path gains nothing.
-            let settle = self.emitter.runtime_call(
-                "void",
-                "subscript_rt_exception_settle",
-                &["void*".into()],
-                &["ctx".into()],
-            );
+            // compiler.md §116.2 rule 2: an exception that leaves an `async`
+            // body completes its handle. A generator body is an exception
+            // boundary (§115.4 item 3). The unwind exit is cold, so the
+            // success path gains nothing.
+            let settle = if self.function.is_async {
+                self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_async_complete_exception",
+                    &["void*".into(), "void*".into()],
+                    &["ctx".into(), "frame".into()],
+                )
+            } else {
+                self.emitter.runtime_call(
+                    "void",
+                    "subscript_rt_exception_settle",
+                    &["void*".into()],
+                    &["ctx".into()],
+                )
+            };
             let _ = writeln!(out, "    {settle};");
             out.push_str("    return 1;\ncoroutine_done:\n    ;\n    return 1;\n");
         } else if self.function.return_type == Type::Void {

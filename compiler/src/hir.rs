@@ -4205,13 +4205,28 @@ impl Expr {
                     }
                 }
                 sites.push(call(&self.pos));
+                // compiler.md §116.1 rule 2: the `await` of a direct call is
+                // a raise site when its callee can raise. The creation of a
+                // held handle is not.
+                if matches!(self.kind, K::AsyncCall { .. })
+                    && crate::raise_sites::async_callee_can_raise(module, callee)
+                {
+                    sites.push(TrapSite::Raise {
+                        pos: self.pos.clone(),
+                    });
+                }
                 sites
             }
+            // compiler.md §116.1 rule 2: the `await` of a held handle is a
+            // raise site.
             K::AsyncHandleAwait(_) => vec![
                 TrapSite::DevReloadOnlyStaleCoroutine {
                     pos: self.pos.clone(),
                 },
                 call(&self.pos),
+                TrapSite::Raise {
+                    pos: self.pos.clone(),
+                },
             ],
             K::New { class, args } => {
                 let Some(def) = module.classes.get(class.0) else {

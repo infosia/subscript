@@ -184,6 +184,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let resume_value = return_type
             .as_ref()
             .map(|_| self.blocks[successor.0 as usize].parameters[0]);
+        let (raise, traps) = split_await_raise(convert_traps(&expr.trap_sites(self.lowering.hir)));
         self.terminate(
             l::Terminator::Suspend {
                 kind: l::SuspendKind::AsyncCall {
@@ -195,11 +196,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 resume_value,
                 arguments: Vec::new(),
                 invalidates: self.array_values.clone(),
-                traps: convert_traps(&expr.trap_sites(self.lowering.hir)),
+                traps,
             },
             &expr.pos,
         )?;
         self.current = Some(successor);
+        self.emit_await_raise(raise, &expr.pos)?;
         Ok(resume_value.map(l::Operand::Value))
     }
 
@@ -241,6 +243,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let resume_value = return_type
             .as_ref()
             .map(|_| self.blocks[successor.0 as usize].parameters[0]);
+        let (raise, traps) = split_await_raise(convert_traps(&expr.trap_sites(self.lowering.hir)));
         self.terminate(
             l::Terminator::Suspend {
                 kind: l::SuspendKind::AsyncHandle { handle },
@@ -249,11 +252,38 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 resume_value,
                 arguments: Vec::new(),
                 invalidates: self.array_values.clone(),
-                traps: convert_traps(&expr.trap_sites(self.lowering.hir)),
+                traps,
             },
             &expr.pos,
         )?;
         self.current = Some(successor);
+        self.emit_await_raise(raise, &expr.pos)?;
         Ok(resume_value.map(l::Operand::Value))
     }
+
+    /// Starts the resume successor of an `await` with its raise site
+    /// (`compiler.md` §116.1 rule 2), when the `await` is one.
+    fn emit_await_raise(&mut self, raise: Vec<l::Trap>, pos: &Pos) -> Result<(), LowerError> {
+        if raise.is_empty() {
+            return Ok(());
+        }
+        self.emit(
+            l::InstructionKind::AwaitRaise,
+            Vec::new(),
+            None,
+            false,
+            raise,
+            pos.clone(),
+        )?;
+        Ok(())
+    }
+}
+
+/// Splits the `Raise` site of an `await` from the traps of its suspension.
+/// The raise site belongs to the resume successor, where the handler edge
+/// reads the bindings after the resume (`compiler.md` §116.2 rule 3).
+fn split_await_raise(traps: Vec<l::Trap>) -> (Vec<l::Trap>, Vec<l::Trap>) {
+    traps
+        .into_iter()
+        .partition(|trap| matches!(trap.kind, l::TrapKind::Raise(_)))
 }

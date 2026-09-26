@@ -27,6 +27,7 @@ use crate::root_storage::{self, RootStoragePlan};
 mod access;
 mod analysis;
 mod arith;
+mod async_count;
 mod body;
 mod call;
 mod collection;

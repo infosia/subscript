@@ -15,6 +15,8 @@ use super::*;
 pub(super) struct HandlerFrame {
     /// The type of the catch binding, when the clause names one.
     binding_type: Option<l::ValueType>,
+    /// The scopes outside this handler remain live at its landing.
+    pub(super) scope_depth: usize,
     /// Each raise site's landing block and the binding values at the site.
     pub(super) landings: Vec<(l::BlockId, Vec<Option<l::Operand>>)>,
 }
@@ -22,9 +24,10 @@ pub(super) struct HandlerFrame {
 impl HandlerFrame {
     /// A frame whose landings bind no Error object: the exception edge of
     /// a `using` binding, or the hooks on that edge.
-    pub(super) fn without_binding() -> Self {
+    pub(super) fn without_binding(scope_depth: usize) -> Self {
         Self {
             binding_type: None,
+            scope_depth,
             landings: Vec::new(),
         }
     }
@@ -34,7 +37,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     /// Gives each `Raise` trap its edge: a fresh landing block of the
     /// nearest enclosing `try`, or the propagate exit when none encloses
     /// the site.
-    pub(super) fn resolve_raise_edges(&mut self, traps: &mut [l::Trap]) {
+    pub(super) fn resolve_raise_edges(&mut self, traps: &mut [l::Trap]) -> Result<(), LowerError> {
         for trap in traps {
             if !matches!(trap.kind, l::TrapKind::Raise(_)) {
                 continue;
@@ -49,8 +52,59 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 }
                 l::RaiseEdge::Handler(landing)
             };
+            let depth = self.handlers.last().map_or(0, |frame| frame.scope_depth);
+            let owns = self.scopes.iter().skip(depth).any(|scope| {
+                scope
+                    .values()
+                    .any(|binding| is_async_owner_type(&self.bindings[binding.0].ty))
+            });
+            let returning = self.exit_return.clone();
+            let edge = if owns || returning.is_some() {
+                let source = self.current;
+                let snapshot = self.binding_snapshot();
+                let landing = self.new_block(Vec::new(), Some("release.landing".to_string()));
+                self.current = Some(landing);
+                self.emit(
+                    l::InstructionKind::ExceptionPark,
+                    Vec::new(),
+                    None,
+                    false,
+                    Vec::new(),
+                    trap.pos.clone(),
+                )?;
+                self.exit_actions(depth, self.usings.len(), &trap.pos)?;
+                if let Some((value, ty)) = returning {
+                    self.release_owner(value, &ty, &trap.pos)?;
+                }
+                // The resume uses the resolved edge; it must not repeat the releases.
+                self.blocks[landing.0 as usize]
+                    .instructions
+                    .push(l::Instruction {
+                        result: None,
+                        kind: l::InstructionKind::ExceptionResume,
+                        operands: Vec::new(),
+                        invalidates: Vec::new(),
+                        traps: vec![l::Trap {
+                            kind: l::TrapKind::Raise(edge),
+                            pos: trap.pos.clone(),
+                        }],
+                        pos: trap.pos.clone(),
+                    });
+                self.terminate(
+                    l::Terminator::Unreachable {
+                        pos: trap.pos.clone(),
+                    },
+                    &trap.pos,
+                )?;
+                self.restore_bindings(&snapshot);
+                self.current = source;
+                l::RaiseEdge::Handler(landing)
+            } else {
+                edge
+            };
             trap.kind = l::TrapKind::Raise(edge);
         }
+        Ok(())
     }
 
     /// `throw value` (§115.2): read the Error's two fields, record the
@@ -104,6 +158,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         );
         self.handlers.push(HandlerFrame {
             binding_type,
+            scope_depth: self.scopes.len(),
             landings: Vec::new(),
         });
         let lowered = self.lower_scoped(body);
@@ -161,7 +216,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 lowered = self.lower_statements(handler);
             }
             if lowered.is_ok() && self.current.is_some() {
-                self.release_scopes_from(self.scopes.len() - 1, pos)?;
+                self.exit_actions(self.scopes.len() - 1, self.usings.len(), pos)?;
             }
             self.scopes.pop();
             lowered?;

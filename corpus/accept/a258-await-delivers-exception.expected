@@ -1,0 +1,40 @@
+failsAtCall:start direct
+direct:caught at call direct
+failsAfterAwait:start direct
+value:10
+failsAfterAwait:resumed 10
+direct:caught TypeError after await direct
+loader:load false
+value:5
+method:ok 50
+loader:load true
+value:5
+method:caught loader failed
+failsAtCall:start held
+held:after call
+held:first at call held
+held:second at call held
+held:same object true
+failsAfterAwait:start held
+value:10
+held:late created
+failsAfterAwait:resumed 10
+held:late caught after await held
+level1:start
+level2:start
+level3:start
+value:3
+level2:caught deep, rethrow
+chain:caught SyntaxError deep
+value:1
+spanning:a progress=1
+value:2
+spanning:b progress=3
+failsAfterAwait:start spanning
+value:10
+failsAfterAwait:resumed 10
+spanning:caught after await spanning progress=3
+value:4
+spanning:after handler progress=107
+value:6
+main:total=113

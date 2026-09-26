@@ -30,6 +30,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         subscript_rt_async_register,
         subscript_rt_async_park,
         subscript_rt_async_await,
+        subscript_rt_async_await_owned,
         subscript_rt_async_missing_completion,
         subscript_rt_async_retain,
         subscript_rt_async_release,
@@ -291,6 +292,10 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         (
             "subscript_rt_exception_resume",
             exception::subscript_rt_exception_resume as *const u8,
+        ),
+        (
+            "subscript_rt_async_complete_exception",
+            exception::subscript_rt_async_complete_exception as *const u8,
         ),
     ] {
         builder.symbol(name, address);

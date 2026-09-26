@@ -380,7 +380,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let frame = self
             .frame
             .ok_or_else(|| internal("async parent has no frame"))?;
-        self.call_runtime(self.ml.rt.async_await, &[self.ctx, frame, child], false)?;
+        self.call_runtime(
+            self.ml.rt.async_await_owned,
+            &[self.ctx, frame, child],
+            false,
+        )?;
         self.suspend_after_await(plan)
     }
 
@@ -474,13 +478,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 slot.offset as i32,
             )?));
         }
-        let release_pos = self.position_id(&pos);
-        let release_pos = self.iconst(types::I32, release_pos);
-        self.call_runtime(
-            self.ml.rt.async_release,
-            &[self.ctx, child, release_pos],
-            false,
-        )?;
         let child_offset = plan
             .child
             .ok_or_else(|| internal("completed async call has no child-frame slot"))?;
@@ -567,7 +564,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     // continues in the caller's current block. The scheduler resumes an
     // await only after its handle completes, so a missing completion is an
     // internal protocol defect (`compiler.md` §94.1): the Context stops and
-    // nothing re-registers, polls, or fabricates a result.
+    // nothing re-registers, polls, or fabricates a result. An exception
+    // completion becomes the pending exception, and the `AwaitRaise` that
+    // starts the successor takes its edge (§116.2 rule 3).
     fn read_completion(
         &mut self,
         handle: Value,
@@ -603,6 +602,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let unwind = self.unwind_block();
         self.builder.ins().jump(unwind, &[]);
         self.builder.switch_to_block(completed);
+        // compiler.md §116.1 rule 4a: release the registration's handle count.
+        self.async_count(handle, Some((pos, &[])))?;
         Ok(())
     }
 

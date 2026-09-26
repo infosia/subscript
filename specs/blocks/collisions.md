@@ -132,7 +132,9 @@ this project's, so an entry that prints one is not `js-comparable`.
 operations returning result values. `a18` keeps that pattern as one
 accepted style.)*
 Accept: `a18`, `a250`–`a257`. Reject: `r11-throw` (a non-Error
-operand), `r233`–`r239`. Trap: `t61`–`t65`.
+operand), `r233`, `r236`–`r239`. Trap: `t61`–`t67`. Accept adds
+`a258`–`a261` (§116). `retired:r234-try-holds-await` and
+`retired:r235-try-holds-yield` by §116.
 
 ### C7. Unions, `null`, `undefined` (Q8) — `T | null` only
 
@@ -234,12 +236,17 @@ call. Measured before the revision: `node` printed
 `start1 start2 end1 end2` where this language printed
 `start1 end1 start2 end2`. Accept adds `a184`.
 *Revised 2026-09-26 (§115):* a `try` block that holds `await` or
-`yield` is rejected (`r234`, `r235`). An exception that leaves an async body
+`yield` is rejected (`retired:r234-try-holds-await`,
+`retired:r235-try-holds-yield`). An exception that leaves an async body
 or a generator body traps with `UncaughtException`; the awaiting
 caller observes a trap, not an exception (`t63`, `t64`). Accept adds
 `a256`. *Revised 2026-09-26 (§116):* the `try` rejection
 retires. An exception that leaves an async body completes its handle,
-and the `await` raises it; a generator body still traps.
+and the `await` raises it; a generator body still traps. Divergence:
+when an exception exit releases a handle that holds an unobserved
+exception, this language traps at once; `node` lets a `catch` take
+the propagating exception first and reports the unhandled rejection
+after it (§116.1 rule 4b).
 
 ### C9. Field initializers — every construction, no `this`
 

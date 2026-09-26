@@ -125,11 +125,16 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         // compiler.md §115.5 rule 2: the position of the `using` binding
         // whose hook raised.
         "t62-hook-raises-during-exit" => (TrapKind::DisposeRaisedDuringExit, 26, 9),
-        // compiler.md §115.4 items 2, 3, and 5: the boundary converts the
-        // exception, and the trap cites the position of the `throw`.
-        "t63-exception-leaves-async" => (TrapKind::UncaughtException, 10, 5),
+        // compiler.md §115.4 items 3 and 5, §116.1 rule 5: the boundary
+        // converts the exception, and the trap cites the position of the
+        // `throw`.
+        "t63-exception-leaves-async" => (TrapKind::UncaughtException, 16, 5),
         "t64-exception-leaves-generator" => (TrapKind::UncaughtException, 10, 7),
         "t65-exception-leaves-host-callback" => (TrapKind::UncaughtException, 13, 7),
+        // compiler.md §116.1 rule 4: the release of the last holder traps,
+        // and the trap cites the position of the `throw`.
+        "t66-unobserved-async-exception" => (TrapKind::UncaughtException, 9, 3),
+        "t67-exception-exit-releases-its-handle" => (TrapKind::UncaughtException, 8, 40),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }

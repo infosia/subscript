@@ -1,4 +1,5 @@
-//! Three-engine agreement for the exception core (`compiler.md` §115).
+//! Three-engine agreement for the exception core (`compiler.md` §115) and
+//! for the delivery of an async body's exception at its `await` (§116).
 //!
 //! Each program runs on the dev JIT, the ship C tier, and the reference
 //! interpreter. Stdout and the trap tuple must agree on all three, and
@@ -248,11 +249,13 @@ fn a_trap_inside_a_try_block_is_not_caught() {
     assert_eq!(report.stdout, b"");
 }
 
-/// compiler.md §115.4 item 2: an exception that leaves an async body after
-/// a suspension traps at the body, on a settled await and on a resume that
-/// a host checkpoint runs.
+/// compiler.md §116.1 rules 2 and 5: an `await` raises the exception of its
+/// handle with the report text and the position of the `throw`, on a
+/// settled await and on a resume that a host checkpoint runs. The
+/// host-kicked root has no script holder, so the exception becomes the
+/// uncaught-exception trap there.
 #[test]
-fn an_exception_after_an_await_traps_at_the_async_body() {
+fn an_await_raises_with_the_text_and_position_of_the_throw() {
     let report = agree_on_trap(
         "async function settled(): Promise<i32> { return 1; }\n\
          async function late(): Promise<i32> {\n\
@@ -649,5 +652,517 @@ fn an_exception_crosses_nested_runtime_callback_loops() {
     assert_eq!(
         stdout,
         "map 1 10\nouter 1\ninner 3\ngroup 1\nnested 3\ncaught stop 3\nafter 2\nend\n"
+    );
+}
+
+/// compiler.md §116.1 rule 1: an exception that leaves an async body
+/// completes its handle, also in the part of the body that runs at the
+/// call. The call returns the handle, and the caller continues.
+#[test]
+fn an_exception_completes_the_handle_and_not_the_call() {
+    let stdout = agree_on_stdout(
+        "async function fails(tag: string): Promise<i32> {\n\
+         \x20 print(`fails:${tag}`);\n\
+         \x20 throw new Error(`failed ${tag}`);\n\
+         }\n\
+         async function later(): Promise<i32> {\n\
+         \x20 await Context.suspend();\n\
+         \x20 print(\"later:resumed\");\n\
+         \x20 throw new TypeError(\"failed later\");\n\
+         }\n\
+         export async function main(): Promise<void> {\n\
+         \x20 try {\n\
+         \x20   const early: Promise<i32> = fails(\"at call\");\n\
+         \x20   print(\"main:created\");\n\
+         \x20   const value: i32 = await early;\n\
+         \x20   print(`main:unreached ${value}`);\n\
+         \x20 } catch (e) {\n\
+         \x20   if (e instanceof Error) { print(`main:caught ${e.message}`); }\n\
+         \x20 }\n\
+         \x20 const late: Promise<i32> = later();\n\
+         \x20 print(\"main:late created\");\n\
+         \x20 try {\n\
+         \x20   await late;\n\
+         \x20 } catch (e) {\n\
+         \x20   if (e instanceof TypeError) { print(`main:caught ${e.message}`); }\n\
+         \x20 }\n\
+         \x20 print(\"main:end\");\n\
+         }\n",
+    );
+    assert_eq!(
+        stdout,
+        "fails:at call\nmain:created\nmain:caught failed at call\nmain:late created\n\
+         later:resumed\nmain:caught failed later\nmain:end\n"
+    );
+}
+
+/// compiler.md §116.1 rule 3: each `await` of one handle raises the same
+/// object, from a direct await, from two holders, and from a repeated
+/// await of a held handle.
+#[test]
+fn each_await_raises_the_same_object() {
+    let stdout = agree_on_stdout(
+        "let first: Error | null = null;\n\
+         async function fails(): Promise<i32> {\n\
+         \x20 await Context.suspend();\n\
+         \x20 throw new SyntaxError(\"shared\");\n\
+         }\n\
+         async function observe(handle: Promise<i32>, tag: string): Promise<void> {\n\
+         \x20 try {\n\
+         \x20   await handle;\n\
+         \x20 } catch (e) {\n\
+         \x20   const seen: Error | null = first;\n\
+         \x20   if (e instanceof SyntaxError) {\n\
+         \x20     if (seen === null) {\n\
+         \x20       first = e;\n\
+         \x20       print(`${tag}:${e.message} first`);\n\
+         \x20     } else {\n\
+         \x20       print(`${tag}:${e.message} same=${e === seen}`);\n\
+         \x20     }\n\
+         \x20   }\n\
+         \x20 }\n\
+         }\n\
+         export async function main(): Promise<void> {\n\
+         \x20 const handle: Promise<i32> = fails();\n\
+         \x20 const a: Promise<void> = observe(handle, \"a\");\n\
+         \x20 const b: Promise<void> = observe(handle, \"b\");\n\
+         \x20 await a;\n\
+         \x20 await b;\n\
+         \x20 await observe(handle, \"c\");\n\
+         \x20 await observe(handle, \"d\");\n\
+         }\n",
+    );
+    assert_eq!(
+        stdout,
+        "a:shared first\nb:shared same=true\nc:shared same=true\nd:shared same=true\n"
+    );
+}
+
+/// compiler.md §116.1 rule 4: the last release of a handle that holds an
+/// unobserved exception traps with the text and the position of the
+/// `throw`, at a field overwrite and at the scheduler's release after a
+/// body the program no longer holds. The control: a handle whose exception
+/// an `await` raised releases with no trap.
+#[test]
+fn an_unobserved_exception_traps_when_its_count_reaches_zero() {
+    let stdout = agree_on_stdout(
+        "class Holder {\n\
+         \x20 job: Promise<i32>;\n\
+         \x20 constructor(job: Promise<i32>) { this.job = job; }\n\
+         }\n\
+         async function fails(): Promise<i32> { throw new Error(\"observed\"); }\n\
+         export async function main(): Promise<void> {\n\
+         \x20 const holder: Holder = new Holder(fails());\n\
+         \x20 try {\n\
+         \x20   await holder.job;\n\
+         \x20 } catch (e) {\n\
+         \x20   print(\"caught\");\n\
+         \x20 }\n\
+         \x20 Context.free(holder);\n\
+         \x20 print(\"released after the await\");\n\
+         }\n",
+    );
+    assert_eq!(stdout, "caught\nreleased after the await\n");
+
+    let report = agree_on_trap(
+        "class Holder {\n\
+         \x20 job: Promise<i32>;\n\
+         \x20 constructor(job: Promise<i32>) { this.job = job; }\n\
+         }\n\
+         async function fails(): Promise<i32> { throw new Error(\"overwritten\"); }\n\
+         async function quiet(): Promise<i32> { return 2; }\n\
+         export async function main(): Promise<void> {\n\
+         \x20 const holder: Holder = new Holder(fails());\n\
+         \x20 print(\"created\");\n\
+         \x20 const next: Promise<i32> = quiet();\n\
+         \x20 holder.job = next;\n\
+         \x20 print(\"unreached\");\n\
+         \x20 print(`${await next}`);\n\
+         }\n",
+    );
+    assert_eq!(report.rule, TrapKind::UncaughtException);
+    assert_eq!(report.message, "Error: overwritten");
+    assert_eq!((report.pos.line, report.pos.col), (5, 40));
+    assert_eq!(report.stdout, b"created\n");
+
+    let report = agree_on_trap(
+        "class Holder {\n\
+         \x20 job: Promise<i32>;\n\
+         \x20 constructor(job: Promise<i32>) { this.job = job; }\n\
+         }\n\
+         async function later(): Promise<i32> {\n\
+         \x20 await Context.suspend();\n\
+         \x20 print(\"later:resumed\");\n\
+         \x20 throw new TypeError(\"nobody holds me\");\n\
+         }\n\
+         export async function main(): Promise<void> {\n\
+         \x20 const holder: Holder = new Holder(later());\n\
+         \x20 Context.free(holder);\n\
+         \x20 print(\"main:freed\");\n\
+         \x20 await Context.suspend();\n\
+         \x20 print(\"main:unreached\");\n\
+         }\n",
+    );
+    assert_eq!(report.rule, TrapKind::UncaughtException);
+    assert_eq!(report.message, "TypeError: nobody holds me");
+    assert_eq!((report.pos.line, report.pos.col), (8, 3));
+    assert_eq!(report.stdout, b"main:freed\nlater:resumed\n");
+}
+
+/// compiler.md §116.1 rule 5: a host-kicked async export has no script
+/// holder. An exception that leaves it traps at its completion, before its
+/// first suspension and after one.
+#[test]
+fn an_async_export_with_no_holder_traps() {
+    let report = agree_on_trap(
+        "export async function main(): Promise<void> {\n\
+         \x20 print(\"main:start\");\n\
+         \x20 throw new Error(\"at the kick\");\n\
+         }\n",
+    );
+    assert_eq!(report.rule, TrapKind::UncaughtException);
+    assert_eq!(report.message, "Error: at the kick");
+    assert_eq!((report.pos.line, report.pos.col), (3, 3));
+    assert_eq!(report.stdout, b"main:start\n");
+
+    let report = agree_on_trap(
+        "export async function main(): Promise<void> {\n\
+         \x20 await Context.suspend();\n\
+         \x20 print(\"main:resumed\");\n\
+         \x20 throw new TypeError(\"after the checkpoint\");\n\
+         }\n",
+    );
+    assert_eq!(report.rule, TrapKind::UncaughtException);
+    assert_eq!(report.message, "TypeError: after the checkpoint");
+    assert_eq!((report.pos.line, report.pos.col), (4, 3));
+    assert_eq!(report.stdout, b"main:resumed\n");
+}
+
+/// compiler.md §116.1 rule 6: the handle holds the Error object as a
+/// collection root, and the release of the handle does not free it, so a
+/// catch binding reads it after an explicit collection.
+#[test]
+fn the_error_object_outlives_its_handle() {
+    let stdout = agree_on_stdout(
+        "let kept: Error | null = null;\n\
+         async function fails(tag: string): Promise<i32> {\n\
+         \x20 throw new TypeError(`kept ${tag}`);\n\
+         }\n\
+         export async function main(): Promise<void> {\n\
+         \x20 const rooted: Promise<i32> = fails(\"rooted\");\n\
+         \x20 Context.collect();\n\
+         \x20 try {\n\
+         \x20   await rooted;\n\
+         \x20 } catch (e) {\n\
+         \x20   if (e instanceof TypeError) { print(e.message); }\n\
+         \x20 }\n\
+         \x20 {\n\
+         \x20   const released: Promise<i32> = fails(\"released\");\n\
+         \x20   try {\n\
+         \x20     await released;\n\
+         \x20   } catch (e) {\n\
+         \x20     if (e instanceof TypeError) { kept = e; }\n\
+         \x20   }\n\
+         \x20 }\n\
+         \x20 Context.collect();\n\
+         \x20 const value: Error | null = kept;\n\
+         \x20 if (value !== null) { print(`${value.name}: ${value.message}`); }\n\
+         }\n",
+    );
+    assert_eq!(stdout, "kept rooted\nTypeError: kept released\n");
+}
+
+/// compiler.md §116.1 rule 7: a `try` block holds `await` and `yield`. A
+/// `yield` inside a `try` block resumes into the handler region, and an
+/// exception that leaves the generator body still traps there.
+#[test]
+fn a_try_block_holds_a_yield_and_a_generator_body_still_traps() {
+    let stdout = agree_on_stdout(
+        "function* steps(): Generator<i32> {\n\
+         \x20 let seen: i32 = 0;\n\
+         \x20 try {\n\
+         \x20   yield 1;\n\
+         \x20   seen += 1;\n\
+         \x20   yield 2;\n\
+         \x20   seen += 1;\n\
+         \x20   throw new Error(\"after two resumes\");\n\
+         \x20 } catch (e) {\n\
+         \x20   if (e instanceof Error) { print(`caught ${e.message} seen=${seen}`); }\n\
+         \x20 }\n\
+         \x20 yield 3;\n\
+         }\n\
+         export function main(): void {\n\
+         \x20 for (const n of steps()) { print(`n=${n}`); }\n\
+         }\n",
+    );
+    assert_eq!(stdout, "n=1\nn=2\ncaught after two resumes seen=2\nn=3\n");
+
+    let report = agree_on_trap(
+        "function* steps(): Generator<i32> {\n\
+         \x20 try {\n\
+         \x20   yield 1;\n\
+         \x20 } catch (e) {\n\
+         \x20   print(\"inner\");\n\
+         \x20 }\n\
+         \x20 throw new Error(\"leaves the body\");\n\
+         }\n\
+         export function main(): void {\n\
+         \x20 try {\n\
+         \x20   for (const n of steps()) { print(`n=${n}`); }\n\
+         \x20 } catch {\n\
+         \x20   print(\"caught\");\n\
+         \x20 }\n\
+         }\n",
+    );
+    assert_eq!(report.rule, TrapKind::UncaughtException);
+    assert_eq!(report.message, "Error: leaves the body");
+    assert_eq!((report.pos.line, report.pos.col), (7, 3));
+    assert_eq!(report.stdout, b"n=1\n");
+}
+
+/// compiler.md §116.1 rule 8: a Worker entry does not change. An exception
+/// that leaves it is the Worker trap, and a `try` block that holds an
+/// `await` in the parent does not catch it. The interpreter runs no Worker,
+/// so the two tiers are compared.
+#[test]
+fn a_worker_exception_stays_the_worker_trap_under_an_await() {
+    let files = sources(
+        "class Job {\n\
+         \x20 value: i32;\n\
+         \x20 constructor(value: i32) { this.value = value; }\n\
+         }\n\
+         function work(inbox: Inbox<Job>, outbox: Outbox<Job>): void {\n\
+         \x20 const job: Job | null = inbox.wait();\n\
+         \x20 if (job !== null) {\n\
+         \x20   throw new TypeError(`job ${job.value} failed`);\n\
+         \x20 }\n\
+         }\n\
+         async function step(): Promise<i32> { return 1; }\n\
+         export async function main(): Promise<void> {\n\
+         \x20 const worker: Worker<Job, Job> = Worker.spawn(work);\n\
+         \x20 worker.post(new Job(7));\n\
+         \x20 worker.close();\n\
+         \x20 try {\n\
+         \x20   print(`step ${await step()}`);\n\
+         \x20   worker.join();\n\
+         \x20 } catch (e) {\n\
+         \x20   print(\"caught\");\n\
+         \x20 }\n\
+         \x20 print(\"unreached\");\n\
+         }\n",
+    );
+    for (tier, outcome) in [("dev JIT", run_jit(&files)), ("ship C", run_c_aot(&files))] {
+        let report = match outcome {
+            Err(RunError::Trap(report)) => report,
+            other => panic!("{tier} did not trap: {other:?}"),
+        };
+        assert_eq!(report.rule, TrapKind::WorkerTrapped, "{tier}");
+        assert_eq!(report.stdout, b"step 1\n", "{tier}");
+        assert!(
+            report.message.ends_with(": TypeError: job 7 failed"),
+            "{tier}: {}",
+            report.message
+        );
+    }
+}
+
+/// compiler.md §116.1 rule 4a: the registration outlives the freed script holder.
+#[test]
+fn a_waiting_await_holds_an_exception_handle() {
+    let stdout = agree_on_stdout(
+        r#"class Holder { job: Promise<i32>; constructor(job: Promise<i32>) { this.job = job; } }
+async function later(): Promise<i32> { await Context.suspend(); print("later:resumed"); throw new Error("late"); }
+async function waitOn(h: Holder): Promise<void> {
+  try { print(`waited ${await h.job}`); } catch (e) { if (e instanceof Error) { print(`caught ${e.message}`); } }
+}
+export async function main(): Promise<void> {
+  const holder: Holder = new Holder(later());
+  const w: Promise<void> = waitOn(holder);
+  Context.free(holder);
+  print("freed holder");
+  await w;
+  print("end");
+}
+"#,
+    );
+    assert_eq!(stdout, "freed holder\nlater:resumed\ncaught late\nend\n");
+}
+
+/// compiler.md §116.1 rule 4a: the registration outlives the freed script holder.
+#[test]
+fn a_waiting_await_holds_a_value_handle() {
+    let stdout = agree_on_stdout(
+        r#"class Holder { job: Promise<i32>; constructor(job: Promise<i32>) { this.job = job; } }
+async function later(): Promise<i32> { await Context.suspend(); print("later:resumed"); return 5; }
+async function waitOn(h: Holder): Promise<void> {
+  try { print(`waited ${await h.job}`); } catch (e) { print("caught"); }
+}
+export async function main(): Promise<void> {
+  const holder: Holder = new Holder(later());
+  const w: Promise<void> = waitOn(holder);
+  Context.free(holder);
+  print("freed holder");
+  await w;
+  print("end");
+}
+"#,
+    );
+    assert_eq!(stdout, "freed holder\nlater:resumed\nwaited 5\nend\n");
+}
+
+#[test]
+fn an_exception_exit_releases_an_unobserved_handle() {
+    let report = agree_on_trap(include_str!(
+        "../../corpus/trap/t67-exception-exit-releases-its-handle.ts"
+    ));
+    assert_eq!(report.rule, TrapKind::UncaughtException);
+    assert_eq!(report.message, "Error: dropped");
+    assert_eq!((report.pos.line, report.pos.col), (8, 40));
+    assert!(report.stdout.is_empty());
+}
+
+/// Each case uses one C compile and the runtime count probe on the dev host.
+fn released_value_frames(source: &str, expected: &str) {
+    assert_eq!(agree_on_stdout(source), expected);
+    let mut session = subscript_codegen::ReloadSession::new(&sources(source)).expect("session");
+    let before = session.live_allocations();
+    session.call_main().expect("kick main");
+    assert!(
+        session.live_allocations() > before,
+        "the pending root is the firing control"
+    );
+    while session.async_pending() != 0 {
+        session.async_step().expect("checkpoint");
+    }
+    assert_eq!(
+        session.live_allocations(),
+        before,
+        "the exit releases every value frame"
+    );
+    assert_eq!(session.take_output(), expected.as_bytes());
+}
+
+#[test]
+fn a_thrown_exit_releases_a_value_handle() {
+    released_value_frames(
+        r#"const fault: Error = new Error("exit");
+const caught: string = "caught";
+const end: string = "end";
+const alive: string = "outer alive";
+async function value(): Promise<i32> { return 7; }
+async function inner(skip: boolean): Promise<i32> {
+  const h: Promise<i32> = value();
+  if (skip) { throw fault; }
+  return await h;
+}
+export async function main(): Promise<void> {
+  try { await inner(true); } catch { print(caught); }
+  print(end);
+}
+"#,
+        "caught\nend\n",
+    );
+}
+
+#[test]
+fn a_catch_in_the_same_function_releases_only_the_left_scopes() {
+    released_value_frames(
+        r#"const fault: Error = new Error("exit");
+const caught: string = "caught";
+const end: string = "end";
+const alive: string = "outer alive";
+async function value(): Promise<i32> { return 7; }
+export async function main(): Promise<void> {
+  const outer: Promise<i32> = value();
+  try {
+    const inner: Promise<i32> = value();
+    if (true) { throw fault; }
+    await inner;
+  } catch { print(caught); }
+  const result: i32 = await outer;
+  if (result === 7) { print(alive); }
+}
+"#,
+        "caught\nouter alive\n",
+    );
+}
+
+#[test]
+fn a_hook_that_aborts_a_return_releases_the_returned_owner() {
+    let report = agree_on_trap(
+        r#"async function fails(): Promise<i32> { throw new Error("returned"); }
+class R { [Symbol.dispose](): void { throw new TypeError("hook"); } }
+function returning(): Promise<i32> {
+  using r = new R();
+  const h: Promise<i32> = fails();
+  return h;
+}
+export async function main(): Promise<void> {
+  try { const h: Promise<i32> = returning(); await h; } catch { print("caught"); }
+}
+"#,
+    );
+    assert_eq!(report.rule, TrapKind::UncaughtException);
+    assert_eq!(report.message, "Error: returned");
+    assert_eq!((report.pos.line, report.pos.col), (1, 40));
+    assert!(report.stdout.is_empty());
+}
+
+/// compiler.md §116.1 rule 4c: only the local copy owns a count.
+#[test]
+fn a_lambda_borrows_a_handle_on_return() {
+    let stdout = agree_on_stdout(
+        r#"async function value(): Promise<i32> { return 7; }
+export async function main(): Promise<void> {
+  const h: Promise<i32> = value();
+  const f = (): i32 => {
+    const local: Promise<i32> = h;
+    return 1;
+  };
+  print(`${f()}`);
+  print(`${f()}`);
+  print(`got ${await h}`);
+}
+"#,
+    );
+    assert_eq!(stdout, "1\n1\ngot 7\n");
+}
+
+/// compiler.md §116.1 rule 4c: only the local copy owns a count.
+#[test]
+fn a_lambda_borrows_a_handle_on_exception() {
+    let stdout = agree_on_stdout(
+        r#"async function fails(): Promise<i32> { throw new Error("dropped"); }
+export async function main(): Promise<void> {
+  const h: Promise<i32> = fails();
+  const f = (skip: boolean): i32 => {
+    const local: Promise<i32> = h;
+    if (skip) { throw new TypeError("in lambda"); }
+    return 1;
+  };
+  try { print(`${f(true)}`); } catch (e) { if (e instanceof Error) { print(`caught ${e.name}`); } }
+  try { print(`unreached ${await h}`); } catch (e) { if (e instanceof Error) { print(`caught late ${e.message}`); } }
+  print("end");
+}
+"#,
+    );
+    assert_eq!(stdout, "caught TypeError\ncaught late dropped\nend\n");
+}
+
+/// Each case costs one C compile and checks the runtime's live allocation count on the dev host.
+#[test]
+fn a_direct_await_of_a_failed_call_releases_its_frame() {
+    released_value_frames(
+        r#"const fault: Error = new Error("failure");
+const caught: string = "caught";
+async function fails(late: boolean): Promise<i32> {
+    if (late) { await Context.suspend(); }
+    throw fault;
+}
+export async function main(): Promise<void> {
+    try { await fails(false); } catch { print(caught); }
+    try { await fails(true); } catch { print(caught); }
+}"#,
+        "caught\ncaught\n",
     );
 }

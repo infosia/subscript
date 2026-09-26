@@ -46,8 +46,8 @@ pub enum Divergence {
     /// A capturing lambda that escapes, and the container callback parameter.
     EscapingCapture,
     /// A form outside the decided exception surface: a non-Error `throw`,
-    /// `finally`, a suspension in a `try` block, and a catch binding read
-    /// or annotation outside the two legal forms.
+    /// `finally`, and a catch binding read or annotation outside the two
+    /// legal forms.
     Exceptions,
     /// `instanceof` with a class outside the Error family.
     InstanceofNonError,

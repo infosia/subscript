@@ -2,10 +2,11 @@
 //! rule 2).
 //!
 //! A raise site is decided here from LIR facts alone: a `throw`, a call
-//! to a target whose function carries `can_raise`, an indirect call, and a
-//! built-in call that receives a function value. The lowering decides the
-//! same question from HIR trap sites, so the two derivations are separate
-//! (CLAUDE.md core principle 9).
+//! to a target whose function carries `can_raise`, an indirect call, a
+//! built-in call that receives a function value, and an `await` of a held
+//! handle or of a direct call to a target that carries `can_raise`. The
+//! lowering decides the same question from HIR trap sites, so the two
+//! derivations are separate (CLAUDE.md core principle 9).
 
 use super::verify::{finding, operand_type};
 use super::*;
@@ -39,13 +40,14 @@ pub(super) fn verify_raise_edges(
                     ),
                 ));
             }
-            // An `async` body and a generator body take the propagate exit
-            // to their own boundary, which converts the exception into a
-            // trap (compiler.md §115.4 items 2 and 3). Every other function
-            // propagates to its caller, so it must carry `can_raise`.
+            // A generator body takes the propagate exit to its own
+            // boundary, which converts the exception into a trap
+            // (compiler.md §115.4 item 3). An `async` body completes its
+            // handle, and an `await` raises it (§116.1 rules 1 and 2), so an
+            // async function propagates as every other function does and
+            // must carry `can_raise`.
             if matches!(instruction.raise_edge(), Some(l::RaiseEdge::Propagate))
                 && !function.can_raise
-                && !function.is_async
                 && !function.is_generator
             {
                 errors.push(finding(
@@ -88,6 +90,7 @@ pub(super) fn verify_raise_edges(
     for (handler, sources) in handler_sources {
         verify_handler(function, handler, &sources, errors);
     }
+    verify_await_raises(module, function, errors);
     // compiler.md §115.5 rule 2: only the raise edge of an exit hook
     // reaches the trap for a hook that raises during an exit.
     for block in &function.blocks {
@@ -107,6 +110,84 @@ pub(super) fn verify_raise_edges(
                 ),
             ));
         }
+    }
+}
+
+/// Every `await` that can raise starts its resume successor with its raise
+/// site, and an `AwaitRaise` stands nowhere else (`compiler.md` §116.2
+/// rule 3). An `await` can raise when it awaits a held handle, or a direct
+/// call to a target that carries `can_raise`.
+fn verify_await_raises(module: &l::Module, function: &l::Function, errors: &mut Vec<VerifyError>) {
+    let mut required = HashSet::new();
+    for block in &function.blocks {
+        let l::Terminator::Suspend {
+            kind, successor, ..
+        } = &block.terminator
+        else {
+            continue;
+        };
+        let raises = match kind {
+            l::SuspendKind::AsyncHandle { .. } => true,
+            l::SuspendKind::AsyncCall { target, .. } => target_can_raise(module, target),
+            l::SuspendKind::Yield(_) | l::SuspendKind::Async => false,
+        };
+        if raises {
+            required.insert(*successor);
+        }
+    }
+    for block in &function.blocks {
+        for (index, instruction) in block.instructions.iter().enumerate() {
+            if !matches!(instruction.kind, l::InstructionKind::AwaitRaise) {
+                continue;
+            }
+            if index != 0 || !required.contains(&block.id) {
+                errors.push(finding(
+                    function,
+                    format!(
+                        "block {} instruction {index} is an await raise site outside the start of a raising await's resume successor",
+                        block.id.0
+                    ),
+                ));
+            }
+        }
+        let starts = block
+            .instructions
+            .first()
+            .is_some_and(|first| matches!(first.kind, l::InstructionKind::AwaitRaise));
+        if required.contains(&block.id) && !starts {
+            errors.push(finding(
+                function,
+                format!(
+                    "block {} resumes an await that can raise and does not start with its raise site",
+                    block.id.0
+                ),
+            ));
+        }
+    }
+}
+
+/// Whether the function of a direct call target carries `can_raise`.
+fn target_can_raise(module: &l::Module, target: &l::CallTarget) -> bool {
+    let function_can_raise = |id: l::FunctionId| {
+        module
+            .functions
+            .get(id.0 as usize)
+            .is_some_and(|callee| callee.can_raise)
+    };
+    match &target.kind {
+        l::CallTargetKind::Function(id) | l::CallTargetKind::StaticClosure(id) => {
+            function_can_raise(*id)
+        }
+        l::CallTargetKind::Method(method) => module
+            .classes
+            .iter()
+            .flat_map(|class| class.constructor.iter().chain(&class.methods))
+            .find(|candidate| candidate.id == *method)
+            .is_some_and(|candidate| function_can_raise(candidate.function)),
+        l::CallTargetKind::Indirect => true,
+        l::CallTargetKind::Intrinsic(_)
+        | l::CallTargetKind::BuiltinMethod(_)
+        | l::CallTargetKind::Foreign(_) => false,
     }
 }
 
@@ -202,27 +283,13 @@ fn verify_handler(
 /// Whether `instruction` can leave an exception pending.
 fn is_raise_site(module: &l::Module, function: &l::Function, instruction: &l::Instruction) -> bool {
     let target = match &instruction.kind {
-        l::InstructionKind::Throw | l::InstructionKind::ExceptionResume => return true,
+        l::InstructionKind::Throw
+        | l::InstructionKind::ExceptionResume
+        | l::InstructionKind::AwaitRaise => return true,
         l::InstructionKind::Call(target) => target,
         _ => return false,
     };
-    let function_can_raise = |id: l::FunctionId| {
-        module
-            .functions
-            .get(id.0 as usize)
-            .is_some_and(|callee| callee.can_raise)
-    };
     match &target.kind {
-        l::CallTargetKind::Function(id) | l::CallTargetKind::StaticClosure(id) => {
-            function_can_raise(*id)
-        }
-        l::CallTargetKind::Method(method) => module
-            .classes
-            .iter()
-            .flat_map(|class| class.constructor.iter().chain(&class.methods))
-            .find(|candidate| candidate.id == *method)
-            .is_some_and(|candidate| function_can_raise(candidate.function)),
-        l::CallTargetKind::Indirect => true,
         l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_) => {
             instruction.operands.iter().any(|operand| {
                 matches!(
@@ -231,7 +298,7 @@ fn is_raise_site(module: &l::Module, function: &l::Function, instruction: &l::In
                 )
             })
         }
-        l::CallTargetKind::Foreign(_) => false,
+        _ => target_can_raise(module, target),
     }
 }
 
@@ -451,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn a_coroutine_body_propagates_to_its_own_boundary() {
+    fn a_generator_propagates_to_its_boundary_and_an_async_body_to_its_handle() {
         let hir = check_program(&[SourceFile::new(
             "boundary.ts",
             "function fail(): void { throw new Error(\"x\"); }\n\
@@ -463,38 +530,200 @@ mod tests {
              }\n",
         )])
         .expect("checks clean");
-        let mut module = lower_module(&hir).expect("lowers and verifies");
-        for name in ["load", "numbers"] {
-            let function = module
+        let module = lower_module(&hir).expect("lowers and verifies");
+        let find = |name: &str| {
+            module
                 .functions
                 .iter()
-                .find(|function| function.source_name == name)
-                .expect("coroutine");
-            assert!(!function.can_raise, "{name} never raises to a caller");
-            assert!(
-                function
-                    .blocks
-                    .iter()
-                    .any(
-                        |block| block.instructions.iter().any(|instruction| matches!(
-                            instruction.raise_edge(),
-                            Some(l::RaiseEdge::Propagate)
-                        ))
-                    ),
-                "{name} holds a propagating raise site"
-            );
-        }
-        // The firing control: the same propagating site in a plain function
-        // that cannot raise is rejected.
-        let load = module
-            .functions
+                .position(|function| function.source_name == name)
+                .expect("coroutine")
+        };
+        let propagates = |function: &l::Function| {
+            function.blocks.iter().any(|block| {
+                block.instructions.iter().any(|instruction| {
+                    matches!(instruction.raise_edge(), Some(l::RaiseEdge::Propagate))
+                })
+            })
+        };
+        let (load, numbers) = (find("load"), find("numbers"));
+        assert!(
+            module.functions[load].can_raise,
+            "compiler.md §116.1 rule 1: an async body raises to its awaiter"
+        );
+        assert!(
+            !module.functions[numbers].can_raise,
+            "a generator never raises to its consumer"
+        );
+        assert!(propagates(&module.functions[load]));
+        assert!(propagates(&module.functions[numbers]));
+        // The firing controls: the same propagating site in an async
+        // function without the fact, or in a plain function, is rejected.
+        let mut changed = module.clone();
+        changed.functions[load].can_raise = false;
+        let async_findings = findings(&changed);
+        assert!(
+            async_findings.contains("propagates an exception from a function that cannot raise"),
+            "{async_findings}"
+        );
+        let mut changed = module;
+        changed.functions[numbers].is_generator = false;
+        let plain_findings = findings(&changed);
+        assert!(
+            plain_findings.contains("propagates an exception from a function that cannot raise"),
+            "{plain_findings}"
+        );
+    }
+
+    const AWAIT_PROGRAM: &str = "async function fail(): Promise<i32> { throw new Error(\"x\"); }\n\
+                                 async function quiet(): Promise<i32> { return 1; }\n\
+                                 export async function main(): Promise<void> {\n\
+                                 \x20 const held: Promise<i32> = quiet();\n\
+                                 \x20 try {\n\
+                                 \x20   print(`${await fail()}`);\n\
+                                 \x20 } catch {\n\
+                                 \x20   print(\"caught\");\n\
+                                 \x20 }\n\
+                                 \x20 print(`${await quiet()} ${await held}`);\n\
+                                 }\n";
+
+    fn await_lowered() -> (l::Module, usize) {
+        let hir =
+            check_program(&[SourceFile::new("await.ts", AWAIT_PROGRAM)]).expect("checks clean");
+        let module = lower_module(&hir).expect("lowers and verifies");
+        let main = main_index(&module);
+        (module, main)
+    }
+
+    /// The resume successors of main's three awaits, in block order, with
+    /// whether each starts with an `AwaitRaise`.
+    fn await_successors(function: &l::Function) -> Vec<(l::BlockId, bool)> {
+        function
+            .blocks
             .iter()
-            .position(|function| function.source_name == "load")
-            .expect("load");
-        module.functions[load].is_async = false;
+            .filter_map(|block| match &block.terminator {
+                l::Terminator::Suspend {
+                    kind: l::SuspendKind::AsyncCall { .. } | l::SuspendKind::AsyncHandle { .. },
+                    successor,
+                    ..
+                } => Some(*successor),
+                _ => None,
+            })
+            .map(|successor| {
+                let starts = function.blocks[successor.0 as usize]
+                    .instructions
+                    .first()
+                    .is_some_and(|first| matches!(first.kind, l::InstructionKind::AwaitRaise));
+                (successor, starts)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_await_that_can_raise_starts_its_resume_with_its_raise_site() {
+        let (module, main) = await_lowered();
+        let function = &module.functions[main];
+        let successors = await_successors(function);
+        assert_eq!(
+            successors
+                .iter()
+                .map(|(_, starts)| *starts)
+                .collect::<Vec<_>>(),
+            [true, false, true],
+            "a raising direct await, a quiet direct await, and a held await"
+        );
+        let first = &function.blocks[successors[0].0 .0 as usize].instructions[0];
+        assert!(
+            matches!(first.raise_edge(), Some(l::RaiseEdge::Handler(_))),
+            "the await inside the `try` block takes its handler edge"
+        );
+        let held = &function.blocks[successors[2].0 .0 as usize].instructions[0];
+        let Some(l::RaiseEdge::Handler(landing)) = held.raise_edge() else {
+            panic!("the held await must release its owner on the exception edge");
+        };
+        let cleanup = &function.blocks[landing.0 as usize];
+        assert!(cleanup
+            .instructions
+            .iter()
+            .any(|i| matches!(i.kind, l::InstructionKind::AsyncHandleRelease)));
+        assert_eq!(
+            cleanup.instructions.last().and_then(|i| i.raise_edge()),
+            Some(&l::RaiseEdge::Propagate)
+        );
+        assert!(function.can_raise);
+    }
+
+    #[test]
+    fn an_await_without_its_raise_site_is_rejected() {
+        let (mut module, main) = await_lowered();
+        let (successor, _) = await_successors(&module.functions[main])[2];
+        module.functions[main].blocks[successor.0 as usize]
+            .instructions
+            .remove(0);
         let findings = findings(&module);
         assert!(
-            findings.contains("propagates an exception from a function that cannot raise"),
+            findings.contains(&format!(
+                "block {} resumes an await that can raise and does not start with its raise site",
+                successor.0
+            )),
+            "{findings}"
+        );
+    }
+
+    #[test]
+    fn an_await_raise_site_elsewhere_is_rejected() {
+        let (mut module, main) = await_lowered();
+        let (quiet, _) = await_successors(&module.functions[main])[1];
+        let pos = module.functions[main].pos.clone();
+        let pos_copy = pos.clone();
+        module.functions[main].blocks[quiet.0 as usize]
+            .instructions
+            .insert(
+                0,
+                l::Instruction {
+                    result: None,
+                    kind: l::InstructionKind::AwaitRaise,
+                    operands: Vec::new(),
+                    invalidates: Vec::new(),
+                    traps: vec![l::Trap {
+                        kind: l::TrapKind::Raise(l::RaiseEdge::Propagate),
+                        pos,
+                    }],
+                    pos: pos_copy,
+                },
+            );
+        let findings = findings(&module);
+        assert!(
+            findings.contains(&format!(
+                "block {} instruction 0 is an await raise site outside the start of a raising await's resume successor",
+                quiet.0
+            )),
+            "{findings}"
+        );
+    }
+
+    #[test]
+    fn a_handle_release_without_its_check_is_rejected() {
+        let (mut module, main) = await_lowered();
+        let release = module.functions[main]
+            .blocks
+            .iter_mut()
+            .flat_map(|block| &mut block.instructions)
+            .find(|instruction| matches!(instruction.kind, l::InstructionKind::AsyncHandleRelease))
+            .expect("the release of the held handle");
+        assert!(
+            matches!(
+                release.traps.as_slice(),
+                [l::Trap {
+                    kind: l::TrapKind::Call,
+                    ..
+                }]
+            ),
+            "compiler.md §116.1 rule 4: the lowered release checks the word"
+        );
+        release.traps.clear();
+        let findings = findings(&module);
+        assert!(
+            findings.contains("async handle release does not carry one Call trap"),
             "{findings}"
         );
     }

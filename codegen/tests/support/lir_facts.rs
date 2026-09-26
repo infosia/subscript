@@ -6,12 +6,15 @@ use subscript_compiler::hir;
 use subscript_compiler::lir as l;
 use subscript_compiler::{ClassId, Pos, Type};
 
+#[path = "lir_facts_release.rs"]
+mod release;
 #[path = "lir_facts_using.rs"]
 mod using;
 
 /// Returns every HIR execution fact that the supplied LIR module drops.
 pub fn dropped_facts(hir: &hir::Module, lir: &l::Module) -> Vec<String> {
     let mut findings = Vec::new();
+    release::compare(hir, lir, &mut findings);
     compare_declaration_entities(hir, lir, &mut findings);
     compare_function_entities(hir, lir, &mut findings);
     compare_entry_and_async_roots(hir, lir, &mut findings);
@@ -1220,10 +1223,15 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
                     // A `throw` statement owns its raise site, and the
                     // exception edge of a `using` binding owns the raise
                     // site of its resume; no HIR expression carries either
-                    // (compiler.md §115.2, §115.5 rule 7).
+                    // (compiler.md §115.2, §115.5 rule 7). A handle release
+                    // owns its check (§116.1 rule 4); the lowering places
+                    // releases, and the verifier requires the check.
                     if matches!(
                         instruction.kind,
-                        l::InstructionKind::Throw | l::InstructionKind::ExceptionResume
+                        l::InstructionKind::Throw
+                            | l::InstructionKind::ExceptionResume
+                            | l::InstructionKind::AsyncHandleRelease
+                            | l::InstructionKind::AsyncHandleArrayRelease
                     ) {
                         continue;
                     }
@@ -1857,6 +1865,7 @@ fn instruction_arity(
         | K::CatchEntry
         | K::ExceptionPark
         | K::ExceptionResume
+        | K::AwaitRaise
         | K::Zero => Arity::Exact(0),
         K::Throw => Arity::Exact(3),
         K::StoreLocal(_) | K::StoreGlobal(_) => Arity::Exact(1),

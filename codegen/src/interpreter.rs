@@ -265,23 +265,37 @@ struct Coroutine {
     // Handle ownership and waiter registration never borrow this cell.
     state: Rc<RefCell<Frame>>,
     completed: bool,
-    completion: Option<Value>,
+    completion: Option<Completion>,
     owners: u32,
+    /// A host-kicked export root has no script holder (`compiler.md`
+    /// §116.1 rule 5).
+    host_root: bool,
     /// Continuations registered on this frame, in registration order
     /// (`compiler.md` §94.1 rule 5). Completion moves them to the ready
     /// queue's tail in that order.
     waiters: Vec<Rc<RefCell<Coroutine>>>,
     /// The awaited frame this suspension registered on, with the position
-    /// that reports a resume without a completion, and whether this frame
-    /// owns the awaited reference (a direct `await f(...)` does).
+    /// that reports a resume without a completion. The registration owns one count.
     awaiting: Option<AwaitedHandle>,
+}
+
+/// The completion of an async handle (`compiler.md` §116.2 rules 1 and 5).
+enum Completion {
+    Value(Value),
+    /// The exception that left the body, and whether an `await` raised it
+    /// (§116.1 rule 4).
+    Exception(Box<ExceptionCompletion>),
+}
+
+struct ExceptionCompletion {
+    exception: (usize, String, Pos),
+    observed: bool,
 }
 
 /// One outstanding await registration.
 struct AwaitedHandle {
     handle: Rc<RefCell<Coroutine>>,
     pos: Pos,
-    owned: bool,
 }
 
 /// What a suspension asks the scheduler to do (`compiler.md` §94.1).
@@ -303,6 +317,9 @@ struct Frame {
     resume: Option<Value>,
     /// The exact successor parameter that receives `resume`.
     resume_target: Option<l::ValueId>,
+    /// The exception of an exception completion, which the `AwaitRaise`
+    /// of the resume successor raises (`compiler.md` §116.2 rule 3).
+    delivered: Option<(usize, String, Pos)>,
 }
 
 struct InterpreterLocal {
@@ -321,6 +338,9 @@ impl InterpreterLocal {
 
 enum Flow {
     Returned(Value),
+    /// An exception left an async body with a script holder
+    /// (`compiler.md` §116.1 rule 1).
+    Raised((usize, String, Pos)),
     Suspended {
         yielded: Option<Value>,
         /// `None` for a generator yield, which keeps its own protocol.
@@ -527,6 +547,7 @@ impl<'m> Interpreter<'m> {
             locals,
             resume: None,
             resume_target: None,
+            delivered: None,
         };
         if function.is_generator || function.is_async {
             for trap in &function.creation_traps {
@@ -539,6 +560,7 @@ impl<'m> Interpreter<'m> {
                 completed: false,
                 completion: None,
                 owners: u32::from(function.is_async),
+                host_root: false,
                 waiters: Vec::new(),
                 awaiting: None,
             }));
@@ -558,7 +580,7 @@ impl<'m> Interpreter<'m> {
         let mut frame = frame;
         match self.execute_frame(&mut frame)? {
             Flow::Returned(value) => Ok(value),
-            Flow::Suspended { .. } => Err(self.invalid(
+            Flow::Raised(_) | Flow::Suspended { .. } => Err(self.invalid(
                 Some(function.pos.clone()),
                 "non-coroutine function suspended",
             )),
@@ -627,7 +649,7 @@ impl<'m> Interpreter<'m> {
             if let Some(resume) = saved.resume.as_ref() {
                 collect_coroutines(resume, &mut work);
             }
-            if let Some(completion) = state.completion.as_ref() {
+            if let Some(Completion::Value(completion)) = state.completion.as_ref() {
                 collect_coroutines(completion, &mut work);
             }
             saved.values.clear();
@@ -646,6 +668,7 @@ impl<'m> Interpreter<'m> {
     /// Starts an exported root and registers whatever it suspends on
     /// (§94.1 rules 1, 7 and 10). The kick drains nothing.
     fn async_kick(&mut self, coroutine: &Rc<RefCell<Coroutine>>) -> Result<(), InterpretError> {
+        coroutine.borrow_mut().host_root = true;
         self.async_start(coroutine)?;
         if self.context.trapped() {
             // The existing trap policy preserves the trapping frame.
@@ -653,8 +676,7 @@ impl<'m> Interpreter<'m> {
         }
         // The kick holds no scheduler reference: a suspended root registered
         // its own, and a completed root has no continuation work.
-        self.release_coroutine(coroutine);
-        Ok(())
+        self.release_coroutine(coroutine)
     }
 
     // §94.2: the reference driver clears at a host entry boundary.
@@ -711,8 +733,17 @@ impl<'m> Interpreter<'m> {
     fn async_resume(&mut self, coroutine: &Rc<RefCell<Coroutine>>) -> Result<(), InterpretError> {
         let awaited = coroutine.borrow_mut().awaiting.take();
         if let Some(awaited) = awaited {
-            let completion = awaited.handle.borrow().completion.clone();
-            let Some(value) = completion else {
+            let completion = match awaited.handle.borrow_mut().completion.as_mut() {
+                None => None,
+                Some(Completion::Value(value)) => Some(Ok(value.clone())),
+                // compiler.md §116.1 rules 2 and 3: each await raises the
+                // same object.
+                Some(Completion::Exception(payload)) => {
+                    payload.observed = true;
+                    Some(Err(payload.exception.clone()))
+                }
+            };
+            let Some(completion) = completion else {
                 // §94.1: an internal protocol defect, never a source trap and
                 // never a reason to poll or re-register.
                 return Err(InterpretError::Trap {
@@ -721,10 +752,49 @@ impl<'m> Interpreter<'m> {
                     message: "async resume without completion".to_string(),
                 });
             };
-            coroutine.borrow().state.borrow_mut().resume = Some(value);
-            if awaited.owned {
-                self.release_coroutine(&awaited.handle);
-            }
+            let state = Rc::clone(&coroutine.borrow().state);
+            let mut frame = state.borrow_mut();
+            let value = match completion {
+                Ok(value) => value,
+                Err(exception) => {
+                    let starts_with_raise = self
+                        .module
+                        .functions
+                        .get(frame.function.0 as usize)
+                        .and_then(|function| function.blocks.get(frame.block.0 as usize))
+                        .and_then(|block| block.instructions.first())
+                        .is_some_and(|instruction| {
+                            matches!(instruction.kind, l::InstructionKind::AwaitRaise)
+                        });
+                    if !starts_with_raise {
+                        return Err(InterpretError::Trap {
+                            kind: subscript_runtime::TrapKind::Internal.rule().to_string(),
+                            pos: awaited.pos.clone(),
+                            message: "async exception resume without AwaitRaise".to_string(),
+                        });
+                    }
+                    // The successor's `AwaitRaise` takes the edge; the
+                    // resume value is the zero value, as the tiers read it.
+                    frame.delivered = Some(exception);
+                    let ty = frame
+                        .resume_target
+                        .and_then(|target| {
+                            self.module
+                                .functions
+                                .get(frame.function.0 as usize)?
+                                .values
+                                .get(target.0 as usize)
+                        })
+                        .map(|value| value.ty.clone());
+                    match ty {
+                        Some(l::ValueType::Data(ty)) => self.zero(&ty),
+                        _ => Value::Void,
+                    }
+                }
+            };
+            frame.resume = Some(value);
+            drop(frame);
+            self.release_coroutine(&awaited.handle)?;
         }
         let flow = self.execute_coroutine(coroutine)?;
         self.apply_async_flow(coroutine, flow)
@@ -736,22 +806,31 @@ impl<'m> Interpreter<'m> {
         &mut self,
         coroutine: &Rc<RefCell<Coroutine>>,
     ) -> Result<Flow, InterpretError> {
-        let frame = {
+        let (frame, host_root) = {
             let state = coroutine.borrow();
             if state.completed {
-                return Ok(Flow::Returned(
-                    state.completion.clone().unwrap_or(Value::Void),
-                ));
+                return Ok(Flow::Returned(match &state.completion {
+                    Some(Completion::Value(value)) => value.clone(),
+                    Some(Completion::Exception(_)) | None => Value::Void,
+                }));
             }
-            Rc::clone(&state.state)
+            (Rc::clone(&state.state), state.host_root)
         };
         let mut frame = frame
             .try_borrow_mut()
             .map_err(|_| self.invalid(None, "coroutine frame is already executing"))?;
-        // compiler.md §115.4 items 2 and 3: an `async` body and a generator
-        // body are exception boundaries.
-        self.execute_frame(&mut frame)
-            .map_err(InterpretError::settled)
+        let is_async = self.function(frame.function)?.is_async;
+        // compiler.md §116.1 rule 1: an exception that leaves an async body
+        // with a script holder completes its handle. A host-kicked root
+        // (rule 5) and a generator body (§115.4 item 3) are boundaries.
+        match self.execute_frame(&mut frame) {
+            Err(InterpretError::Exception {
+                object,
+                message,
+                pos,
+            }) if is_async && !host_root => Ok(Flow::Raised((object, message, pos))),
+            outcome => outcome.map_err(InterpretError::settled),
+        }
     }
 
     /// Applies one execution outcome to the scheduler state.
@@ -765,12 +844,36 @@ impl<'m> Interpreter<'m> {
                 let waiters = {
                     let mut state = coroutine.borrow_mut();
                     state.completed = true;
-                    state.completion = Some(value);
+                    state.completion = Some(Completion::Value(value));
                     std::mem::take(&mut state.waiters)
                 };
                 // §94.1 rule 5: completion makes every registered
                 // continuation runnable, in registration order, at the tail.
                 self.async_ready.extend(waiters);
+                Ok(())
+            }
+            Flow::Raised(exception) => {
+                let (waiters, owners) = {
+                    let mut state = coroutine.borrow_mut();
+                    state.completed = true;
+                    state.completion = Some(Completion::Exception(Box::new(ExceptionCompletion {
+                        exception: exception.clone(),
+                        observed: false,
+                    })));
+                    (std::mem::take(&mut state.waiters), state.owners)
+                };
+                self.async_ready.extend(waiters);
+                // compiler.md §116.1 rule 4: with no holder left, the
+                // exception can never be observed.
+                if owners == 0 {
+                    let (object, message, pos) = exception;
+                    return Err(InterpretError::Exception {
+                        object,
+                        message,
+                        pos,
+                    }
+                    .settled());
+                }
                 Ok(())
             }
             Flow::Suspended {
@@ -821,10 +924,14 @@ impl<'m> Interpreter<'m> {
         pos: Pos,
         owned: bool,
     ) {
+        // compiler.md §116.1 rule 4a: the registration owns one handle count.
+        if !owned {
+            let mut state = handle.borrow_mut();
+            state.owners = state.owners.saturating_add(1);
+        }
         frame.borrow_mut().awaiting = Some(AwaitedHandle {
             handle: Rc::clone(handle),
             pos,
-            owned,
         });
         if handle.borrow().completed {
             self.async_ready.push_back(Rc::clone(frame));
@@ -836,16 +943,34 @@ impl<'m> Interpreter<'m> {
     /// Ends one holder's ownership of a handle. The last release drops the
     /// interpreter's handle table entry; the completion cache and the values
     /// reachable from it live as long as some owner holds them (§94.2).
-    fn release_coroutine(&self, coroutine: &Rc<RefCell<Coroutine>>) {
+    ///
+    /// The last release of a handle that holds an exception that no `await`
+    /// raised is the uncaught-exception trap (`compiler.md` §116.1 rule 4).
+    fn release_coroutine(&self, coroutine: &Rc<RefCell<Coroutine>>) -> Result<(), InterpretError> {
         let key = Rc::as_ptr(coroutine) as usize;
         let mut state = coroutine.borrow_mut();
         if state.owners != 0 {
             state.owners -= 1;
         }
         if state.owners == 0 {
+            let unobserved = match &state.completion {
+                Some(Completion::Exception(payload)) if !payload.observed => {
+                    Some(payload.exception.clone())
+                }
+                _ => None,
+            };
             drop(state);
             self.async_handles.borrow_mut().remove(&key);
+            if let Some((object, message, pos)) = unobserved {
+                return Err(InterpretError::Exception {
+                    object,
+                    message,
+                    pos,
+                }
+                .settled());
+            }
         }
+        Ok(())
     }
 
     fn resume_generator(
@@ -858,6 +983,7 @@ impl<'m> Interpreter<'m> {
         }
         let flow = self.execute_coroutine(coroutine)?;
         match flow {
+            Flow::Raised(_) => Err(self.invalid(None, "a generator body raised to its consumer")),
             Flow::Returned(_) => {
                 coroutine.borrow_mut().completed = true;
                 self.iter_result(true, self.zero(value_ty), value_ty)
@@ -1194,6 +1320,18 @@ impl<'m> Interpreter<'m> {
                     self.context.catch_exception();
                 }
                 self.parked.push(caught);
+                None
+            }
+            // compiler.md §116.2 rule 3: the resume of an exception
+            // completion delivered its exception; this raise site raises it.
+            l::InstructionKind::AwaitRaise => {
+                if let Some((object, message, pos)) = frame.delivered.take() {
+                    return Err(InterpretError::Exception {
+                        object,
+                        message,
+                        pos,
+                    });
+                }
                 None
             }
             l::InstructionKind::ExceptionResume => {
@@ -1560,7 +1698,7 @@ impl<'m> Interpreter<'m> {
                     .first()
                     .ok_or_else(|| self.missing_operand(instruction, 0))?;
                 match value {
-                    Value::Coroutine(handle) => self.release_coroutine(handle),
+                    Value::Coroutine(handle) => self.release_coroutine(handle)?,
                     Value::Null => {}
                     _ => {
                         return Err(self.invalid(
@@ -1602,7 +1740,7 @@ impl<'m> Interpreter<'m> {
                     let key = unsafe { (data.add(index * 8) as *const usize).read_unaligned() };
                     let handle = self.async_handles.borrow().get(&key).cloned();
                     if let Some(handle) = handle {
-                        self.release_coroutine(&handle);
+                        self.release_coroutine(&handle)?;
                     }
                 }
                 None
@@ -6255,7 +6393,6 @@ mod tests {
         waiting.borrow_mut().awaiting = Some(AwaitedHandle {
             handle: Rc::clone(&handle),
             pos: pos.clone(),
-            owned: false,
         });
         assert!(!handle.borrow().completed);
         let error = interpreter
@@ -6267,6 +6404,54 @@ mod tests {
                 kind: subscript_runtime::TrapKind::Internal.rule().to_string(),
                 pos,
                 message: "async resume without completion".to_string(),
+            }
+        );
+    }
+
+    /// compiler.md §116.2 rule 5: an exception resume requires its raise site.
+    #[test]
+    fn an_exception_resume_without_await_raise_reports_the_internal_defect() {
+        let (mut module, ()) = interpreter_for(
+            "async function fail(): Promise<i32> { throw new Error(\"late\"); }\n\
+             export async function main(): Promise<void> {\n\
+             try { await fail(); } catch { print(\"caught\"); }\n\
+             }\n",
+        );
+        assert_eq!(interpret(&module).expect("valid raise site"), b"caught\n");
+        let main = module
+            .functions
+            .iter_mut()
+            .find(|function| function.source_name == "main")
+            .expect("main function");
+        let pos = main
+            .blocks
+            .iter()
+            .find_map(|block| match &block.terminator {
+                l::Terminator::Suspend { pos, .. } => Some(pos.clone()),
+                _ => None,
+            })
+            .expect("await position");
+        let successor = main
+            .blocks
+            .iter_mut()
+            .find(|block| {
+                block.instructions.first().is_some_and(|instruction| {
+                    matches!(instruction.kind, l::InstructionKind::AwaitRaise)
+                })
+            })
+            .expect("resume successor");
+        successor.instructions.remove(0);
+        let error = interpret(&module).expect_err("missing raise site");
+        let InterpretError::Execution { output, source } = error else {
+            panic!("expected execution error: {error:?}");
+        };
+        assert!(output.is_empty());
+        assert_eq!(
+            *source,
+            InterpretError::Trap {
+                kind: subscript_runtime::TrapKind::Internal.rule().to_string(),
+                pos,
+                message: "async exception resume without AwaitRaise".to_string(),
             }
         );
     }
@@ -7005,3 +7190,7 @@ fn assoc_key_kind(ty: &Type, module: &l::Module) -> u32 {
         _ => 0,
     }
 }
+
+#[cfg(test)]
+#[path = "interpreter/completion_tests.rs"]
+mod completion_tests;

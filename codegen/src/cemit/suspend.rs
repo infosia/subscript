@@ -255,7 +255,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     ) -> Result<(), String> {
         let register = self.emitter.runtime_call(
             "void",
-            "subscript_rt_async_await",
+            if matches!(
+                block.terminator,
+                l::Terminator::Suspend {
+                    kind: l::SuspendKind::AsyncCall { .. },
+                    ..
+                }
+            ) {
+                "subscript_rt_async_await_owned"
+            } else {
+                "subscript_rt_async_await"
+            },
             &["void*".into(), "void*".into(), "void*".into()],
             &[
                 "ctx".into(),
@@ -282,7 +292,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             kind: l::SuspendKind::AsyncCall { .. },
             successor,
             resume_value,
-            pos,
             ..
         } = &block.terminator
         else {
@@ -298,18 +307,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         };
         self.emit_completion_read(out, block, &output, &size)?;
         self.restore_suspend_arguments(out, block)?;
-        let pos = self.emitter.pos_id(pos);
-        let release = self.emitter.runtime_call(
-            "void",
-            "subscript_rt_async_release",
-            &["void*".into(), "void*".into(), "uint32_t".into()],
-            &[
-                "ctx".into(),
-                format!("frame->b{}_child", block.id.0),
-                format!("{pos}u"),
-            ],
-        );
-        let _ = writeln!(out, "    {release};");
         let _ = writeln!(out, "    frame->b{}_child = NULL;", block.id.0);
         let _ = writeln!(out, "    goto b{};", successor.0);
         Ok(())
@@ -347,7 +344,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     // The scheduler resumes an await only after its handle completes, so a
     // missing completion is an internal protocol defect (`compiler.md`
     // §94.1). The Context stops; nothing re-registers, polls, or fabricates
-    // a result.
+    // a result. An exception completion becomes the pending exception, and
+    // the `AwaitRaise` that starts the successor takes its edge (§116.2
+    // rule 3).
     fn emit_completion_read(
         &mut self,
         out: &mut String,
@@ -364,7 +363,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "uint8_t",
             "subscript_rt_async_result",
             &[
-                "const void*".into(),
+                "void*".into(),
                 "const void*".into(),
                 "void*".into(),
                 "uint64_t".into(),
@@ -385,6 +384,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             &["ctx".into(), format!("{pos}u")],
         );
         let _ = writeln!(out, "    if (!{done}) {{ {missing}; goto unwind; }}");
+        // compiler.md §116.1 rule 4a: release the registration's handle count.
+        self.emit_async_count(out, &handle, Some((pos, &[])))?;
         Ok(())
     }
 }

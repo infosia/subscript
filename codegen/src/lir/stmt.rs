@@ -30,7 +30,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .last()
                 .map(stmt_pos)
                 .unwrap_or_else(|| self.function.pos.clone());
-            self.release_scopes_from(self.scopes.len() - 1, &pos)?;
+            self.exit_actions(self.scopes.len() - 1, self.usings.len(), &pos)?;
         }
         self.scopes.pop();
         result
@@ -271,7 +271,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         });
         if exit_reachable {
             self.enter_block(exit)?;
-            self.release_scopes_from(self.scopes.len() - 1, pos)?;
+            self.exit_actions(self.scopes.len() - 1, self.usings.len(), pos)?;
         } else {
             self.current = None;
         }
@@ -385,7 +385,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         )?;
         self.lower_scoped(body)?;
         if self.current.is_some() {
-            self.release_scopes_from(self.scopes.len() - 1, pos)?;
+            self.exit_actions(self.scopes.len() - 1, self.usings.len(), pos)?;
         }
         self.scopes.pop();
         if self.current.is_some() {
@@ -436,7 +436,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         self.controls.pop();
         self.enter_block(exit)?;
-        self.release_scopes_from(self.scopes.len() - 1, pos)?;
+        self.exit_actions(self.scopes.len() - 1, self.usings.len(), pos)?;
         self.scopes.pop();
         Ok(())
     }
@@ -917,7 +917,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let result = result_binding
             .map(|binding| self.read_binding(binding, &expr.pos))
             .transpose()?;
-        self.release_scopes_from(self.scopes.len() - 1, &expr.pos)?;
+        self.exit_actions(self.scopes.len() - 1, self.usings.len(), &expr.pos)?;
         self.scopes.pop();
         Ok(result)
     }
@@ -1192,7 +1192,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.terminate(l::Terminator::Branch(edge), &expr.pos)?;
 
         self.enter_block(exit)?;
-        self.release_scopes_from(self.scopes.len() - 1, &expr.pos)?;
+        self.exit_actions(self.scopes.len() - 1, self.usings.len(), &expr.pos)?;
         self.scopes.pop();
         Ok(None)
     }

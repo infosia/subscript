@@ -40,6 +40,51 @@ pub(crate) struct PendingException {
     pub(crate) pos_id: u32,
 }
 
+/// The completion of an async handle (`compiler.md` §116.2 rule 1): the
+/// fulfilled value, or the exception that left the body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Completion {
+    /// The fulfilled representation.
+    Value(Vec<u8>),
+    /// The exception that left the body. `observed` records whether an
+    /// `await` raised it (§116.1 rule 4).
+    Exception(Box<ExceptionCompletion>),
+}
+
+/// The payload of an exception completion (`compiler.md` §116.2 rule 1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExceptionCompletion {
+    pub(crate) exception: PendingException,
+    pub(crate) observed: bool,
+}
+
+impl Completion {
+    /// The fulfilled representation, for a value completion.
+    pub(crate) fn value(&self) -> Option<&[u8]> {
+        match self {
+            Self::Value(bytes) => Some(bytes),
+            Self::Exception(_) => None,
+        }
+    }
+
+    /// The address of the Error object, for an exception completion. It is
+    /// a collection root while the handle holds it (§116.1 rule 6).
+    pub(crate) fn exception_object(&self) -> Option<usize> {
+        match self {
+            Self::Value(_) => None,
+            Self::Exception(payload) => Some(payload.exception.object),
+        }
+    }
+
+    /// The exception of a completion that no `await` raised.
+    pub(crate) fn unobserved(self) -> Option<PendingException> {
+        match self {
+            Self::Exception(payload) if !payload.observed => Some(payload.exception),
+            Self::Value(_) | Self::Exception(_) => None,
+        }
+    }
+}
+
 /// Returns the report text of an Error with this `name` and `message`.
 ///
 /// The text follows `Error.prototype.toString`: the name alone when the
@@ -178,6 +223,42 @@ impl Context {
         self.parked_exceptions.len()
     }
 
+    /// Completes the async frame `frame` with the pending exception, at the
+    /// unwind exit of its resume function (`compiler.md` §116.2 rule 2).
+    ///
+    /// The completion holds the object, the report text, and the position
+    /// of the last `throw`. The word clears, and every continuation that
+    /// waits on the frame becomes runnable, as a value completion makes it
+    /// (§94.1 rule 5). A frame with no script holder, a host-kicked export
+    /// root, converts the exception into the uncaught-exception trap
+    /// instead (§116.1 rule 5). A trap or a clear word passes unchanged.
+    pub fn async_complete_exception(&mut self, frame: *mut u8) {
+        if self.trap_flag != STATE_EXCEPTION {
+            return;
+        }
+        let held = self
+            .async_frames
+            .get(&(frame as usize))
+            .is_some_and(|meta| !meta.host_root && meta.completion.is_none());
+        if !held {
+            self.settle_uncaught_exception();
+            return;
+        }
+        let Some(exception) = self.pending_exception.take() else {
+            self.settle_uncaught_exception();
+            return;
+        };
+        self.trap_flag = STATE_NONE;
+        if let Some(meta) = self.async_frames.get_mut(&(frame as usize)) {
+            meta.completion = Some(Completion::Exception(Box::new(ExceptionCompletion {
+                exception,
+                observed: false,
+            })));
+            let waiters = std::mem::take(&mut meta.waiters);
+            self.async_ready.extend(waiters);
+        }
+    }
+
     /// The address of the pending Error object, if one is pending.
     #[must_use]
     pub fn pending_exception_object(&self) -> Option<*mut u8> {
@@ -230,11 +311,10 @@ pub unsafe extern "C" fn subscript_rt_exception_catch(ctx: *mut Context) -> *mut
 }
 
 /// An exception boundary: converts a pending exception into the trap
-/// [`TrapKind::UncaughtException`] (`compiler.md` §115.4 items 2 and 3).
+/// [`TrapKind::UncaughtException`] (`compiler.md` §115.4 item 3).
 ///
-/// The unwind exit of an `async` body and of a generator body calls it,
-/// so no exception leaves the body. With no pending exception, the call
-/// does nothing.
+/// The unwind exit of a generator body calls it, so no exception leaves
+/// the body. With no pending exception, the call does nothing.
 ///
 /// # Safety
 ///
@@ -243,6 +323,22 @@ pub unsafe extern "C" fn subscript_rt_exception_catch(ctx: *mut Context) -> *mut
 pub unsafe extern "C" fn subscript_rt_exception_settle(ctx: *mut Context) {
     // SAFETY: exclusive Context contract.
     unsafe { &mut *ctx }.settle_uncaught_exception();
+}
+
+/// The unwind exit of an `async` resume function: completes the frame's
+/// handle with the pending exception (`compiler.md` §116.2 rule 2).
+///
+/// A frame with no script holder settles the exception into the
+/// uncaught-exception trap (§116.1 rule 5). A trap passes unchanged.
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract. `frame` is the async
+/// frame whose resume function unwinds.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_complete_exception(ctx: *mut Context, frame: *mut u8) {
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.async_complete_exception(frame);
 }
 
 /// The start of the hooks of an exception exit: parks the pending
@@ -268,6 +364,9 @@ pub unsafe extern "C" fn subscript_rt_exception_resume(ctx: *mut Context) {
     // SAFETY: exclusive Context contract.
     unsafe { &mut *ctx }.resume_exception();
 }
+
+#[cfg(test)]
+mod async_completion_tests;
 
 #[cfg(test)]
 mod tests {

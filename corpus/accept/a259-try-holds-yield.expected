@@ -1,0 +1,13 @@
+main:n=0
+steps:after yield 0 total=0
+main:n=1
+steps:caught step 1 failed total=1
+main:n=101
+main:n=2
+steps:after yield 2 total=3
+steps:done total=3
+main:spans 1
+main:spans 2
+spans:caught TypeError after two resumes seen=2
+main:spans 3
+main:end

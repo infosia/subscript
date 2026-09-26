@@ -647,12 +647,23 @@ export async function main(): Promise<void> {
     assert_eq!(source.matches("frame->b1_child = NULL;").count(), 1);
     // The suspension registers the caller and returns; it never resumes the
     // child it created.
-    for block in ["b0", "b1"] {
-        let register = format!("subscript_rt_async_await(ctx, frame, frame->{block}_child)");
+    for (block, suffix) in [("b0", "_owned"), ("b1", "")] {
+        let register =
+            format!("subscript_rt_async_await{suffix}(ctx, frame, frame->{block}_child)");
         assert_eq!(
             source.matches(register.as_str()).count(),
             1,
             "{block} registers exactly one continuation"
+        );
+    }
+    for block in ["b0", "b1"] {
+        assert_eq!(
+            source
+                .matches(&format!(
+                    "subscript_rt_async_release(ctx, frame->{block}_child"
+                ))
+                .count(),
+            1
         );
     }
     let release = source
@@ -1275,10 +1286,24 @@ const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
     (
         "t63-exception-leaves-async",
-        "an exception that leaves an async body becomes the uncaught-exception trap there",
+        "an exception that leaves a host-kicked async export becomes the uncaught-exception trap there",
         "uncaught-exception",
-        10,
+        16,
         5,
+    ),
+    (
+        "t66-unobserved-async-exception",
+        "a handle whose unobserved exception reaches a zero count traps at the throw position",
+        "uncaught-exception",
+        9,
+        3,
+    ),
+    (
+        "t67-exception-exit-releases-its-handle",
+        "an exception exit releases an unobserved failed handle",
+        "uncaught-exception",
+        8,
+        40,
     ),
     (
         "t64-exception-leaves-generator",
@@ -2601,5 +2626,80 @@ fn a_parameter_default_evaluates_after_the_field_initializers() {
     assert_eq!(
         interpret(&module).expect("construction order LIR interprets"),
         b"arg\ninit\ndefault\n1 5 5\n"
+    );
+}
+
+#[test]
+fn exception_exit_fact_check_rejects_a_missing_release() {
+    let hir = check_program(&[SourceFile::new(
+        "release.ts",
+        include_str!("../../corpus/trap/t67-exception-exit-releases-its-handle.ts"),
+    )])
+    .expect("checks");
+    let mut lir = lower_module(&hir).expect("lowers");
+    assert!(lir_facts::dropped_facts(&hir, &lir).is_empty());
+    let landing = lir
+        .functions
+        .iter_mut()
+        .flat_map(|f| &mut f.blocks)
+        .find(|block| {
+            matches!(
+                block.instructions.first().map(|i| &i.kind),
+                Some(InstructionKind::ExceptionPark)
+            ) && block
+                .instructions
+                .iter()
+                .any(|i| matches!(i.kind, InstructionKind::AsyncHandleRelease))
+        })
+        .expect("release landing");
+    landing
+        .instructions
+        .retain(|i| !matches!(i.kind, InstructionKind::AsyncHandleRelease));
+    let findings = lir_facts::dropped_facts(&hir, &lir);
+    assert!(
+        findings.iter().any(
+            |f| f.contains("exception edge releases 0 owned handles; lexical scopes require 1")
+        ),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn exception_exit_fact_check_rejects_an_extra_release() {
+    let hir = check_program(&[SourceFile::new(
+        "release.ts",
+        include_str!("../../corpus/trap/t67-exception-exit-releases-its-handle.ts"),
+    )])
+    .expect("checks");
+    let mut lir = lower_module(&hir).expect("lowers");
+    assert!(lir_facts::dropped_facts(&hir, &lir).is_empty());
+    let landing = lir
+        .functions
+        .iter_mut()
+        .flat_map(|f| &mut f.blocks)
+        .find(|block| {
+            matches!(
+                block.instructions.first().map(|i| &i.kind),
+                Some(InstructionKind::ExceptionPark)
+            ) && block
+                .instructions
+                .iter()
+                .any(|i| matches!(i.kind, InstructionKind::AsyncHandleRelease))
+        })
+        .expect("release landing");
+    let release = landing
+        .instructions
+        .iter()
+        .position(|i| matches!(i.kind, InstructionKind::AsyncHandleRelease))
+        .expect("release");
+    landing
+        .instructions
+        .insert(release, landing.instructions[release].clone());
+    let findings = lir_facts::dropped_facts(&hir, &lir);
+    assert!(
+        findings.iter().any(
+            |f| f.contains("exception edge releases 2 owned handles; lexical scopes require 1")
+        ),
+        "{findings:?}"
     );
 }

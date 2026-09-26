@@ -267,8 +267,10 @@ pub struct Function {
     pub host_entry_traps: Option<Vec<Trap>>,
     /// Whether a call to this function can leave an exception pending.
     /// The lowering copies the HIR fact (`compiler.md` §115.6 rule 3). An
-    /// `async` body and a generator body carry `false`: their propagate
-    /// exit is their own boundary (§115.4 items 2 and 3).
+    /// `async` function carries the fact of its body: its propagate exit
+    /// completes its handle, and an `await` raises it (§116.1 rules 1 and
+    /// 2). A generator body carries `false`: its propagate exit is its own
+    /// boundary (§115.4 item 3).
     pub can_raise: bool,
     /// Typed parameters; each parameter value is a definition.
     pub parameters: Vec<Parameter>,
@@ -567,11 +569,14 @@ pub enum InstructionKind {
     AsyncHandleCreate(CallTarget),
     /// Increment one async frame's non-atomic owner count.
     AsyncHandleRetain,
-    /// Decrement one async frame's owner count and free it at zero.
+    /// Decrement one async frame's owner count and free it at zero. Its
+    /// `Call` trap stops at a frame that holds an unobserved exception
+    /// (§116.1 rule 4).
     AsyncHandleRelease,
     /// Retain each async handle stored in one dynamic array.
     AsyncHandleArrayRetain,
-    /// Release each async handle stored in one dynamic array.
+    /// Release each async handle stored in one dynamic array. Its `Call`
+    /// trap stops as `AsyncHandleRelease` stops (§116.1 rule 4).
     AsyncHandleArrayRelease,
     /// Create a fused iteration cursor with its source-selected bound.
     IteratorCreate {
@@ -604,6 +609,13 @@ pub enum InstructionKind {
     /// Make the exception that the last park set aside pending again. The
     /// instruction's `Raise` trap names its handler edge (§115.5 rule 7).
     ExceptionResume,
+    /// The raise site of an `await` (§116.1 rule 2). It is the first
+    /// instruction of the resume successor of an `AsyncCall` or
+    /// `AsyncHandle` suspension. For a handle that completed with an
+    /// exception, the resume made that exception pending, and the
+    /// instruction's `Raise` trap names its handler edge. It has no
+    /// operand and no result.
+    AwaitRaise,
 }
 
 impl InstructionKind {
@@ -1256,6 +1268,9 @@ pub struct SwitchArm {
 /// - An ordinary call and an export kick never drain ready work.
 /// - A resumed await reads the immutable cached completion. A resume
 ///   without that completion is an internal protocol defect.
+/// - A completion is a value or an exception (§116.2 rule 1). The resume
+///   of an exception completion makes the exception pending, and the
+///   `AwaitRaise` instruction that starts the successor takes its edge.
 ///
 /// Generator suspension keeps its own `.next()`-driven protocol.
 #[derive(Debug, Clone, PartialEq, Eq)]

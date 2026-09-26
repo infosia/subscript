@@ -75,7 +75,7 @@ fn hook_sites(hir: &hir::Module, binding: &hir::UsingBinding) -> Vec<hir::TrapSi
 
 /// The lowering places the hooks at the end of a body only where the body
 /// lowers to its end and control can arrive there (`compiler.md` §101).
-fn end_places_hooks(hir: &hir::Module, body: &[hir::Stmt]) -> bool {
+pub(super) fn end_places_hooks(hir: &hir::Module, body: &[hir::Stmt]) -> bool {
     sequence_exits(hir, body).next && arrives(body).next
 }
 

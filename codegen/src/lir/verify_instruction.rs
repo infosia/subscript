@@ -64,6 +64,11 @@ pub(super) fn verify_instruction_contract(
                 bad("exception exit signature is invalid", errors);
             }
         }
+        l::InstructionKind::AwaitRaise => {
+            if !instruction.operands.is_empty() || instruction.result.is_some() {
+                bad("await raise signature is invalid", errors);
+            }
+        }
         l::InstructionKind::CatchEntry => {
             let valid = instruction.operands.is_empty()
                 && matches!(
@@ -396,6 +401,9 @@ pub(super) fn verify_instruction_contract(
             {
                 bad("async handle ownership instruction is invalid", errors);
             }
+            if !release_checks_the_word(instruction) {
+                bad("async handle release does not carry one Call trap", errors);
+            }
         }
         l::InstructionKind::AsyncHandleArrayRetain
         | l::InstructionKind::AsyncHandleArrayRelease => {
@@ -405,6 +413,9 @@ pub(super) fn verify_instruction_contract(
                 || instruction.result.is_some()
             {
                 bad("async handle array release signature is invalid", errors);
+            }
+            if !release_checks_the_word(instruction) {
+                bad("async handle release does not carry one Call trap", errors);
             }
         }
         l::InstructionKind::LoadAddress => {
@@ -664,6 +675,23 @@ pub(super) fn verify_instruction_contract(
             }
         }
     }
+}
+
+/// Whether a release of async handles carries its one `Call` trap
+/// (`compiler.md` §116.1 rule 4). A retain passes.
+fn release_checks_the_word(instruction: &l::Instruction) -> bool {
+    let releases = matches!(
+        instruction.kind,
+        l::InstructionKind::AsyncHandleRelease | l::InstructionKind::AsyncHandleArrayRelease
+    );
+    !releases
+        || matches!(
+            instruction.traps.as_slice(),
+            [l::Trap {
+                kind: l::TrapKind::Call,
+                ..
+            }]
+        )
 }
 
 fn lir_field_type(

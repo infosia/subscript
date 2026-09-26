@@ -351,6 +351,20 @@ pub unsafe extern "C" fn subscript_rt_async_await(
     unsafe { &mut *ctx }.async_await(frame, handle);
 }
 
+/// Moves the call's handle count to an await registration (§116.1 rule 4a).
+///
+/// # Safety
+///
+/// Shared contract; both frames are live. The caller transfers one handle count.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_await_owned(
+    ctx: *mut Context,
+    frame: *mut u8,
+    handle: *mut u8,
+) {
+    unsafe { &mut *ctx }.async_await_owned(frame, handle);
+}
+
 /// Reports a scheduled await resume whose awaited handle carries no
 /// completion (`compiler.md` §94.1). This is an internal protocol defect,
 /// never a source-language trap, and no consumer recovers from it.
@@ -461,6 +475,8 @@ pub unsafe extern "C" fn subscript_rt_async_complete(
 }
 
 /// Copies the cached fulfilled representation for a later held await.
+/// An exception completion becomes the pending exception instead
+/// (`compiler.md` §116.1 rule 2).
 ///
 /// # Safety
 ///
@@ -468,12 +484,12 @@ pub unsafe extern "C" fn subscript_rt_async_complete(
 /// `size` writable bytes when `size` is nonzero.
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_async_result(
-    ctx: *const Context,
+    ctx: *mut Context,
     frame: *const u8,
     out: *mut u8,
     size: u64,
 ) -> u8 {
-    u8::from(unsafe { &*ctx }.async_result(frame, out, size as usize))
+    u8::from(unsafe { &mut *ctx }.async_result(frame, out, size as usize))
 }
 
 // ----- Map / Set (stdlib.md §10, Q24) -----

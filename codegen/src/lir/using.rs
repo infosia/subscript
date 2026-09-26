@@ -26,6 +26,8 @@ pub(super) struct UsingFrame {
     storage: Vec<(BindingId, Option<BindingId>)>,
     /// The depth of the handler stack where the node starts.
     handler_depth: usize,
+    /// The depth of the lexical scopes where the node starts.
+    scope_depth: usize,
 }
 
 /// An edge that leaves statements: `return`, `break`, or `continue`.
@@ -53,13 +55,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
     }
 
-    /// The one lowering of `return`, `break`, and `continue`: the hooks of
-    /// each `using` node that the edge leaves, innermost first, then the
-    /// scope releases, then the terminator.
+    /// The one lowering of `return`, `break`, and `continue`: the scope
+    /// actions, innermost first, then the terminator.
     pub(super) fn leave(&mut self, edge: Leave, pos: &Pos) -> Result<(), LowerError> {
         match edge {
             Leave::Return(value) => {
-                self.run_exit_hooks(0)?;
                 let ty = l::ValueType::Data(self.function.ret.clone());
                 self.terminate_return(value, ty, pos)
             }
@@ -98,8 +98,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         (target, scope_depth, using_depth): (l::BlockId, usize, usize),
         pos: &Pos,
     ) -> Result<(), LowerError> {
-        self.run_exit_hooks(using_depth)?;
-        self.release_scopes_from(scope_depth, pos)?;
+        self.exit_actions(scope_depth, using_depth, pos)?;
         let edge = self.block_target(target, Vec::new())?;
         self.terminate(l::Terminator::Branch(edge), pos)
     }
@@ -123,12 +122,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
         let handler_depth = self.handlers.len();
         for _ in bindings {
-            self.handlers.push(HandlerFrame::without_binding());
+            self.handlers
+                .push(HandlerFrame::without_binding(self.scopes.len()));
         }
         self.usings.push(UsingFrame {
             bindings: bindings.to_vec(),
             storage,
             handler_depth,
+            scope_depth: self.scopes.len(),
         });
         let mut lowered = self.lower_scoped(body);
         // §101: no hook where control cannot arrive.
@@ -136,7 +137,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             && self.current.is_some()
             && subscript_compiler::sequence_can_fall_through(body)
         {
-            lowered = self.run_exit_hooks(self.usings.len() - 1);
+            lowered = self.exit_actions(self.scopes.len(), self.usings.len() - 1, pos);
         }
         lowered?;
         let frame = self
@@ -162,10 +163,31 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(())
     }
 
-    /// The hooks of the nodes from `first` to the innermost, innermost
-    /// first, in reverse declaration order (`compiler.md` §60.1 rule 4).
-    fn run_exit_hooks(&mut self, first: usize) -> Result<(), LowerError> {
+    /// Places every exit's actions, from the innermost scope to `depth`.
+    /// Each body's releases precede its enclosing node's hooks (§116.1 rule 4b).
+    /// The exception edge supplies the hooks through its handler frames.
+    pub(super) fn exit_actions(
+        &mut self,
+        depth: usize,
+        first: usize,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        let scopes = self.scopes.clone();
+        let result = self.place_exit_actions(depth, first, pos);
+        self.scopes = scopes;
+        result
+    }
+
+    fn place_exit_actions(
+        &mut self,
+        depth: usize,
+        first: usize,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
         for node in (first..self.usings.len()).rev() {
+            let scope_depth = self.usings[node].scope_depth;
+            self.release_scopes_from(scope_depth, pos)?;
+            self.scopes.truncate(scope_depth);
             for binding in (0..self.usings[node].bindings.len()).rev() {
                 if self.current.is_none() {
                     return Ok(());
@@ -180,7 +202,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 lowered?;
             }
         }
-        Ok(())
+        self.release_scopes_from(depth, pos)
     }
 
     /// The hook of one binding of the node at `node` on the `using` stack.
@@ -246,12 +268,17 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.terminate(l::Terminator::Branch(target), &pos)?;
         }
         self.enter_block(exit_block)?;
-        self.handlers.push(HandlerFrame::without_binding());
-        let lowered = self.lower_hook_statement(
-            &using.hook(),
-            (using.name.clone(), using.active.clone()),
-            frame.storage[binding],
-        );
+        self.handlers
+            .push(HandlerFrame::without_binding(self.scopes.len()));
+        let using_depth = self.usings.len();
+        self.usings.push(UsingFrame {
+            bindings: vec![using.clone()],
+            storage: vec![frame.storage[binding]],
+            handler_depth: self.handlers.len(),
+            scope_depth: self.scopes.len(),
+        });
+        let lowered = self.exit_actions(self.scopes.len(), using_depth, &pos);
+        self.usings.pop();
         let hook_frame = self
             .handlers
             .pop()

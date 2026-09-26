@@ -32,6 +32,7 @@ use crate::root_storage::{self, RootStoragePlan};
 
 mod abi;
 mod aggregate;
+mod async_count;
 mod boundary;
 mod builtin;
 mod call;
@@ -469,10 +470,22 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         self.builder.switch_to_block(block);
         self.pop_shadow()?;
         if self.coroutine.is_some() {
-            // compiler.md §115.4 items 2 and 3: an `async` body and a
-            // generator body are exception boundaries. The unwind exit is
-            // cold, so the success path gains nothing.
-            self.call_runtime(self.ml.rt.exception_settle, &[self.ctx], false)?;
+            // compiler.md §116.2 rule 2: an exception that leaves an `async`
+            // body completes its handle. A generator body is an exception
+            // boundary (§115.4 item 3). The unwind exit is cold, so the
+            // success path gains nothing.
+            if self.function.is_async {
+                let frame = self
+                    .frame
+                    .ok_or_else(|| internal("the async unwind exit has no frame"))?;
+                self.call_runtime(
+                    self.ml.rt.async_complete_exception,
+                    &[self.ctx, frame],
+                    false,
+                )?;
+            } else {
+                self.call_runtime(self.ml.rt.exception_settle, &[self.ctx], false)?;
+            }
             let one = self.iconst(types::I8, 1);
             self.builder.ins().return_(&[one]);
             return Ok(());

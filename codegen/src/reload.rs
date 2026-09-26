@@ -919,6 +919,12 @@ impl ReloadSession {
         self.check_trap()
     }
 
+    /// Number of live Context allocations, for host inspection.
+    #[must_use]
+    pub fn live_allocations(&self) -> usize {
+        self.ctx.live_count()
+    }
+
     /// Number of suspended async roots currently owned by the live
     /// Context. Calling an async export kicks a root but does not pump it;
     /// reload-capable hosts retain the same explicit polling control as C
@@ -1195,6 +1201,17 @@ mod tests {
         s.call_main().expect("call");
         assert_eq!(s.take_output(), b"one\n");
         assert_eq!(s.take_output(), b"");
+    }
+
+    #[test]
+    fn live_allocations_reads_the_runtime_count() {
+        let mut session = ReloadSession::new(&src(
+            "export function main(): void { const values: i32[] = [1]; }",
+        ))
+        .expect("session");
+        let before = session.live_allocations();
+        session.call_main().expect("main");
+        assert!(session.live_allocations() > before);
     }
 
     #[test]

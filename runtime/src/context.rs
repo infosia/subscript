@@ -133,13 +133,17 @@ pub type ScriptMainEntry = unsafe extern "C" fn(ctx: *mut Context);
 pub type AsyncResume = unsafe extern "C" fn(ctx: *mut Context, frame: *mut u8, out: *mut u8) -> u8;
 
 #[derive(Default)]
-struct AsyncFrameMeta {
+pub(crate) struct AsyncFrameMeta {
     created_epoch: u32,
-    completion: Option<Vec<u8>>,
+    // compiler.md §116.2 rule 1: a value or an exception.
+    pub(crate) completion: Option<crate::exception::Completion>,
     // The fulfilled-value size the scheduler supplies when it resumes this
     // frame, and the continuations registered on it (§94.1 rule 5).
     result_size: usize,
-    waiters: Vec<*mut u8>,
+    pub(crate) waiters: Vec<*mut u8>,
+    // compiler.md §116.1 rule 5: a host-kicked export root has no script
+    // holder, so an exception that leaves it settles into a trap.
+    pub(crate) host_root: bool,
 }
 
 /// Aligned result storage for one scheduler resume (`compiler.md` §94.2).
@@ -656,7 +660,7 @@ pub struct Context {
     // so explicit collection keeps the running frame alive.
     // §94 scheduler state: runnable continuations in FIFO order, and the
     // frames that wait for the next host checkpoint.
-    async_ready: VecDeque<*mut u8>,
+    pub(crate) async_ready: VecDeque<*mut u8>,
     async_parked: VecDeque<*mut u8>,
     // §94.2: clearance transfers the recorded ready job to stopped storage.
     async_trapping: Option<(*mut u8, TrapKind)>,
@@ -666,7 +670,7 @@ pub struct Context {
     // frame header's four-byte `reserved` word; Context metadata holds
     // reload provenance, the fulfilled-value size the scheduler needs, the
     // cached completion, and the continuations registered on the frame.
-    async_frames: HashMap<usize, AsyncFrameMeta>,
+    pub(crate) async_frames: HashMap<usize, AsyncFrameMeta>,
     // §113.2 rule 4: live payload bytes (§18.2d) in both memory modes.
     // Every site that changes the live set moves it, so a per-frame host
     // read costs the same at every live count.
@@ -1194,6 +1198,7 @@ impl Context {
                 completion: None,
                 result_size,
                 waiters: Vec::new(),
+                host_root: false,
             },
         );
     }
@@ -1217,12 +1222,28 @@ impl Context {
     /// Registers `frame` as a continuation of `handle` (`compiler.md`
     /// §94.1 rules 4 to 6). A completed handle places the continuation at
     /// the ready queue's tail; an unfinished handle keeps it in its own
-    /// registration-ordered list.
+    /// registration-ordered list. The registration holds one handle count
+    /// until the resume reads its completion and releases that count (§116.1).
     ///
     /// # Safety
     ///
     /// Both pointers are registered live async frames in this Context.
     pub unsafe fn async_await(&mut self, frame: *mut u8, handle: *mut u8) {
+        if frame.is_null() || !self.async_frames.contains_key(&(frame as usize)) {
+            return;
+        }
+        unsafe {
+            self.async_retain(handle);
+            self.async_await_owned(frame, handle);
+        }
+    }
+
+    /// Moves the call's handle count to an await registration (§116.1 rule 4a).
+    ///
+    /// # Safety
+    ///
+    /// Both pointers are registered live frames. The caller transfers one handle count.
+    pub unsafe fn async_await_owned(&mut self, frame: *mut u8, handle: *mut u8) {
         if frame.is_null() || !self.async_frames.contains_key(&(frame as usize)) {
             return;
         }
@@ -1291,6 +1312,10 @@ impl Context {
     /// Decrements one held async handle count and frees the frame exactly
     /// when the count reaches zero.
     ///
+    /// A frame whose completion holds an exception that no `await` raised
+    /// traps with [`TrapKind::UncaughtException`] at that point
+    /// (`compiler.md` §116.1 rule 4).
+    ///
     /// # Safety
     ///
     /// `frame` is a registered live async frame in this Context and the
@@ -1306,8 +1331,15 @@ impl Context {
         }
         *slot -= 1;
         if *slot == 0 {
-            self.async_frames.remove(&(frame as usize));
+            let meta = self.async_frames.remove(&(frame as usize));
             self.delete(frame as usize, pos_id);
+            if let Some(unobserved) = meta.and_then(|meta| meta.completion?.unobserved()) {
+                self.trap(
+                    TrapKind::UncaughtException,
+                    unobserved.message,
+                    unobserved.pos_id,
+                );
+            }
         }
     }
 
@@ -1335,6 +1367,9 @@ impl Context {
 
     /// Caches the fulfilled representation after the first held await.
     ///
+    /// A completion is immutable (§94.1 rule 11): a frame that already
+    /// completed with an exception keeps it (`compiler.md` §116.2 rule 2).
+    ///
     /// # Safety
     ///
     /// `value` is null when `size == 0`, otherwise it points to `size`
@@ -1343,13 +1378,16 @@ impl Context {
         let Some(meta) = self.async_frames.get_mut(&(frame as usize)) else {
             return;
         };
+        if meta.completion.is_some() {
+            return;
+        }
         let bytes = if size == 0 {
             Vec::new()
         } else {
             // SAFETY: guaranteed by the caller.
             unsafe { std::slice::from_raw_parts(value, size) }.to_vec()
         };
-        meta.completion = Some(bytes);
+        meta.completion = Some(crate::exception::Completion::Value(bytes));
         // §94.1 rule 5: completion makes every registered continuation
         // runnable, in registration order, at the queue's tail.
         let waiters = std::mem::take(&mut meta.waiters);
@@ -1359,17 +1397,35 @@ impl Context {
     /// Copies a cached fulfilled representation into `out`, returning
     /// `true` when the handle had already completed.
     ///
+    /// For an exception completion, the call leaves `out` unchanged, makes
+    /// the exception pending again with its object, report text, and
+    /// position, and returns `true`. The raise site of the `await` then
+    /// takes its edge (`compiler.md` §116.1 rules 2 and 3).
+    ///
     /// # Safety
     ///
     /// `out` is null when `size == 0`, otherwise it points to `size`
     /// writable bytes.
-    pub unsafe fn async_result(&self, frame: *const u8, out: *mut u8, size: usize) -> bool {
-        let Some(bytes) = self
+    pub unsafe fn async_result(&mut self, frame: *const u8, out: *mut u8, size: usize) -> bool {
+        let Some(completion) = self
             .async_frames
-            .get(&(frame as usize))
-            .and_then(|meta| meta.completion.as_ref())
+            .get_mut(&(frame as usize))
+            .and_then(|meta| meta.completion.as_mut())
         else {
             return false;
+        };
+        let bytes = match completion {
+            crate::exception::Completion::Value(bytes) => bytes,
+            crate::exception::Completion::Exception(payload) => {
+                payload.observed = true;
+                let exception = payload.exception.clone();
+                self.raise_exception(
+                    exception.object as *mut u8,
+                    exception.message,
+                    exception.pos_id,
+                );
+                return true;
+            }
         };
         if size != 0 {
             if bytes.len() != size {
@@ -1393,6 +1449,9 @@ impl Context {
     pub unsafe fn async_kick(&mut self, frame: *mut u8, resume: AsyncResume) {
         if frame.is_null() || self.trapped() {
             return;
+        }
+        if let Some(meta) = self.async_frames.get_mut(&(frame as usize)) {
+            meta.host_root = true;
         }
         self.active_async_frames.push(frame as usize);
         let ctx = self as *mut Context;
@@ -1480,6 +1539,11 @@ impl Context {
             // The scheduler's own reference ends here. A frame that
             // suspended again registered a new one before it returned.
             unsafe { self.async_release(frame, 0) };
+            if self.trapped() {
+                // compiler.md §116.1 rule 4: the release freed a frame that
+                // holds an unobserved exception. No frame is left to keep.
+                break;
+            }
         }
         self.active_async_frames.truncate(active_base);
         self.exit_script();
@@ -2999,7 +3063,7 @@ impl Context {
         let completions = self
             .async_frames
             .values()
-            .filter_map(|meta| meta.completion.as_deref())
+            .filter_map(|meta| meta.completion.as_ref()?.value())
             .enumerate()
             .flat_map(|(index, completion)| {
                 completion
@@ -3014,6 +3078,20 @@ impl Context {
                     })
             });
         self.push_root_set(&mut work, &mut tracer, "completion", completions);
+        // compiler.md §116.1 rule 6: a handle holds its Error object as a
+        // collection root.
+        let completion_exceptions = self
+            .async_frames
+            .values()
+            .filter_map(|meta| meta.completion.as_ref()?.exception_object())
+            .enumerate()
+            .map(|(index, address)| (index, 0, address));
+        self.push_root_set(
+            &mut work,
+            &mut tracer,
+            "completion_exception",
+            completion_exceptions,
+        );
         let interned = self
             .interned
             .values()

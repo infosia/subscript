@@ -155,29 +155,35 @@ fn catch_annotations_and_patterns_follow_the_decided_surface() {
 }
 
 #[test]
-fn finally_and_a_suspension_in_the_try_block_are_rejected() {
+fn finally_is_rejected_and_a_try_block_can_hold_a_suspension() {
     let finally = first_error(&in_main(
         "  try {\n    print(\"x\");\n  } finally {\n    print(\"y\");\n  }",
     ));
     assert_eq!(finally.code, RuleCode::S010);
     assert!(finally.message.contains("`finally`"), "{}", finally.message);
 
-    let awaited = first_error(
+    // compiler.md §116.1 rule 7: a `try` block can hold `await` and
+    // `yield`.
+    check(
         "async function step(): Promise<i32> { return 1; }\n\
          export async function main(): Promise<void> {\n\
          \x20 try {\n    const value: i32 = await step();\n    print(`${value}`);\n  } catch {\n  }\n}\n",
-    );
-    assert_eq!(awaited.code, RuleCode::S010);
-    assert!(awaited.message.contains("`await`"), "{}", awaited.message);
-    assert!(
-        awaited
-            .message
-            .contains("is outside the decided exception surface"),
-        "{}",
-        awaited.message
-    );
-    assert_eq!(awaited.pos.line, 4);
-
+    )
+    .expect("a try block can hold an await of a direct call");
+    check(
+        "async function step(): Promise<i32> { return 1; }\n\
+         export async function main(): Promise<void> {\n\
+         \x20 const held: Promise<i32> = step();\n\
+         \x20 try {\n    await Context.suspend();\n    print(`${await held}`);\n  } catch {\n  }\n}\n",
+    )
+    .expect("a try block can hold an explicit suspension and a held await");
+    check(
+        "function* numbers(): Generator<i32> {\n\
+         \x20 try {\n    yield 1;\n  } catch {\n  }\n}\n\
+         export function main(): void {\n\
+         \x20 const values: Generator<i32> = numbers();\n  values.next();\n}\n",
+    )
+    .expect("a try block can hold a yield");
     check(
         "export async function main(): Promise<void> {\n\
          \x20 try {\n    print(\"x\");\n  } catch {\n    await Context.suspend();\n  }\n}\n",
