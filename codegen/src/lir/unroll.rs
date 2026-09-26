@@ -709,7 +709,7 @@ fn has_external_use(
 fn predecessors(function: &l::Function) -> Vec<Vec<l::BlockId>> {
     let mut result = vec![Vec::new(); function.blocks.len()];
     for block in &function.blocks {
-        for successor in block.terminator.successors() {
+        for successor in block.successors() {
             if let Some(predecessors) = result.get_mut(successor.0 as usize) {
                 predecessors.push(block.id);
             }

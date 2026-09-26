@@ -1,6 +1,5 @@
 //! Lowering for statements: declarations, conditionals, loops, iteration callbacks, and switch.
 
-use super::verify_dominance::successors;
 use super::*;
 
 impl<'a, 'm> FunctionBuilder<'a, 'm> {
@@ -23,7 +22,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(())
     }
 
-    fn lower_scoped(&mut self, statements: &[hir::Stmt]) -> Result<(), LowerError> {
+    pub(super) fn lower_scoped(&mut self, statements: &[hir::Stmt]) -> Result<(), LowerError> {
         self.scopes.push(HashMap::new());
         let result = self.lower_statements(statements);
         if result.is_ok() && self.current.is_some() {
@@ -37,7 +36,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         result
     }
 
-    fn lower_statement(&mut self, statement: &hir::Stmt) -> Result<(), LowerError> {
+    pub(super) fn lower_statement(&mut self, statement: &hir::Stmt) -> Result<(), LowerError> {
         match statement {
             hir::Stmt::Let {
                 name,
@@ -77,7 +76,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .as_ref()
                     .map(|value| self.lower_stored_expr_at(&self.function.ret.clone(), value, pos))
                     .transpose()?;
-                self.terminate_return(value, l::ValueType::Data(self.function.ret.clone()), pos)?;
+                self.leave(using::Leave::Return(value), pos)?;
             }
             hir::Stmt::If {
                 cond,
@@ -106,32 +105,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             hir::Stmt::Switch { disc, cases, pos } => {
                 self.lower_switch(disc, cases, pos)?;
             }
-            hir::Stmt::Break(pos) => {
-                let block = self
-                    .controls
-                    .last()
-                    .map(|control| (control.break_target, control.scope_depth))
-                    .ok_or_else(|| self.error(pos, "break has no enclosing target"))?;
-                self.release_scopes_from(block.1, pos)?;
-                let edge = self.block_target(block.0, Vec::new())?;
-                self.terminate(l::Terminator::Branch(edge), pos)?;
-            }
-            hir::Stmt::Continue(pos) => {
-                let control = self
-                    .controls
-                    .iter()
-                    .rev()
-                    .find_map(|control| {
-                        control
-                            .continue_target
-                            .map(|target| (target, control.scope_depth))
-                    })
-                    .ok_or_else(|| self.error(pos, "continue has no enclosing loop"))?;
-                self.release_scopes_from(control.1, pos)?;
-                let edge = self.block_target(control.0, Vec::new())?;
-                self.terminate(l::Terminator::Branch(edge), pos)?;
-            }
+            hir::Stmt::Break(pos) => self.leave(using::Leave::Break, pos)?,
+            hir::Stmt::Continue(pos) => self.leave(using::Leave::Continue, pos)?,
             hir::Stmt::Block(statements) => self.lower_scoped(statements)?,
+            hir::Stmt::Throw { value, pos } => self.lower_throw(value, pos)?,
+            hir::Stmt::Try {
+                body,
+                binding,
+                handler,
+                pos,
+            } => self.lower_try(body, binding.as_ref(), handler, pos)?,
+            hir::Stmt::Using {
+                bindings,
+                body,
+                pos,
+            } => self.lower_using(bindings, body, pos)?,
         }
         Ok(())
     }
@@ -202,11 +190,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             },
             pos,
         )?;
-        self.controls.push(Control {
-            break_target: exit,
-            continue_target: Some(header),
-            scope_depth: self.scopes.len(),
-        });
+        self.controls.push(self.control(exit, Some(header)));
         self.current = Some(body_block);
         self.lower_scoped(body)?;
         if self.current.is_some() {
@@ -251,11 +235,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         } else {
             self.terminate(branch(body_block), pos)?;
         }
-        self.controls.push(Control {
-            break_target: exit,
-            continue_target: Some(step_block),
-            scope_depth: self.scopes.len(),
-        });
+        self.controls.push(self.control(exit, Some(step_block)));
         self.current = Some(body_block);
         self.lower_scoped(body)?;
         if self.current.is_some() {
@@ -266,7 +246,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             block
                 .terminator
                 .as_ref()
-                .is_some_and(|terminator| successors(terminator).contains(&step_block))
+                .is_some_and(|terminator| terminator.successors().contains(&step_block))
         });
         if step_reachable {
             self.enter_block(step_block)?;
@@ -281,8 +261,20 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.current = None;
         }
         self.controls.pop();
-        self.enter_block(exit)?;
-        self.release_scopes_from(self.scopes.len() - 1, pos)?;
+        // A `for` with no condition and no `break` has no exit edge, so
+        // control does not continue after it (compiler.md §101 rule 2).
+        let exit_reachable = self.blocks.iter().any(|block| {
+            block
+                .terminator
+                .as_ref()
+                .is_some_and(|terminator| terminator.successors().contains(&exit))
+        });
+        if exit_reachable {
+            self.enter_block(exit)?;
+            self.release_scopes_from(self.scopes.len() - 1, pos)?;
+        } else {
+            self.current = None;
+        }
         self.scopes.pop();
         Ok(())
     }
@@ -367,11 +359,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             },
             pos,
         )?;
-        self.controls.push(Control {
-            break_target: exit,
-            continue_target: Some(step_block),
-            scope_depth: self.scopes.len(),
-        });
+        self.controls.push(self.control(exit, Some(step_block)));
         self.current = Some(body_block);
         let cursor = self.read_binding(cursor_binding, pos)?;
         let index = self.read_binding(index_binding, pos)?;
@@ -408,7 +396,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             block
                 .terminator
                 .as_ref()
-                .is_some_and(|terminator| successors(terminator).contains(&step_block))
+                .is_some_and(|terminator| terminator.successors().contains(&step_block))
         });
         if step_reachable {
             self.enter_block(step_block)?;
@@ -504,6 +492,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 ret,
                 body,
                 captures,
+                ..
             } => {
                 let (function, callable) =
                     self.lower_lambda_with_id(params, ret, body, captures, callback)?;
@@ -648,7 +637,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .expect("static callback iterator bound");
         let call_traps = convert_traps(&expr.trap_sites(self.lowering.hir))
             .into_iter()
+            .filter(|trap| matches!(trap.kind, l::TrapKind::Call | l::TrapKind::Raise(_)))
+            .collect::<Vec<_>>();
+        // The capacity allocation is not a raise site; the callback call is.
+        let allocation_traps = call_traps
+            .iter()
             .filter(|trap| trap.kind == l::TrapKind::Call)
+            .cloned()
             .collect::<Vec<_>>();
 
         let output = if matches!(operation, hir::ArrFn::Map | hir::ArrFn::Filter) {
@@ -661,7 +656,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     vec![bound.clone()],
                     Some(l::ValueType::Data(Type::Array(output_element.clone()))),
                     false,
-                    call_traps.clone(),
+                    allocation_traps,
                     expr.pos.clone(),
                 )?
                 .expect("capacity array result"),
@@ -1311,11 +1306,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 }
             }
         }
-        self.controls.push(Control {
-            break_target: exit,
-            continue_target: None,
-            scope_depth: self.scopes.len(),
-        });
+        self.controls.push(self.control(exit, None));
         let mut previous_end = None;
         for (index, (case, block)) in cases.iter().zip(&case_blocks).enumerate() {
             if let Some(end) = previous_end {
@@ -1339,7 +1330,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             block
                 .terminator
                 .as_ref()
-                .is_some_and(|terminator| successors(terminator).contains(&exit))
+                .is_some_and(|terminator| terminator.successors().contains(&exit))
         });
         if exit_reachable {
             self.enter_block(exit)?;

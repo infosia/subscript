@@ -108,32 +108,40 @@ pub const DIVERGENCE_WITNESSES: &[DivergenceWitness] = &[
         id: "q5-json-parse-lone-surrogate",
         surface: "`JSON.parse<string>` of a lone UTF-16 surrogate",
         q_rule: "Q5 and Q28",
-        summary: "subscript reports a failed parse because its UTF-8 string type cannot represent a lone surrogate; JavaScript returns a UTF-16 string containing it.",
+        summary: "subscript raises TypeError because its UTF-8 string type cannot represent a lone surrogate; JavaScript returns a UTF-16 string containing it.",
         subscript: r#"export function main(): void {
-  const result: JsonResult<string> = JSON.parse<string>('"\\ud800"');
-  print(`${result.ok}`);
-  Context.free(result);
+  try {
+    print(JSON.parse<string>('"\\ud800"'));
+  } catch (e) {
+    if (e instanceof TypeError) {
+      print(e.message);
+    }
+  }
 }
 "#,
         javascript: r#"console.log(JSON.parse('"\\ud800"'));
 "#,
-        subscript_outcome: WitnessOutcome::Value("false\n"),
+        subscript_outcome: WitnessOutcome::Value("JSON.parse: document does not match string\n"),
         javascript_outcome: WitnessOutcome::Value("�\n"),
     },
     DivergenceWitness {
         id: "q28-json-parse-f32-range",
         surface: "`JSON.parse<f32>(\"1e39\")`",
         q_rule: "Q28",
-        summary: "subscript reports a failed parse when a finite JSON number overflows the statically requested f32 target; JavaScript has only binary64 and returns the value.",
+        summary: "subscript raises TypeError when a finite JSON number overflows the statically requested f32 target; JavaScript has only binary64 and returns the value.",
         subscript: r#"export function main(): void {
-  const result: JsonResult<f32> = JSON.parse<f32>("1e39");
-  print(`${result.ok}`);
-  Context.free(result);
+  try {
+    print(`${JSON.parse<f32>("1e39")}`);
+  } catch (e) {
+    if (e instanceof TypeError) {
+      print(e.message);
+    }
+  }
 }
 "#,
         javascript: r#"console.log(JSON.parse("1e39"));
 "#,
-        subscript_outcome: WitnessOutcome::Value("false\n"),
+        subscript_outcome: WitnessOutcome::Value("JSON.parse: document does not match f32\n"),
         javascript_outcome: WitnessOutcome::Value("1e+39\n"),
     },
     DivergenceWitness {

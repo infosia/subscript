@@ -265,6 +265,11 @@ pub struct Function {
     /// `None` means that this function has no host entry. `Some` can hold an
     /// empty list when the entry needs no parameter validation.
     pub host_entry_traps: Option<Vec<Trap>>,
+    /// Whether a call to this function can leave an exception pending.
+    /// The lowering copies the HIR fact (`compiler.md` §115.6 rule 3). An
+    /// `async` body and a generator body carry `false`: their propagate
+    /// exit is their own boundary (§115.4 items 2 and 3).
+    pub can_raise: bool,
     /// Typed parameters; each parameter value is a definition.
     pub parameters: Vec<Parameter>,
     /// Language return type.
@@ -428,6 +433,43 @@ pub struct BasicBlock {
     pub terminator: Terminator,
 }
 
+impl BasicBlock {
+    /// Returns every successor block id: the handler edge of each raise
+    /// site in instruction order, then the terminator's successors in edge
+    /// order (`compiler.md` §115.6 rule 2).
+    ///
+    /// A handler edge leaves its block after the raise site. Every graph
+    /// pass reads the block's successors here, so none can miss the edge.
+    #[must_use]
+    pub fn successors(&self) -> Vec<BlockId> {
+        self.instructions
+            .iter()
+            .filter_map(Instruction::handler)
+            .chain(self.terminator.successors())
+            .collect()
+    }
+}
+
+impl Instruction {
+    /// The raise edge of this instruction, when it is a raise site.
+    #[must_use]
+    pub fn raise_edge(&self) -> Option<&RaiseEdge> {
+        self.traps.iter().find_map(|trap| match &trap.kind {
+            TrapKind::Raise(edge) => Some(edge),
+            _ => None,
+        })
+    }
+
+    /// The handler block of this raise site, when a handler encloses it.
+    #[must_use]
+    pub fn handler(&self) -> Option<BlockId> {
+        match self.raise_edge() {
+            Some(RaiseEdge::Handler(block)) => Some(*block),
+            Some(RaiseEdge::Propagate) | None => None,
+        }
+    }
+}
+
 /// One ordered instruction.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instruction {
@@ -548,6 +590,20 @@ pub enum InstructionKind {
     IteratorAdvance,
     /// Checker-internal typed zero.
     Zero,
+    /// `throw`: record operand zero, an Error object, as the pending
+    /// exception. Operands one and two are its `name` and `message`. The
+    /// instruction's `Raise` trap names its handler edge (§115.2).
+    Throw,
+    /// Take the pending exception at the start of a handler block and
+    /// clear the word. The result is the Error object (§115.3 rule 6).
+    CatchEntry,
+    /// Set the pending exception aside at the start of a handler block and
+    /// clear the word. The exception keeps its object, text, and position
+    /// (§115.5 rule 7).
+    ExceptionPark,
+    /// Make the exception that the last park set aside pending again. The
+    /// instruction's `Raise` trap names its handler edge (§115.5 rule 7).
+    ExceptionResume,
 }
 
 impl InstructionKind {
@@ -1227,6 +1283,18 @@ pub enum SuspendKind {
     },
 }
 
+/// Where an exception goes from one raise site (`compiler.md` §115.6
+/// rule 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RaiseEdge {
+    /// The handler block of the nearest enclosing `try`. It has no block
+    /// parameter and starts with a catch entry.
+    Handler(BlockId),
+    /// No handler encloses the site: the function leaves through its unwind
+    /// exit, and the caller's raise site decides.
+    Propagate,
+}
+
 /// One semantic trap point.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trap {
@@ -1243,6 +1311,8 @@ pub enum TrapKind {
     Allocation,
     /// A call left the Context trapped.
     Call,
+    /// A raise site and its handler edge (`compiler.md` §115.6 rule 2).
+    Raise(RaiseEdge),
     /// Reached source `unreachable()`.
     Unreachable,
     /// Integer divisor is zero.
@@ -1251,8 +1321,6 @@ pub enum TrapKind {
     IndexRead,
     /// Bounds-checked index write.
     IndexWrite,
-    /// Failed `JsonResult.value` guard, with the boolean field it reads.
-    JsonResultValue(FieldId),
     /// Failed null narrowing.
     NullNarrowing,
     /// Failed reference-class narrowing.
@@ -1263,6 +1331,10 @@ pub enum TrapKind {
     DevReloadOnlyStaleCoroutine,
     /// Invalid C-entered wire alias value.
     WireEnumValue(StringAliasId),
+    /// A dispose hook raised on an exception exit (`compiler.md` §115.5
+    /// rule 2). Only a handler block that starts with a catch entry
+    /// terminates with it.
+    DisposeRaisedDuringExit,
 }
 
 #[cfg(test)]
@@ -1465,6 +1537,56 @@ mod tests {
             assert_eq!(actual, values.into_iter().map(ValueId).collect::<Vec<_>>());
             assert_eq!(actual.len(), actual.iter().collect::<HashSet<_>>().len());
         }
+    }
+
+    fn raise_site(edge: Option<RaiseEdge>) -> Instruction {
+        Instruction {
+            result: None,
+            kind: InstructionKind::Call(async_target()),
+            operands: Vec::new(),
+            invalidates: Vec::new(),
+            traps: std::iter::once(Trap {
+                kind: TrapKind::Call,
+                pos: pos(),
+            })
+            .chain(edge.map(|edge| Trap {
+                kind: TrapKind::Raise(edge),
+                pos: pos(),
+            }))
+            .collect(),
+            pos: pos(),
+        }
+    }
+
+    #[test]
+    fn raise_edges_name_their_handler_and_precede_the_terminator_successors() {
+        let handled = raise_site(Some(RaiseEdge::Handler(BlockId(3))));
+        let propagated = raise_site(Some(RaiseEdge::Propagate));
+        let plain = raise_site(None);
+        assert_eq!(handled.raise_edge(), Some(&RaiseEdge::Handler(BlockId(3))));
+        assert_eq!(handled.handler(), Some(BlockId(3)));
+        assert_eq!(propagated.raise_edge(), Some(&RaiseEdge::Propagate));
+        assert_eq!(propagated.handler(), None);
+        assert_eq!(plain.raise_edge(), None);
+        assert_eq!(plain.handler(), None);
+
+        let block = BasicBlock {
+            id: BlockId(0),
+            source_name: None,
+            parameters: Vec::new(),
+            instructions: vec![
+                handled,
+                propagated,
+                plain,
+                raise_site(Some(RaiseEdge::Handler(BlockId(5)))),
+            ],
+            terminator: Terminator::Branch(target(1, &[])),
+        };
+        assert_eq!(
+            block.successors(),
+            vec![BlockId(3), BlockId(5), BlockId(1)],
+            "handler edges in instruction order, then the terminator"
+        );
     }
 
     #[test]

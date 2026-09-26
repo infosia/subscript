@@ -4,7 +4,7 @@
 
 ## Current-state surface summary
 
-subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. Exported functions are host entry points. Types are explicit and nominal; exceptions, dynamic evaluation, `any`, general unions, ordinary `undefined` values, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.
+subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. Exported functions are host entry points. Types are explicit and nominal; only `Error`, `SyntaxError`, and `TypeError` objects are thrown, and dynamic evaluation, `any`, general unions, ordinary `undefined` values, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.
 
 ## Rejection rules
 
@@ -200,7 +200,7 @@ function makeAdder(offset: i32): (value: i32) => i32 {
 
 ### S010
 
-Exceptions are not in the language.
+An exception form outside the decided exception surface is rejected.
 
 Pinned corpus: [`corpus/reject/r11-throw.ts`](../corpus/reject/r11-throw.ts), line 8.
 
@@ -208,11 +208,11 @@ Header guidance:
 
 ```text
 // tsc: accepts
-// expected-error: exceptions are not in the language
+// expected-error: S010 at the `throw` of a string operand
 ```
 
 ```ts
-// expected-error: exceptions are not in the language
+// expected-error: S010 at the `throw` of a string operand
 function fail(): void {
   throw "failure";
 }

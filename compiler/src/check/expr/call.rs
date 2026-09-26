@@ -60,6 +60,9 @@ impl<'p> Checker<'p> {
             return self.check_indirect_call(callee, c, fx, pos);
         }
         let item = self.scope_item(&name);
+        if item.is_none() && crate::check::exception::ErrorKind::from_name(&name).is_some() {
+            return self.reject_error_call(&name, pos);
+        }
         if c.type_args.is_some()
             && matches!(item, Some(ScopeItem::Func(_)) | Some(ScopeItem::Foreign(_)))
         {
@@ -1230,6 +1233,9 @@ impl<'p> Checker<'p> {
         }
         if name == "RegExp" && self.regexp_is_ambient(fx) {
             return self.check_regex_new(n, fx, pos);
+        }
+        if self.error_name_is_ambient(&name, fx) {
+            return self.check_error_new(&name, n, fx, pos);
         }
         // `new Date(ms)` (stdlib.md §3): the ambient constructor applies
         // only when neither a program declaration nor a function-local

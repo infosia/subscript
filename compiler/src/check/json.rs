@@ -9,6 +9,7 @@
 
 use std::collections::HashSet;
 
+use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::diag::{Pos, RuleCode};
@@ -16,6 +17,7 @@ use crate::divergence::Divergence;
 use crate::hir::{self, BinOp, Callee, ExprKind, JsonFn, UnOp};
 use crate::types::{ClassId, Type};
 
+use super::exception::ErrorKind;
 use super::{Checker, FnCtx};
 
 impl Checker<'_> {
@@ -28,50 +30,6 @@ impl Checker<'_> {
             ty,
             pos: pos.clone(),
         }
-    }
-
-    /// Monomorphizes the ambient `JsonResult<T>` reference class on first
-    /// use. The zeroed payload is exactly the failed-result shape.
-    pub(crate) fn instantiate_json_result(&mut self, value: &Type, pos: Pos) -> ClassId {
-        let name = self.mono_name("JsonResult", std::slice::from_ref(value));
-        if let Some(&id) = self.class_ids.get(&name) {
-            return id;
-        }
-        let id = self.new_class(&name, false, false, None, pos.clone());
-        self.classes[id.0].fields = vec![
-            hir::Field {
-                name: "ok".to_string(),
-                ty: Type::Bool,
-                is_defaulted: false,
-                is_absence_capable: false,
-                init: None,
-                foreign_provenance: None,
-                pos: pos.clone(),
-            },
-            hir::Field {
-                name: "value".to_string(),
-                ty: value.clone(),
-                is_defaulted: false,
-                is_absence_capable: false,
-                init: None,
-                foreign_provenance: None,
-                pos,
-            },
-        ];
-        id
-    }
-
-    pub(super) fn json_result_value_type(&self, ty: &Type) -> Option<Type> {
-        let Type::Class(id) = ty else {
-            return None;
-        };
-        let class = self.classes.get(id.0)?;
-        if !class.name.starts_with("JsonResult<") || class.fields.len() != 2 {
-            return None;
-        }
-        let ok = &class.fields[0];
-        let value = &class.fields[1];
-        (ok.name == "ok" && ok.ty == Type::Bool && value.name == "value").then(|| value.ty.clone())
     }
 
     /// True when `obj` denotes the unshadowed ambient `JSON` namespace.
@@ -125,6 +83,10 @@ impl Checker<'_> {
         let value = self.check_expr(&call.args[0].expr, None, fx);
         self.in_json_argument = saved_json_argument;
         if value.ty == Type::Error {
+            return self.err_expr(pos);
+        }
+        if self.type_holds_error(&value.ty) {
+            self.reject_json_error_type("JSON.stringify", &value.ty, member_pos);
             return self.err_expr(pos);
         }
         if !self.json_serializable(&value.ty) {
@@ -201,7 +163,8 @@ impl Checker<'_> {
             return self.err_expr(spread_pos);
         }
 
-        let target = if let Some(type_args) = &call.type_args {
+        // `spelling` is the target as the source spells it (§115.7 rule 5).
+        let (target, spelling) = if let Some(type_args) = &call.type_args {
             if type_args.params.len() != 1 {
                 self.error(
                     RuleCode::S014,
@@ -214,20 +177,26 @@ impl Checker<'_> {
             self.in_json_argument = true;
             let target = self.resolve_type(&type_args.params[0]);
             self.in_json_argument = saved;
-            target
-        } else if let Some(target) = ctx.and_then(|ty| self.json_result_value_type(ty)) {
-            target
+            let spelling = self.prog.snippet(type_args.params[0].span());
+            (target, spelling)
+        } else if let Some(target) = ctx {
+            (target.clone(), None)
         } else {
             self.error_diverging(
                 RuleCode::S014,
                 "`JSON.parse` requires a target type; use `JSON.parse<T>(text)` \
-                 or a contextual `JsonResult<T>` type (Q28)",
+                 or a contextual type (Q28)",
                 member_pos,
                 Divergence::JsonSubset,
             );
             return self.err_expr(pos);
         };
+        let spelling = spelling.unwrap_or_else(|| self.type_name(&target));
         if target == Type::Error {
+            return self.err_expr(pos);
+        }
+        if self.type_holds_error(&target) {
+            self.reject_json_error_type("JSON.parse", &target, member_pos);
             return self.err_expr(pos);
         }
         if self.json_type_contains_date(&target) {
@@ -270,8 +239,7 @@ impl Checker<'_> {
             return self.err_expr(pos);
         }
 
-        let result_id = self.instantiate_json_result(&target, pos.clone());
-        let wrapper = match self.synthesize_json_parser(&target, result_id, pos.clone()) {
+        let wrapper = match self.synthesize_json_parser(&target, &spelling, pos.clone()) {
             Ok(wrapper) => wrapper,
             Err(detail) => {
                 self.error(
@@ -287,9 +255,28 @@ impl Checker<'_> {
                 callee: Callee::Func(wrapper),
                 args: vec![text],
             },
-            ty: Type::Class(result_id),
+            ty: target,
             pos,
         }
+    }
+
+    /// S014 for a JSON input or target that holds an Error class
+    /// (`compiler.md` §115.1 rule 6).
+    fn reject_json_error_type(&mut self, operation: &str, ty: &Type, pos: Pos) {
+        let name = self.type_name(ty);
+        let detail = if self.is_error_type(ty) {
+            String::new()
+        } else {
+            " it holds an Error at some depth, and".to_string()
+        };
+        self.error_diverging(
+            RuleCode::S014,
+            format!(
+                "`{operation}` cannot accept `{name}`:{detail} the Error classes are not JSON types"
+            ),
+            pos,
+            Divergence::JsonSubset,
+        );
     }
 
     /// True when a parse target contains Date at any depth. JSON has no
@@ -354,7 +341,8 @@ impl Checker<'_> {
                     };
                     // Mirror-ingested boundary structs are not source
                     // `@CStruct` values and may contain opaque host shapes.
-                    if class.is_boundary {
+                    // §115.1 rule 6: the Error classes are not JSON types.
+                    if class.is_boundary || checker.is_error_type(ty) {
                         return false;
                     }
                     if done.contains(id) || active.contains(id) {
@@ -455,6 +443,7 @@ impl Checker<'_> {
         for (index, ty) in types.iter().enumerate() {
             let body = self.json_helper_body(ty, tracked, &types, &names, &pos)?;
             self.functions.push(hir::Function {
+                can_raise: false,
                 name: names[index].clone(),
                 exported: false,
                 is_generator: false,
@@ -508,6 +497,7 @@ impl Checker<'_> {
             },
         ];
         self.functions.push(hir::Function {
+            can_raise: false,
             name: wrapper.clone(),
             exported: false,
             is_generator: false,
@@ -780,7 +770,7 @@ impl Checker<'_> {
     fn synthesize_json_parser(
         &mut self,
         root: &Type,
-        result_id: ClassId,
+        spelling: &str,
         pos: Pos,
     ) -> Result<String, String> {
         let call_id = self.functions.len();
@@ -796,6 +786,7 @@ impl Checker<'_> {
         for (index, ty) in types.iter().enumerate() {
             let body = self.json_validation_body(ty, &types, &validators, &pos)?;
             self.functions.push(hir::Function {
+                can_raise: false,
                 name: validators[index].clone(),
                 exported: false,
                 is_generator: false,
@@ -812,6 +803,7 @@ impl Checker<'_> {
         for (index, ty) in types.iter().enumerate() {
             let body = self.json_construction_body(ty, &types, &constructors, &pos)?;
             self.functions.push(hir::Function {
+                can_raise: false,
                 name: constructors[index].clone(),
                 exported: false,
                 is_generator: false,
@@ -826,111 +818,117 @@ impl Checker<'_> {
             });
         }
 
-        let result_ty = Type::Class(result_id);
         let locals = JsonLocals::new(&pos);
         let root_index = json_type_index(&types, root)?;
-        let assign_ok = json_assign(
-            json_field(locals.result(result_ty.clone()), "ok", Type::Bool, &pos),
-            json_bool(true, &pos),
-            Type::Bool,
-            &pos,
-        );
-        let constructed = script_call(
-            constructors[root_index].clone(),
-            vec![locals.parser(), locals.node()],
-            root.clone(),
-            &pos,
-        );
-        let assign_value = json_assign(
-            json_field(
-                locals.result(result_ty.clone()),
-                "value",
-                root.clone(),
+        // §115.7 rules 3 and 4: the runtime keeps the offset and the
+        // reason of a syntax failure, and creates no document for it.
+        let syntax_error = {
+            let message = self.json_call(JsonFn::ParseFailure, Vec::new(), Type::Str, &pos);
+            self.error_new(ErrorKind::Syntax, message, pos.clone())
+        };
+        // §115.7 rule 5: the document is released before the raise.
+        let type_error = self.error_new(
+            ErrorKind::Type,
+            json_string(
+                &format!("JSON.parse: document does not match {spelling}"),
                 &pos,
             ),
-            constructed,
-            root.clone(),
-            &pos,
+            pos.clone(),
         );
-        let valid = script_call(
-            validators[root_index].clone(),
-            vec![locals.parser(), locals.node()],
-            Type::Bool,
-            &pos,
-        );
-        let parser_present = json_binary(
-            BinOp::Ne,
-            locals.parser(),
-            json_u64(0, &pos),
-            Type::Bool,
-            &pos,
-        );
+        let not = |operand: hir::Expr| hir::Expr {
+            kind: ExprKind::Unary {
+                op: UnOp::Not,
+                operand: Box::new(operand),
+            },
+            ty: Type::Bool,
+            pos: pos.clone(),
+        };
+        let end = || {
+            hir::Stmt::Expr(self.json_call(
+                JsonFn::ParseEnd,
+                vec![locals.parser()],
+                Type::Void,
+                &pos,
+            ))
+        };
+        let let_u64 = |name: &str, init: hir::Expr| hir::Stmt::Let {
+            name: name.to_string(),
+            ty: Type::U64,
+            mutable: false,
+            dispose: false,
+            init,
+            pos: pos.clone(),
+        };
+        let body = vec![
+            let_u64(
+                "parser",
+                self.json_call(JsonFn::ParseBegin, vec![locals.text()], Type::U64, &pos),
+            ),
+            hir::Stmt::If {
+                cond: json_binary(
+                    BinOp::Eq,
+                    locals.parser(),
+                    json_u64(0, &pos),
+                    Type::Bool,
+                    &pos,
+                ),
+                then: vec![hir::Stmt::Throw {
+                    value: syntax_error,
+                    pos: pos.clone(),
+                }],
+                els: None,
+                pos: pos.clone(),
+            },
+            let_u64(
+                "node",
+                self.json_call(JsonFn::ParseRoot, vec![locals.parser()], Type::U64, &pos),
+            ),
+            hir::Stmt::If {
+                cond: not(script_call(
+                    validators[root_index].clone(),
+                    vec![locals.parser(), locals.node()],
+                    Type::Bool,
+                    &pos,
+                )),
+                then: vec![
+                    end(),
+                    hir::Stmt::Throw {
+                        value: type_error,
+                        pos: pos.clone(),
+                    },
+                ],
+                els: None,
+                pos: pos.clone(),
+            },
+            hir::Stmt::Let {
+                name: "value".to_string(),
+                ty: root.clone(),
+                mutable: false,
+                dispose: false,
+                init: script_call(
+                    constructors[root_index].clone(),
+                    vec![locals.parser(), locals.node()],
+                    root.clone(),
+                    &pos,
+                ),
+                pos: pos.clone(),
+            },
+            end(),
+            hir::Stmt::Return {
+                value: Some(locals.value(root.clone())),
+                pos: pos.clone(),
+            },
+        ];
         let wrapper = format!("[[json.parse#{call_id}.root]]");
         self.functions.push(hir::Function {
+            can_raise: false,
             name: wrapper.clone(),
             exported: false,
             is_generator: false,
             is_async: false,
             params: vec![json_param("text", Type::Str, &pos)],
-            ret: result_ty.clone(),
-            body: vec![
-                hir::Stmt::Let {
-                    name: "result".to_string(),
-                    ty: result_ty.clone(),
-                    mutable: false,
-                    dispose: false,
-                    init: hir::Expr {
-                        kind: ExprKind::RawNew { class: result_id },
-                        ty: Type::Class(result_id),
-                        pos: pos.clone(),
-                    },
-                    pos: pos.clone(),
-                },
-                hir::Stmt::Let {
-                    name: "parser".to_string(),
-                    ty: Type::U64,
-                    mutable: false,
-                    dispose: false,
-                    init: self.json_call(JsonFn::ParseBegin, vec![locals.text()], Type::U64, &pos),
-                    pos: pos.clone(),
-                },
-                hir::Stmt::If {
-                    cond: parser_present,
-                    then: vec![
-                        hir::Stmt::Let {
-                            name: "node".to_string(),
-                            ty: Type::U64,
-                            mutable: false,
-                            dispose: false,
-                            init: self.json_call(
-                                JsonFn::ParseRoot,
-                                vec![locals.parser()],
-                                Type::U64,
-                                &pos,
-                            ),
-                            pos: pos.clone(),
-                        },
-                        hir::Stmt::If {
-                            cond: valid,
-                            then: vec![hir::Stmt::Expr(assign_value), hir::Stmt::Expr(assign_ok)],
-                            els: None,
-                            pos: pos.clone(),
-                        },
-                        hir::Stmt::Expr(self.json_call(
-                            JsonFn::ParseEnd,
-                            vec![locals.parser()],
-                            Type::Void,
-                            &pos,
-                        )),
-                    ],
-                    els: None,
-                    pos: pos.clone(),
-                },
-                hir::Stmt::Return {
-                    value: Some(locals.result(result_ty.clone())),
-                    pos: pos.clone(),
-                },
-            ],
+            ret: root.clone(),
+            body,
             pos,
         });
         Ok(wrapper)
@@ -1433,10 +1431,6 @@ impl<'a> JsonLocals<'a> {
 
     fn value(&self, ty: Type) -> hir::Expr {
         self.local("value", ty)
-    }
-
-    fn result(&self, ty: Type) -> hir::Expr {
-        self.local("result", ty)
     }
 
     fn text(&self) -> hir::Expr {

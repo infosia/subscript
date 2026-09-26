@@ -127,6 +127,7 @@ impl<'p> Checker<'p> {
                     mutable: true,
                     holds_capturing: false,
                     async_origins: HashSet::new(),
+                    caught: false,
                 },
                 param_pos,
                 fx,
@@ -204,13 +205,7 @@ impl<'p> Checker<'p> {
         statements.extend(body);
         let body = statements;
         let body = if crate::check::has_dispose_binding(&body) {
-            self.insert_scope_exit_disposals(
-                body,
-                ret.as_ref().unwrap_or(&Type::Error),
-                &mut Vec::new(),
-                (None, None),
-                (true, &[]),
-            )
+            crate::check::using_scope::structure(body, &mut self.next_using_switch_id)
         } else {
             body
         };
@@ -229,6 +224,7 @@ impl<'p> Checker<'p> {
                 ret,
                 body,
                 captures,
+                can_raise: false,
             },
             ty,
             pos,

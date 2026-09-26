@@ -145,7 +145,7 @@ fn run_preserves_stdout_before_a_trap() {
 
 #[test]
 fn run_trap_without_output_keeps_stdout_empty() {
-    let source = workspace_root().join("corpus/trap/t01-json-result-value.ts");
+    let source = workspace_root().join("corpus/trap/t51-bytes-into-range.ts");
     let expected = std::fs::read(source.with_extension("expected")).unwrap();
     assert!(expected.is_empty());
     let mut stdout = Vec::new();
@@ -157,7 +157,7 @@ fn run_trap_without_output_keeps_stdout_empty() {
     );
     assert_eq!(stdout, expected);
     assert_eq!(code, 1);
-    assert!(String::from_utf8_lossy(&stderr).contains("json-result-value"));
+    assert!(String::from_utf8_lossy(&stderr).contains("index-out-of-bounds"));
 }
 
 fn directory_sources(directory: &Path) -> Result<Vec<SourceFile>, String> {

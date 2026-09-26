@@ -129,7 +129,8 @@ this project's, so an entry that prints one is not `js-comparable`.
 *(Until 2026-09-26 this entry held "exceptions — out", with fallible
 operations returning result values. `a18` keeps that pattern as one
 accepted style.)*
-Accept: `a18`. Reject: `r11-throw` (a non-Error operand).
+Accept: `a18`, `a250`–`a257`. Reject: `r11-throw` (a non-Error
+operand), `r233`–`r239`. Trap: `t61`–`t65`.
 
 ### C7. Unions, `null`, `undefined` (Q8) — `T | null` only
 
@@ -231,9 +232,10 @@ call. Measured before the revision: `node` printed
 `start1 start2 end1 end2` where this language printed
 `start1 end1 start2 end2`. Accept adds `a184`.
 *Revised 2026-09-26 (§115):* a `try` block that holds `await` or
-`yield` is rejected. An exception that leaves an async body or a generator
-body traps with `UncaughtException`; the awaiting caller observes a
-trap, not an exception.
+`yield` is rejected (`r234`, `r235`). An exception that leaves an async body
+or a generator body traps with `UncaughtException`; the awaiting
+caller observes a trap, not an exception (`t63`, `t64`). Accept adds
+`a256`.
 
 ### C9. Field initializers — every construction, no `this`
 

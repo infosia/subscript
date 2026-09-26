@@ -1118,21 +1118,9 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
     });
     out.push(ApiItem {
         group: "JSON",
-        signature: "parse<T>(text: string): JsonResult<T>".to_string(),
-        summary: "Parses and validates one statically known P13 type; malformed, mismatched, or over-128-depth data returns ok=false, and the caller releases the result with Context.free.",
+        signature: "parse<T>(text: string): T".to_string(),
+        summary: "Parses and validates one statically known P13 type; malformed or over-128-depth text raises SyntaxError with the byte offset, and a document that does not match T raises TypeError.",
     });
-    out.extend([
-        ApiItem {
-            group: "JsonResult<T>",
-            signature: "ok: boolean".to_string(),
-            summary: "Reports whether parsing and complete static-type validation succeeded.",
-        },
-        ApiItem {
-            group: "JsonResult<T>",
-            signature: "value: T".to_string(),
-            summary: "Carries the parsed value on success; reading it when ok is false traps.",
-        },
-    ]);
     out.extend([
         ApiItem {
             group: "Generator<T>",
@@ -1558,9 +1546,7 @@ mod tests {
             ("T[]", "pop(): T"),
             ("FixedArray<T, N>", "length: i32"),
             ("JSON", "stringify<T>(value: T): string"),
-            ("JSON", "parse<T>(text: string): JsonResult<T>"),
-            ("JsonResult<T>", "ok: boolean"),
-            ("JsonResult<T>", "value: T"),
+            ("JSON", "parse<T>(text: string): T"),
             ("Generator<T>", "next(): IteratorResult<T>"),
             ("IteratorResult<T>", "done: boolean"),
             ("IteratorResult<T>", "value: T"),
@@ -1601,7 +1587,7 @@ mod tests {
             // The `Array.from(source)` row (compiler.md §105.2).
             + 1
             + regex_rows
-            + 7;
+            + 5;
         assert_eq!(
             rows.len(),
             expected,

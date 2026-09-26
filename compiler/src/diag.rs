@@ -31,7 +31,7 @@ pub enum RuleCode {
     S008,
     /// A capturing lambda may not escape its defining function (C5).
     S009,
-    /// Exceptions are not in the language (C6).
+    /// An exception form outside the decided exception surface (C6).
     S010,
     /// Unions are limited to nullable handles (including boundary boxes);
     /// nullable values must be narrowed before member access (C7, §33.5).
@@ -117,7 +117,9 @@ impl RuleCode {
                 "Numeric literals must fit their context and be integral in an integer context."
             }
             RuleCode::S009 => "A capturing lambda may not escape its defining function.",
-            RuleCode::S010 => "Exceptions are not in the language.",
+            RuleCode::S010 => {
+                "An exception form outside the decided exception surface is rejected."
+            }
             RuleCode::S011 => {
                 "Unions are limited to nullable handles, including boundary boxes; nullable values must be narrowed before member access."
             }

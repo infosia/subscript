@@ -512,7 +512,7 @@ fn r29_index_sugar_and_spelled_calls_have_identical_hir_bodies() {
 }
 
 #[test]
-fn r31_multi_binding_using_appends_reverse_dispose_calls_in_hir() {
+fn r31_multi_binding_using_nests_one_node_per_binding_in_hir() {
     let accept = corpus_dir().join("accept");
     let module = check_entry(&[(
         "a138-using-dispose.ts",
@@ -522,30 +522,29 @@ fn r31_multi_binding_using_appends_reverse_dispose_calls_in_hir() {
     let hir::Stmt::Block(body) = &main.body[0] else {
         panic!("expected the using block");
     };
-    assert!(matches!(&body[0], hir::Stmt::Let { dispose: true, .. }));
-    assert!(matches!(&body[1], hir::Stmt::Let { dispose: true, .. }));
-    let disposed = body
-        .iter()
-        .filter_map(|statement| {
-            let hir::Stmt::Expr(hir::Expr {
-                kind:
-                    hir::ExprKind::Call {
-                        callee: hir::Callee::Method { recv, name },
-                        ..
-                    },
-                ..
-            }) = statement
-            else {
-                return None;
-            };
-            if name != hir::DISPOSE_METHOD_NAME {
-                return None;
-            }
-            let hir::ExprKind::Local(local) = &recv.kind else {
-                return None;
-            };
-            Some(local.as_str())
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(disposed, ["b", "a"]);
+    let [hir::Stmt::Let {
+        name: a,
+        dispose: true,
+        ..
+    }, hir::Stmt::Using {
+        bindings: outer,
+        body: outer_body,
+        ..
+    }] = body.as_slice()
+    else {
+        panic!("the first binding and its node: {body:#?}");
+    };
+    let [hir::Stmt::Let {
+        name: b,
+        dispose: true,
+        ..
+    }, hir::Stmt::Using {
+        bindings: inner, ..
+    }, ..] = outer_body.as_slice()
+    else {
+        panic!("the second binding and its node: {outer_body:#?}");
+    };
+    let names = [a, b, &outer[0].name, &inner[0].name];
+    assert_eq!(names, ["a", "b", "a", "b"]);
+    assert_eq!((outer.len(), inner.len()), (1, 1));
 }

@@ -1,0 +1,30 @@
+i32: 42
+u64: 18446744073709551615
+f64: -0.5
+f32: 0.25
+boolean: true
+string: café 😀
+FixedArray: 1 -2 3
+CStruct: 3 true
+class: ada 36 bob 7
+nullable: true
+array: ok 3
+class: ok demo:3
+truncated: SyntaxError: JSON.parse: invalid syntax at byte 23
+trailing: SyntaxError: JSON.parse: invalid syntax at byte 4
+utf8 offset: SyntaxError: JSON.parse: invalid syntax at byte 6
+empty: SyntaxError: JSON.parse: invalid syntax at byte 0
+depth: SyntaxError: JSON.parse: nesting deeper than 128 at byte 128
+depth 128: TypeError: JSON.parse: document does not match i32[]
+missing field: TypeError: JSON.parse: document does not match Config
+wrong kind: TypeError: JSON.parse: document does not match Config
+contextual target: TypeError: JSON.parse: document does not match Config
+element: TypeError: JSON.parse: document does not match i32[]
+out of range: TypeError: JSON.parse: document does not match u8
+not an integer: TypeError: JSON.parse: document does not match i32
+f32 overflow: TypeError: JSON.parse: document does not match f32
+lone surrogate: TypeError: JSON.parse: document does not match string
+fixed length: TypeError: JSON.parse: document does not match FixedArray<i16, 3>
+no partial value
+kept: before:1
+after failures: ok again:4

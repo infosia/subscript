@@ -458,13 +458,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .ok_or_else(|| internal("field base type is missing"))?,
                     &instruction.traps,
                 )?;
-                self.guard_json_result_value(
-                    *field,
-                    *operands
-                        .first()
-                        .ok_or_else(|| internal("field base is missing"))?,
-                    &instruction.traps,
-                )?;
                 let value = self.load_data(&ty, address, 0)?;
                 self.validate_wire_alias_traps(&ty, value, &instruction.traps)?;
                 Some(self.clone_value(value, &l::ValueType::Data(ty))?)
@@ -714,6 +707,21 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .ok_or_else(|| internal("Zero result type is missing"))?,
                 )?)?,
             ),
+            l::InstructionKind::Throw => {
+                self.emit_throw(&operands, &instruction.pos)?;
+                None
+            }
+            l::InstructionKind::CatchEntry => {
+                self.emit_catch_entry(instruction.result.is_some())?
+            }
+            l::InstructionKind::ExceptionPark => {
+                self.call_runtime(self.ml.rt.exception_park, &[self.ctx], false)?;
+                None
+            }
+            l::InstructionKind::ExceptionResume => {
+                self.call_runtime(self.ml.rt.exception_resume, &[self.ctx], true)?;
+                None
+            }
         };
         match (instruction.result, result) {
             (Some(id), Some(value)) => self.set_value(id, value),

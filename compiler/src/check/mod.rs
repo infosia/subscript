@@ -7,13 +7,15 @@
 //! declarations are registered as templates in pass A/B and
 //! monomorphized on first use (`identity<i32>`, `Box<f64>`).
 
+mod exception;
 mod expr;
-mod fallthrough;
+pub(crate) mod fallthrough;
 mod json;
 mod layout;
 pub(crate) mod pattern;
 mod stmt;
 mod tyres;
+mod using_scope;
 
 #[cfg(test)]
 pub(crate) use expr::{take_classified_places, PlaceKind};
@@ -391,6 +393,10 @@ pub(crate) struct Local {
     pub holds_capturing: bool,
     /// Async-handle creation obligations reachable through this value.
     pub async_origins: HashSet<u32>,
+    /// True for a catch binding. Before a narrowing test it has two legal
+    /// uses: the left operand of `instanceof` and the operand of `throw`
+    /// (compiler.md §115.3 rule 4).
+    pub caught: bool,
 }
 
 /// One lexical scope. `fn_boundary` marks the start of a lambda body:
@@ -409,22 +415,6 @@ pub(crate) struct Scope {
     /// True when this scope contains one switch body.
     pub is_switch: bool,
     pub fn_boundary: bool,
-}
-
-#[derive(Clone)]
-struct UsingBinding {
-    name: String,
-    ty: Type,
-    nullable: bool,
-    pos: Pos,
-    active: Option<String>,
-}
-
-struct SwitchUsingStorage {
-    source: String,
-    active: String,
-    storage: String,
-    ty: Type,
 }
 
 fn has_dispose_binding(statements: &[hir::Stmt]) -> bool {
@@ -1050,10 +1040,11 @@ pub(crate) struct Checker<'p> {
     pub regex_literals: HashMap<(String, u32, u32), String>,
     /// Monotonic suffix for collision-free regex-literal global names.
     pub next_regex_literal_id: usize,
-    /// Monotonic suffix for return locals that preserve values across disposal.
-    pub next_using_return_id: usize,
     /// Monotonic suffix for switch-body disposal storage.
     pub next_using_switch_id: usize,
+    /// The one class behind `Error`, `SyntaxError`, and `TypeError`,
+    /// created on first use (compiler.md §115.1).
+    pub error_class: Option<ClassId>,
     /// This suffix keeps compound-write operand locals unique.
     pub next_compound_local_id: usize,
     /// Monotonic suffix for the storage that holds a binding pattern's
@@ -1260,8 +1251,8 @@ pub(crate) fn run(
         next_for_of_id: 0,
         regex_literals: HashMap::new(),
         next_regex_literal_id: 0,
-        next_using_return_id: 0,
         next_using_switch_id: 0,
+        error_class: None,
         next_compound_local_id: 0,
         next_pattern_id: 0,
     };
@@ -1335,10 +1326,12 @@ pub(crate) fn run(
             foreign_fns: ck.foreign_defs,
             foreign_mirrors: ck.foreign_mirrors,
             top_level: ck.top_level,
+            initializer_can_raise: false,
             source_bytes: prog.source_bytes,
         };
         module.operation_signatures = operation_signatures(&mut module);
         crate::trap_sites::decide_index_checks(&mut module);
+        crate::raise_sites::decide_can_raise(&mut module);
         Ok(module)
     } else {
         Err(ck.diags.take())
@@ -1798,6 +1791,7 @@ impl<'p> Checker<'p> {
                     mutable: true,
                     holds_capturing: false,
                     async_origins: HashSet::new(),
+                    caught: false,
                 },
             );
         }
@@ -1882,6 +1876,7 @@ impl<'p> Checker<'p> {
                     mutable,
                     holds_capturing,
                     async_origins,
+                    caught: false,
                 },
                 pos.clone(),
                 fx,
@@ -4840,405 +4835,6 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn make_disposal_statements(
-        scopes: &[Vec<UsingBinding>],
-        first_scope: usize,
-    ) -> Vec<hir::Stmt> {
-        let mut calls = Vec::new();
-        for scope in scopes[first_scope..].iter().rev() {
-            for binding in scope.iter().rev() {
-                let receiver_type = match &binding.ty {
-                    Type::Nullable(inner) if binding.nullable => inner.as_ref(),
-                    other => other,
-                };
-                let call = hir::Stmt::Expr(hir::Expr {
-                    kind: hir::ExprKind::Call {
-                        callee: hir::Callee::Method {
-                            recv: Box::new(hir::Expr {
-                                kind: hir::ExprKind::Local(binding.name.clone()),
-                                ty: receiver_type.clone(),
-                                pos: binding.pos.clone(),
-                            }),
-                            name: hir::DISPOSE_METHOD_NAME.to_string(),
-                        },
-                        args: Vec::new(),
-                    },
-                    ty: Type::Void,
-                    pos: binding.pos.clone(),
-                });
-                let call = if binding.nullable {
-                    hir::Stmt::If {
-                        cond: hir::Expr {
-                            kind: hir::ExprKind::Binary {
-                                op: hir::BinOp::Ne,
-                                left: Box::new(hir::Expr {
-                                    kind: hir::ExprKind::Local(binding.name.clone()),
-                                    ty: binding.ty.clone(),
-                                    pos: binding.pos.clone(),
-                                }),
-                                right: Box::new(hir::Expr {
-                                    kind: hir::ExprKind::Null,
-                                    ty: Type::Null,
-                                    pos: binding.pos.clone(),
-                                }),
-                            },
-                            ty: Type::Bool,
-                            pos: binding.pos.clone(),
-                        },
-                        then: vec![call],
-                        els: None,
-                        pos: binding.pos.clone(),
-                    }
-                } else {
-                    call
-                };
-                if let Some(active) = &binding.active {
-                    calls.push(hir::Stmt::If {
-                        cond: hir::Expr {
-                            kind: hir::ExprKind::Local(active.clone()),
-                            ty: Type::Bool,
-                            pos: binding.pos.clone(),
-                        },
-                        then: vec![call],
-                        els: None,
-                        pos: binding.pos.clone(),
-                    });
-                } else {
-                    calls.push(call);
-                }
-            }
-        }
-        calls
-    }
-
-    fn insert_scope_exit_disposals(
-        &mut self,
-        statements: Vec<hir::Stmt>,
-        ret: &Type,
-        scopes: &mut Vec<Vec<UsingBinding>>,
-        control_scopes: (Option<usize>, Option<usize>),
-        scope_mode: (bool, &[SwitchUsingStorage]),
-    ) -> Vec<hir::Stmt> {
-        let (break_scope, continue_scope) = control_scopes;
-        let (open_scope, switch_storage) = scope_mode;
-        if open_scope {
-            scopes.push(Vec::new());
-        }
-        let mut rewritten = Vec::new();
-        let mut falls_through = true;
-        for statement in statements {
-            if !falls_through {
-                break;
-            }
-            falls_through = fallthrough::can_fall_through(&statement);
-            match statement {
-                hir::Stmt::Let {
-                    name,
-                    ty,
-                    mutable,
-                    dispose,
-                    init,
-                    pos,
-                } => {
-                    rewritten.push(hir::Stmt::Let {
-                        name: name.clone(),
-                        ty: ty.clone(),
-                        mutable,
-                        dispose,
-                        init,
-                        pos: pos.clone(),
-                    });
-                    if dispose {
-                        let storage = switch_storage.iter().find(|storage| storage.source == name);
-                        let dispose_name = storage
-                            .map(|storage| storage.storage.clone())
-                            .unwrap_or_else(|| name.clone());
-                        let active = storage.map(|storage| storage.active.clone());
-                        scopes
-                            .last_mut()
-                            .expect("using scope exists")
-                            .push(UsingBinding {
-                                name: dispose_name,
-                                ty: ty.clone(),
-                                nullable: matches!(ty, Type::Nullable(_)),
-                                pos: pos.clone(),
-                                active,
-                            });
-                        if let Some(storage) = storage {
-                            rewritten.push(hir::Stmt::Expr(hir::Expr {
-                                kind: hir::ExprKind::Assign {
-                                    op: None,
-                                    target: Box::new(hir::Expr {
-                                        kind: hir::ExprKind::Local(storage.storage.clone()),
-                                        ty: ty.clone(),
-                                        pos: pos.clone(),
-                                    }),
-                                    value: Box::new(hir::Expr {
-                                        kind: hir::ExprKind::Local(name),
-                                        ty,
-                                        pos: pos.clone(),
-                                    }),
-                                },
-                                ty: storage.ty.clone(),
-                                pos: pos.clone(),
-                            }));
-                            rewritten.push(hir::Stmt::Expr(hir::Expr {
-                                kind: hir::ExprKind::Assign {
-                                    op: None,
-                                    target: Box::new(hir::Expr {
-                                        kind: hir::ExprKind::Local(storage.active.clone()),
-                                        ty: Type::Bool,
-                                        pos: pos.clone(),
-                                    }),
-                                    value: Box::new(hir::Expr {
-                                        kind: hir::ExprKind::Bool(true),
-                                        ty: Type::Bool,
-                                        pos: pos.clone(),
-                                    }),
-                                },
-                                ty: Type::Bool,
-                                pos,
-                            }));
-                        }
-                    }
-                }
-                hir::Stmt::Return { value, pos } => {
-                    if let Some(value) = value {
-                        if !matches!(ret, Type::Void | Type::Error) {
-                            let id = self.next_using_return_id;
-                            self.next_using_return_id += 1;
-                            let name = format!("[[using.return#{id}]]");
-                            rewritten.push(hir::Stmt::Let {
-                                name: name.clone(),
-                                ty: ret.clone(),
-                                mutable: false,
-                                dispose: false,
-                                init: value,
-                                pos: pos.clone(),
-                            });
-                            rewritten.extend(Self::make_disposal_statements(scopes, 0));
-                            rewritten.push(hir::Stmt::Return {
-                                value: Some(hir::Expr {
-                                    kind: hir::ExprKind::Local(name),
-                                    ty: ret.clone(),
-                                    pos: pos.clone(),
-                                }),
-                                pos,
-                            });
-                        } else {
-                            rewritten.extend(Self::make_disposal_statements(scopes, 0));
-                            rewritten.push(hir::Stmt::Return {
-                                value: Some(value),
-                                pos,
-                            });
-                        }
-                    } else {
-                        rewritten.extend(Self::make_disposal_statements(scopes, 0));
-                        rewritten.push(hir::Stmt::Return { value: None, pos });
-                    }
-                }
-                hir::Stmt::Break(pos) => {
-                    if let Some(first_scope) = break_scope {
-                        rewritten.extend(Self::make_disposal_statements(scopes, first_scope));
-                    }
-                    rewritten.push(hir::Stmt::Break(pos));
-                }
-                hir::Stmt::Continue(pos) => {
-                    if let Some(first_scope) = continue_scope {
-                        rewritten.extend(Self::make_disposal_statements(scopes, first_scope));
-                    }
-                    rewritten.push(hir::Stmt::Continue(pos));
-                }
-                hir::Stmt::Block(body) => {
-                    let body = self.insert_scope_exit_disposals(
-                        body,
-                        ret,
-                        scopes,
-                        (break_scope, continue_scope),
-                        (true, &[]),
-                    );
-                    rewritten.push(hir::Stmt::Block(body));
-                }
-                hir::Stmt::If {
-                    cond,
-                    then,
-                    els,
-                    pos,
-                } => {
-                    let then = self.insert_scope_exit_disposals(
-                        then,
-                        ret,
-                        scopes,
-                        (break_scope, continue_scope),
-                        (true, &[]),
-                    );
-                    let els = els.map(|body| {
-                        self.insert_scope_exit_disposals(
-                            body,
-                            ret,
-                            scopes,
-                            (break_scope, continue_scope),
-                            (true, &[]),
-                        )
-                    });
-                    rewritten.push(hir::Stmt::If {
-                        cond,
-                        then,
-                        els,
-                        pos,
-                    });
-                }
-                hir::Stmt::While { cond, body, pos } => {
-                    let loop_scope = scopes.len();
-                    let body = self.insert_scope_exit_disposals(
-                        body,
-                        ret,
-                        scopes,
-                        (Some(loop_scope), Some(loop_scope)),
-                        (true, &[]),
-                    );
-                    rewritten.push(hir::Stmt::While { cond, body, pos });
-                }
-                hir::Stmt::For {
-                    init,
-                    cond,
-                    step,
-                    body,
-                    pos,
-                } => {
-                    let loop_scope = scopes.len();
-                    let body = self.insert_scope_exit_disposals(
-                        body,
-                        ret,
-                        scopes,
-                        (Some(loop_scope), Some(loop_scope)),
-                        (true, &[]),
-                    );
-                    rewritten.push(hir::Stmt::For {
-                        init,
-                        cond,
-                        step,
-                        body,
-                        pos,
-                    });
-                }
-                hir::Stmt::ForOf {
-                    name,
-                    ty,
-                    subject,
-                    kind,
-                    body,
-                    pos,
-                } => {
-                    let loop_scope = scopes.len();
-                    let body = self.insert_scope_exit_disposals(
-                        body,
-                        ret,
-                        scopes,
-                        (Some(loop_scope), Some(loop_scope)),
-                        (true, &[]),
-                    );
-                    rewritten.push(hir::Stmt::ForOf {
-                        name,
-                        ty,
-                        subject,
-                        kind,
-                        body,
-                        pos,
-                    });
-                }
-                hir::Stmt::Switch { disc, cases, pos } => {
-                    let switch_scope = scopes.len();
-                    let mut switch_bindings = Vec::new();
-                    for case in &cases {
-                        for statement in &case.body {
-                            let hir::Stmt::Let {
-                                name,
-                                ty,
-                                dispose: true,
-                                pos,
-                                ..
-                            } = statement
-                            else {
-                                continue;
-                            };
-                            let id = self.next_using_switch_id;
-                            self.next_using_switch_id += 1;
-                            let active = format!("[[using.active#{id}]]");
-                            let storage = format!("[[using.value#{id}]]");
-                            rewritten.push(hir::Stmt::Let {
-                                name: active.clone(),
-                                ty: Type::Bool,
-                                mutable: true,
-                                dispose: false,
-                                init: hir::Expr {
-                                    kind: hir::ExprKind::Bool(false),
-                                    ty: Type::Bool,
-                                    pos: pos.clone(),
-                                },
-                                pos: pos.clone(),
-                            });
-                            rewritten.push(hir::Stmt::Let {
-                                name: storage.clone(),
-                                ty: ty.clone(),
-                                mutable: true,
-                                dispose: false,
-                                init: hir::Expr {
-                                    kind: hir::ExprKind::Null,
-                                    ty: ty.clone(),
-                                    pos: pos.clone(),
-                                },
-                                pos: pos.clone(),
-                            });
-                            switch_bindings.push(SwitchUsingStorage {
-                                source: name.clone(),
-                                active,
-                                storage,
-                                ty: ty.clone(),
-                            });
-                        }
-                    }
-                    scopes.push(Vec::new());
-                    let mut cases = cases
-                        .into_iter()
-                        .map(|case| hir::SwitchCase {
-                            test: case.test,
-                            body: self.insert_scope_exit_disposals(
-                                case.body,
-                                ret,
-                                scopes,
-                                (Some(switch_scope), continue_scope),
-                                (false, &switch_bindings),
-                            ),
-                            pos: case.pos,
-                        })
-                        .collect::<Vec<_>>();
-                    let scope = scopes.pop().unwrap_or_default();
-                    if let Some(last_case) = cases.last_mut() {
-                        if fallthrough::sequence_can_fall_through(&last_case.body) {
-                            last_case.body.extend(Self::make_disposal_statements(
-                                std::slice::from_ref(&scope),
-                                0,
-                            ));
-                        }
-                    }
-                    rewritten.push(hir::Stmt::Switch { disc, cases, pos });
-                }
-                other => rewritten.push(other),
-            }
-        }
-        if open_scope {
-            let scope = scopes.pop().unwrap_or_default();
-            if falls_through && !scope.is_empty() {
-                rewritten.extend(Self::make_disposal_statements(
-                    std::slice::from_ref(&scope),
-                    0,
-                ));
-            }
-        }
-        rewritten
-    }
-
     /// Checks a function body against its resolved signature and builds
     /// the HIR function. Returns `None` for poisoned signatures.
     pub(crate) fn check_function(
@@ -5296,13 +4892,7 @@ impl<'p> Checker<'p> {
             );
         }
         let body = if has_dispose_binding(&body) {
-            self.insert_scope_exit_disposals(
-                body,
-                &sig.ret,
-                &mut Vec::new(),
-                (None, None),
-                (true, &[]),
-            )
+            using_scope::structure(body, &mut self.next_using_switch_id)
         } else {
             body
         };
@@ -5324,6 +4914,7 @@ impl<'p> Checker<'p> {
             sig.ret.clone()
         };
         Some(hir::Function {
+            can_raise: false,
             name: name.to_string(),
             exported,
             is_generator: sig.is_generator,
@@ -5379,6 +4970,7 @@ impl<'p> Checker<'p> {
                     } else {
                         HashSet::new()
                     },
+                    caught: false,
                 },
                 pos.clone(),
                 fx,
@@ -5533,6 +5125,7 @@ impl<'p> Checker<'p> {
                                 mutable: true,
                                 holds_capturing: false,
                                 async_origins: HashSet::new(),
+                                caught: false,
                             },
                             param_pos.clone(),
                             &mut fx,
@@ -5554,15 +5147,10 @@ impl<'p> Checker<'p> {
                         }
                     }
                     if has_dispose_binding(&body) {
-                        body = self.insert_scope_exit_disposals(
-                            body,
-                            &Type::Void,
-                            &mut Vec::new(),
-                            (None, None),
-                            (true, &[]),
-                        );
+                        body = using_scope::structure(body, &mut self.next_using_switch_id);
                     }
                     self.classes[id.0].ctor = Some(hir::Function {
+                        can_raise: false,
                         name: "constructor".to_string(),
                         exported: false,
                         is_generator: false,
@@ -6164,6 +5752,7 @@ impl<'p> Checker<'p> {
                             mutable: true,
                             holds_capturing: false,
                             async_origins: HashSet::new(),
+                            caught: false,
                         });
                     }
                 }
@@ -6193,6 +5782,7 @@ impl<'p> Checker<'p> {
                     mutable: true,
                     holds_capturing: false,
                     async_origins: HashSet::new(),
+                    caught: false,
                 });
             }
             if let Some(local) = scope.vars.get(name) {
@@ -6210,6 +5800,7 @@ impl<'p> Checker<'p> {
                     mutable: true,
                     holds_capturing: false,
                     async_origins: HashSet::new(),
+                    caught: false,
                 });
             }
             if scope.fn_boundary {

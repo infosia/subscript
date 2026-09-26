@@ -1,0 +1,15 @@
+direct: Error: from the helper
+nested: Error: from the helper
+recursion: Error: at the bottom of the recursion
+method after 3 bumps: Error: limit at 3
+function value: TypeError: through a function value
+lambda: Error: 9 is above 4
+lambda 1
+forEach lambda: Error: forEach lambda stopped at 2
+visit 1
+visit 2
+forEach function: SyntaxError: visit stopped at 3
+visit 1
+visit 2
+forEach function value: SyntaxError: visit stopped at 3
+done

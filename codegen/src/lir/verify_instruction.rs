@@ -44,31 +44,36 @@ pub(super) fn verify_instruction_contract(
             );
         }
     }
-    for trap in &instruction.traps {
-        let l::TrapKind::JsonResultValue(ok_field) = trap.kind else {
-            continue;
-        };
-        let valid = match instruction.kind {
-            l::InstructionKind::LoadField(l::FieldRef::Class(value_field)) => module
-                .classes
-                .iter()
-                .find(|class| class.fields.iter().any(|field| field.id == value_field))
-                .is_some_and(|class| {
-                    class
-                        .fields
-                        .iter()
-                        .any(|field| field.id == ok_field && field.ty == Type::Bool)
-                }),
-            _ => false,
-        };
-        if !valid {
-            bad(
-                "JsonResultValue trap names no boolean field in the loaded field's class",
-                errors,
-            );
-        }
-    }
     match &instruction.kind {
+        l::InstructionKind::Throw => {
+            let valid = matches!(
+                operand_types.as_slice(),
+                [
+                    l::ValueType::Data(Type::Class(_)),
+                    l::ValueType::Data(Type::Str),
+                    l::ValueType::Data(Type::Str)
+                ]
+            ) && instruction.operands.len() == 3
+                && instruction.result.is_none();
+            if !valid {
+                bad("throw signature is invalid", errors);
+            }
+        }
+        l::InstructionKind::ExceptionPark | l::InstructionKind::ExceptionResume => {
+            if !instruction.operands.is_empty() || instruction.result.is_some() {
+                bad("exception exit signature is invalid", errors);
+            }
+        }
+        l::InstructionKind::CatchEntry => {
+            let valid = instruction.operands.is_empty()
+                && matches!(
+                    result_type.as_ref(),
+                    None | Some(l::ValueType::Data(Type::Class(_)))
+                );
+            if !valid {
+                bad("catch entry signature is invalid", errors);
+            }
+        }
         l::InstructionKind::Copy => {
             if operand_types.len() != 1 || result_type.as_ref() != operand_types.first() {
                 bad("copy input/result types do not match", errors);

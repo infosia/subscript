@@ -446,7 +446,8 @@ impl<'p> Checker<'p> {
                 self.err_expr(pos)
             }
             B::NullishCoalescing => self.check_nullish(b, fx, pos),
-            B::In | B::InstanceOf | B::Exp => {
+            B::InstanceOf => self.check_instanceof(b, fx, pos),
+            B::In | B::Exp => {
                 self.error(
                     RuleCode::S100,
                     "operator outside the decided surface",
@@ -811,6 +812,7 @@ impl<'p> Checker<'p> {
                 mutable: true,
                 holds_capturing: false,
                 async_origins: HashSet::new(),
+                caught: false,
             },
         );
         fx.push_synthetic_prefix(hir::Stmt::Let {

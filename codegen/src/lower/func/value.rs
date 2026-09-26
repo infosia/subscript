@@ -438,12 +438,32 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         }
     }
 
+    /// Loads the word and leaves on a nonzero state. At a raise site with
+    /// a handler, the cold path takes the handler edge for a pending
+    /// exception; the success path is the same one load and compare
+    /// (compiler.md §115.6 rule 4).
     pub(super) fn trap_check(&mut self) {
+        self.pending_checks += 1;
         let trap = self.builder.ins().load(types::I32, flags(), self.ctx, 0);
         let clear = self.builder.ins().icmp_imm(IntCC::Equal, trap, 0);
         let next = self.builder.create_block();
         let unwind = self.unwind_block();
-        self.builder.ins().brif(clear, next, &[], unwind, &[]);
+        match self.raise_target {
+            None => {
+                self.builder.ins().brif(clear, next, &[], unwind, &[]);
+            }
+            Some(handler) => {
+                let dispatch = self.builder.create_block();
+                self.builder.ins().brif(clear, next, &[], dispatch, &[]);
+                self.builder.switch_to_block(dispatch);
+                let raised = self.builder.ins().icmp_imm(
+                    IntCC::Equal,
+                    trap,
+                    i64::from(subscript_runtime::exception::STATE_EXCEPTION),
+                );
+                self.builder.ins().brif(raised, handler, &[], unwind, &[]);
+            }
+        }
         self.builder.switch_to_block(next);
     }
 
@@ -537,7 +557,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .ok_or_else(|| internal(format!("trap {:?} has no direct runtime kind", trap.kind)))
         };
         let value = match operand {
-            TrapOperand::Value(value) | TrapOperand::Condition(value) => Some(value),
+            TrapOperand::Value(value) => Some(value),
             _ => None,
         };
         match &trap.kind {
@@ -547,7 +567,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 }
                 self.trap_check();
             }
-            l::TrapKind::Unreachable => {
+            l::TrapKind::Raise(_) => {
+                return Err(internal(
+                    "a raise edge is consumed by its instruction, not by a trap emitter",
+                ));
+            }
+            l::TrapKind::Unreachable | l::TrapKind::DisposeRaisedDuringExit => {
                 let false_value = self.iconst(types::I8, 0);
                 self.guard(false_value, direct_kind()?, &trap.pos)?;
             }
@@ -568,17 +593,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     }
                     self.index_guard(condition, index, length, &trap.pos)?;
                 }
-                TrapOperand::Value(_)
-                | TrapOperand::Condition(_)
-                | TrapOperand::WireValue { .. } => {
+                TrapOperand::Value(_) | TrapOperand::WireValue { .. } => {
                     return Err(internal("index trap received no index/length payload"))
                 }
             },
-            l::TrapKind::JsonResultValue(_) => {
-                let condition =
-                    value.ok_or_else(|| internal("JSON result trap has no condition"))?;
-                self.guard(condition, direct_kind()?, &trap.pos)?;
-            }
             l::TrapKind::NullNarrowing => {
                 let pointer = value.ok_or_else(|| internal("null trap has no pointer"))?;
                 let nonnull = self.builder.ins().icmp_imm(IntCC::NotEqual, pointer, 0);
@@ -598,7 +616,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             l::TrapKind::DevOnlyLifetime => match operand {
                 TrapOperand::Pending => self.trap_check(),
-                TrapOperand::Value(pointer) | TrapOperand::Condition(pointer) => {
+                TrapOperand::Value(pointer) => {
                     self.live_check(pointer, &trap.pos)?;
                 }
                 TrapOperand::Index { .. } | TrapOperand::WireValue { .. } => {

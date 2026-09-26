@@ -4,7 +4,7 @@
 //! at link time, so one list serves both tiers.
 
 use cranelift_jit::JITBuilder;
-use subscript_runtime::{ffi, registration};
+use subscript_runtime::{exception, ffi, registration};
 
 macro_rules! runtime_symbols {
     ($($name:ident),+ $(,)?) => {
@@ -86,6 +86,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         subscript_rt_json_parse_array_len,
         subscript_rt_json_parse_array_get,
         subscript_rt_json_parse_object_get,
+        subscript_rt_json_parse_failure,
         subscript_rt_f16_from_f64,
         subscript_rt_f16_to_f64,
         subscript_rt_fmod,
@@ -269,6 +270,27 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         (
             "subscript_rt_cb_registration_trampoline",
             registration::subscript_rt_cb_registration_trampoline as *const u8,
+        ),
+        // compiler.md §115: the exception entries live with their area.
+        (
+            "subscript_rt_exception_throw",
+            exception::subscript_rt_exception_throw as *const u8,
+        ),
+        (
+            "subscript_rt_exception_catch",
+            exception::subscript_rt_exception_catch as *const u8,
+        ),
+        (
+            "subscript_rt_exception_settle",
+            exception::subscript_rt_exception_settle as *const u8,
+        ),
+        (
+            "subscript_rt_exception_park",
+            exception::subscript_rt_exception_park as *const u8,
+        ),
+        (
+            "subscript_rt_exception_resume",
+            exception::subscript_rt_exception_resume as *const u8,
         ),
     ] {
         builder.symbol(name, address);

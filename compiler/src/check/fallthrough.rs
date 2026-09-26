@@ -33,12 +33,11 @@ impl Exits {
     }
 }
 
-/// True when a statement has a normal exit, separate from return, break, or continue.
-pub(super) fn can_fall_through(statement: &Stmt) -> bool {
-    exits(statement).next
-}
-
-pub(super) fn sequence_can_fall_through(statements: &[Stmt]) -> bool {
+/// True when control can leave `statements` at their end: the one
+/// predicate of `compiler.md` §101 rule 2. The lowering places the hooks
+/// at the end of a `using` scope only when it answers true (§115.5
+/// rule 5).
+pub fn sequence_can_fall_through(statements: &[Stmt]) -> bool {
     sequence_exits(statements).next
 }
 
@@ -64,7 +63,7 @@ fn loop_exits(condition: Option<&crate::hir::Expr>, body: &[Stmt]) -> Exits {
 fn exits(statement: &Stmt) -> Exits {
     match statement {
         Stmt::Let { .. } | Stmt::ForOf { .. } => Exits::NEXT,
-        Stmt::Return { .. } | Stmt::Continue(_) => Exits::STOP,
+        Stmt::Return { .. } | Stmt::Continue(_) | Stmt::Throw { .. } => Exits::STOP,
         Stmt::Break(_) => Exits {
             next: false,
             breaks: true,
@@ -77,6 +76,12 @@ fn exits(statement: &Stmt) -> Exits {
             _ => Exits::NEXT,
         },
         Stmt::Block(body) => sequence_exits(body),
+        // A hook that raises leaves through the exception edge, so each
+        // exit of the scope is an exit of its body.
+        Stmt::Using { body, .. } => sequence_exits(body),
+        // The handler runs after a raise anywhere in the body, so each
+        // exit of either block is an exit of the statement.
+        Stmt::Try { body, handler, .. } => sequence_exits(body).either(sequence_exits(handler)),
         Stmt::If {
             cond, then, els, ..
         } => {
@@ -118,6 +123,12 @@ fn exits(statement: &Stmt) -> Exits {
 mod tests {
     use super::*;
     use crate::{check_program, hir, SourceFile};
+
+    /// True when a statement has a normal exit, separate from return,
+    /// break, or continue.
+    fn can_fall_through(statement: &Stmt) -> bool {
+        exits(statement).next
+    }
 
     fn body(source: &str) -> Vec<Stmt> {
         let source =

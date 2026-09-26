@@ -1,0 +1,19 @@
+guarded:start 3
+guarded:checked 6
+report:tail
+main:first=13
+guarded:start -4
+guarded:caught negative -4
+report:catch
+guarded:after-await 7
+guarded:still TypeError
+report:tail
+main:second=14
+guarded:start -1
+guarded:caught negative -1
+report:catch
+main:held
+guarded:after-await 7
+guarded:still TypeError
+report:tail
+main:held=14

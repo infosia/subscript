@@ -23,6 +23,7 @@ pub mod arrops;
 pub mod assocops;
 pub mod context;
 pub mod date;
+pub mod exception;
 pub mod ffi;
 pub mod fmt;
 mod half;

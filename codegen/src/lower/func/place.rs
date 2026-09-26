@@ -119,61 +119,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         }
     }
 
-    /// Guards the semantic `JsonResult<T>.value` field load with its
-    /// materialized sibling `ok` field. Ordinary field loads can carry other
-    /// trap kinds, so the LIR trap distinguishes this checked access after
-    /// the HIR expression kind has been transcribed away.
-    pub(super) fn guard_json_result_value(
-        &mut self,
-        field: l::FieldRef,
-        base: RV,
-        traps: &[l::Trap],
-    ) -> Result<(), String> {
-        let mut json_traps = traps.iter().filter_map(|trap| match trap.kind {
-            l::TrapKind::JsonResultValue(ok_field) => Some((trap, ok_field)),
-            _ => None,
-        });
-        let Some((first_trap, ok_field)) = json_traps.next() else {
-            return Ok(());
-        };
-        let l::FieldRef::Class(field) = field else {
-            return Err(internal(
-                "JSON result trap is attached to a synthetic field",
-            ));
-        };
-        let (class, _, _) = self.field_definition(field)?;
-        let definition = self
-            .ml
-            .lir
-            .classes
-            .get(class.0)
-            .filter(|definition| definition.id == class)
-            .ok_or_else(|| internal("JSON result class is missing"))?;
-        let ok_index = definition
-            .fields
-            .iter()
-            .position(|field| field.id == ok_field && field.ty == Type::Bool)
-            .ok_or_else(|| internal("JSON result guard field id is invalid"))?;
-        if json_traps.any(|(_, candidate)| candidate != ok_field) {
-            return Err(internal("JSON result traps disagree on the guard field id"));
-        }
-        if definition.is_value {
-            return Err(internal("JSON result unexpectedly has value-class layout"));
-        }
-        let ok_offset = *self
-            .ml
-            .layouts
-            .class(class.0)?
-            .field_offsets
-            .get(ok_index)
-            .ok_or_else(|| internal("JSON result ok field offset is missing"))?;
-        let pointer = self.expect_scalar(base)?;
-        let ok = self.load_data(&Type::Bool, pointer, ok_offset as i32)?;
-        let ok = self.expect_scalar(ok)?;
-        self.emit_trap(first_trap, TrapOperand::Condition(ok))?;
-        Ok(())
-    }
-
     pub(super) fn index_address(
         &mut self,
         base: RV,

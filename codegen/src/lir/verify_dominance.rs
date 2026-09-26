@@ -268,7 +268,7 @@ fn check_dominates(
 pub(super) fn predecessors(function: &l::Function) -> Vec<Vec<l::BlockId>> {
     let mut predecessors = vec![Vec::new(); function.blocks.len()];
     for block in &function.blocks {
-        for successor in block.terminator.successors() {
+        for successor in block.successors() {
             if let Some(list) = predecessors.get_mut(successor.0 as usize) {
                 list.push(block.id);
             }
@@ -312,8 +312,10 @@ pub(super) fn dominators(
     sets
 }
 
-pub(super) fn successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
-    terminator.successors()
+/// Every successor of `block`, the handler edges of its raise sites
+/// included (`compiler.md` §115.6 rule 2).
+pub(super) fn successors(block: &l::BasicBlock) -> Vec<l::BlockId> {
+    block.successors()
 }
 
 pub(super) fn terminator_values(terminator: &l::Terminator) -> Vec<l::ValueId> {
@@ -361,6 +363,10 @@ pub(super) fn verify_address_invalidation(function: &l::Function, errors: &mut V
                 if instruction.invalidates.contains(&base) {
                     invalidated = true;
                 }
+                // A handler edge leaves after the raise site.
+                if let Some(handler) = instruction.handler() {
+                    queue.push_back((handler, 0, invalidated));
+                }
                 index += 1;
             }
             if invalidated && terminator_values(&block.terminator).contains(&value.id) {
@@ -376,7 +382,7 @@ pub(super) fn verify_address_invalidation(function: &l::Function, errors: &mut V
                 l::Terminator::Suspend { invalidates, .. } => invalidates.contains(&base),
                 _ => false,
             };
-            for successor in successors(&block.terminator) {
+            for successor in block.terminator.successors() {
                 queue.push_back((successor, 0, invalidated || term_invalidates));
             }
         }

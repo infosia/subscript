@@ -36,6 +36,7 @@ mod boundary;
 mod builtin;
 mod call;
 mod coroutine;
+mod exception;
 mod expr;
 mod instruction;
 mod intrinsic;
@@ -153,7 +154,6 @@ struct BoundaryPtrWriteback {
 enum TrapOperand {
     Pending,
     Value(Value),
-    Condition(Value),
     Index {
         condition: Value,
         index: Value,
@@ -454,6 +454,11 @@ struct Body<'f, 'm, 'a, 'l, M: Module> {
     closure_environments: HashMap<l::ValueId, u32>,
     closure_environment_layout: Option<(u32, u32)>,
     consumed_traps: Vec<l::Trap>,
+    /// The handler landing block of the instruction that lowers now, when
+    /// it is a raise site in a `try` block (compiler.md §115.6 rule 2).
+    raise_target: Option<Block>,
+    /// The number of pending-word checks emitted so far.
+    pending_checks: usize,
 }
 
 impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
@@ -464,6 +469,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         self.builder.switch_to_block(block);
         self.pop_shadow()?;
         if self.coroutine.is_some() {
+            // compiler.md §115.4 items 2 and 3: an `async` body and a
+            // generator body are exception boundaries. The unwind exit is
+            // cold, so the success path gains nothing.
+            self.call_runtime(self.ml.rt.exception_settle, &[self.ctx], false)?;
             let one = self.iconst(types::I8, 1);
             self.builder.ins().return_(&[one]);
             return Ok(());
@@ -528,7 +537,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             let entry_clears = self.root_storage.clear_at_block_entry[source.id.0 as usize].clone();
             self.clear_root_slots(&entry_clears)?;
             for (instruction_index, instruction) in source.instructions.iter().enumerate() {
-                self.emit_instruction(instruction).map_err(|error| {
+                self.emit_raise_site(instruction).map_err(|error| {
                     internal(format!(
                         "function {} block {} instruction {:?}: {error}",
                         self.function.id.0, source.id.0, instruction.kind
@@ -965,6 +974,8 @@ pub(crate) fn define_function<M: Module>(
             closure_environments: HashMap::new(),
             closure_environment_layout,
             consumed_traps: Vec::new(),
+            raise_target: None,
+            pending_checks: 0,
         };
         initialize_storage(&mut body)?;
         if matches!(function.kind, l::FunctionKind::ModuleInitializer) {
@@ -1129,6 +1140,8 @@ pub(crate) fn define_coroutine<M: Module>(
                 closure_environments: HashMap::new(),
                 closure_environment_layout,
                 consumed_traps: Vec::new(),
+                raise_target: None,
+                pending_checks: 0,
             };
             let size = body.iconst(types::I64, i64::from(plan.size));
             let class = body.iconst(types::I32, i64::from(rtc::CLASS_GENERATOR));
@@ -1270,6 +1283,8 @@ pub(crate) fn define_coroutine<M: Module>(
                 closure_environments: plan.closure_environments.clone(),
                 closure_environment_layout,
                 consumed_traps: Vec::new(),
+                raise_target: None,
+                pending_checks: 0,
             };
             initialize_storage(&mut body)?;
             for (parameter, slot) in function.parameters.iter().zip(&plan.parameter_slots) {

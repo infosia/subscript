@@ -363,8 +363,8 @@ mod tests {
                calls += 1;\n\
                print(`start:${calls}`);\n\
                if (calls === 1) {\n\
-                 const failed: JsonResult<i32> = JSON.parse<i32>(\"nope\");\n\
-                 print(`${failed.value}`);\n\
+                 const failed: i32 = JSON.parse<i32>(\"nope\");\n\
+                 print(`${failed}`);\n\
                }\n\
                print(\"done\");\n\
              }\n",

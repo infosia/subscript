@@ -165,6 +165,7 @@ impl<'a> Lowering<'a> {
                 is_async: false,
                 creation_traps: Vec::new(),
                 host_entry_traps: None,
+                can_raise: self.hir.initializer_can_raise,
                 params: Vec::new(),
                 ret: Type::Void,
                 body: self.hir.top_level.clone(),

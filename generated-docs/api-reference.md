@@ -290,14 +290,7 @@
 | subscript signature | Behavior |
 |---|---|
 | `stringify<T>(value: T): string` | Serializes one statically known P13 type; cycle tracking is emitted only when its reference-class field graph can cycle. |
-| `parse<T>(text: string): JsonResult<T>` | Parses and validates one statically known P13 type; malformed, mismatched, or over-128-depth data returns ok=false, and the caller releases the result with Context.free. |
-
-### JsonResult<T>
-
-| subscript signature | Behavior |
-|---|---|
-| `ok: boolean` | Reports whether parsing and complete static-type validation succeeded. |
-| `value: T` | Carries the parsed value on success; reading it when ok is false traps. |
+| `parse<T>(text: string): T` | Parses and validates one statically known P13 type; malformed or over-128-depth text raises SyntaxError with the byte offset, and a document that does not match T raises TypeError. |
 
 ### Generator<T>
 
@@ -474,15 +467,19 @@ console.log(JSON.stringify(Infinity));
 
 ### `JSON.parse<string>` of a lone UTF-16 surrogate — Q5 and Q28
 
-subscript reports a failed parse because its UTF-8 string type cannot represent a lone surrogate; JavaScript returns a UTF-16 string containing it.
+subscript raises TypeError because its UTF-8 string type cannot represent a lone surrogate; JavaScript returns a UTF-16 string containing it.
 
 subscript:
 
 ```ts
 export function main(): void {
-  const result: JsonResult<string> = JSON.parse<string>('"\\ud800"');
-  print(`${result.ok}`);
-  Context.free(result);
+  try {
+    print(JSON.parse<string>('"\\ud800"'));
+  } catch (e) {
+    if (e instanceof TypeError) {
+      print(e.message);
+    }
+  }
 }
 ```
 
@@ -492,20 +489,24 @@ Node:
 console.log(JSON.parse('"\\ud800"'));
 ```
 
-- subscript result: `false\n`
+- subscript result: `JSON.parse: document does not match string\n`
 - Node result: `�\n`
 
 ### `JSON.parse<f32>("1e39")` — Q28
 
-subscript reports a failed parse when a finite JSON number overflows the statically requested f32 target; JavaScript has only binary64 and returns the value.
+subscript raises TypeError when a finite JSON number overflows the statically requested f32 target; JavaScript has only binary64 and returns the value.
 
 subscript:
 
 ```ts
 export function main(): void {
-  const result: JsonResult<f32> = JSON.parse<f32>("1e39");
-  print(`${result.ok}`);
-  Context.free(result);
+  try {
+    print(`${JSON.parse<f32>("1e39")}`);
+  } catch (e) {
+    if (e instanceof TypeError) {
+      print(e.message);
+    }
+  }
 }
 ```
 
@@ -515,7 +516,7 @@ Node:
 console.log(JSON.parse("1e39"));
 ```
 
-- subscript result: `false\n`
+- subscript result: `JSON.parse: document does not match f32\n`
 - Node result: `1e+39\n`
 
 ### `string.length` — Q5

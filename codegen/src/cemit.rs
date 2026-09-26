@@ -31,6 +31,7 @@ mod body;
 mod call;
 mod collection;
 mod emitter;
+mod exception;
 mod graph;
 mod intrinsic;
 mod iterator;
@@ -170,6 +171,11 @@ struct Body<'e, 'm, 'f> {
     fixed_iterators: HashSet<l::ValueId>,
     delayed_declarations: HashMap<String, l::ValueId>,
     consumed_traps: Vec<l::Trap>,
+    /// The handler landing block of the instruction that emits now, when
+    /// it is a raise site in a `try` block (compiler.md §115.6 rule 2).
+    raise_target: Option<l::BlockId>,
+    /// The number of pending-word checks emitted so far.
+    pending_checks: std::cell::Cell<usize>,
     temporary: u32,
     /// Whether `emit_storage` declared a shadow-root frame. `emit_pop`
     /// reads the same fact, so push and pop cannot disagree.
@@ -693,6 +699,7 @@ mod tests {
             is_async: false,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: Vec::new(),
             return_type: Type::I32,
             locals: (0..3)
@@ -991,6 +998,7 @@ mod tests {
             is_async: false,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: Vec::new(),
             return_type: Type::Void,
             locals: Vec::new(),
@@ -1079,39 +1087,6 @@ mod tests {
                 "{ty:?}"
             );
         }
-    }
-
-    #[test]
-    fn c_json_guard_reads_the_lir_field_id() {
-        let mut module = lower_test_source(
-            "json-field-id.ts",
-            "export function main(): void {\n  const result: JsonResult<i32> = JSON.parse<i32>(\"1\");\n  print(`${result.value}`);\n}\n",
-        );
-        let ok_field = module
-            .functions
-            .iter()
-            .flat_map(|function| &function.blocks)
-            .flat_map(|block| &block.instructions)
-            .flat_map(|instruction| &instruction.traps)
-            .find_map(|trap| match trap.kind {
-                l::TrapKind::JsonResultValue(field) => Some(field),
-                _ => None,
-            })
-            .expect("JSON value load names its ok field");
-        module
-            .classes
-            .iter_mut()
-            .flat_map(|class| &mut class.fields)
-            .find(|field| field.id == ok_field)
-            .expect("JSON ok field exists")
-            .source_name = "not_ok".to_string();
-
-        let program = emit_lir_c(&module, true).expect("C locates the guard field by LIR id");
-        assert!(
-            program.source.contains(&format!(")->d{}", ok_field.0)),
-            "the emitted guard does not read field {}",
-            ok_field.0
-        );
     }
 
     #[test]

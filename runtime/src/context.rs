@@ -640,7 +640,7 @@ pub struct CallbackBinding {
 /// ship C and hot-reload code both read the module-global block slot.
 #[repr(C)]
 pub struct Context {
-    trap_flag: u32,
+    pub(crate) trap_flag: u32,
     reload_epoch: u32,
     fn_table: *const *const u8,
     globals: *mut u8,
@@ -689,6 +689,11 @@ pub struct Context {
     print_observer: Option<PrintObserver>,
     print_observer_userdata: *mut c_void,
     trap: Option<TrapRecord>,
+    // compiler.md §115.6 rule 1: the Error object behind word state 2.
+    pub(crate) pending_exception: Option<crate::exception::PendingException>,
+    // compiler.md §115.5 rule 7: the exceptions that wait while the hooks
+    // of an exception exit run, innermost last.
+    pub(crate) parked_exceptions: Vec<crate::exception::PendingException>,
     trap_observer: Option<TrapObserver>,
     trap_observer_userdata: *mut c_void,
     trap_observer_active: bool,
@@ -814,6 +819,8 @@ impl Context {
             print_observer: None,
             print_observer_userdata: std::ptr::null_mut(),
             trap: None,
+            pending_exception: None,
+            parked_exceptions: Vec::new(),
             trap_observer: None,
             trap_observer_userdata: std::ptr::null_mut(),
             trap_observer_active: false,
@@ -1150,6 +1157,11 @@ impl Context {
     /// Marks return from script code.
     pub fn exit_script(&mut self) {
         self.script_depth = self.script_depth.saturating_sub(1);
+        // compiler.md §115.4 item 1: an exception that leaves the
+        // outermost script frame of a host entry becomes a trap.
+        if self.script_depth == 0 {
+            self.settle_uncaught_exception();
+        }
     }
 
     /// Number of host-to-script calls currently on the stack. A hot
@@ -1539,6 +1551,10 @@ impl Context {
     /// (generated code unwinds after the first, but runtime functions
     /// invoked on the unwind path stay callable).
     pub fn trap(&mut self, kind: TrapKind, message: impl Into<String>, pos_id: u32) {
+        // compiler.md §115.6 rule 1: a trap drops a pending exception, and
+        // the exceptions that wait for their hooks.
+        self.pending_exception = None;
+        self.parked_exceptions.clear();
         if self.trap.is_none() {
             self.trap = Some(TrapRecord::new(kind, message, pos_id));
             // The observer sees both the stored record and the raised
@@ -1640,6 +1656,8 @@ impl Context {
             }
         }
         self.trap = None;
+        self.pending_exception = None;
+        self.parked_exceptions.clear();
         self.trap_flag = 0;
         // A trapping JSON operation may unwind before its finish leaf on
         // the dev tier. Builders and parsed trees are transient
@@ -2914,6 +2932,18 @@ impl Context {
                 })
             });
         self.push_root_set(&mut work, &mut tracer, "shadow", shadow);
+        // compiler.md §115.2 rule 4: a pending exception is a root.
+        let pending = self
+            .pending_exception
+            .iter()
+            .map(|pending| (0, 0, pending.object));
+        self.push_root_set(&mut work, &mut tracer, "pending_exception", pending);
+        // compiler.md §115.5 rule 8: the park stack is a collection root.
+        let parked = self
+            .parked_exceptions
+            .iter()
+            .map(|parked| (0, 0, parked.object));
+        self.push_root_set(&mut work, &mut tracer, "parked_exceptions", parked);
         // §94.2: every scheduler state is a collection root. Ready jobs,
         // parked frames, and blocked continuations are named separately, so
         // the enumeration shows each state rather than relying on the

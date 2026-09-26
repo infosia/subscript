@@ -472,6 +472,9 @@ fn run_worker(
         // SAFETY: same function-pointer and argument lifetime contract.
         unsafe { entry(ctx_ptr, &mut inbox, &mut outbox) };
     }
+    // The Worker Context starts at depth zero, so this exit is the
+    // outermost one: a pending exception becomes the Worker's
+    // uncaught-exception trap here (compiler.md §115.4 item 4).
     ctx.exit_script();
     let outcome = match ctx.trap_record() {
         Some(record) => WorkerOutcome::Trapped(record.clone()),
@@ -655,6 +658,22 @@ mod tests {
     ) {
         // SAFETY: entry received the live worker Context.
         unsafe { subscript_rt_trap(ctx, TrapKind::EmptyPop as u32, 77) };
+    }
+
+    /// Leaves an exception pending when it returns (compiler.md §115.4
+    /// item 4).
+    unsafe extern "C" fn raise_entry(
+        ctx: *mut Context,
+        _inbox: *mut WorkerInbox,
+        _outbox: *mut WorkerOutbox,
+    ) {
+        // SAFETY: entry received the live worker Context.
+        let worker = unsafe { &mut *ctx };
+        let object = worker.alloc(24, 1, 0);
+        let name = worker.alloc_str(b"TypeError", 0);
+        let message = worker.alloc_str(b"worker failed", 0);
+        // SAFETY: live worker Context, object, and string handles.
+        unsafe { crate::exception::subscript_rt_exception_throw(ctx, object, name, message, 41) };
     }
 
     unsafe extern "C" fn nested_worker_entry(
@@ -1166,6 +1185,35 @@ mod tests {
             unsafe { subscript_rt_ctx_trap_kind(parent) },
             TrapKind::WorkerTrapped as u32
         );
+        // SAFETY: parent is released exactly once.
+        unsafe { subscript_rt_ctx_release(parent) };
+    }
+
+    #[test]
+    fn an_exception_that_leaves_a_worker_entry_is_the_worker_trap() {
+        let parent = subscript_rt_ctx_new();
+        // SAFETY: fresh parent Context and linked callbacks.
+        let worker = unsafe {
+            subscript_rt_worker_spawn(
+                parent,
+                Some(no_op_init),
+                Some(raise_entry),
+                &EMPTY_DESCRIPTOR,
+                &EMPTY_DESCRIPTOR,
+            )
+        };
+        assert!(!worker.is_null());
+        // SAFETY: the worker terminates with its exception pending.
+        assert_eq!(unsafe { subscript_rt_worker_join(parent, worker) }, 0);
+        // SAFETY: the parent is live; the trap record is read in place.
+        let trap = unsafe { &*parent }.trap_record().expect("worker trap");
+        assert_eq!(trap.kind, TrapKind::WorkerTrapped);
+        assert_eq!(
+            trap.message,
+            "worker trapped with uncaught-exception at position 41: TypeError: worker failed"
+        );
+        // SAFETY: the parent Context has no pending exception of its own.
+        assert!(!unsafe { &*parent }.exception_pending());
         // SAFETY: parent is released exactly once.
         unsafe { subscript_rt_ctx_release(parent) };
     }

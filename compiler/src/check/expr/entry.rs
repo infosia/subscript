@@ -14,7 +14,7 @@ use crate::types::{ClassId, Type};
 use super::contextual_object_class;
 
 impl<'p> Checker<'p> {
-    pub(super) fn ambient_visible(&self, name: &str, fx: &FnCtx) -> bool {
+    pub(in crate::check) fn ambient_visible(&self, name: &str, fx: &FnCtx) -> bool {
         !fx.owns_local_name(name) && self.scope_item(name).is_none()
     }
 
@@ -59,10 +59,9 @@ impl<'p> Checker<'p> {
                 .iter()
                 .flat_map(|element| self.expr_async_origins(&element.expr, fx))
                 .collect(),
-            K::Index { obj, .. }
-            | K::Field { obj, .. }
-            | K::Cast(obj)
-            | K::JsonResultValue(obj) => self.expr_async_origins(obj, fx),
+            K::Index { obj, .. } | K::Field { obj, .. } | K::Cast(obj) => {
+                self.expr_async_origins(obj, fx)
+            }
             K::Cond { then, els, .. } => self
                 .expr_async_origins(then, fx)
                 .into_iter()

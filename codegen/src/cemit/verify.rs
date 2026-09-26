@@ -333,7 +333,10 @@ pub(super) fn runtime_traps(function: &l::Function) -> Vec<l::Trap> {
 }
 
 pub(super) fn script_call_requires_pending_check(function: &l::Function) -> bool {
-    function.is_generator || function.is_async || !runtime_traps(function).is_empty()
+    function.is_generator
+        || function.is_async
+        || function.can_raise
+        || !runtime_traps(function).is_empty()
 }
 
 pub(super) fn verify_trap_consumption(

@@ -169,6 +169,17 @@ fn walk_statements<S: Clone>(
                 visit(statement, remaining, loop_depth, &mut nested);
                 walk_statements(body, loop_depth, &mut nested, visit);
             }
+            Stmt::Using { body, .. } => {
+                let mut nested = state.clone();
+                visit(statement, remaining, loop_depth, &mut nested);
+                walk_statements(body, loop_depth, &mut nested, visit);
+            }
+            Stmt::Try { body, handler, .. } => {
+                let mut branch = state.clone();
+                visit(statement, remaining, loop_depth, &mut branch);
+                walk_statements(body, loop_depth, &mut branch.clone(), visit);
+                walk_statements(handler, loop_depth, &mut branch, visit);
+            }
             _ => visit(statement, remaining, loop_depth, state),
         }
     }
@@ -231,6 +242,10 @@ impl WarningChecker<'_> {
                             AllocationSink::Escape,
                         );
                     }
+                }
+                // A thrown object leaves the iteration (compiler.md §115.2).
+                Stmt::Throw { value, .. } => {
+                    self.scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape);
                 }
                 _ => {
                     for child in stmt.children() {
@@ -467,7 +482,31 @@ impl WarningChecker<'_> {
     }
 
     fn analyze_w002_block(&mut self, stmts: &[Stmt]) {
-        let mut freed = HashSet::new();
+        self.analyze_w002_sequence(stmts, HashSet::new());
+    }
+
+    /// The end of a `using` scope calls the hook of each binding
+    /// (compiler.md §115.5 rule 5): a use of each binding name.
+    fn analyze_w002_using(
+        &mut self,
+        bindings: &[hir::UsingBinding],
+        body: &[Stmt],
+        freed: &HashSet<String>,
+    ) {
+        let freed = self.analyze_w002_sequence(body, freed.clone());
+        for binding in bindings.iter().rev() {
+            self.warn_w002_direct_uses(&binding.hook(), &freed);
+        }
+    }
+
+    /// `stmts` after statements that left `freed` freed. The body of a
+    /// `using` scope continues the sequence of its block. Returns the
+    /// names that stay freed at the end of the sequence.
+    fn analyze_w002_sequence(
+        &mut self,
+        stmts: &[Stmt],
+        mut freed: HashSet<String>,
+    ) -> HashSet<String> {
         for stmt in stmts {
             self.warn_w002_direct_uses(stmt, &freed);
 
@@ -497,7 +536,16 @@ impl WarningChecker<'_> {
                         self.analyze_w002_block(&case.body);
                     }
                 }
-                _ => {
+                Stmt::Using { bindings, body, .. } => {
+                    self.analyze_w002_using(bindings, body, &freed);
+                }
+                Stmt::Let { .. }
+                | Stmt::Expr(_)
+                | Stmt::Return { .. }
+                | Stmt::Break(_)
+                | Stmt::Continue(_)
+                | Stmt::Throw { .. }
+                | Stmt::Try { .. } => {
                     for child in stmt.children() {
                         if let hir::HirChild::Stmt(child) = child {
                             self.analyze_w002_block(std::slice::from_ref(child));
@@ -514,6 +562,8 @@ impl WarningChecker<'_> {
                     | Stmt::ForOf { .. }
                     | Stmt::Switch { .. }
                     | Stmt::Block(_)
+                    | Stmt::Try { .. }
+                    | Stmt::Using { .. }
             ) {
                 // v1 carries no freed-state facts through a control-flow
                 // join. The condition/discriminant above is still a direct
@@ -521,6 +571,7 @@ impl WarningChecker<'_> {
                 freed.clear();
             }
         }
+        freed
     }
 
     fn warn_w002_direct_uses(&mut self, stmt: &Stmt, freed: &HashSet<String>) {
@@ -710,6 +761,7 @@ fn count_w004_bound_names(stmts: &[Stmt], counts: &mut HashMap<String, usize>) {
             Stmt::While { body, .. } | Stmt::Block(body) => {
                 count_w004_bound_names(body, counts);
             }
+            Stmt::Using { body, .. } => count_w004_bound_names(body, counts),
             Stmt::For { init, body, .. } => {
                 if let Some(init) = init {
                     count_w004_bound_names(std::slice::from_ref(init.as_ref()), counts);
@@ -721,7 +773,23 @@ fn count_w004_bound_names(stmts: &[Stmt], counts: &mut HashMap<String, usize>) {
                     count_w004_bound_names(&case.body, counts);
                 }
             }
-            Stmt::Expr(_) | Stmt::Return { .. } | Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::Try {
+                body,
+                binding,
+                handler,
+                ..
+            } => {
+                count_w004_bound_names(body, counts);
+                if let Some((binding, _)) = binding {
+                    count_bound_name(counts, binding);
+                }
+                count_w004_bound_names(handler, counts);
+            }
+            Stmt::Expr(_)
+            | Stmt::Return { .. }
+            | Stmt::Break(_)
+            | Stmt::Continue(_)
+            | Stmt::Throw { .. } => {}
         }
     }
 }
@@ -755,6 +823,7 @@ fn collect_synthesized_origins(stmts: &[Stmt], origins: &mut HashMap<String, Str
             Stmt::While { body, .. } | Stmt::ForOf { body, .. } | Stmt::Block(body) => {
                 collect_synthesized_origins(body, origins)
             }
+            Stmt::Using { body, .. } => collect_synthesized_origins(body, origins),
             Stmt::For { init, body, .. } => {
                 if let Some(init) = init {
                     collect_synthesized_origins(std::slice::from_ref(init.as_ref()), origins);
@@ -766,11 +835,16 @@ fn collect_synthesized_origins(stmts: &[Stmt], origins: &mut HashMap<String, Str
                     collect_synthesized_origins(&case.body, origins);
                 }
             }
+            Stmt::Try { body, handler, .. } => {
+                collect_synthesized_origins(body, origins);
+                collect_synthesized_origins(handler, origins);
+            }
             Stmt::Let { .. }
             | Stmt::Expr(_)
             | Stmt::Return { .. }
             | Stmt::Break(_)
-            | Stmt::Continue(_) => {}
+            | Stmt::Continue(_)
+            | Stmt::Throw { .. } => {}
         }
     }
 }
@@ -858,6 +932,9 @@ fn collect_w004_local_bindings(
             Stmt::While { body, .. } | Stmt::ForOf { body, .. } | Stmt::Block(body) => {
                 collect_w004_local_bindings(module, body, bound_names, origins, bindings)
             }
+            Stmt::Using { body, .. } => {
+                collect_w004_local_bindings(module, body, bound_names, origins, bindings)
+            }
             Stmt::For { init, body, .. } => {
                 if let Some(init) = init {
                     collect_w004_local_bindings(
@@ -875,11 +952,16 @@ fn collect_w004_local_bindings(
                     collect_w004_local_bindings(module, &case.body, bound_names, origins, bindings);
                 }
             }
+            Stmt::Try { body, handler, .. } => {
+                collect_w004_local_bindings(module, body, bound_names, origins, bindings);
+                collect_w004_local_bindings(module, handler, bound_names, origins, bindings);
+            }
             Stmt::Let { .. }
             | Stmt::Expr(_)
             | Stmt::Return { .. }
             | Stmt::Break(_)
-            | Stmt::Continue(_) => {}
+            | Stmt::Continue(_)
+            | Stmt::Throw { .. } => {}
         }
     }
 }
@@ -1297,7 +1379,30 @@ fn scan_candidate_stmts(stmts: &[Stmt], name: &str, state: &mut CandidateUse) {
                 }
                 continue;
             }
-            _ => {}
+            Stmt::Throw { value, .. } => {
+                if value_is_candidate(value, name) {
+                    state.escaped = true;
+                }
+                scan_candidate_expr(value, name, state);
+                continue;
+            }
+            // Each exit of the scope calls the hook of each binding
+            // (compiler.md §115.5 rule 5).
+            Stmt::Using { bindings, .. } => {
+                for binding in bindings {
+                    scan_candidate_stmts(&[binding.hook()], name, state);
+                }
+            }
+            Stmt::Expr(_)
+            | Stmt::If { .. }
+            | Stmt::While { .. }
+            | Stmt::For { .. }
+            | Stmt::ForOf { .. }
+            | Stmt::Switch { .. }
+            | Stmt::Break(_)
+            | Stmt::Continue(_)
+            | Stmt::Block(_)
+            | Stmt::Try { .. } => {}
         }
         for child in stmt.children() {
             match child {

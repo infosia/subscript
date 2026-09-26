@@ -1,21 +1,35 @@
 // corpus: accept/a72-json-parse-limits
-// purpose: Reports parse-side representation and input-depth failures as data.
-// exercises: JSON, typed parse, JsonResult, depth limit, UTF-8, f32 range
-// questions: Q28, Q5, Q6
-// tsc: accepts; js-comparable: no Q6 Q28: The Context memory API has no JavaScript shim.
+// purpose: Reports parse-side representation and input-depth failures as caught exceptions.
+// exercises: JSON, typed parse, try-catch, depth limit, UTF-8, f32 range
+// questions: Q28, Q5, Q9
+// tsc: accepts; js-comparable: no Q5 Q28: JavaScript JSON.parse has no static target type to validate.
 export function main(): void {
-  const loneSurrogate: JsonResult<string> =
-    JSON.parse<string>('"\\ud800"');
-  print(`lone-surrogate-ok=${loneSurrogate.ok}`);
-  Context.free(loneSurrogate);
+  let loneSurrogateOk: boolean = true;
+  try {
+    const loneSurrogate: string = JSON.parse<string>('"\\ud800"');
+    loneSurrogateOk = loneSurrogate.length >= 0;
+  } catch {
+    loneSurrogateOk = false;
+  }
+  print(`lone-surrogate-ok=${loneSurrogateOk}`);
 
-  const f32Overflow: JsonResult<f32> = JSON.parse<f32>("1e39");
-  print(`f32-overflow-ok=${f32Overflow.ok}`);
-  Context.free(f32Overflow);
+  let f32OverflowOk: boolean = true;
+  try {
+    const f32Overflow: f32 = JSON.parse<f32>("1e39");
+    f32OverflowOk = f32Overflow === f32Overflow;
+  } catch {
+    f32OverflowOk = false;
+  }
+  print(`f32-overflow-ok=${f32OverflowOk}`);
 
   const tooDeepText: string =
     "[".repeat(129) + "0" + "]".repeat(129);
-  const tooDeep: JsonResult<i32> = JSON.parse<i32>(tooDeepText);
-  print(`depth-limit-ok=${tooDeep.ok}`);
-  Context.free(tooDeep);
+  let tooDeepOk: boolean = true;
+  try {
+    const tooDeep: i32 = JSON.parse<i32>(tooDeepText);
+    tooDeepOk = tooDeep === tooDeep;
+  } catch {
+    tooDeepOk = false;
+  }
+  print(`depth-limit-ok=${tooDeepOk}`);
 }

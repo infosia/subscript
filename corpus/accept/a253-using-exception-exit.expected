@@ -1,0 +1,28 @@
+outer body
+inner body
+dispose second
+dispose first
+dispose outer
+caught two scopes
+null body
+dispose last
+dispose first
+caught null binding
+return early
+dispose normal inner
+dispose normal outer
+value 7
+dispose normal inner
+after block
+return late
+dispose normal outer
+value 7
+dispose loop 0
+dispose loop 1
+caught loop 1
+dispose switch held
+dispose switch outer
+caught switch
+switch default
+dispose switch outer
+done

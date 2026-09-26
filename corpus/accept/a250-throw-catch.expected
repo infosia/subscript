@@ -1,0 +1,9 @@
+Error branch: Error: plain
+SyntaxError branch: SyntaxError: bad token
+TypeError branch: TypeError: wrong kind
+no exception
+catch without a binding after step 1
+empty message length 0
+Renamed: changed
+held is a TypeError: held
+after the handlers 1

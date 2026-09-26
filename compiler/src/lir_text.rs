@@ -144,6 +144,9 @@ pub fn print_module(module: &lir::Module) -> String {
         if !function.creation_traps.is_empty() {
             writeln!(&mut out, "  creation-traps {:?}", function.creation_traps).unwrap();
         }
+        if function.can_raise {
+            writeln!(&mut out, "  can-raise").unwrap();
+        }
         for parameter in &function.parameters {
             writeln!(
                 &mut out,

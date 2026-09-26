@@ -30,6 +30,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 self.read_binding(binding, &expr.pos)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        // A lambda body is its own function; the check derives its fact
+        // (compiler.md §115.6 rule 3).
+        let hir::ExprKind::Lambda { can_raise, .. } = &expr.kind else {
+            return Err(self.error(&expr.pos, "a lambda lowers from a lambda expression"));
+        };
+        let can_raise = *can_raise;
         let id = self.lowering.allocate_function_id();
         let function = FunctionInput {
             name: format!(
@@ -41,6 +47,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             is_async: false,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise,
             params: params.to_vec(),
             ret: ret.clone(),
             body: body.to_vec(),

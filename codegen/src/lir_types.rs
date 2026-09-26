@@ -13,16 +13,16 @@ fn internal(message: impl AsRef<str>) -> String {
 pub(crate) fn runtime_trap_kind(kind: &l::TrapKind) -> Option<TrapKind> {
     Some(match kind {
         l::TrapKind::Allocation => TrapKind::AllocationFailure,
-        l::TrapKind::Call => return None,
+        l::TrapKind::Call | l::TrapKind::Raise(_) => return None,
         l::TrapKind::Unreachable => TrapKind::UnreachableReached,
         l::TrapKind::DivisionByZero => TrapKind::DivisionByZero,
         l::TrapKind::IndexRead | l::TrapKind::IndexWrite => TrapKind::IndexOutOfBounds,
-        l::TrapKind::JsonResultValue(_) => TrapKind::JsonResultValue,
         l::TrapKind::NullNarrowing => TrapKind::NullNarrowing,
         l::TrapKind::ClassMismatch(_) => TrapKind::ClassMismatch,
         l::TrapKind::DevOnlyLifetime => TrapKind::UseAfterDelete,
         l::TrapKind::DevReloadOnlyStaleCoroutine => TrapKind::StaleCoroutine,
         l::TrapKind::WireEnumValue(_) => TrapKind::WireEnumUnknownValue,
+        l::TrapKind::DisposeRaisedDuringExit => TrapKind::DisposeRaisedDuringExit,
     })
 }
 
@@ -375,14 +375,11 @@ mod tests {
         let cases = [
             (l::TrapKind::Allocation, Some(TrapKind::AllocationFailure)),
             (l::TrapKind::Call, None),
+            (l::TrapKind::Raise(l::RaiseEdge::Propagate), None),
             (l::TrapKind::Unreachable, Some(TrapKind::UnreachableReached)),
             (l::TrapKind::DivisionByZero, Some(TrapKind::DivisionByZero)),
             (l::TrapKind::IndexRead, Some(TrapKind::IndexOutOfBounds)),
             (l::TrapKind::IndexWrite, Some(TrapKind::IndexOutOfBounds)),
-            (
-                l::TrapKind::JsonResultValue(l::FieldId(1)),
-                Some(TrapKind::JsonResultValue),
-            ),
             (l::TrapKind::NullNarrowing, Some(TrapKind::NullNarrowing)),
             (
                 l::TrapKind::ClassMismatch(ClassId(2)),
@@ -397,8 +394,12 @@ mod tests {
                 l::TrapKind::WireEnumValue(StringAliasId(3)),
                 Some(TrapKind::WireEnumUnknownValue),
             ),
+            (
+                l::TrapKind::DisposeRaisedDuringExit,
+                Some(TrapKind::DisposeRaisedDuringExit),
+            ),
         ];
-        assert_eq!(cases.len(), 12);
+        assert_eq!(cases.len(), 13);
         for (lir, runtime) in cases {
             assert_eq!(runtime_trap_kind(&lir), runtime, "{lir:?}");
         }

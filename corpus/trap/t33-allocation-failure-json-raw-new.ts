@@ -14,9 +14,7 @@ class Config {
 
 export function main(): void {
   print("before");
-  const result: JsonResult<Config> =
+  const result: Config =
     JSON.parse<Config>("{\"value\":7}");
-  if (result.ok) {
-    print(`${result.value.value}`);
-  }
+  print(`${result.value}`);
 }

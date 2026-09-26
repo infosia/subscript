@@ -285,6 +285,13 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         15,
     ),
+    ("r233-finally.ts", RuleCode::S010, 12),
+    ("r234-try-holds-await.ts", RuleCode::S010, 9),
+    ("r235-try-holds-yield.ts", RuleCode::S010, 9),
+    ("r236-caught-binding-use.ts", RuleCode::S010, 11),
+    ("r237-catch-annotation.ts", RuleCode::S010, 10),
+    ("r238-instanceof-non-error.ts", RuleCode::S100, 13),
+    ("r239-stringify-error.ts", RuleCode::S014, 9),
     (
         "r65-cstruct-field-offset-layout-too-large.ts",
         RuleCode::S100,

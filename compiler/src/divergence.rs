@@ -45,8 +45,12 @@ pub enum Divergence {
     WireEnumValues,
     /// A capturing lambda that escapes, and the container callback parameter.
     EscapingCapture,
-    /// `throw` and the `try`/`catch`/`finally` statements.
+    /// A form outside the decided exception surface: a non-Error `throw`,
+    /// `finally`, a suspension in a `try` block, and a catch binding read
+    /// or annotation outside the two legal forms.
     Exceptions,
+    /// `instanceof` with a class outside the Error family.
+    InstanceofNonError,
     /// A general union type, and the `undefined` token.
     GeneralUnionAndUndefined,
     /// A nullish test on a non-nullable value.
@@ -211,6 +215,7 @@ impl Divergence {
         Divergence::WireEnumValues,
         Divergence::EscapingCapture,
         Divergence::Exceptions,
+        Divergence::InstanceofNonError,
         Divergence::GeneralUnionAndUndefined,
         Divergence::NullishNonNullable,
         Divergence::OptionalChainNonNullable,
@@ -396,11 +401,20 @@ impl Divergence {
                 ts: "function fail(): void {\n\
                      \x20 throw \"failure\";\n\
                      }",
-                subscript: "function fail(): i32 {\n\
-                            \x20 return -1;\n\
+                subscript: "function fail(): void {\n\
+                            \x20 throw new Error(\"failure\");\n\
                             }",
-                why: "Unwinding cannot cross the C ABI, so a fallible operation returns a \
-                      result value and a fault traps.",
+                why: "The decided surface throws only an Error-family object, reads a catch \
+                      binding only through `instanceof` or a rethrow, and has no `finally`.",
+                collision: "C6",
+            },
+            Divergence::InstanceofNonError => DivergenceEntry {
+                ts: "class Box {}\n\
+                     const box: Box = new Box();\n\
+                     const known: boolean = box instanceof Box;",
+                subscript: "no equivalent; the nominal static type already names the class",
+                why: "Only an Error-family object carries a runtime class tag, and a nominal \
+                      static type already decides every other class.",
                 collision: "C6",
             },
             Divergence::GeneralUnionAndUndefined => DivergenceEntry {
@@ -684,7 +698,7 @@ impl Divergence {
                      const parsed = JSON.parse(\"{}\");",
                 subscript: "class Box { value: i32 = 1; }\n\
                             print(JSON.stringify(new Box()));\n\
-                            const r: JsonResult<Box> = JSON.parse<Box>('{\"value\":1}');",
+                            const r: Box = JSON.parse<Box>('{\"value\":1}');",
                 why: "A container, a function, and a Date have no static field shape, and a \
                       parse needs a declared target type.",
                 collision: "stdlib.md §13",

@@ -14,6 +14,7 @@ mod address_taken;
 mod builder;
 mod call;
 mod construct;
+mod exception;
 mod expr;
 mod lambda;
 mod liveness;
@@ -21,9 +22,11 @@ mod lowering;
 mod place;
 mod stmt;
 mod unroll;
+mod using;
 mod verify;
 mod verify_dominance;
 mod verify_instruction;
+mod verify_raise;
 mod verify_terminator;
 
 use self::liveness::{classify_local_storage, thread_suspension_live_ins};
@@ -204,6 +207,7 @@ struct FunctionInput {
     is_async: bool,
     creation_traps: Vec<hir::TrapSite>,
     host_entry_traps: Option<Vec<hir::TrapSite>>,
+    can_raise: bool,
     params: Vec<hir::Param>,
     ret: Type,
     body: Vec<hir::Stmt>,
@@ -220,6 +224,7 @@ impl From<hir::Function> for FunctionInput {
             is_async: function.is_async,
             creation_traps,
             host_entry_traps: None,
+            can_raise: function.can_raise,
             params: function.params,
             ret: function.ret,
             body: function.body,
@@ -429,6 +434,7 @@ fn intrinsic_runtime_symbol(family: l::IntrinsicFamily, name: &str) -> Option<&'
         (l::IntrinsicFamily::Json, "ParseArrayLen") => "subscript_rt_json_parse_array_len",
         (l::IntrinsicFamily::Json, "ParseArrayGet") => "subscript_rt_json_parse_array_get",
         (l::IntrinsicFamily::Json, "ParseObjectGet") => "subscript_rt_json_parse_object_get",
+        (l::IntrinsicFamily::Json, "ParseFailure") => "subscript_rt_json_parse_failure",
         (l::IntrinsicFamily::String, "Slice") => "subscript_rt_str_slice",
         (l::IntrinsicFamily::String, "IndexOf") => "subscript_rt_str_index_of",
         (l::IntrinsicFamily::String, "LastIndexOf") => "subscript_rt_str_last_index_of",
@@ -629,13 +635,12 @@ fn convert_traps(sites: &[hir::TrapSite]) -> Vec<l::Trap> {
             kind: match site {
                 hir::TrapSite::Allocation { .. } => l::TrapKind::Allocation,
                 hir::TrapSite::Call { .. } => l::TrapKind::Call,
+                // `FunctionBuilder::emit` gives the edge (§115.6 rule 2).
+                hir::TrapSite::Raise { .. } => l::TrapKind::Raise(l::RaiseEdge::Propagate),
                 hir::TrapSite::Unreachable { .. } => l::TrapKind::Unreachable,
                 hir::TrapSite::DivisionByZero { .. } => l::TrapKind::DivisionByZero,
                 hir::TrapSite::IndexRead { .. } => l::TrapKind::IndexRead,
                 hir::TrapSite::IndexWrite { .. } => l::TrapKind::IndexWrite,
-                hir::TrapSite::JsonResultValue { .. } => {
-                    l::TrapKind::JsonResultValue(l::FieldId(u32::MAX))
-                }
                 hir::TrapSite::NullNarrowing { .. } => l::TrapKind::NullNarrowing,
                 hir::TrapSite::ClassMismatch { class, .. } => l::TrapKind::ClassMismatch(*class),
                 hir::TrapSite::DevOnlyLifetime { .. } => l::TrapKind::DevOnlyLifetime,
@@ -696,10 +701,13 @@ impl BindingSite {
 }
 
 #[derive(Clone)]
+/// A `break` or `continue` target. Only [`FunctionBuilder::control`]
+/// builds one, so each records the `using` nodes that its exits leave.
 struct Control {
     break_target: l::BlockId,
     continue_target: Option<l::BlockId>,
     scope_depth: usize,
+    using_depth: usize,
 }
 
 fn is_place_expr(expr: &hir::Expr) -> bool {
@@ -848,6 +856,8 @@ struct FunctionBuilder<'a, 'm> {
     controls: Vec<Control>,
     array_values: Vec<l::ValueId>,
     moved_async_owners: HashSet<l::ValueId>,
+    handlers: Vec<exception::HandlerFrame>,
+    usings: Vec<using::UsingFrame>,
 }
 
 type CallResolution = (
@@ -977,7 +987,10 @@ fn stmt_pos(statement: &hir::Stmt) -> Pos {
         | hir::Stmt::ForOf { pos, .. }
         | hir::Stmt::Switch { pos, .. }
         | hir::Stmt::Break(pos)
-        | hir::Stmt::Continue(pos) => pos.clone(),
+        | hir::Stmt::Continue(pos)
+        | hir::Stmt::Throw { pos, .. }
+        | hir::Stmt::Try { pos, .. }
+        | hir::Stmt::Using { pos, .. } => pos.clone(),
         hir::Stmt::Expr(expr) => expr.pos.clone(),
         hir::Stmt::Block(statements) => statements
             .first()
@@ -1038,6 +1051,7 @@ mod verifier_tests {
             is_async: false,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: vec![l::Parameter {
                 storage: Some(l::LocalId(0)),
                 value: l::ValueId(0),
@@ -1139,6 +1153,7 @@ mod verifier_tests {
             is_async: false,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: vec![l::Parameter {
                 storage: None,
                 value: l::ValueId(0),
@@ -1177,6 +1192,7 @@ mod verifier_tests {
             is_async: false,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: Vec::new(),
             return_type: Type::Void,
             locals: Vec::new(),
@@ -1327,6 +1343,7 @@ mod verifier_tests {
             is_async: false,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters,
             return_type: Type::Void,
             locals: Vec::new(),

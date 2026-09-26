@@ -121,10 +121,6 @@ fn record_terminator(
     Ok(())
 }
 
-fn successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
-    terminator.successors()
-}
-
 fn live_ins(
     function: &l::Function,
     held_to_exit: &BTreeSet<l::ValueId>,
@@ -186,7 +182,10 @@ impl Interference {
         let mut intervals = vec![Vec::new(); function.values.len()];
         let mut parameter_rules = Vec::new();
         for block in &function.blocks {
-            let mut live = successors(&block.terminator)
+            // A handler edge makes the handler's live-ins live through the
+            // raising block (compiler.md §115.6 rule 2).
+            let mut live = block
+                .successors()
                 .into_iter()
                 .flat_map(|successor| live_in[successor.0 as usize].iter().copied())
                 .collect::<BTreeSet<_>>();
@@ -680,6 +679,7 @@ pub(crate) fn plan_with_interference(
 
     let mut block_starts = vec![BTreeSet::new(); function.blocks.len()];
     let mut block_ends = vec![BTreeSet::new(); function.blocks.len()];
+    let mut block_slots = vec![BTreeSet::new(); function.blocks.len()];
     let mut clear_after_instruction = function
         .blocks
         .iter()
@@ -692,6 +692,7 @@ pub(crate) fn plan_with_interference(
         for range in &facts.intervals {
             let range = range.interval;
             let block = range.block.0 as usize;
+            block_slots[block].insert(slot);
             if range.start == 0 {
                 block_starts[block].insert(slot);
             }
@@ -705,8 +706,17 @@ pub(crate) fn plan_with_interference(
     }
     let mut candidates = vec![BTreeSet::new(); function.blocks.len()];
     for block in &function.blocks {
-        for successor in successors(&block.terminator) {
+        for successor in block.terminator.successors() {
             candidates[successor.0 as usize].extend(&block_ends[block.id.0 as usize]);
+        }
+        // A handler edge leaves in the middle of its block, so any slot the
+        // block occupies can hold a value when the handler starts.
+        for handler in block
+            .instructions
+            .iter()
+            .filter_map(l::Instruction::handler)
+        {
+            candidates[handler.0 as usize].extend(&block_slots[block.id.0 as usize]);
         }
     }
     let mut clear_at_block_entry = vec![Vec::new(); function.blocks.len()];
@@ -783,6 +793,7 @@ mod tests {
             is_async: false,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: Vec::new(),
             return_type: Type::Void,
             locals: Vec::new(),

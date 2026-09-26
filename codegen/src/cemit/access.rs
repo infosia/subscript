@@ -174,27 +174,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     ) -> Result<(), String> {
         if let l::FieldRef::Class(field_id) = field {
             let (class_id, _, _) = self.emitter.field(field_id)?;
-            for trap in &instruction.traps {
-                if let l::TrapKind::JsonResultValue(ok_id) = trap.kind {
-                    let valid = self
-                        .emitter
-                        .class(class_id)?
-                        .fields
-                        .iter()
-                        .any(|field| field.id == ok_id && field.ty == Type::Bool);
-                    if !valid {
-                        return Err(internal("JsonResult guard field id is invalid"));
-                    }
-                    let condition = format!(
-                        "((({}*)({}))->d{})",
-                        self.emitter.class_name(class_id),
-                        operands[0],
-                        ok_id.0
-                    );
-                    self.consume(trap);
-                    self.emit_guard(out, &condition, trap)?;
-                }
-            }
             let expression = match &operand_types[0] {
                 l::ValueType::Address(address) if matches!(&address.pointee, Type::Class(id) if self.emitter.is_value_class(*id)?) =>
                 {
@@ -227,7 +206,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         self.consume(trap);
                         self.emit_wire_validation(out, &expression, *alias, trap)?;
                     }
-                    l::TrapKind::JsonResultValue(_) => {}
                     other => return Err(internal(format!("field load trap {other:?} is invalid"))),
                 }
             }

@@ -26,7 +26,7 @@ program type-checks under stock `tsc --strict`.
 | `undefined`, `T \| U` | `Ref \| null` only, narrowed before use |
 | `enum` of strings | `type Mode = "fast" \| "safe"`, closed and nominal |
 | Garbage collection | `Context.free`, `Context.collect`, `using`; nothing runs unbidden |
-| `throw` / `try` | Values (`Ref \| null`) for expected failure, traps for faults |
+| `throw` / `try` | `Error`, `SyntaxError`, and `TypeError` only, no `finally`; faults are traps, which no `catch` stops |
 | Event loop, `Promise` | Host-stepped suspension; `Promise<T>` is an annotation |
 | `Worker` with structured clone | `Worker.spawn` with copied, typed messages |
 | A program with a top level | Exported entry points the host calls |
@@ -395,19 +395,66 @@ value copy that a function writes through and never reads. Warnings do
 not fail a build. `subscript check --deny-warnings` makes them fail in
 CI.
 
-## Failures are values or traps, never exceptions
+## Exceptions, result values, and traps
 
-`throw`, `try`, and `catch` are not in the language. Two mechanisms
-replace them, and the split is deliberate.
+`throw`, `try`, and `catch` are in the language, with a narrower
+surface than in JavaScript. A thrown value is an `Error`, a
+`SyntaxError`, or a `TypeError`. The catch binding has two uses:
+`instanceof`, which narrows it to the class, and `throw`, which
+rethrows it. `finally` is rejected, and so is a `try` block that
+holds `await` or `yield`. `throw 42` and `catch (e: any)` are
+rejected with `S010`.
 
-An expected failure is a value. A lookup that finds nothing returns
-`T | null`. `JSON.parse` returns a `JsonResult<T>` whose `ok` you test
-before you read `value`.
+`JSON.parse<T>` returns a `T`. Malformed text raises `SyntaxError`
+with the UTF-8 byte offset of the first byte the parser cannot accept.
+A document that does not match `T` raises `TypeError`:
+
+```ts
+class Config {
+  name: string;
+  count: i32;
+
+  constructor(name: string, count: i32) {
+    this.name = name;
+    this.count = count;
+  }
+}
+
+export function main(): void {
+  try {
+    const config: Config = JSON.parse('{"name":"demo","count":');
+    print(config.name);
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      print(e.message);
+    }
+  }
+  try {
+    const config: Config = JSON.parse('{"name":"demo"}');
+    print(config.name);
+  } catch (e) {
+    if (e instanceof TypeError) {
+      print(e.message);
+    }
+  }
+}
+```
+
+```sh
+$ subscript run errors.ts
+JSON.parse: invalid syntax at byte 23
+JSON.parse: document does not match Config
+```
+
+An expected failure can also be a value. A lookup that finds nothing
+returns `T | null`, and a function can return a result-shaped value
+that the caller tests.
 
 A fault is a **trap**. An index outside an array, an integer division
 or remainder by zero, a `null` where an `as` narrowing promised a
 reference, a use after `Context.free`, and a reached `unreachable()`
-are traps. A trap records the rule, the message, and the source
+are traps. An exception that no handler catches becomes a trap at the
+host entry. A trap records the rule, the message, and the source
 position in the Context. It stops the current entry. The host then
 reads what happened:
 
@@ -721,8 +768,9 @@ one output for one input.
 **A scalar has no miss value.** `T[].find` is absent, because a
 missing `i32` has nothing to return; `findIndex` returns `-1`.
 `Map.get` returns `V | null` for a reference value, and `Map.getOr`
-takes the fallback for a scalar value. `JSON.parse<T>` returns a
-`JsonResult<T>` against a class you declare, not an `any`.
+takes the fallback for a scalar value. `JSON.parse<T>` returns a `T`
+against a class you declare, not an `any`, and raises `TypeError` when
+the document does not match it.
 
 What is outside the subset is rejected at compile time, with `S014`
 and a named replacement. It does not fail at run time.
@@ -773,7 +821,7 @@ pinned corpus example, is in
 | S007 | Bare `number` |
 | S008 | A numeric literal that does not fit its context |
 | S009 | A capturing lambda that escapes its defining function |
-| S010 | Exceptions |
+| S010 | An exception form outside the decided surface: a non-Error `throw`, `finally`, `catch (e: any)` |
 | S011 | Unions beyond `Ref \| null`, and unnarrowed access |
 | S012 | `undefined` |
 | S013 | The `Promise` object surface, and an async handle never awaited |

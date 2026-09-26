@@ -1,0 +1,13 @@
+dispose return
+caught outside: return failed
+dispose value inner
+dispose value outer
+caught outside: value inner failed
+dispose break 0
+caught outside: break 0 failed
+dispose continue 0
+caught outside: continue 0 failed
+dispose enclosing
+enclosing: caught enclosing failed
+enclosing: after outer try
+done

@@ -366,9 +366,11 @@ int main(void) {
 }
 ```
 
-There are no exceptions and nothing unwinds across the C boundary. A
-script fault records a trap in the Context and returns. "Step 6" holds
-the trap surface.
+Nothing unwinds across the C boundary. A script can catch its own
+exceptions, but an exception that no script handler catches becomes a
+trap before control returns to C (`compiler.md` §115.4). A script
+fault records a trap in the Context and returns. "Step 6" holds the
+trap surface.
 
 ### Step 3 — build and run, one command
 

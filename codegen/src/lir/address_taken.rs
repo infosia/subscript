@@ -126,6 +126,7 @@ impl AddressTaken<'_> {
                 }
             }
             hir::Stmt::Block(statements) => self.scoped(statements),
+            hir::Stmt::Using { body, .. } => self.scoped(body),
             _ => {
                 for child in statement.children() {
                     match child {

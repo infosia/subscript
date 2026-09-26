@@ -55,7 +55,6 @@ fn render_run(result: &Result<Vec<u8>, RunError>) -> String {
 
 fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
     match id {
-        "t01-json-result-value" => (TrapKind::JsonResultValue, 9, 19),
         "t02-statements-after-fault" => (TrapKind::IndexOutOfBounds, 10, 24),
         "t03-loop-stops-at-fault" => (TrapKind::IndexOutOfBounds, 13, 28),
         "t04-call-after-fault" => (TrapKind::IndexOutOfBounds, 15, 24),
@@ -121,6 +120,16 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         // reaches no script site. Both tiers report the empty position
         // for this kind, and the entry pins their agreement.
         "t60-registration-fire-after-release" => (TrapKind::CallbackRegistrationEnded, 0, 0),
+        // compiler.md §115.4 item 1: the position of the `throw`.
+        "t61-uncaught-exception" => (TrapKind::UncaughtException, 9, 5),
+        // compiler.md §115.5 rule 2: the position of the `using` binding
+        // whose hook raised.
+        "t62-hook-raises-during-exit" => (TrapKind::DisposeRaisedDuringExit, 26, 9),
+        // compiler.md §115.4 items 2, 3, and 5: the boundary converts the
+        // exception, and the trap cites the position of the `throw`.
+        "t63-exception-leaves-async" => (TrapKind::UncaughtException, 10, 5),
+        "t64-exception-leaves-generator" => (TrapKind::UncaughtException, 10, 7),
+        "t65-exception-leaves-host-callback" => (TrapKind::UncaughtException, 13, 7),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -154,7 +163,7 @@ fn allocation_failure_count(id: &str) -> Option<u64> {
         "t30-allocation-failure-string-concat" => Some(4),
         "t31-allocation-failure-template" => Some(5),
         "t32-allocation-failure-generator-frame" => Some(2),
-        "t33-allocation-failure-json-raw-new" => Some(5),
+        "t33-allocation-failure-json-raw-new" => Some(4),
         "t35-allocation-failure-map-new" | "t36-allocation-failure-set-new" => Some(2),
         "t37-allocation-failure-map-grow" | "t38-allocation-failure-set-grow" => Some(3),
         _ => None,
@@ -968,23 +977,26 @@ fn out_of_range_320_byte_cstruct_store_stops_before_the_store() {
     assert_trap_outcomes_identical("320-byte CStruct array store", &outcomes);
 }
 
+/// `compiler.md` §115.4 item 1 and §115.7: a parse failure that no
+/// handler catches is the uncaught-exception trap at the `JSON.parse`
+/// call, for a string, a reference, and a nested target.
 #[test]
-fn failed_json_result_string_and_reference_payloads_trap_identically() {
+fn uncaught_json_parse_failures_trap_identically() {
     for (source, line) in [
         (
-            "export function main(): void {\n  const failed: JsonResult<string> = JSON.parse<string>(\"nope\");\n  print(failed.value);\n}\n",
-            3,
+            "export function main(): void {\n  const failed: string = JSON.parse<string>(\"nope\");\n  print(failed);\n}\n",
+            2,
         ),
         (
-            "class Box {\n  name: string;\n  constructor() { this.name = \"box\"; }\n}\nexport function main(): void {\n  const failed: JsonResult<Box> = JSON.parse<Box>(\"nope\");\n  print(failed.value.name);\n}\n",
-            7,
+            "class Box {\n  name: string;\n  constructor() { this.name = \"box\"; }\n}\nexport function main(): void {\n  const failed: Box = JSON.parse<Box>(\"{}\");\n  print(failed.name);\n}\n",
+            6,
         ),
         (
-            "class Box {\n  name: string;\n  constructor() { this.name = \"box\"; }\n}\nfunction read(result: JsonResult<Box>): Box {\n  return result.value;\n}\nexport function main(): void {\n  const failed: JsonResult<Box> = JSON.parse<Box>(\"nope\");\n  print(read(failed).name);\n}\n",
+            "class Box {\n  name: string;\n  constructor() { this.name = \"box\"; }\n}\nfunction read(text: string): Box {\n  return JSON.parse(text);\n}\nexport function main(): void {\n  print(read(\"[\").name);\n}\n",
             6,
         ),
     ] {
-        assert_json_trap_identical(source, TrapKind::JsonResultValue, line);
+        assert_json_trap_identical(source, TrapKind::UncaughtException, line);
     }
 }
 

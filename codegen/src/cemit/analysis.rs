@@ -122,7 +122,7 @@ impl<'f> EmissionIndex<'f> {
         }
         let mut predecessors = vec![Vec::new(); block_count];
         for block in &function.blocks {
-            for successor in terminator_successors(&block.terminator) {
+            for successor in block.successors() {
                 predecessors[successor.0 as usize].push(block.id);
             }
         }
@@ -238,7 +238,7 @@ impl<'f> EmissionIndex<'f> {
             for value in block.terminator.value_uses() {
                 value_id(value)?;
             }
-            for successor in terminator_successors(&block.terminator) {
+            for successor in block.successors() {
                 block_id(successor)?;
             }
             if let l::Terminator::Suspend {
@@ -496,10 +496,6 @@ fn record_terminator_value_references(
             }
         }
     }
-}
-
-fn terminator_successors(terminator: &l::Terminator) -> Vec<l::BlockId> {
-    terminator.successors()
 }
 
 pub(super) fn fixed_iterator_values(
@@ -798,7 +794,7 @@ pub(super) fn declaration_scopes(
 
     let mut predecessors = vec![Vec::new(); block_count];
     for block in &function.blocks {
-        for successor in terminator_successors(&block.terminator) {
+        for successor in block.successors() {
             predecessors[successor.0 as usize].push(block.id);
         }
     }
@@ -811,7 +807,7 @@ pub(super) fn declaration_scopes(
             continue;
         }
         reachable[index] = true;
-        pending.extend(terminator_successors(&function.blocks[index].terminator));
+        pending.extend(function.blocks[index].successors());
     }
     let reachable_blocks = reachable
         .iter()

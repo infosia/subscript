@@ -1,9 +1,9 @@
 // corpus: reject/r11-throw
-// purpose: Rejects exception throwing.
+// purpose: Rejects a `throw` whose operand is not an Error-family object.
 // exercises: rejected-throw, exception
 // questions: none
 // tsc: accepts
-// expected-error: exceptions are not in the language
+// expected-error: S010 at the `throw` of a string operand
 function fail(): void {
   throw "failure";
 }

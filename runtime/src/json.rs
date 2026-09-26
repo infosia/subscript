@@ -37,6 +37,10 @@ pub(crate) const KIND_NUMBER: u32 = 2;
 pub(crate) const KIND_STRING: u32 = 3;
 pub(crate) const KIND_ARRAY: u32 = 4;
 pub(crate) const KIND_OBJECT: u32 = 5;
+/// The kind of a string whose escapes spell a lone surrogate. No
+/// validator asks for it, so it matches no target (`compiler.md` §115.7
+/// rule 5).
+pub(crate) const KIND_UNPAIRED_STRING: u32 = 6;
 
 /// Stable numeric-target tags used by checker-generated parse validators.
 pub(crate) const NUMBER_I8: u32 = 0;
@@ -68,8 +72,9 @@ enum JsonValue {
     Bool(bool),
     Number(JsonNumber),
     String(String),
+    UnpairedString,
     Array(Vec<u64>),
-    Object(Vec<(String, u64)>),
+    Object(Vec<(Option<String>, u64)>),
 }
 
 impl JsonValue {
@@ -79,6 +84,7 @@ impl JsonValue {
             JsonValue::Bool(_) => KIND_BOOL,
             JsonValue::Number(_) => KIND_NUMBER,
             JsonValue::String(_) => KIND_STRING,
+            JsonValue::UnpairedString => KIND_UNPAIRED_STRING,
             JsonValue::Array(_) => KIND_ARRAY,
             JsonValue::Object(_) => KIND_OBJECT,
         }
@@ -97,14 +103,24 @@ struct JsonDocument {
 pub(crate) struct JsonParsers {
     next: u64,
     documents: HashMap<u64, JsonDocument>,
+    /// The failure of the last `begin` that returned zero, until
+    /// `take_failure` reads it.
+    failure: Option<ParseFailure>,
 }
 
 impl JsonParsers {
-    /// Parses one complete JSON text. Malformed input returns zero and
-    /// creates no transient document.
+    /// Parses one complete JSON text. Malformed input returns zero,
+    /// creates no transient document, and records the failure for
+    /// `take_failure`. An exhausted handle space returns zero and
+    /// records nothing, which `take_failure` reports as an internal fault.
     pub(crate) fn begin(&mut self, bytes: &[u8]) -> u64 {
-        let Some(document) = Parser::new(bytes).parse() else {
-            return 0;
+        self.failure = None;
+        let document = match Parser::new(bytes).parse() {
+            Ok(document) => document,
+            Err(failure) => {
+                self.failure = Some(failure);
+                return 0;
+            }
         };
         let Some(next) = self.next.checked_add(1) else {
             return 0;
@@ -112,6 +128,12 @@ impl JsonParsers {
         self.next = next;
         self.documents.insert(next, document);
         next
+    }
+
+    /// Returns and clears the failure of the last `begin` that returned
+    /// zero.
+    pub(crate) fn take_failure(&mut self) -> Option<ParseFailure> {
+        self.failure.take()
     }
 
     /// Drops one completed transient document.
@@ -122,6 +144,7 @@ impl JsonParsers {
     /// Drops transient documents left by a trapping construction pass.
     pub(crate) fn clear(&mut self) {
         self.documents.clear();
+        self.failure = None;
     }
 
     pub(crate) fn root(&self, parser: u64) -> Option<u64> {
@@ -189,7 +212,9 @@ impl JsonParsers {
                 fields
                     .iter()
                     .rev()
-                    .find_map(|(candidate, value)| (candidate == key).then_some(*value))
+                    .find_map(|(candidate, value)| {
+                        (candidate.as_deref() == Some(key)).then_some(*value)
+                    })
                     .unwrap_or(0),
             ),
             _ => None,
@@ -341,10 +366,40 @@ fn decimal_exponent(bytes: &[u8]) -> Option<i64> {
     Some(if negative { -magnitude } else { magnitude })
 }
 
+/// Why a parse stopped, with the UTF-8 byte offset of the first byte the
+/// parser cannot accept (`compiler.md` §115.7 rules 3 and 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParseFailure {
+    /// Malformed text or trailing bytes.
+    Syntax(usize),
+    /// An array or object that opens past `MAX_JSON_DEPTH`.
+    Depth(usize),
+}
+
+impl ParseFailure {
+    /// The `SyntaxError` message of the failure.
+    pub(crate) fn message(self) -> String {
+        match self {
+            ParseFailure::Syntax(at) => format!("JSON.parse: invalid syntax at byte {at}"),
+            ParseFailure::Depth(at) => {
+                format!("JSON.parse: nesting deeper than {MAX_JSON_DEPTH} at byte {at}")
+            }
+        }
+    }
+}
+
+/// One decoded JSON string. `unpaired` is true when an escape spells a
+/// lone surrogate, which no language string can hold (Q5).
+struct JsonText {
+    text: String,
+    unpaired: bool,
+}
+
 struct Parser<'a> {
     bytes: &'a [u8],
     at: usize,
     values: Vec<JsonValue>,
+    failure: Option<ParseFailure>,
 }
 
 impl<'a> Parser<'a> {
@@ -353,22 +408,41 @@ impl<'a> Parser<'a> {
             bytes,
             at: 0,
             values: Vec::new(),
+            failure: None,
         }
     }
 
-    fn parse(mut self) -> Option<JsonDocument> {
+    fn parse(mut self) -> Result<JsonDocument, ParseFailure> {
         self.ws();
-        let root = self.value(0)?;
+        let Some(root) = self.value(0) else {
+            return Err(self.failure.unwrap_or(ParseFailure::Syntax(self.at)));
+        };
         self.ws();
-        (self.at == self.bytes.len()).then_some(JsonDocument {
+        if self.at != self.bytes.len() {
+            return Err(ParseFailure::Syntax(self.at));
+        }
+        Ok(JsonDocument {
             root,
             values: self.values,
         })
     }
 
+    /// Records the first failure. Every caller returns `None` after it.
+    fn fail<T>(&mut self, failure: ParseFailure) -> Option<T> {
+        self.failure.get_or_insert(failure);
+        None
+    }
+
+    fn syntax<T>(&mut self, at: usize) -> Option<T> {
+        self.fail(ParseFailure::Syntax(at))
+    }
+
     fn value(&mut self, depth: usize) -> Option<u64> {
         self.ws();
-        match self.peek()? {
+        let Some(byte) = self.peek() else {
+            return self.syntax(self.at);
+        };
+        match byte {
             b'n' => {
                 self.word(b"null")?;
                 self.push(JsonValue::Null)
@@ -383,15 +457,20 @@ impl<'a> Parser<'a> {
             }
             b'"' => {
                 let value = self.string_value()?;
-                self.push(JsonValue::String(value))
+                self.push(if value.unpaired {
+                    JsonValue::UnpairedString
+                } else {
+                    JsonValue::String(value.text)
+                })
             }
-            b'[' if depth < MAX_JSON_DEPTH => self.array(depth + 1),
-            b'{' if depth < MAX_JSON_DEPTH => self.object(depth + 1),
+            b'[' | b'{' if depth >= MAX_JSON_DEPTH => self.fail(ParseFailure::Depth(self.at)),
+            b'[' => self.array(depth + 1),
+            b'{' => self.object(depth + 1),
             b'-' | b'0'..=b'9' => {
                 let value = self.number_value()?;
                 self.push(JsonValue::Number(value))
             }
-            _ => None,
+            _ => self.syntax(self.at),
         }
     }
 
@@ -426,7 +505,8 @@ impl<'a> Parser<'a> {
             self.ws();
             self.take(b':')?;
             let value = self.value(depth)?;
-            fields.push((key, value));
+            // A key that spells a lone surrogate matches no field name.
+            fields.push(((!key.unpaired).then_some(key.text), value));
             self.ws();
             if self.consume(b'}') {
                 break;
@@ -436,22 +516,41 @@ impl<'a> Parser<'a> {
         self.push(JsonValue::Object(fields))
     }
 
-    fn string_value(&mut self) -> Option<String> {
+    /// Appends the raw bytes `start..self.at` to `output`.
+    fn raw_text(&mut self, output: &mut String, start: usize) -> Option<()> {
+        match std::str::from_utf8(&self.bytes[start..self.at]) {
+            Ok(text) => {
+                output.push_str(text);
+                Some(())
+            }
+            Err(error) => self.syntax(start + error.valid_up_to()),
+        }
+    }
+
+    fn string_value(&mut self) -> Option<JsonText> {
         self.take(b'"')?;
         let mut output = String::new();
+        let mut unpaired = false;
         let mut raw_start = self.at;
         loop {
-            let byte = self.peek()?;
+            let Some(byte) = self.peek() else {
+                return self.syntax(self.at);
+            };
             match byte {
                 b'"' => {
-                    output.push_str(std::str::from_utf8(&self.bytes[raw_start..self.at]).ok()?);
+                    self.raw_text(&mut output, raw_start)?;
                     self.at += 1;
-                    return Some(output);
+                    return Some(JsonText {
+                        text: output,
+                        unpaired,
+                    });
                 }
                 b'\\' => {
-                    output.push_str(std::str::from_utf8(&self.bytes[raw_start..self.at]).ok()?);
+                    self.raw_text(&mut output, raw_start)?;
                     self.at += 1;
-                    let escaped = self.next()?;
+                    let Some(escaped) = self.peek() else {
+                        return self.syntax(self.at);
+                    };
                     match escaped {
                         b'"' => output.push('"'),
                         b'\\' => output.push('\\'),
@@ -461,52 +560,76 @@ impl<'a> Parser<'a> {
                         b'n' => output.push('\n'),
                         b'r' => output.push('\r'),
                         b't' => output.push('\t'),
-                        b'u' => {
-                            let first = self.hex4()?;
-                            let scalar = if (0xd800..=0xdbff).contains(&first) {
-                                self.take(b'\\')?;
-                                self.take(b'u')?;
-                                let second = self.hex4()?;
-                                if !(0xdc00..=0xdfff).contains(&second) {
-                                    return None;
+                        b'u' => {}
+                        _ => return self.syntax(self.at),
+                    }
+                    self.at += 1;
+                    if escaped == b'u' {
+                        let first = self.hex4()?;
+                        match first {
+                            0xd800..=0xdbff => match self.low_surrogate() {
+                                Some(second) => {
+                                    let scalar = 0x1_0000
+                                        + ((u32::from(first) - 0xd800) << 10)
+                                        + (u32::from(second) - 0xdc00);
+                                    match char::from_u32(scalar) {
+                                        Some(scalar) => output.push(scalar),
+                                        None => unpaired = true,
+                                    }
                                 }
-                                0x1_0000
-                                    + ((u32::from(first) - 0xd800) << 10)
-                                    + (u32::from(second) - 0xdc00)
-                            } else if (0xdc00..=0xdfff).contains(&first) {
-                                return None;
-                            } else {
-                                u32::from(first)
-                            };
-                            output.push(char::from_u32(scalar)?);
+                                None => unpaired = true,
+                            },
+                            0xdc00..=0xdfff => unpaired = true,
+                            _ => match char::from_u32(u32::from(first)) {
+                                Some(scalar) => output.push(scalar),
+                                None => unpaired = true,
+                            },
                         }
-                        _ => return None,
                     }
                     raw_start = self.at;
                 }
-                0x00..=0x1f => return None,
+                0x00..=0x1f => return self.syntax(self.at),
                 _ => self.at += 1,
             }
         }
     }
 
+    /// Consumes a `\uDC00`–`\uDFFF` escape that follows a high surrogate,
+    /// and returns its code unit. Any other text stays unconsumed, so the
+    /// high surrogate is lone.
+    fn low_surrogate(&mut self) -> Option<u16> {
+        let escape = self.bytes.get(self.at..self.at.checked_add(6)?)?;
+        if escape[0] != b'\\' || escape[1] != b'u' {
+            return None;
+        }
+        let mut unit = 0u16;
+        for &digit in &escape[2..] {
+            unit = unit * 16 + u16::from(hex_digit(digit)?);
+        }
+        if !(0xdc00..=0xdfff).contains(&unit) {
+            return None;
+        }
+        self.at += 6;
+        Some(unit)
+    }
+
     fn number_value(&mut self) -> Option<JsonNumber> {
         let start = self.at;
         self.consume(b'-');
-        match self.peek()? {
-            b'0' => {
+        match self.peek() {
+            Some(b'0') => {
                 self.at += 1;
                 if matches!(self.peek(), Some(b'0'..=b'9')) {
-                    return None;
+                    return self.syntax(self.at);
                 }
             }
-            b'1'..=b'9' => {
+            Some(b'1'..=b'9') => {
                 self.at += 1;
                 while matches!(self.peek(), Some(b'0'..=b'9')) {
                     self.at += 1;
                 }
             }
-            _ => return None,
+            _ => return self.syntax(self.at),
         }
         if self.consume(b'.') {
             let fraction = self.at;
@@ -514,7 +637,7 @@ impl<'a> Parser<'a> {
                 self.at += 1;
             }
             if self.at == fraction {
-                return None;
+                return self.syntax(self.at);
             }
         }
         if matches!(self.peek(), Some(b'e' | b'E')) {
@@ -527,26 +650,29 @@ impl<'a> Parser<'a> {
                 self.at += 1;
             }
             if self.at == exponent {
-                return None;
+                return self.syntax(self.at);
             }
         }
-        let text = std::str::from_utf8(&self.bytes[start..self.at]).ok()?;
+        let Ok(text) = std::str::from_utf8(&self.bytes[start..self.at]) else {
+            return self.syntax(start);
+        };
+        let Ok(value) = text.parse() else {
+            return self.syntax(start);
+        };
         Some(JsonNumber {
             text: text.to_string(),
-            value: text.parse().ok()?,
+            value,
         })
     }
 
     fn hex4(&mut self) -> Option<u16> {
         let mut value = 0u16;
         for _ in 0..4 {
-            value = value.checked_mul(16)?;
-            value = value.checked_add(match self.next()? {
-                b'0'..=b'9' => u16::from(self.bytes[self.at - 1] - b'0'),
-                b'a'..=b'f' => u16::from(self.bytes[self.at - 1] - b'a' + 10),
-                b'A'..=b'F' => u16::from(self.bytes[self.at - 1] - b'A' + 10),
-                _ => return None,
-            })?;
+            let Some(digit) = self.peek().and_then(hex_digit) else {
+                return self.syntax(self.at);
+            };
+            value = value * 16 + u16::from(digit);
+            self.at += 1;
         }
         Some(value)
     }
@@ -554,13 +680,20 @@ impl<'a> Parser<'a> {
     /// Records one node.
     fn push(&mut self, value: JsonValue) -> Option<u64> {
         self.values.push(value);
-        u64::try_from(self.values.len()).ok()
+        match u64::try_from(self.values.len()) {
+            Ok(node) => Some(node),
+            Err(_) => self.syntax(self.at),
+        }
     }
 
     fn word(&mut self, word: &[u8]) -> Option<()> {
-        (self.bytes.get(self.at..self.at.checked_add(word.len())?)? == word).then(|| {
-            self.at += word.len();
-        })
+        for (offset, expected) in word.iter().enumerate() {
+            if self.bytes.get(self.at + offset) != Some(expected) {
+                return self.syntax(self.at + offset);
+            }
+        }
+        self.at += word.len();
+        Some(())
     }
 
     fn ws(&mut self) {
@@ -573,12 +706,6 @@ impl<'a> Parser<'a> {
         self.bytes.get(self.at).copied()
     }
 
-    fn next(&mut self) -> Option<u8> {
-        let value = self.peek()?;
-        self.at += 1;
-        Some(value)
-    }
-
     fn consume(&mut self, expected: u8) -> bool {
         if self.peek() == Some(expected) {
             self.at += 1;
@@ -589,7 +716,20 @@ impl<'a> Parser<'a> {
     }
 
     fn take(&mut self, expected: u8) -> Option<()> {
-        self.consume(expected).then_some(())
+        if self.consume(expected) {
+            Some(())
+        } else {
+            self.syntax(self.at)
+        }
+    }
+}
+
+fn hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
     }
 }
 
@@ -847,15 +987,66 @@ mod tests {
     #[test]
     fn parser_rejects_malformed_text_without_creating_a_document() {
         let mut parsers = JsonParsers::default();
-        for malformed in [
-            br#"{"x":"#.as_slice(),
-            br#"[1,]"#,
-            br#"01"#,
-            br#""\ud800""#,
-            br#"true false"#,
+        for (malformed, at) in [
+            (br#"{"x":"#.as_slice(), 5),
+            (br#"[1,]"#, 3),
+            (br#"01"#, 1),
+            (br#"true false"#, 5),
+            (br#"nope"#, 1),
+            (br#""ab"#, 3),
+            (br#""\q""#, 2),
+            (br#""\u12G4""#, 5),
+            (b"\"a\x01\"", 2),
+            (br#"{,}"#, 1),
+            (br#"1."#, 2),
+            (br#"-"#, 1),
+            (b"", 0),
+            (b"  ", 2),
+            ("\"\u{e9}\" x".as_bytes(), 5),
         ] {
             assert_eq!(parsers.begin(malformed), 0, "{malformed:?}");
+            assert_eq!(
+                parsers.take_failure(),
+                Some(ParseFailure::Syntax(at)),
+                "{malformed:?}"
+            );
+            assert_eq!(parsers.take_failure(), None);
+            assert!(parsers.documents.is_empty());
         }
+    }
+
+    #[test]
+    fn failure_messages_name_the_byte_offset() {
+        assert_eq!(
+            ParseFailure::Syntax(7).message(),
+            "JSON.parse: invalid syntax at byte 7"
+        );
+        assert_eq!(
+            ParseFailure::Depth(128).message(),
+            "JSON.parse: nesting deeper than 128 at byte 128"
+        );
+    }
+
+    #[test]
+    fn a_lone_surrogate_is_well_formed_and_matches_no_string_target() {
+        let mut parsers = JsonParsers::default();
+        for text in [
+            br#""\ud800""#.as_slice(),
+            br#""\udc00""#,
+            br#""\ud800x""#,
+            br#""\ud800A""#,
+        ] {
+            let id = parsers.begin(text);
+            assert_ne!(id, 0, "{text:?}");
+            let root = parsers.root(id).expect("root");
+            assert_eq!(parsers.is_kind(id, root, KIND_STRING), Some(false));
+            assert_eq!(parsers.is_kind(id, root, KIND_UNPAIRED_STRING), Some(true));
+            assert!(parsers.finish(id));
+        }
+        let id = parsers.begin(br#"{"\ud800":1,"a":2}"#);
+        let root = parsers.root(id).expect("root");
+        assert_ne!(parsers.object_get(id, root, "a"), Some(0));
+        assert!(parsers.finish(id));
     }
 
     #[test]
@@ -872,7 +1063,80 @@ mod tests {
         );
         let mut parsers = JsonParsers::default();
         assert_ne!(parsers.begin(accepted.as_bytes()), 0);
+        assert_eq!(parsers.take_failure(), None);
         assert_eq!(parsers.begin(rejected.as_bytes()), 0);
+        assert_eq!(
+            parsers.take_failure(),
+            Some(ParseFailure::Depth(MAX_JSON_DEPTH))
+        );
+    }
+
+    /// `compiler.md` §115.10: 10,000 caught parse failures leave the
+    /// parser and builder tables empty. The loop makes the runtime calls
+    /// of the generated root helper on each failure path.
+    #[test]
+    fn caught_parse_failures_leave_the_json_tables_empty() {
+        use crate::context::Context;
+        use crate::ffi::{
+            subscript_rt_json_parse_begin, subscript_rt_json_parse_end,
+            subscript_rt_json_parse_failure, subscript_rt_json_parse_is_kind,
+            subscript_rt_json_parse_root,
+        };
+
+        let mut context = Context::new();
+        let deep = format!(
+            "{}0{}",
+            "[".repeat(MAX_JSON_DEPTH + 1),
+            "]".repeat(MAX_JSON_DEPTH + 1)
+        );
+        let malformed = context.alloc_str(br#"{"count":"#, 0);
+        let too_deep = context.alloc_str(deep.as_bytes(), 0);
+        let mismatch = context.alloc_str(br#"{"count":"three"}"#, 0);
+        let ctx: *mut Context = &mut *context;
+        for _ in 0..10_000 {
+            for text in [malformed, too_deep] {
+                // SAFETY: `ctx` is live and `text` is a live string handle.
+                unsafe {
+                    assert_eq!(subscript_rt_json_parse_begin(ctx, text, 0), 0);
+                    assert!(!subscript_rt_json_parse_failure(ctx, 0).is_null());
+                }
+            }
+            // SAFETY: `ctx` is live and `mismatch` is a live string handle.
+            unsafe {
+                let parser = subscript_rt_json_parse_begin(ctx, mismatch, 0);
+                assert_ne!(parser, 0);
+                let root = subscript_rt_json_parse_root(ctx, parser, 0);
+                assert_eq!(
+                    subscript_rt_json_parse_is_kind(ctx, parser, root, KIND_ARRAY, 0),
+                    0
+                );
+                subscript_rt_json_parse_end(ctx, parser, 0);
+            }
+        }
+        assert!(!context.trapped());
+        let parsers = context.json_parsers();
+        assert!(parsers.documents.is_empty());
+        assert_eq!(parsers.failure, None);
+        let builders = context.json_builders();
+        assert!(builders.output.is_empty());
+        assert!(builders.active.is_empty());
+    }
+
+    /// A failure read with no recorded failure is an internal fault.
+    #[test]
+    fn a_failure_read_without_a_failed_begin_traps() {
+        use crate::context::Context;
+        use crate::trap::TrapKind;
+
+        let mut context = Context::new();
+        let ctx: *mut Context = &mut *context;
+        // SAFETY: `ctx` is live.
+        let text = unsafe { crate::ffi::subscript_rt_json_parse_failure(ctx, 0) };
+        assert!(text.is_null());
+        assert_eq!(
+            context.trap_record().map(|record| record.kind),
+            Some(TrapKind::Internal)
+        );
     }
 
     #[test]

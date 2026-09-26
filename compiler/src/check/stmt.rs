@@ -27,6 +27,9 @@ fn pattern_type_ann(pat: &ast::Pat) -> Option<&ast::TsTypeAnn> {
 /// Narrowing facts derived from a checked condition: paths known non-null
 /// or known present when the condition is true / false.
 pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
+    if let Some(key) = super::exception::instanceof_narrowed_path(cond) {
+        return (vec![key], Vec::new());
+    }
     if let ExprKind::AbsenceTest { value, negated } = &cond.kind {
         if let Some(key) = path_key(value) {
             return if *negated {
@@ -72,7 +75,7 @@ pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
     }
 }
 
-fn root_of(key: &str) -> &str {
+pub(super) fn root_of(key: &str) -> &str {
     key.split('.').next().unwrap_or(key)
 }
 
@@ -85,7 +88,8 @@ pub(crate) fn always_returns(stmts: &[hir::Stmt]) -> bool {
 
 fn stmt_returns(s: &hir::Stmt) -> bool {
     match s {
-        hir::Stmt::Return { .. } => true,
+        hir::Stmt::Return { .. } | hir::Stmt::Throw { .. } => true,
+        hir::Stmt::Try { body, handler, .. } => always_returns(body) && always_returns(handler),
         hir::Stmt::Expr(hir::Expr {
             kind:
                 ExprKind::Call {
@@ -94,7 +98,7 @@ fn stmt_returns(s: &hir::Stmt) -> bool {
                 },
             ..
         }) => true,
-        hir::Stmt::Block(b) => always_returns(b),
+        hir::Stmt::Block(b) | hir::Stmt::Using { body: b, .. } => always_returns(b),
         hir::Stmt::If {
             then,
             els: Some(els),
@@ -126,10 +130,11 @@ fn is_true_literal(e: &hir::Expr) -> bool {
 fn contains_break(stmts: &[hir::Stmt]) -> bool {
     stmts.iter().any(|s| match s {
         hir::Stmt::Break(_) => true,
-        hir::Stmt::Block(b) => contains_break(b),
+        hir::Stmt::Block(b) | hir::Stmt::Using { body: b, .. } => contains_break(b),
         hir::Stmt::If { then, els, .. } => {
             contains_break(then) || els.as_ref().is_some_and(|e| contains_break(e))
         }
+        hir::Stmt::Try { body, handler, .. } => contains_break(body) || contains_break(handler),
         _ => false,
     })
 }
@@ -154,18 +159,24 @@ fn insert_for_step_before_continues(statements: &mut [hir::Stmt], step: &[hir::S
                 }
             }
             hir::Stmt::Block(body) => insert_for_step_before_continues(body, step),
+            hir::Stmt::Try { body, handler, .. } => {
+                insert_for_step_before_continues(body, step);
+                insert_for_step_before_continues(handler, step);
+            }
             hir::Stmt::While { .. } | hir::Stmt::For { .. } | hir::Stmt::ForOf { .. } => {}
             hir::Stmt::Let { .. }
             | hir::Stmt::Expr(_)
             | hir::Stmt::Return { .. }
-            | hir::Stmt::Break(_) => {}
+            | hir::Stmt::Break(_)
+            | hir::Stmt::Throw { .. } => {}
+            hir::Stmt::Using { body, .. } => insert_for_step_before_continues(body, step),
         }
     }
 }
 
 /// Collects root names assigned anywhere in a statement (used to drop
 /// narrowing facts across loop iterations).
-fn assigned_roots_stmt(s: &ast::Stmt, out: &mut HashSet<String>) {
+pub(super) fn assigned_roots_stmt(s: &ast::Stmt, out: &mut HashSet<String>) {
     match s {
         ast::Stmt::Block(b) => {
             for s in &b.stmts {
@@ -524,26 +535,8 @@ impl<'p> Checker<'p> {
                     out.push(hir::Stmt::Block(inner));
                     terminates
                 }
-                ast::Stmt::Throw(t) => {
-                    let pos = self.pos(t.span);
-                    self.error_diverging(
-                        RuleCode::S010,
-                        "exceptions are not in the language; return a result value",
-                        pos,
-                        Divergence::Exceptions,
-                    );
-                    true
-                }
-                ast::Stmt::Try(t) => {
-                    let pos = self.pos(t.span);
-                    self.error_diverging(
-                        RuleCode::S010,
-                        "exceptions are not in the language; return a result value",
-                        pos,
-                        Divergence::Exceptions,
-                    );
-                    false
-                }
+                ast::Stmt::Throw(t) => self.check_throw(t, fx, out),
+                ast::Stmt::Try(t) => self.check_try(t, fx, out),
                 ast::Stmt::ForOf(for_of) => {
                     self.check_for_of(for_of, fx, out);
                     false
@@ -705,6 +698,7 @@ impl<'p> Checker<'p> {
                     mutable,
                     holds_capturing,
                     async_origins,
+                    caught: false,
                 },
                 pos.clone(),
                 fx,
@@ -1097,6 +1091,7 @@ impl<'p> Checker<'p> {
                     mutable,
                     holds_capturing: false,
                     async_origins: binding_async_origins,
+                    caught: false,
                 },
                 binding_pos.clone(),
                 fx,

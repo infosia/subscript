@@ -38,7 +38,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             );
         }
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
-            self.emit_instruction(out, instruction).map_err(|error| {
+            self.emit_raise_site(out, instruction).map_err(|error| {
                 internal(format!(
                     "function {} block {} instruction {:?}: {error}",
                     self.function.id.0, block.id.0, instruction.kind
@@ -67,7 +67,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         Ok(())
     }
 
-    fn emit_instruction(
+    pub(super) fn emit_instruction(
         &mut self,
         out: &mut String,
         instruction: &l::Instruction,
@@ -84,6 +84,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .collect::<Result<Vec<_>, _>>()?;
         let result = instruction.result.map(|id| self.value(id));
         match &instruction.kind {
+            l::InstructionKind::Throw => self.emit_throw(out, instruction, &operands),
+            l::InstructionKind::CatchEntry => self.emit_catch_entry(out, result),
+            l::InstructionKind::ExceptionPark => self.emit_exception_park(out),
+            l::InstructionKind::ExceptionResume => self.emit_exception_resume(out),
             l::InstructionKind::Copy => {
                 if let Some(id) = instruction.result {
                     if self.is_function_value(id)? {
@@ -468,8 +472,23 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         self.consumed_traps.push(trap.clone());
     }
 
+    /// Loads the word and leaves on a nonzero state. At a raise site with
+    /// a handler, the cold path takes the handler edge for a pending
+    /// exception; the success path is the same one load and compare
+    /// (compiler.md §115.6 rule 4).
     pub(super) fn emit_pending_check(&self, out: &mut String) {
-        out.push_str("    if (*(const uint32_t*)ctx != 0u) goto unwind;\n");
+        self.pending_checks.set(self.pending_checks.get() + 1);
+        match self.raise_target {
+            None => out.push_str("    if (*(const uint32_t*)ctx != 0u) goto unwind;\n"),
+            Some(handler) => {
+                let _ = writeln!(
+                    out,
+                    "    if (*(const uint32_t*)ctx != 0u) {{ if (*(const uint32_t*)ctx == {}u) goto b{}; goto unwind; }}",
+                    subscript_runtime::exception::STATE_EXCEPTION,
+                    handler.0
+                );
+            }
+        }
     }
 
     pub(super) fn emit_pop(&mut self, out: &mut String) {
@@ -488,6 +507,16 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         out.push_str("unwind:\n    ;\n");
         self.emit_pop(out);
         if self.coroutine {
+            // compiler.md §115.4 items 2 and 3: an `async` body and a
+            // generator body are exception boundaries. The unwind exit is
+            // cold, so the success path gains nothing.
+            let settle = self.emitter.runtime_call(
+                "void",
+                "subscript_rt_exception_settle",
+                &["void*".into()],
+                &["ctx".into()],
+            );
+            let _ = writeln!(out, "    {settle};");
             out.push_str("    return 1;\ncoroutine_done:\n    ;\n    return 1;\n");
         } else if self.function.return_type == Type::Void {
             out.push_str("    return;\n");

@@ -1,0 +1,10 @@
+inner caught first
+outer caught first
+same object: true
+nearest handler caught inner
+outer handler caught replacement
+0;c[2]!;3;[4]5;b
+70
+-1
+0
+3

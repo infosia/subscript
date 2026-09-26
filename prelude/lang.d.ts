@@ -26,14 +26,8 @@ declare namespace Context {
   function suspend(): Promise<void>;
 }
 
-declare class JsonResult<T> {
-  private constructor();
-  ok: boolean;
-  value: T;
-}
-
 declare interface JSON {
-  parse<T>(text: string): JsonResult<T>;
+  parse<T>(text: string): T;
 }
 
 declare function CStruct<T extends abstract new (...args: never[]) => object>(

@@ -23,10 +23,12 @@ mod ambient;
 mod check;
 mod parse;
 mod provenance;
+mod raise_sites;
 mod regex;
 mod trap_sites;
 mod warn;
 
+pub use check::fallthrough::sequence_can_fall_through;
 pub use diag::{Diagnostic, Pos, RuleCode};
 pub use diag_render::{render_diagnostics, render_warnings};
 pub use parse::parse_import_specifiers;
@@ -255,7 +257,8 @@ mod tests {
                     hir::Stmt::While { body, .. }
                     | hir::Stmt::For { body, .. }
                     | hir::Stmt::ForOf { body, .. }
-                    | hir::Stmt::Block(body) => count_storage_writes(body),
+                    | hir::Stmt::Block(body)
+                    | hir::Stmt::Using { body, .. } => count_storage_writes(body),
                     hir::Stmt::Switch { cases, .. } => cases
                         .iter()
                         .map(|case| count_storage_writes(&case.body))
@@ -1509,7 +1512,8 @@ mod tests {
         assert_eq!(err[0].code, RuleCode::S010);
         assert_eq!(
             err[0].message,
-            "exceptions are not in the language; return a result value"
+            "`throw` requires an `Error`, `SyntaxError`, or `TypeError` object; \
+             this operand has type `string`"
         );
         assert_eq!(err[0].pos.line, 2);
     }

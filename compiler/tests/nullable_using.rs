@@ -1,4 +1,6 @@
-//! Section 97: nullable disposal uses existing HIR forms.
+//! Section 97: a nullable `using` binding disposes through a null guard.
+//! The HIR node carries the binding; the hook it builds is the call the
+//! lowering places at each exit (compiler.md §115.5 rule 5).
 
 use subscript_compiler::{check_program, hir, RuleCode, SourceFile, Type};
 
@@ -65,6 +67,15 @@ fn null_guard(statement: &hir::Stmt) -> (&hir::Expr, &hir::Expr) {
     (left, recv)
 }
 
+/// The bindings of the one `using` node at `body[1]`.
+fn node_bindings(body: &[hir::Stmt]) -> &[hir::UsingBinding] {
+    let hir::Stmt::Using { bindings, body, .. } = &body[1] else {
+        panic!("the using node: {body:#?}");
+    };
+    assert!(body.is_empty(), "the checker places no hook call");
+    bindings
+}
+
 #[test]
 fn nullable_using_has_null_guard_and_non_null_receiver() {
     let module = check(
@@ -81,7 +92,12 @@ fn nullable_using_has_null_guard_and_non_null_receiver() {
             ..
         }
     ));
-    let (left, _) = null_guard(&body[1]);
+    let [binding] = node_bindings(body) else {
+        panic!("one binding");
+    };
+    assert!(binding.nullable());
+    let hook = binding.hook();
+    let (left, _) = null_guard(&hook);
     assert_eq!(left.kind, hir::ExprKind::Local("resource".into()));
 }
 
@@ -93,7 +109,12 @@ fn non_nullable_using_keeps_bare_call() {
     );
     let body = main_body(&module);
     assert_eq!(body.len(), 2);
-    let recv = disposal_receiver(&body[1]);
+    let [binding] = node_bindings(body) else {
+        panic!("one binding");
+    };
+    assert!(!binding.nullable());
+    let hook = binding.hook();
+    let recv = disposal_receiver(&hook);
     assert!(matches!(recv.ty, Type::Class(_)));
     assert_eq!(recv.kind, hir::ExprKind::Local("resource".into()));
 }
@@ -174,9 +195,22 @@ fn skipped_switch_declaration_reads_no_disposal_storage() {
     }
     assert_eq!(flags, 2);
     let reads: usize = body.iter().map(|stmt| check_storage_reads(stmt, &[])).sum();
-    assert!(
-        reads >= 4,
-        "each disposal has a guarded comparison and call read"
+    assert_eq!(reads, 0, "the body holds no hook, so it reads no storage");
+    let node = body
+        .iter()
+        .find_map(|statement| match statement {
+            hir::Stmt::Using { bindings, .. } => Some(bindings),
+            _ => None,
+        })
+        .expect("the switch node");
+    assert_eq!(node.len(), 2);
+    let reads: usize = node
+        .iter()
+        .map(|binding| check_storage_reads(&binding.hook(), &[]))
+        .sum();
+    assert_eq!(
+        reads, 4,
+        "each hook has a guarded comparison read and a guarded call read"
     );
 }
 

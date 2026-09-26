@@ -54,6 +54,17 @@ pub enum InterpretError {
         /// Source position of the invalidation.
         invalidated_at: Pos,
     },
+    /// An exception propagates (`compiler.md` §115.6 rule 5). The host
+    /// entry converts one that no handler catches into the
+    /// uncaught-exception trap, so [`interpret`] never returns it.
+    Exception {
+        /// Address of the Error object.
+        object: usize,
+        /// The Error's report text.
+        message: String,
+        /// Position of the last `throw`.
+        pos: Pos,
+    },
     /// Execution stopped after already producing observable output.
     Execution {
         /// Bytes written before the failure.
@@ -77,6 +88,9 @@ impl fmt::Display for InterpretError {
                 write!(f, "{pos}: trap {kind}: {message}")
             }
             InterpretError::Unsupported { reason } => write!(f, "unsupported: {reason}"),
+            InterpretError::Exception { message, pos, .. } => {
+                write!(f, "{pos}: exception: {message}")
+            }
             InterpretError::PoisonedAddress {
                 instruction,
                 invalidated_by,
@@ -100,6 +114,20 @@ impl Error for InterpretError {
 }
 
 impl InterpretError {
+    /// Converts a propagating exception into the uncaught-exception trap
+    /// at a boundary (`compiler.md` §115.4). Every other error passes
+    /// unchanged.
+    pub(crate) fn settled(self) -> Self {
+        match self {
+            InterpretError::Exception { message, pos, .. } => InterpretError::Trap {
+                kind: RuntimeTrapKind::UncaughtException.rule().to_string(),
+                pos,
+                message,
+            },
+            other => other,
+        }
+    }
+
     /// Bytes written before this error stopped execution.
     #[must_use]
     pub fn output(&self) -> &[u8] {
@@ -346,6 +374,11 @@ struct Interpreter<'m> {
     // Keep the enclosing LIR sites here so that even those reports use the
     // checker-owned source position rather than the instruction's broad span.
     active_traps: Vec<l::Trap>,
+    // The exception a handler edge carries to its catch entry or its park.
+    caught: Option<(usize, String, Pos)>,
+    // The exceptions that wait while the hooks of an exception exit run,
+    // innermost last (compiler.md §115.5 rule 7).
+    parked: Vec<(usize, String, Pos)>,
 }
 
 impl<'m> Interpreter<'m> {
@@ -367,6 +400,8 @@ impl<'m> Interpreter<'m> {
             async_trapping: None,
             async_stopped: Vec::new(),
             active_traps: Vec::new(),
+            caught: None,
+            parked: Vec::new(),
         };
         interpreter.compute_class_layouts()?;
         interpreter.globals = module
@@ -382,7 +417,9 @@ impl<'m> Interpreter<'m> {
         self.context.enter_script();
         let outcome = self.run_entries();
         self.context.exit_script();
-        outcome
+        // compiler.md §115.4 item 1: the host entry converts an exception
+        // that no handler catches.
+        outcome.map_err(InterpretError::settled)
     }
 
     fn run_entries(&mut self) -> Result<Vec<u8>, InterpretError> {
@@ -711,7 +748,10 @@ impl<'m> Interpreter<'m> {
         let mut frame = frame
             .try_borrow_mut()
             .map_err(|_| self.invalid(None, "coroutine frame is already executing"))?;
+        // compiler.md §115.4 items 2 and 3: an `async` body and a generator
+        // body are exception boundaries.
         self.execute_frame(&mut frame)
+            .map_err(InterpretError::settled)
     }
 
     /// Applies one execution outcome to the scheduler state.
@@ -858,11 +898,36 @@ impl<'m> Interpreter<'m> {
                     self.set_value(&mut frame.values, target, resume, &function.pos)?;
                 }
             }
+            let mut handler = None;
             for instruction in &block.instructions {
-                self.execute_instruction(frame, function, instruction)?;
+                let outcome = self.execute_instruction(frame, function, instruction);
+                // compiler.md §115.6 rule 2: a raise site with a handler
+                // edge takes it for an exception.
+                match (outcome, instruction.handler()) {
+                    (Ok(()), _) => {}
+                    (
+                        Err(InterpretError::Exception {
+                            object,
+                            message,
+                            pos,
+                        }),
+                        Some(block),
+                    ) => {
+                        self.caught = Some((object, message, pos));
+                        handler = Some(block);
+                    }
+                    (Err(error), _) => return Err(error),
+                }
                 self.invalidate(&instruction.invalidates, &instruction.pos, || {
                     format!("{:?}", instruction.kind)
                 });
+                if handler.is_some() {
+                    break;
+                }
+            }
+            if let Some(handler) = handler {
+                frame.block = handler;
+                continue;
             }
             match &block.terminator {
                 l::Terminator::Branch(target) => {
@@ -1083,6 +1148,67 @@ impl<'m> Interpreter<'m> {
             .map(|value| &value.ty);
         self.dispatch_instruction_traps(function, instruction, &operands, None, TrapPhase::Before)?;
         let result = match &instruction.kind {
+            l::InstructionKind::Throw => {
+                let text = |index: usize| -> Result<Vec<u8>, InterpretError> {
+                    let handle = operands
+                        .get(index)
+                        .ok_or_else(|| self.missing_operand(instruction, index))?
+                        .as_handle()?;
+                    self.string_bytes(handle)
+                };
+                let message = subscript_runtime::exception::exception_message(&text(1)?, &text(2)?);
+                let object = operands
+                    .first()
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?
+                    .as_handle()?;
+                return Err(InterpretError::Exception {
+                    object: object as usize,
+                    message,
+                    pos: instruction.pos.clone(),
+                });
+            }
+            l::InstructionKind::CatchEntry => {
+                let caught = self.caught.take().ok_or_else(|| {
+                    self.invalid(
+                        Some(instruction.pos.clone()),
+                        "a catch entry ran with no exception on its edge",
+                    )
+                })?;
+                // A callback bridge stopped its runtime loop with the
+                // exception state; the handler clears it.
+                if self.context.exception_pending() {
+                    self.context.catch_exception();
+                }
+                instruction
+                    .result
+                    .map(|_| Value::Handle(caught.0 as *mut u8))
+            }
+            l::InstructionKind::ExceptionPark => {
+                let caught = self.caught.take().ok_or_else(|| {
+                    self.invalid(
+                        Some(instruction.pos.clone()),
+                        "an exception exit ran with no exception on its edge",
+                    )
+                })?;
+                if self.context.exception_pending() {
+                    self.context.catch_exception();
+                }
+                self.parked.push(caught);
+                None
+            }
+            l::InstructionKind::ExceptionResume => {
+                let (object, message, pos) = self.parked.pop().ok_or_else(|| {
+                    self.invalid(
+                        Some(instruction.pos.clone()),
+                        "an exception exit resumed with no parked exception",
+                    )
+                })?;
+                return Err(InterpretError::Exception {
+                    object,
+                    message,
+                    pos,
+                });
+            }
             l::InstructionKind::Copy => Some(
                 self.copy_value(
                     operands
@@ -1738,6 +1864,9 @@ impl<'m> Interpreter<'m> {
                     }
                     false
                 }
+                // The instruction's own effect raises; the frame loop takes
+                // the edge (compiler.md §115.6 rule 5).
+                (l::TrapKind::Raise(_), _) => false,
                 (l::TrapKind::Unreachable, TrapPhase::Before) => true,
                 (l::TrapKind::DivisionByZero, TrapPhase::Before) => operands
                     .get(1)
@@ -1749,9 +1878,6 @@ impl<'m> Interpreter<'m> {
                         .as_i64()?;
                     let length = self.indexed_length(function, instruction, operands)?;
                     index < 0 || index >= length
-                }
-                (l::TrapKind::JsonResultValue(ok_field), TrapPhase::Before) => {
-                    !self.json_result_ok(instruction, operands, *ok_field)?
                 }
                 (l::TrapKind::NullNarrowing, TrapPhase::Before) => {
                     operands.first().is_some_and(|value| match value {
@@ -1805,12 +1931,12 @@ impl<'m> Interpreter<'m> {
                     | l::TrapKind::DivisionByZero
                     | l::TrapKind::IndexRead
                     | l::TrapKind::IndexWrite
-                    | l::TrapKind::JsonResultValue(_)
                     | l::TrapKind::NullNarrowing
                     | l::TrapKind::ClassMismatch(_)
                     | l::TrapKind::DevOnlyLifetime
                     | l::TrapKind::DevReloadOnlyStaleCoroutine
-                    | l::TrapKind::WireEnumValue(_),
+                    | l::TrapKind::WireEnumValue(_)
+                    | l::TrapKind::DisposeRaisedDuringExit,
                     _,
                 ) => false,
             };
@@ -1860,88 +1986,6 @@ impl<'m> Interpreter<'m> {
                 Some(instruction.pos.clone()),
                 format!("index trap has non-indexable base type {other:?}"),
             )),
-        }
-    }
-
-    fn json_result_ok(
-        &self,
-        instruction: &l::Instruction,
-        operands: &[Value],
-        ok_field: l::FieldId,
-    ) -> Result<bool, InterpretError> {
-        let l::InstructionKind::LoadField(l::FieldRef::Class(field)) = instruction.kind else {
-            return Err(self.invalid(
-                Some(instruction.pos.clone()),
-                "JsonResultValue is not attached to a class-field load",
-            ));
-        };
-        let definition = self
-            .module
-            .classes
-            .iter()
-            .find(|definition| {
-                definition
-                    .fields
-                    .iter()
-                    .any(|candidate| candidate.id == field)
-            })
-            .ok_or_else(|| {
-                self.invalid(
-                    Some(instruction.pos.clone()),
-                    format!("JsonResult value field {} is missing", field.0),
-                )
-            })?;
-        let ok_field = definition
-            .fields
-            .iter()
-            .find(|candidate| candidate.id == ok_field && candidate.ty == Type::Bool)
-            .ok_or_else(|| {
-                self.invalid(
-                    Some(instruction.pos.clone()),
-                    "JsonResultValue names no boolean guard field in the loaded field's class",
-                )
-            })?;
-        let (offset, _) = self
-            .field_layouts
-            .get(&ok_field.id)
-            .ok_or_else(|| self.invalid(None, "JsonResult ok field has no layout"))?;
-        let base = operands
-            .first()
-            .ok_or_else(|| self.missing_operand(instruction, 0))?;
-        match base {
-            Value::Handle(handle)
-                if !handle.is_null() && self.context.is_live(*handle as usize) =>
-            {
-                // SAFETY: exact live-handle membership plus the verified class
-                // layout proves that the one-byte boolean field is readable.
-                Ok(unsafe { *handle.add(*offset) != 0 })
-            }
-            Value::Blob(bytes) => Ok(bytes.get(*offset).is_some_and(|value| *value != 0)),
-            Value::Address(address) => {
-                let address = Address {
-                    target: match &address.target {
-                        AddressTarget::Slot(slot) => AddressTarget::SlotBytes {
-                            slot: slot.clone(),
-                            offset: *offset,
-                        },
-                        AddressTarget::SlotBytes { slot, offset: base } => {
-                            AddressTarget::SlotBytes {
-                                slot: slot.clone(),
-                                offset: base + *offset,
-                            }
-                        }
-                        AddressTarget::Pointer(pointer) => {
-                            // SAFETY: the source address names the verified
-                            // aggregate whose `ok` field offset was computed.
-                            AddressTarget::Pointer(unsafe { pointer.add(*offset) })
-                        }
-                    },
-                    pointee: Type::Bool,
-                    poison: address.poison.clone(),
-                };
-                self.load_address(&address)?.as_bool()
-            }
-            _ => Ok(false),
         }
     }
 
@@ -3060,6 +3104,10 @@ impl<'m> Interpreter<'m> {
             "ParseObjectGet" => Value::U(unsafe {
                 ffi::subscript_rt_json_parse_object_get(context, id(0)?, id(1)?, handle(2)?, 0)
             }),
+            // SAFETY: the Context is live.
+            "ParseFailure" => {
+                Value::Handle(unsafe { ffi::subscript_rt_json_parse_failure(context, 0) })
+            }
             _ => return Err(self.invalid(None, format!("unknown JSON intrinsic {operation}"))),
         };
         self.check_runtime(&Pos::new("<json>", 1, 1))?;
@@ -5818,10 +5866,21 @@ unsafe fn callback_interpreter(state: &mut CallbackState) -> &mut Interpreter<'s
 
 unsafe fn callback_failed(ctx: *mut Context, state: &mut CallbackState, error: InterpretError) {
     let message = error.to_string();
+    // The runtime uses its nonzero word to stop the traversal immediately.
+    // The interpreter returns the more precise saved error after the FFI
+    // call. An exception stops it with the exception state, which the
+    // catch entry clears (compiler.md §115.4). An exception that left an
+    // inner runtime loop is already pending, so it is not raised again.
+    match &error {
+        InterpretError::Exception { .. } if unsafe { (*ctx).exception_pending() } => {}
+        InterpretError::Exception {
+            object,
+            message: text,
+            ..
+        } => unsafe { (*ctx).raise_exception(*object as *mut u8, text.clone(), 0) },
+        _ => unsafe { (*ctx).trap(RuntimeTrapKind::Internal, message, 0) },
+    }
     state.error = Some(error);
-    // The runtime uses its trap flag to stop the traversal immediately. The
-    // interpreter returns the more precise saved error after the FFI call.
-    unsafe { (*ctx).trap(RuntimeTrapKind::Internal, message, 0) };
 }
 
 unsafe extern "C" fn map_callback_bridge(
@@ -6158,6 +6217,7 @@ mod tests {
             is_async: true,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: Vec::new(),
             return_type: Type::Void,
             locals: Vec::new(),
@@ -6805,6 +6865,7 @@ export async function main(): Promise<void> {
             is_async: true,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: Vec::new(),
             return_type: Type::I32,
             locals: Vec::new(),
@@ -6835,6 +6896,7 @@ export async function main(): Promise<void> {
             is_async: true,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: Vec::new(),
             return_type: Type::I32,
             locals: Vec::new(),

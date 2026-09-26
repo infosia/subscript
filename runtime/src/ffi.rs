@@ -2484,7 +2484,8 @@ fn parsed<T>(ctx: &mut Context, value: Option<T>, default: T, operation: &str, p
 }
 
 /// Parses a complete JSON document into transient runtime state.
-/// Malformed input returns zero without trapping.
+/// Malformed input returns zero without trapping, and records the
+/// failure for `subscript_rt_json_parse_failure`.
 ///
 /// # Safety
 ///
@@ -2499,6 +2500,27 @@ pub unsafe extern "C" fn subscript_rt_json_parse_begin(
     let ctx = unsafe { &mut *ctx };
     let bytes = unsafe { ctx.str_view(text) };
     ctx.json_parsers().begin(bytes)
+}
+
+/// Returns the `SyntaxError` message of the last parse begin that returned
+/// zero, and clears the record (`compiler.md` §115.7 rules 3 and 4). A
+/// call with no recorded failure is an internal fault.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_json_parse_failure(
+    ctx: *mut Context,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let Some(failure) = ctx.json_parsers().take_failure() else {
+        json_parser_invalid(ctx, "failure", pos_id);
+        return std::ptr::null_mut();
+    };
+    ctx.alloc_str(failure.message().as_bytes(), pos_id)
 }
 
 /// Removes one transient parsed document.
@@ -4816,6 +4838,10 @@ pub(crate) unsafe fn fire_callback(
     let f: LangCb = unsafe { std::mem::transmute::<*const u8, LangCb>(code) };
     // SAFETY: calling generated code that never unwinds across FFI.
     unsafe { f(ctx, env, s, userdata1, userdata2) };
+    // compiler.md §115.4 item 5: no exception crosses the C frame of the
+    // host function. A pending exception becomes the uncaught trap here.
+    // SAFETY: the same live Context; the callback returned.
+    unsafe { &mut *ctx }.settle_uncaught_exception();
 }
 
 /// Ends one callback registration (§111 rule 5).

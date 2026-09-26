@@ -139,6 +139,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             fixed_iterators,
             delayed_declarations,
             consumed_traps: Vec::new(),
+            raise_target: None,
+            pending_checks: std::cell::Cell::new(0),
             temporary: 0,
             shadow_frame: false,
         })

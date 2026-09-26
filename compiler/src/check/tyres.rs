@@ -394,29 +394,16 @@ impl<'p> Checker<'p> {
             _ => {}
         }
 
-        // The ambient generic result reference (stdlib.md §13). Like
-        // Map/Set below, the checker monomorphizes it directly; a source
-        // declaration with the same name shadows the ambient class.
-        if name == "JsonResult" && self.scope_item(name).is_none() {
-            let Some(args) = &r.type_params else {
-                self.error(
-                    RuleCode::S100,
-                    "generic reference class `JsonResult` requires one type argument",
-                    pos,
-                );
-                return Type::Error;
-            };
-            if args.params.len() != 1 {
-                self.error(
-                    RuleCode::S100,
-                    "`JsonResult` takes exactly one type argument",
-                    pos,
-                );
+        // compiler.md §115.1: the three ambient Error classes are one
+        // class; a program declaration shadows the ambient name.
+        if crate::check::exception::ErrorKind::from_name(name).is_some()
+            && self.scope_item(name).is_none()
+        {
+            if r.type_params.is_some() {
+                self.error(RuleCode::S100, format!("`{name}` is not generic"), pos);
                 return Type::Error;
             }
-            let value = self.resolve_type(&args.params[0]);
-            let id = self.instantiate_json_result(&value, pos);
-            return Type::Class(id);
+            return Type::Class(self.error_class(&pos));
         }
 
         // The ES2022 lib supplies the editor declarations; the language

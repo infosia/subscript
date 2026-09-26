@@ -101,7 +101,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .collect();
             let call_traps = convert_traps(&expr.trap_sites(self.lowering.hir))
                 .into_iter()
-                .filter(|trap| trap.kind == l::TrapKind::Call)
+                .filter(|trap| matches!(trap.kind, l::TrapKind::Call | l::TrapKind::Raise(_)))
                 .collect();
             let stored = constructor
                 .params

@@ -159,6 +159,7 @@ fn suspend_successor_rejects_a_pre_suspend_value_without_a_parameter() {
         is_async: true,
         creation_traps: Vec::new(),
         host_entry_traps: None,
+        can_raise: false,
         parameters: Vec::new(),
         return_type: Type::Void,
         locals: Vec::new(),
@@ -255,6 +256,7 @@ fn interpreter_poison_reports_an_activation_local_read_after_suspend() {
             is_async: true,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: Vec::new(),
             return_type: Type::Void,
             locals: vec![lir::Local {
@@ -357,6 +359,7 @@ fn address_type_rejects_an_undeclared_array_base() {
         is_async: false,
         creation_traps: Vec::new(),
         host_entry_traps: None,
+        can_raise: false,
         parameters: vec![lir::Parameter {
             storage: None,
             value: lir::ValueId(0),
@@ -415,6 +418,7 @@ fn intrinsic_call_is_checked_against_the_module_signature_table() {
         is_async: false,
         creation_traps: Vec::new(),
         host_entry_traps: None,
+        can_raise: false,
         parameters: (0..3)
             .map(|index| lir::Parameter {
                 storage: None,
@@ -733,6 +737,7 @@ fn counted_store_verifier_reports_a_missing_retain() {
             is_async: false,
             creation_traps: Vec::new(),
             host_entry_traps: None,
+            can_raise: false,
             parameters: vec![lir::Parameter {
                 storage: Some(lir::LocalId(0)),
                 value: lir::ValueId(0),
@@ -1269,11 +1274,32 @@ const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 #[cfg(debug_assertions)]
 const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
     (
-        "t01-json-result-value",
-        "checked JsonResult.value reads the sibling ok field before loading",
-        "json-result-value",
+        "t63-exception-leaves-async",
+        "an exception that leaves an async body becomes the uncaught-exception trap there",
+        "uncaught-exception",
+        10,
+        5,
+    ),
+    (
+        "t64-exception-leaves-generator",
+        "an exception that leaves a generator body becomes the uncaught-exception trap there",
+        "uncaught-exception",
+        10,
+        7,
+    ),
+    (
+        "t61-uncaught-exception",
+        "an exception no handler catches becomes the uncaught-exception trap at the throw",
+        "uncaught-exception",
         9,
-        19,
+        5,
+    ),
+    (
+        "t62-hook-raises-during-exit",
+        "a dispose hook that raises while an exception is pending traps at its binding",
+        "dispose-raised-during-exit",
+        26,
+        9,
     ),
     (
         "t08-div-zero-expression",

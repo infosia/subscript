@@ -218,39 +218,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .expect("field load");
                 Some(self.coerce_operand(value, l::ValueType::Data(expr.ty.clone()), &expr.pos)?)
             }
-            K::JsonResultValue(obj) => {
-                let object = self.require_expr(obj)?;
-                let field = self.resolve_field(&obj.ty, "value", &expr.pos)?;
-                let ok_field = match self.resolve_field(&obj.ty, "ok", &expr.pos)? {
-                    l::FieldRef::Class(field) => field,
-                    _ => {
-                        return Err(
-                            self.error(&expr.pos, "JSON result ok field is not a class field")
-                        );
-                    }
-                };
-                let stored_type = self.resolved_field_type(field, &obj.ty, &expr.pos)?;
-                let traps = convert_traps(&expr.trap_sites(self.lowering.hir))
-                    .into_iter()
-                    .map(|mut trap| {
-                        if matches!(trap.kind, l::TrapKind::JsonResultValue(_)) {
-                            trap.kind = l::TrapKind::JsonResultValue(ok_field);
-                        }
-                        trap
-                    })
-                    .collect();
-                let value = self
-                    .emit(
-                        l::InstructionKind::LoadField(field),
-                        vec![object],
-                        Some(l::ValueType::Data(stored_type)),
-                        false,
-                        traps,
-                        expr.pos.clone(),
-                    )?
-                    .expect("JSON result field load");
-                Some(self.coerce_operand(value, l::ValueType::Data(expr.ty.clone()), &expr.pos)?)
-            }
             K::Length(value) => {
                 let value = self.require_expr(value)?;
                 self.emit(
@@ -402,6 +369,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 ret,
                 body,
                 captures,
+                ..
             } => Some(self.lower_lambda(params, ret, body, captures, expr)?),
             K::Yield(value) => {
                 let value = value

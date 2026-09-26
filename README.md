@@ -98,9 +98,9 @@ gaps to be closed later:
   walkthrough (a complete host is 31 lines of C).
 - [subscript for TypeScript developers](docs/tutorial-typescript.md) —
   what changes coming from TypeScript: sized integers, nominal and value
-  classes, `null` without `undefined`, explicit memory, traps instead of
-  exceptions, host-stepped `async`, coroutines, workers, and the
-  complete rejection table.
+  classes, `null` without `undefined`, explicit memory, `Error`-family
+  exceptions beside uncatchable traps, host-stepped `async`, coroutines,
+  workers, and the complete rejection table.
 - [subscript for Rust embedders](docs/tutorial-rust.md) — embedding
   through the crates directly: the dev tier in your process, a
   frame-loop host with hot reload in four steps, backed by a
@@ -117,7 +117,7 @@ Every accepted program type-checks under stock `tsc` with the ambient
 prelude — that is what makes the TypeScript editor tooling work. The
 compiler then *narrows*: `tsc` accepts a superset, and subscript enforces
 the sound rules on top (nominal types, sized integers, value types,
-restricted unions, no exceptions). A program `tsc` cannot police is
+restricted unions, `Error`-family exceptions only). A program `tsc` cannot police is
 rejected here with a rule-specific diagnostic at the TypeScript source
 position.
 

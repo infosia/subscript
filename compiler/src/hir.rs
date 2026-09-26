@@ -9,8 +9,15 @@
 use crate::diag::Pos;
 use crate::types::{CallbackLifetime, ClassId, EnumId, HandleClass, HandleKind, IterKind, Type};
 
+mod using;
+pub use using::UsingBinding;
+
 /// Names the synchronous disposal hook after the checker lowers `[Symbol.dispose]`.
 pub const DISPOSE_METHOD_NAME: &str = "[[Symbol.dispose]]";
+
+/// Names the hidden `u32` kind tag that precedes the two fields of the
+/// Error class (`compiler.md` §115.1 rule 3). No source spelling reaches it.
+pub const ERROR_KIND_FIELD: &str = "[[kind]]";
 
 /// A checked program: all source files merged into one module.
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +52,10 @@ pub struct Module {
     /// Checked top-level non-declaration statements, in source order.
     /// The accept corpus uses these statements in entries such as `a168`.
     pub top_level: Vec<Stmt>,
+    /// Whether the module initializer (the global initializers, then
+    /// `top_level`) can leave an exception pending (`compiler.md` §115.6
+    /// rule 3). The check derives it; the lowering reads it.
+    pub initializer_can_raise: bool,
     /// Total bytes of the source texts the check read for this module.
     /// The dev JIT derives one module's one memory reservation from
     /// this number (`specs/blocks/compiler.md` §110 rule 3).
@@ -508,6 +519,12 @@ pub struct Function {
     pub ret: Type,
     /// Checked body statements.
     pub body: Vec<Stmt>,
+    /// Whether a call to this function can leave an exception pending
+    /// (`compiler.md` §115.6 rule 3). One HIR pass derives it after the
+    /// check; every engine reads it. It is false for an `async` function
+    /// and a generator, whose bodies convert an exception into a trap
+    /// (§115.4 items 2 and 3).
+    pub can_raise: bool,
     /// Position of the declaration.
     pub pos: Pos,
 }
@@ -708,6 +725,36 @@ pub enum Stmt {
     Continue(Pos),
     /// Nested block scope.
     Block(Vec<Stmt>),
+    /// `throw` of an Error-family object (`compiler.md` §115.2).
+    Throw {
+        /// The thrown Error object.
+        value: Expr,
+        /// Position of the statement: the raise site.
+        pos: Pos,
+    },
+    /// `try` with one `catch` clause (`compiler.md` §115.3).
+    Try {
+        /// Statements of the `try` block.
+        body: Vec<Stmt>,
+        /// The catch binding and its type, the Error class; absent for
+        /// `catch { }`.
+        binding: Option<(String, Type)>,
+        /// Statements of the `catch` block.
+        handler: Vec<Stmt>,
+        /// Position of the statement.
+        pos: Pos,
+    },
+    /// A `using` scope (`compiler.md` §115.5 rule 5): the statements that
+    /// follow a `using` declaration, to the end of its block. The lowering
+    /// runs the hook of each binding on each edge that leaves `body`.
+    Using {
+        /// The bindings, in declaration order.
+        bindings: Vec<UsingBinding>,
+        /// The statements of the scope.
+        body: Vec<Stmt>,
+        /// Position of the first declaration.
+        pos: Pos,
+    },
 }
 
 /// Closed set of fused built-in `for…of` traversals (stdlib.md §14).
@@ -816,6 +863,13 @@ pub enum TrapSite {
         /// Position of the call.
         pos: Pos,
     },
+    /// A raise site: the preceding call can leave an exception pending
+    /// (`compiler.md` §115.6 rules 2 and 3). The lowering gives it a
+    /// handler edge.
+    Raise {
+        /// Position of the call.
+        pos: Pos,
+    },
     /// A reached `unreachable()` call statement traps unconditionally.
     Unreachable {
         /// Position of the call.
@@ -836,11 +890,6 @@ pub enum TrapSite {
     /// index.
     IndexWrite {
         /// Position of the assignment target.
-        pos: Pos,
-    },
-    /// `JsonResult.value` requires the materialized sibling `ok` value.
-    JsonResultValue {
-        /// Position of the `.value` read.
         pos: Pos,
     },
     /// Reference narrowing requires a non-null materialized pointer.
@@ -888,11 +937,11 @@ impl TrapSite {
         match self {
             TrapSite::Allocation { pos }
             | TrapSite::Call { pos }
+            | TrapSite::Raise { pos }
             | TrapSite::Unreachable { pos }
             | TrapSite::DivisionByZero { pos }
             | TrapSite::IndexRead { pos }
             | TrapSite::IndexWrite { pos }
-            | TrapSite::JsonResultValue { pos }
             | TrapSite::NullNarrowing { pos }
             | TrapSite::ClassMismatch { pos, .. }
             | TrapSite::DevOnlyLifetime { pos }
@@ -1557,7 +1606,7 @@ pub enum JsonFn {
     /// Removes a reference from the active-path set.
     Leave,
     /// Parses complete text into a transient syntax tree; zero means
-    /// malformed input and is data, not a trap.
+    /// malformed input, and the runtime records the failure.
     ParseBegin,
     /// Removes a transient parsed syntax tree.
     ParseEnd,
@@ -1581,11 +1630,14 @@ pub enum JsonFn {
     ParseArrayGet,
     /// Returns the last occurrence of an object field, or zero if absent.
     ParseObjectGet,
+    /// Allocates the `SyntaxError` message of the failed `ParseBegin`
+    /// (`compiler.md` §115.7 rules 3 and 4).
+    ParseFailure,
 }
 
 impl JsonFn {
     /// Every internal JSON runtime leaf in discriminant order.
-    pub const ALL: [JsonFn; 28] = [
+    pub const ALL: [JsonFn; 29] = [
         JsonFn::Begin,
         JsonFn::BeginTracked,
         JsonFn::Finish,
@@ -1614,6 +1666,7 @@ impl JsonFn {
         JsonFn::ParseArrayLen,
         JsonFn::ParseArrayGet,
         JsonFn::ParseObjectGet,
+        JsonFn::ParseFailure,
     ];
 
     /// Whether the runtime call can leave the Context trapped.
@@ -1657,6 +1710,7 @@ impl JsonFn {
             JsonFn::ParseArrayLen => "subscript_rt_json_parse_array_len",
             JsonFn::ParseArrayGet => "subscript_rt_json_parse_array_get",
             JsonFn::ParseObjectGet => "subscript_rt_json_parse_object_get",
+            JsonFn::ParseFailure => "subscript_rt_json_parse_failure",
         }
     }
 
@@ -3342,9 +3396,6 @@ pub enum ExprKind {
         /// Field name.
         name: String,
     },
-    /// Checked read of `JsonResult<T>.value`. Both backends guard the
-    /// ordinary field load with the sibling `ok` field.
-    JsonResultValue(Box<Expr>),
     /// `length` of an array, `FixedArray`, or string.
     Length(Box<Expr>),
     /// Index access `obj[i]`.
@@ -3380,6 +3431,10 @@ pub enum ExprKind {
         /// Captured `const` locals and their resolved storage types,
         /// empty when non-capturing.
         captures: Vec<Capture>,
+        /// Whether the body can leave an exception pending
+        /// (`compiler.md` §115.6 rule 3). The check derives it after the
+        /// function facts; the lowering reads it.
+        can_raise: bool,
     },
     /// `yield` inside a generator (C8).
     Yield(Option<Box<Expr>>),
@@ -3562,7 +3617,6 @@ impl Expr {
         match &self.kind {
             K::Unary { operand, .. }
             | K::Cast(operand)
-            | K::JsonResultValue(operand)
             | K::Length(operand)
             | K::AsyncHandleAwait(operand)
             | K::AsyncHandleTransfer { value: operand, .. } => {
@@ -3654,7 +3708,6 @@ impl Expr {
         match &mut self.kind {
             K::Unary { operand, .. }
             | K::Cast(operand)
-            | K::JsonResultValue(operand)
             | K::Length(operand)
             | K::AsyncHandleAwait(operand)
             | K::AsyncHandleTransfer { value: operand, .. } => {
@@ -3793,6 +3846,11 @@ impl Stmt {
             }
             Stmt::Block(body) => body.iter().map(HirChild::Stmt).collect(),
             Stmt::Break(_) | Stmt::Continue(_) => Vec::new(),
+            Stmt::Throw { value, .. } => vec![HirChild::Expr(value)],
+            Stmt::Try { body, handler, .. } => {
+                body.iter().chain(handler).map(HirChild::Stmt).collect()
+            }
+            Stmt::Using { body, .. } => body.iter().map(HirChild::Stmt).collect(),
         }
     }
 
@@ -3848,6 +3906,13 @@ impl Stmt {
             }
             Stmt::Block(body) => body.iter_mut().map(HirChildMut::Stmt).collect(),
             Stmt::Break(_) | Stmt::Continue(_) => Vec::new(),
+            Stmt::Throw { value, .. } => vec![HirChildMut::Expr(value)],
+            Stmt::Try { body, handler, .. } => body
+                .iter_mut()
+                .chain(handler)
+                .map(HirChildMut::Stmt)
+                .collect(),
+            Stmt::Using { body, .. } => body.iter_mut().map(HirChildMut::Stmt).collect(),
         }
     }
 }
@@ -4023,6 +4088,11 @@ impl Expr {
                 if callee.has_call_site() {
                     sites.push(call(&self.pos));
                 }
+                if crate::raise_sites::call_can_raise(module, callee, args) {
+                    sites.push(TrapSite::Raise {
+                        pos: self.pos.clone(),
+                    });
+                }
                 let parameter_types = match callee {
                     Callee::Func(name) => module
                         .functions
@@ -4161,6 +4231,11 @@ impl Expr {
                 if def.ctor.is_some() {
                     sites.push(call(&self.pos));
                 }
+                if crate::raise_sites::construction_call_can_raise(def) {
+                    sites.push(TrapSite::Raise {
+                        pos: self.pos.clone(),
+                    });
+                }
                 sites
             }
             K::DescriptorLit { .. } => vec![allocation(&self.pos)],
@@ -4188,12 +4263,6 @@ impl Expr {
                 }
                 sites
             }
-            K::JsonResultValue(obj) => vec![
-                lifetime(&obj.pos),
-                TrapSite::JsonResultValue {
-                    pos: self.pos.clone(),
-                },
-            ],
             K::Index { obj, checked, .. } if *checked => {
                 let mut sites = Vec::new();
                 if matches!(obj.ty, Type::Array(_)) {
@@ -4453,7 +4522,6 @@ mod tests {
                 },
                 vec![1],
             ),
-            (ExprKind::JsonResultValue(Box::new(child_expr(1))), vec![1]),
             (ExprKind::Length(Box::new(child_expr(1))), vec![1]),
             (
                 ExprKind::Index {
@@ -4494,6 +4562,7 @@ mod tests {
                     ret: Type::Void,
                     body: vec![child_stmt(1), child_stmt(2)],
                     captures: Vec::new(),
+                    can_raise: false,
                 },
                 vec![1, 2],
             ),
@@ -4625,7 +4694,36 @@ mod tests {
             ),
             (Stmt::Block(vec![child_stmt(1), child_stmt(2)]), vec![1, 2]),
             (Stmt::Break(pos.clone()), Vec::new()),
-            (Stmt::Continue(pos), Vec::new()),
+            (Stmt::Continue(pos.clone()), Vec::new()),
+            (
+                Stmt::Throw {
+                    value: child_expr(1),
+                    pos: pos.clone(),
+                },
+                vec![1],
+            ),
+            (
+                Stmt::Try {
+                    body: vec![child_stmt(1)],
+                    binding: Some(("e".to_string(), Type::I32)),
+                    handler: vec![child_stmt(2)],
+                    pos: pos.clone(),
+                },
+                vec![1, 2],
+            ),
+            (
+                Stmt::Using {
+                    bindings: vec![UsingBinding::new(
+                        "r".to_string(),
+                        Type::I32,
+                        None,
+                        pos.clone(),
+                    )],
+                    body: vec![child_stmt(1), child_stmt(2)],
+                    pos,
+                },
+                vec![1, 2],
+            ),
         ];
         for (stmt, expected) in cases {
             assert_eq!(child_values(stmt.children()), expected);
@@ -4637,6 +4735,7 @@ mod tests {
         let parameter_pos = Pos::new("wire-entry.ts", 3, 27);
         let function = Function {
             name: "configure".to_string(),
+            can_raise: false,
             exported: true,
             is_generator: false,
             is_async: false,
@@ -4668,6 +4767,7 @@ mod tests {
             foreign_fns: Vec::new(),
             foreign_mirrors: Vec::new(),
             top_level: Vec::new(),
+            initializer_can_raise: false,
             source_bytes: 0,
         };
         assert_eq!(
@@ -5063,6 +5163,7 @@ mod tests {
             foreign_fns: Vec::new(),
             foreign_mirrors: Vec::new(),
             top_level: Vec::new(),
+            initializer_can_raise: false,
             source_bytes: 0,
         };
         assert!(m.functions.is_empty());

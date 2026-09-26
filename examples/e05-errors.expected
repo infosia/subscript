@@ -1,0 +1,7 @@
+division=true,7
+division-error=false
+ratio=7
+caught=Error: division by zero
+json=42
+json-syntax=JSON.parse: invalid syntax at byte 1
+json-type=JSON.parse: document does not match i32

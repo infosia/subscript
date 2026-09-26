@@ -111,6 +111,11 @@ pub(crate) struct RtFns {
     pub trap: FuncId,
     pub trap_index_out_of_bounds: FuncId,
     pub trap_wire_enum: FuncId,
+    pub exception_throw: FuncId,
+    pub exception_catch: FuncId,
+    pub exception_settle: FuncId,
+    pub exception_park: FuncId,
+    pub exception_resume: FuncId,
     pub shadow_push: FuncId,
     pub shadow_pop: FuncId,
     pub async_kick: FuncId,
@@ -709,6 +714,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             J::ParseArrayLen => (&[I64, I64, I64, I32], Some(I32)),
             J::ParseArrayGet => (&[I64, I64, I64, I32, I32], Some(I64)),
             J::ParseObjectGet => (&[I64, I64, I64, I64, I32], Some(I64)),
+            J::ParseFailure => (&[I64, I32], Some(I64)),
             other => return Err(internal(format!("unknown JsonFn {other:?}"))),
         };
         json_ids.push(mk(f.symbol(), params, ret)?);
@@ -916,6 +922,15 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             &[I64, I32, I32, I32],
             None,
         )?,
+        exception_throw: mk(
+            "subscript_rt_exception_throw",
+            &[I64, I64, I64, I64, I32],
+            None,
+        )?,
+        exception_catch: mk("subscript_rt_exception_catch", &[I64], Some(I64))?,
+        exception_settle: mk("subscript_rt_exception_settle", &[I64], None)?,
+        exception_park: mk("subscript_rt_exception_park", &[I64], None)?,
+        exception_resume: mk("subscript_rt_exception_resume", &[I64], None)?,
         trap_wire_enum: mk(
             "subscript_rt_trap_wire_enum",
             &[I64, I64, I64, I32, I32],
@@ -1773,8 +1788,8 @@ fn lower_lir_module_with<M: Module>(
 #[cfg(test)]
 mod tests {
     use super::{
-        checked_layout_add, checked_layout_mul, dev_flags, lower_lir_module_with,
-        lower_module_with, round_up_layout, LowerOptions,
+        checked_layout_add, checked_layout_mul, dev_flags, lower_module_with, round_up_layout,
+        LowerOptions,
     };
     use cranelift_codegen::settings::ProbestackStrategy;
     use cranelift_jit::{JITBuilder, JITModule};
@@ -1897,44 +1912,5 @@ mod tests {
             error,
             "cannot lower discovery HIR: poisoned import `./p.typegpu`"
         );
-    }
-
-    #[test]
-    fn cranelift_json_guard_reads_the_lir_field_id() {
-        let hir = check_program(&[SourceFile::new(
-            "json-field-id.ts",
-            "export function main(): void {\n  const result: JsonResult<i32> = JSON.parse<i32>(\"1\");\n  print(`${result.value}`);\n}\n",
-        )])
-        .expect("JSON field-id source checks");
-        let mut lir = crate::lir::lower_module(&hir).expect("JSON field-id source lowers");
-        let ok_field = lir
-            .functions
-            .iter()
-            .flat_map(|function| &function.blocks)
-            .flat_map(|block| &block.instructions)
-            .flat_map(|instruction| &instruction.traps)
-            .find_map(|trap| match trap.kind {
-                subscript_compiler::lir::TrapKind::JsonResultValue(field) => Some(field),
-                _ => None,
-            })
-            .expect("JSON value load names its ok field");
-        lir.classes
-            .iter_mut()
-            .flat_map(|class| &mut class.fields)
-            .find(|field| field.id == ok_field)
-            .expect("JSON ok field exists")
-            .source_name = "not_ok".to_string();
-
-        let isa = cranelift_native::builder()
-            .expect("host ISA")
-            .finish(dev_flags().expect("dev flags"))
-            .expect("ISA flags");
-        let builder = JITBuilder::with_isa(isa, default_libcall_names());
-        let mut module = JITModule::new(builder);
-        lower_lir_module_with(&mut module, &lir, LowerOptions::default())
-            .expect("Cranelift locates the guard field by LIR id");
-
-        // SAFETY: no finalized function address escapes this test.
-        unsafe { module.free_memory() };
     }
 }

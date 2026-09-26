@@ -276,6 +276,9 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if let Some(local) = self.lookup_local(&name, &pos, fx) {
+            if self.reject_caught_read(&name, &local, &pos, fx) {
+                return self.err_expr(pos);
+            }
             let mut expr = hir::Expr {
                 kind: ExprKind::Local(name),
                 ty: local.ty,

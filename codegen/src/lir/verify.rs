@@ -2,6 +2,7 @@
 
 use super::verify_dominance::{terminator_values, verify_address_invalidation, verify_dominance};
 use super::verify_instruction::verify_instruction_contract;
+use super::verify_raise::verify_raise_edges;
 use super::verify_terminator::verify_terminator_types;
 use super::*;
 
@@ -12,6 +13,7 @@ pub(super) fn verify_function(
 ) {
     verify_structure_and_types(module, function, errors);
     verify_counted_stores(function, errors);
+    verify_raise_edges(module, function, errors);
     verify_dominance(function, errors);
     verify_address_invalidation(function, errors);
 }

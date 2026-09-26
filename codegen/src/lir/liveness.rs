@@ -319,7 +319,7 @@ fn lir_live_ins(function: &l::Function, original_value_count: usize) -> Vec<BTre
         let mut changed = false;
         for block in function.blocks.iter().rev() {
             let index = block.id.0 as usize;
-            let next_out = successors(&block.terminator)
+            let next_out = successors(block)
                 .into_iter()
                 .filter_map(|successor| live_in.get(successor.0 as usize))
                 .flat_map(|values| values.iter().copied())
@@ -358,7 +358,7 @@ fn reachable_blocks(function: &l::Function) -> Vec<bool> {
         }
         *mark = true;
         if let Some(block) = function.blocks.get(block.0 as usize) {
-            queue.extend(successors(&block.terminator));
+            queue.extend(successors(block));
         }
     }
     reachable
@@ -446,7 +446,7 @@ fn local_read_before_redefinition(
             }
         }
         if !redefined {
-            pending.extend(successors(&block.terminator));
+            pending.extend(successors(block));
         }
     }
     false

@@ -63,9 +63,6 @@ pub enum TrapKind {
     /// `JSON.stringify` revisited a reference already on the active
     /// serialization path, proving a cyclic object graph.
     JsonCycle = 17,
-    /// A program read `JsonResult<T>.value` after parsing or static-type
-    /// validation failed and `ok` was false.
-    JsonResultValue = 18,
     /// A malformed pattern/flag set or a regex operation that violates
     /// its contracted flag requirements.
     Regex = 19,
@@ -84,6 +81,12 @@ pub enum TrapKind {
     /// A callback fired through a registration the host released
     /// (compiler.md §111 rule 14).
     CallbackRegistrationEnded = 28,
+    /// An exception left the outermost script frame of a host entry
+    /// (compiler.md §115.4).
+    UncaughtException = 29,
+    /// A dispose hook raised while another exception was pending
+    /// (compiler.md §115.5 rule 2).
+    DisposeRaisedDuringExit = 30,
 }
 
 impl TrapKind {
@@ -108,7 +111,6 @@ impl TrapKind {
             15 => TrapKind::NumberRange,
             16 => TrapKind::JsonNumber,
             17 => TrapKind::JsonCycle,
-            18 => TrapKind::JsonResultValue,
             19 => TrapKind::Regex,
             20 => TrapKind::RegexBudget,
             21 => TrapKind::CallbackUserdataFreed,
@@ -116,6 +118,8 @@ impl TrapKind {
             23 => TrapKind::UnreachableReached,
             24 => TrapKind::WireEnumUnknownValue,
             28 => TrapKind::CallbackRegistrationEnded,
+            29 => TrapKind::UncaughtException,
+            30 => TrapKind::DisposeRaisedDuringExit,
             _ => return None,
         })
     }
@@ -141,7 +145,6 @@ impl TrapKind {
             TrapKind::NumberRange => "number-range",
             TrapKind::JsonNumber => "json-non-finite-number",
             TrapKind::JsonCycle => "json-cycle",
-            TrapKind::JsonResultValue => "json-result-value",
             TrapKind::Regex => "regex-error",
             TrapKind::RegexBudget => "regex-budget-exhausted",
             TrapKind::CallbackUserdataFreed => "callback-userdata-freed",
@@ -149,6 +152,8 @@ impl TrapKind {
             TrapKind::UnreachableReached => "unreachable-reached",
             TrapKind::WireEnumUnknownValue => "wire-enum-unknown-value",
             TrapKind::CallbackRegistrationEnded => "callback-registration-ended",
+            TrapKind::UncaughtException => "uncaught-exception",
+            TrapKind::DisposeRaisedDuringExit => "dispose-raised-during-exit",
         }
     }
 
@@ -171,8 +176,8 @@ impl TrapKind {
             (TrapKind::DivisionByZero, _) => Cow::Borrowed("integer division by zero"),
             (TrapKind::Internal, _) => Cow::Borrowed("unknown trap kind raised by generated code"),
             (TrapKind::StaleCoroutine, _) => Cow::Borrowed("stale coroutine after reload"),
-            (TrapKind::JsonResultValue, _) => {
-                Cow::Borrowed("`JsonResult.value` read when `ok` is false")
+            (TrapKind::DisposeRaisedDuringExit, _) => {
+                Cow::Borrowed("a dispose hook raised while an exception was pending")
             }
             (other, _) => Cow::Borrowed(other.rule()),
         }
@@ -216,21 +221,21 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in (1..=24u32).chain([28]) {
+        for v in (1..=17u32).chain(19..=24).chain([28, 29, 30]) {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }
         assert_eq!(TrapKind::from_u32(0), None);
-        assert_eq!(TrapKind::from_u32(29), None);
+        assert_eq!(TrapKind::from_u32(31), None);
         assert_eq!(TrapKind::from_u32(99), None);
     }
 
-    /// `specs/blocks/compiler.md` §113.1 rule 5: the numbers 25, 26, and
-    /// 27 stay unassigned, so `from_u32` answers them as it answers every
-    /// unknown number.
+    /// `specs/blocks/compiler.md` §113.1 rule 5 and §115.7 rule 8: the
+    /// numbers 18, 25, 26, and 27 stay unassigned, so `from_u32` answers
+    /// them as it answers every unknown number.
     #[test]
     fn retired_kind_numbers_name_no_kind() {
-        for v in [25u32, 26, 27] {
+        for v in [18u32, 25, 26, 27] {
             assert_eq!(TrapKind::from_u32(v), None);
         }
     }

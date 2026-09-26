@@ -33,6 +33,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             controls: Vec::new(),
             array_values: Vec::new(),
             moved_async_owners: HashSet::new(),
+            handlers: Vec::new(),
+            usings: Vec::new(),
         };
         let entry = builder.new_block(Vec::new(), Some("entry".to_string()));
         builder.entry = entry;
@@ -81,6 +83,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     }
 
     pub(super) fn finish(mut self) -> Result<l::Function, LowerError> {
+        if !self.usings_closed() {
+            return Err(self.error(&self.function.pos, "a `using` node is still open"));
+        }
         if let Some(block) = self.current {
             if self.blocks[block.0 as usize].terminator.is_none() {
                 if self.function.ret == Type::Void || self.function.is_generator {
@@ -114,6 +119,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             is_async: self.function.is_async,
             creation_traps: convert_traps(&self.function.creation_traps),
             host_entry_traps: self.function.host_entry_traps.as_deref().map(convert_traps),
+            can_raise: self.function.can_raise,
             parameters: self.parameters,
             return_type: self.function.ret,
             locals: self.locals,
@@ -325,12 +331,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         operands: Vec<l::Operand>,
         result_type: Option<l::ValueType>,
         invalidates_arrays: bool,
-        traps: Vec<l::Trap>,
+        mut traps: Vec<l::Trap>,
         pos: Pos,
     ) -> Result<Option<l::Operand>, LowerError> {
         let block = self.current.ok_or_else(|| {
             self.error(&pos, "attempted to emit an instruction after a terminator")
         })?;
+        self.resolve_raise_edges(&mut traps);
         let result = result_type
             .as_ref()
             .map(|ty| self.new_value(ty.clone(), None));
