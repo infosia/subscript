@@ -761,7 +761,14 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             let (params, ret): (&[types::Type], types::Type) = match function {
                 R::New => (&[I64, I64, I64, I32], I64),
                 R::Test => (&[I64, I64, I64, I32], I32),
-                R::Source | R::Flags => (&[I64, I64, I32], I64),
+                R::Source | R::Flags | R::ToString => (&[I64, I64, I32], I64),
+                R::Global
+                | R::IgnoreCase
+                | R::Multiline
+                | R::DotAll
+                | R::Unicode
+                | R::HasIndices
+                | R::Sticky => (&[I64, I64, I32], I32),
                 R::Search => (&[I64, I64, I64, I32], I32),
                 R::Replace | R::ReplaceAll => (&[I64, I64, I64, I64, I32], I64),
                 R::Split => (&[I64, I64, I64, I32, I32], I64),

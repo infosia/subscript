@@ -148,7 +148,7 @@ impl<'p> Checker<'p> {
     pub(super) fn check_str_method(
         &mut self,
         recv: hir::Expr,
-        f: StrFn,
+        (f, name): (StrFn, &str),
         c: &ast::CallExpr,
         fx: &mut FnCtx,
         pos: Pos,
@@ -176,7 +176,7 @@ impl<'p> Checker<'p> {
                         && (optional_zero_position || optional_end_position || optional_pad)),
             })
             .collect();
-        let mut args = self.check_args(&params, &c.args, fx, &pos, f.name());
+        let mut args = self.check_args(&params, &c.args, fx, &pos, name);
         if optional_slice && args.is_empty() {
             args.push(hir::Expr {
                 kind: ExprKind::Int(0),
@@ -266,7 +266,7 @@ impl<'p> Checker<'p> {
         &mut self,
         recv: hir::Expr,
         elem: Type,
-        f: ArrFn,
+        (f, name): (ArrFn, &str),
         c: &ast::CallExpr,
         fx: &mut FnCtx,
         pos: Pos,
@@ -316,7 +316,7 @@ impl<'p> Checker<'p> {
                     },
                 ];
                 let mut args = vec![recv];
-                args.extend(self.check_args(&params, &c.args, fx, &pos, f.name()));
+                args.extend(self.check_args(&params, &c.args, fx, &pos, name));
                 if args.len() == 2 {
                     args.push(int_default(
                         if f == A::LastIndexOf {
@@ -340,7 +340,7 @@ impl<'p> Checker<'p> {
                     self.error(
                         RuleCode::S014,
                         format!(
-                            "`join` formats elements by the Q14 interpolation rules; \
+                            "`{name}` formats elements by the Q14 interpolation rules; \
                              `{}` elements are not interpolatable (Q22)",
                             elem_n
                         ),
@@ -353,7 +353,7 @@ impl<'p> Checker<'p> {
                     ty: Type::Str,
                     has_default: true,
                 }];
-                let mut checked = self.check_args(&params, &c.args, fx, &pos, "join");
+                let mut checked = self.check_args(&params, &c.args, fx, &pos, name);
                 if checked.is_empty() {
                     checked.push(hir::Expr {
                         kind: ExprKind::Str(",".to_string()),

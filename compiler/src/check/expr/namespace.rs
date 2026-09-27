@@ -818,6 +818,19 @@ impl<'p> Checker<'p> {
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
+        if name == "toString" {
+            let checked = self.check_args(&[], &c.args, fx, &pos, name);
+            let mut args = vec![recv];
+            args.extend(checked);
+            return hir::Expr {
+                kind: ExprKind::Call {
+                    callee: Callee::Regex(RegexFn::ToString),
+                    args,
+                },
+                ty: Type::Str,
+                pos,
+            };
+        }
         let (function, param, result) = match name {
             "test" => (RegexFn::Test, Type::Str, Type::Bool),
             "matchStart" => (RegexFn::MatchStart, Type::I32, Type::I32),

@@ -1949,11 +1949,27 @@ pub enum RegexFn {
     MatchStart,
     /// `re.matchEnd(group)`.
     MatchEnd,
+    /// `re.global`.
+    Global,
+    /// `re.ignoreCase`.
+    IgnoreCase,
+    /// `re.multiline`.
+    Multiline,
+    /// `re.dotAll`.
+    DotAll,
+    /// `re.unicode`.
+    Unicode,
+    /// `re.hasIndices`.
+    HasIndices,
+    /// `re.sticky`.
+    Sticky,
+    /// `re.toString()`.
+    ToString,
 }
 
 impl RegexFn {
     /// Every regex intrinsic in discriminant order.
-    pub const ALL: [RegexFn; 10] = [
+    pub const ALL: [RegexFn; 18] = [
         RegexFn::New,
         RegexFn::Test,
         RegexFn::Source,
@@ -1964,6 +1980,14 @@ impl RegexFn {
         RegexFn::Split,
         RegexFn::MatchStart,
         RegexFn::MatchEnd,
+        RegexFn::Global,
+        RegexFn::IgnoreCase,
+        RegexFn::Multiline,
+        RegexFn::DotAll,
+        RegexFn::Unicode,
+        RegexFn::HasIndices,
+        RegexFn::Sticky,
+        RegexFn::ToString,
     ];
 
     /// Opaque runtime symbol used by both execution tiers.
@@ -1974,6 +1998,14 @@ impl RegexFn {
             RegexFn::Test => "subscript_rt_regex_test",
             RegexFn::Source => "subscript_rt_regex_source",
             RegexFn::Flags => "subscript_rt_regex_flags",
+            RegexFn::Global => "subscript_rt_regex_global",
+            RegexFn::IgnoreCase => "subscript_rt_regex_ignore_case",
+            RegexFn::Multiline => "subscript_rt_regex_multiline",
+            RegexFn::DotAll => "subscript_rt_regex_dot_all",
+            RegexFn::Unicode => "subscript_rt_regex_unicode",
+            RegexFn::HasIndices => "subscript_rt_regex_has_indices",
+            RegexFn::Sticky => "subscript_rt_regex_sticky",
+            RegexFn::ToString => "subscript_rt_regex_to_string",
             RegexFn::Search => "subscript_rt_regex_search",
             RegexFn::Replace => "subscript_rt_regex_replace",
             RegexFn::ReplaceAll => "subscript_rt_regex_replace_all",
@@ -1992,6 +2024,14 @@ impl RegexFn {
                 | RegexFn::Test
                 | RegexFn::Source
                 | RegexFn::Flags
+                | RegexFn::Global
+                | RegexFn::IgnoreCase
+                | RegexFn::Multiline
+                | RegexFn::DotAll
+                | RegexFn::Unicode
+                | RegexFn::HasIndices
+                | RegexFn::Sticky
+                | RegexFn::ToString
                 | RegexFn::Search
                 | RegexFn::Replace
                 | RegexFn::ReplaceAll
@@ -2009,6 +2049,14 @@ impl RegexFn {
             RegexFn::Test => "test(subject: string): boolean",
             RegexFn::Source => "source: string",
             RegexFn::Flags => "flags: string",
+            RegexFn::Global => "global: boolean",
+            RegexFn::IgnoreCase => "ignoreCase: boolean",
+            RegexFn::Multiline => "multiline: boolean",
+            RegexFn::DotAll => "dotAll: boolean",
+            RegexFn::Unicode => "unicode: boolean",
+            RegexFn::HasIndices => "hasIndices: boolean",
+            RegexFn::Sticky => "sticky: boolean",
+            RegexFn::ToString => "toString(): string",
             RegexFn::Search => "string.search(pattern: RegExp): i32",
             RegexFn::Replace => "string.replace(pattern: RegExp, replacement: string): string",
             RegexFn::ReplaceAll => {
@@ -2028,6 +2076,14 @@ impl RegexFn {
             RegexFn::Test => "Tests for a budgeted match and records its capture extents.",
             RegexFn::Source => "Returns the constructor pattern text.",
             RegexFn::Flags => "Returns flags in canonical `dgimsuv` order.",
+            RegexFn::Global => "Returns whether the flags contain `g`.",
+            RegexFn::IgnoreCase => "Returns whether the flags contain `i`.",
+            RegexFn::Multiline => "Returns whether the flags contain `m`.",
+            RegexFn::DotAll => "Returns whether the flags contain `s`.",
+            RegexFn::Unicode => "Returns whether the flags contain `u`.",
+            RegexFn::HasIndices => "Returns whether the flags contain `d`.",
+            RegexFn::Sticky => "Returns false; sticky matching requires lastIndex.",
+            RegexFn::ToString => "Returns the source and flags between slash delimiters.",
             RegexFn::Search => "Returns the first UTF-8 byte offset, or -1.",
             RegexFn::Replace => "Replaces the first match with ECMA `$` substitutions.",
             RegexFn::ReplaceAll => {

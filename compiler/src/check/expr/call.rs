@@ -892,7 +892,14 @@ impl<'p> Checker<'p> {
                         return self.err_expr(pos);
                     }
                     if let Some(f) = crate::ambient::arr_method(other) {
-                        return self.check_array_method(recv, (*elem).clone(), f, c, fx, pos);
+                        return self.check_array_method(
+                            recv,
+                            (*elem).clone(),
+                            (f, &name),
+                            c,
+                            fx,
+                            pos,
+                        );
                     }
                     if !self.arr_subset_rejection(other, prop_pos.clone()) {
                         self.arr_surface_error(other, prop_pos.clone());
@@ -907,7 +914,14 @@ impl<'p> Checker<'p> {
             Type::FixedArray(elem, n) => {
                 if let Some(f) = crate::ambient::arr_method(&name) {
                     if f.fixed_symbol().is_some() {
-                        return self.check_array_method(recv, (*elem).clone(), f, c, fx, pos);
+                        return self.check_array_method(
+                            recv,
+                            (*elem).clone(),
+                            (f, &name),
+                            c,
+                            fx,
+                            pos,
+                        );
                     }
                     self.reject_api_form(
                         "FixedArray<T, N>",
@@ -932,7 +946,7 @@ impl<'p> Checker<'p> {
                 other => {
                     // The §8 method intrinsics (stdlib.md §8, Q21).
                     if let Some(f) = crate::ambient::str_method(other) {
-                        return self.check_str_method(recv, f, c, fx, pos);
+                        return self.check_str_method(recv, (f, &name), c, fx, pos);
                     }
                     if !self.str_subset_rejection(other, prop_pos.clone()) {
                         self.str_surface_error(other, prop_pos.clone());

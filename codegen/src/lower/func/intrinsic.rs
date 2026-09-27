@@ -190,7 +190,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     operands,
                     Some(pos),
                     checked,
-                    name == "Test",
+                    matches!(
+                        name.as_str(),
+                        "Test"
+                            | "Global"
+                            | "IgnoreCase"
+                            | "Multiline"
+                            | "DotAll"
+                            | "Unicode"
+                            | "HasIndices"
+                            | "Sticky"
+                    ),
                 )?
             }
             l::IntrinsicFamily::Date => self.date_intrinsic(&name, operands, checked, pos)?,

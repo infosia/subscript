@@ -187,6 +187,14 @@
 | `flags: string` | Returns flags in canonical `dgimsuv` order. |
 | `matchStart(group: i32): i32` | Returns a recorded capture's start byte offset, or -1. |
 | `matchEnd(group: i32): i32` | Returns a recorded capture's end byte offset, or -1. |
+| `global: boolean` | Returns whether the flags contain `g`. |
+| `ignoreCase: boolean` | Returns whether the flags contain `i`. |
+| `multiline: boolean` | Returns whether the flags contain `m`. |
+| `dotAll: boolean` | Returns whether the flags contain `s`. |
+| `unicode: boolean` | Returns whether the flags contain `u`. |
+| `hasIndices: boolean` | Returns whether the flags contain `d`. |
+| `sticky: boolean` | Returns false; sticky matching requires lastIndex. |
+| `toString(): string` | Returns the source and flags between slash delimiters. |
 
 ### T[]
 

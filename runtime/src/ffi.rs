@@ -7408,3 +7408,116 @@ mod tests {
         assert!(ctx.is_live(b as usize));
     }
 }
+
+/// Returns `RegExp.global`.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_regex_global(
+    ctx: *mut Context,
+    regex: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::has_flag(unsafe { &mut *ctx }, regex, b'g', pos_id)
+}
+/// Returns `RegExp.ignoreCase`.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_regex_ignore_case(
+    ctx: *mut Context,
+    regex: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::has_flag(unsafe { &mut *ctx }, regex, b'i', pos_id)
+}
+/// Returns `RegExp.multiline`.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_regex_multiline(
+    ctx: *mut Context,
+    regex: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::has_flag(unsafe { &mut *ctx }, regex, b'm', pos_id)
+}
+/// Returns `RegExp.dotAll`.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_regex_dot_all(
+    ctx: *mut Context,
+    regex: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::has_flag(unsafe { &mut *ctx }, regex, b's', pos_id)
+}
+/// Returns `RegExp.unicode`.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_regex_unicode(
+    ctx: *mut Context,
+    regex: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::has_flag(unsafe { &mut *ctx }, regex, b'u', pos_id)
+}
+/// Returns `RegExp.hasIndices`.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_regex_has_indices(
+    ctx: *mut Context,
+    regex: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::has_flag(unsafe { &mut *ctx }, regex, b'd', pos_id)
+}
+/// Returns `RegExp.sticky`.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_regex_sticky(
+    ctx: *mut Context,
+    regex: *const u8,
+    pos_id: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    crate::regexops::has_flag(unsafe { &mut *ctx }, regex, b'y', pos_id)
+}
+/// Returns `RegExp.toString`.
+///
+/// # Safety
+///
+/// Shared contract; `regex` is a live RegExp handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_regex_to_string(
+    ctx: *mut Context,
+    regex: *const u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    crate::regexops::to_string(unsafe { &mut *ctx }, regex, pos_id)
+}

@@ -3029,6 +3029,38 @@ impl<'m> Interpreter<'m> {
                 Value::Handle(unsafe { ffi::subscript_rt_regex_source(context, handle(0)?, 0) })
             }
             // SAFETY: operand is a live regex.
+            "Global" => {
+                Value::Bool(unsafe { ffi::subscript_rt_regex_global(context, handle(0)?, 0) } != 0)
+            }
+            // SAFETY: operand is a live regex.
+            "IgnoreCase" => Value::Bool(
+                unsafe { ffi::subscript_rt_regex_ignore_case(context, handle(0)?, 0) } != 0,
+            ),
+            // SAFETY: operand is a live regex.
+            "Multiline" => Value::Bool(
+                unsafe { ffi::subscript_rt_regex_multiline(context, handle(0)?, 0) } != 0,
+            ),
+            // SAFETY: operand is a live regex.
+            "DotAll" => {
+                Value::Bool(unsafe { ffi::subscript_rt_regex_dot_all(context, handle(0)?, 0) } != 0)
+            }
+            // SAFETY: operand is a live regex.
+            "Unicode" => {
+                Value::Bool(unsafe { ffi::subscript_rt_regex_unicode(context, handle(0)?, 0) } != 0)
+            }
+            // SAFETY: operand is a live regex.
+            "HasIndices" => Value::Bool(
+                unsafe { ffi::subscript_rt_regex_has_indices(context, handle(0)?, 0) } != 0,
+            ),
+            // SAFETY: operand is a live regex.
+            "Sticky" => {
+                Value::Bool(unsafe { ffi::subscript_rt_regex_sticky(context, handle(0)?, 0) } != 0)
+            }
+            // SAFETY: operand is a live regex.
+            "ToString" => {
+                Value::Handle(unsafe { ffi::subscript_rt_regex_to_string(context, handle(0)?, 0) })
+            }
+            // SAFETY: operand is a live regex.
             "Flags" => {
                 Value::Handle(unsafe { ffi::subscript_rt_regex_flags(context, handle(0)?, 0) })
             }

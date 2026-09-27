@@ -358,6 +358,36 @@ pub(crate) fn flags(ctx: &mut Context, regex: *const u8, pos_id: u32) -> *mut u8
     unsafe { (*(regex as *const RegexHeader)).flags }
 }
 
+/// Tests the canonical flag bytes without allocation.
+pub(crate) fn has_flag(ctx: &mut Context, regex: *const u8, flag: u8, pos_id: u32) -> i32 {
+    let flags = flags(ctx, regex, pos_id);
+    if flags.is_null() {
+        return 0;
+    }
+    // SAFETY: flags returned a live string handle.
+    i32::from(unsafe { ctx.str_bytes(flags) }.contains(&flag))
+}
+
+/// Joins the existing source and flag renderings with slash delimiters.
+pub(crate) fn to_string(ctx: &mut Context, regex: *const u8, pos_id: u32) -> *mut u8 {
+    let source = source(ctx, regex, pos_id);
+    if source.is_null() {
+        return std::ptr::null_mut();
+    }
+    let flags = flags(ctx, regex, pos_id);
+    if flags.is_null() {
+        return std::ptr::null_mut();
+    }
+    let mut result = vec![b'/'];
+    // SAFETY: source and flags returned live string handles.
+    unsafe {
+        result.extend_from_slice(ctx.str_bytes(source));
+        result.push(b'/');
+        result.extend_from_slice(ctx.str_bytes(flags));
+    }
+    ctx.alloc_str(&result, pos_id)
+}
+
 /// Returns the first match's UTF-8 byte offset, or -1.
 pub(crate) fn search(ctx: &mut Context, subject: *const u8, regex: *const u8, pos_id: u32) -> i32 {
     let Some(text) = self::subject(ctx, subject, "RegExp subject", pos_id) else {

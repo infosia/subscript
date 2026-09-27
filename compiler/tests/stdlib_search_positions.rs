@@ -10,6 +10,9 @@ fn array_to_string_has_the_join_element_restriction() {
             assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
             assert_eq!(diagnostics[0].code, RuleCode::S014);
             assert!(diagnostics[0].message.contains("not interpolatable"));
+            assert!(diagnostics[0]
+                .message
+                .starts_with(&format!("`{method}` formats elements")));
         }
     }
     for receiver in ["[1, 2]", "[true, false]", "[1.5, 2.5]", "[\"a\", \"b\"]"] {
@@ -96,6 +99,19 @@ fn new_forms_keep_argument_types_and_arities() {
         assert!(
             check_program(&[SourceFile::new("test.ts", source)]).is_err(),
             "{expression}"
+        );
+    }
+}
+
+#[test]
+fn trim_alias_diagnostics_keep_the_spelled_name() {
+    for name in ["trimLeft", "trimRight"] {
+        let source = format!("export function main(): void {{ \"abc\".{name}(1); }}");
+        let diagnostics =
+            check_program(&[SourceFile::new("test.ts", source)]).expect_err("extra argument");
+        assert_eq!(
+            diagnostics[0].message,
+            format!("`{name}` expects 0 argument(s) (0 required), got 1")
         );
     }
 }

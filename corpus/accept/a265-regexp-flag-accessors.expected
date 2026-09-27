@@ -1,0 +1,8 @@
+/a/ false false false false false false false a 
+/a/gimsu true true true true true false false a gimsu
+/a/d false false false false false false true a d
+/a\/b/ false false false false false false false a\/b 
+/(?:)/ false false false false false false false (?:) 
+/[/]/ false false false false false false false [/] 
+/a\/b/ false false false false false false false a\/b 
+/a/dgimsu true true true true true false true a dgimsu

@@ -409,18 +409,25 @@ impl<'p> Checker<'p> {
                 self.err_expr(prop_pos)
             }
             Type::RegExp => {
-                if !for_write && matches!(name, "source" | "flags") {
-                    let function = if name == "source" {
-                        RegexFn::Source
-                    } else {
-                        RegexFn::Flags
-                    };
+                let accessor = match name {
+                    "source" => Some((RegexFn::Source, Type::Str)),
+                    "flags" => Some((RegexFn::Flags, Type::Str)),
+                    "global" => Some((RegexFn::Global, Type::Bool)),
+                    "ignoreCase" => Some((RegexFn::IgnoreCase, Type::Bool)),
+                    "multiline" => Some((RegexFn::Multiline, Type::Bool)),
+                    "dotAll" => Some((RegexFn::DotAll, Type::Bool)),
+                    "unicode" => Some((RegexFn::Unicode, Type::Bool)),
+                    "hasIndices" => Some((RegexFn::HasIndices, Type::Bool)),
+                    "sticky" => Some((RegexFn::Sticky, Type::Bool)),
+                    _ => None,
+                };
+                if let Some((function, ty)) = accessor.filter(|_| !for_write) {
                     return hir::Expr {
                         kind: ExprKind::Call {
                             callee: Callee::Regex(function),
                             args: vec![obj],
                         },
-                        ty: Type::Str,
+                        ty,
                         pos: prop_pos,
                     };
                 }
@@ -428,7 +435,7 @@ impl<'p> Checker<'p> {
                     "`RegExp.lastIndex` is rejected: mutable global-match state would drive `exec`, which is not representable (Q31)".to_string()
                 } else if name == "exec" {
                     "`RegExp.exec` is rejected: its result needs an array with extra fields and a tuple type, neither of which the language has (Q31)".to_string()
-                } else if matches!(name, "test" | "matchStart" | "matchEnd") {
+                } else if matches!(name, "test" | "matchStart" | "matchEnd" | "toString") {
                     format!("method `{name}` may only be called, not read as a value")
                 } else {
                     format!("`RegExp` has no accepted member `{name}`")
