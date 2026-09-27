@@ -162,3 +162,4 @@ Every section, with its status:
 | §118 | A capture never outlives its frame | active; amends C5, §8.2, §116 | [`s118-a-capture-never-outlives-its-frame.md`](compiler/s118-a-capture-never-outlives-its-frame.md) |
 | §119 | A synthesized helper has no reload slot | active; amends §8.2 | [`s119-a-synthesized-helper-has-no-reload-slot.md`](compiler/s119-a-synthesized-helper-has-no-reload-slot.md) |
 | §120 | A lifetime site names its operand | active; amends §20.2 | [`s120-a-lifetime-site-names-its-operand.md`](compiler/s120-a-lifetime-site-names-its-operand.md) |
+| §121 | A reload build gives every call a raise edge | active; closes §119.5 item 1 | [`s121-a-reload-build-gives-every-call-a-raise-edge.md`](compiler/s121-a-reload-build-gives-every-call-a-raise-edge.md) |

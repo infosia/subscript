@@ -96,7 +96,7 @@ class table. No `.expected` golden moves. If one does, stop and report.
 
 ### 119.5 Open items outside this section
 
-- `can_raise` (§115.6 rule 3) is derived from bodies and is not in the
+- *(Closed by §121.)* `can_raise` (§115.6 rule 3) is derived from bodies and is not in the
   hash. A body edit that makes a callee start raising can reach a
   retained caller compiled without a raise edge at that call.
 - The first use of a new generic instance (`f<T>`) adds a declaration,
