@@ -236,16 +236,16 @@ machine/runtime versions is in [`benchmarks/`](benchmarks/README.md).
 
 | Workload | C | subscript&#8209;ship | subscript&#8209;jit | LuaJIT | JSC | V8 |
 |---|---|---|---|---|---|---|
-| mandelbrot | 1.00× | **1.00×** | 1.04× | 2.76× | 1.00× | 1.00× |
-| fib-recursive | 1.00× | **1.02×** | 2.19× | 1.96× | 1.49× | 2.66× |
-| primes | 1.00× | **0.97×** | 1.46× | 2.12× | 0.93× | 1.73× |
-| fib-loop | 1.00× | **1.02×** | 2.40× | 1.46× | 1.08× | 1.56× |
-| queen | 1.00× | 1.10× | 1.53× | 1.37× | 1.24× | 1.78× |
-| sort | 1.00× | 1.15× | 2.17× | 2.26× | 1.44× | 1.84× |
-| tree | 1.00× | 2.01× | 6.31× | 2.26× | 0.33× | 0.48× |
-| particles | 1.00× | 1.92× | 12.02× | 3.84× | 1.90× | 3.59× |
-| collect | 1.00× | 1.11× | 3.62× | 3.67× | 0.96× | 2.62× |
-| callbacks | 1.00× | 2.83× | 35.17× | 9.72× | 5.22× | 30.32× |
+| mandelbrot | 1.00× | **1.01×** | 1.04× | 2.77× | 1.00× | 1.00× |
+| fib-recursive | 1.00× | **1.01×** | 2.21× | 1.93× | 1.49× | 2.63× |
+| primes | 1.00× | **0.97×** | 1.47× | 2.10× | 0.93× | 1.72× |
+| fib-loop | 1.00× | **1.03×** | 2.43× | 1.48× | 1.09× | 1.58× |
+| queen | 1.00× | 1.09× | 1.51× | 1.51× | 1.23× | 1.79× |
+| sort | 1.00× | 1.14× | 2.15× | 2.26× | 1.44× | 1.77× |
+| tree | 1.00× | 2.00× | 6.33× | 2.17× | 0.32× | 0.47× |
+| particles | 1.00× | 1.92× | 12.02× | 3.84× | 1.90× | 3.58× |
+| collect | 1.00× | 1.08× | 3.56× | 3.66× | 0.94× | 2.70× |
+| callbacks | 1.00× | 2.83× | 19.02× | 9.76× | 5.24× | 30.23× |
 
 For what the language looks like at these speeds — twelve commented programs,
 a C host facade, and a C host that owns the loop — see
@@ -254,13 +254,13 @@ a C host facade, and a C host that owns the loop — see
 What the numbers show:
 
 - **On compute-bound work the shipping tier is C** — mandelbrot
-  1.00×, fib-recursive 1.02×, primes 0.97×, fib-loop
-  1.02×, queen 1.10×. The shipping tier *is* the emitted C compiled
+  1.01×, fib-recursive 1.01×, primes 0.97×, fib-loop
+  1.03×, queen 1.09×. The shipping tier *is* the emitted C compiled
   by the same `clang -O2`, and pure-numeric code has almost no array
   traffic to check.
 - **The cost is checked memory traffic and value copies** — `sort`
-  (bounds-checked growable arrays) at 1.15×, `tree` (per-node allocate and
-  free through the Context's size-class arena) at 2.01×, `particles`
+  (bounds-checked growable arrays) at 1.14×, `tree` (per-node allocate and
+  free through the Context's size-class arena) at 2.00×, `particles`
   (value-struct arrays) at 1.92×. These are the language's real costs — an
   emitted bounds check per element, value-copy semantics, a 16-byte
   allocation header — not a measurement artifact.
@@ -269,18 +269,18 @@ What the numbers show:
   fresh output array per stage, while the C baseline reuses three buffers
   it allocates once. A callback that names a function compiles to a plain
   loop with a direct call; the allocation is what remains. Every runtime
-  pays for the idiom (JSC 5.22×, LuaJIT 9.72×, V8 30.32×).
+  pays for the idiom (JSC 5.24×, LuaJIT 9.76×, V8 30.23×).
 - **`collect` is near C.** It allocates 20000 string-owning nodes per
   round, drops one quarter of them, and reclaims those through an
-  explicit collection: 1.11× of C on the shipping tier, behind JSC
-  (0.96×) and ahead of V8 (2.62×) and LuaJIT (3.67×).
+  explicit collection: 1.08× of C on the shipping tier, behind JSC
+  (0.94×) and ahead of V8 (2.70×) and LuaJIT (3.66×).
 - **Against the JITs**, the shipping tier is ahead of LuaJIT on every row,
   level with JSC on the compute-bound rows and on `particles`, ahead of
   JSC and V8 on `callbacks`, and behind JSC on `collect`. JSC/V8 lead on
   `tree`, where garbage-collected bump allocation beats even C.
 - **The development tier trades execution speed for iteration speed** —
   the Cranelift JIT is tuned for compile speed and hot reload, not peak
-  codegen, and runs 1.04×–35.17×. That is the trade the tier exists to
+  codegen, and runs 1.04×–19.02×. That is the trade the tier exists to
   make; the next section measures the side it is paid on.
 
 ### Iteration speed
@@ -302,7 +302,7 @@ within 20 ms, and development-tier execution below a 25× ceiling.
 
 This is one benchmark set on one machine; treat the ratios as indicative,
 not a leaderboard. The table above is the arm64 / macOS snapshot (the
-shipping target), captured 2026-09-26. The shipping tier's `tree` median
+shipping target), captured 2026-09-27 at f682926. The shipping tier's `tree` median
 has two modes on one binary (about 1.55× and 2.01× of C in consecutive
 runs); this snapshot caught the upper one. An x86_64 / Windows snapshot
 (2026-09-26, at 0a066c9) is in
