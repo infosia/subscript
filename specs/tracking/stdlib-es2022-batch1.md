@@ -40,3 +40,24 @@ The checker at `48c802c` rejected every new form with S100: string
 RegExp separator, `trimLeft()`, `trimRight()`, array `indexOf`,
 `includes`, and `lastIndexOf` with a position, `splice(start)`, and
 `toString()` on a scalar and a nested array.
+
+## Landing
+
+Every accepted form rewrites to an existing intrinsic before lowering:
+`trimLeft`/`trimRight` to `TrimStart`/`TrimEnd`, `toString` to `Join`
+with `","`, `splice(start)` to `Splice` with a supplied count; the search
+positions and the `split` limit are one more `i32` operand on the
+existing runtime entries (computed in `i64`, so `length + fromIndex`
+does not overflow). `a264-string-array-search-positions` matches `node`
+byte for byte (175 bytes) on the dev JIT, the ship C, and the
+interpreter. The LIR text snapshot moved by one line: `a149`'s
+`indexOf` call gains the default position `0`.
+
+A fresh review ran every rule against `node` and both tiers, including
+non-ASCII byte offsets, `i32::MIN` and `i32::MAX` positions, a RegExp
+separator with captures and empty matches, and a nested `toString`: no
+CRITICAL or MAJOR. MINOR, open: a diagnostic names the resolved
+intrinsic (`trimStart`, `join`) where the source spelled `trimLeft` or
+`toString`.
+
+`gate full f55bcde dirty:21 debug 1707/0/2 release 1704/0/2 skips 2/0 clippy 5/18/13 goldens-moved 1 exit 0`.

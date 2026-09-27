@@ -1257,8 +1257,8 @@ pub unsafe extern "C" fn subscript_rt_str_index_of(
     unsafe { crate::strops::index_of(ctx.str_bytes(s), ctx.str_bytes(needle), from) }
 }
 
-/// `lastIndexOf(needle)`: last byte index or −1; an empty needle
-/// returns the length (Q21).
+/// `lastIndexOf(needle, position)`: last byte index at or before the clamped position.
+/// An empty needle returns the clamped position (stdlib.md §8.9).
 ///
 /// # Safety
 ///
@@ -1268,6 +1268,7 @@ pub unsafe extern "C" fn subscript_rt_str_last_index_of(
     ctx: *mut Context,
     s: *const u8,
     needle: *const u8,
+    position: i32,
 ) -> i32 {
     if s.is_null() || needle.is_null() {
         return -1;
@@ -1275,7 +1276,7 @@ pub unsafe extern "C" fn subscript_rt_str_last_index_of(
     // SAFETY: shared contract.
     let ctx = unsafe { &*ctx };
     // SAFETY: live string handles.
-    unsafe { crate::strops::last_index_of(ctx.str_bytes(s), ctx.str_bytes(needle)) }
+    unsafe { crate::strops::last_index_of(ctx.str_bytes(s), ctx.str_bytes(needle), position) }
 }
 
 /// `includes(needle, from)`: 1 when found, else 0. The checker supplies
@@ -1565,7 +1566,7 @@ pub unsafe extern "C" fn subscript_rt_str_code_point_at(
     }
 }
 
-/// `split(sep)`: a fresh `string[]` of the pieces between separator
+/// `split(sep, limit)`: a fresh `string[]`, capped by the ToUint32 limit, between separator
 /// matches (JS piece order; no match → `[whole]`). An empty separator
 /// splits at UTF-8 code-point boundaries. The elements are string handles stored as 8-byte
 /// values, exactly as a `string[]` literal stores them.
@@ -1578,6 +1579,7 @@ pub unsafe extern "C" fn subscript_rt_str_split(
     ctx: *mut Context,
     s: *const u8,
     sep: *const u8,
+    limit: i32,
     pos_id: u32,
 ) -> *mut u8 {
     if s.is_null() || sep.is_null() {
@@ -1598,7 +1600,12 @@ pub unsafe extern "C" fn subscript_rt_str_split(
     // holds no list of pieces of its own, so the first failed piece
     // stops it.
     let mut failed = false;
+    let mut remaining = limit as u32;
     crate::strops::split_each(hay, sep, |piece| {
+        if remaining == 0 {
+            return false;
+        }
+        remaining -= 1;
         let handle = ctx.alloc_str(piece, pos_id);
         if handle.is_null() {
             failed = true;
@@ -2055,7 +2062,7 @@ pub unsafe extern "C" fn subscript_rt_regex_replace_all(
     crate::regexops::replace_all(unsafe { &mut *ctx }, subject, regex, replacement, pos_id)
 }
 
-/// `string.split(RegExp)` with capture reinjection.
+/// `string.split(RegExp, limit)` with capture reinjection and a ToUint32 limit.
 ///
 /// # Safety
 ///
@@ -2065,10 +2072,11 @@ pub unsafe extern "C" fn subscript_rt_regex_split(
     ctx: *mut Context,
     subject: *const u8,
     regex: *const u8,
+    limit: i32,
     pos_id: u32,
 ) -> *mut u8 {
     // SAFETY: shared contract.
-    crate::regexops::split(unsafe { &mut *ctx }, subject, regex, pos_id)
+    crate::regexops::split(unsafe { &mut *ctx }, subject, regex, limit, pos_id)
 }
 
 /// Returns the last match's capture start byte, or -1.
@@ -3889,7 +3897,7 @@ unsafe fn decode_elem_kind(ctx: *mut Context, kind: u32) -> Option<crate::arrops
     decoded
 }
 
-/// `indexOf(x)`: first index under per-kind `===` equality, or −1
+/// `indexOf(x, from)`: first index under per-kind `===` equality, or −1
 /// (stdlib.md §9). `x` points at one element-sized value.
 ///
 /// # Safety
@@ -3902,16 +3910,17 @@ pub unsafe extern "C" fn subscript_rt_arr_index_of(
     a: *mut u8,
     x: *const u8,
     kind: u32,
+    from: i32,
 ) -> i32 {
     // SAFETY: shared contract (forwarded).
     let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
         return -1;
     };
     // SAFETY: shared contract.
-    unsafe { crate::arrops::index_of(ctx, a, x, kind) }
+    unsafe { crate::arrops::index_of(ctx, a, x, kind, from) }
 }
 
-/// `lastIndexOf(x)`: last index or −1.
+/// `lastIndexOf(x, from)`: last index or −1, with the position rules of stdlib.md §9.9.
 ///
 /// # Safety
 ///
@@ -3922,16 +3931,17 @@ pub unsafe extern "C" fn subscript_rt_arr_last_index_of(
     a: *mut u8,
     x: *const u8,
     kind: u32,
+    from: i32,
 ) -> i32 {
     // SAFETY: shared contract (forwarded).
     let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
         return -1;
     };
     // SAFETY: shared contract.
-    unsafe { crate::arrops::last_index_of(ctx, a, x, kind) }
+    unsafe { crate::arrops::last_index_of(ctx, a, x, kind, from) }
 }
 
-/// `includes(x)`: 1 when found under SameValueZero equality, else 0.
+/// `includes(x, from)`: 1 when found under SameValueZero equality, else 0.
 ///
 /// # Safety
 ///
@@ -3942,13 +3952,14 @@ pub unsafe extern "C" fn subscript_rt_arr_includes(
     a: *mut u8,
     x: *const u8,
     kind: u32,
+    from: i32,
 ) -> i32 {
     // SAFETY: shared contract (forwarded).
     let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
         return 0;
     };
     // SAFETY: shared contract.
-    unsafe { crate::arrops::includes(ctx, a, x, kind) }
+    unsafe { crate::arrops::includes(ctx, a, x, kind, from) }
 }
 
 /// `join(sep)`: Q14-formatted elements separated by `sep` (stdlib.md
@@ -6293,8 +6304,8 @@ mod tests {
             assert_eq!(subscript_rt_str_index_of(p, s, o, -3), 4);
             assert_eq!(subscript_rt_str_index_of(p, s, o, 99), -1);
             assert_eq!(subscript_rt_str_index_of(p, s, empty, 99), 11);
-            assert_eq!(subscript_rt_str_last_index_of(p, s, o), 7);
-            assert_eq!(subscript_rt_str_last_index_of(p, s, empty), 11);
+            assert_eq!(subscript_rt_str_last_index_of(p, s, o, i32::MAX), 7);
+            assert_eq!(subscript_rt_str_last_index_of(p, s, empty, i32::MAX), 11);
             assert_eq!(subscript_rt_str_includes(p, s, world, 0), 1);
             assert_eq!(subscript_rt_str_includes(p, s, world, 7), 0);
             assert_eq!(subscript_rt_str_includes(p, s, empty, 0), 1);
@@ -6388,7 +6399,7 @@ mod tests {
         unsafe {
             let s = subscript_rt_str_lit(p, S.as_ptr(), S.len() as u64, 0);
             let comma = subscript_rt_str_lit(p, b",".as_ptr(), 1, 0);
-            let arr = subscript_rt_str_split(p, s, comma, 0);
+            let arr = subscript_rt_str_split(p, s, comma, -1, 0);
             assert!(!arr.is_null());
             assert_eq!(subscript_rt_array_len(p, arr), 3);
             let data = subscript_rt_array_data(p, arr) as *const u64;
@@ -6409,7 +6420,7 @@ mod tests {
         unsafe {
             let s = subscript_rt_str_lit(p, b"ab".as_ptr(), 2, 0);
             let empty = subscript_rt_str_lit(p, b"".as_ptr(), 0, 0);
-            let arr = subscript_rt_str_split(p, s, empty, 23);
+            let arr = subscript_rt_str_split(p, s, empty, -1, 23);
             assert!(!arr.is_null());
             assert_eq!(subscript_rt_array_len(p, arr), 2);
             let data = subscript_rt_array_data(p, arr) as *const u64;
@@ -7067,7 +7078,7 @@ mod tests {
         ctx.clear_trap();
         // SAFETY: the array method validates the retained dead receiver first.
         assert_eq!(
-            unsafe { subscript_rt_arr_index_of(p, array, (&raw const value).cast(), 0) },
+            unsafe { subscript_rt_arr_index_of(p, array, (&raw const value).cast(), 0, 0) },
             -1
         );
         let trap = ctx.trap_record().expect("array method trap");
@@ -7278,15 +7289,15 @@ mod tests {
             }
             let one = 1i32;
             assert_eq!(
-                subscript_rt_arr_index_of(p, a, (&one as *const i32).cast(), 0),
+                subscript_rt_arr_index_of(p, a, (&one as *const i32).cast(), 0, 0),
                 1
             );
             assert_eq!(
-                subscript_rt_arr_last_index_of(p, a, (&one as *const i32).cast(), 0),
+                subscript_rt_arr_last_index_of(p, a, (&one as *const i32).cast(), 0, i32::MAX),
                 3
             );
             assert_eq!(
-                subscript_rt_arr_includes(p, a, (&one as *const i32).cast(), 0),
+                subscript_rt_arr_includes(p, a, (&one as *const i32).cast(), 0, 0),
                 1
             );
             let sep = ctx.alloc_str(b"-", 0);
@@ -7331,7 +7342,7 @@ mod tests {
         // SAFETY: valid context; live array; readable needle.
         unsafe {
             assert_eq!(
-                subscript_rt_arr_index_of(p, a, (&x as *const i32).cast(), 99),
+                subscript_rt_arr_index_of(p, a, (&x as *const i32).cast(), 99, 0),
                 -1
             );
         }

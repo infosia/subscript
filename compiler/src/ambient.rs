@@ -770,6 +770,11 @@ pub(crate) fn date_method(name: &str) -> Option<DateMethod> {
 /// Maps a `String` method name to its intrinsic (stdlib.md §8, Q21).
 /// The out-of-subset members resolve to nothing.
 pub(crate) fn str_method(name: &str) -> Option<StrFn> {
+    let name = match name {
+        "trimLeft" => "trimStart",
+        "trimRight" => "trimEnd",
+        other => other,
+    };
     StrFn::ALL.iter().copied().find(|f| f.name() == name)
 }
 
@@ -777,6 +782,7 @@ pub(crate) fn str_method(name: &str) -> Option<StrFn> {
 /// `push`/`pop` are not here; they stay on the `Callee::Method` path.
 /// The out-of-subset members resolve to nothing.
 pub(crate) fn arr_method(name: &str) -> Option<ArrFn> {
+    let name = if name == "toString" { "join" } else { name };
     ArrFn::ALL.iter().copied().find(|f| f.name() == name)
 }
 
@@ -1002,6 +1008,16 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
         signature: "length: i32".to_string(),
         summary: "Returns the UTF-8 byte length.",
     });
+    for (group, signature, summary) in [
+        ("string", "trimLeft(): string", "Alias of trimStart()."),
+        ("string", "trimRight(): string", "Alias of trimEnd()."),
+    ] {
+        out.push(ApiItem {
+            group,
+            signature: signature.to_string(),
+            summary,
+        });
+    }
     for f in StrFn::ALL {
         out.push(ApiItem {
             group: "string",
@@ -1055,6 +1071,11 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             summary,
         });
     }
+    out.push(ApiItem {
+        group: "T[]",
+        signature: "toString(): string".to_string(),
+        summary: "Joins interpolatable elements with a comma.",
+    });
     for f in ArrFn::ALL {
         out.push(ApiItem {
             group: "T[]",
@@ -1560,7 +1581,7 @@ mod tests {
         }
 
         let regex_rows = 1 + RegexFn::ALL.len();
-        let expected = AmbientFn::ALL.len()
+        let expected = 3 + AmbientFn::ALL.len()
             + ContextBytesFn::ALL.len()
             + 1
             + 2

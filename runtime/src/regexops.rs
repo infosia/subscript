@@ -503,6 +503,7 @@ pub(crate) fn split(
     ctx: &mut Context,
     subject: *const u8,
     regex: *const u8,
+    limit: i32,
     pos_id: u32,
 ) -> *mut u8 {
     let Some(text) = self::subject(ctx, subject, "RegExp subject", pos_id) else {
@@ -514,6 +515,10 @@ pub(crate) fn split(
     let array = ctx.array_new(8, pos_id);
     if array.is_null() {
         return std::ptr::null_mut();
+    }
+    let mut remaining = limit as u32;
+    if remaining == 0 {
+        return array;
     }
     if text.is_empty() {
         let Some(found) = budgeted_find(ctx, &compiled, text, 0, pos_id) else {
@@ -551,12 +556,22 @@ pub(crate) fn split(
         ) {
             return std::ptr::null_mut();
         }
+        remaining -= 1;
+        if remaining == 0 {
+            ctx.regex_store().record(regex, Some(found));
+            return array;
+        }
         for capture in &found.captures {
             let bytes = capture
                 .as_ref()
                 .map_or(&[][..], |range| &text.as_bytes()[range.clone()]);
             if !push_string(ctx, array, bytes, pos_id) {
                 return std::ptr::null_mut();
+            }
+            remaining -= 1;
+            if remaining == 0 {
+                ctx.regex_store().record(regex, Some(found));
+                return array;
             }
         }
         previous_end = found.range.end;
@@ -632,7 +647,7 @@ mod tests {
     fn split_text(ctx: &mut Context, subject: &str, pattern: &str) -> Vec<Vec<u8>> {
         let regex = regex(ctx, pattern, "");
         let subject = string(ctx, subject);
-        let result = split(ctx, subject, regex, 0);
+        let result = split(ctx, subject, regex, -1, 0);
         assert!(!result.is_null());
         // SAFETY: `split` returned a live array of live string handles.
         unsafe {

@@ -764,7 +764,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
                 R::Source | R::Flags => (&[I64, I64, I32], I64),
                 R::Search => (&[I64, I64, I64, I32], I32),
                 R::Replace | R::ReplaceAll => (&[I64, I64, I64, I64, I32], I64),
-                R::Split => (&[I64, I64, I64, I32], I64),
+                R::Split => (&[I64, I64, I64, I32, I32], I64),
                 R::MatchStart | R::MatchEnd => (&[I64, I64, I32, I32], I32),
                 other => return Err(internal(format!("unknown RegexFn {other:?}"))),
             };
@@ -782,8 +782,8 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
     for f in ArrFn::ALL {
         use ArrFn as A;
         let (params, ret): (&[types::Type], Option<types::Type>) = match f {
-            // (ctx, recv, x_ptr, kind) -> i32
-            A::IndexOf | A::LastIndexOf | A::Includes => (&[I64, I64, I64, I32], Some(I32)),
+            // (ctx, recv, x_ptr, kind, from) -> i32
+            A::IndexOf | A::LastIndexOf | A::Includes => (&[I64, I64, I64, I32, I32], Some(I32)),
             // (ctx, recv, sep, fmt_kind, pos_id) -> str handle
             A::Join => (&[I64, I64, I64, I32, I32], Some(I64)),
             // (ctx, recv, start, end, pos_id) -> array handle

@@ -883,6 +883,14 @@ impl<'p> Checker<'p> {
                 }
                 other => {
                     // The §9 method intrinsics (stdlib.md §9, Q22).
+                    if other == "toString" && !c.args.is_empty() {
+                        self.error(
+                            RuleCode::S100,
+                            "`toString` expects no arguments",
+                            pos.clone(),
+                        );
+                        return self.err_expr(pos);
+                    }
                     if let Some(f) = crate::ambient::arr_method(other) {
                         return self.check_array_method(recv, (*elem).clone(), f, c, fx, pos);
                     }

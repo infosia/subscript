@@ -74,12 +74,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         "void*".into(),
                         "const void*".into(),
                         "uint32_t".into(),
+                        "int32_t".into(),
                     ],
                     &[
                         "ctx".into(),
                         receiver,
                         pointer,
                         format!("{}u", array_element_kind(self.emitter.module, element)?),
+                        argument(2)?,
                     ],
                 )
             }

@@ -156,7 +156,10 @@ impl<'p> Checker<'p> {
         let optional_slice = f == StrFn::Slice;
         let optional_zero_position =
             matches!(f, StrFn::IndexOf | StrFn::Includes | StrFn::StartsWith);
-        let optional_end_position = matches!(f, StrFn::EndsWith | StrFn::Substring | StrFn::Substr);
+        let optional_end_position = matches!(
+            f,
+            StrFn::LastIndexOf | StrFn::EndsWith | StrFn::Substring | StrFn::Substr
+        );
         let optional_pad = matches!(f, StrFn::PadStart | StrFn::PadEnd);
         let params: Vec<ParamSig> = f
             .params()
@@ -304,9 +307,26 @@ impl<'p> Checker<'p> {
         }
         match f {
             A::IndexOf | A::LastIndexOf | A::Includes => {
-                let params = [ParamSig::positional(elem.clone())];
+                let params = [
+                    ParamSig::positional(elem.clone()),
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: true,
+                    },
+                ];
                 let mut args = vec![recv];
                 args.extend(self.check_args(&params, &c.args, fx, &pos, f.name()));
+                if args.len() == 2 {
+                    args.push(int_default(
+                        if f == A::LastIndexOf {
+                            ArrFn::END_SENTINEL
+                        } else {
+                            0
+                        },
+                        &pos,
+                    ));
+                }
                 let ty = if f == A::Includes {
                     Type::Bool
                 } else {
@@ -416,11 +436,11 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                if c.args.len() != 2 {
+                if c.args.is_empty() {
                     self.error(
                         RuleCode::S100,
                         format!(
-                            "`splice` expects 2 arguments (start, deleteCount), got {}",
+                            "`splice` expects 1 or 2 arguments (start, deleteCount), got {}",
                             c.args.len()
                         ),
                         pos.clone(),
@@ -429,10 +449,17 @@ impl<'p> Checker<'p> {
                 }
                 let params = [
                     ParamSig::positional(Type::I32),
-                    ParamSig::positional(Type::I32),
+                    ParamSig {
+                        name: String::new(),
+                        ty: Type::I32,
+                        has_default: true,
+                    },
                 ];
                 let mut args = vec![recv];
                 args.extend(self.check_args(&params, &c.args, fx, &pos, "splice"));
+                if args.len() == 2 {
+                    args.push(int_default(ArrFn::END_SENTINEL, &pos));
+                }
                 mk(args, arr_ty, pos)
             }
             A::Shift => {

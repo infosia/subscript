@@ -1804,7 +1804,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("no Callee::Arr({}) call", f.name()))
                 .clone()
         };
-        assert_eq!(get(hir::ArrFn::IndexOf).1, 2); // recv + needle
+        assert_eq!(get(hir::ArrFn::IndexOf).1, 3); // recv + needle + from
         assert_eq!(get(hir::ArrFn::Join).1, 2); // recv + defaulted ","
         assert_eq!(get(hir::ArrFn::Slice).1, 3); // recv + start + end
         assert_eq!(get(hir::ArrFn::Fill).1, 4); // recv + x + start + end

@@ -2014,7 +2014,7 @@ impl RegexFn {
             RegexFn::ReplaceAll => {
                 "string.replaceAll(pattern: RegExp, replacement: string): string"
             }
-            RegexFn::Split => "string.split(separator: RegExp): string[]",
+            RegexFn::Split => "string.split(separator: RegExp, limit?: i32): string[]",
             RegexFn::MatchStart => "matchStart(group: i32): i32",
             RegexFn::MatchEnd => "matchEnd(group: i32): i32",
         }
@@ -2160,10 +2160,13 @@ impl StrFn {
     pub fn params(self) -> &'static [StrParam] {
         match self {
             StrFn::Slice | StrFn::Substring | StrFn::Substr => &[StrParam::I32, StrParam::I32],
-            StrFn::IndexOf | StrFn::Includes | StrFn::StartsWith | StrFn::EndsWith => {
-                &[StrParam::Str, StrParam::I32]
-            }
-            StrFn::LastIndexOf | StrFn::Split | StrFn::Concat => &[StrParam::Str],
+            StrFn::IndexOf
+            | StrFn::LastIndexOf
+            | StrFn::Split
+            | StrFn::Includes
+            | StrFn::StartsWith
+            | StrFn::EndsWith => &[StrParam::Str, StrParam::I32],
+            StrFn::Concat => &[StrParam::Str],
             StrFn::CharCodeAt | StrFn::Repeat | StrFn::CharAt | StrFn::CodePointAt => {
                 &[StrParam::I32]
             }
@@ -2212,12 +2215,12 @@ impl StrFn {
         match self {
             StrFn::Slice => "slice(start?: i32, end?: i32): string",
             StrFn::IndexOf => "indexOf(needle: string, from?: i32): i32",
-            StrFn::LastIndexOf => "lastIndexOf(needle: string): i32",
+            StrFn::LastIndexOf => "lastIndexOf(needle: string, position?: i32): i32",
             StrFn::Includes => "includes(needle: string, from?: i32): boolean",
             StrFn::StartsWith => "startsWith(needle: string, position?: i32): boolean",
             StrFn::EndsWith => "endsWith(needle: string, endPosition?: i32): boolean",
             StrFn::CharCodeAt => "charCodeAt(index: i32): i32",
-            StrFn::Split => "split(separator: string): string[]",
+            StrFn::Split => "split(separator: string, limit?: i32): string[]",
             StrFn::Trim => "trim(): string",
             StrFn::TrimStart => "trimStart(): string",
             StrFn::TrimEnd => "trimEnd(): string",
@@ -2528,9 +2531,9 @@ impl ArrFn {
     #[must_use]
     pub(crate) fn api_signature(self) -> &'static str {
         match self {
-            ArrFn::IndexOf => "indexOf(value: T): i32",
-            ArrFn::LastIndexOf => "lastIndexOf(value: T): i32",
-            ArrFn::Includes => "includes(value: T): boolean",
+            ArrFn::IndexOf => "indexOf(value: T, fromIndex?: i32): i32",
+            ArrFn::LastIndexOf => "lastIndexOf(value: T, fromIndex?: i32): i32",
+            ArrFn::Includes => "includes(value: T, fromIndex?: i32): boolean",
             ArrFn::Join => "join(separator?: string): string",
             ArrFn::Slice => "slice(start?: i32, end?: i32): T[]",
             ArrFn::Fill => "fill(value: T, start?: i32, end?: i32): T[]",
@@ -2561,7 +2564,7 @@ impl ArrFn {
             ArrFn::ReduceRight => {
                 "reduceRight<U>(callback: ((acc: U, value: T) => U) | ((acc: U, value: T, index: i32) => U), init: U): U"
             }
-            ArrFn::Splice => "splice(start: i32, deleteCount: i32): T[]",
+            ArrFn::Splice => "splice(start: i32, deleteCount?: i32): T[]",
             ArrFn::Shift => "shift(): T",
             ArrFn::Unshift => "unshift(value: T): i32",
             ArrFn::CopyWithin => "copyWithin(target: i32, start: i32, end?: i32): T[]",
@@ -4900,7 +4903,7 @@ mod tests {
         // Post-normalization parameter spellings (stdlib.md §8).
         assert_eq!(StrFn::IndexOf.params(), &[P::Str, P::I32]);
         assert_eq!(StrFn::Includes.params(), &[P::Str, P::I32]);
-        assert_eq!(StrFn::LastIndexOf.params(), &[P::Str]);
+        assert_eq!(StrFn::LastIndexOf.params(), &[P::Str, P::I32]);
         assert_eq!(StrFn::CharCodeAt.params(), &[P::I32]);
         assert_eq!(StrFn::Trim.params(), &[] as &[P]);
         assert_eq!(StrFn::PadStart.params(), &[P::I32, P::Str]);

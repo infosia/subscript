@@ -451,13 +451,14 @@ Accepted members on `T[]` (checker: `ArrFn` intrinsics; runtime
 `subscript_rt_arr_*`, one implementation, both tiers):
 
 Without closures —
-- `indexOf(x)/lastIndexOf(x)/includes(x)`: scalars by value, strings
+- `indexOf(x, fromIndex?)/lastIndexOf(x, fromIndex?)/includes(x, fromIndex?)`
+  (`fromIndex` added by §9.9): scalars by value, strings
   by content (`str_eq`), `Date` by millis, reference classes by
   identity. `indexOf`/`lastIndexOf` use JS `===` per kind;
   **`includes` uses SameValueZero** (Q22, revised 2026-07-25) and so
   finds `NaN`, as JS does. The two rules differ in that one case only.
 - `join(sep?): string` — `sep` defaults `","`; elements formatted by
-  the Q14 rules (the `${…}` formatting)
+  the Q14 rules (the `${…}` formatting); `toString()` is `join(",")` (§9.9)
 - `slice(start?, end?): T[]` — JS negative/clamp rules; fresh array
 - `fill(x, start?, end?)`, `reverse()` — in place; return the
   receiver

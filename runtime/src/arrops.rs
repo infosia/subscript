@@ -464,6 +464,7 @@ unsafe fn position(
     h: *mut u8,
     x: *const u8,
     kind: ElemKind,
+    from: i32,
     reverse: bool,
     same_value_zero: bool,
 ) -> i32 {
@@ -478,8 +479,20 @@ unsafe fn position(
     if unsafe { abi_or_trap(ctx, kind, esz) }.is_none() {
         return -1;
     }
-    for step in 0..n {
-        let i = if reverse { n - 1 - step } else { step };
+    let start = if from < 0 {
+        (n as i64) + i64::from(from)
+    } else {
+        i64::from(from)
+    };
+    let (first, count) = if reverse {
+        let first = start.min((n as i64) - 1);
+        (first, (first + 1).max(0))
+    } else {
+        let first = start.max(0).min(n as i64);
+        (first, (n as i64) - first)
+    };
+    for step in 0..count {
+        let i = if reverse { first - step } else { first + step };
         // SAFETY: `i < n`; caller contract.
         let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
         // SAFETY: element storage and needle are `esz` readable bytes.
@@ -490,32 +503,51 @@ unsafe fn position(
     -1
 }
 
-/// `indexOf(x)`: first index under per-kind `===` equality, or −1.
+/// `indexOf(x, from)`: first index under per-kind `===` equality, or −1.
+/// The position follows the negative and clamp rules of stdlib.md §9.9.
 ///
 /// # Safety
 ///
 /// `h` is a live array of `ctx` (or null); `x` is readable for the
 /// element size; string elements/needles are live handles.
-pub unsafe fn index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKind) -> i32 {
-    unsafe { position(ctx, h, x, kind, false, false) }
+pub unsafe fn index_of(
+    ctx: *mut Context,
+    h: *mut u8,
+    x: *const u8,
+    kind: ElemKind,
+    from: i32,
+) -> i32 {
+    unsafe { position(ctx, h, x, kind, from, false, false) }
 }
 
-/// `lastIndexOf(x)`: last index or −1.
+/// `lastIndexOf(x, from)`: last index or −1, with the position rules of stdlib.md §9.9.
 ///
 /// # Safety
 ///
 /// As [`index_of`].
-pub unsafe fn last_index_of(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKind) -> i32 {
-    unsafe { position(ctx, h, x, kind, true, false) }
+pub unsafe fn last_index_of(
+    ctx: *mut Context,
+    h: *mut u8,
+    x: *const u8,
+    kind: ElemKind,
+    from: i32,
+) -> i32 {
+    unsafe { position(ctx, h, x, kind, from, true, false) }
 }
 
-/// `includes(x)`: 1 when found under SameValueZero equality, else 0.
+/// `includes(x, from)`: 1 when found under SameValueZero equality, else 0.
 ///
 /// # Safety
 ///
 /// As [`index_of`].
-pub unsafe fn includes(ctx: *mut Context, h: *mut u8, x: *const u8, kind: ElemKind) -> i32 {
-    i32::from(unsafe { position(ctx, h, x, kind, false, true) } >= 0)
+pub unsafe fn includes(
+    ctx: *mut Context,
+    h: *mut u8,
+    x: *const u8,
+    kind: ElemKind,
+    from: i32,
+) -> i32 {
+    i32::from(unsafe { position(ctx, h, x, kind, from, false, true) } >= 0)
 }
 
 // ----- join -----
@@ -2111,28 +2143,31 @@ mod tests {
         let needle = |v: &i32| (v as *const i32).cast::<u8>();
         // SAFETY: live arrays/handles of `c`; needles readable.
         unsafe {
-            assert_eq!(index_of(p, h, needle(&n4), ElemKind::Int), 0);
-            assert_eq!(last_index_of(p, h, needle(&n4), ElemKind::Int), 2);
-            assert_eq!(index_of(p, h, needle(&n5), ElemKind::Int), -1);
-            assert_eq!(includes(p, h, needle(&n7), ElemKind::Int), 1);
-            assert_eq!(includes(p, h, needle(&n5), ElemKind::Int), 0);
+            assert_eq!(index_of(p, h, needle(&n4), ElemKind::Int, 0), 0);
+            assert_eq!(last_index_of(p, h, needle(&n4), ElemKind::Int, i32::MAX), 2);
+            assert_eq!(index_of(p, h, needle(&n5), ElemKind::Int, 0), -1);
+            assert_eq!(includes(p, h, needle(&n7), ElemKind::Int, 0), 1);
+            assert_eq!(includes(p, h, needle(&n5), ElemKind::Int, 0), 0);
 
             // Floats: -0 == 0 under both rules. SameValueZero makes
             // `includes` find NaN while index searches retain `===`.
             let f = arr_f64(&mut c, &[0.0, 1.5, f64::NAN]);
             let nz = -0.0f64;
-            assert_eq!(index_of(p, f, (&nz as *const f64).cast(), ElemKind::F64), 0);
+            assert_eq!(
+                index_of(p, f, (&nz as *const f64).cast(), ElemKind::F64, 0),
+                0
+            );
             let nan = f64::NAN;
             assert_eq!(
-                index_of(p, f, (&nan as *const f64).cast(), ElemKind::F64),
+                index_of(p, f, (&nan as *const f64).cast(), ElemKind::F64, 0),
                 -1
             );
             assert_eq!(
-                last_index_of(p, f, (&nan as *const f64).cast(), ElemKind::F64),
+                last_index_of(p, f, (&nan as *const f64).cast(), ElemKind::F64, i32::MAX),
                 -1
             );
             assert_eq!(
-                includes(p, f, (&nan as *const f64).cast(), ElemKind::F64),
+                includes(p, f, (&nan as *const f64).cast(), ElemKind::F64, 0),
                 1
             );
 
@@ -2140,12 +2175,12 @@ mod tests {
             let s = arr_str(&mut c, &["alpha", "beta"]);
             let fresh = c.alloc_str(b"beta", 0) as u64;
             assert_eq!(
-                index_of(p, s, (&fresh as *const u64).cast(), ElemKind::Str),
+                index_of(p, s, (&fresh as *const u64).cast(), ElemKind::Str, 0),
                 1
             );
             let miss = c.alloc_str(b"gamma", 0) as u64;
             assert_eq!(
-                index_of(p, s, (&miss as *const u64).cast(), ElemKind::Str),
+                index_of(p, s, (&miss as *const u64).cast(), ElemKind::Str, 0),
                 -1
             );
         }
@@ -2692,15 +2727,15 @@ mod tests {
         unsafe {
             c.array_push(h, a.as_ptr(), 0);
             c.array_push(h, b.as_ptr(), 0);
-            assert_eq!(index_of(p, h, b.as_ptr(), ElemKind::Int), -1);
+            assert_eq!(index_of(p, h, b.as_ptr(), ElemKind::Int, 0), -1);
         }
         assert!(c.trapped());
         assert_eq!(c.trap_record().map(|r| r.kind), Some(TrapKind::Internal));
         c.clear_trap();
         // SAFETY: as above.
         unsafe {
-            assert_eq!(last_index_of(p, h, a.as_ptr(), ElemKind::Int), -1);
-            assert_eq!(includes(p, h, a.as_ptr(), ElemKind::Int), 0);
+            assert_eq!(last_index_of(p, h, a.as_ptr(), ElemKind::Int, i32::MAX), -1);
+            assert_eq!(includes(p, h, a.as_ptr(), ElemKind::Int, 0), 0);
         }
         assert!(c.trapped());
         assert_eq!(c.trap_record().map(|r| r.kind), Some(TrapKind::Internal));

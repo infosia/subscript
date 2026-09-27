@@ -889,10 +889,20 @@ impl<'p> Checker<'p> {
         } else {
             1
         };
-        if c.args.len() != arity || c.args.iter().any(|arg| arg.spread.is_some()) {
+        if !(c.args.len() == arity || (name == "split" && c.args.len() == 2))
+            || c.args.iter().any(|arg| arg.spread.is_some())
+        {
             self.error(
                 RuleCode::S100,
-                format!("`{name}` expects {arity} argument(s), got {}", c.args.len()),
+                format!(
+                    "`{name}` expects {} argument(s), got {}",
+                    if name == "split" {
+                        "1 or 2".to_string()
+                    } else {
+                        arity.to_string()
+                    },
+                    c.args.len()
+                ),
                 pos.clone(),
             );
         }
@@ -907,17 +917,33 @@ impl<'p> Checker<'p> {
                 );
                 continue;
             }
-            let context = (index == 1).then_some(&Type::Str);
+            let second_type = if name == "split" {
+                Type::I32
+            } else {
+                Type::Str
+            };
+            let context = (index == 1).then_some(&second_type);
             let value = self.check_expr(&arg.expr, context, fx);
             if index == 1 {
                 self.require_assignable(
                     &value.ty.clone(),
-                    &Type::Str,
+                    &second_type,
                     value.pos.clone(),
-                    "the replacement",
+                    if name == "split" {
+                        "the limit"
+                    } else {
+                        "the replacement"
+                    },
                 );
             }
             checked.push(value);
+        }
+        if name == "split" && checked.len() == 1 {
+            checked.push(hir::Expr {
+                kind: ExprKind::Int(-1),
+                ty: Type::I32,
+                pos: pos.clone(),
+            });
         }
         let Some(pattern) = checked.first() else {
             return self.err_expr(pos);

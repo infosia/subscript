@@ -146,14 +146,16 @@
 | subscript signature | Behavior |
 |---|---|
 | `length: i32` | Returns the UTF-8 byte length. |
+| `trimLeft(): string` | Alias of trimStart(). |
+| `trimRight(): string` | Alias of trimEnd(). |
 | `slice(start?: i32, end?: i32): string` | Returns a fresh UTF-8 byte range using JS clamp and negative-index rules. |
 | `indexOf(needle: string, from?: i32): i32` | Returns the first matching byte index, or -1. |
-| `lastIndexOf(needle: string): i32` | Returns the last matching byte index, or -1. |
+| `lastIndexOf(needle: string, position?: i32): i32` | Returns the last matching byte index, or -1. |
 | `includes(needle: string, from?: i32): boolean` | Tests for a substring from an optional byte index. |
 | `startsWith(needle: string, position?: i32): boolean` | Tests for a prefix at an optional byte position. |
 | `endsWith(needle: string, endPosition?: i32): boolean` | Tests for a suffix ending at an optional byte position. |
 | `charCodeAt(index: i32): i32` | Returns one UTF-8 byte value; out of range traps. |
-| `split(separator: string): string[]` | Splits on a literal separator; an empty separator splits UTF-8 code points. |
+| `split(separator: string, limit?: i32): string[]` | Splits on a literal separator; an empty separator splits UTF-8 code points. |
 | `trim(): string` | Removes ECMA whitespace from both ends. |
 | `trimStart(): string` | Removes ECMA whitespace from the start. |
 | `trimEnd(): string` | Removes ECMA whitespace from the end. |
@@ -172,7 +174,7 @@
 | `string.search(pattern: RegExp): i32` | Returns the first UTF-8 byte offset, or -1. |
 | `string.replace(pattern: RegExp, replacement: string): string` | Replaces the first match with ECMA `$` substitutions. |
 | `string.replaceAll(pattern: RegExp, replacement: string): string` | Replaces every match with ECMA `$` substitutions; the RegExp must be global. |
-| `string.split(separator: RegExp): string[]` | Splits with capture reinjection. |
+| `string.split(separator: RegExp, limit?: i32): string[]` | Splits with capture reinjection. |
 
 ### RegExp
 
@@ -193,9 +195,10 @@
 | `length: i32` | Returns the element count. |
 | `push(value: T): i32` | Appends one element and returns the new length. |
 | `pop(): T` | Removes the last element; an empty array traps. |
-| `indexOf(value: T): i32` | Returns the first `===`-equal element index, or -1. |
-| `lastIndexOf(value: T): i32` | Returns the last `===`-equal element index, or -1. |
-| `includes(value: T): boolean` | Uses SameValueZero equality. |
+| `toString(): string` | Joins interpolatable elements with a comma. |
+| `indexOf(value: T, fromIndex?: i32): i32` | Returns the first `===`-equal element index, or -1. |
+| `lastIndexOf(value: T, fromIndex?: i32): i32` | Returns the last `===`-equal element index, or -1. |
+| `includes(value: T, fromIndex?: i32): boolean` | Uses SameValueZero equality. |
 | `join(separator?: string): string` | Formats elements with the language interpolation rules. |
 | `slice(start?: i32, end?: i32): T[]` | Returns a fresh range using JS clamp and negative-index rules. |
 | `fill(value: T, start?: i32, end?: i32): T[]` | Stores one value across a range and returns the receiver. |
@@ -210,7 +213,7 @@
 | `findIndex(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): i32` | Returns the first matching callback index, or -1. |
 | `sort(comparator: (left: T, right: T) => i32): T[]` | Stable-sorts in place with a required comparator. |
 | `reduceRight<U>(callback: ((acc: U, value: T) => U) \| ((acc: U, value: T, index: i32) => U), init: U): U` | Folds right-to-left from a required initial accumulator. |
-| `splice(start: i32, deleteCount: i32): T[]` | Deletes a clamped range in place and returns the removed elements. |
+| `splice(start: i32, deleteCount?: i32): T[]` | Deletes a clamped range in place and returns the removed elements. |
 | `shift(): T` | Removes the first element; an empty array traps. |
 | `unshift(value: T): i32` | Prepends one element and returns the new length. |
 | `copyWithin(target: i32, start: i32, end?: i32): T[]` | Copies a clamped range within the receiver and returns the receiver. |

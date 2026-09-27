@@ -2896,7 +2896,7 @@ impl<'m> Interpreter<'m> {
             } as i64),
             // SAFETY: live strings.
             "LastIndexOf" => Value::I(unsafe {
-                ffi::subscript_rt_str_last_index_of(context, receiver, handle(1)?)
+                ffi::subscript_rt_str_last_index_of(context, receiver, handle(1)?, integer(2)?)
             } as i64),
             // SAFETY: live strings and scalar byte position.
             "Includes" => Value::Bool(
@@ -2922,7 +2922,7 @@ impl<'m> Interpreter<'m> {
             } as i64),
             // SAFETY: live strings; runtime owns split allocation.
             "Split" => Value::Handle(unsafe {
-                ffi::subscript_rt_str_split(context, receiver, handle(1)?, 0)
+                ffi::subscript_rt_str_split(context, receiver, handle(1)?, integer(2)?, 0)
             }),
             // SAFETY: live string; runtime owns Unicode trimming.
             "Trim" => Value::Handle(unsafe { ffi::subscript_rt_str_trim(context, receiver, 0) }),
@@ -3046,7 +3046,7 @@ impl<'m> Interpreter<'m> {
             }),
             // SAFETY: operands are a live subject string and regex.
             "Split" => Value::Handle(unsafe {
-                ffi::subscript_rt_regex_split(context, handle(0)?, handle(1)?, 0)
+                ffi::subscript_rt_regex_split(context, handle(0)?, handle(1)?, integer(2)?, 0)
             }),
             // SAFETY: operand is a live regex and the group is an integer.
             "MatchStart" => Value::I(unsafe {
@@ -3335,14 +3335,26 @@ impl<'m> Interpreter<'m> {
                 let needle = packed(1)?;
                 // SAFETY: live array and correctly packed element.
                 Value::I(unsafe {
-                    ffi::subscript_rt_arr_index_of(context, array, needle.as_ptr(), kind)
+                    ffi::subscript_rt_arr_index_of(
+                        context,
+                        array,
+                        needle.as_ptr(),
+                        kind,
+                        integer(2)?,
+                    )
                 } as i64)
             }
             "LastIndexOf" => {
                 let needle = packed(1)?;
                 // SAFETY: live array and correctly packed element.
                 Value::I(unsafe {
-                    ffi::subscript_rt_arr_last_index_of(context, array, needle.as_ptr(), kind)
+                    ffi::subscript_rt_arr_last_index_of(
+                        context,
+                        array,
+                        needle.as_ptr(),
+                        kind,
+                        integer(2)?,
+                    )
                 } as i64)
             }
             "Includes" => {
@@ -3350,7 +3362,13 @@ impl<'m> Interpreter<'m> {
                 // SAFETY: live array and correctly packed element.
                 Value::Bool(
                     unsafe {
-                        ffi::subscript_rt_arr_includes(context, array, needle.as_ptr(), kind)
+                        ffi::subscript_rt_arr_includes(
+                            context,
+                            array,
+                            needle.as_ptr(),
+                            kind,
+                            integer(2)?,
+                        )
                     } != 0,
                 )
             }

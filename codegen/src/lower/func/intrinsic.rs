@@ -389,8 +389,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let value = self.materialize(value, &element)?;
                 let kind = array_element_kind(self.ml.lir, &element)?;
                 let kind = self.iconst(types::I32, i64::from(kind));
+                let from = scalar(self, 2)?;
                 let result = self
-                    .call_runtime(function, &[self.ctx, receiver, value, kind], checked)?
+                    .call_runtime(function, &[self.ctx, receiver, value, kind, from], checked)?
                     .ok_or_else(|| internal(format!("Array.{name} has no result")))?;
                 Ok(RV::Scalar(if name == "Includes" {
                     self.builder.ins().icmp_imm(IntCC::NotEqual, result, 0)

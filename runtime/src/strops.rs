@@ -68,17 +68,18 @@ pub fn index_of(hay: &[u8], needle: &[u8], from: i32) -> i32 {
     }
 }
 
-/// `lastIndexOf(needle)`: last byte index or −1; an empty needle
-/// returns the length (ECMA-262).
+/// `lastIndexOf(needle, position)`: last byte index at or before the clamped position.
+/// An empty needle returns the clamped position (stdlib.md §8.9).
 #[must_use]
-pub fn last_index_of(hay: &[u8], needle: &[u8]) -> i32 {
+pub fn last_index_of(hay: &[u8], needle: &[u8], position: i32) -> i32 {
+    let at = (position.max(0) as usize).min(hay.len());
     if needle.is_empty() {
-        return hay.len() as i32;
+        return at as i32;
     }
     if needle.len() > hay.len() {
         return -1;
     }
-    match (0..=hay.len() - needle.len())
+    match (0..=at.min(hay.len() - needle.len()))
         .rev()
         .find(|&i| &hay[i..i + needle.len()] == needle)
     {
@@ -556,13 +557,13 @@ mod tests {
     #[test]
     fn last_index_of_scans_from_the_end() {
         let s = b"hello world";
-        assert_eq!(last_index_of(s, b"o"), 7);
-        assert_eq!(last_index_of(s, b"z"), -1);
-        assert_eq!(last_index_of(s, b"hello"), 0);
+        assert_eq!(last_index_of(s, b"o", i32::MAX), 7);
+        assert_eq!(last_index_of(s, b"z", i32::MAX), -1);
+        assert_eq!(last_index_of(s, b"hello", i32::MAX), 0);
         // Empty needle: the length (ECMA-262).
-        assert_eq!(last_index_of(s, b""), 11);
-        assert_eq!(last_index_of(b"", b""), 0);
-        assert_eq!(last_index_of(b"ab", b"abc"), -1);
+        assert_eq!(last_index_of(s, b"", i32::MAX), 11);
+        assert_eq!(last_index_of(b"", b"", i32::MAX), 0);
+        assert_eq!(last_index_of(b"ab", b"abc", i32::MAX), -1);
     }
 
     #[test]
