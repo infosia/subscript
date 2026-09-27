@@ -1,11 +1,11 @@
 //! The exception surface of `compiler.md` §115.1–§115.3: the Error
 //! classes, `throw`, `try`/`catch`, the catch binding, and `instanceof`.
 //!
-//! `Error`, `SyntaxError`, and `TypeError` share one layout, so the checker
-//! builds one reference class for the three names. A hidden `u32` kind tag
+//! The Error classes share one layout, so the checker
+//! builds one reference class for the seven names. A hidden `u32` kind tag
 //! precedes the `name` and `message` fields, and `instanceof` reads the tag
-//! (§115.1 rule 3). The three names are one static type: TypeScript reads
-//! the three `lib.es5.d.ts` interfaces as one shape, so an assignment
+//! (§115.1 rule 3). The seven names are one static type: TypeScript reads
+//! the seven `lib.es5.d.ts` interfaces as one shape, so an assignment
 //! between two of them is `tsc`-clean in both directions.
 
 use std::collections::HashSet;
@@ -20,44 +20,36 @@ use crate::types::{ClassId, Type};
 
 use super::{Checker, FnCtx, Local};
 
-/// The kind tag of an Error-family object (§115.1 rule 3).
+/// The class names and stable tags of the Error family (stdlib.md §19.1).
+pub(crate) const ERROR_CLASSES: &[&str] = &[
+    "Error",
+    "SyntaxError",
+    "TypeError",
+    "RangeError",
+    "ReferenceError",
+    "EvalError",
+    "URIError",
+];
+
+/// One index into the Error class table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ErrorKind {
-    Error,
-    Syntax,
-    Type,
-}
+pub(crate) struct ErrorKind(usize);
 
 impl ErrorKind {
-    /// The class that an ambient name selects.
     pub(crate) fn from_name(name: &str) -> Option<Self> {
-        Some(match name {
-            "Error" => Self::Error,
-            "SyntaxError" => Self::Syntax,
-            "TypeError" => Self::Type,
-            _ => return None,
-        })
+        ERROR_CLASSES
+            .iter()
+            .position(|candidate| *candidate == name)
+            .map(Self)
     }
 
     fn tag(self) -> i64 {
-        match self {
-            Self::Error => 0,
-            Self::Syntax => 1,
-            Self::Type => 2,
-        }
+        self.0 as i64
     }
-
     fn name(self) -> &'static str {
-        match self {
-            Self::Error => "Error",
-            Self::Syntax => "SyntaxError",
-            Self::Type => "TypeError",
-        }
+        ERROR_CLASSES[self.0]
     }
 }
-
-/// The number of Error-family kinds. Every tag is below it.
-const ERROR_KIND_COUNT: i64 = 3;
 
 /// The path that an `instanceof` test narrows in its true branch, when
 /// `condition` is one (§115.3 rule 5).
@@ -215,7 +207,7 @@ impl Checker<'_> {
         visit(self, ty, &mut HashSet::new())
     }
 
-    /// `new Error(message?)`, `new SyntaxError(…)`, `new TypeError(…)`
+    /// Constructs an Error-family object with an optional message.
     /// (§115.1 rule 2).
     pub(crate) fn check_error_new(
         &mut self,
@@ -368,7 +360,7 @@ impl Checker<'_> {
                     self.error_diverging(
                         RuleCode::S010,
                         format!(
-                            "`throw` requires an `Error`, `SyntaxError`, or `TypeError` object; \
+                            "`throw` requires an Error-family object; \
                              this operand has type `{found}`"
                         ),
                         pos.clone(),
@@ -515,7 +507,7 @@ impl Checker<'_> {
         let Some(kind) = kind else {
             self.error_diverging(
                 RuleCode::S100,
-                "`instanceof` accepts only `Error`, `SyntaxError`, and `TypeError` as its right operand",
+                "`instanceof` requires an Error-family class as its right operand",
                 pos.clone(),
                 Divergence::InstanceofNonError,
             );
@@ -552,7 +544,7 @@ impl Checker<'_> {
         };
         let (op, constant) = match kind {
             // Every Error-family object is an `Error`.
-            ErrorKind::Error => (BinOp::Lt, ERROR_KIND_COUNT),
+            ErrorKind(0) => (BinOp::Lt, ERROR_CLASSES.len() as i64),
             other => (BinOp::Eq, other.tag()),
         };
         hir::Expr {
@@ -568,5 +560,30 @@ impl Checker<'_> {
             ty: Type::Bool,
             pos,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_table_preserves_tags_and_names() {
+        let expected = [
+            "Error",
+            "SyntaxError",
+            "TypeError",
+            "RangeError",
+            "ReferenceError",
+            "EvalError",
+            "URIError",
+        ];
+        assert_eq!(ERROR_CLASSES, expected);
+        for (tag, name) in expected.iter().enumerate() {
+            let kind = ErrorKind::from_name(name).unwrap();
+            assert_eq!(kind.tag(), tag as i64);
+            assert_eq!(kind.name(), *name);
+        }
+        assert_eq!(ErrorKind::from_name("UnknownError"), None);
     }
 }

@@ -145,6 +145,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     bool_result,
                 )?
             }
+            l::IntrinsicFamily::Text => {
+                let function = *self
+                    .ml
+                    .rt
+                    .text
+                    .get(intrinsic.operation as usize)
+                    .ok_or_else(|| internal(format!("Text.{name} operation is out of range")))?;
+                self.simple_runtime_intrinsic(function, operands, Some(pos), checked, false)?
+            }
             l::IntrinsicFamily::Json => {
                 let function = *self
                     .ml

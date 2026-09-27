@@ -482,6 +482,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 None,
                 None,
             )),
+            hir::Callee::Text(value) => Ok(intrinsic_resolution(
+                l::IntrinsicFamily::Text,
+                intrinsic_index(&hir::TextFn::ALL, value),
+                None,
+                None,
+            )),
             hir::Callee::Json(value) => Ok(intrinsic_resolution(
                 l::IntrinsicFamily::Json,
                 intrinsic_index(&hir::JsonFn::ALL, value),

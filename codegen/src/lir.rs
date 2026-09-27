@@ -350,6 +350,7 @@ fn intrinsic_operations() -> Vec<l::IntrinsicOperation> {
                 }
             }),
     );
+    append(&mut table, l::IntrinsicFamily::Text, &hir::TextFn::ALL);
     table
 }
 
@@ -406,6 +407,15 @@ fn intrinsic_runtime_symbol(family: l::IntrinsicFamily, name: &str) -> Option<&'
         (l::IntrinsicFamily::Number, "ToStringF64") => "subscript_rt_num_to_string_f64",
         (l::IntrinsicFamily::Number, "ToExponential") => "subscript_rt_num_to_exponential",
         (l::IntrinsicFamily::Number, "ToPrecision") => "subscript_rt_num_to_precision",
+        (l::IntrinsicFamily::Text, "ErrorToString") => "subscript_rt_error_to_string",
+        (l::IntrinsicFamily::Text, "EncodeUri") => "subscript_rt_encode_uri",
+        (l::IntrinsicFamily::Text, "EncodeComponent") => "subscript_rt_encode_uri_component",
+        (l::IntrinsicFamily::Text, "DecodeUri") => "subscript_rt_decode_uri",
+        (l::IntrinsicFamily::Text, "DecodeComponent") => "subscript_rt_decode_uri_component",
+        (l::IntrinsicFamily::Text, "UriFailure") => "subscript_rt_decode_uri_failure",
+        (l::IntrinsicFamily::Text, "ComponentFailure") => {
+            "subscript_rt_decode_uri_component_failure"
+        }
         (l::IntrinsicFamily::Json, "Begin") => "subscript_rt_json_begin",
         (l::IntrinsicFamily::Json, "BeginTracked") => "subscript_rt_json_begin_tracked",
         (l::IntrinsicFamily::Json, "Finish") => "subscript_rt_json_finish",
@@ -531,6 +541,12 @@ fn lower_operation_signature(signature: &hir::OperationSignature) -> l::CallSign
         hir::OperationSignatureTarget::Date(function) => intrinsic(
             l::IntrinsicFamily::Date,
             intrinsic_index(&hir::DateFn::ALL, function),
+            None,
+            None,
+        ),
+        hir::OperationSignatureTarget::Text(function) => intrinsic(
+            l::IntrinsicFamily::Text,
+            intrinsic_index(&hir::TextFn::ALL, function),
             None,
             None,
         ),

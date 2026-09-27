@@ -885,6 +885,30 @@ const SET_SOURCE_SUMMARY: &str = "Constructs a set from one source in first-occu
 /// generator.
 pub(crate) fn accepted_api() -> Vec<ApiItem> {
     let mut out = Vec::new();
+    for name in crate::check::exception::ERROR_CLASSES {
+        out.push(ApiItem {
+            group: "Error constructors",
+            signature: format!("new {name}(message?: string): Error"),
+            summary: "Constructs an Error-family object with a class tag, name, and message.",
+        });
+    }
+    out.push(ApiItem {
+        group: "Error instance",
+        signature: "toString(): string".to_string(),
+        summary: "Formats the current name and message with the uncaught-report rule.",
+    });
+    for name in [
+        "encodeURI",
+        "encodeURIComponent",
+        "decodeURI",
+        "decodeURIComponent",
+    ] {
+        out.push(ApiItem {
+            group: "Global",
+            signature: format!("{name}(value: string): string"),
+            summary: "Transforms UTF-8 URI text; malformed decode input raises URIError.",
+        });
+    }
     for f in [AmbientFn::Print, AmbientFn::Unreachable] {
         out.push(ApiItem {
             group: "Global",
@@ -1600,7 +1624,7 @@ mod tests {
         }
 
         let regex_rows = 1 + RegexFn::ALL.len();
-        let expected = 7 + AmbientFn::ALL.len()
+        let expected = 12 + 7 + AmbientFn::ALL.len()
             + ContextBytesFn::ALL.len()
             + 1
             + 2

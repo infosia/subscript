@@ -35,6 +35,7 @@ pub(crate) mod regexops;
 pub mod registration;
 pub mod strops;
 pub mod trap;
+mod uri;
 mod valeq;
 pub mod worker;
 

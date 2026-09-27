@@ -6,10 +6,32 @@
 
 ## Accepted surface
 
+### Error constructors
+
+| subscript signature | Behavior |
+|---|---|
+| `new Error(message?: string): Error` | Constructs an Error-family object with a class tag, name, and message. |
+| `new SyntaxError(message?: string): Error` | Constructs an Error-family object with a class tag, name, and message. |
+| `new TypeError(message?: string): Error` | Constructs an Error-family object with a class tag, name, and message. |
+| `new RangeError(message?: string): Error` | Constructs an Error-family object with a class tag, name, and message. |
+| `new ReferenceError(message?: string): Error` | Constructs an Error-family object with a class tag, name, and message. |
+| `new EvalError(message?: string): Error` | Constructs an Error-family object with a class tag, name, and message. |
+| `new URIError(message?: string): Error` | Constructs an Error-family object with a class tag, name, and message. |
+
+### Error instance
+
+| subscript signature | Behavior |
+|---|---|
+| `toString(): string` | Formats the current name and message with the uncaught-report rule. |
+
 ### Global
 
 | subscript signature | Behavior |
 |---|---|
+| `encodeURI(value: string): string` | Transforms UTF-8 URI text; malformed decode input raises URIError. |
+| `encodeURIComponent(value: string): string` | Transforms UTF-8 URI text; malformed decode input raises URIError. |
+| `decodeURI(value: string): string` | Transforms UTF-8 URI text; malformed decode input raises URIError. |
+| `decodeURIComponent(value: string): string` | Transforms UTF-8 URI text; malformed decode input raises URIError. |
 | `print(message: string): void` | Writes one line to the Context output sink. |
 | `unreachable(): never` | Marks a call-statement path as diverging and traps if execution reaches it. |
 | `NaN: f64` | Ambient NaN literal used by floating-point APIs. |

@@ -2405,6 +2405,7 @@ impl<'m> Interpreter<'m> {
             l::IntrinsicFamily::Date => self.intrinsic_date(operation, operands),
             l::IntrinsicFamily::String => self.intrinsic_string(operation, operands),
             l::IntrinsicFamily::Regex => self.intrinsic_regex(operation, operands),
+            l::IntrinsicFamily::Text => self.intrinsic_text(operation, operands),
             l::IntrinsicFamily::Json => self.intrinsic_json(operation, operands, result_ty),
             l::IntrinsicFamily::Array => {
                 self.intrinsic_array(operation, operands, parameter_types, result_ty)
@@ -7248,3 +7249,5 @@ fn assoc_key_kind(ty: &Type, module: &l::Module) -> u32 {
 #[cfg(test)]
 #[path = "interpreter/completion_tests.rs"]
 mod completion_tests;
+
+mod text;

@@ -6,6 +6,9 @@
 //! generic template. A discovery HIR can contain [`Type::Error`] and one
 //! or more [`PoisonedImport`] records.
 
+mod text;
+pub use text::TextFn;
+
 use crate::diag::Pos;
 use crate::types::{CallbackLifetime, ClassId, EnumId, HandleClass, HandleKind, IterKind, Type};
 
@@ -210,6 +213,8 @@ pub enum OperationSignatureTarget {
     Date(DateFn),
     /// A JSON operation.
     Json(JsonFn),
+    /// Error formatting and URI text operations (stdlib.md §19).
+    Text(TextFn),
     /// A String operation.
     Str(StrFn),
     /// A regular-expression operation.
@@ -3197,6 +3202,8 @@ pub enum Callee {
     /// One internal leaf of a checker-generated `JSON.stringify<T>` or
     /// `JSON.parse<T>` helper graph (stdlib.md §13, Q28).
     Json(JsonFn),
+    /// Error formatting and URI text operations (stdlib.md §19).
+    Text(TextFn),
     /// A `String` method intrinsic (stdlib.md §8, Q21). The receiver is
     /// the first argument; optional arguments were normalized at check
     /// time, so the arity is `1 + f.params().len()` exactly.
@@ -3240,6 +3247,7 @@ impl Callee {
             Callee::Num(f) => f.takes_pos_id(),
             Callee::Date(f) => f.can_trap(),
             Callee::Json(f) => f.can_trap(),
+            Callee::Text(_) => true,
             Callee::Str(f) => f.takes_pos_id(),
             Callee::Regex(f) => f.can_trap(),
             Callee::Arr(f) => f.can_trap(),
@@ -3267,6 +3275,7 @@ pub fn operation_signature_target(
         Callee::Num(function) => OperationSignatureTarget::Num(*function),
         Callee::Date(function) => OperationSignatureTarget::Date(*function),
         Callee::Json(function) => OperationSignatureTarget::Json(*function),
+        Callee::Text(function) => OperationSignatureTarget::Text(*function),
         Callee::Str(function) => OperationSignatureTarget::Str(*function),
         Callee::Regex(function) => OperationSignatureTarget::Regex(*function),
         Callee::Arr(function) => OperationSignatureTarget::Arr(*function),

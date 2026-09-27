@@ -1512,7 +1512,7 @@ mod tests {
         assert_eq!(err[0].code, RuleCode::S010);
         assert_eq!(
             err[0].message,
-            "`throw` requires an `Error`, `SyntaxError`, or `TypeError` object; \
+            "`throw` requires an Error-family object; \
              this operand has type `string`"
         );
         assert_eq!(err[0].pos.line, 2);

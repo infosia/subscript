@@ -824,11 +824,15 @@ impl Checker<'_> {
         // reason of a syntax failure, and creates no document for it.
         let syntax_error = {
             let message = self.json_call(JsonFn::ParseFailure, Vec::new(), Type::Str, &pos);
-            self.error_new(ErrorKind::Syntax, message, pos.clone())
+            self.error_new(
+                ErrorKind::from_name("SyntaxError").ok_or("missing SyntaxError class")?,
+                message,
+                pos.clone(),
+            )
         };
         // §115.7 rule 5: the document is released before the raise.
         let type_error = self.error_new(
-            ErrorKind::Type,
+            ErrorKind::from_name("TypeError").ok_or("missing TypeError class")?,
             json_string(
                 &format!("JSON.parse: document does not match {spelling}"),
                 &pos,

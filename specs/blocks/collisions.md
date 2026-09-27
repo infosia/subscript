@@ -137,7 +137,7 @@ this project's, so an entry that prints one is not `js-comparable`.
 *(Until 2026-09-26 this entry held "exceptions — out", with fallible
 operations returning result values. `a18` keeps that pattern as one
 accepted style.)*
-Accept: `a18`, `a250`–`a257`. Reject: `r11-throw` (a non-Error
+Accept: `a18`, `a250`–`a257`, `a267` (stdlib §19). Reject: `r11-throw` (a non-Error
 operand), `r233`, `r236`–`r239`. Trap: `t61`–`t67`. Accept adds
 `a258`–`a261` (§116). `retired:r234-try-holds-await` and
 `retired:r235-try-holds-yield` by §116.

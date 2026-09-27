@@ -266,7 +266,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 operand_types,
                 result,
             ),
-            l::IntrinsicFamily::Json => {
+            l::IntrinsicFamily::Json | l::IntrinsicFamily::Text => {
                 let symbol = runtime_symbol
                     .as_deref()
                     .ok_or_else(|| internal(format!("JSON.{name} has no runtime symbol")))?;

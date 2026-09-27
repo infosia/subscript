@@ -806,6 +806,8 @@ pub enum IntrinsicFamily {
     Date,
     /// JSON helper leaves.
     Json,
+    /// Error formatting and URI text operations.
+    Text,
     /// String operations.
     String,
     /// Regular-expression operations.

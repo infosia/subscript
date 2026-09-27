@@ -1,0 +1,54 @@
+Error m Error: m true
+true false false false false false false
+SyntaxError m SyntaxError: m true
+true true false false false false false
+TypeError m TypeError: m true
+true false true false false false false
+RangeError m RangeError: m true
+true false false true false false false
+ReferenceError m ReferenceError: m true
+true false false false true false false
+EvalError m EvalError: m true
+true false false false false true false
+URIError m URIError: m true
+true false false false false false true
+x
+N
+a%20b
+a%20b
+h%C3%A9llo
+h%C3%A9llo
+%F0%9F%98%80
+%F0%9F%98%80
+a%26b%3Dc%2Fd%3Fe%23f
+a&b=c/d?e#f
+-_.!~*'()
+-_.!~*'()
+%3B%2C%2F%3F%3A%40%26%3D%2B%24%23
+;,/?:@&=+$#
+
+
+%25
+%25
+%E2%80%A8
+%E2%80%A8
+a b
+a b
+€
+€
+😀
+😀
+;/?
+%3B%2F%3F
+true URIError
+true URIError
+true URIError
+true URIError
+true URIError
+true URIError
+true URIError
+true URIError
+true URIError
+true URIError
+true URIError
+true URIError

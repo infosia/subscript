@@ -333,7 +333,7 @@ pub(crate) fn call_can_raise(module: &Module, callee: &Callee, _args: &[Expr]) -
             .method(&recv.ty, name)
             .is_some_and(|method| method.can_raise && !method.is_async),
         Callee::Value(_) => true,
-        Callee::Foreign(_) | Callee::Worker(_) | Callee::Json(_) => false,
+        Callee::Text(_) | Callee::Foreign(_) | Callee::Worker(_) | Callee::Json(_) => false,
         Callee::Ambient(_)
         | Callee::ContextBytes { .. }
         | Callee::Math(_)

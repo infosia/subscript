@@ -4,7 +4,7 @@
 
 ## Current-state surface summary
 
-subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. Exported functions are host entry points. Types are explicit and nominal; only `Error`, `SyntaxError`, and `TypeError` objects are thrown, and dynamic evaluation, `any`, general unions, ordinary `undefined` values, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.
+subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. Exported functions are host entry points. Types are explicit and nominal; only Error-family objects are thrown, and dynamic evaluation, `any`, general unions, ordinary `undefined` values, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.
 
 ## Rejection rules
 

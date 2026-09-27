@@ -139,6 +139,9 @@ impl<'p> Checker<'p> {
                 self.err_expr(pos)
             }
             None => {
+                if let Some(function) = super::super::text::uri_function(&name) {
+                    return self.check_uri_call(function, c, fx, pos, &name);
+                }
                 if name == "eval" {
                     self.error_diverging(
                         RuleCode::S002,
@@ -765,6 +768,13 @@ impl<'p> Checker<'p> {
                 name = instance;
             }
         }
+        if self.is_error_type(&recv.ty) && name == "toString" {
+            self.check_args(&[], &c.args, fx, &pos, &name);
+            if c.type_args.is_some() {
+                self.error(RuleCode::S100, "`toString` is not generic", pos.clone());
+            }
+            return self.error_to_string(recv, pos);
+        }
         let name = name;
         let mk = |recv: hir::Expr, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             kind: ExprKind::Call {
@@ -1057,7 +1067,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    pub(super) fn check_args(
+    pub(in crate::check) fn check_args(
         &mut self,
         params: &[ParamSig],
         args: &[ast::ExprOrSpread],

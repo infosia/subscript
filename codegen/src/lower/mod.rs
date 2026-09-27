@@ -197,6 +197,8 @@ pub(crate) struct RtFns {
     /// Checker-generated JSON serializer leaves (stdlib.md §13), indexed
     /// by [`JsonFn::ALL`] discriminant order.
     pub json: [FuncId; JsonFn::ALL.len()],
+    /// Error formatting and URI imports.
+    pub text: [FuncId; subscript_compiler::hir::TextFn::ALL.len()],
     /// `subscript_rt_str_*` method imports (stdlib.md §8), indexed by
     /// `StrFn as usize` (the [`StrFn::ALL`] order). Each
     /// signature is `(ctx, recv, params…[, pos_id])` per
@@ -691,6 +693,18 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         .map_err(|_| internal("Number import table size"))?;
     // JSON builder leaves (stdlib.md §13). The checker emits a typed
     // serializer graph; these are its only runtime-specific operations.
+    let mut text_ids = Vec::new();
+    for function in subscript_compiler::hir::TextFn::ALL {
+        let params: &[types::Type] = if function == subscript_compiler::hir::TextFn::ErrorToString {
+            &[I64, I64, I64, I32]
+        } else {
+            &[I64, I64, I32]
+        };
+        text_ids.push(mk(function.symbol(), params, Some(I64))?);
+    }
+    let text = text_ids
+        .try_into()
+        .map_err(|_| internal("Text import table size"))?;
     let mut json_ids: Vec<FuncId> = Vec::with_capacity(JsonFn::ALL.len());
     for f in JsonFn::ALL {
         use JsonFn as J;
@@ -1092,6 +1106,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             Some(I64),
         )?,
         json,
+        text,
         str_ops,
         regex_ops,
         arr_ops,

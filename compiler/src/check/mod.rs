@@ -8,7 +8,7 @@
 //! monomorphized on first use (`identity<i32>`, `Box<f64>`).
 
 mod capture;
-mod exception;
+pub(crate) mod exception;
 mod expr;
 pub(crate) mod fallthrough;
 mod json;
@@ -1030,7 +1030,7 @@ pub(crate) struct Checker<'p> {
     pub next_regex_literal_id: usize,
     /// Monotonic suffix for switch-body disposal storage.
     pub next_using_switch_id: usize,
-    /// The one class behind `Error`, `SyntaxError`, and `TypeError`,
+    /// The one class behind every Error-family name,
     /// created on first use (compiler.md §115.1).
     pub error_class: Option<ClassId>,
     /// This suffix keeps compound-write operand locals unique.
@@ -6079,3 +6079,5 @@ mod tests {
         );
     }
 }
+
+mod text;

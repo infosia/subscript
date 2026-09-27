@@ -12,7 +12,7 @@ use crate::{RuleCode, WarnCode};
 
 const GENERATED_BY: &str = "cargo run --offline -p subscript-compiler --bin generate-api-reference";
 
-const SURFACE_SUMMARY: &str = "subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. Exported functions are host entry points. Types are explicit and nominal; only `Error`, `SyntaxError`, and `TypeError` objects are thrown, and dynamic evaluation, `any`, general unions, ordinary `undefined` values, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.";
+const SURFACE_SUMMARY: &str = "subscript is a deliberately closed, TypeScript-shaped language for deterministic embedded programs. Exported functions are host entry points. Types are explicit and nominal; only Error-family objects are thrown, and dynamic evaluation, `any`, general unions, ordinary `undefined` values, and an implicit scheduler are outside the language. Standard-library acceptance is narrower than the stock ES2022 declarations; consult `api-reference.md` for the checker-owned surface and replacements.";
 
 const SIZED_NUMERICS: &str = "Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, and `f64`; bare `number` is rejected. Literals are checked against their contextual sized type. Integer shifts use `count & (width - 1)` for every count spelling, including compound assignments. Literal counts must fit their contextual type. Mixed-width operands require an explicit `as`. `>>` preserves signedness; `>>>` fills with zero bits. `f16` is storage-only: convert to `f32` or `f64` before arithmetic.";
 

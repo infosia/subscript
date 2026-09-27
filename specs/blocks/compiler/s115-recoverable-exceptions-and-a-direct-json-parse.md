@@ -47,22 +47,22 @@ word is nonzero.
 
 ### 115.1 The Error classes
 
-1. `Error`, `SyntaxError`, and `TypeError` are ambient reference
-   classes. *(2026-09-27, stdlib §19.1: `RangeError`,
-   `ReferenceError`, `EvalError`, and `URIError` join them under every
-   rule of this section; "the three" below reads "the seven".)* `tsc` reads them from `lib.es5.d.ts`; the prelude declares
+1. The **Error family** is seven ambient reference classes: `Error`,
+   `SyntaxError`, `TypeError`, `RangeError`, `ReferenceError`,
+   `EvalError`, and `URIError` (the last four since 2026-09-27, stdlib
+   §19.1). `tsc` reads them from `lib.es5.d.ts`; the prelude declares
    nothing for them.
 2. Each class has two fields, `name: string` and `message: string`,
    and a constructor `(message: string)`. `new Error()` is accepted
    and sets `message` to `""`. The constructor sets `name` to the class
    name. A call without `new` fails with S100. Any other member
    (`stack`, `cause`) fails with S018.
-3. The three classes share one layout. A hidden `u32` kind tag
+3. The classes of the family share one layout. A hidden `u32` kind tag
    precedes the two fields. The tag selects the class for
    `instanceof`. The `name` field does not, because a program can
-   assign it. The three names denote one static type, so an
-   assignment between them is accepted, as `tsc` accepts it for three
-   classes of one shape.
+   assign it. The names denote one static type, so an assignment
+   between them is accepted, as `tsc` accepts it for classes of one
+   shape.
 4. An Error is an ordinary Context-allocated reference object. The
    rules of every reference class apply: Context scope, `Context.free`,
    and collection only when it is invoked.
@@ -76,8 +76,8 @@ word is nonzero.
 
 ### 115.2 `throw`
 
-1. `throw expr` requires the static type `Error`, `SyntaxError`, or
-   `TypeError`. Any other operand fails with S010 (`throw 42` and
+1. `throw expr` requires the static type of an Error-family class
+   (§115.1 rule 1). Any other operand fails with S010 (`throw 42` and
    `throw "x"` are `tsc`-clean).
 2. `throw` ends the flow of its block, as `return` does.
 3. At a `throw`, the runtime records the object and the `pos_id` of
@@ -102,10 +102,9 @@ word is nonzero.
    two legal uses: the left operand of `instanceof`, and the operand
    of `throw`. Any other use fails with S010. `catch (e) { }` with no
    use is accepted.
-5. `e instanceof C` requires `C` to be `Error`, `SyntaxError`, or
-   `TypeError`. It narrows `e` to `C` in the true branch, by the same
+5. `e instanceof C` requires `C` to be an Error-family class. It narrows `e` to `C` in the true branch, by the same
    flow rules as a null test (C7). `x instanceof C` on a value whose
-   static type is one of the three classes is accepted with the same
+   static type is an Error-family class is accepted with the same
    narrowing. Every other `instanceof` fails with S100.
 6. The nearest enclosing `try` whose block holds the raise site
    catches the exception. Entry to its `catch` clause clears the
