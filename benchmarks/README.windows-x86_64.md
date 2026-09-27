@@ -11,7 +11,7 @@ Snapshot captured 2026-09-27. Measured live by the runner (`benchmarks/src/bin/c
 ## Runtimes
 
 - **C**: clang version 22.1.6 (https://github.com/llvm/llvm-project fc4aad7b5db3fff421df9a9637605b9ca5667881)
-- **subscript**: subscript @ 514ab82 (dev-JIT: Cranelift; ship: HIR->C->clang)
+- **subscript**: subscript @ 246c7dd (dev-JIT: Cranelift; ship: HIR->C->clang)
 - **LuaJIT**: absent
 - **JSC**: absent
 - **V8 (Node.js)**: Node.js v24.16.0
@@ -26,31 +26,31 @@ Every subject that runs discards at least 3 warm-up iterations and continues unt
 
 | Workload | Checksum | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |
 |---|---|---|---|---|---|---|---|
-| fib-recursive | 1346269 | 1.00x (2.380 ms) | invalid (noise) | 1.61x (3.832 ms) | - | - | invalid (noise) |
-| fib-loop | 973132000 | 1.00x (20.711 ms) | 0.99x (20.549 ms) | 2.44x (50.470 ms) | - | - | 1.62x (33.539 ms) |
-| mandelbrot | 43027996 | 1.00x (74.937 ms) | 1.02x (76.421 ms) | 0.99x (74.518 ms) | - | - | 0.96x (72.268 ms) |
-| primes | 41538 | 1.00x (32.457 ms) | 0.98x (31.745 ms) | 0.99x (32.163 ms) | - | - | 1.00x (32.612 ms) |
-| sort | 3672124540 | 1.00x (14.690 ms) | 1.51x (22.166 ms) | 2.01x (29.461 ms) | - | - | 1.59x (23.361 ms) |
-| tree | 3932130 | 1.00x (152.830 ms) | 0.65x (99.825 ms) | 3.81x (582.915 ms) | - | - | invalid (noise) |
-| queen | 73712 | 1.00x (22.202 ms) | 1.10x (24.503 ms) | 1.54x (34.245 ms) | - | - | 1.35x (30.048 ms) |
-| particles | 1712845248 | 1.00x (35.760 ms) | 2.11x (75.324 ms) | 7.05x (252.177 ms) | - | - | 2.89x (103.218 ms) |
-| callbacks | -662567840 | 1.00x (13.489 ms) | invalid (noise) | 14.76x (199.097 ms) | - | - | 29.81x (402.047 ms) |
-| collect | 1332546592 | 1.00x (38.479 ms) | 1.36x (52.161 ms) | invalid (noise) | - | - | 2.74x (105.351 ms) |
+| fib-recursive | 1346269 | 1.00x (2.384 ms) | 1.12x (2.673 ms) | 1.67x (3.977 ms) | - | - | 2.95x (7.039 ms) |
+| fib-loop | 973132000 | 1.00x (21.758 ms) | 0.96x (20.951 ms) | 2.27x (49.332 ms) | - | - | 1.54x (33.472 ms) |
+| mandelbrot | 43027996 | 1.00x (75.514 ms) | 1.01x (76.410 ms) | 1.02x (76.863 ms) | - | - | 0.98x (73.765 ms) |
+| primes | 41538 | 1.00x (31.792 ms) | 0.97x (30.970 ms) | 1.00x (31.651 ms) | - | - | 1.03x (32.610 ms) |
+| sort | 3672124540 | 1.00x (13.830 ms) | 1.64x (22.614 ms) | 2.14x (29.604 ms) | - | - | 1.63x (22.525 ms) |
+| tree | 3932130 | invalid (noise) | 102.618 ms | 577.766 ms | - | - | 40.829 ms |
+| queen | 73712 | 1.00x (21.523 ms) | 1.09x (23.467 ms) | 1.61x (34.686 ms) | - | - | 1.42x (30.660 ms) |
+| particles | 1712845248 | 1.00x (37.161 ms) | 2.04x (75.861 ms) | 6.80x (252.592 ms) | - | - | 2.98x (110.646 ms) |
+| callbacks | -662567840 | 1.00x (13.261 ms) | 4.00x (53.090 ms) | 15.14x (200.822 ms) | - | - | 30.36x (402.534 ms) |
+| collect | 1332546592 | 1.00x (37.639 ms) | 1.34x (50.278 ms) | 3.41x (128.255 ms) | - | - | 2.73x (102.611 ms) |
 
 ## Measured warm-up
 
 | Workload | C | subscript-ship | subscript-jit | LuaJIT | JSC | V8 (Node.js) |
 |---|---|---|---|---|---|---|
-| fib-recursive | 0.202 s (88 iterations) | 0.201 s (74 iterations) | 0.201 s (51 iterations) | - | - | 0.203 s (29 iterations) |
-| fib-loop | 0.211 s (10 iterations) | 0.216 s (10 iterations) | 0.247 s (5 iterations) | - | - | 0.209 s (6 iterations) |
-| mandelbrot | 0.228 s (3 iterations) | 0.239 s (3 iterations) | 0.238 s (3 iterations) | - | - | 0.219 s (3 iterations) |
-| primes | 0.222 s (7 iterations) | 0.225 s (7 iterations) | 0.200 s (6 iterations) | - | - | 0.215 s (7 iterations) |
-| sort | 0.211 s (15 iterations) | 0.205 s (9 iterations) | 0.209 s (7 iterations) | - | - | 0.220 s (9 iterations) |
-| tree | 0.457 s (3 iterations) | 0.307 s (3 iterations) | 1.851 s (3 iterations) | - | - | 0.219 s (4 iterations) |
-| queen | 0.220 s (10 iterations) | 0.222 s (9 iterations) | 0.211 s (6 iterations) | - | - | 0.209 s (7 iterations) |
-| particles | 0.220 s (6 iterations) | 0.225 s (3 iterations) | 0.777 s (3 iterations) | - | - | 0.306 s (3 iterations) |
-| callbacks | 0.201 s (15 iterations) | 0.228 s (5 iterations) | 0.615 s (3 iterations) | - | - | 1.347 s (3 iterations) |
-| collect | 0.227 s (6 iterations) | 0.250 s (5 iterations) | 0.415 s (3 iterations) | - | - | 0.346 s (3 iterations) |
+| fib-recursive | 0.203 s (81 iterations) | 0.202 s (73 iterations) | 0.202 s (48 iterations) | - | - | 0.200 s (27 iterations) |
+| fib-loop | 0.200 s (9 iterations) | 0.215 s (10 iterations) | 0.248 s (5 iterations) | - | - | 0.212 s (6 iterations) |
+| mandelbrot | 0.225 s (3 iterations) | 0.234 s (3 iterations) | 0.237 s (3 iterations) | - | - | 0.229 s (3 iterations) |
+| primes | 0.231 s (7 iterations) | 0.223 s (7 iterations) | 0.204 s (6 iterations) | - | - | 0.215 s (7 iterations) |
+| sort | 0.205 s (15 iterations) | 0.204 s (9 iterations) | 0.208 s (7 iterations) | - | - | 0.216 s (9 iterations) |
+| tree | 0.445 s (3 iterations) | 0.309 s (3 iterations) | 1.834 s (3 iterations) | - | - | 0.204 s (4 iterations) |
+| queen | 0.224 s (10 iterations) | 0.211 s (9 iterations) | 0.222 s (6 iterations) | - | - | 0.204 s (7 iterations) |
+| particles | 0.221 s (6 iterations) | 0.228 s (3 iterations) | 0.781 s (3 iterations) | - | - | 0.323 s (3 iterations) |
+| callbacks | 0.203 s (15 iterations) | 0.224 s (5 iterations) | 0.621 s (3 iterations) | - | - | 1.336 s (3 iterations) |
+| collect | 0.234 s (6 iterations) | 0.212 s (4 iterations) | 0.433 s (3 iterations) | - | - | 0.338 s (3 iterations) |
 
 **callbacks interpretation.** This workload measures what the idiomatic callback spelling costs against a hand-written loop, not a codegen deficit.
 
@@ -69,4 +69,4 @@ Every subject that runs discards at least 3 warm-up iterations and continues unt
 - **callbacks** — i32[1000000] from LCG state=state*1664525+1013904223 (seed 0x12345678), K=20 rounds; map(value,index)=(value+index) i32; filter(value,index)=((value^index)&3)!=0 (removes exactly 250000 elements per round); reduce(acc,value,index)=(acc+value+index) i32 from 0; checksum=checksum+round_result (i32 wrap)
 - **collect** — N=20000 nodes x K=6 rounds from LCG state=state*1664525+1013904223 (seed 0x12345678); each 48-byte node owns unique strings of lengths 9/41/105/233 bytes (subscript requests 17/49/113/241 bytes, one byte past size-class payload capacities 16/48/112/240); keep exactly the nodes with (state&3)!=0 (15000 survivors/round), drop the rest, force collection (C: explicitly free), then traverse the surviving reverse-built chain; checksum per survivor in traversal order is checksum=(checksum*31+state+9+41+105+233) with i32 wrap; final checksum=1332546592
 
-Noise: wider than +/-20% spread for fib-recursive/subscript-ship (42%), fib-recursive/V8 (Node.js) (26%), tree/V8 (Node.js) (40%), callbacks/subscript-ship (23%), collect/subscript-jit (24%) — those timings are invalid and withheld.
+Noise: interquartile range wider than 15% of the median (or invalid samples) for tree/C (IQR 16.1% of median) — those timings are invalid and withheld.
