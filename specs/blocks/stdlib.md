@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 16, 2026-09-27 (Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
+Status: Rev 17, 2026-09-27 (Rev 17 adds §3.1 and §11.4a, `Date` `toJSON`/`toUTCString`/`valueOf`/copy/`UTC(year)`, `toFixed()`, and the global `Infinity`; Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
 2026-07-26, adds the §13 P13 `JSON` contract; Rev 10, 2026-07-26, adds
 the §14 P22 `for…of`/spread contract; Rev 11, 2026-07-27, adds the §15
 P23 regex contract and removes the `regex` feature from it; Rev 12,
@@ -151,6 +151,45 @@ in runtime Rust with direct unit tests: epoch, leap rules (2000-02-29
 valid, 1900 and 2100 not leap, 400-year rule), pre-1970 negatives, and
 known weekdays. Lowering: constructor/statics/methods are intrinsics →
 `subscript_rt_date_*` on both tiers.
+
+### 3.1 ES2022 additions (2026-09-27)
+
+Origin: the ES2022 gap inventory, batch 3 (owner, 2026-09-27). Each
+form is `tsc`-clean at the ES2022 lib (`tsc` 5.9.2).
+
+1. `new Date(d: Date)` is a copy of the value (`new Date(d.getTime())`).
+   A `Date` is an immutable value, so the copy is the same `i64`.
+2. `Date.UTC(year: i32)` with `month0` omitted: the month is 0, as in
+   the ES2017 lib. `Date.UTC(2020)` is `1577836800000`, equal to
+   `Date.UTC(2020, 0)`; the two-digit-year rule is the existing one
+   (`Date.UTC(99)` is `915148800000`).
+3. `valueOf(): i64` is `getTime()`. Its S014 row said "implicit `Date`
+   numeric conversion is unavailable". That reason fits an implicit
+   conversion (`+d`, `d - e`, a comparison), which stays rejected; it
+   does not fit an explicit call (compiler §103).
+4. `toJSON(): string` is `toISOString()`, with its range rule: a year
+   outside 0000–9999 traps. JavaScript returns `null` only for an
+   Invalid Date, which this language does not have (§3). Its S014 row
+   gave a scope reason ("outside the checker-owned formatting subset"),
+   which is not a reason under compiler §103.
+5. `toUTCString(): string` is the RFC 7231 form
+   `Www, DD Mmm YYYY HH:mm:ss GMT`, the same civil-date computation as
+   `toISOString`. Every year in the TimeClip range formats as
+   JavaScript formats it: a year below 1000 or above 9999 has no
+   padding beyond four digits, and a negative year carries a `-` sign
+   (`-0001`). It does not trap. Its S014 row had the same scope reason
+   as `toJSON`. (Decided 2026-09-27: JavaScript defines the form for
+   every year, so there is no failure to report.)
+
+Measured on `node` v24.18.0: `new Date(1700000000123)` gives
+`toJSON()` `2023-11-14T22:13:20.123Z` and `toUTCString()`
+`Tue, 14 Nov 2023 22:13:20 GMT`; `new Date(0)` gives
+`Thu, 01 Jan 1970 00:00:00 GMT`; `new Date(-1)` gives
+`Wed, 31 Dec 1969 23:59:59 GMT`; `Date.UTC(10000, 0)` gives
+`Sat, 01 Jan 10000 00:00:00 GMT`; `Date.UTC(-1, 0)` gives
+`Fri, 01 Jan -0001 00:00:00 GMT`; `valueOf()` is `1700000000123`.
+
+Corpus: `a266-date-es2022-additions`, `js-comparable` against `node`.
 
 ## 4. Corpus plan (Red first)
 
@@ -862,6 +901,21 @@ negative value's sign placement.
 One implementation behind an opaque `subscript_rt_num_*` symbol on both
 tiers (§0.2) — never the host libc's `snprintf("%.*f")`, whose
 rounding is platform-dependent.
+
+### 11.4a `toFixed()` and the global `Infinity` (2026-09-27)
+
+Origin: the ES2022 gap inventory, batch 3.
+
+1. `toFixed()` with no argument is `toFixed(0)`: the JavaScript default
+   is 0, so omitting it does not change the meaning, and Q26's arity
+   rule does not apply. Measured on `node`: `(1.5).toFixed()` is `"2"`,
+   `(2.5)` `"3"`, `(-1.5)` `"-2"`, `(0.5)` `"1"`, `(1e21)` `"1e+21"`,
+   `(-0)` `"0"` — each equal to this language's `toFixed(0)`.
+2. The global identifier `Infinity` is an `f64` constant, equal to
+   `Number.POSITIVE_INFINITY`, as `NaN` already is. `-Infinity` is the
+   negation.
+
+Corpus: `a266-date-es2022-additions` holds these rows too.
 
 ### 11.5 `toString(radix)`, `toExponential`, `toPrecision`
 
