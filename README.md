@@ -230,8 +230,8 @@ unless all subjects agree — same computation, verified). Ratios are to a
 hand-written C baseline; **lower is better**, C = 1.00×. One arm64 macOS
 machine, one session. Every subject discards warm-up runs until measured
 execution passes a 200 ms floor (at least three), then reports the median
-of 11 timed runs; a subject whose samples spread wider than ±20% is
-withheld as noise. Full table with absolute times, methodology, and
+of 11 timed runs; a subject whose interquartile range is wider than 15%
+of the median is withheld as noise. Full table with absolute times, methodology, and
 machine/runtime versions is in [`benchmarks/`](benchmarks/README.md).
 
 | Workload | C | subscript&#8209;ship | subscript&#8209;jit | LuaJIT | JSC | V8 |

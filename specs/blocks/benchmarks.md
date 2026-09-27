@@ -1,6 +1,6 @@
 # Cross-language benchmarks — contract
 
-Status: Rev 5, 2026-08-28 (a partial run no longer writes the record — `--only` destroyed a ten-workload record twice); Rev 4, 2026-07-27 (a fresh process per (workload, subject) becomes normative — `subscript-jit` had been the one in-process subject and its whole column was order-dependent); Rev 3, 2026-07-27 (warm-up becomes a measured time floor after clang was found deleting the warm-up loop outright in three C workloads); Rev 2, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for; Rev 2 adds `collect`, which the P21 Phase Review found the same way). A cross-language performance comparison of the
+Status: Rev 6, 2026-09-27 (the noise gate reads the interquartile range — one preempted sample withheld a stable median, on 20 of 160 Windows cells); Rev 5, 2026-08-28 (a partial run no longer writes the record — `--only` destroyed a ten-workload record twice); Rev 4, 2026-07-27 (a fresh process per (workload, subject) becomes normative — `subscript-jit` had been the one in-process subject and its whole column was order-dependent); Rev 3, 2026-07-27 (warm-up becomes a measured time floor after clang was found deleting the warm-up loop outright in three C workloads); Rev 2, 2026-07-26 (Rev 0: 2026-07-23; Rev 1 adds the `callbacks` workload, which the P18 Phase Review found the suite had no coverage for; Rev 2 adds `collect`, which the P21 Phase Review found the same way). A cross-language performance comparison of the
 subscript ship and dev tiers against a C baseline and JIT-enabled
 scripting runtimes. Not a gate (the P4 gate in `compiler.md` §3/§9 is the
 gate); this is a published comparison. Lives in `benchmarks/`.
@@ -65,8 +65,40 @@ themselves and print `<checksum> <median_seconds>`.
 ## Timing methodology (mirrors `compiler.md` §9)
 
 - Each subject: **≥11 timed runs, report the median**; also record
-  min/max and **every sample**. A spread wider than ±20% of the median
-  invalidates that subject's timing, which is withheld.
+  min/max and **every sample**.
+
+- **The noise gate reads the interquartile range, not the extremes.**
+  *(Rev 6.)* If the interquartile range is wider than 15% of the
+  median, the timing of that subject is invalid, and the runner
+  withholds it. The quartiles are linear interpolations between
+  closest ranks: for sorted samples `x[0..n]`, the quartile at `p` is
+  at position `(n - 1) * p`. For `n = 11`, Q1 is `x[2] + 0.5 * (x[3] - x[2])`
+  and Q3 is `x[7] + 0.5 * (x[8] - x[7])`.
+
+  The rule before Rev 6 withheld a timing when one sample was more than
+  20% from the median. The reported figure is the median, and one
+  sample does not move the median. So the old rule withheld a stable
+  median for one preempted sample. The rule must test the figure that
+  the table reports.
+
+  The limit is 15% because of these measurements
+  (`specs/tracking/benchmarks-noise-gate.md`):
+  - 546 cells in 12 arm64 macOS records: the largest interquartile
+    range is 12.9% of the median. This rule withholds no cell.
+  - 160 cells in four x86_64 Windows runs: the old rule withheld 20
+    cells. In all 20, one or two of the 11 samples caused the failure.
+    This rule withholds 4 cells.
+  - `callbacks`/`subscript-ship` on Windows has an interquartile range
+    of 6.9% to 21.1% of the median, and its median moves 15% across
+    runs. This rule withholds it in two of four runs, and the old rule
+    also withheld it in two of four runs.
+
+  The gate tests one run. It cannot see a median that moves between
+  runs while each run is tight: `callbacks`/V8 on Windows moves 25.7%
+  across four runs with an interquartile range of 3.3% or less.
+
+  `compiler.md` §9 (`perf-gate`), `bound-call`, and `async-cost` keep
+  their own spread rules. Rev 6 changes this runner only.
 
 - **Warm-up is a time floor, not a count: ≥200 ms of measured warm-up
   execution**, and ≥3 iterations. *(Revised 2026-07-27; it said "≥3

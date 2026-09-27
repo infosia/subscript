@@ -105,8 +105,8 @@ const DEFAULT_WARMUP: usize = 3;
 const DEFAULT_TIMED: usize = 11;
 /// Minimum sum of measured workload execution discarded as warm-up.
 const WARMUP_FLOOR: Duration = Duration::from_millis(200);
-/// A spread wider than this fraction of the median flags a noisy subject.
-const NOISE_LIMIT: f64 = 0.20;
+/// An interquartile range wider than this fraction of the median flags noise.
+const NOISE_LIMIT: f64 = 0.15;
 
 /// The report subjects, in column order. The first is the 1.00x reference.
 const SUBJECTS: [&str; 6] = [
@@ -139,14 +139,35 @@ impl Measured {
         stats(&self.samples_s).map(|(_, min, max)| (min, max))
     }
 
-    /// Whether the sample set extends beyond the valid +/-20% median band.
-    fn noisy(&self) -> bool {
-        let Some((min, max)) = self.spread() else {
-            return true;
+    /// Linearly interpolated first and third quartiles of valid timed samples.
+    fn quartiles(&self) -> Option<(f64, f64)> {
+        stats(&self.samples_s)?;
+        let mut sorted = self.samples_s.clone();
+        sorted.sort_by(f64::total_cmp);
+        let last = sorted.len().checked_sub(1)?;
+        let quartile = |p: f64| -> Option<f64> {
+            let h = last as f64 * p;
+            let lower = h.floor() as usize;
+            let low = *sorted.get(lower)?;
+            let high = *sorted.get(lower.saturating_add(1).min(last))?;
+            Some(low + (h - lower as f64) * (high - low))
         };
-        self.median_s > 0.0
-            && ((max - self.median_s) / self.median_s).max((self.median_s - min) / self.median_s)
-                > NOISE_LIMIT
+        Some((quartile(0.25)?, quartile(0.75)?))
+    }
+
+    /// IQR divided by the median; valid nonpositive medians retain zero noise.
+    fn iqr_fraction(&self) -> Option<f64> {
+        let (q1, q3) = self.quartiles()?;
+        Some(if self.median_s > 0.0 {
+            (q3 - q1) / self.median_s
+        } else {
+            0.0
+        })
+    }
+
+    /// Whether samples are invalid or their IQR exceeds the median fraction limit.
+    fn noisy(&self) -> bool {
+        self.iqr_fraction().is_none_or(|iqr| iqr > NOISE_LIMIT)
     }
 }
 
@@ -437,7 +458,7 @@ fn run() -> Result<ExitCode, Fail> {
         eprintln!("benchmarks: at least one workload's subjects disagreed on the checksum; its timings are withheld.");
         Ok(ExitCode::from(1))
     } else if rows.iter().any(WorkloadResult::has_noise) {
-        eprintln!("benchmarks: at least one subject exceeded the +/-20% spread limit; its timing is invalid and withheld.");
+        eprintln!("benchmarks: at least one subject has an interquartile range wider than {:.0}% of the median; its timing is invalid and withheld.", NOISE_LIMIT * 100.0);
         Ok(ExitCode::from(1))
     } else if rows.iter().any(WorkloadResult::has_error) {
         eprintln!("benchmarks: at least one available subject failed; its timing is unavailable.");
@@ -1598,14 +1619,12 @@ fn render_readme(
     for row in rows {
         for subject in SUBJECTS {
             if let Some(m) = row.sampled(subject) {
-                if let Some((min, max)) = m.spread() {
-                    if m.median_s > 0.0 {
-                        let spread =
-                            ((max - m.median_s) / m.median_s).max((m.median_s - min) / m.median_s);
-                        if spread > NOISE_LIMIT {
-                            noisy.push(format!("{}/{subject} ({:.0}%)", row.id, spread * 100.0));
-                        }
-                    }
+                if m.noisy() {
+                    let iqr = m.iqr_fraction().map_or_else(
+                        || "IQR unavailable".to_string(),
+                        |fraction| format!("IQR {:.1}% of median", fraction * 100.0),
+                    );
+                    noisy.push(format!("{}/{subject} ({iqr})", row.id));
                 }
             }
         }
@@ -1614,13 +1633,13 @@ fn render_readme(
     if noisy.is_empty() {
         let _ = writeln!(
             s,
-            "Noise: every recorded sample set is within +/-{:.0}% of its median.",
+            "Noise: no recorded sample set has an interquartile range wider than {:.0}% of the median.",
             NOISE_LIMIT * 100.0
         );
     } else {
         let _ = writeln!(
             s,
-            "Noise: wider than +/-{:.0}% spread for {} — those timings are invalid and withheld.",
+            "Noise: interquartile range wider than {:.0}% of the median (or invalid samples) for {} — those timings are invalid and withheld.",
             NOISE_LIMIT * 100.0,
             noisy.join(", ")
         );
@@ -1747,6 +1766,17 @@ fn render_json(
             let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));
         }
         let _ = writeln!(s, "      }},");
+        let _ = writeln!(s, "      \"quartiles_s\": {{");
+        for (si, subject) in subs.iter().enumerate() {
+            let comma = if si + 1 < subs.len() { "," } else { "" };
+            let value = row
+                .sampled(subject)
+                .and_then(Measured::quartiles)
+                .map(|(q1, q3)| format!("[{q1:.9}, {q3:.9}]"))
+                .unwrap_or_else(|| "null".to_string());
+            let _ = writeln!(s, "        {}: {value}{comma}", jstr(subject));
+        }
+        let _ = writeln!(s, "      }},");
         let _ = writeln!(s, "      \"unavailable_reasons\": {{");
         for (si, subject) in subs.iter().enumerate() {
             let comma = if si + 1 < subs.len() { "," } else { "" };
@@ -1788,7 +1818,111 @@ fn jstr(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{workload_has_all_present_timings, writes_the_record, Outcome};
+    use super::*;
+
+    /// Builds a measurement without executing a workload.
+    fn measurement(samples_s: &[f64]) -> Measured {
+        Measured {
+            checksum: 1,
+            median_s: stats(samples_s).map_or(0.0, |(median, _, _)| median),
+            samples_s: samples_s.to_vec(),
+            warmup_s: 0.2,
+            warmup_iterations: 3,
+        }
+    }
+
+    #[test]
+    fn quartiles_interpolate_eleven_samples() {
+        let x = [
+            90.0, 92.0, 94.0, 96.0, 98.0, 100.0, 102.0, 104.0, 106.0, 108.0, 110.0,
+        ];
+        let mut reversed = x;
+        reversed.reverse();
+        let m = measurement(&reversed);
+        assert_eq!(m.median_s, 100.0);
+        assert_eq!(
+            m.quartiles(),
+            Some((x[2] + 0.5 * (x[3] - x[2]), x[7] + 0.5 * (x[8] - x[7])))
+        );
+        assert_eq!(m.iqr_fraction(), Some(0.10));
+        assert_eq!(measurement(&[5.0]).quartiles(), Some((5.0, 5.0)));
+    }
+
+    #[test]
+    fn isolated_outlier_does_not_withhold_stable_median() {
+        let m = measurement(&[
+            98.0, 99.0, 99.0, 100.0, 100.0, 100.0, 101.0, 101.0, 102.0, 102.0, 155.0,
+        ]);
+        assert_eq!(m.median_s, 100.0);
+        assert_eq!(m.iqr_fraction(), Some(0.02));
+        assert!(!m.noisy());
+    }
+
+    #[test]
+    fn noise_gate_compares_iqr_to_limit() {
+        for (half_width, noisy) in [(8.0, true), (7.0, false), (7.5, false)] {
+            let mut samples = vec![100.0 - half_width; 5];
+            samples.push(100.0);
+            samples.extend([100.0 + half_width; 5]);
+            let m = measurement(&samples);
+            assert_eq!(m.iqr_fraction(), Some(2.0 * half_width / 100.0));
+            assert_eq!(m.noisy(), noisy);
+        }
+    }
+
+    #[test]
+    fn invalid_samples_are_noisy_but_nonpositive_medians_are_not() {
+        for samples in [
+            vec![],
+            vec![f64::NAN],
+            vec![1.0, f64::INFINITY],
+            vec![f64::NEG_INFINITY],
+            vec![-1.0],
+        ] {
+            let m = measurement(&samples);
+            assert_eq!(m.quartiles(), None);
+            assert_eq!(m.iqr_fraction(), None);
+            assert!(m.noisy());
+        }
+        for median in [0.0, -1.0] {
+            let mut m = measurement(&[0.0; 11]);
+            m.median_s = median;
+            assert_eq!(m.iqr_fraction(), Some(0.0));
+            assert!(!m.noisy());
+        }
+    }
+
+    #[test]
+    fn reports_use_iqr_and_preserve_ranges() {
+        let machine = Machine {
+            arch: "test".into(),
+            os: "test".into(),
+            cpu: "test".into(),
+            cores: "1".into(),
+            power: "test".into(),
+        };
+        let mut rows = [WorkloadResult {
+            id: "sort".into(),
+            checksum: Some(1),
+            matched: true,
+            outcomes: vec![(
+                "C".into(),
+                Outcome::Ok(measurement(&[
+                    90.0, 92.0, 92.0, 92.0, 99.0, 100.0, 101.0, 108.0, 108.0, 108.0, 110.0,
+                ])),
+            )],
+        }];
+        let readme = render_readme(&rows, &machine, &[], "test", 3, 11);
+        assert!(readme.contains("Noise: interquartile range wider than 15% of the median"));
+        assert!(readme.contains("sort/C (IQR 16.0% of median)"));
+        assert!(readme.contains("invalid (noise)"));
+        let json = render_json(&rows, &machine, &[], "test", 3, 11);
+        assert!(json.contains("\"ranges_s\": {\n        \"C\": [90.000000000, 110.000000000],"));
+        assert!(json.contains("\"quartiles_s\": {\n        \"C\": [92.000000000, 108.000000000],\n        \"subscript-ship\": null,"));
+        rows[0].outcomes = vec![("C".into(), Outcome::Ok(measurement(&[100.0; 11])))];
+        let readme = render_readme(&rows, &machine, &[], "test", 3, 11);
+        assert!(readme.contains("Noise: no recorded sample set has an interquartile range wider than 15% of the median."));
+    }
 
     #[test]
     fn writes_record_when_all_workloads_are_measured() {
