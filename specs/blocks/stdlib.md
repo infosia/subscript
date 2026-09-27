@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 17, 2026-09-27 (Rev 17 adds §3.1 and §11.4a, `Date` `toJSON`/`toUTCString`/`valueOf`/copy/`UTC(year)`, `toFixed()`, and the global `Infinity`; Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
+Status: Rev 18, 2026-09-27 (Rev 18 adds §19, four more Error classes, `Error.prototype.toString`, and the URI functions; Rev 17 adds §3.1 and §11.4a, `Date` `toJSON`/`toUTCString`/`valueOf`/copy/`UTC(year)`, `toFixed()`, and the global `Infinity`; Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
 2026-07-26, adds the §13 P13 `JSON` contract; Rev 10, 2026-07-26, adds
 the §14 P22 `for…of`/spread contract; Rev 11, 2026-07-27, adds the §15
 P23 regex contract and removes the `regex` feature from it; Rev 12,
@@ -2374,3 +2374,67 @@ S014 in item 1 (this host).
 7. Gates: `cargo test --offline --workspace` in both profiles;
    zero-warning build; `cargo fmt --check`; the `tsc` gate; every
    pre-existing golden and `.expected` byte-identical.
+
+## 19. Error classes, `Error.prototype.toString`, and the URI functions (2026-09-27)
+
+Origin: the ES2022 gap inventory, batch 4. The owner decided on
+2026-09-27 that a new Error class does not turn an existing trap into
+an exception: a runtime fault stays a trap (`compiler.md` §115). Each
+form below is `tsc`-clean at the ES2022 lib (`tsc` 5.9.2).
+
+### 19.1 Four more Error classes
+
+`RangeError`, `ReferenceError`, `EvalError`, and `URIError` join
+`Error`, `SyntaxError`, and `TypeError` under `compiler.md` §115.1: the
+same layout, a kind tag per class, `instanceof` by the tag, `name` set
+by the constructor, and one static type for the seven names. No
+existing trap changes: `repeat(-1)`, a radix or digit count out of
+range, and every other runtime fault stay traps. Measured on `node`
+v24.18.0: `new RangeError("m")` has `name` `RangeError`, `message` `m`,
+and `instanceof Error` true, and the same holds for the other three.
+
+### 19.2 `Error.prototype.toString()`
+
+`toString(): string` on any of the seven classes returns the ECMA form
+that `compiler.md` §115 already uses for an uncaught report: the `name`
+alone when the `message` is empty, the `message` alone when the `name`
+is empty, and `name + ": " + message` otherwise. Measured: `RangeError:
+m`; with `name` `""` and `message` `x`, `x`; with `name` `N` and
+`message` `""`, `N`.
+
+### 19.3 `encodeURIComponent`, `encodeURI`
+
+`encodeURIComponent(s: string): string` and `encodeURI(s: string):
+string` percent-encode the UTF-8 bytes of `s` with upper-case hex.
+`encodeURIComponent` keeps `A–Z a–z 0–9 - _ . ! ~ * ' ( )`;
+`encodeURI` also keeps `; , / ? : @ & = + $ #`. Both are total: the
+only JavaScript failure is a lone surrogate, which a UTF-8 string
+cannot hold (Q5). The argument is a `string`; the lib's
+`number | boolean` forms are coercions and stay rejected (Q25).
+Measured: `"a b"` → `a%20b`; `"héllo"` → `h%C3%A9llo`; `"😀"` →
+`%F0%9F%98%80`; `"a&b=c/d?e#f"` → `a%26b%3Dc%2Fd%3Fe%23f` and
+`a&b=c/d?e#f`; `";,/?:@&=+$#"` → all escaped and unchanged; `"%"` →
+`%25`; U+2028 → `%E2%80%A8`.
+
+### 19.4 `decodeURIComponent`, `decodeURI`
+
+`decodeURIComponent(s: string): string` and `decodeURI(s: string):
+string` decode each `%XX` escape to its byte and read the result as
+UTF-8. `decodeURI` leaves an escape of `; / ? : @ & = + $ , #` as it is.
+Malformed input raises `URIError` (§19.1), because a malformed string
+is data, as in `JSON.parse` (`compiler.md` §115.7): a `%` without two
+hex digits, a byte sequence that is not UTF-8, an overlong form, and
+an encoded surrogate. The message is this project's
+(`decodeURI: malformed escape at byte <N>`, with the UTF-8 byte offset
+of the `%`), not `node`'s `URI malformed`, so an entry that prints it
+is not `js-comparable` (C6). Measured: `a%20b` → `a b`; `%E2%82%AC` →
+`€`; `%F0%9F%98%80` → `😀`; `%3B%2F%3F` → `;/?` and `%3B%2F%3F`; `%`,
+`%zz`, `%C3`, `%ED%A0%80`, `%C0%80`, `%FF` → `URIError`.
+
+### 19.5 Corpus
+
+`a267-error-classes-and-uri`: the four classes, `instanceof`, `toString`
+in each of the three name/message cases, every §19.3 row, and every
+§19.4 success row, with each failure row caught and printing only
+`e instanceof URIError` and `e.name` (`js-comparable` against `node`).
+

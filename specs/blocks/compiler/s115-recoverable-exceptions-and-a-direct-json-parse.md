@@ -48,7 +48,9 @@ word is nonzero.
 ### 115.1 The Error classes
 
 1. `Error`, `SyntaxError`, and `TypeError` are ambient reference
-   classes. `tsc` reads them from `lib.es5.d.ts`; the prelude declares
+   classes. *(2026-09-27, stdlib §19.1: `RangeError`,
+   `ReferenceError`, `EvalError`, and `URIError` join them under every
+   rule of this section; "the three" below reads "the seven".)* `tsc` reads them from `lib.es5.d.ts`; the prelude declares
    nothing for them.
 2. Each class has two fields, `name: string` and `message: string`,
    and a constructor `(message: string)`. `new Error()` is accepted

@@ -117,7 +117,9 @@ capturing lambda; `tsc`-clean), `r240`–`r248` (§118; `tsc`-clean).
 
 *(Revised 2026-09-26 by `compiler.md` §115, owner decision.)*
 `throw`, `try`/`catch`, and `instanceof` narrowing are in the
-language. A thrown value is an `Error`, `SyntaxError`, or `TypeError`;
+language. A thrown value is an `Error`, `SyntaxError`, `TypeError`,
+`RangeError`, `ReferenceError`, `EvalError`, or `URIError` (the last
+four since 2026-09-27, `stdlib.md` §19);
 the language has no other thrown type and no user error class. The
 catch binding has two legal uses: `instanceof` and `throw`. `finally`
 is rejected. An exception that leaves an async body completes its
