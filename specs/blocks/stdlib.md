@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 14, 2026-08-15 (Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
+Status: Rev 15, 2026-09-27 (Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
 2026-07-26, adds the §13 P13 `JSON` contract; Rev 10, 2026-07-26, adds
 the §14 P22 `for…of`/spread contract; Rev 11, 2026-07-27, adds the §15
 P23 regex contract and removes the `regex` feature from it; Rev 12,
@@ -269,14 +269,16 @@ returning a string allocates via the Context):
   other.)*
 - `indexOf(needle: string, from?: i32): i32` — byte index or −1;
   `from` defaults 0, clamped to `[0, length]` (negative → 0)
-- `lastIndexOf(needle: string): i32`
+- `lastIndexOf(needle: string, position?: i32): i32` — `position` added
+  by §8.9
 - `includes(needle: string, from?: i32): boolean`
 - `startsWith(needle: string, position?: i32): boolean`,
   `endsWith(needle: string, endPosition?: i32): boolean` — byte
   offsets (the position arguments were added by Q27)
 - `charCodeAt(i: i32): i32` — the byte value 0–255 (Q21; JS returns
   the UTF-16 unit); out of range traps (JS returns NaN)
-- `split(sep: string): string[]` — no-match → `[whole]`; adjacent,
+- `split(sep: string, limit?: i32): string[]` (`limit` added by §8.9)
+  — no-match → `[whole]`; adjacent,
   leading and trailing non-empty separators produce empty strings (JS
   semantics). An **empty separator returns one piece per UTF-8 code
   point** (§95.3); `"".split("")` is `[]`. Every piece starts and ends
@@ -375,6 +377,35 @@ under lib ES2022); reject entries at pinned S014 positions; trap
 identity across tiers for the four trap paths; §5 item 5 benchmarks
 (`specs/blocks/benchmarks.md`) — no ship-row regression.
 
+### 8.9 Search positions, `split` limit, and two aliases (2026-09-27)
+
+Origin: the ES2022 gap inventory of 2026-09-27; the owner chose the
+batch order and the design answers on that date. Each form is
+`tsc`-clean at the ES2022 lib (measured with `tsc` 5.9.2), and each
+was rejected with S100 before this section (measured on the checker at
+`48c802c`).
+
+1. `lastIndexOf(needle: string, position?: i32): i32`. `position` is a
+   byte offset (Q5). It defaults to the length, and is clamped to
+   `[0, length]` (a negative value is 0). The result is the largest
+   byte index `i <= position` where `needle` starts, or −1. An empty
+   `needle` gives `min(position, length)`. Measured on `node` v24.18.0
+   for ASCII: `"abcabc".lastIndexOf("c", 3)` is 2, with 100 is 5, with
+   −5 is −1, `lastIndexOf("a", 0)` is 0, `lastIndexOf("", 2)` is 2, and
+   `lastIndexOf("", 99)` is 6.
+2. `split(sep: string, limit?: i32): string[]` and
+   `split(sep: RegExp, limit?: i32): string[]`. The result is the first
+   `limit` pieces of the unlimited split. `limit` follows JS's ToUint32:
+   0 gives `[]`, and a negative `limit` is its `u32` value, so −1 does
+   not limit (owner decision, 2026-09-27: follow JS). Measured on
+   `node`: `"a,b,c".split(",", 2)` is `["a","b"]`, with 0 is `[]`, with
+   −1 is `["a","b","c"]`; `"a1b2c".split(/\d/, 1)` is `["a"]`; and
+   `"abc".split("", 2)` is `["a","b"]` (one piece per code point,
+   §95.3).
+3. `trimLeft()` and `trimRight()` are `trimStart()` and `trimEnd()`.
+   Both are `@deprecated` in the lib, as `substr` is, and Q27 accepted
+   `substr` (owner decision, 2026-09-27).
+
 ## 9. P11 — `Array` methods (Q22)
 
 ### 9.0 The `Array` namespace
@@ -452,7 +483,8 @@ Added by Q27 (2026-07-25):
 
 - `reduceRight(f: (acc: U, v: T) => U, init: U): U` — `init` required,
   by the same rule that requires it on `reduce`
-- `splice(start: i32, deleteCount: i32): T[]` — **delete-only**,
+- `splice(start: i32, deleteCount?: i32): T[]` (`deleteCount` optional
+  by §9.9) — **delete-only**,
   returning the removed elements as a fresh array. JS's variadic
   insert form (`splice(1, 2, 9, 9, 9)`) needs variadic parameters,
   which the language does not have; this is a recorded subset, not
@@ -497,6 +529,39 @@ zero errors unchanged config; sort-stability pinned; the
 trapping-callback tuple identical across tiers; reject entries at
 pinned S014 positions; §5 item 5 benchmarks
 (`specs/blocks/benchmarks.md`) — no ship-row regression.
+
+### 9.9 Search positions, one-argument `splice`, and `toString` (2026-09-27)
+
+Origin and measurement as §8.9. Each form is `tsc`-clean and was
+rejected with S100.
+
+1. `indexOf(x: T, fromIndex?: i32): i32` and
+   `includes(x: T, fromIndex?: i32): boolean`. `fromIndex` defaults to
+   0; a negative value is `length + fromIndex`, clamped to 0; a value
+   at or past the length gives −1 or `false`. The equality rules of
+   this section do not change: `includes` keeps SameValueZero. Measured
+   on `node`: `[1,2,3,1,2].indexOf(1, 1)` is 3, with −2 is 3, with −100
+   is 0, `indexOf(2, 99)` is −1; `[NaN,1].includes(NaN, 0)` is `true`,
+   with 1 is `false`.
+2. `lastIndexOf(x: T, fromIndex?: i32): i32`. `fromIndex` defaults to
+   `length − 1`; a value at or past the length is `length − 1`; a
+   negative value is `length + fromIndex`, and a result below 0 gives
+   −1. Measured: `lastIndexOf(1, 2)` is 0, with −3 is 0, with −100 is
+   −1, `lastIndexOf(2, 99)` is 4.
+3. `splice(start: i32)` deletes from the normalized `start` to the end
+   and returns the removed elements, as JS does. `start` keeps the
+   existing negative and clamp rules. Measured: `[1,2,3,4,5].splice(2)`
+   returns `[3,4,5]` and leaves `[1,2]`; `[1,2,3].splice(-1)` returns
+   `[3]`; `[1,2].splice(9)` returns `[]`.
+4. `toString(): string` is `join(",")` for every element type that
+   `join` accepts, and is rejected where `join` is. A nested array is
+   one: `join` rejects it with S014, so `[[1,2],[3]].toString()` (`node`
+   gives `"1,2,3"`) stays rejected with it. Measured: `[1,2].toString()`
+   is `"1,2"`.
+
+Corpus: `a264-string-array-search-positions` covers §8.9 and §9.9 with
+ASCII text, except the nested-array `toString`, and is `js-comparable`
+against `node`.
 
 ## 10. P15 — `Map` / `Set` (Q24)
 
