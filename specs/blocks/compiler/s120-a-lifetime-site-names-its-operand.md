@@ -15,6 +15,17 @@ for `new Set(s)` with a freed `s`. A test-only JIT entry point
 `use-after-delete` at the call position for the same program, so a
 test through that entry point does not show the hole.
 
+*(Corrected 2026-09-28.)* `subscript run` runs with the retention mode
+off. With the mode off, a use after `Context.free` is undefined on the
+dev tier (§8.1a-1), so the `trap [internal]` above is not a contract
+violation, and no result with the mode off is evidence. The defect of
+the form stands on the mode-on results of the test-only entry point,
+which runs the §8.1a-1 mode. With the mode on, at `e61e012`: `new
+Map(x)`, `new Set<i32>(x)`, and `a.union(x)` trap at the call position,
+not the operand position, because the dev JIT tests the first operand
+of the call; the interpreter tests every handle operand, so the two
+engines choose the operand separately.
+
 Cause, read from the code at `26fabb8`:
 
 - `Expr::trap_sites` (`compiler/src/hir.rs`) derives a
@@ -93,9 +104,10 @@ principle 12). Rule 6 needs the interpreter to reach the operation.
    handle as data (§8.1a); this section does not change that.
 5. The ship tier keeps no check (§8.1a, §8.1b). It still matches every
    site explicitly, as §20.3 requires.
-6. A freed operand of a runtime operation gives
-   `trap [use-after-delete]` at the operand position on the dev JIT and
-   on the reference interpreter. Never `trap [internal]`.
+6. With the §8.1a-1 retention mode on, a freed operand of a runtime
+   operation gives `trap [use-after-delete]` at the operand position on
+   the dev JIT and on the reference interpreter. With the mode off, the
+   use is undefined (§8.1a-1), as it is on the ship tier.
 
 7. The reference interpreter collects the layout of every type that a
    collected type contains: the key and value types of a `Map`, the
@@ -107,13 +119,15 @@ principle 12). Rule 6 needs the interpreter to reach the operation.
 
 1. Red first (core principle 10): at `e61e012` (the batch 5b
    implementation), measure each operation class below with a
-   freed operand through `subscript run` (the dev JIT the program
-   gets) and through the corpus interpreter harness. A test-only entry
-   point with other freed-handle diagnostics is not the measurement. Record the
+   freed operand with the §8.1a-1 retention mode on (the dev-JIT entry
+   point that sets it, and the corpus interpreter harness). A result
+   with the mode off is undefined (§8.1a-1) and is not a measurement.
+   Record the
    output per class in `specs/tracking/s120-lifetime-operand.md`.
 2. One dev-tier test per operation class with a freed non-receiver
    operand, expecting `use-after-delete` at the operand position, with
-   a live-operand firing control, through the entry point of item 1.
+   a live-operand firing control, with the mode on as in item 1. No
+   test asserts a trap with the mode off.
    A class that no program can reach with a freed operand (the operand
    type is not accepted by `Context.free`) is recorded with the
    diagnostic that rejects it, in place of a test. The classes are at
