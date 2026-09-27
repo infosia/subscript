@@ -66,7 +66,8 @@ true. Core principle 14 states the rule; this section applies it.
 6. **A `Generator<T>` source is rejected**, by §14.4's rule: a
    generator is single-use, and construction is a value expression.
 7. **`new Map(source)` stays rejected in every form.** A pair element
-   needs a tuple type.
+   needs a tuple type. *(Except `new Map(otherMap)`, accepted
+   2026-09-27 by `stdlib.md` §10.9.)*
 
 The reason for the change is the reason that was there. One rejection
 row in `compiler/src/ambient.rs` covered both constructors and gave
@@ -141,7 +142,8 @@ reader must not read this list as a rejection.
    none, so §14.3 decides nothing for it.
 3. **`new Map(otherMap)`.** It needs no user-visible tuple and is the
    same class as 103.1's `Set` form. 103.1 keeps it rejected because
-   the owner approved the `Set` form only.
+   the owner approved the `Set` form only. *(Closed 2026-09-27 by `stdlib.md` §10.9, which
+   accepts it.)*
 4. **`a217` did not run on the reference interpreter.** *(Closed
    2026-09-10 by §106, which found the defect wider than this item
    states and repaired every packed location. `a217` now has three

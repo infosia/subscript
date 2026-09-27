@@ -65,7 +65,7 @@ point per element, as §14.1 already does.
 | member | this section | reason |
 |---|---|---|
 | `Array.isArray(x)` | **rejected, with its own record**; a candidate | The answer is statically known for an ordinary declared type, and a boundary-opaque `object` or a nullable form can need a runtime test. A round decides it after it inspects the runtime classification. The argument evaluates once whatever the answer, so a constant result is not a reason to drop it |
-| `Array.of(a, b, …)` | **rejected, with its own record**; a candidate at fixed arity | Variable arity keeps the recorded variadic prerequisite. That prerequisite does **not** reach `Array.of<T>()` and `Array.of<T>(v)`: `push` and `unshift` already ship as fixed-arity forms. A round measures the dispatch and inference cost, then decides |
+| `Array.of(a, b, …)` | **rejected, with its own record**; a candidate at fixed arity *(2026-09-27: the fixed-arity forms are accepted by `stdlib.md` §9.11; two or more arguments stay rejected)* | Variable arity keeps the recorded variadic prerequisite. That prerequisite does **not** reach `Array.of<T>()` and `Array.of<T>(v)`: `push` and `unshift` already ship as fixed-arity forms. A round measures the dispatch and inference cost, then decides |
 | `new Array<T>(n)` | **rejected** | The language has no array hole and no missing-element value. Filling with zero or `null` changes what a read means and what element presence means. This is not a cost statement |
 
 **"A candidate" is not a rejection reason.** Each of the first two

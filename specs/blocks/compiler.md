@@ -144,9 +144,9 @@ Every section, with its status:
 | §100 | The Windows host runs the standing gate | active | [`s100-the-windows-host-runs-the-standing-gate.md`](compiler/s100-the-windows-host-runs-the-standing-gate.md) |
 | §101 | A disposal is not placed where control cannot arrive | active | [`s101-a-disposal-is-not-placed-where-control-cannot-arrive.md`](compiler/s101-a-disposal-is-not-placed-where-control-cannot-arrive.md) |
 | §102 | A test waits on a fact, not on a clock | active | [`s102-a-test-waits-on-a-fact-not-on-a-clock.md`](compiler/s102-a-test-waits-on-a-fact-not-on-a-clock.md) |
-| §103 | A rejection reason must fit the form it rejects | active | [`s103-a-rejection-reason-must-fit-the-form-it-rejects.md`](compiler/s103-a-rejection-reason-must-fit-the-form-it-rejects.md) |
+| §103 | A rejection reason must fit the form it rejects | active; item 5.3 closed by stdlib §10.9 | [`s103-a-rejection-reason-must-fit-the-form-it-rejects.md`](compiler/s103-a-rejection-reason-must-fit-the-form-it-rejects.md) |
 | §104 | A bare `Map` is not an iteration source | active | [`s104-a-bare-map-is-not-an-iteration-source.md`](compiler/s104-a-bare-map-is-not-an-iteration-source.md) |
-| §105 | The `Array` namespace, and `Array.from` | active | [`s105-the-array-namespace-and-array-from.md`](compiler/s105-the-array-namespace-and-array-from.md) |
+| §105 | The `Array` namespace, and `Array.from` | active; §105.3 row amended by stdlib §9.11 | [`s105-the-array-namespace-and-array-from.md`](compiler/s105-the-array-namespace-and-array-from.md) |
 | §106 | The reference interpreter stores a generator | active | [`s106-the-reference-interpreter-stores-a-generator.md`](compiler/s106-the-reference-interpreter-stores-a-generator.md) |
 | §107 | Binding patterns, by source type and position | active | [`s107-binding-patterns-by-source-type-and-position.md`](compiler/s107-binding-patterns-by-source-type-and-position.md) |
 | §108 | A field carries a value before a constructor returns | active | [`s108-a-field-carries-a-value-before-a-constructor-returns.md`](compiler/s108-a-field-carries-a-value-before-a-constructor-returns.md) |

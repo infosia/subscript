@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 19, 2026-09-27 (Rev 19 adds §8.10 and §9.10, `at`, reference-element `find`/`findLast`, `findLastIndex`, and `flatMap`; Rev 18 adds §19, four more Error classes, `Error.prototype.toString`, and the URI functions; Rev 17 adds §3.1 and §11.4a, `Date` `toJSON`/`toUTCString`/`valueOf`/copy/`UTC(year)`, `toFixed()`, and the global `Infinity`; Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
+Status: Rev 20, 2026-09-27 (Rev 20 adds §9.11 and §10.9, `Array.of` at fixed arity and `new Map(map)`; Rev 19 adds §8.10 and §9.10, `at`, reference-element `find`/`findLast`, `findLastIndex`, and `flatMap`; Rev 18 adds §19, four more Error classes, `Error.prototype.toString`, and the URI functions; Rev 17 adds §3.1 and §11.4a, `Date` `toJSON`/`toUTCString`/`valueOf`/copy/`UTC(year)`, `toFixed()`, and the global `Infinity`; Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
 2026-07-26, adds the §13 P13 `JSON` contract; Rev 10, 2026-07-26, adds
 the §14 P22 `for…of`/spread contract; Rev 11, 2026-07-27, adds the §15
 P23 regex contract and removes the `regex` feature from it; Rev 12,
@@ -653,6 +653,27 @@ closure-taking members that §9 Stage 6 names, and a call of `at`,
 Corpus: `a268-array-string-at-find-flatmap`, `js-comparable` against
 `node` where no miss traps; the traps go in unit or three-engine tests.
 
+### 9.11 `Array.of` at fixed arity (2026-09-27)
+
+Origin: the ES2022 gap inventory, batch 5; `compiler.md` §105.3 named
+this form a candidate at fixed arity after a measurement of the
+dispatch and inference cost.
+
+1. `Array.of<T>(): T[]` is `[]` with element type `T`; the type
+   argument is required, as for an empty literal with no context.
+2. `Array.of(v: T): T[]` is `[v]`; `T` comes from `v`, or from the type
+   argument.
+3. Two or more arguments stay rejected: the variadic prerequisite of
+   Q19/Q27 is unchanged.
+4. The measurement §105.3 asks for: each form lowers to the LIR of the
+   array literal it equals, so the runtime cost is that literal's; the
+   checker's time over the corpus is measured before and after and
+   recorded.
+
+Measured on `node` v24.18.0: `Array.of()` `[]`, `Array.of(7)` `[7]`,
+`Array.of(1, 2)` `[1,2]`. `tsc` 5.9.2 accepts `Array.of<i32>()`,
+`Array.of<i32>(7)`, and `Array.of(7)`.
+
 ## 10. P15 — `Map` / `Set` (Q24)
 
 Owner decision 2026-07-25 reversed the non-goal (§7). This is the
@@ -735,7 +756,8 @@ A **`Map` source is rejected**: stock `tsc` answers TS2769, because
 invariant 5 excludes it. A **`Generator<K>` source is rejected** by
 §14.4's rule — a generator is single-use, and construction is a value
 expression. **`new Map(source)` stays rejected in every form**: a
-pair element needs a tuple type.
+pair element needs a tuple type. *(Except `new Map(otherMap)`, which
+§10.9 accepts: it needs no user-visible tuple.)*
 
 Added by Q27 (2026-07-25):
 
@@ -861,6 +883,27 @@ by golden; the collector reclaims a dropped container (observable via
 a `Context.collect()` entry that then still prints correctly); a trapping
 `forEach` callback reports an identical tuple across tiers; rejects at
 pinned S014 positions; benchmarks — no ship-row regression.
+
+### 10.9 `new Map(otherMap)` (2026-09-27)
+
+Origin: the ES2022 gap inventory, batch 5; `compiler.md` §103.5 item 3
+left it open as "the same class as 103.1's `Set` form".
+
+`new Map<K, V>(source: Map<K, V>)` and `new Map(source)` return a fresh
+`Map<K, V>` with the entries of `source` in its insertion order. The
+copy is shallow: a reference-class value is the same object in both
+maps. Later changes to either map do not reach the other. `K` and `V`
+keep every rule of §10.1 and §10.2. The lowering follows `compiler.md`
+§103.1 rule 4: one instruction, the traversal in the runtime behind
+the one insert path that `set` uses, no iterator object on any tier.
+Every other `new Map(source)` stays rejected.
+
+Measured on `node` v24.18.0: `new Map(m)` of `{a:1, b:2}`, then
+`n.set("c", 3)` and `m.delete("a")`, gives `n` keys `a,b,c`, `m` keys
+`b`, `n.size` 3, `n === m` false; a reference value is `===` in both.
+`tsc` 5.9.2 accepts `new Map(m)` and `new Map<string, i32>(m)`.
+
+Corpus: `a269-array-of-and-map-copy`, `js-comparable` against `node`.
 
 ## 11. P12 — `Number` statics, `parseInt`/`parseFloat`, `toFixed` (Q25)
 
