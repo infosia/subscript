@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 15, 2026-09-27 (Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
+Status: Rev 16, 2026-09-27 (Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
 2026-07-26, adds the §13 P13 `JSON` contract; Rev 10, 2026-07-26, adds
 the §14 P22 `for…of`/spread contract; Rev 11, 2026-07-27, adds the §15
 P23 regex contract and removes the `regex` feature from it; Rev 12,
@@ -1708,6 +1708,38 @@ agree. This follows from the string representation — this language's
 strings are UTF-8 (§15.1) — and is not adjustable; recorded because
 §15 previously documented only the offset divergence, and a corpus
 entry with a non-BMP subject now pins it.
+
+### 15.3a Flag accessors and `toString` (2026-09-27)
+
+Origin: the ES2022 gap inventory, batch 2 (owner, 2026-09-27). Each
+form is `tsc`-clean at the ES2022 lib (`tsc` 5.9.2) and was rejected
+before this section.
+
+1. `global`, `ignoreCase`, `multiline`, `dotAll`, `unicode`,
+   `hasIndices`: `boolean`, true when the flag set holds `g`, `i`, `m`,
+   `s`, `u`, `d`. They read the flags that `re.flags` renders.
+2. `sticky`: `boolean`, always `false`, because the `y` flag is
+   rejected (§15.3). The accessor reports the fact; it does not steer
+   matching.
+3. `toString(): string` is `"/" + source + "/" + flags`, with `source`
+   and `flags` as §15.3 defines them.
+
+`unicodeSets` (`v`) is ES2024 and absent from the ES2022 lib, so it is
+not added.
+
+Measured on `node` v24.18.0 (`String(re)`, then the seven accessors in
+the order above with `sticky` before `hasIndices`, then `source`):
+
+| Pattern | `toString()` | g i m s u y d | `source` |
+|---|---|---|---|
+| `/a/` | `/a/` | f f f f f f f | `a` |
+| `/a/gimsu` | `/a/gimsu` | t t t t t f f | `a` |
+| `/a/d` | `/a/d` | f f f f f f t | `a` |
+| `new RegExp("a/b")` | `/a\/b/` | f f f f f f f | `a\/b` |
+| `new RegExp("")` | `/(?:)/` | f f f f f f f | `(?:)` |
+| `/[/]/` | `/[/]/` | f f f f f f f | `[/]` |
+
+Corpus: `a265-regexp-flag-accessors`, `js-comparable` against `node`.
 
 ### 15.4 The failure channels
 
