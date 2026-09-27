@@ -13,6 +13,7 @@
 | `print(message: string): void` | Writes one line to the Context output sink. |
 | `unreachable(): never` | Marks a call-statement path as diverging and traps if execution reaches it. |
 | `NaN: f64` | Ambient NaN literal used by floating-point APIs. |
+| `Infinity: f64` | Positive infinity as an f64 constant. |
 | `parseInt(value: string, radix: i32): f64` | Parses the longest integer prefix; the radix is required. |
 | `parseFloat(value: string): f64` | Parses the longest decimal floating-point prefix. |
 
@@ -100,12 +101,13 @@
 | subscript signature | Behavior |
 |---|---|
 | `new Date(milliseconds: i64): Date` | Constructs an immutable Date from epoch milliseconds. |
+| `new Date(value: Date): Date` | Copies an immutable Date value. |
 
 ### Date
 
 | subscript signature | Behavior |
 |---|---|
-| `UTC(year: i32, month: i32, date?: i32, hours?: i32, minutes?: i32, seconds?: i32, milliseconds?: i32): i64` | Builds epoch milliseconds from UTC components. |
+| `UTC(year: i32, month?: i32, date?: i32, hours?: i32, minutes?: i32, seconds?: i32, milliseconds?: i32): i64` | Builds epoch milliseconds from UTC components. |
 | `now(): i64` | Reads the Context clock. |
 
 ### Date instance
@@ -121,13 +123,16 @@
 | `getUTCSeconds(): i32` | Returns the UTC second. |
 | `getUTCMilliseconds(): i32` | Returns the UTC millisecond. |
 | `toISOString(): string` | Formats years 0000 through 9999 as UTC ISO text. |
+| `toUTCString(): string` | Formats every TimeClip year as UTC text with weekday and GMT. |
 | `getTime(): i64` | Returns epoch milliseconds. |
+| `valueOf(): i64` | Returns epoch milliseconds. |
+| `toJSON(): string` | Formats years 0000 through 9999 as UTC ISO text. |
 
 ### f32
 
 | subscript signature | Behavior |
 |---|---|
-| `toFixed(digits: i32): string` | Formats with a required fixed-decimal digit count. |
+| `toFixed(digits?: i32): string` | Formats with a fixed-decimal digit count, defaulting to zero. |
 | `toString(radix: i32): string` | Formats in an explicit radix from 2 through 36. |
 | `toExponential(digits?: i32): string` | Formats in exponential notation. |
 | `toPrecision(digits: i32): string` | Formats with a required significant-digit count. |
@@ -136,7 +141,7 @@
 
 | subscript signature | Behavior |
 |---|---|
-| `toFixed(digits: i32): string` | Formats with a required fixed-decimal digit count. |
+| `toFixed(digits?: i32): string` | Formats with a fixed-decimal digit count, defaulting to zero. |
 | `toString(radix: i32): string` | Formats in an explicit radix from 2 through 36. |
 | `toExponential(digits?: i32): string` | Formats in exponential notation. |
 | `toPrecision(digits: i32): string` | Formats with a required significant-digit count. |
@@ -352,9 +357,6 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Date | `toLocaleString` | S014 | Q20 | `toISOString` | Locale and timezone formatting is unavailable. | — |
 | Date | `toLocaleDateString` | S014 | Q20 | `toISOString` | Locale and timezone formatting is unavailable. | — |
 | Date | `toLocaleTimeString` | S014 | Q20 | `toISOString` | Locale and timezone formatting is unavailable. | — |
-| Date | `toUTCString` | S014 | Q20 | `toISOString` | Outside the checker-owned Date formatting subset. | — |
-| Date | `toJSON` | S014 | Q20 | `toISOString` | Outside the checker-owned Date formatting subset. | — |
-| Date | `valueOf` | S014 | Q20 | `getTime` | Implicit Date numeric conversion is unavailable. | — |
 | Map<K, V> | `keys` | S014 | Q30 | `use directly as a for…of subject` | `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). | `r42-map-iterator-member.ts` |
 | Map<K, V> | `values` | S014 | Q30 | `use directly as a for…of subject` | `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). | — |
 | Map<K, V> | `entries` | S014 | Q30 | — | `entries()` yields a pair, but the language has no tuple type. | `r79-assign-entries.ts` |

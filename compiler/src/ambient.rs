@@ -416,30 +416,6 @@ const DATE_STRING_REJECTIONS: &[ApiRejection] = &[
         "Locale and timezone formatting is unavailable.",
         None,
     ),
-    rejection(
-        "Date",
-        "toUTCString",
-        "Q20",
-        Some("toISOString"),
-        "Outside the checker-owned Date formatting subset.",
-        None,
-    ),
-    rejection(
-        "Date",
-        "toJSON",
-        "Q20",
-        Some("toISOString"),
-        "Outside the checker-owned Date formatting subset.",
-        None,
-    ),
-    rejection(
-        "Date",
-        "valueOf",
-        "Q20",
-        Some("getTime"),
-        "Implicit Date numeric conversion is unavailable.",
-        None,
-    ),
 ];
 
 const MAP_REJECTIONS: &[ApiRejection] = &[
@@ -715,10 +691,9 @@ pub(crate) fn number_global(name: &str) -> Option<NumFn> {
     })
 }
 
-/// Maps a `Date` instance-method name to its intrinsic (stdlib.md §3):
-/// the eight UTC accessors and `toISOString`. `getTime` is not here —
-/// it folds to the receiver value at check time — and the statics
-/// (`UTC`, `now`) are resolved on the `Date` namespace, not a receiver.
+/// Maps UTC accessors and formatting methods to Date intrinsics (stdlib.md §3.1).
+/// `getTime` and `valueOf` fold to the receiver at check time.
+/// The checker resolves `UTC` and `now` on the Date namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DateMethod {
     GetUtcFullYear,
@@ -730,10 +705,11 @@ pub(crate) enum DateMethod {
     GetUtcSeconds,
     GetUtcMilliseconds,
     ToIso,
+    ToUtcString,
 }
 
 impl DateMethod {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::GetUtcFullYear,
         Self::GetUtcMonth,
         Self::GetUtcDate,
@@ -743,6 +719,7 @@ impl DateMethod {
         Self::GetUtcSeconds,
         Self::GetUtcMilliseconds,
         Self::ToIso,
+        Self::ToUtcString,
     ];
 
     pub(crate) fn operation(self) -> DateFn {
@@ -756,11 +733,17 @@ impl DateMethod {
             Self::GetUtcSeconds => DateFn::GetUtcSeconds,
             Self::GetUtcMilliseconds => DateFn::GetUtcMilliseconds,
             Self::ToIso => DateFn::ToIso,
+            Self::ToUtcString => DateFn::ToUtcString,
         }
     }
 }
 
 pub(crate) fn date_method(name: &str) -> Option<DateMethod> {
+    let name = if name == "toJSON" {
+        "toISOString"
+    } else {
+        name
+    };
     DateMethod::ALL
         .iter()
         .copied()
@@ -914,6 +897,11 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
         signature: "NaN: f64".to_string(),
         summary: "Ambient NaN literal used by floating-point APIs.",
     });
+    out.push(ApiItem {
+        group: "Global",
+        signature: "Infinity: f64".to_string(),
+        summary: "Positive infinity as an f64 constant.",
+    });
     for f in [NumFn::ParseInt, NumFn::ParseFloat] {
         out.push(ApiItem {
             group: "Global",
@@ -981,12 +969,37 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             signature: f.api_signature().to_string(),
             summary: f.api_summary(),
         });
+        if f == DateFn::New {
+            out.push(ApiItem {
+                group,
+                signature: "new Date(value: Date): Date".to_string(),
+                summary: "Copies an immutable Date value.",
+            });
+        }
     }
     out.push(ApiItem {
         group: "Date instance",
         signature: "getTime(): i64".to_string(),
         summary: "Returns epoch milliseconds.",
     });
+    for (group, signature, summary) in [
+        (
+            "Date instance",
+            "valueOf(): i64",
+            "Returns epoch milliseconds.",
+        ),
+        (
+            "Date instance",
+            "toJSON(): string",
+            "Formats years 0000 through 9999 as UTC ISO text.",
+        ),
+    ] {
+        out.push(ApiItem {
+            group,
+            signature: signature.to_string(),
+            summary,
+        });
+    }
     for (group, f) in [
         ("f32", NumFn::ToFixed),
         ("f32", NumFn::ToStringF32),
@@ -1358,6 +1371,8 @@ mod tests {
         );
         assert_eq!(date_method("getUTCDay"), Some(DateMethod::GetUtcDay));
         assert_eq!(date_method("toISOString"), Some(DateMethod::ToIso));
+        assert_eq!(date_method("toJSON"), Some(DateMethod::ToIso));
+        assert_eq!(date_method("toUTCString"), Some(DateMethod::ToUtcString));
         // getTime folds at check time; it is not an intrinsic lookup.
         assert_eq!(date_method("getTime"), None);
         // Out-of-subset members resolve to nothing (Q20).
@@ -1560,6 +1575,10 @@ mod tests {
         }
         for (group, signature) in [
             ("Global", "NaN: f64"),
+            ("Global", "Infinity: f64"),
+            ("Date constructor", "new Date(value: Date): Date"),
+            ("Date instance", "valueOf(): i64"),
+            ("Date instance", "toJSON(): string"),
             ("Date instance", "getTime(): i64"),
             ("string", "length: i32"),
             ("T[]", "length: i32"),
@@ -1581,7 +1600,7 @@ mod tests {
         }
 
         let regex_rows = 1 + RegexFn::ALL.len();
-        let expected = 3 + AmbientFn::ALL.len()
+        let expected = 7 + AmbientFn::ALL.len()
             + ContextBytesFn::ALL.len()
             + 1
             + 2

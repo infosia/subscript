@@ -238,6 +238,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         subscript_rt_date_now,
         subscript_rt_date_get,
         subscript_rt_date_to_iso,
+        subscript_rt_date_to_utc_string,
         subscript_rt_worker_spawn,
         subscript_rt_worker_post,
         subscript_rt_worker_poll,

@@ -383,12 +383,14 @@ impl<'p> Checker<'p> {
                 self.err_expr(pos)
             }
             None => {
-                if name == "NaN" {
-                    // The ES ambient global is the literal spelling used
-                    // by Q24. Local or program declarations named `NaN`
-                    // were resolved above and therefore still shadow it.
+                if name == "NaN" || name == "Infinity" {
+                    // Local and program declarations shadow ambient constants.
                     hir::Expr {
-                        kind: ExprKind::Float(f64::NAN),
+                        kind: ExprKind::Float(if name == "NaN" {
+                            f64::NAN
+                        } else {
+                            f64::INFINITY
+                        }),
                         ty: Type::F64,
                         pos,
                     }

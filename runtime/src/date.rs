@@ -210,9 +210,47 @@ pub fn to_iso(ms: i64) -> Option<String> {
     ))
 }
 
+/// `toUTCString()`: UTC text with an English weekday, month, and GMT suffix.
+/// Every TimeClip year has at least four digits, with a separate negative sign.
+#[must_use]
+pub fn to_utc_string(ms: i64) -> String {
+    const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let f = decompose(ms);
+    format!(
+        "{}, {:02} {} {}{:04} {:02}:{:02}:{:02} GMT",
+        WEEKDAYS[f.weekday as usize],
+        f.day,
+        MONTHS[f.month0 as usize],
+        if f.year < 0 { "-" } else { "" },
+        f.year.abs(),
+        f.hours,
+        f.minutes,
+        f.seconds,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn utc_string_formats_calendar_edges() {
+        for (ms, expected) in [
+            (0, "Thu, 01 Jan 1970 00:00:00 GMT"),
+            (-1, "Wed, 31 Dec 1969 23:59:59 GMT"),
+            (951_782_400_000, "Tue, 29 Feb 2000 00:00:00 GMT"),
+            (-62_198_755_200_000, "Fri, 01 Jan -0001 00:00:00 GMT"),
+            (-59_042_995_200_000, "Thu, 01 Jan 0099 00:00:00 GMT"),
+            (253_402_300_800_000, "Sat, 01 Jan 10000 00:00:00 GMT"),
+            (-8_640_000_000_000_000, "Tue, 20 Apr -271821 00:00:00 GMT"),
+            (8_640_000_000_000_000, "Sat, 13 Sep 275760 00:00:00 GMT"),
+        ] {
+            assert_eq!(to_utc_string(ms), expected, "{ms}");
+        }
+    }
 
     #[test]
     fn epoch_is_day_zero_and_a_thursday() {

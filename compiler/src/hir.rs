@@ -1523,7 +1523,7 @@ impl NumFn {
             NumFn::IsSafeInteger => "isSafeInteger(value: f64): boolean",
             NumFn::ParseInt => "parseInt(value: string, radix: i32): f64",
             NumFn::ParseFloat => "parseFloat(value: string): f64",
-            NumFn::ToFixed => "toFixed(digits: i32): string",
+            NumFn::ToFixed => "toFixed(digits?: i32): string",
             NumFn::ToStringF32 | NumFn::ToStringF64 => "toString(radix: i32): string",
             NumFn::ToExponential => "toExponential(digits?: i32): string",
             NumFn::ToPrecision => "toPrecision(digits: i32): string",
@@ -1540,7 +1540,7 @@ impl NumFn {
             NumFn::IsSafeInteger => "Tests the ECMA safe-integer range.",
             NumFn::ParseInt => "Parses the longest integer prefix; the radix is required.",
             NumFn::ParseFloat => "Parses the longest decimal floating-point prefix.",
-            NumFn::ToFixed => "Formats with a required fixed-decimal digit count.",
+            NumFn::ToFixed => "Formats with a fixed-decimal digit count, defaulting to zero.",
             NumFn::ToStringF32 | NumFn::ToStringF64 => {
                 "Formats in an explicit radix from 2 through 36."
             }
@@ -1749,11 +1749,13 @@ pub enum DateFn {
     /// `toISOString()` → `subscript_rt_date_to_iso` (years 0000–9999, else a
     /// trap, Q20).
     ToIso,
+    /// `toUTCString()` formats every TimeClip year as UTC text (stdlib.md §3.1).
+    ToUtcString,
 }
 
 impl DateFn {
     /// Every accepted Date operation in discriminant order.
-    pub const ALL: [DateFn; 12] = [
+    pub const ALL: [DateFn; 13] = [
         DateFn::New,
         DateFn::Utc,
         DateFn::Now,
@@ -1766,12 +1768,16 @@ impl DateFn {
         DateFn::GetUtcSeconds,
         DateFn::GetUtcMilliseconds,
         DateFn::ToIso,
+        DateFn::ToUtcString,
     ];
 
     /// Whether the runtime call can leave the Context trapped.
     #[must_use]
     pub fn can_trap(self) -> bool {
-        matches!(self, DateFn::New | DateFn::Utc | DateFn::ToIso)
+        matches!(
+            self,
+            DateFn::New | DateFn::Utc | DateFn::ToIso | DateFn::ToUtcString
+        )
     }
 
     /// The lib member name (diagnostics and the checker's lookup).
@@ -1790,6 +1796,7 @@ impl DateFn {
             DateFn::GetUtcSeconds => "getUTCSeconds",
             DateFn::GetUtcMilliseconds => "getUTCMilliseconds",
             DateFn::ToIso => "toISOString",
+            DateFn::ToUtcString => "toUTCString",
         }
     }
 
@@ -1818,7 +1825,7 @@ impl DateFn {
         match self {
             DateFn::New => "new Date(milliseconds: i64): Date",
             DateFn::Utc => {
-                "UTC(year: i32, month: i32, date?: i32, hours?: i32, minutes?: i32, seconds?: i32, milliseconds?: i32): i64"
+                "UTC(year: i32, month?: i32, date?: i32, hours?: i32, minutes?: i32, seconds?: i32, milliseconds?: i32): i64"
             }
             DateFn::Now => "now(): i64",
             DateFn::GetUtcFullYear => "getUTCFullYear(): i32",
@@ -1830,6 +1837,7 @@ impl DateFn {
             DateFn::GetUtcSeconds => "getUTCSeconds(): i32",
             DateFn::GetUtcMilliseconds => "getUTCMilliseconds(): i32",
             DateFn::ToIso => "toISOString(): string",
+            DateFn::ToUtcString => "toUTCString(): string",
         }
     }
 
@@ -1849,6 +1857,7 @@ impl DateFn {
             DateFn::GetUtcSeconds => "Returns the UTC second.",
             DateFn::GetUtcMilliseconds => "Returns the UTC millisecond.",
             DateFn::ToIso => "Formats years 0000 through 9999 as UTC ISO text.",
+            DateFn::ToUtcString => "Formats every TimeClip year as UTC text with weekday and GMT.",
         }
     }
 }
@@ -4914,10 +4923,17 @@ mod tests {
         for (i, f) in accessors.iter().enumerate() {
             assert_eq!(f.field_code(), Some(i as u32), "field code of {}", f.name());
         }
-        for f in [DateFn::New, DateFn::Utc, DateFn::Now, DateFn::ToIso] {
+        for f in [
+            DateFn::New,
+            DateFn::Utc,
+            DateFn::Now,
+            DateFn::ToIso,
+            DateFn::ToUtcString,
+        ] {
             assert_eq!(f.field_code(), None, "{} is not an accessor", f.name());
         }
         assert_eq!(DateFn::ToIso.name(), "toISOString");
+        assert_eq!(DateFn::ToUtcString.name(), "toUTCString");
         assert_eq!(DateFn::Utc.name(), "UTC");
     }
 
@@ -4930,6 +4946,7 @@ mod tests {
         assert!(Callee::Num(NumFn::ParseInt).has_call_site());
         assert!(!Callee::Num(NumFn::IsFinite).has_call_site());
         assert!(Callee::Date(DateFn::New).has_call_site());
+        assert!(Callee::Date(DateFn::ToUtcString).has_call_site());
         assert!(!Callee::Date(DateFn::Now).has_call_site());
         assert!(Callee::Json(JsonFn::Finish).has_call_site());
         assert!(Callee::Str(StrFn::CharCodeAt).has_call_site());

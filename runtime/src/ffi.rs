@@ -3326,6 +3326,21 @@ pub unsafe extern "C" fn subscript_rt_date_to_iso(
     }
 }
 
+/// `toUTCString()`: allocates UTC text for every TimeClip year.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_date_to_utc_string(
+    ctx: *mut Context,
+    ms: i64,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.alloc_str(crate::date::to_utc_string(ms).as_bytes(), pos_id)
+}
+
 /// Pins the Context's `Date.now` clock to `ms` (stdlib.md §3; tests and
 /// replays). The default, unpinned source is the system UTC clock.
 ///
@@ -7168,6 +7183,8 @@ mod tests {
             );
             let iso = subscript_rt_date_to_iso(p, ms, 0);
             assert_eq!(ctx.str_bytes(iso), b"2020-06-15T12:34:56.789Z");
+            let utc = subscript_rt_date_to_utc_string(p, ms, 0);
+            assert_eq!(ctx.str_bytes(utc), b"Mon, 15 Jun 2020 12:34:56 GMT");
         }
         assert!(ctx.trap_record().is_none());
     }

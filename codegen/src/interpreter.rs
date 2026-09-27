@@ -2844,6 +2844,10 @@ impl<'m> Interpreter<'m> {
                         ffi::subscript_rt_date_get(context, first()?.as_i64()?, field)
                     } as i64)
                 }
+                // SAFETY: scalar Date and owned Context.
+                "ToUtcString" => Value::Handle(unsafe {
+                    ffi::subscript_rt_date_to_utc_string(context, first()?.as_i64()?, 0)
+                }),
                 // SAFETY: scalar Date; runtime owns ISO formatting/range checks.
                 "ToIso" => Value::Handle(unsafe {
                     ffi::subscript_rt_date_to_iso(context, first()?.as_i64()?, 0)

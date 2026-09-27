@@ -444,6 +444,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             "Utc" => ("subscript_rt_date_utc", true),
             "Now" => ("subscript_rt_date_now", false),
             "ToIso" => ("subscript_rt_date_to_iso", true),
+            "ToUtcString" => ("subscript_rt_date_to_utc_string", true),
             other => return Err(internal(format!("unknown Date intrinsic {other}"))),
         };
         self.emit_simple_runtime_intrinsic(

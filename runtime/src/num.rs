@@ -506,6 +506,25 @@ mod tests {
     }
 
     #[test]
+    fn to_fixed_zero_digits_matches_default_formatting() {
+        for (value, expected) in [
+            (1.5, "2"),
+            (2.5, "3"),
+            (-1.5, "-2"),
+            (1234.5, "1235"),
+            (0.0, "0"),
+            (-0.0, "0"),
+            (1e21, "1e+21"),
+            (f64::NAN, "NaN"),
+            (0.5, "1"),
+            (f64::INFINITY, "Infinity"),
+            (f64::NEG_INFINITY, "-Infinity"),
+        ] {
+            assert_eq!(to_fixed(value, 0), expected);
+        }
+    }
+
+    #[test]
     fn radix_formatting_includes_fractions_and_q14_decimal() {
         assert_eq!(to_string_radix_f64(1234.5678, 36), "ya.kfv9yqdpm");
         assert_eq!(to_string_radix_f64(0.5, 2), "0.1");

@@ -53,8 +53,8 @@ impl<'p> Checker<'p> {
         let (f, optional, arity_message) = match name {
             "toFixed" => (
                 NumFn::ToFixed,
-                false,
-                "`toFixed` takes exactly 1 i32 digit count",
+                true,
+                "`toFixed` takes zero or one i32 digit count",
             ),
             "toString" => (
                 if recv.ty == Type::F32 {
@@ -109,7 +109,7 @@ impl<'p> Checker<'p> {
         let mut checked = self.check_args(&params, &c.args, fx, &pos, name);
         if optional && checked.is_empty() {
             checked.push(hir::Expr {
-                kind: ExprKind::Int(-1),
+                kind: ExprKind::Int(if f == NumFn::ToFixed { 0 } else { -1 }),
                 ty: Type::I32,
                 pos: pos.clone(),
             });

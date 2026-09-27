@@ -775,6 +775,11 @@ Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
   `new Date(Date.now())`), `Date` in template literals, and direct
   `Date` comparison (`===`, `<`, … — compare `getTime()` values).
   Out-of-range times trap; there is no Invalid-Date value.
+  `toISOString()` and `toJSON()` trap for a year outside 0000–9999,
+  where JavaScript writes an extended year (`+010000-01-01T00:00:00.000Z`,
+  `-000001-01-01T00:00:00.000Z`; measured on `node` v24.18.0,
+  2026-09-27). `toUTCString()` formats every year as JavaScript does
+  (`stdlib.md` §3.1).
 - **Q21 (`String` methods)** — strings are immutable UTF-8 byte
   strings; every accepted index/length/code-unit measure is a **byte**
   (the standing meaning of `length`/`slice`). ASCII programs behave as

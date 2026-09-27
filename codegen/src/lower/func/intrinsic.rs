@@ -283,8 +283,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             "Now" => {
                 self.simple_runtime_intrinsic(self.ml.rt.date_now, operands, None, checked, false)
             }
-            "ToIso" => self.simple_runtime_intrinsic(
-                self.ml.rt.date_to_iso,
+            "ToIso" | "ToUtcString" => self.simple_runtime_intrinsic(
+                if name == "ToIso" {
+                    self.ml.rt.date_to_iso
+                } else {
+                    self.ml.rt.date_to_utc_string
+                },
                 operands,
                 Some(pos),
                 checked,

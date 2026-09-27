@@ -192,6 +192,8 @@ pub(crate) struct RtFns {
     pub date_get: FuncId,
     /// `subscript_rt_date_to_iso`: (ms, pos id) → string handle.
     pub date_to_iso: FuncId,
+    /// `subscript_rt_date_to_utc_string`: (ms, pos id) → string handle.
+    pub date_to_utc_string: FuncId,
     /// Checker-generated JSON serializer leaves (stdlib.md §13), indexed
     /// by [`JsonFn::ALL`] discriminant order.
     pub json: [FuncId; JsonFn::ALL.len()],
@@ -1084,6 +1086,11 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         date_now: mk("subscript_rt_date_now", &[I64], Some(I64))?,
         date_get: mk("subscript_rt_date_get", &[I64, I64, I32], Some(I32))?,
         date_to_iso: mk("subscript_rt_date_to_iso", &[I64, I64, I32], Some(I64))?,
+        date_to_utc_string: mk(
+            "subscript_rt_date_to_utc_string",
+            &[I64, I64, I32],
+            Some(I64),
+        )?,
         json,
         str_ops,
         regex_ops,

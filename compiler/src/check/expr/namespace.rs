@@ -1081,14 +1081,13 @@ impl<'p> Checker<'p> {
     ) -> Option<hir::Expr> {
         match name {
             "UTC" => {
-                // year and month0 are required; day defaults to 1, the
-                // time components to 0 (ECMA Date.UTC with the lib's
-                // optional parameters).
+                // Only year is required; day defaults to 1, all other
+                // components to 0 (stdlib.md §3.1).
                 let params: Vec<ParamSig> = (0..7)
                     .map(|i| ParamSig {
                         name: String::new(),
                         ty: Type::I32,
-                        has_default: i >= 2,
+                        has_default: i >= 1,
                     })
                     .collect();
                 let mut args = self.check_args(&params, &c.args, fx, &pos, "Date.UTC");
@@ -1127,7 +1126,7 @@ impl<'p> Checker<'p> {
     }
 
     /// `new Date(…)` when no program declaration shadows `Date`
-    /// (stdlib.md §3): exactly one `i64` millisecond argument. The
+    /// (stdlib.md §3.1): one `i64` millisecond or `Date` argument. The
     /// zero-argument and multi-argument lib constructors mean
     /// current/local time and are out of subset (Q20).
     pub(super) fn check_date_new(
@@ -1140,8 +1139,28 @@ impl<'p> Checker<'p> {
         let args_ast = n.args.as_deref().unwrap_or(&empty);
         match args_ast.len() {
             1 => {
-                let params = [ParamSig::positional(Type::I64)];
-                let args = self.check_args(&params, args_ast, fx, &pos, "new Date");
+                let arg = &args_ast[0];
+                if let Some(spread) = arg.spread {
+                    let spread_pos = self.pos(spread);
+                    self.error(
+                        RuleCode::S014,
+                        "spread arguments require variadic parameters, which the language does not have",
+                        spread_pos,
+                    );
+                    return self.err_expr(pos);
+                }
+                let mut value = self.check_expr(&arg.expr, Some(&Type::I64), fx);
+                if value.ty == Type::Date {
+                    value.ty = Type::I64;
+                } else {
+                    self.require_assignable(
+                        &value.ty,
+                        &Type::I64,
+                        value.pos.clone(),
+                        "the argument",
+                    );
+                }
+                let args = vec![value];
                 hir::Expr {
                     kind: ExprKind::Call {
                         callee: Callee::Date(DateFn::New),
@@ -1182,8 +1201,8 @@ impl<'p> Checker<'p> {
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
-        if name == "getTime" {
-            self.check_args(&[], &c.args, fx, &pos, "getTime");
+        if matches!(name, "getTime" | "valueOf") {
+            self.check_args(&[], &c.args, fx, &pos, name);
             return hir::Expr {
                 kind: recv.kind,
                 ty: Type::I64,
@@ -1192,7 +1211,10 @@ impl<'p> Checker<'p> {
         }
         if let Some(method) = crate::ambient::date_method(name) {
             self.check_args(&[], &c.args, fx, &pos, name);
-            let ty = if method == crate::ambient::DateMethod::ToIso {
+            let ty = if matches!(
+                method,
+                crate::ambient::DateMethod::ToIso | crate::ambient::DateMethod::ToUtcString
+            ) {
                 Type::Str
             } else {
                 Type::I32
