@@ -105,6 +105,10 @@ Accept: `a03`. Reject: `r09-int-literal-overflow` (`const x: i32 =
   Its environment lives on the stack; no allocation.
 - C callbacks (plan §4 pattern 4) therefore take the manual form: a
   non-capturing function plus explicit `userdata`.
+- *(Added 2026-09-27, `compiler.md` §118.)* The checker enforces
+  this by type: every value of a type that can carry a function may
+  capture unless it is syntactically clean, a parameter that escapes is
+  inferred, and its callers pass clean values.
 
 Accept: `a13`, `a14`. Reject: `r10-escaping-capture` (returns a capturing
 lambda; `tsc`-clean).

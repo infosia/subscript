@@ -89,9 +89,8 @@ the completion, not the ownership.
 4c. **A lambda borrows a captured handle.** C5 states that a lambda
    does not escape its defining function and captures only `const`
    locals, so the defining function's binding outlives every call of
-   the lambda. *(The checker does not enforce C5 through a callee that
-   stores its function-typed parameter; the tracking note records the
-   measured escape as an open item outside this section.)* A
+   the lambda. *(§118 enforces C5 through a callee that stores or returns its
+   function-typed parameter.)* A
    capture is not an owner: the closure takes no count, and no exit of
    the lambda, normal or exceptional, releases it. A copy inside the
    lambda (`const local = h`) acquires and releases as any copy does

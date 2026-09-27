@@ -204,7 +204,8 @@ position defect, so the form changes, not the site.)*
    cannot drop one (§20.1).
 3. **"Can raise" is a callee fact, derived one time in HIR.** A
    function can raise if its body holds a `throw`, a `JSON.parse`, a
-   built-in call that takes a script callback, an indirect call, or a
+   built-in call that calls a script callback (§118.2: not a built-in
+   call whose operand only has a function type), an indirect call, or a
    call to a function that can raise. Each engine reads the fact. None
    derives it again. The C emitter checks the word after each call to
    a callee that can raise.

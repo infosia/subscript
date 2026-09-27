@@ -22,7 +22,7 @@ The stages of the current form and the sections that hold their rules:
 
 | Stage | Sections |
 |---|---|
-| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116 |
+| parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
@@ -43,7 +43,7 @@ Every section, with its status:
 | §5 | Conventions | active | [`s005-conventions.md`](compiler/s005-conventions.md) |
 | §6 | P1 checker contract | active | [`s006-p1-checker-contract.md`](compiler/s006-p1-checker-contract.md) |
 | §7 | P2 runtime and JIT contract | active | [`s007-p2-runtime-and-jit-contract.md`](compiler/s007-p2-runtime-and-jit-contract.md) |
-| §8 | P3 AOT, hot reload, and the standing gate | active | [`s008-p3-aot-hot-reload-and-the-standing-gate.md`](compiler/s008-p3-aot-hot-reload-and-the-standing-gate.md) |
+| §8 | P3 AOT, hot reload, and the standing gate | active; §8.2 amended by §118 | [`s008-p3-aot-hot-reload-and-the-standing-gate.md`](compiler/s008-p3-aot-hot-reload-and-the-standing-gate.md) |
 | §9 | P4 measurement methodology | active | [`s009-p4-measurement-methodology.md`](compiler/s009-p4-measurement-methodology.md) |
 | §10 | P4.1 lowering optimization and re-measurement | active | [`s010-p4-1-lowering-optimization-and-re-measurement.md`](compiler/s010-p4-1-lowering-optimization-and-re-measurement.md) |
 | §10a | Emitted-C growable-array element access is inlined | active | [`s010a-emitted-c-growable-array-element-access-is-inlined.md`](compiler/s010a-emitted-c-growable-array-element-access-is-inlined.md) |
@@ -156,6 +156,7 @@ Every section, with its status:
 | §112 | Position id 0 is "no script site" | active; rule 4 and 112.2 amended by §113 | [`s112-position-id-0-is-no-script-site.md`](compiler/s112-position-id-0-is-no-script-site.md) |
 | §113 | The sandbox profile is removed | active; §114 deletes 113.2 rules 1 and 9, and amends rules 2 and 3 | [`s113-the-sandbox-profile-is-removed.md`](compiler/s113-the-sandbox-profile-is-removed.md) |
 | §114 | The compile thread is removed | active | [`s114-the-compile-thread-is-removed.md`](compiler/s114-the-compile-thread-is-removed.md) |
-| §115 | Recoverable exceptions, and `JSON.parse` returns `T` | active; rule 3.3 and item 4.2 replaced by §116; revises C6, C8, C11, stdlib §13.4, §20.3 | [`s115-recoverable-exceptions-and-a-direct-json-parse.md`](compiler/s115-recoverable-exceptions-and-a-direct-json-parse.md) |
+| §115 | Recoverable exceptions, and `JSON.parse` returns `T` | active; rule 3.3 and item 4.2 replaced by §116; rule 6.3 amended by §118; revises C6, C8, C11, stdlib §13.4, §20.3 | [`s115-recoverable-exceptions-and-a-direct-json-parse.md`](compiler/s115-recoverable-exceptions-and-a-direct-json-parse.md) |
 | §116 | An `await` delivers the exception of its handle | active; amends §115, §70, C6, C8 | [`s116-an-await-delivers-the-exception-of-its-handle.md`](compiler/s116-an-await-delivers-the-exception-of-its-handle.md) |
 | §117 | An array iterator reads its bound from the header | active | [`s117-an-array-iterator-reads-its-bound-from-the-header.md`](compiler/s117-an-array-iterator-reads-its-bound-from-the-header.md) |
+| §118 | A capture never outlives its frame | active; amends C5, §8.2, §116 | [`s118-a-capture-never-outlives-its-frame.md`](compiler/s118-a-capture-never-outlives-its-frame.md) |

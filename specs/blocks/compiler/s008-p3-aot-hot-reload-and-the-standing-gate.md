@@ -531,7 +531,9 @@ Per §1's rules, made testable:
   (name, parameter types, return type). Function *bodies* are excluded
   by construction. The hash is computed from the typed HIR, is stable
   across recompiles of identical declarations, and changes for any
-  declaration edit.
+  declaration edit. *(2026-09-27, §118.1 rule 10: the hash also holds
+  whether each parameter escapes. That fact is derived from bodies, so
+  a body edit that changes it is a rejected swap.)*
 - **Accepted swap**: same declaration hash → the per-function
   indirection table is repointed at the newly compiled bodies. Context
   state (globals, live allocations) survives; execution continues.
