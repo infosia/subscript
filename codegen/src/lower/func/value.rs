@@ -506,18 +506,52 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         Ok(())
     }
 
-    pub(super) fn live_check(&mut self, pointer: Value, position: &Pos) -> Result<(), String> {
-        let state = self
-            .builder
-            .ins()
-            .load(types::I64, flags(), pointer, rtc::STATE_OFFSET);
-        let live = self
-            .builder
-            .ins()
-            .icmp_imm(IntCC::Equal, state, rtc::LIVE_STATE as i64);
-        let kind = runtime_trap_kind(&l::TrapKind::DevOnlyLifetime)
-            .ok_or_else(|| internal("lifetime trap has no direct runtime kind"))?;
-        self.guard(live, kind, position)
+    pub(super) fn consume_lifetimes<'i>(
+        &mut self,
+        traps: &'i [l::Trap],
+        operands: &[RV],
+    ) -> Result<std::borrow::Cow<'i, [l::Trap]>, String> {
+        if !traps.iter().any(|trap| {
+            matches!(
+                trap.kind,
+                l::TrapKind::DevOnlyLifetime(_) | l::TrapKind::DevOnlyRelease(_)
+            )
+        }) {
+            return Ok(std::borrow::Cow::Borrowed(traps));
+        }
+        let mut remaining = Vec::new();
+        for trap in traps {
+            match trap.kind {
+                l::TrapKind::DevOnlyLifetime(_) | l::TrapKind::DevOnlyRelease(_) => {
+                    self.emit_lifetime_traps(std::slice::from_ref(trap), operands)?
+                }
+                // Preserve narrowing and lifetime site order (compiler.md §20.2 and §120.1 rule 2).
+                l::TrapKind::NullNarrowing => {
+                    let value = *operands
+                        .first()
+                        .ok_or_else(|| internal("narrowing operand is missing"))?;
+                    let pointer = self.expect_scalar(value)?;
+                    self.emit_trap(trap, TrapOperand::Value(pointer))?;
+                }
+                _ => remaining.push(trap.clone()),
+            }
+        }
+        Ok(std::borrow::Cow::Owned(remaining))
+    }
+
+    fn emit_lifetime_traps(&mut self, traps: &[l::Trap], operands: &[RV]) -> Result<(), String> {
+        for trap in traps {
+            if let l::TrapKind::DevOnlyLifetime(index) | l::TrapKind::DevOnlyRelease(index) =
+                trap.kind
+            {
+                let value = *operands
+                    .get(index)
+                    .ok_or_else(|| internal("lifetime operand is missing"))?;
+                let pointer = self.expect_scalar(value)?;
+                self.emit_trap(trap, TrapOperand::Value(pointer))?;
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn reload_epoch_check(
@@ -614,10 +648,28 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .icmp_imm(IntCC::Equal, class_id, class.0 as i64);
                 self.guard(matches, direct_kind()?, &trap.pos)?;
             }
-            l::TrapKind::DevOnlyLifetime => match operand {
+            l::TrapKind::DevOnlyRelease(_) | l::TrapKind::DevOnlyLifetime(_) => match operand {
                 TrapOperand::Pending => self.trap_check(),
                 TrapOperand::Value(pointer) => {
-                    self.live_check(pointer, &trap.pos)?;
+                    // Null is not an allocation (compiler.md §120.1 rule 2).
+                    let done = self.builder.create_block();
+                    let allocated = self.builder.create_block();
+                    let is_null = self.builder.ins().icmp_imm(IntCC::Equal, pointer, 0);
+                    self.builder.ins().brif(is_null, done, &[], allocated, &[]);
+                    self.builder.switch_to_block(allocated);
+                    let state =
+                        self.builder
+                            .ins()
+                            .load(types::I64, flags(), pointer, rtc::STATE_OFFSET);
+                    let live =
+                        self.builder
+                            .ins()
+                            .icmp_imm(IntCC::Equal, state, rtc::LIVE_STATE as i64);
+                    let kind = runtime_trap_kind(&trap.kind)
+                        .ok_or_else(|| internal("lifetime trap has no direct runtime kind"))?;
+                    self.guard(live, kind, &trap.pos)?;
+                    self.builder.ins().jump(done, &[]);
+                    self.builder.switch_to_block(done);
                 }
                 TrapOperand::Index { .. } | TrapOperand::WireValue { .. } => {
                     return Err(internal("lifetime trap received a wire operand"))

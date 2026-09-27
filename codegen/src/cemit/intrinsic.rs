@@ -133,11 +133,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let mut check = false;
         for trap in traps {
             match trap.kind {
-                l::TrapKind::DevOnlyLifetime => {
-                    if accepts_dev_traps {
-                        self.consume(trap);
-                    }
-                }
                 l::TrapKind::DevReloadOnlyStaleCoroutine if accepts_dev_traps => {
                     self.consume(trap);
                 }

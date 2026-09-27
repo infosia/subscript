@@ -12,13 +12,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         operand_types: &[l::ValueType],
         result: Option<String>,
     ) -> Result<(), String> {
-        if matches!(target.kind, l::CallTargetKind::Method(_)) {
-            for trap in &instruction.traps {
-                if trap.kind == l::TrapKind::DevOnlyLifetime {
-                    self.consume(trap);
-                }
-            }
-        }
         match &target.kind {
             l::CallTargetKind::Function(function) => {
                 self.emit_script_call(out, *function, operands, result)?;
@@ -325,7 +318,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         .ok_or_else(|| internal("wire-enum foreign return has no result"))?;
                     self.emit_wire_validation(out, destination, *alias, trap)?;
                 }
-                l::TrapKind::DevOnlyLifetime => self.consume(trap),
                 other => return Err(internal(format!("foreign call carries trap {other:?}"))),
             }
         }

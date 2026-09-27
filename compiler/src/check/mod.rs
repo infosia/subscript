@@ -1309,6 +1309,12 @@ pub(crate) fn run(
             enums: ck.enums,
             string_aliases: ck.string_aliases,
             globals: ck.globals,
+            synthesized_helpers: ck
+                .functions
+                .iter()
+                .filter(|function| function.synthesized_helper)
+                .map(|function| function.name.clone())
+                .collect(),
             functions: ck.functions,
             worker_entries: ck.worker_entries,
             operation_signatures: Vec::new(),

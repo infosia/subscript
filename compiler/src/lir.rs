@@ -1347,7 +1347,9 @@ pub enum TrapKind {
     /// Failed reference-class narrowing.
     ClassMismatch(ClassId),
     /// Development-tier allocation lifetime check.
-    DevOnlyLifetime,
+    DevOnlyLifetime(usize),
+    /// Development-tier release check for the named operand.
+    DevOnlyRelease(usize),
     /// Reload-only stale coroutine check.
     DevReloadOnlyStaleCoroutine,
     /// Invalid C-entered wire alias value.

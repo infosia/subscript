@@ -15,6 +15,7 @@ mod diag_render;
 pub mod divergence;
 pub mod hir;
 pub mod language_reference;
+mod lifetime;
 pub mod lir;
 pub mod lir_text;
 pub mod types;

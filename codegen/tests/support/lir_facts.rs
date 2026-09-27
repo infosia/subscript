@@ -6,6 +6,8 @@ use subscript_compiler::hir;
 use subscript_compiler::lir as l;
 use subscript_compiler::{ClassId, Pos, Type};
 
+#[path = "lir_facts_lifetime.rs"]
+mod lifetime;
 #[path = "lir_facts_release.rs"]
 mod release;
 #[path = "lir_facts_using.rs"]
@@ -1229,12 +1231,14 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
                     // exception edge of a `using` binding owns the raise
                     // site of its resume; no HIR expression carries either
                     // (compiler.md §115.2, §115.5 rule 7). A handle release
-                    // owns its check (§116.1 rule 4); the lowering places
-                    // releases, and the verifier requires the check.
+                    // owns its check (§116.1 rule 4). Counted-store checks place
+                    // retains; the lifetime verifier checks their read sites.
                     if matches!(
                         instruction.kind,
                         l::InstructionKind::Throw
                             | l::InstructionKind::ExceptionResume
+                            | l::InstructionKind::AsyncHandleRetain
+                            | l::InstructionKind::AsyncHandleArrayRetain
                             | l::InstructionKind::AsyncHandleRelease
                             | l::InstructionKind::AsyncHandleArrayRelease
                     ) {
@@ -1261,6 +1265,10 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
     walk_execution_root_expressions(hir, &mut |expr| {
         collect_trap_expression(expr, hir, &mut expected);
     });
+    lifetime::statements(&hir.top_level, hir, &mut expected);
+    for function in all_declared_functions(hir) {
+        lifetime::statements(&function.body, hir, &mut expected);
+    }
     for key in using::hook_facts(hir).traps {
         *expected.entry(key).or_default() += 1;
     }
@@ -1318,6 +1326,7 @@ fn collect_trap_expression(
     let mut nodes = Vec::new();
     walk_expr(hir, expression, &mut |node| nodes.push(node));
     for node in nodes {
+        lifetime::expression(node, hir, expected);
         if !matches!(&node.kind, hir::ExprKind::Template(parts) if parts.is_empty()) {
             for site in node.trap_sites(hir) {
                 *expected.entry(hir_trap_key(&site)).or_default() += 1;
@@ -1605,6 +1614,7 @@ fn hir_trap_key(trap: &hir::TrapSite) -> TrapKey {
         hir::TrapSite::IndexWrite { .. } => "IndexWrite".to_string(),
         hir::TrapSite::NullNarrowing { .. } => "NullNarrowing".to_string(),
         hir::TrapSite::ClassMismatch { class, .. } => format!("ClassMismatch({})", class.0),
+        hir::TrapSite::DevOnlyRelease { .. } => "DevOnlyRelease".to_string(),
         hir::TrapSite::DevOnlyLifetime { .. } => "DevOnlyLifetime".to_string(),
         hir::TrapSite::DevReloadOnlyStaleCoroutine { .. } => {
             "DevReloadOnlyStaleCoroutine".to_string()
@@ -1625,7 +1635,8 @@ fn lir_trap_key(trap: &l::Trap) -> TrapKey {
         l::TrapKind::IndexWrite => "IndexWrite".to_string(),
         l::TrapKind::NullNarrowing => "NullNarrowing".to_string(),
         l::TrapKind::ClassMismatch(class) => format!("ClassMismatch({})", class.0),
-        l::TrapKind::DevOnlyLifetime => "DevOnlyLifetime".to_string(),
+        l::TrapKind::DevOnlyRelease(_) => "DevOnlyRelease".to_string(),
+        l::TrapKind::DevOnlyLifetime(_) => "DevOnlyLifetime".to_string(),
         l::TrapKind::DevReloadOnlyStaleCoroutine => "DevReloadOnlyStaleCoroutine".to_string(),
         l::TrapKind::WireEnumValue(alias) => format!("WireEnumValue({})", alias.0),
         l::TrapKind::DisposeRaisedDuringExit => "DisposeRaisedDuringExit".to_string(),

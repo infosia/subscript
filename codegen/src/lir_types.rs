@@ -19,7 +19,8 @@ pub(crate) fn runtime_trap_kind(kind: &l::TrapKind) -> Option<TrapKind> {
         l::TrapKind::IndexRead | l::TrapKind::IndexWrite => TrapKind::IndexOutOfBounds,
         l::TrapKind::NullNarrowing => TrapKind::NullNarrowing,
         l::TrapKind::ClassMismatch(_) => TrapKind::ClassMismatch,
-        l::TrapKind::DevOnlyLifetime => TrapKind::UseAfterDelete,
+        l::TrapKind::DevOnlyLifetime(_) => TrapKind::UseAfterDelete,
+        l::TrapKind::DevOnlyRelease(_) => TrapKind::DoubleDelete,
         l::TrapKind::DevReloadOnlyStaleCoroutine => TrapKind::StaleCoroutine,
         l::TrapKind::WireEnumValue(_) => TrapKind::WireEnumUnknownValue,
         l::TrapKind::DisposeRaisedDuringExit => TrapKind::DisposeRaisedDuringExit,
@@ -31,10 +32,11 @@ fn runtime_trap_matches_lir(runtime: TrapKind, lir: &l::TrapKind) -> bool {
         return true;
     }
     match runtime {
-        TrapKind::DoubleDelete | TrapKind::InvalidDelete | TrapKind::CallbackUserdataFreed => {
-            *lir == l::TrapKind::DevOnlyLifetime
+        TrapKind::DoubleDelete | TrapKind::InvalidDelete => {
+            matches!(lir, l::TrapKind::DevOnlyRelease(_))
         }
-        TrapKind::EmptyPop
+        TrapKind::CallbackUserdataFreed
+        | TrapKind::EmptyPop
         | TrapKind::StringSlice
         | TrapKind::Internal
         | TrapKind::DateRange
@@ -385,7 +387,11 @@ mod tests {
                 l::TrapKind::ClassMismatch(ClassId(2)),
                 Some(TrapKind::ClassMismatch),
             ),
-            (l::TrapKind::DevOnlyLifetime, Some(TrapKind::UseAfterDelete)),
+            (
+                l::TrapKind::DevOnlyLifetime(0),
+                Some(TrapKind::UseAfterDelete),
+            ),
+            (l::TrapKind::DevOnlyRelease(0), Some(TrapKind::DoubleDelete)),
             (
                 l::TrapKind::DevReloadOnlyStaleCoroutine,
                 Some(TrapKind::StaleCoroutine),
@@ -399,7 +405,7 @@ mod tests {
                 Some(TrapKind::DisposeRaisedDuringExit),
             ),
         ];
-        assert_eq!(cases.len(), 13);
+        assert_eq!(cases.len(), 14);
         for (lir, runtime) in cases {
             assert_eq!(runtime_trap_kind(&lir), runtime, "{lir:?}");
         }
@@ -430,7 +436,7 @@ mod tests {
             pos: subscript_compiler::Pos::new("call.ts", 7, 11),
         };
         let lifetime = l::Trap {
-            kind: l::TrapKind::DevOnlyLifetime,
+            kind: l::TrapKind::DevOnlyRelease(0),
             pos: subscript_compiler::Pos::new("call.ts", 9, 3),
         };
         let sites = [call.clone(), lifetime.clone()];
@@ -439,7 +445,7 @@ mod tests {
         // fallback arm.
         assert_eq!(
             runtime_trap_site(TrapKind::CallbackUserdataFreed, &sites),
-            TrapSite::Site(&lifetime),
+            TrapSite::Site(&call),
             "callback-userdata-freed maps by name"
         );
         // The firing control for the fallback arm: a kind that matches

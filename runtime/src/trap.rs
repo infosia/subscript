@@ -172,6 +172,9 @@ impl TrapKind {
             (TrapKind::ClassMismatch, _) => {
                 Cow::Borrowed("`as` narrowing to a class the instance does not have")
             }
+            (TrapKind::DoubleDelete, _) => {
+                Cow::Borrowed("Context.free of an already-deleted allocation")
+            }
             (TrapKind::UseAfterDelete, _) => Cow::Borrowed("use of a deleted allocation"),
             (TrapKind::DivisionByZero, _) => Cow::Borrowed("integer division by zero"),
             (TrapKind::Internal, _) => Cow::Borrowed("unknown trap kind raised by generated code"),
@@ -250,6 +253,10 @@ mod tests {
 
     #[test]
     fn trap_kind_message_is_canonical_for_runtime_and_emitted_checks() {
+        assert_eq!(
+            TrapKind::DoubleDelete.message(None),
+            "Context.free of an already-deleted allocation"
+        );
         assert_eq!(
             TrapKind::IndexOutOfBounds.message(Some((-1, 3))),
             "index -1 out of bounds for array length 3"

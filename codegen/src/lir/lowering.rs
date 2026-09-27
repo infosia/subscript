@@ -91,6 +91,11 @@ impl<'a> Lowering<'a> {
 
         let mut lowering = Self {
             hir: module,
+            handle_classes: module
+                .classes
+                .iter()
+                .map(subscript_compiler::types::HandleClass::from)
+                .collect(),
             free_functions,
             methods,
             foreign_functions,

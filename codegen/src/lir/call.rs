@@ -104,8 +104,13 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 operands[0] = self.materialize_address_inner(&place, &expr.pos, false)?;
             }
         }
-        let deleted_field_owners =
-            self.owners_destroyed_by_unsafe_delete(callee, args, &operands, explicit_offset)?;
+        let deleted_field_owners = self.owners_destroyed_by_unsafe_delete(
+            callee,
+            args,
+            &operands,
+            explicit_offset,
+            &expr.pos,
+        )?;
         let table_signature = matches!(
             kind,
             l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_)
@@ -146,7 +151,21 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         // Nullable boundary boxes are emitted while each argument is lowered;
         // keep their allocation sites on those instructions instead of also
         // attaching them to the eventual call.
-        let call_traps = convert_traps(&expr.trap_sites(self.lowering.hir))
+        let mut sites = expr.trap_sites(self.lowering.hir);
+        for site in &mut sites {
+            if let hir::TrapSite::DevOnlyLifetime {
+                operand: hir::LifetimeOperand::Argument(index),
+                ..
+            }
+            | hir::TrapSite::DevOnlyRelease {
+                operand: hir::LifetimeOperand::Argument(index),
+                ..
+            } = site
+            {
+                *index += explicit_offset;
+            }
+        }
+        let call_traps = convert_traps(&sites)
             .into_iter()
             .filter(|trap| trap.kind != l::TrapKind::Allocation)
             .collect();
@@ -238,6 +257,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         args: &[hir::Expr],
         operands: &[l::Operand],
         explicit_offset: usize,
+        call_pos: &Pos,
     ) -> Result<Vec<(l::Operand, l::ValueType, Pos)>, LowerError> {
         if !matches!(callee, hir::Callee::Ambient(hir::AmbientFn::UnsafeDelete)) {
             return Ok(Vec::new());
@@ -282,7 +302,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     vec![base.clone()],
                     Some(ty.clone()),
                     false,
-                    Vec::new(),
+                    vec![l::Trap {
+                        kind: l::TrapKind::DevOnlyRelease(0),
+                        pos: call_pos.clone(),
+                    }],
                     pos.clone(),
                 )?
                 .ok_or_else(|| self.error(&pos, "deleted class field produced no owner"))?;
@@ -801,6 +824,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         element: &Type,
         pos: Pos,
     ) -> Result<[l::Operand; 2], LowerError> {
+        let traps = self.read_lifetime(
+            &l::ValueType::Data(Type::Array(Box::new(element.clone()))),
+            &pos,
+        );
         let data = self
             .emit(
                 l::InstructionKind::ForeignArrayData,
@@ -810,7 +837,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     array_base: None,
                 })),
                 false,
-                Vec::new(),
+                traps.clone(),
                 pos.clone(),
             )?
             .expect("foreign array data snapshot");
@@ -820,7 +847,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 vec![value],
                 Some(l::ValueType::Data(Type::I32)),
                 false,
-                Vec::new(),
+                traps.clone(),
                 pos,
             )?
             .expect("foreign array count snapshot");

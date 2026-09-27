@@ -256,7 +256,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .iter()
             .map(|id| self.value(*id))
             .collect::<Result<Vec<_>, _>>()?;
-        self.create_async_child_from_values(target, &operands, traps)
+        let traps = self.consume_lifetimes(traps, &operands)?;
+        self.create_async_child_from_values(target, &operands, &traps)
     }
 
     pub(super) fn create_async_child_from_values(
@@ -290,14 +291,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let mut arguments = vec![self.ctx];
         for (value, ty) in operands.iter().zip(&target.parameter_types) {
             self.push_argument(&mut arguments, *value, ty)?;
-        }
-        for trap in traps {
-            if trap.kind == l::TrapKind::DevOnlyLifetime {
-                if let Some(first) = operands.first() {
-                    let pointer = self.expect_scalar(*first)?;
-                    self.emit_trap(trap, TrapOperand::Value(pointer))?;
-                }
-            }
         }
         let results = self.call_script(&FnKey::LirFunction(function), &arguments, false)?;
         for trap in traps {

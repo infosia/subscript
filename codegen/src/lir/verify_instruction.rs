@@ -30,6 +30,14 @@ pub(super) fn verify_instruction_contract(
             ),
         ));
     };
+    for trap in &instruction.traps {
+        if let l::TrapKind::DevOnlyLifetime(index) | l::TrapKind::DevOnlyRelease(index) = trap.kind
+        {
+            if index >= instruction.operands.len() {
+                bad("lifetime operand index is out of range", errors);
+            }
+        }
+    }
     if let Some(result) = instruction.result {
         let expected_fresh = instruction.kind.produces_fresh_async_owner()
             && result_type.as_ref().is_some_and(is_async_owner_type);
@@ -694,13 +702,12 @@ fn release_checks_the_word(instruction: &l::Instruction) -> bool {
         l::InstructionKind::AsyncHandleRelease | l::InstructionKind::AsyncHandleArrayRelease
     );
     !releases
-        || matches!(
-            instruction.traps.as_slice(),
-            [l::Trap {
-                kind: l::TrapKind::Call,
-                ..
-            }]
-        )
+        || instruction
+            .traps
+            .iter()
+            .filter(|trap| !matches!(trap.kind, l::TrapKind::DevOnlyLifetime(_)))
+            .map(|trap| &trap.kind)
+            .eq([&l::TrapKind::Call])
 }
 
 fn lir_field_type(

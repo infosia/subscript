@@ -303,7 +303,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 vec![subject_value],
                 Some(iterator_type.clone()),
                 false,
-                Vec::new(),
+                convert_traps(&subject.statement_read_sites(self.lowering.hir)),
                 pos.clone(),
             )?
             .expect("iterator result");
@@ -448,6 +448,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         element: Type,
         bound: l::IteratorBoundKind,
         pos: &Pos,
+        traps: Vec<l::Trap>,
     ) -> Result<(l::ValueType, l::Operand), LowerError> {
         let iterator_type = l::ValueType::Iterator(l::IteratorType { kind, element });
         let iterator = self
@@ -456,7 +457,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 vec![subject],
                 Some(iterator_type.clone()),
                 false,
-                Vec::new(),
+                traps,
                 pos.clone(),
             )?
             .expect("iterator result");
@@ -547,6 +548,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         value: l::Operand,
         pos: &Pos,
     ) -> Result<(), LowerError> {
+        let traps = self.read_lifetime(&self.operand_type(&array, pos)?, pos);
         self.emit(
             l::InstructionKind::Call(l::CallTarget {
                 kind: l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush),
@@ -556,7 +558,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             vec![array, value],
             Some(l::ValueType::Data(Type::I32)),
             true,
-            Vec::new(),
+            traps,
             pos.clone(),
         )?;
         Ok(())
@@ -601,6 +603,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             return Err(self.error(&callback_expr.pos, "static callback arity is invalid"));
         }
 
+        let expression_traps = convert_traps(&expr.trap_sites(self.lowering.hir));
         let reverse = operation == hir::ArrFn::ReduceRight;
         let kind = if reverse {
             l::ForOfKind::ArrayValuesReverse
@@ -613,7 +616,30 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             element.clone(),
             l::IteratorBoundKind::Fixed,
             &expr.pos,
+            expression_traps
+                .clone()
+                .into_iter()
+                .filter(|trap| matches!(trap.kind, l::TrapKind::DevOnlyLifetime(0)))
+                .collect(),
         )?;
+        for mut trap in expression_traps.clone() {
+            if let l::TrapKind::DevOnlyLifetime(index) = trap.kind {
+                if index != 0 {
+                    let value = initial.as_ref().filter(|_| index == 2).ok_or_else(|| {
+                        self.error(&trap.pos, "static callback lifetime operand is missing")
+                    })?;
+                    trap.kind = l::TrapKind::DevOnlyLifetime(0);
+                    self.emit(
+                        l::InstructionKind::Copy,
+                        vec![value.clone()],
+                        Some(l::ValueType::Data(args[index].ty.clone())),
+                        false,
+                        vec![trap],
+                        args[index].pos.clone(),
+                    )?;
+                }
+            }
+        }
         let reverse_index_iterator = if reverse && indexed {
             Some(self.create_iterator(
                 subject_value,
@@ -621,6 +647,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 Type::I32,
                 l::IteratorBoundKind::Fixed,
                 &expr.pos,
+                convert_traps(&subject.statement_read_sites(self.lowering.hir)),
             )?)
         } else {
             None
@@ -635,7 +662,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 expr.pos.clone(),
             )?
             .expect("static callback iterator bound");
-        let call_traps = convert_traps(&expr.trap_sites(self.lowering.hir))
+        let call_traps = expression_traps
+            .clone()
             .into_iter()
             .filter(|trap| matches!(trap.kind, l::TrapKind::Call | l::TrapKind::Raise(_)))
             .collect::<Vec<_>>();
@@ -965,6 +993,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 format!("forEach lowering expected 2 operands, got {}", args.len()),
             ));
         };
+        let expression_traps = convert_traps(&expr.trap_sites(self.lowering.hir));
         let subject_value = self.require_expr(subject)?;
         let callback_value = self.require_expr(callback)?;
         let Type::Func(callback_type) = &callback.ty else {
@@ -1010,10 +1039,22 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             element.clone(),
             bound,
             &expr.pos,
+            expression_traps
+                .clone()
+                .into_iter()
+                .filter(|trap| matches!(trap.kind, l::TrapKind::DevOnlyLifetime(0)))
+                .collect(),
         )?;
         let secondary_iterator = secondary
             .map(|(kind, element)| {
-                self.create_iterator(subject_value.clone(), kind, element, bound, &expr.pos)
+                self.create_iterator(
+                    subject_value.clone(),
+                    kind,
+                    element,
+                    bound,
+                    &expr.pos,
+                    convert_traps(&subject.statement_read_sites(self.lowering.hir)),
+                )
             })
             .transpose()?;
         let captured_bound = self
@@ -1135,7 +1176,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             call_operands,
             None,
             true,
-            convert_traps(&expr.trap_sites(self.lowering.hir)),
+            expression_traps
+                .clone()
+                .into_iter()
+                .filter(|trap| !matches!(trap.kind, l::TrapKind::DevOnlyLifetime(_)))
+                .collect(),
             expr.pos.clone(),
         )?;
         let edge = self.block_target(step, Vec::new())?;

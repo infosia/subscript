@@ -345,6 +345,50 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
 }
 
 impl Type {
+    /// The immediate type arguments, including function parameters and results.
+    #[must_use]
+    pub fn contained_types(&self) -> Vec<&Type> {
+        match self {
+            Self::FixedArray(inner, _)
+            | Self::Array(inner)
+            | Self::Set(inner)
+            | Self::Inbox(inner)
+            | Self::Outbox(inner)
+            | Self::Nullable(inner)
+            | Self::Generator(inner)
+            | Self::AsyncHandle(inner)
+            | Self::IterResult(inner) => vec![inner],
+            Self::Map(key, value) | Self::Worker(key, value) => vec![key, value],
+            Self::Func(signature) => signature
+                .params
+                .iter()
+                .chain(std::iter::once(&signature.ret))
+                .collect(),
+            Self::I8
+            | Self::U8
+            | Self::I16
+            | Self::U16
+            | Self::I32
+            | Self::U32
+            | Self::I64
+            | Self::U64
+            | Self::F32
+            | Self::F64
+            | Self::F16
+            | Self::Bool
+            | Self::Str
+            | Self::Date
+            | Self::RegExp
+            | Self::Void
+            | Self::Null
+            | Self::Object
+            | Self::Class(_)
+            | Self::Enum(_)
+            | Self::StringAlias(_)
+            | Self::Error => Vec::new(),
+        }
+    }
+
     /// Returns the mathematical bounds of a sized integer type.
     #[must_use]
     pub fn int_bounds(&self) -> Option<(i128, i128)> {
@@ -620,6 +664,64 @@ impl fmt::Display for Type {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn contained_types_cover_the_complete_grammar() {
+        let single = Type::I32;
+        for ty in [
+            Type::Array(Box::new(single.clone())),
+            Type::FixedArray(Box::new(single.clone()), 2),
+            Type::Set(Box::new(single.clone())),
+            Type::Inbox(Box::new(single.clone())),
+            Type::Outbox(Box::new(single.clone())),
+            Type::Nullable(Box::new(single.clone())),
+            Type::Generator(Box::new(single.clone())),
+            Type::AsyncHandle(Box::new(single.clone())),
+            Type::IterResult(Box::new(single.clone())),
+        ] {
+            assert_eq!(ty.contained_types(), vec![&single]);
+        }
+        for ty in [
+            Type::Map(Box::new(Type::I32), Box::new(Type::Str)),
+            Type::Worker(Box::new(Type::I32), Box::new(Type::Str)),
+        ] {
+            assert_eq!(ty.contained_types(), vec![&Type::I32, &Type::Str]);
+        }
+        let function = Type::Func(Box::new(FuncType {
+            params: vec![Type::I32, Type::Str],
+            ret: Type::Bool,
+        }));
+        assert_eq!(
+            function.contained_types(),
+            vec![&Type::I32, &Type::Str, &Type::Bool]
+        );
+        for ty in [
+            Type::I8,
+            Type::U8,
+            Type::I16,
+            Type::U16,
+            Type::I32,
+            Type::U32,
+            Type::I64,
+            Type::U64,
+            Type::F32,
+            Type::F64,
+            Type::F16,
+            Type::Bool,
+            Type::Str,
+            Type::Date,
+            Type::RegExp,
+            Type::Void,
+            Type::Null,
+            Type::Object,
+            Type::Class(ClassId(0)),
+            Type::Enum(EnumId(0)),
+            Type::StringAlias(StringAliasId(0)),
+            Type::Error,
+        ] {
+            assert!(ty.contained_types().is_empty());
+        }
+    }
 
     #[test]
     fn aggregate_limit_matches_the_backend_displacement_range() {

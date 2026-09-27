@@ -326,6 +326,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(operand)
     }
 
+    pub(super) fn read_lifetime(&self, ty: &l::ValueType, pos: &Pos) -> Vec<l::Trap> {
+        let l::ValueType::Data(ty) = ty else {
+            return Vec::new();
+        };
+        if ty
+            .handle_kind(&self.lowering.handle_classes)
+            .is_some_and(subscript_compiler::types::HandleKind::needs_lifetime_trap)
+        {
+            vec![l::Trap {
+                kind: l::TrapKind::DevOnlyLifetime(0),
+                pos: pos.clone(),
+            }]
+        } else {
+            Vec::new()
+        }
+    }
+
     pub(super) fn emit(
         &mut self,
         kind: l::InstructionKind,
@@ -501,7 +518,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             vec![value.clone()],
             None,
             false,
-            Vec::new(),
+            self.read_lifetime(ty, pos),
             pos.clone(),
         )?;
         Ok(())
@@ -524,10 +541,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         };
         // compiler.md §116.1 rule 4: a release that frees a frame holding an
         // unobserved exception traps, so the release checks the word.
-        let traps = vec![l::Trap {
+        let mut traps = self.read_lifetime(ty, pos);
+        traps.push(l::Trap {
             kind: l::TrapKind::Call,
             pos: pos.clone(),
-        }];
+        });
         self.emit(kind, vec![value], None, false, traps, pos.clone())?;
         Ok(())
     }

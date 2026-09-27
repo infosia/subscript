@@ -120,7 +120,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     vec![object.clone()],
                     Some(l::ValueType::Data(Type::Str)),
                     false,
-                    Vec::new(),
+                    convert_traps(&value.statement_read_sites(self.lowering.hir)),
                     pos.clone(),
                 )?
                 .ok_or_else(|| self.error(pos, "an Error field load produced no value"))?;

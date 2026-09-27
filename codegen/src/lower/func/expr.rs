@@ -296,9 +296,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         for trap in traps {
             if matches!(
                 trap.kind,
-                l::TrapKind::NullNarrowing
-                    | l::TrapKind::DevOnlyLifetime
-                    | l::TrapKind::ClassMismatch(_)
+                l::TrapKind::NullNarrowing | l::TrapKind::ClassMismatch(_)
             ) {
                 self.emit_trap(trap, TrapOperand::Value(scalar))?;
             }

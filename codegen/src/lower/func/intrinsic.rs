@@ -56,22 +56,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         pos: &Pos,
     ) -> Result<RV, String> {
         let name = self.intrinsic_name(intrinsic)?.to_string();
-        if name != "UnsafeDelete"
-            && traps
-                .iter()
-                .any(|trap| trap.kind == l::TrapKind::DevOnlyLifetime)
-        {
-            let receiver = self.expect_scalar(
-                *operands
-                    .first()
-                    .ok_or_else(|| internal(format!("{name} has no lifetime operand")))?,
-            )?;
-            for trap in traps {
-                if trap.kind == l::TrapKind::DevOnlyLifetime {
-                    self.emit_trap(trap, TrapOperand::Value(receiver))?;
-                }
-            }
-        }
         let checked = traps
             .iter()
             .any(|trap| matches!(trap.kind, l::TrapKind::Allocation | l::TrapKind::Call));
@@ -99,11 +83,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     let position = self.position_id(pos);
                     let position = self.iconst(types::I32, position);
                     self.call_runtime(self.ml.rt.delete, &[self.ctx, value, position], false)?;
-                    for trap in traps {
-                        if trap.kind == l::TrapKind::DevOnlyLifetime {
-                            self.emit_trap(trap, TrapOperand::Pending)?;
-                        }
-                    }
+                    self.trap_check();
                     RV::None
                 }
                 "Unreachable" => {
@@ -674,7 +654,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .first()
                     .ok_or_else(|| internal("Map.GroupBy items are missing"))?,
             )?;
-            self.live_check(items, pos)?;
+
             let (code, environment) = self.expect_pair(
                 *operands
                     .get(1)
@@ -743,7 +723,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .first()
                 .ok_or_else(|| internal(format!("Map.{name} receiver is missing")))?,
         )?;
-        self.live_check(handle, pos)?;
+
         let operand = |index: usize| {
             operands
                 .get(index)
@@ -872,7 +852,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .first()
                 .ok_or_else(|| internal(format!("Set.{name} receiver is missing")))?,
         )?;
-        self.live_check(handle, pos)?;
+
         let operand = |index: usize| {
             operands
                 .get(index)
@@ -927,7 +907,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             "Union" | "Intersection" | "Difference" | "SymmetricDifference" => {
                 let other = self.expect_scalar(operand(1)?)?;
-                self.live_check(other, pos)?;
+
                 let position = self.position_id(pos);
                 let position = self.iconst(types::I32, position);
                 self.call_runtime(function, &[self.ctx, handle, other, position], checked)?
@@ -936,7 +916,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             "IsSubsetOf" | "IsSupersetOf" | "IsDisjointFrom" => {
                 let other = self.expect_scalar(operand(1)?)?;
-                self.live_check(other, pos)?;
+
                 let result = self
                     .call_runtime(function, &[self.ctx, handle, other], false)?
                     .ok_or_else(|| internal(format!("Set.{name} has no result")))?;

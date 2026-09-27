@@ -174,7 +174,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let traps = if include_traps {
             place.traps.clone()
         } else {
-            Default::default()
+            place
+                .traps
+                .iter()
+                .filter(|trap| matches!(trap.kind, l::TrapKind::DevOnlyLifetime(_)))
+                .cloned()
+                .collect()
         };
         match &place.kind {
             PreparedPlaceKind::ExistingAddress(address, _) => Ok(address.clone()),

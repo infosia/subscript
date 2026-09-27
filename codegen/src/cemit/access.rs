@@ -118,11 +118,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         operand_types: &[l::ValueType],
         result: Option<String>,
     ) -> Result<(), String> {
-        for trap in &instruction.traps {
-            if trap.kind == l::TrapKind::DevOnlyLifetime {
-                self.consume(trap);
-            }
-        }
         let result_id = instruction
             .result
             .ok_or_else(|| internal("field address has no result"))?;
@@ -201,7 +196,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             };
             for trap in &instruction.traps {
                 match &trap.kind {
-                    l::TrapKind::DevOnlyLifetime => self.consume(trap),
                     l::TrapKind::WireEnumValue(alias) => {
                         self.consume(trap);
                         self.emit_wire_validation(out, &expression, *alias, trap)?;
@@ -283,11 +277,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let index = &operands[1];
         let (address, length) = match &operand_types[0] {
             l::ValueType::Data(Type::Array(element)) => {
-                for trap in &instruction.traps {
-                    if trap.kind == l::TrapKind::DevOnlyLifetime {
-                        self.consume(trap);
-                    }
-                }
                 let header = self.fresh();
                 let _ = writeln!(
                     out,

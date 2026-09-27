@@ -2438,7 +2438,7 @@ impl Context {
                 if self.dead_allocations.contains(&payload) {
                     self.trap(
                         TrapKind::DoubleDelete,
-                        "Context.free of an already-deleted allocation",
+                        TrapKind::DoubleDelete.message(None),
                         pos_id,
                     );
                 } else {

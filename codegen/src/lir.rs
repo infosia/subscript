@@ -26,6 +26,7 @@ mod using;
 mod verify;
 mod verify_dominance;
 mod verify_instruction;
+mod verify_lifetime;
 mod verify_raise;
 mod verify_terminator;
 
@@ -136,6 +137,7 @@ pub fn lower_module(module: &hir::Module) -> Result<l::Module, LowerError> {
 pub fn verify_module(module: &l::Module) -> Result<(), Vec<VerifyError>> {
     let mut errors = Vec::new();
     verify_module_entries(module, &mut errors);
+    verify_lifetime::verify(module, &mut errors);
     for function in &module.functions {
         verify_function(module, function, &mut errors);
     }
@@ -274,6 +276,7 @@ impl From<&hir::Param> for CallParam {
 
 struct Lowering<'a> {
     hir: &'a hir::Module,
+    handle_classes: Vec<subscript_compiler::types::HandleClass>,
     free_functions: HashMap<String, FunctionRecord>,
     methods: HashMap<(usize, String), FunctionRecord>,
     foreign_functions: HashMap<String, l::ForeignFunctionId>,
@@ -668,7 +671,12 @@ fn convert_traps(sites: &[hir::TrapSite]) -> Vec<l::Trap> {
                 hir::TrapSite::IndexWrite { .. } => l::TrapKind::IndexWrite,
                 hir::TrapSite::NullNarrowing { .. } => l::TrapKind::NullNarrowing,
                 hir::TrapSite::ClassMismatch { class, .. } => l::TrapKind::ClassMismatch(*class),
-                hir::TrapSite::DevOnlyLifetime { .. } => l::TrapKind::DevOnlyLifetime,
+                hir::TrapSite::DevOnlyLifetime { operand, .. } => {
+                    l::TrapKind::DevOnlyLifetime(operand.evaluated_index(0))
+                }
+                hir::TrapSite::DevOnlyRelease { operand, .. } => {
+                    l::TrapKind::DevOnlyRelease(operand.evaluated_index(0))
+                }
                 hir::TrapSite::DevReloadOnlyStaleCoroutine { .. } => {
                     l::TrapKind::DevReloadOnlyStaleCoroutine
                 }
@@ -812,7 +820,9 @@ fn collect_place_traps(place: &PreparedPlace, traps: &mut Vec<l::Trap>) {
 }
 
 fn prepare_place_after_checked_read(place: &mut PreparedPlace) {
-    place.traps.clear();
+    place
+        .traps
+        .retain(|trap| matches!(trap.kind, l::TrapKind::DevOnlyLifetime(_)));
     let base = match &mut place.kind {
         PreparedPlaceKind::Index { base, checked, .. } => {
             *checked = false;
@@ -838,7 +848,12 @@ fn prepare_direct_index_store(place: &mut PreparedPlace, assignment_traps: &[l::
     }
     place.traps = assignment_traps
         .iter()
-        .filter(|trap| trap.kind == l::TrapKind::IndexWrite)
+        .filter(|trap| {
+            matches!(
+                trap.kind,
+                l::TrapKind::IndexWrite | l::TrapKind::DevOnlyLifetime(_)
+            )
+        })
         .cloned()
         .collect();
     if place.traps.is_empty() {
@@ -855,7 +870,7 @@ fn prepare_direct_index_assignment(place: &mut PreparedPlace, assignment_traps: 
         .filter(|trap| {
             matches!(
                 trap.kind,
-                l::TrapKind::DevOnlyLifetime | l::TrapKind::IndexWrite
+                l::TrapKind::DevOnlyLifetime(_) | l::TrapKind::IndexWrite
             )
         })
         .cloned()
@@ -1132,10 +1147,16 @@ mod verifier_tests {
                             }),
                         ],
                         invalidates: Vec::new(),
-                        traps: vec![l::Trap {
-                            kind: l::TrapKind::IndexRead,
-                            pos: pos(),
-                        }],
+                        traps: vec![
+                            l::Trap {
+                                kind: l::TrapKind::DevOnlyLifetime(0),
+                                pos: pos(),
+                            },
+                            l::Trap {
+                                kind: l::TrapKind::IndexRead,
+                                pos: pos(),
+                            },
+                        ],
                         pos: pos(),
                     },
                     l::Instruction {

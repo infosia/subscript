@@ -3,6 +3,9 @@
 #[path = "corpus/mod.rs"]
 mod corpus;
 
+#[path = "support/lifetime_sites.rs"]
+mod lifetime_sites;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -145,6 +148,11 @@ fn missing_operation_calls(module: &hir::Module) -> Vec<(Pos, hir::OperationSign
 }
 
 fn append_missing(label: &str, module: &mut hir::Module, errors: &mut Vec<String>) {
+    errors.extend(
+        lifetime_sites::check(module)
+            .into_iter()
+            .map(|error| format!("{label}: {error}")),
+    );
     errors.extend(
         missing_operation_calls(module)
             .into_iter()

@@ -529,7 +529,7 @@ export function main(): void {}
             assert_eq!(t.message, "use of a deleted allocation", "{kind}");
             assert_eq!(
                 (t.pos.file.as_str(), t.pos.line, t.pos.col),
-                ("test.ts", 4, 18),
+                ("test.ts", 4, 12),
                 "{kind}"
             );
         }

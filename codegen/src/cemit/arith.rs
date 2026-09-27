@@ -214,7 +214,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         trap,
                     )?;
                 }
-                l::TrapKind::DevOnlyLifetime => self.consume(trap),
                 ref other => {
                     return Err(internal(format!(
                         "conversion carries unexpected trap {other:?}"

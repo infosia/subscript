@@ -2004,7 +2004,10 @@ impl<'m> Interpreter<'m> {
     ) -> Result<(), InterpretError> {
         for trap in &instruction.traps {
             let fired = match (&trap.kind, phase) {
-                (l::TrapKind::Allocation | l::TrapKind::Call, TrapPhase::After) => {
+                (
+                    l::TrapKind::Allocation | l::TrapKind::Call | l::TrapKind::DevOnlyRelease(_),
+                    TrapPhase::After,
+                ) => {
                     if let Some(runtime) = self.context.trap_record() {
                         return Err(InterpretError::Trap {
                             kind: runtime.kind.rule().to_string(),
@@ -2039,13 +2042,16 @@ impl<'m> Interpreter<'m> {
                 (l::TrapKind::ClassMismatch(class), TrapPhase::Before) => operands
                     .first()
                     .is_some_and(|value| !self.value_has_class(value, *class)),
-                (l::TrapKind::DevOnlyLifetime, TrapPhase::Before) => operands
-                    .iter()
-                    .filter_map(|value| match value {
-                        Value::Handle(handle) if !handle.is_null() => Some(*handle as usize),
-                        _ => None,
-                    })
-                    .any(|handle| !self.context.is_live(handle)),
+                (
+                    l::TrapKind::DevOnlyLifetime(index) | l::TrapKind::DevOnlyRelease(index),
+                    TrapPhase::Before,
+                ) => {
+                    let value = operands
+                        .get(*index)
+                        .ok_or_else(|| self.missing_operand(instruction, *index))?;
+                    matches!(value, Value::Handle(handle)
+                        if !handle.is_null() && !self.context.is_live(*handle as usize))
+                }
                 // The reference interpreter does not hot-reload a module, so
                 // a frame created by this run cannot have a stale epoch.
                 (l::TrapKind::DevReloadOnlyStaleCoroutine, TrapPhase::Before) => false,
@@ -2083,7 +2089,7 @@ impl<'m> Interpreter<'m> {
                     | l::TrapKind::IndexWrite
                     | l::TrapKind::NullNarrowing
                     | l::TrapKind::ClassMismatch(_)
-                    | l::TrapKind::DevOnlyLifetime
+                    | l::TrapKind::DevOnlyLifetime(_)
                     | l::TrapKind::DevReloadOnlyStaleCoroutine
                     | l::TrapKind::WireEnumValue(_)
                     | l::TrapKind::DisposeRaisedDuringExit,
@@ -2159,7 +2165,11 @@ impl<'m> Interpreter<'m> {
         InterpretError::Trap {
             kind,
             pos: trap.pos.clone(),
-            message: "LIR trap terminator/check fired".to_string(),
+            message: if matches!(trap.kind, l::TrapKind::DevOnlyRelease(_)) {
+                RuntimeTrapKind::DoubleDelete.message(None).into_owned()
+            } else {
+                "LIR trap terminator/check fired".to_string()
+            },
         }
     }
 
@@ -4302,7 +4312,8 @@ impl<'m> Interpreter<'m> {
                 l::ValueType::Iterator(iterator) => iterator.element.clone(),
             }));
         }
-        for ty in types {
+        while let Some(ty) = types.pop() {
+            types.extend(ty.contained_types().into_iter().cloned());
             let _ = self.type_layout(&ty)?;
         }
         Ok(())

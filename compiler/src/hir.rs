@@ -7,6 +7,8 @@
 //! or more [`PoisonedImport`] records.
 
 mod text;
+pub use crate::lifetime::LifetimeOperand;
+
 pub use text::TextFn;
 
 use crate::diag::Pos;
@@ -44,6 +46,8 @@ pub struct Module {
     /// Free functions, including monomorphized generic instances.
     /// Constructors and methods live on their [`ClassDef`].
     pub functions: Vec<Function>,
+    /// Names of synthesized helper functions.
+    pub synthesized_helpers: std::collections::HashSet<String>,
     /// Q35 worker-entry adapters required by `Worker.spawn` call sites,
     /// deduplicated by directly named function and message-class pair.
     pub worker_entries: Vec<WorkerEntry>,
@@ -905,7 +909,16 @@ pub enum TrapSite {
     /// The releasing C tier intentionally has no corresponding check
     /// (`compiler.md` §8.1b), but it must still match this explicit site.
     DevOnlyLifetime {
-        /// Position of the access or delete.
+        /// The receiver or argument whose allocation is read.
+        operand: LifetimeOperand,
+        /// Position of the access.
+        pos: Pos,
+    },
+    /// Development-tier release validation (compiler.md §120.1 rule 3b).
+    DevOnlyRelease {
+        /// The argument whose allocation is released.
+        operand: LifetimeOperand,
+        /// Position of the release call.
         pos: Pos,
     },
     /// Reload-mode-only coroutine epoch validation.
@@ -939,7 +952,8 @@ impl TrapSite {
             | TrapSite::IndexWrite { pos }
             | TrapSite::NullNarrowing { pos }
             | TrapSite::ClassMismatch { pos, .. }
-            | TrapSite::DevOnlyLifetime { pos }
+            | TrapSite::DevOnlyLifetime { pos, .. }
+            | TrapSite::DevOnlyRelease { pos, .. }
             | TrapSite::DevReloadOnlyStaleCoroutine { pos }
             | TrapSite::WireEnumValue { pos, .. } => pos,
         }
@@ -4050,7 +4064,10 @@ impl Expr {
 
         let allocation = |pos: &Pos| TrapSite::Allocation { pos: pos.clone() };
         let call = |pos: &Pos| TrapSite::Call { pos: pos.clone() };
-        let lifetime = |pos: &Pos| TrapSite::DevOnlyLifetime { pos: pos.clone() };
+        let lifetime = |pos: &Pos| TrapSite::DevOnlyLifetime {
+            operand: LifetimeOperand::Receiver,
+            pos: pos.clone(),
+        };
         let handle_classes = module
             .classes
             .iter()
@@ -4191,7 +4208,10 @@ impl Expr {
             K::Call { callee, args } => {
                 let mut sites = Vec::new();
                 if matches!(callee, Callee::Ambient(AmbientFn::UnsafeDelete)) {
-                    sites.push(lifetime(&self.pos));
+                    sites.push(TrapSite::DevOnlyRelease {
+                        operand: LifetimeOperand::Argument(0),
+                        pos: self.pos.clone(),
+                    });
                     return sites;
                 }
                 if let Callee::Method { recv, name } = callee {
@@ -4202,6 +4222,25 @@ impl Expr {
                         sites.push(TrapSite::DevReloadOnlyStaleCoroutine {
                             pos: self.pos.clone(),
                         });
+                    }
+                }
+                let operation = operation_signature_target(callee);
+                let helper = matches!(callee, Callee::Func(name)
+                    if module.synthesized_helpers.contains(name));
+                if operation.is_some() || helper {
+                    for (index, argument) in args.iter().enumerate() {
+                        let execution_index =
+                            index + usize::from(matches!(callee, Callee::Method { .. }));
+                        if reference_value(&argument.ty)
+                            && !operation.as_ref().is_some_and(|(target, _)| {
+                                target.copies_lifetime_operand(execution_index)
+                            })
+                        {
+                            sites.push(TrapSite::DevOnlyLifetime {
+                                operand: LifetimeOperand::Argument(index),
+                                pos: argument.pos.clone(),
+                            });
+                        }
                     }
                 }
                 if callee.has_call_site() {
@@ -4374,6 +4413,7 @@ impl Expr {
             }
             K::DescriptorLit { .. } => vec![allocation(&self.pos)],
             K::RawNew { .. } => vec![allocation(&self.pos)],
+            K::Length(value) => value.statement_read_sites(module),
             K::Field { obj, .. } => {
                 let mut sites = Vec::new();
                 if reference_value(&obj.ty) {
@@ -4397,14 +4437,16 @@ impl Expr {
                 }
                 sites
             }
-            K::Index { obj, checked, .. } if *checked => {
+            K::Index { obj, checked, .. } => {
                 let mut sites = Vec::new();
                 if matches!(obj.ty, Type::Array(_)) {
                     sites.push(lifetime(&obj.pos));
                 }
-                sites.push(TrapSite::IndexRead {
-                    pos: self.pos.clone(),
-                });
+                if *checked {
+                    sites.push(TrapSite::IndexRead {
+                        pos: self.pos.clone(),
+                    });
+                }
                 sites
             }
             K::ArrayLit(elems) if matches!(self.ty, Type::Array(_)) => {
@@ -4415,6 +4457,18 @@ impl Expr {
             }
             K::ArraySpreadLit(elems) => {
                 let mut sites = Vec::with_capacity(elems.len() + 1);
+                sites.extend(
+                    elems
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, element)| {
+                            element.spread.is_some() && reference_value(&element.expr.ty)
+                        })
+                        .map(|(index, element)| TrapSite::DevOnlyLifetime {
+                            operand: LifetimeOperand::Argument(index),
+                            pos: element.expr.pos.clone(),
+                        }),
+                );
                 sites.push(allocation(&self.pos));
                 sites.extend(elems.iter().map(|elem| allocation(&elem.expr.pos)));
                 sites
@@ -4457,8 +4511,6 @@ impl Expr {
             | K::Binary { .. }
             | K::AbsenceTest { .. }
             | K::Cast(_)
-            | K::Length(_)
-            | K::Index { .. }
             | K::ArrayLit(_)
             | K::Lambda { .. }
             | K::Yield(_)
@@ -4888,6 +4940,7 @@ mod tests {
         };
         let module = Module {
             poisoned_imports: Vec::new(),
+            synthesized_helpers: Default::default(),
             classes: Vec::new(),
             enums: Vec::new(),
             string_aliases: vec![StringAliasDef {
@@ -5307,6 +5360,7 @@ mod tests {
     fn module_is_constructible_empty() {
         let m = Module {
             poisoned_imports: Vec::new(),
+            synthesized_helpers: Default::default(),
             classes: Vec::new(),
             enums: Vec::new(),
             string_aliases: Vec::new(),

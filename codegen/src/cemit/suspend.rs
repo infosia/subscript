@@ -143,14 +143,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         operands: &[l::ValueId],
         traps: &[l::Trap],
     ) -> Result<(), String> {
+        let traps = self.consume_lifetime_sites(traps);
         let function = match target.kind {
             l::CallTargetKind::Function(function) => function,
             l::CallTargetKind::Method(method) => self.emitter.method_function(method)?,
             ref other => return Err(internal(format!("async target {other:?} is invalid"))),
         };
-        for trap in traps {
+        for trap in &traps {
             match trap.kind {
-                l::TrapKind::DevOnlyLifetime => self.consume(trap),
                 l::TrapKind::Call => {}
                 _ => {
                     return Err(internal(format!(

@@ -72,18 +72,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         traps: &[l::Trap],
         pos: &Pos,
     ) -> Result<RV, String> {
-        if matches!(target.kind, l::CallTargetKind::Method(_)) {
-            let receiver = self.expect_scalar(
-                *operands
-                    .first()
-                    .ok_or_else(|| internal("method call has no receiver"))?,
-            )?;
-            for trap in traps {
-                if trap.kind == l::TrapKind::DevOnlyLifetime {
-                    self.emit_trap(trap, TrapOperand::Value(receiver))?;
-                }
-            }
-        }
         let result = match &target.kind {
             l::CallTargetKind::Function(function) => self.script_call(
                 *function,
@@ -151,6 +139,17 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
 
     pub(super) fn emit_instruction(&mut self, instruction: &l::Instruction) -> Result<(), String> {
         let operands = self.instruction_operands(instruction)?;
+        let traps = self.consume_lifetimes(&instruction.traps, &operands)?;
+        let remaining;
+        let instruction = if let std::borrow::Cow::Owned(traps) = traps {
+            remaining = l::Instruction {
+                traps,
+                ..instruction.clone()
+            };
+            &remaining
+        } else {
+            instruction
+        };
         let operand_types = self.instruction_operand_types(instruction)?;
         let result_ty = self.result_type(instruction)?;
         let result = match &instruction.kind {
@@ -382,7 +381,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     operand_types
                         .first()
                         .ok_or_else(|| internal("field base type is missing"))?,
-                    &instruction.traps,
                 )?;
                 Some(RV::Scalar(address))
             }
@@ -456,7 +454,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     operand_types
                         .first()
                         .ok_or_else(|| internal("field base type is missing"))?,
-                    &instruction.traps,
                 )?;
                 let value = self.load_data(&ty, address, 0)?;
                 self.validate_wire_alias_traps(&ty, value, &instruction.traps)?;

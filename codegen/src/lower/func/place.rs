@@ -55,7 +55,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         field: l::FieldRef,
         base: RV,
         base_type: &l::ValueType,
-        traps: &[l::Trap],
     ) -> Result<(Value, Type), String> {
         match field {
             l::FieldRef::Class(field) => {
@@ -75,11 +74,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                             self.address_offset(pointer, i64::from(offset))
                         } else {
                             let pointer = self.expect_scalar(base)?;
-                            for trap in traps {
-                                if trap.kind == l::TrapKind::DevOnlyLifetime {
-                                    self.emit_trap(trap, TrapOperand::Value(pointer))?;
-                                }
-                            }
                             self.address_offset(pointer, i64::from(offset))
                         }
                     }
@@ -131,11 +125,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let (base_address, length, runtime_stride, element) = match base_type {
             l::ValueType::Data(Type::Array(element)) => {
                 let handle = self.expect_scalar(base)?;
-                for trap in traps {
-                    if trap.kind == l::TrapKind::DevOnlyLifetime {
-                        self.emit_trap(trap, TrapOperand::Value(handle))?;
-                    }
-                }
                 let length = checked.then(|| {
                     self.builder
                         .ins()

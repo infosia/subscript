@@ -735,14 +735,18 @@ mod tests {
             .find(|instruction| matches!(instruction.kind, l::InstructionKind::AsyncHandleRelease))
             .expect("the release of the held handle");
         assert!(
-            matches!(
-                release.traps.as_slice(),
-                [l::Trap {
-                    kind: l::TrapKind::Call,
-                    ..
-                }]
-            ),
+            release
+                .traps
+                .iter()
+                .any(|trap| matches!(trap.kind, l::TrapKind::Call)),
             "compiler.md §116.1 rule 4: the lowered release checks the word"
+        );
+        assert!(
+            release
+                .traps
+                .iter()
+                .any(|trap| matches!(trap.kind, l::TrapKind::DevOnlyLifetime(0))),
+            "compiler.md §120: the lifetime site names the handle operand"
         );
         release.traps.clear();
         let findings = findings(&module);

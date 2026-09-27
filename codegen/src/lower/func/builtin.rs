@@ -91,11 +91,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .first()
                         .ok_or_else(|| internal("array push has no receiver"))?,
                 )?;
-                for trap in traps {
-                    if trap.kind == l::TrapKind::DevOnlyLifetime {
-                        self.emit_trap(trap, TrapOperand::Value(handle))?;
-                    }
-                }
                 let value = *operands
                     .get(1)
                     .ok_or_else(|| internal("array push has no value"))?;
@@ -179,9 +174,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 )?;
                 for trap in traps {
                     match trap.kind {
-                        l::TrapKind::DevOnlyLifetime => {
-                            self.emit_trap(trap, TrapOperand::Value(handle))?
-                        }
                         l::TrapKind::Allocation | l::TrapKind::Call => {
                             self.emit_trap(trap, TrapOperand::Pending)?
                         }
@@ -216,11 +208,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .ok_or_else(|| internal("generator next has no receiver"))?,
                 )?;
                 for trap in traps {
-                    match trap.kind {
-                        l::TrapKind::DevOnlyLifetime | l::TrapKind::DevReloadOnlyStaleCoroutine => {
-                            self.emit_trap(trap, TrapOperand::Value(frame))?
-                        }
-                        _ => {}
+                    if trap.kind == l::TrapKind::DevReloadOnlyStaleCoroutine {
+                        self.emit_trap(trap, TrapOperand::Value(frame))?;
                     }
                 }
                 let l::ValueType::Data(Type::IterResult(value)) =

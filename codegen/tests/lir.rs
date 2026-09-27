@@ -2352,7 +2352,7 @@ export function read(): i32 {
         .collect::<Vec<_>>();
     assert_eq!(sites.len(), 2, "one checked place-base index per function");
     assert!(sites.iter().all(|traps| {
-        traps.contains(&TrapKind::IndexRead) && traps.contains(&TrapKind::DevOnlyLifetime)
+        traps.contains(&TrapKind::IndexRead) && traps.contains(&TrapKind::DevOnlyLifetime(0))
     }));
 }
 

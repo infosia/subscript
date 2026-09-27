@@ -67,11 +67,37 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         Ok(())
     }
 
+    pub(super) fn consume_lifetime_sites(&mut self, traps: &[l::Trap]) -> Vec<l::Trap> {
+        traps
+            .iter()
+            .filter_map(|trap| match trap.kind {
+                l::TrapKind::DevOnlyLifetime(_) | l::TrapKind::DevOnlyRelease(_) => {
+                    self.consume(trap);
+                    None
+                }
+                _ => Some(trap.clone()),
+            })
+            .collect()
+    }
+
     pub(super) fn emit_instruction(
         &mut self,
         out: &mut String,
         instruction: &l::Instruction,
     ) -> Result<(), String> {
+        let mut remaining;
+        let instruction = if instruction.traps.iter().any(|trap| {
+            matches!(
+                trap.kind,
+                l::TrapKind::DevOnlyLifetime(_) | l::TrapKind::DevOnlyRelease(_)
+            )
+        }) {
+            remaining = instruction.clone();
+            remaining.traps = self.consume_lifetime_sites(&instruction.traps);
+            &remaining
+        } else {
+            instruction
+        };
         let operands = instruction
             .operands
             .iter()
