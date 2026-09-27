@@ -877,8 +877,7 @@ impl Divergence {
             Divergence::ArrayOfArity => DivergenceEntry {
                 ts: "const xs: i32[] = Array.of<i32>(1, 2);",
                 subscript: "const xs: i32[] = [1, 2];",
-                why: "Variable arity needs the variadic-parameter prerequisite, and the \
-                      fixed-arity form needs measured dispatch and inference cost.",
+                why: "Variable arity needs the variadic-parameter prerequisite.",
                 collision: "compiler.md §105.3",
             },
             Divergence::ArrayHoleConstruction => DivergenceEntry {

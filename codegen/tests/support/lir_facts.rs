@@ -1656,6 +1656,7 @@ fn compare_call_operands(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<
                     l::InstructionKind::Call(_)
                         | l::InstructionKind::AsyncHandleCreate(_)
                         | l::InstructionKind::SetFromSource(_)
+                        | l::InstructionKind::MapFromSource
                 ) {
                     *actual
                         .entry((
@@ -1862,6 +1863,7 @@ fn instruction_arity(
         | K::ForeignArrayData
         | K::ArrayWithCapacity
         | K::SetFromSource(_)
+        | K::MapFromSource
         | K::IteratorCreate { .. }
         | K::IteratorBound => Arity::Exact(1),
         K::StringLiteral(_)

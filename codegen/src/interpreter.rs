@@ -1635,6 +1635,18 @@ impl<'m> Interpreter<'m> {
                 let ty = self.data_result_type(result_ty, instruction)?;
                 Some(self.array_spread_literal(ty, parts, &operands, &instruction.pos)?)
             }
+            l::InstructionKind::MapFromSource => {
+                let source = operands
+                    .first()
+                    .ok_or_else(|| self.missing_operand(instruction, 0))?
+                    .as_handle()?;
+                // SAFETY: the verified source is a live Map in this Context.
+                let handle =
+                    unsafe { ffi::subscript_rt_map_from_assoc(&mut *self.context, source, 0) };
+                self.check_runtime(&instruction.pos)?;
+                self.root_handle(handle);
+                Some(Value::Handle(handle))
+            }
             l::InstructionKind::SetFromSource(spread) => {
                 let ty = self.data_result_type(result_ty, instruction)?.clone();
                 Some(

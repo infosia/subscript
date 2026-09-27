@@ -3,6 +3,7 @@
 //! conversions, lambdas (C5), and null narrowing at use sites (C7).
 
 mod aggregate;
+mod array_of_and_map_copy;
 mod assign;
 mod call;
 mod entry;

@@ -561,6 +561,15 @@ pub(super) fn verify_instruction_contract(
                 bad("spread-array literal signature is invalid", errors);
             }
         }
+        l::InstructionKind::MapFromSource => {
+            if !matches!(
+                result_type.as_ref(),
+                Some(l::ValueType::Data(Type::Map(_, _)))
+            ) || operand_types.as_slice() != result_type.as_slice()
+            {
+                bad("Map source-construction signature is invalid", errors);
+            }
+        }
         l::InstructionKind::SetFromSource(spread) => {
             let valid = match (result_type.as_ref(), operand_types.as_slice()) {
                 (Some(l::ValueType::Data(Type::Set(key))), [l::ValueType::Data(source)]) => {

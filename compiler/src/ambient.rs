@@ -561,7 +561,7 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("Array", "Array.from(Map)", "Q22", Some("push map.keys() or map.values() into an array with a for…of loop"), "TypeScript reads a Map element as a `[K, V]` pair and this language reads `K`, so an accepted program fails the `tsc` gate (compiler.md §104.1).", Some("r206-array-from-bare-map.ts")),
     rejection("Array", "Array.from(Generator<T>)", "Q22", Some("collect the generator with for…of, then push"), "A generator is single-use, and `Array.from` is a value expression (stdlib.md §14.4).", Some("r207-array-from-generator.ts")),
     rejection("Array", "isArray(value)", "Q22", None, "A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3).", Some("r210-array-is-array.ts")),
-    rejection("Array", "of(value, …)", "Q22", Some("an array literal"), "Variable arity needs the variadic-parameter prerequisite, and a fixed-arity form needs the measured cost of dispatch and inference (compiler.md §105.3).", Some("r211-array-of-variadic.ts")),
+    rejection("Array", "of(value, …)", "Q22", Some("an array literal"), "Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3).", Some("r211-array-of-variadic.ts")),
     rejection("Array", "new Array(length)", "Q22", Some("an array literal, or push in a loop"), "The language has no array hole and no missing-element value (compiler.md §105.3).", Some("r212-new-array-length.ts")),
     rejection("Object", "groupBy", "Q27", None, "It returns a null-prototype object, and the language has no such type.", Some("r52-object-groupby.ts")),
     rejection("Set<K>", "algebra(non-Set)", "Q27", Some("pass a Set<K>"), "The language has no set-like protocol.", Some("r53-set-algebra-nonset.ts")),
@@ -1137,6 +1137,13 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
             signature: f.api_signature().to_string(),
             summary: f.api_summary(),
         });
+        if f == MapFn::New {
+            out.push(ApiItem {
+                group: "Map constructor",
+                signature: "new Map<K, V>(source: Map<K, V>): Map<K, V>".to_string(),
+                summary: "Copies entries in insertion order into a fresh map; reference values retain their identity.",
+            });
+        }
     }
     for f in SetFn::ALL {
         out.push(ApiItem {
@@ -1155,6 +1162,13 @@ pub(crate) fn accepted_api() -> Vec<ApiItem> {
                 summary: SET_SOURCE_SUMMARY,
             });
         }
+    }
+    for signature in ["of<T>(): T[]", "of<T>(value: T): T[]"] {
+        out.push(ApiItem {
+            group: "Array namespace",
+            signature: signature.to_string(),
+            summary: "Constructs the equivalent array literal (stdlib.md §9.11).",
+        });
     }
     out.push(ApiItem {
         group: "Array namespace",
@@ -1637,6 +1651,8 @@ mod tests {
                 .filter(|f| f.fixed_symbol().is_some())
                 .count()
             + MapFn::ALL.len()
+            // The Map copy row and the two Array.of rows (stdlib.md §10.9 and §9.11).
+            + 3
             + SetFn::ALL.len()
             // The `new Set<K>(source)` row (compiler.md §103.1).
             + 1

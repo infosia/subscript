@@ -509,6 +509,25 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     &instruction.pos,
                 )?,
             ),
+            l::InstructionKind::MapFromSource => {
+                let source = *operands
+                    .first()
+                    .ok_or_else(|| internal("Map copy source is missing"))?;
+                let source = self.expect_scalar(source)?;
+                let position = self.position_id(&instruction.pos);
+                let position = self.iconst(types::I32, position);
+                let handle = self
+                    .call_runtime(
+                        self.ml.rt.map_from_assoc,
+                        &[self.ctx, source, position],
+                        false,
+                    )?
+                    .ok_or_else(|| internal("Map copy result is missing"))?;
+                for trap in &instruction.traps {
+                    self.emit_trap(trap, TrapOperand::Pending)?;
+                }
+                Some(RV::Scalar(handle))
+            }
             l::InstructionKind::SetFromSource(spread) => Some(
                 self.set_from_source(
                     data_type(

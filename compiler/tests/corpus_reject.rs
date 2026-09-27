@@ -994,7 +994,7 @@ fn q22_array_namespace_rejections_each_name_their_own_record() {
         ),
         (
             "r211-array-of-variadic.ts",
-            &["variadic-parameter prerequisite", "fixed-arity"][..],
+            &["variadic-parameter prerequisite"][..],
         ),
         (
             "r212-new-array-length.ts",

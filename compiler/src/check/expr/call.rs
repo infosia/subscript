@@ -696,10 +696,9 @@ impl<'p> Checker<'p> {
         {
             return self.check_map_group_by(c, fx, pos);
         }
-        // `Array.<member>(…)` (compiler.md §105): `from` is the accepted
-        // member; the others carry their own recorded rejection.
+        // Resolves Array namespace calls (stdlib.md §9.11; compiler.md §105).
         if self.ambient_namespace(&m.obj, fx) == Some("Array") {
-            return self.check_array_static_call(&name, c, fx, pos, prop_pos);
+            return self.check_array_static_call(&name, c, ctx, fx, pos, prop_pos);
         }
         if let Some(handled) =
             self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)
@@ -1265,6 +1264,9 @@ impl<'p> Checker<'p> {
             return self.check_date_new(n, fx, pos);
         }
         if (name == "Map" || name == "Set") && self.assoc_is_ambient(&name, fx) {
+            if name == "Map" && n.args.as_ref().is_some_and(|args| !args.is_empty()) {
+                return self.check_map_copy(n, fx, pos, ident_pos);
+            }
             let Some(type_args) = &n.type_args else {
                 self.error(
                     RuleCode::S100,
@@ -1283,12 +1285,6 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
             let arguments: &[ast::ExprOrSpread] = n.args.as_deref().unwrap_or(&[]);
-            // `new Map(source)` stays rejected in every form: a pair
-            // element needs a tuple type (compiler.md §103.1 rule 7).
-            if name == "Map" && !arguments.is_empty() {
-                self.reject_api_form("Map", "new Map(iterable)", "new Map(iterable)", pos.clone());
-                return self.err_expr(pos);
-            }
             let saved = self.in_assoc_key;
             self.in_assoc_key = true;
             let key = self.resolve_type(&type_args.params[0]);

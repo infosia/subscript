@@ -44,6 +44,20 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         if matches!(callee, hir::Callee::Set(hir::SetFn::New)) && !args.is_empty() {
             return self.lower_set_from_source(args, expr);
         }
+        if matches!(callee, hir::Callee::Map(hir::MapFn::New)) && !args.is_empty() {
+            let [source] = args else {
+                return Err(self.error(&expr.pos, "Map copy needs one source"));
+            };
+            let source = self.require_expr(source)?;
+            return self.emit(
+                l::InstructionKind::MapFromSource,
+                vec![source],
+                Some(l::ValueType::Data(expr.ty.clone())),
+                false,
+                convert_traps(&expr.trap_sites(self.lowering.hir)),
+                expr.pos.clone(),
+            );
+        }
         if matches!(callee, hir::Callee::Ambient(hir::AmbientFn::Unreachable)) {
             let trap = convert_traps(&expr.trap_sites(self.lowering.hir))
                 .into_iter()

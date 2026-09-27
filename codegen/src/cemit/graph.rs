@@ -267,6 +267,20 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::InstructionKind::ArraySpreadLiteral(spreads) => {
                 self.emit_spread_array(out, instruction, spreads, &operands, &operand_types, result)
             }
+            l::InstructionKind::MapFromSource => {
+                let source = operands
+                    .first()
+                    .ok_or_else(|| internal("Map copy source is missing"))?;
+                let position = self.emitter.pos_id(&instruction.pos);
+                let call = self.emitter.runtime_call(
+                    "void*",
+                    "subscript_rt_map_from_assoc",
+                    &["void*".into(), "void*".into(), "uint32_t".into()],
+                    &["ctx".into(), source.clone(), format!("{position}u")],
+                );
+                self.assign(out, result, &call)?;
+                self.consume_runtime_traps(out, &instruction.traps, true, true)
+            }
             l::InstructionKind::SetFromSource(spread) => self.emit_set_from_source(
                 out,
                 instruction,

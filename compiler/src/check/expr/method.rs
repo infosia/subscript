@@ -843,15 +843,12 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// Checks a call on the `Array` builtin namespace (compiler.md §105).
-    ///
-    /// `from` is the accepted member (§105.2). Every other member has a
-    /// recorded rejection of its own (§105.3), so none of them answers
-    /// the general unknown-name diagnostic any more.
+    /// Checks the `Array` namespace (stdlib.md §9.11; compiler.md §105).
     pub(super) fn check_array_static_call(
         &mut self,
         name: &str,
         call: &ast::CallExpr,
+        ctx: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
         prop_pos: Pos,
@@ -863,11 +860,7 @@ impl<'p> Checker<'p> {
                 self.check_poisoned_arguments(&call.args, fx);
                 self.err_expr(pos)
             }
-            "of" => {
-                self.reject_api_form("Array", "of(value, …)", "Array.of", prop_pos.clone());
-                self.check_poisoned_arguments(&call.args, fx);
-                self.err_expr(pos)
-            }
+            "of" => self.check_array_of(call, ctx, fx, pos, prop_pos),
             other => {
                 self.error(
                     RuleCode::S014,

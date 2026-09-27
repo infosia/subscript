@@ -558,6 +558,8 @@ pub enum InstructionKind {
     ArraySpreadLiteral(Vec<Option<SpreadKind>>),
     /// Construct a `Set` from one fused source traversal.
     SetFromSource(SpreadKind),
+    /// Construct a shallow Map copy in insertion order (stdlib.md §10.9).
+    MapFromSource,
     /// Format and concatenate a template literal.
     Template(Vec<TemplatePart>),
     /// Construct a function value and its capture environment.

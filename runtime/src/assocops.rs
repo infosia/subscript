@@ -61,6 +61,10 @@ impl KeyKind {
     }
 }
 
+#[path = "assoc_copy.rs"]
+mod copy;
+pub(crate) use copy::copy_map;
+
 fn header_kind(header: &AssocHeader) -> KeyKind {
     KeyKind::from_u32(header.key_kind as u32).unwrap_or(KeyKind::Bits)
 }

@@ -591,6 +591,25 @@ pub unsafe extern "C" fn subscript_rt_map_new(
     )
 }
 
+/// Copies a Map in insertion order through the shared insert path (stdlib.md §10.9).
+///
+/// # Safety
+///
+/// `ctx` is live and `source` is a live Map owned by that Context.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_map_from_assoc(
+    ctx: *mut Context,
+    source: *mut u8,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: the caller supplies the live Context.
+    if !assoc_receiver_is_live(unsafe { &mut *ctx }, source, pos_id) {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared source and Context contract.
+    unsafe { crate::assocops::copy_map(ctx, source, pos_id) }
+}
+
 /// Allocates an empty monomorphized `Set<K>`.
 ///
 /// # Safety

@@ -227,6 +227,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         subscript_rt_fixed_arr_find_index,
         subscript_rt_fixed_arr_reduce_right,
         subscript_rt_map_new,
+        subscript_rt_map_from_assoc,
         subscript_rt_assoc_size,
         subscript_rt_assoc_has,
         subscript_rt_assoc_delete,

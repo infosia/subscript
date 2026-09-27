@@ -278,6 +278,7 @@
 | subscript signature | Behavior |
 |---|---|
 | `new Map<K, V>(): Map<K, V>` | Constructs an empty insertion-ordered map. |
+| `new Map<K, V>(source: Map<K, V>): Map<K, V>` | Copies entries in insertion order into a fresh map; reference values retain their identity. |
 
 ### Map<K, V>
 
@@ -327,6 +328,8 @@
 
 | subscript signature | Behavior |
 |---|---|
+| `of<T>(): T[]` | Constructs the equivalent array literal (stdlib.md §9.11). |
+| `of<T>(value: T): T[]` | Constructs the equivalent array literal (stdlib.md §9.11). |
 | `from<T>(source: T[] \| FixedArray<T, N> \| Set<T> \| string): T[]` | Collects a source over the array-literal spread traversal into a fresh T[]; a string source yields one code point per element. |
 
 ### JSON
@@ -430,7 +433,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | Array | `Array.from(Map)` | S014 | Q22 | `push map.keys() or map.values() into an array with a for…of loop` | TypeScript reads a Map element as a `[K, V]` pair and this language reads `K`, so an accepted program fails the `tsc` gate (compiler.md §104.1). | `r206-array-from-bare-map.ts` |
 | Array | `Array.from(Generator<T>)` | S014 | Q22 | `collect the generator with for…of, then push` | A generator is single-use, and `Array.from` is a value expression (stdlib.md §14.4). | `r207-array-from-generator.ts` |
 | Array | `isArray(value)` | S014 | Q22 | — | A declared type answers this statically. A boundary-opaque value needs a runtime test, and the runtime classification that test reads is not inspected (compiler.md §105.3). | `r210-array-is-array.ts` |
-| Array | `of(value, …)` | S014 | Q22 | `an array literal` | Variable arity needs the variadic-parameter prerequisite, and a fixed-arity form needs the measured cost of dispatch and inference (compiler.md §105.3). | `r211-array-of-variadic.ts` |
+| Array | `of(value, …)` | S014 | Q22 | `an array literal` | Variable arity needs the variadic-parameter prerequisite (compiler.md §105.3). | `r211-array-of-variadic.ts` |
 | Array | `new Array(length)` | S014 | Q22 | `an array literal, or push in a loop` | The language has no array hole and no missing-element value (compiler.md §105.3). | `r212-new-array-length.ts` |
 | Object | `groupBy` | S014 | Q27 | — | It returns a null-prototype object, and the language has no such type. | `r52-object-groupby.ts` |
 | Set<K> | `algebra(non-Set)` | S014 | Q27 | `pass a Set<K>` | The language has no set-like protocol. | `r53-set-algebra-nonset.ts` |
