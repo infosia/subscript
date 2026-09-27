@@ -161,3 +161,4 @@ Every section, with its status:
 | §117 | An array iterator reads its bound from the header | active | [`s117-an-array-iterator-reads-its-bound-from-the-header.md`](compiler/s117-an-array-iterator-reads-its-bound-from-the-header.md) |
 | §118 | A capture never outlives its frame | active; amends C5, §8.2, §116 | [`s118-a-capture-never-outlives-its-frame.md`](compiler/s118-a-capture-never-outlives-its-frame.md) |
 | §119 | A synthesized helper has no reload slot | active; amends §8.2 | [`s119-a-synthesized-helper-has-no-reload-slot.md`](compiler/s119-a-synthesized-helper-has-no-reload-slot.md) |
+| §120 | A lifetime site names its operand | active; amends §20.2 | [`s120-a-lifetime-site-names-its-operand.md`](compiler/s120-a-lifetime-site-names-its-operand.md) |

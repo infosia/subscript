@@ -66,6 +66,7 @@ A boolean cannot express these; each was found in the P19 work.
   CRITICAL 1 was an operand string interpolated twice, calling a
   call-valued divisor twice — the guard must hold a materialized
   operand, not a re-emittable expression.
+  *(2026-09-28: a lifetime site names its operand, §120.)*
 
 ### 20.3 Sites in scope
 
