@@ -145,6 +145,7 @@ impl Checker<'_> {
             field("message", Type::Str),
         ];
         let parameter = |name: &str, ty: Type| hir::Param {
+            escapes: false,
             name: name.to_string(),
             ty,
             default: None,
@@ -423,7 +424,6 @@ impl Checker<'_> {
                 Local {
                     ty: Type::Class(class),
                     mutable: false,
-                    holds_capturing: false,
                     async_origins: HashSet::new(),
                     caught: true,
                 },

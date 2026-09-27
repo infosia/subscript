@@ -857,3 +857,53 @@ fn a_registration_open_across_a_reload_calls_the_code_it_was_created_with() {
         .expect("fire the second registration");
     assert_eq!(output(&mut session), "v2 3\nreleased 1\n");
 }
+
+#[test]
+fn a_retained_lambda_cannot_call_a_new_escaping_parameter() {
+    let before = r#"
+function named(): i32 { return 0; }
+class Holder { cb: () => i32 = named; }
+const saved: Holder = new Holder();
+let marked: boolean = false;
+function sink(cb: () => i32): void { print(`${cb()}`); }
+let retained: () => void = (): void => { const n: i32 = 7; sink((): i32 => n); };
+export function main(): void { retained(); print(`${marked}`); }
+"#;
+    let after = before
+        .replace("print(`${cb()}`);", "saved.cb = cb; marked = true;")
+        .replace("const n: i32 = 7; sink((): i32 => n);", "");
+    check_program(&files(&after)).expect("replacement source checks on its own");
+    let mut session = ReloadSession::new(&files(before)).expect("initial session");
+    assert!(
+        matches!(session.reload(&files(&after)), Err(ReloadError::DeclarationChanged { declaration }) if declaration == "function sink")
+    );
+    session
+        .call_main()
+        .expect("rejected swap preserves old callee");
+    assert_eq!(output(&mut session), "7\nfalse\n");
+
+    let compatible = before
+        .replace("print(`${cb()}`);", "print(`${cb() + 1}`);")
+        .replace("const n: i32 = 7; sink((): i32 => n);", "");
+    session
+        .reload(&files(&compatible))
+        .expect("unchanged escape facts permit the body edit");
+    session
+        .call_main()
+        .expect("retained lambda calls the new compatible callee");
+    assert_eq!(output(&mut session), "8\nfalse\n");
+}
+
+#[test]
+fn lambda_parameter_escape_facts_enter_the_reload_hash() {
+    let before = "function named(): i32 { return 0; } let saved: () => i32 = named; let run: (cb: () => i32) => void = (cb: () => i32): void => { cb(); }; export function main(): void {}";
+    let after = before.replace("cb();", "saved = cb;");
+    let mut session = ReloadSession::new(&files(before)).expect("initial session");
+    assert!(matches!(
+        session.reload(&files(&after)),
+        Err(ReloadError::DeclarationChanged { .. })
+    ));
+    session
+        .reload(&files(&before.replace("cb();", "print(`${cb()}`);")))
+        .expect("a compatible lambda body edit reloads");
+}

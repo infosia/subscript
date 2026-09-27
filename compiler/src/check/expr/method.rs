@@ -384,17 +384,6 @@ impl<'p> Checker<'p> {
                     },
                 ];
                 let mut checked = self.check_args(&params, &c.args, fx, &pos, "fill");
-                // C5: `fill` stores its argument in the array.
-                if let Some(value) = checked.first() {
-                    if self.is_capturing_value(value, fx) {
-                        self.error(
-                            RuleCode::S009,
-                            "capturing lambdas may not escape: `fill` stores its \
-                             argument in the array",
-                            value.pos.clone(),
-                        );
-                    }
-                }
                 if checked.len() == 1 {
                     checked.push(int_default(0, &pos));
                 }
@@ -471,17 +460,6 @@ impl<'p> Checker<'p> {
                 }
                 let params = [ParamSig::positional(elem)];
                 let checked = self.check_args(&params, &c.args, fx, &pos, "unshift");
-                // C5: `unshift` stores its argument in the array.
-                if let Some(value) = checked.first() {
-                    if self.is_capturing_value(value, fx) {
-                        self.error(
-                            RuleCode::S009,
-                            "capturing lambdas may not escape: `unshift` stores its \
-                             argument in the array",
-                            value.pos.clone(),
-                        );
-                    }
-                }
                 let mut args = vec![recv];
                 args.extend(checked);
                 mk(args, Type::I32, pos)
@@ -1043,17 +1021,6 @@ impl<'p> Checker<'p> {
             M::Set => {
                 let params = [ParamSig::positional(key), ParamSig::positional(value)];
                 let checked = self.check_args(&params, &c.args, fx, &pos, "Map.set");
-                if checked
-                    .get(1)
-                    .is_some_and(|argument| self.is_capturing_value(argument, fx))
-                {
-                    let value_pos = checked[1].pos.clone();
-                    self.error(
-                        RuleCode::S009,
-                        "capturing lambdas may not escape: `Map.set` stores its value",
-                        value_pos,
-                    );
-                }
                 let mut args = vec![recv];
                 args.extend(checked);
                 mk(MapFn::Set, args, map_ty, pos)

@@ -3,12 +3,12 @@
 //!
 //! A raise site is decided here from LIR facts alone: a `throw`, a call
 //! to a target whose function carries `can_raise`, an indirect call, a
-//! built-in call that receives a function value, and an `await` of a held
+//! built-in call that calls a script callback, and an `await` of a held
 //! handle or of a direct call to a target that carries `can_raise`. The
 //! lowering decides the same question from HIR trap sites, so the two
 //! derivations are separate (CLAUDE.md core principle 9).
 
-use super::verify::{finding, operand_type};
+use super::verify::finding;
 use super::*;
 
 pub(super) fn verify_raise_edges(
@@ -281,7 +281,11 @@ fn verify_handler(
 }
 
 /// Whether `instruction` can leave an exception pending.
-fn is_raise_site(module: &l::Module, function: &l::Function, instruction: &l::Instruction) -> bool {
+fn is_raise_site(
+    module: &l::Module,
+    _function: &l::Function,
+    instruction: &l::Instruction,
+) -> bool {
     let target = match &instruction.kind {
         l::InstructionKind::Throw
         | l::InstructionKind::ExceptionResume
@@ -290,14 +294,30 @@ fn is_raise_site(module: &l::Module, function: &l::Function, instruction: &l::In
         _ => return false,
     };
     match &target.kind {
-        l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_) => {
-            instruction.operands.iter().any(|operand| {
-                matches!(
-                    operand_type(function, operand),
-                    Some(l::ValueType::Data(Type::Func(_)))
-                )
-            })
-        }
+        l::CallTargetKind::Intrinsic(intrinsic) => module
+            .intrinsic_operations
+            .iter()
+            .find(|op| op.family == intrinsic.family && op.operation == intrinsic.operation)
+            .is_some_and(|op| match op.family {
+                l::IntrinsicFamily::Array => matches!(
+                    op.semantic_name.as_str(),
+                    "ForEach"
+                        | "Map"
+                        | "Filter"
+                        | "Reduce"
+                        | "ReduceRight"
+                        | "Some"
+                        | "Every"
+                        | "FindIndex"
+                        | "Sort"
+                ),
+                l::IntrinsicFamily::Map => {
+                    matches!(op.semantic_name.as_str(), "ForEach" | "GroupBy")
+                }
+                l::IntrinsicFamily::Set => op.semantic_name == "ForEach",
+                _ => false,
+            }),
+        l::CallTargetKind::BuiltinMethod(_) => false,
         _ => target_can_raise(module, target),
     }
 }

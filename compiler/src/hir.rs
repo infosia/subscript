@@ -9,6 +9,9 @@
 use crate::diag::Pos;
 use crate::types::{CallbackLifetime, ClassId, EnumId, HandleClass, HandleKind, IterKind, Type};
 
+mod parameter;
+pub use parameter::Param;
+
 mod using;
 pub use using::UsingBinding;
 
@@ -603,22 +606,6 @@ impl Function {
                 .collect(),
         )
     }
-}
-
-/// One function parameter.
-#[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
-pub struct Param {
-    /// Parameter name.
-    pub name: String,
-    /// Resolved type.
-    pub ty: Type,
-    /// Checked default value, when declared (`a11`).
-    pub default: Option<Expr>,
-    /// C spelling absorbed at this foreign boundary parameter.
-    pub foreign_provenance: Option<ForeignTypeProvenance>,
-    /// Position of the parameter.
-    pub pos: Pos,
 }
 
 /// One immutable local copied by value into a closure environment.
@@ -4755,6 +4742,7 @@ mod tests {
             is_generator: false,
             is_async: false,
             params: vec![Param {
+                escapes: false,
                 name: "mode".to_string(),
                 ty: Type::StringAlias(crate::types::StringAliasId(0)),
                 default: None,

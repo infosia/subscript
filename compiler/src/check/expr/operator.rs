@@ -1,12 +1,10 @@
 //! Checks the operator expressions, the conditional expression, `yield`, and `as`.
 
-use std::collections::HashSet;
-
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::stmt::narrow_paths;
-use crate::check::{static_member_symbol, Checker, FnCtx, Local};
+use crate::check::{static_member_symbol, Checker, FnCtx};
 use crate::diag::{Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::hir::{self, BinOp, Callee, ExprKind, UnOp};
@@ -807,11 +805,10 @@ impl<'p> Checker<'p> {
         let nullable = operand.ty.clone();
         fx.declare(
             &name,
-            Local {
+            crate::check::Local {
                 ty: nullable.clone(),
                 mutable: true,
-                holds_capturing: false,
-                async_origins: HashSet::new(),
+                async_origins: std::collections::HashSet::new(),
                 caught: false,
             },
         );

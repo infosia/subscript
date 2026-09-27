@@ -110,8 +110,8 @@ Accept: `a03`. Reject: `r09-int-literal-overflow` (`const x: i32 =
   capture unless it is syntactically clean, a parameter that escapes is
   inferred, and its callers pass clean values.
 
-Accept: `a13`, `a14`. Reject: `r10-escaping-capture` (returns a capturing
-lambda; `tsc`-clean).
+Accept: `a13`, `a14`, `a262`. Reject: `r10-escaping-capture` (returns a
+capturing lambda; `tsc`-clean), `r240`–`r248` (§118; `tsc`-clean).
 
 ### C6. Exceptions (Q9) — `Error`-family only, uncatchable traps
 

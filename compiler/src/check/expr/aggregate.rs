@@ -48,13 +48,6 @@ impl<'p> Checker<'p> {
                         checked.pos.clone(),
                         "the array element",
                     );
-                    if self.is_capturing_value(&checked, fx) {
-                        self.error(
-                            RuleCode::S009,
-                            "capturing lambdas may not be stored in arrays",
-                            checked.pos.clone(),
-                        );
-                    }
                     out.push(checked);
                 }
                 hir::Expr {
@@ -87,13 +80,6 @@ impl<'p> Checker<'p> {
                         checked.pos.clone(),
                         "the array element",
                     );
-                    if self.is_capturing_value(&checked, fx) {
-                        self.error(
-                            RuleCode::S009,
-                            "capturing lambdas may not be stored in arrays",
-                            checked.pos.clone(),
-                        );
-                    }
                     out.push(checked);
                 }
                 hir::Expr {
@@ -130,15 +116,6 @@ impl<'p> Checker<'p> {
                         "the array element",
                     );
                     out.push(checked);
-                }
-                for checked in &out {
-                    if self.is_capturing_value(checked, fx) {
-                        self.error(
-                            RuleCode::S009,
-                            "capturing lambdas may not be stored in arrays",
-                            checked.pos.clone(),
-                        );
-                    }
                 }
                 hir::Expr {
                     kind: ExprKind::ArrayLit(out),
@@ -266,13 +243,6 @@ impl<'p> Checker<'p> {
                     checked.pos.clone(),
                     "the descriptor member",
                 );
-                if self.is_capturing_value(checked, fx) {
-                    self.error(
-                        RuleCode::S009,
-                        "capturing lambdas may not escape into descriptor objects",
-                        checked.pos.clone(),
-                    );
-                }
             }
             fields.push(checked);
         }
@@ -383,13 +353,6 @@ impl<'p> Checker<'p> {
                     expected,
                     expr.pos.clone(),
                     "the array element",
-                );
-            }
-            if !is_spread && self.is_capturing_value(&expr, fx) {
-                self.error(
-                    RuleCode::S009,
-                    "capturing lambdas may not be stored in arrays",
-                    expr.pos.clone(),
                 );
             }
             checked.push(hir::ArrayLitElem { expr, spread });

@@ -125,7 +125,6 @@ impl<'p> Checker<'p> {
                 Local {
                     ty: p.ty.clone(),
                     mutable: true,
-                    holds_capturing: false,
                     async_origins: HashSet::new(),
                     caught: false,
                 },
@@ -133,6 +132,7 @@ impl<'p> Checker<'p> {
                 fx,
             );
             hir_params.push(hir::Param {
+                escapes: false,
                 name: p.name.clone(),
                 ty: p.ty.clone(),
                 default: None,

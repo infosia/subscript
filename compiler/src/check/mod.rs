@@ -7,6 +7,7 @@
 //! declarations are registered as templates in pass A/B and
 //! monomorphized on first use (`identity<i32>`, `Box<f64>`).
 
+mod capture;
 mod exception;
 mod expr;
 pub(crate) mod fallthrough;
@@ -388,9 +389,6 @@ pub(crate) enum ScopeItem {
 pub(crate) struct Local {
     pub ty: Type,
     pub mutable: bool,
-    /// True when the binding holds a capturing lambda; such a binding
-    /// may be called and passed downward but may not escape (C5).
-    pub holds_capturing: bool,
     /// Async-handle creation obligations reachable through this value.
     pub async_origins: HashSet<u32>,
     /// True for a catch binding. Before a narrowing test it has two legal
@@ -935,16 +933,6 @@ impl FnCtx {
             scope.pending.remove(name);
         }
     }
-
-    /// Marks a bound local as holding a capturing lambda.
-    pub(crate) fn taint_capturing(&mut self, name: &str) {
-        for scope in self.scopes.iter_mut().rev() {
-            if let Some(local) = scope.vars.get_mut(name) {
-                local.holds_capturing = true;
-                return;
-            }
-        }
-    }
 }
 
 /// The checker.
@@ -1329,6 +1317,7 @@ pub(crate) fn run(
             initializer_can_raise: false,
             source_bytes: prog.source_bytes,
         };
+        capture::check(&mut module)?;
         module.operation_signatures = operation_signatures(&mut module);
         crate::trap_sites::decide_index_checks(&mut module);
         crate::raise_sites::decide_can_raise(&mut module);
@@ -1789,7 +1778,6 @@ impl<'p> Checker<'p> {
                 Local {
                     ty: Type::Error,
                     mutable: true,
-                    holds_capturing: false,
                     async_origins: HashSet::new(),
                     caught: false,
                 },
@@ -1867,14 +1855,12 @@ impl<'p> Checker<'p> {
             };
             let name = binding.binding.id.sym.to_string();
             let ty = value.ty.clone();
-            let holds_capturing = self.is_capturing_value(&value, fx);
             let async_origins = self.expr_async_origins(&value, fx);
             self.declare_local(
                 &name,
                 Local {
                     ty: ty.clone(),
                     mutable,
-                    holds_capturing,
                     async_origins,
                     caught: false,
                 },
@@ -3230,6 +3216,7 @@ impl<'p> Checker<'p> {
                             );
                         }
                         params.push(hir::Param {
+                            escapes: false,
                             name: parameter.name.clone(),
                             ty: parameter.ty.clone(),
                             default: None,
@@ -4964,7 +4951,6 @@ impl<'p> Checker<'p> {
                 Local {
                     ty: ps.ty.clone(),
                     mutable: true,
-                    holds_capturing: false,
                     async_origins: if ps.ty.carries_async_handle() {
                         HashSet::from([fx.register_async_origin(pos.clone())])
                     } else {
@@ -4976,6 +4962,7 @@ impl<'p> Checker<'p> {
                 fx,
             );
             out.push(hir::Param {
+                escapes: false,
                 name: ps.name.clone(),
                 ty: ps.ty.clone(),
                 default,
@@ -5123,7 +5110,6 @@ impl<'p> Checker<'p> {
                             Local {
                                 ty: ps.ty.clone(),
                                 mutable: true,
-                                holds_capturing: false,
                                 async_origins: HashSet::new(),
                                 caught: false,
                             },
@@ -5131,6 +5117,7 @@ impl<'p> Checker<'p> {
                             &mut fx,
                         );
                         hir_params.push(hir::Param {
+                            escapes: false,
                             name: ps.name.clone(),
                             ty: ps.ty.clone(),
                             default,
@@ -5750,7 +5737,6 @@ impl<'p> Checker<'p> {
                         return Some(Local {
                             ty: Type::Error,
                             mutable: true,
-                            holds_capturing: false,
                             async_origins: HashSet::new(),
                             caught: false,
                         });
@@ -5780,7 +5766,6 @@ impl<'p> Checker<'p> {
                 return Some(Local {
                     ty: Type::Error,
                     mutable: true,
-                    holds_capturing: false,
                     async_origins: HashSet::new(),
                     caught: false,
                 });
@@ -5798,7 +5783,6 @@ impl<'p> Checker<'p> {
                 return Some(Local {
                     ty: Type::Error,
                     mutable: true,
-                    holds_capturing: false,
                     async_origins: HashSet::new(),
                     caught: false,
                 });
@@ -5846,29 +5830,6 @@ impl<'p> Checker<'p> {
             }
         }
         Some(local)
-    }
-
-    /// True when an expression is (or can transport) a capturing
-    /// lambda; such a value may only be called locally or passed
-    /// downward (C5). Conditionals, assignment expressions, and array
-    /// literals forward the taint of their value positions. Other kinds
-    /// cannot carry one: parentheses are erased during checking, `||`
-    /// requires boolean operands, and reading a capturing lambda back
-    /// out of storage is impossible because storing one is rejected.
-    pub(crate) fn is_capturing_value(&self, e: &hir::Expr, fx: &FnCtx) -> bool {
-        e.flow_leaves().any(|leaf| match &leaf.kind {
-            hir::ExprKind::Lambda { captures, .. } => !captures.is_empty(),
-            hir::ExprKind::Local(name) => fx
-                .scopes
-                .iter()
-                .rev()
-                .find_map(|scope| scope.vars.get(name))
-                .is_some_and(|local| local.holds_capturing),
-            hir::ExprKind::ArraySpreadLit(elements) => elements.iter().any(|element| {
-                element.spread.is_none() && self.is_capturing_value(&element.expr, fx)
-            }),
-            _ => false,
-        })
     }
 }
 

@@ -1380,6 +1380,7 @@ fn json_type_index(types: &[Type], ty: &Type) -> Result<usize, String> {
 
 fn json_param(name: &str, ty: Type, pos: &Pos) -> hir::Param {
     hir::Param {
+        escapes: false,
         name: name.to_string(),
         ty,
         default: None,

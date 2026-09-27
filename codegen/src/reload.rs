@@ -162,7 +162,11 @@ fn ty_name(m: &hir::Module, ty: &Type) -> String {
 /// Spells a function signature: name, parameter types in order, return
 /// type, and the two shape bits that change the entry surface.
 fn signature_text(m: &hir::Module, f: &hir::Function) -> String {
-    let params: Vec<String> = f.params.iter().map(|p| ty_name(m, &p.ty)).collect();
+    let params: Vec<String> = f
+        .params
+        .iter()
+        .map(|p| format!("{}:escapes={}", ty_name(m, &p.ty), p.escapes))
+        .collect();
     format!(
         "{}({}) -> {}{}{}{}",
         f.name,
@@ -179,9 +183,9 @@ fn signature_text(m: &hir::Module, f: &hir::Function) -> String {
 /// Covered: classes (kind, field names, types, and order), enum member
 /// values, Q32 string-alias member spellings and order, module-level
 /// variable names and types, and every function signature — free
-/// functions, constructors, and methods. Not covered: any function body,
-/// and therefore any expression, statement, or default-argument value
-/// inside one.
+/// functions, constructors, and methods, including parameter escape facts.
+/// Lambda parameter escape facts also enter the hash (compiler.md §118).
+/// Other body expressions, statements, and default values do not enter it.
 #[must_use]
 pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
     let mut entries: Vec<(String, u64)> = Vec::new();
@@ -248,6 +252,48 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
     }
     for f in &m.functions {
         push(format!("function {}", f.name), &signature_text(m, f));
+    }
+
+    let mut lambdas = Vec::new();
+    fn lambda_facts(m: &hir::Module, child: hir::HirChild<'_>, facts: &mut Vec<String>) {
+        match child {
+            hir::HirChild::Expr(expr) => {
+                if let hir::ExprKind::Lambda { params, .. } = &expr.kind {
+                    if params.iter().any(|p| m.carries_capture(&p.ty)) {
+                        facts.push(
+                            params
+                                .iter()
+                                .map(|p| p.escapes.to_string())
+                                .collect::<Vec<_>>()
+                                .join(","),
+                        );
+                    }
+                }
+                for child in expr.children() {
+                    lambda_facts(m, child, facts);
+                }
+            }
+            hir::HirChild::Stmt(stmt) => {
+                for child in stmt.children() {
+                    lambda_facts(m, child, facts);
+                }
+            }
+        }
+    }
+    for owner in m.expression_owners() {
+        match owner {
+            hir::ExpressionOwner::Expr(expr) => {
+                lambda_facts(m, hir::HirChild::Expr(expr), &mut lambdas)
+            }
+            hir::ExpressionOwner::Body { statements, .. } => {
+                for stmt in statements {
+                    lambda_facts(m, hir::HirChild::Stmt(stmt), &mut lambdas);
+                }
+            }
+        }
+    }
+    if !lambdas.is_empty() {
+        push("lambda parameter escapes".to_owned(), &lambdas.join(";"));
     }
 
     let mut value: u64 = 0xcbf2_9ce4_8422_2325;
@@ -1190,6 +1236,27 @@ mod tests {
             h.declarations(),
             vec!["class C", "constructor C", "variable g", "function main"]
         );
+    }
+
+    #[test]
+    fn declarations_include_carrier_lambda_parameter_escapes() {
+        let h = hash_of(
+            "export function main(): void { let run: (cb: () => i32) => void = (cb: () => i32): void => { cb(); }; }",
+        );
+        assert_eq!(
+            h.declarations(),
+            vec!["function main", "lambda parameter escapes"]
+        );
+    }
+
+    #[test]
+    fn non_carrier_lambda_parameters_preserve_the_declaration_hash() {
+        let before = hash_of("export function main(): void {}");
+        let after = hash_of(
+            "export function main(): void { let run: (n: i32) => i32 = (n: i32): i32 => n; }",
+        );
+        assert_eq!(after.declarations(), vec!["function main"]);
+        assert_eq!(before, after);
     }
 
     #[test]

@@ -875,17 +875,6 @@ impl<'p> Checker<'p> {
                 "push" => {
                     let params = [ParamSig::positional((*elem).clone())];
                     let args = self.check_args(&params, &c.args, fx, &pos, "push");
-                    // C5: `push` stores its argument in the array.
-                    for arg in &args {
-                        if self.is_capturing_value(arg, fx) {
-                            self.error(
-                                RuleCode::S009,
-                                "capturing lambdas may not escape: `push` stores its \
-                                 argument in the array",
-                                arg.pos.clone(),
-                            );
-                        }
-                    }
                     mk(recv, args, Type::I32, pos)
                 }
                 "pop" => {
@@ -1412,15 +1401,6 @@ impl<'p> Checker<'p> {
         let empty: Vec<ast::ExprOrSpread> = Vec::new();
         let args_ast = n.args.as_deref().unwrap_or(&empty);
         let args = self.check_args(&params, args_ast, fx, &pos, &name);
-        for arg in &args {
-            if self.is_capturing_value(arg, fx) {
-                self.error(
-                    RuleCode::S009,
-                    "capturing lambdas may not escape into constructed objects",
-                    arg.pos.clone(),
-                );
-            }
-        }
         hir::Expr {
             kind: ExprKind::New {
                 class: class_id,

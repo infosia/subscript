@@ -689,14 +689,12 @@ impl<'p> Checker<'p> {
                 self.bind_pattern(&pattern, source, mutable, fx, out);
                 continue;
             }
-            let holds_capturing = self.is_capturing_value(&init, fx);
             let async_origins = self.expr_async_origins(&init, fx);
             self.declare_local(
                 &name,
                 Local {
                     ty: ty.clone(),
                     mutable,
-                    holds_capturing,
                     async_origins,
                     caught: false,
                 },
@@ -750,14 +748,6 @@ impl<'p> Checker<'p> {
                         checked.pos.clone(),
                         "the return value",
                     );
-                    if self.is_capturing_value(&checked, fx) {
-                        self.error_diverging(
-                            RuleCode::S009,
-                            "capturing lambdas may not escape their defining function",
-                            pos.clone(),
-                            Divergence::EscapingCapture,
-                        );
-                    }
                     if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
                         let origins = self.expr_async_origins(&checked, fx);
                         fx.handle_async_origins(&origins);
@@ -1089,7 +1079,6 @@ impl<'p> Checker<'p> {
                 Local {
                     ty: elem_ty.clone(),
                     mutable,
-                    holds_capturing: false,
                     async_origins: binding_async_origins,
                     caught: false,
                 },

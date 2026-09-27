@@ -364,26 +364,6 @@ impl<'p> Checker<'p> {
                 _ => {}
             }
         }
-        // C5 escape rule: capturing lambdas may not be stored.
-        match &target.kind {
-            ExprKind::Local(name) => {
-                if self.is_capturing_value(&value, fx) {
-                    let name = name.clone();
-                    fx.taint_capturing(&name);
-                }
-            }
-            ExprKind::Global(_) | ExprKind::Field { .. } | ExprKind::Index { .. } => {
-                if self.is_capturing_value(&value, fx) {
-                    self.error(
-                        RuleCode::S009,
-                        "capturing lambdas may not escape: they cannot be stored in \
-                         globals, fields, or arrays",
-                        value.pos.clone(),
-                    );
-                }
-            }
-            _ => {}
-        }
         // C7: an assignment invalidates narrowing for the path and its
         // extensions.
         if let Some(key) = path_key(&target) {

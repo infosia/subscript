@@ -1,7 +1,7 @@
 //! The "can raise" fact of `compiler.md` §115.6 rule 3.
 //!
 //! A function can raise when its body holds a `throw`, a built-in call
-//! that takes a script callback, an indirect call, or a call to a
+//! that calls a script callback, an indirect call, or a call to a
 //! function that can raise. The fact is derived one time, here, after the
 //! check. `Expr::trap_sites` reads it to give a call its raise site, and
 //! each engine reads the copy that LIR carries. No engine derives it
@@ -284,7 +284,7 @@ impl Module {
         })
     }
 
-    fn method(&self, receiver: &Type, name: &str) -> Option<&Function> {
+    pub(crate) fn method(&self, receiver: &Type, name: &str) -> Option<&Function> {
         let Type::Class(class) = receiver else {
             return None;
         };
@@ -318,12 +318,11 @@ pub(crate) fn async_callee_can_raise(module: &Module, callee: &AsyncCallee) -> b
 ///
 /// A direct call or a method call raises when its target can raise. A call
 /// that creates an async handle never raises (§116.2 rule 4). An
-/// indirect call always raises. A built-in call raises when an argument
-/// is a script callback, because the callback's exception propagates to
+/// indirect call always raises. A built-in call raises when it calls
+/// a script callback, because the callback's exception propagates to
 /// the caller of the built-in (§115.4). A foreign call never raises: a
 /// host callback is a boundary (§115.4 item 5).
-pub(crate) fn call_can_raise(module: &Module, callee: &Callee, args: &[Expr]) -> bool {
-    let takes_callback = || args.iter().any(|arg| matches!(arg.ty, Type::Func(_)));
+pub(crate) fn call_can_raise(module: &Module, callee: &Callee, _args: &[Expr]) -> bool {
     match callee {
         Callee::Func(name) => module
             .functions
@@ -341,10 +340,10 @@ pub(crate) fn call_can_raise(module: &Module, callee: &Callee, args: &[Expr]) ->
         | Callee::Num(_)
         | Callee::Date(_)
         | Callee::Str(_)
-        | Callee::Regex(_)
-        | Callee::Arr(_)
-        | Callee::Map(_)
-        | Callee::Set(_) => takes_callback(),
+        | Callee::Regex(_) => false,
+        Callee::Arr(op) => op.takes_callback(),
+        Callee::Map(op) => matches!(op, crate::hir::MapFn::ForEach | crate::hir::MapFn::GroupBy),
+        Callee::Set(op) => matches!(op, crate::hir::SetFn::ForEach),
     }
 }
 
