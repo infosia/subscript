@@ -1,6 +1,6 @@
 # Standard library — contract
 
-Status: Rev 18, 2026-09-27 (Rev 18 adds §19, four more Error classes, `Error.prototype.toString`, and the URI functions; Rev 17 adds §3.1 and §11.4a, `Date` `toJSON`/`toUTCString`/`valueOf`/copy/`UTC(year)`, `toFixed()`, and the global `Infinity`; Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
+Status: Rev 19, 2026-09-27 (Rev 19 adds §8.10 and §9.10, `at`, reference-element `find`/`findLast`, `findLastIndex`, and `flatMap`; Rev 18 adds §19, four more Error classes, `Error.prototype.toString`, and the URI functions; Rev 17 adds §3.1 and §11.4a, `Date` `toJSON`/`toUTCString`/`valueOf`/copy/`UTC(year)`, `toFixed()`, and the global `Infinity`; Rev 16 adds §15.3a, the `RegExp` flag accessors and `toString`; Rev 15 adds §8.9 and §9.9, the ES2022 search-position arguments and aliases; Rev 14, 2026-08-15, Rev 0: 2026-07-24, P9 `Math`/`Date`; Rev 1 adds the §7 stdlib roadmap and the §8 P10 `String` contract; Rev 2, 2026-07-25, adds the §9 P11 `Array` contract; Rev 3, 2026-07-25, reverses the `Map`/`Set` non-goal and cross-references P14 narrow numerics; Rev 4, 2026-07-25, adds the §10 P15 `Map`/`Set` contract; Rev 5, 2026-07-25, adds the §11 P12 `Number`/parsing/`toFixed` contract; Rev 6, 2026-07-25, moves `toString(radix)`/`toExponential`/`toPrecision`/`Math.clz32` from rejected to accepted per Q26; Rev 7, 2026-07-25, reinstates the thirteen Q27 sweep groups across §1, §8, §9, §10 and §11; Rev 8, 2026-07-26, records Q27 as fully implemented and corrects five contract claims the implementations disproved — §12's no-golden-moves, which-stages-touch-the-checker and sort-takes-an-index, §10.4's intersection ordering, and §10.6's allocation list; Rev 9,
 2026-07-26, adds the §13 P13 `JSON` contract; Rev 10, 2026-07-26, adds
 the §14 P22 `for…of`/spread contract; Rev 11, 2026-07-27, adds the §15
 P23 regex contract and removes the `regex` feature from it; Rev 12,
@@ -377,9 +377,8 @@ substituted — that is ECMA's behaviour for a string pattern, which has
 no capture groups, so this needs no regex engine (verified:
 `"a-b".replace("-", "[$1]")` is `"a[$1]b"`).
 
-Rejected (S014, Q21/Q27): `at` — out of range is `undefined` in JS and
-there is no miss value for it (`string | null` is itself rejected by
-S011); use `charAt`, which is total. `normalize` (Unicode
+*(`at` is accepted by §8.10: out of range traps, as `codePointAt`
+does.)* `normalize` (Unicode
 normalization tables), `localeCompare`,
 `toLocaleUpperCase`/`LowerCase` (locale data) — each a missing
 prerequisite rather than a cost. `match` and `matchAll` are rejected
@@ -444,6 +443,22 @@ was rejected with S100 before this section (measured on the checker at
 3. `trimLeft()` and `trimRight()` are `trimStart()` and `trimEnd()`.
    Both are `@deprecated` in the lib, as `substr` is, and Q27 accepted
    `substr` (owner decision, 2026-09-27).
+
+### 8.10 `at` (2026-09-27)
+
+Origin: the ES2022 gap inventory, batch 5 (owner, 2026-09-27: an `at`
+miss traps).
+
+`at(i: i32): string` is the code point starting at byte `i`; a
+negative `i` is `length + i`. Out of range **traps**, as `codePointAt`
+does; off a code-point boundary traps, as `charAt` does. The ES2022 lib
+types the result `string | undefined`; the prelude declares
+`at(index: i32): string` on `String`, and a merged interface's later
+overload is tried first, so `tsc` reads the result as `string`
+(measured: `const s: string = "abc".at(0)` is `tsc`-clean with the
+augmentation). Measured on `node` v24.18.0: `"abc".at(-1)` is `c`,
+`"abc".at(5)` is `undefined`; `"héllo".at(1)` is `é`, which is also the
+code point at byte 1 here.
 
 ## 9. P11 — `Array` methods (Q22)
 
@@ -541,11 +556,12 @@ Added by Q27 (2026-07-25):
 - the `every` family on `FixedArray`
 
 Rejected (S014, Q22/Q27): no-argument `sort`, no-init `reduce`
-(each changes meaning with arity); `find`/`findLast` (a scalar `T[]`
-has no miss value — `T | null` does not cover scalars; use
-`findIndex`); `at` (same reason); `flat`/`flatMap` (the depth appears
-in the result type, so a runtime depth cannot be typed — undecided
-rather than refused, `js-api-sweep.md`); `entries` (no tuple type);
+(each changes meaning with arity); `find`/`findLast` on a **scalar**
+`T[]` (a scalar has no miss value — `T | null` does not cover scalars;
+use `findIndex`; a reference-class `T` is accepted by §9.10); `flat`
+(the depth appears in the result type, so a runtime depth cannot be
+typed — undecided rather than refused, `js-api-sweep.md`; `flatMap`,
+whose depth is always 1, is accepted by §9.10); `entries` (no tuple type);
 **`keys`/`values` are accepted by Q30 as the direct subject of a
 `for…of` and rejected elsewhere**; and the **`array`
 parameter on callbacks** — `f(v, i)` passes a value and an index, but
@@ -602,6 +618,36 @@ rejected with S100.
 Corpus: `a264-string-array-search-positions` covers §8.9 and §9.9 with
 ASCII text, except the nested-array `toString`, and is `js-comparable`
 against `node`.
+
+### 9.10 `at`, `find`/`findLast` on a reference element, `findLastIndex`, `flatMap` (2026-09-27)
+
+Origin and owner decision as §8.10.
+
+1. `at(i: i32): T`: a negative `i` is `length + i`; out of range
+   **traps**, as an index read, `pop`, and `shift` do. The prelude
+   declares `at(index: i32): T` on `Array<T>`, so `tsc` reads the
+   result as `T`. Measured: `[1,2,3].at(0)` 1, `.at(-1)` 3, `.at(3)` and
+   `.at(-4)` `undefined`.
+2. `find(f: (v: T, i: i32) => boolean): T | null` and `findLast(…)`
+   for a **reference-class** `T` (and any nullable-capable `T`): `null`
+   on a miss, by the `Map.get` rule (§10.5). The `tsc` view is the lib's
+   `T | undefined`, so a program tests the result with `=== null` or
+   `??`, as it does for `Map.get`. A scalar `T` stays rejected. The
+   reason of Q22 ("a scalar has no miss value") does not reach a
+   reference element (compiler §103). `findLast` is ES2023, so the
+   prelude declares it on `Array<T>`.
+3. `findLastIndex(f: (v: T, i: i32) => boolean): i32`: the last index
+   where `f` is true, or −1, scanning from the end. ES2023; the prelude
+   declares it. Measured: `findIndex` 0, `findLastIndex` 2, a miss −1.
+4. `flatMap<U>(f: (v: T, i: i32) => U[]): U[]`: the concatenation of the
+   callback results in order; the depth is always 1. A callback that
+   returns a non-array `U` (the lib's `U | ReadonlyArray<U>`) and a
+   `thisArg` stay rejected. Measured: `[1,2,3].flatMap(v => [v, v*10])`
+   `[1,10,2,20,3,30]`; `[1,2].flatMap(v => [])` `[]`;
+   `[[1],[2]].flatMap(v => v)` `[1,2]`; the index argument `[0,1]`.
+
+Corpus: `a268-array-string-at-find-flatmap`, `js-comparable` against
+`node` where no miss traps; the traps go in unit or three-engine tests.
 
 ## 10. P15 — `Map` / `Set` (Q24)
 
