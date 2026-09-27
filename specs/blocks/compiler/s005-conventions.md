@@ -47,6 +47,12 @@ compiler the gate runs.)*
    child modules of the module that holds the type. The split moves
    `impl` blocks and free functions; it changes no signature and
    widens no visibility past `pub(super)`.
+2a. A file already past the limit is split first by any change that
+   adds lines to it. The split brings the file under the limit, by the
+   method of rule 2, before the change lands. A change that only
+   removes or edits lines in such a file does not split it.
+   The split is a commit of its own, with no behaviour change, before
+   the implementation commit of the section that needs it.
 3. The reason is measured, not stylistic: an agent that changes one
    function reads the whole file. At 10,000 lines that read costs
    about 100,000 tokens before the change starts
