@@ -24,7 +24,7 @@ The stages of the current form and the sections that hold their rules:
 |---|---|
 | parse and check (SWC, the checker, HIR) | §6, §67, §69, §72, §74, §76, §79, §82, §83, §87, §115, §116, §118 |
 | HIR→LIR lowering, the LIR form, the verifier | §20, §68, §73, §75 |
-| dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117 |
+| dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89 |
 | reference interpreter | §68.7 |
 | runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84 |
@@ -43,7 +43,7 @@ Every section, with its status:
 | §5 | Conventions | active | [`s005-conventions.md`](compiler/s005-conventions.md) |
 | §6 | P1 checker contract | active | [`s006-p1-checker-contract.md`](compiler/s006-p1-checker-contract.md) |
 | §7 | P2 runtime and JIT contract | active | [`s007-p2-runtime-and-jit-contract.md`](compiler/s007-p2-runtime-and-jit-contract.md) |
-| §8 | P3 AOT, hot reload, and the standing gate | active; §8.2 amended by §118 | [`s008-p3-aot-hot-reload-and-the-standing-gate.md`](compiler/s008-p3-aot-hot-reload-and-the-standing-gate.md) |
+| §8 | P3 AOT, hot reload, and the standing gate | active; §8.2 amended by §118 and §119 | [`s008-p3-aot-hot-reload-and-the-standing-gate.md`](compiler/s008-p3-aot-hot-reload-and-the-standing-gate.md) |
 | §9 | P4 measurement methodology | active | [`s009-p4-measurement-methodology.md`](compiler/s009-p4-measurement-methodology.md) |
 | §10 | P4.1 lowering optimization and re-measurement | active | [`s010-p4-1-lowering-optimization-and-re-measurement.md`](compiler/s010-p4-1-lowering-optimization-and-re-measurement.md) |
 | §10a | Emitted-C growable-array element access is inlined | active | [`s010a-emitted-c-growable-array-element-access-is-inlined.md`](compiler/s010a-emitted-c-growable-array-element-access-is-inlined.md) |
@@ -160,3 +160,4 @@ Every section, with its status:
 | §116 | An `await` delivers the exception of its handle | active; amends §115, §70, C6, C8 | [`s116-an-await-delivers-the-exception-of-its-handle.md`](compiler/s116-an-await-delivers-the-exception-of-its-handle.md) |
 | §117 | An array iterator reads its bound from the header | active | [`s117-an-array-iterator-reads-its-bound-from-the-header.md`](compiler/s117-an-array-iterator-reads-its-bound-from-the-header.md) |
 | §118 | A capture never outlives its frame | active; amends C5, §8.2, §116 | [`s118-a-capture-never-outlives-its-frame.md`](compiler/s118-a-capture-never-outlives-its-frame.md) |
+| §119 | A synthesized helper has no reload slot | active; amends §8.2 | [`s119-a-synthesized-helper-has-no-reload-slot.md`](compiler/s119-a-synthesized-helper-has-no-reload-slot.md) |
