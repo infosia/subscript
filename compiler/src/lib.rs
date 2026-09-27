@@ -2640,9 +2640,9 @@ mod tests {
             "@CStruct\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  print(`${v.x}`);\n}\n",
         )
         .expect("clean");
-        assert_eq!(module.classes.len(), 1);
-        assert!(module.classes[0].is_value);
-        assert_eq!(module.classes[0].fields[0].ty, Type::F32);
+        assert_eq!(module.classes.len(), 2);
+        assert!(module.classes[1].is_value);
+        assert_eq!(module.classes[1].fields[0].ty, Type::F32);
     }
 
     #[test]
@@ -3068,8 +3068,8 @@ mod tests {
             "class Date { ms: i32;\n  constructor(ms: i32) { this.ms = ms; }\n  getFullYear(): i32 { return 1970; }\n}\nexport function main(): void {\n  const d: Date = new Date(3);\n  print(`${d.getFullYear()},${d.ms}`);\n}\n",
         )
         .expect("shadowing class checks clean");
-        assert_eq!(module.classes.len(), 1);
-        assert_eq!(module.classes[0].name, "Date");
+        assert_eq!(module.classes.len(), 2);
+        assert_eq!(module.classes[1].name, "Date");
     }
 
     #[test]

@@ -49,9 +49,13 @@ impl PositionTable {
     }
 
     /// Adds one script site and answers the id that names it.
+    /// A position with no script site uses the reserved id 0.
     ///
     /// The first id this answers is 1, because index 0 is reserved.
     pub fn add(&mut self, pos: &Pos) -> u32 {
+        if *pos == no_script_site() {
+            return 0;
+        }
         self.entries.push(pos.clone());
         (self.entries.len() - 1) as u32
     }
@@ -113,6 +117,9 @@ mod tests {
         );
         assert!(table.is_empty(), "a new table holds no script site");
 
+        assert_eq!(table.add(&empty), 0);
+        assert_eq!(table.entries(), std::slice::from_ref(&empty));
+
         let first = table.add(&Pos::new("first.ts", 1, 2));
         let second = table.add(&Pos::new("second.ts", 3, 4));
         assert_eq!(
@@ -120,6 +127,8 @@ mod tests {
             (1, 2),
             "§112 rule 1 starts the ids of script sites at 1"
         );
+        assert_eq!(table.len(), 3);
+        assert_eq!(table.add(&empty), 0);
         assert_eq!(table.len(), 3);
         assert!(!table.is_empty());
 

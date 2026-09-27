@@ -442,20 +442,16 @@ impl Checker<'_> {
 
         for (index, ty) in types.iter().enumerate() {
             let body = self.json_helper_body(ty, tracked, &types, &names, &pos)?;
-            self.functions.push(hir::Function {
-                can_raise: false,
-                name: names[index].clone(),
-                exported: false,
-                is_generator: false,
-                is_async: false,
-                params: vec![
+            self.functions.push(hir::Function::new_synthesized_helper(
+                names[index].clone(),
+                vec![
                     json_param("builder", Type::U64, &pos),
                     json_param("value", ty.clone(), &pos),
                 ],
-                ret: Type::Void,
+                Type::Void,
                 body,
-                pos: pos.clone(),
-            });
+                pos.clone(),
+            ));
         }
 
         let wrapper = format!("[[json.stringify#{call_id}.root]]");
@@ -496,17 +492,13 @@ impl Checker<'_> {
                 pos: pos.clone(),
             },
         ];
-        self.functions.push(hir::Function {
-            can_raise: false,
-            name: wrapper.clone(),
-            exported: false,
-            is_generator: false,
-            is_async: false,
-            params: vec![json_param("value", root.clone(), &pos)],
-            ret: Type::Str,
+        self.functions.push(hir::Function::new_synthesized_helper(
+            wrapper.clone(),
+            vec![json_param("value", root.clone(), &pos)],
+            Type::Str,
             body,
             pos,
-        });
+        ));
         Ok(wrapper)
     }
 
@@ -785,37 +777,29 @@ impl Checker<'_> {
 
         for (index, ty) in types.iter().enumerate() {
             let body = self.json_validation_body(ty, &types, &validators, &pos)?;
-            self.functions.push(hir::Function {
-                can_raise: false,
-                name: validators[index].clone(),
-                exported: false,
-                is_generator: false,
-                is_async: false,
-                params: vec![
+            self.functions.push(hir::Function::new_synthesized_helper(
+                validators[index].clone(),
+                vec![
                     json_param("parser", Type::U64, &pos),
                     json_param("node", Type::U64, &pos),
                 ],
-                ret: Type::Bool,
+                Type::Bool,
                 body,
-                pos: pos.clone(),
-            });
+                pos.clone(),
+            ));
         }
         for (index, ty) in types.iter().enumerate() {
             let body = self.json_construction_body(ty, &types, &constructors, &pos)?;
-            self.functions.push(hir::Function {
-                can_raise: false,
-                name: constructors[index].clone(),
-                exported: false,
-                is_generator: false,
-                is_async: false,
-                params: vec![
+            self.functions.push(hir::Function::new_synthesized_helper(
+                constructors[index].clone(),
+                vec![
                     json_param("parser", Type::U64, &pos),
                     json_param("node", Type::U64, &pos),
                 ],
-                ret: ty.clone(),
+                ty.clone(),
                 body,
-                pos: pos.clone(),
-            });
+                pos.clone(),
+            ));
         }
 
         let locals = JsonLocals::new(&pos);
@@ -924,17 +908,13 @@ impl Checker<'_> {
             },
         ];
         let wrapper = format!("[[json.parse#{call_id}.root]]");
-        self.functions.push(hir::Function {
-            can_raise: false,
-            name: wrapper.clone(),
-            exported: false,
-            is_generator: false,
-            is_async: false,
-            params: vec![json_param("text", Type::Str, &pos)],
-            ret: root.clone(),
+        self.functions.push(hir::Function::new_synthesized_helper(
+            wrapper.clone(),
+            vec![json_param("text", Type::Str, &pos)],
+            root.clone(),
             body,
             pos,
-        });
+        ));
         Ok(wrapper)
     }
 

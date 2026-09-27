@@ -144,7 +144,12 @@ impl<'a> Lowering<'a> {
                     pos: function.pos.clone(),
                     message: format!("missing id for function `{}`", function.name),
                 })?;
-            self.lower_function(record.id, function, l::FunctionKind::Free, None, Vec::new())?;
+            let kind = if function.synthesized_helper {
+                l::FunctionKind::SynthesizedHelper
+            } else {
+                l::FunctionKind::Free
+            };
+            self.lower_function(record.id, function, kind, None, Vec::new())?;
         }
 
         let initializer = if self.hir.globals.is_empty() && self.hir.top_level.is_empty() {
@@ -554,6 +559,17 @@ impl<'a> Lowering<'a> {
         receiver: Option<ClassId>,
         captures: Vec<hir::Capture>,
     ) -> Result<(), LowerError> {
+        if function.synthesized_helper
+            && function
+                .params
+                .iter()
+                .any(|parameter| self.hir.carries_capture(&parameter.ty))
+        {
+            return Err(LowerError {
+                pos: function.pos.clone(),
+                message: "internal error: synthesized helper has a carrier parameter (compiler.md §119.1 rule 4)".to_string(),
+            });
+        }
         let host_entry_traps = (kind == l::FunctionKind::Free)
             .then(|| function.host_entry_trap_sites(self.hir))
             .flatten();

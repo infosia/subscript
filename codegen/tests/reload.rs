@@ -907,3 +907,193 @@ fn lambda_parameter_escape_facts_enter_the_reload_hash() {
         .reload(&files(&before.replace("cb();", "print(`${cb()}`);")))
         .expect("a compatible lambda body edit reloads");
 }
+
+const HELPERS_V1: &str = r#"
+function errors(): void { new Error(); new SyntaxError(); new TypeError(); new URIError(); }
+export function main(): void { print("original"); }
+function later(): i32 { return 17; }
+"#;
+const HELPERS_V2: &str = r#"
+function errors(): void { new Error(); new SyntaxError(); new TypeError(); new URIError(); }
+export function main(): void {
+    print(JSON.stringify(JSON.parse<i32>("42")));
+    print(decodeURI("hello%20world"));
+    print(new Error("helper").toString());
+    print(`${later()}`);
+}
+function later(): i32 { return 17; }
+"#;
+
+#[test]
+fn first_error_family_uses_allow_a_body_swap() {
+    let before = "export function main(): void { print(\"original\"); }";
+    for (body, expected) in [
+        ("print(JSON.stringify(JSON.parse<i32>(\"42\")));", "42\n"),
+        ("print(decodeURI(\"hello%20world\"));", "hello world\n"),
+        ("print(new Error(\"first\").message);", "first\n"),
+        (
+            "print(JSON.stringify(JSON.parse<i32>(\"42\"))); print(decodeURI(\"hello%20world\")); print(new Error(\"first\").toString());",
+            "42\nhello world\nError: first\n",
+        ),
+    ] {
+        let mut session = ReloadSession::new(&files(before)).expect("session without Error use");
+        session.call_main().expect("original body");
+        assert_eq!(output(&mut session), "original\n");
+        let after = format!("export function main(): void {{ {body} }}");
+        session.reload(&files(&after)).expect(body);
+        session.call_main().expect("first Error-family use");
+        assert_eq!(output(&mut session), expected);
+    }
+}
+
+#[test]
+fn synthesized_helpers_allow_a_body_swap() {
+    let mut session = ReloadSession::new(&files(HELPERS_V1)).expect("session");
+    session.call_main().expect("original body");
+    assert_eq!(output(&mut session), "original\n");
+    session
+        .reload(&files(HELPERS_V2))
+        .expect("helper body edit");
+    session.call_main().expect("new helpers");
+    assert_eq!(output(&mut session), "42\nhello world\nError: helper\n17\n");
+}
+
+#[test]
+fn first_error_use_preserves_generic_class_ids_and_live_objects() {
+    let before = r#"
+class Box<T> { value: T; constructor(value: T) { this.value = value; } }
+const saved: Box<i32> = new Box<i32>(17);
+export function main(): void {
+    const box = new Box<string>("box");
+    const read = (): string => box.value;
+    print(`${saved.value} ${read()}`);
+}
+"#;
+    let after = before.replace(
+        "    const box",
+        "    print(new Error(\"first\").toString()); Context.collect();\n    const box",
+    );
+    let mut session =
+        ReloadSession::new(&files(before)).expect("generic classes without Error use");
+    session.call_main().expect("original objects");
+    assert_eq!(output(&mut session), "17 box\n");
+    session.reload(&files(&after)).expect("stable class IDs");
+    session.call_main().expect("objects after the swap");
+    assert_eq!(output(&mut session), "Error: first\n17 box\n");
+}
+
+#[test]
+fn synthesized_helpers_do_not_enter_the_declaration_hash() {
+    use subscript_codegen::declaration_hash;
+    let hash = |text| declaration_hash(&check_program(&files(text)).expect("checked module"));
+    assert_eq!(hash(HELPERS_V1), hash(HELPERS_V2));
+    assert_ne!(
+        hash(HELPERS_V2),
+        hash(&HELPERS_V2.replace("later(): i32", "later(unused: i32 = 0): i32"))
+    );
+}
+
+#[test]
+fn retained_lambda_calls_its_generation_helper_after_renumbering() {
+    let before = r#"
+function seed(): string { return decodeURIComponent("seed%20value"); }
+function current(): i32 { return 1; }
+let saved: () => void = (): void => { print(decodeURI("old%20%2F")); print(`${current()}`); };
+export function main(): void { saved(); }
+export function replace(): void {
+    saved = (): void => { print(decodeURI("old%20%2F")); print(`${current()}`); };
+}
+"#;
+    let after = before
+        .replace(
+            "return decodeURIComponent",
+            "print(decodeURI(\"added%20helper\")); return decodeURIComponent",
+        )
+        .replace("return 1;", "return 2;")
+        .replace("old%20%2F", "new%20%2F");
+    let helper_names = |source: &str| {
+        check_program(&files(source))
+            .expect("checked module")
+            .functions
+            .into_iter()
+            .filter(|function| function.synthesized_helper)
+            .map(|function| function.name)
+            .collect::<Vec<_>>()
+    };
+    assert_ne!(helper_names(before), helper_names(&after));
+    let mut session = ReloadSession::new(&files(before)).expect("session");
+    session.call_main().expect("old lambda");
+    assert_eq!(output(&mut session), "old %2F\n1\n");
+    session.reload(&files(&after)).expect("renumbered helpers");
+    session
+        .call_main()
+        .expect("retained lambda and current user slot");
+    assert_eq!(output(&mut session), "old %2F\n2\n");
+    session.call_export("replace").expect("new lambda");
+    session.call_main().expect("replacement lambda");
+    assert_eq!(output(&mut session), "new %2F\n2\n");
+}
+
+#[test]
+fn synthesized_helper_carrier_parameter_is_an_internal_lowering_error() {
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::{hir, Pos, Type};
+
+    let pos = Pos::new("helper.ts", 1, 1);
+    let module_with_parameter = |parameter_type| {
+        let donor = check_program(&files(&format!(
+            "function donor(value: {parameter_type}): void {{}}"
+        )))
+        .expect("parameter donor");
+        let mut module =
+            check_program(&files("export function main(): void {}")).expect("empty module");
+        module.functions.push(hir::Function::new_synthesized_helper(
+            "ordinary_spelling".to_string(),
+            donor.functions[0].params.clone(),
+            Type::Void,
+            Vec::new(),
+            pos.clone(),
+        ));
+        module
+    };
+    let scalar = module_with_parameter("i32");
+    let lir = lower_module(&scalar).expect("scalar helper lowers");
+    assert_eq!(
+        lir.functions
+            .iter()
+            .find(|function| function.source_name == "ordinary_spelling")
+            .expect("lowered helper")
+            .kind,
+        subscript_compiler::lir::FunctionKind::SynthesizedHelper
+    );
+    let carrier = module_with_parameter("() => void");
+    let error = lower_module(&carrier).expect_err("carrier helper must fail");
+    assert_eq!(error.pos, pos);
+    assert_eq!(
+        error.message,
+        "internal error: synthesized helper has a carrier parameter (compiler.md §119.1 rule 4)"
+    );
+}
+
+#[test]
+fn first_generic_function_instance_refuses_a_body_swap() {
+    let before = r#"
+function identity<T>(value: T): T { return value; }
+export function main(): void { print("original"); }
+"#;
+    let mut session = ReloadSession::new(&files(before)).expect("unused generic declaration");
+    let after = before.replace("print(\"original\");", "print(`${identity<i32>(7)}`);");
+    assert!(matches!(
+        session.reload(&files(&after)),
+        Err(ReloadError::DeclarationChanged { .. })
+    ));
+    session
+        .call_main()
+        .expect("original module remains callable");
+    assert_eq!(output(&mut session), "original\n");
+    session
+        .reload(&files(&before.replace("original", "edited")))
+        .expect("body edit without a new instance reloads");
+    session.call_main().expect("edited body");
+    assert_eq!(output(&mut session), "edited\n");
+}

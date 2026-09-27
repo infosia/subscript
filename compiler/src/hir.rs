@@ -12,6 +12,7 @@ pub use text::TextFn;
 use crate::diag::Pos;
 use crate::types::{CallbackLifetime, ClassId, EnumId, HandleClass, HandleKind, IterKind, Type};
 
+mod function;
 mod parameter;
 pub use parameter::Param;
 
@@ -509,6 +510,8 @@ pub struct Global {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Function {
+    /// Checker-synthesized helper without a reload slot (compiler.md §119).
+    pub synthesized_helper: bool,
     /// Unique name; monomorphized instances use `name<args>` spelling.
     pub name: String,
     /// True when declared `export` (every exported function is a host
@@ -4813,6 +4816,7 @@ mod tests {
     fn host_entry_trap_sites_name_each_wire_parameter() {
         let parameter_pos = Pos::new("wire-entry.ts", 3, 27);
         let function = Function {
+            synthesized_helper: false,
             name: "configure".to_string(),
             can_raise: false,
             exported: true,

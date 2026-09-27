@@ -14,9 +14,10 @@ const subscript_alloc_class_info subscript_alloc_classes[] = {
     { 4294967046u, "Set" },
     { 4294967047u, "MapData" },
     { 4294967048u, "MapIndex" },
-    { 0u, "Counter" },
+    { 0u, "Error" },
+    { 1u, "Counter" },
 };
-const uint64_t subscript_alloc_class_count = 9u;
+const uint64_t subscript_alloc_class_count = 10u;
 
 const subscript_alloc_position_info subscript_alloc_positions[] = {
     { "", 0u, 0u },

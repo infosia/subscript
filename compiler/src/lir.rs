@@ -304,6 +304,8 @@ pub struct Liveness {
 pub enum FunctionKind {
     /// Module-level source function.
     Free,
+    /// Checker-synthesized helper without a reload slot (compiler.md §119).
+    SynthesizedHelper,
     /// Class constructor.
     Constructor {
         /// Owning class.

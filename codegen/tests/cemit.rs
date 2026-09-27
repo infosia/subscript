@@ -10,6 +10,8 @@
 //! byte-equality is the real invariant, so these need no committed
 //! golden.
 
+#[path = "support/cemit_function.rs"]
+mod cemit_function;
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
 #[path = "support/pool.rs"]
@@ -1029,7 +1031,7 @@ fn accessor_and_underscore_member_emit_distinct_c_symbols() {
     let files = [SourceFile::new("test.ts", source)];
     let hir = check_program(&files).expect("the escaped accessor program must check");
     let lir = lower_module(&hir).expect("the escaped accessor program must lower");
-    let method_ids = lir.classes[0]
+    let method_ids = lir.classes[1]
         .methods
         .iter()
         .map(|method| method.function.0)
@@ -1057,14 +1059,14 @@ fn generic_method_instances_hold_distinct_hir_names_and_lir_ids() {
     let source = "class Box {\n  m<T>(value: T): T { return value; }\n}\nexport function main(): void {\n  const box: Box = new Box();\n  print(`${box.m<i32>(1)}`);\n  print(`${box.m<u32>(2)}`);\n}\n";
     let files = [SourceFile::new("test.ts", source)];
     let hir = check_program(&files).expect("the generic method program must check");
-    let names = hir.classes[0]
+    let names = hir.classes[1]
         .methods
         .iter()
         .map(|method| method.name.as_str())
         .collect::<Vec<_>>();
     assert_eq!(names, ["m<i32>", "m<u32>"]);
     let lir = lower_module(&hir).expect("the generic method program must lower");
-    let method_ids = lir.classes[0]
+    let method_ids = lir.classes[1]
         .methods
         .iter()
         .map(|method| method.function)
@@ -1138,7 +1140,7 @@ fn aligned_value_class_emits_alignas_on_the_first_field() {
     let source = "@CStruct({ align: 16 })\nclass Vec3f { x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0; }\nexport function main(): void { const value: Vec3f = new Vec3f(); print(`${value.x}`); }\n";
     let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
     let c = emit_c(&hir).expect("emit C").source;
-    assert!(c.contains("    _Alignas(16) float d0;"), "{c}");
+    assert!(c.contains("    _Alignas(16) float d3;"), "{c}");
 }
 
 #[test]
@@ -1172,7 +1174,11 @@ fn host_callable_export_emits_handle_and_scalar_parameters() {
         wrapper.starts_with("(subscript_rt_context* ctx, void* a0, int32_t a1)"),
         "{wrapper}"
     );
-    assert!(wrapper.contains("sub_f0(ctx, a0, a1);"), "{wrapper}");
+    let function = cemit_function::symbol(&hir, "adopt");
+    assert!(
+        wrapper.contains(&format!("{function}(ctx, a0, a1);")),
+        "{wrapper}"
+    );
 }
 
 #[test]
@@ -1195,8 +1201,9 @@ fn wire_alias_entry_wrapper_validates_before_the_internal_call() {
     let trap = wrapper
         .find("subscript_rt_trap_wire_enum(ctx,")
         .expect("wire value trap");
+    let function = cemit_function::symbol(&hir, "configure");
     let call = wrapper
-        .find("sub_f0(ctx, a0, a1);")
+        .find(&format!("{function}(ctx, a0, a1);"))
         .expect("internal entry call");
     assert!(
         validation < trap && trap < call,
@@ -1232,7 +1239,8 @@ fn parameterized_async_export_has_no_host_wrapper() {
         .expect("later function")
         .exported = true;
     let c = emit_c(&hir).expect("async export emits C").source;
-    assert!(c.contains("static void* sub_f0(void* ctx, int32_t a0)"));
+    let function = cemit_function::symbol(&hir, "later");
+    assert!(c.contains(&format!("static void* {function}(void* ctx, int32_t a0)")));
     assert!(
         !c.contains("subscript_export_later"),
         "parameterized async export gained a host wrapper:\n{c}"
@@ -1372,8 +1380,9 @@ fn wire_enum_foreign_crossing_is_identity_with_unknown_return_trap() {
         c.contains("subscript_rt_trap_wire_enum(ctx,") && c.contains("WireMode"),
         "return crossing lacks the shared dynamic trap path:\n{c}"
     );
+    let function = cemit_function::symbol(&hir, "main");
     let main = c
-        .split("static void sub_f0(void* ctx) {")
+        .split(&format!("static void {function}(void* ctx) {{"))
         .nth(1)
         .expect("main body");
     assert!(
@@ -1426,8 +1435,9 @@ fn wire_enum_switch_formatting_and_boundary_member_read_use_wire_values() {
             && c.contains("== -7"),
         "boundary member read lacks wire membership validation:\n{c}"
     );
+    let function = cemit_function::symbol(&hir, "main");
     let main = c
-        .split("static void sub_f0(void* ctx) {")
+        .split(&format!("static void {function}(void* ctx) {{"))
         .nth(1)
         .expect("main body");
     assert!(
@@ -2374,31 +2384,31 @@ fn local_load_store_address_chains_emit_as_member_expressions() {
     let body = emitted_function_body(&c, multiply.id);
 
     assert!(
-        body.contains("((v0).d0).a["),
+        body.contains("((v0).d3).a["),
         "left matrix did not fold into its parameter value:\n{body}"
     );
     assert!(
-        body.contains("((v1).d0).a["),
+        body.contains("((v1).d3).a["),
         "right matrix did not fold into its parameter value:\n{body}"
     );
-    for redundant in ["SubC0 l0", "SubC0 l1", "SubFA_f32_16 l2", " = &l"] {
+    for redundant in ["SubC1 l0", "SubC1 l1", "SubFA_f32_16 l2", " = &l"] {
         assert!(
             !body.contains(redundant),
             "folded address retained local storage `{redundant}`:\n{body}"
         );
     }
     for initialized in [
-        "SubC0 v0 = a0;",
-        "SubC0 v1 = a1;",
+        "SubC1 v0 = a0;",
+        "SubC1 v1 = a1;",
         "SubFA_f32_16 v49 = v2;",
-        "SubC0 v50 = *(v48);",
+        "SubC1 v50 = *(v48);",
     ] {
         assert!(
             body.contains(initialized),
             "whole first write did not initialize `{initialized}`:\n{body}"
         );
     }
-    for redundant_zero in ["SubC0 v0 = (SubC0){0};", "SubC0 v1 = (SubC0){0};"] {
+    for redundant_zero in ["SubC1 v0 = (SubC1){0};", "SubC1 v1 = (SubC1){0};"] {
         assert!(
             !body.contains(redundant_zero),
             "parameter retained redundant zero `{redundant_zero}`:\n{body}"
@@ -2448,12 +2458,12 @@ fn multiply_constant_trip_loop_emits_four_straight_iterations() {
         )
     }));
     assert_eq!(
-        body.matches("((v0).d0).a[").count(),
+        body.matches("((v0).d3).a[").count(),
         4,
         "left matrix does not have four straight accesses:\n{body}"
     );
     assert_eq!(
-        body.matches("((v1).d0).a[").count(),
+        body.matches("((v1).d3).a[").count(),
         4,
         "right matrix does not have four straight accesses:\n{body}"
     );
@@ -2538,7 +2548,7 @@ fn parameter_storage_is_initialized_once_when_its_address_escapes() {
     let body = emitted_function_body(&c, function.id);
 
     assert!(
-        body.contains("SubC0 l0 = (SubC0){0};"),
+        body.contains("SubC1 l0 = (SubC1){0};"),
         "escaping parameter lost addressable storage:\n{body}"
     );
     assert_eq!(

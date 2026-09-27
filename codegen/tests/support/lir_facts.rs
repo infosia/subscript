@@ -1003,7 +1003,12 @@ fn compare_function_entities(hir: &hir::Module, lir: &l::Module, findings: &mut 
             ));
         }
         let kind_matches = match (&expected.kind, &actual.kind) {
-            (ExpectedFunctionKind::Free, l::FunctionKind::Free) => true,
+            (ExpectedFunctionKind::Free, l::FunctionKind::Free) => {
+                !expected.function.synthesized_helper
+            }
+            (ExpectedFunctionKind::Free, l::FunctionKind::SynthesizedHelper) => {
+                expected.function.synthesized_helper
+            }
             (
                 ExpectedFunctionKind::Constructor(class),
                 l::FunctionKind::Constructor { class: actual, .. },
@@ -1287,10 +1292,12 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
     }
 
     let hir_free_functions = hir.functions.iter();
-    let lir_free_functions = lir
-        .functions
-        .iter()
-        .filter(|function| function.kind == l::FunctionKind::Free);
+    let lir_free_functions = lir.functions.iter().filter(|function| {
+        matches!(
+            function.kind,
+            l::FunctionKind::Free | l::FunctionKind::SynthesizedHelper
+        )
+    });
     for (expected_function, actual_function) in hir_free_functions.zip(lir_free_functions) {
         let expected_attachment = expected_function.host_entry_trap_sites(hir).is_some();
         let actual_attachment = actual_function.host_entry_traps.is_some();

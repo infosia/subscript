@@ -172,8 +172,8 @@ fn a180_table_equals_the_hand_written_program_table() {
         },
         hir::OperationSignature {
             target: hir::OperationSignatureTarget::BuiltinMethod(hir::BuiltinMethod::GeneratorNext),
-            parameter_types: vec![Type::Generator(Box::new(Type::Class(ClassId(0))))],
-            return_type: Some(Type::IterResult(Box::new(Type::Class(ClassId(0))))),
+            parameter_types: vec![Type::Generator(Box::new(Type::Class(ClassId(1))))],
+            return_type: Some(Type::IterResult(Box::new(Type::Class(ClassId(1))))),
         },
     ];
     assert_eq!(module.operation_signatures, expected);

@@ -182,8 +182,9 @@ fn signature_text(m: &hir::Module, f: &hir::Function) -> String {
 ///
 /// Covered: classes (kind, field names, types, and order), enum member
 /// values, Q32 string-alias member spellings and order, module-level
-/// variable names and types, and every function signature — free
+/// variable names and types, and every user function signature — free
 /// functions, constructors, and methods, including parameter escape facts.
+/// Synthesized helpers do not enter the hash (compiler.md §119).
 /// Lambda parameter escape facts also enter the hash (compiler.md §118).
 /// Other body expressions, statements, and default values do not enter it.
 #[must_use]
@@ -250,7 +251,7 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
             &format!("{}:{}", g.name, ty_name(m, &g.ty)),
         );
     }
-    for f in &m.functions {
+    for f in m.functions.iter().filter(|f| !f.synthesized_helper) {
         push(format!("function {}", f.name), &signature_text(m, f));
     }
 
@@ -1234,7 +1235,14 @@ mod tests {
         let h = hash_of("class C { x: i32; constructor() { this.x = 0; } }\nlet g: i32 = 1;\nexport function main(): void {}\n");
         assert_eq!(
             h.declarations(),
-            vec!["class C", "constructor C", "variable g", "function main"]
+            vec![
+                "class Error",
+                "constructor Error",
+                "class C",
+                "constructor C",
+                "variable g",
+                "function main"
+            ]
         );
     }
 
@@ -1245,7 +1253,12 @@ mod tests {
         );
         assert_eq!(
             h.declarations(),
-            vec!["function main", "lambda parameter escapes"]
+            vec![
+                "class Error",
+                "constructor Error",
+                "function main",
+                "lambda parameter escapes"
+            ]
         );
     }
 
@@ -1255,7 +1268,10 @@ mod tests {
         let after = hash_of(
             "export function main(): void { let run: (n: i32) => i32 = (n: i32): i32 => n; }",
         );
-        assert_eq!(after.declarations(), vec!["function main"]);
+        assert_eq!(
+            after.declarations(),
+            vec!["class Error", "constructor Error", "function main"]
+        );
         assert_eq!(before, after);
     }
 

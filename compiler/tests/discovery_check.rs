@@ -28,10 +28,11 @@ fn discovery_check_keeps_hir_and_records_named_imports() {
     let options = discovery_options("p.typegpu.ts");
     let module = check_program_with(&files, &options).expect("discovery check");
 
-    assert_eq!(module.classes.len(), 1);
-    assert_eq!(module.classes[0].name, "Header");
-    assert!(module.classes[0].is_value);
-    assert_eq!(module.classes[0].fields.len(), 1);
+    assert_eq!(module.classes.len(), 2);
+    assert_eq!(module.classes[0].name, "Error");
+    assert_eq!(module.classes[1].name, "Header");
+    assert!(module.classes[1].is_value);
+    assert_eq!(module.classes[1].fields.len(), 1);
     assert_eq!(module.poisoned_imports.len(), 1);
     assert_eq!(module.poisoned_imports[0].module, "./p.typegpu");
     assert_eq!(

@@ -347,3 +347,33 @@ fn json_parse_returns_its_target_and_raises_in_its_caller() {
         .iter()
         .any(|body| body.contains("JSON.parse: document does not match FixedArray<i16,  3>")));
 }
+
+#[test]
+fn unused_error_class_precedes_every_user_class() {
+    for source in [
+        "export function main(): void {}",
+        "class First {} class Last {} export function main(): void {}",
+        "class First {} class Box<T> { value: T; constructor(value: T) { this.value = value; } } export function main(): void { const a = new Box<i32>(7); const b = new Box<string>(\"box\"); }",
+        "class Error {} export function main(): void {}",
+    ] {
+        let module = check(source).expect("module without Error-family use");
+        let error_id = 0;
+        let error = &module.classes[error_id];
+        assert_eq!(error.name, if source.starts_with("class Error ") { "[[Error]]" } else { "Error" });
+        if source.starts_with("class Error ") {
+            assert_eq!(module.classes[1].name, "Error");
+        }
+        assert_eq!(error.fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(),
+            [hir::ERROR_KIND_FIELD, "name", "message"]);
+        assert_eq!(module.classes.iter().filter(|class| class.fields.first().is_some_and(|field| field.name == hir::ERROR_KIND_FIELD)).count(), 1);
+        for (id, class) in module.classes.iter().enumerate().skip(1) {
+            assert_ne!(class.name, "[[Error]]");
+            if class.name == "First" {
+                assert_eq!(id, 1);
+            }
+        }
+        let with_use = source.replace("export function main(): void {", "export function main(): void { new URIError(\"body\");");
+        let with_use = check(&with_use).expect("module with an Error-family use");
+        assert_eq!(module.classes, with_use.classes);
+    }
+}

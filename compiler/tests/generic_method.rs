@@ -61,7 +61,7 @@ const TWO_CALLS: &str = "class Box {\n\
 #[test]
 fn two_calls_at_one_type_list_yield_one_instance() {
     let module = module(TWO_CALLS);
-    let names: Vec<&str> = module.classes[0]
+    let names: Vec<&str> = module.classes[1]
         .methods
         .iter()
         .map(|method| method.name.as_str())
@@ -107,7 +107,7 @@ fn a_static_instance_lowers_through_the_static_symbol() {
             .collect::<Vec<_>>()
     );
     assert!(
-        module.classes[0].methods.is_empty(),
+        module.classes[1].methods.is_empty(),
         "a static instance must not join the instance method table"
     );
 }
@@ -212,7 +212,7 @@ fn a_value_class_receiver_carries_a_generic_method() {
                   \x20 print(`${point.pick<i32>(9)}${point.x}${point.y}`);\n\
                   }\n";
     let module = module(source);
-    let names: Vec<&str> = module.classes[0]
+    let names: Vec<&str> = module.classes[1]
         .methods
         .iter()
         .map(|method| method.name.as_str())

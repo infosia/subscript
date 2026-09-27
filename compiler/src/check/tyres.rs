@@ -403,7 +403,7 @@ impl<'p> Checker<'p> {
                 self.error(RuleCode::S100, format!("`{name}` is not generic"), pos);
                 return Type::Error;
             }
-            return Type::Class(self.error_class(&pos));
+            return Type::Class(self.error_class);
         }
 
         // The ES2022 lib supplies the editor declarations; the language

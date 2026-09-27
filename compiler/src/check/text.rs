@@ -129,13 +129,9 @@ impl Checker<'_> {
         pos: Pos,
     ) -> hir::Expr {
         let name = format!("[[{name}#{}]]", self.functions.len());
-        self.functions.push(hir::Function {
-            name: name.clone(),
-            can_raise: false,
-            exported: false,
-            is_generator: false,
-            is_async: false,
-            params: vec![hir::Param {
+        self.functions.push(hir::Function::new_synthesized_helper(
+            name.clone(),
+            vec![hir::Param {
                 name: "value".into(),
                 ty: parameter_type,
                 escapes: false,
@@ -143,10 +139,10 @@ impl Checker<'_> {
                 foreign_provenance: None,
                 pos: pos.clone(),
             }],
-            ret: Type::Str,
+            Type::Str,
             body,
-            pos: pos.clone(),
-        });
+            pos.clone(),
+        ));
         hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Func(name),

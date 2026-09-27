@@ -109,7 +109,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         {
             self.push_argument(&mut arguments, value, ty)?;
         }
-        let results = self.call_script(&function_key(target), &arguments, false)?;
+        let results = if target.kind == l::FunctionKind::SynthesizedHelper {
+            self.call_script_direct(&function_key(target), &arguments, false)?
+        } else {
+            self.call_script(&function_key(target), &arguments, false)?
+        };
         self.call_result(return_type, &results, sret)
     }
 

@@ -1145,13 +1145,13 @@ pub(crate) fn dev_flags() -> Result<cranelift_codegen::settings::Flags, String> 
     Ok(cranelift_codegen::settings::Flags::new(fb))
 }
 
-/// Assigns an indirection-table slot to every function the module
+/// Assigns an indirection-table slot to every user function the module
 /// declares, in declaration order and *only* from declarations, so
 /// that a recompile with an unchanged declaration hash produces the
 /// same slot for the same function (§8.2). Slots are reserved for env
 /// wrappers too, whether or not the program uses the function as a
 /// value: wrapper creation is body-driven and must not shift the
-/// numbering.
+/// numbering. Synthesized helpers have no slot (compiler.md §119).
 fn reserve_slots<M: Module>(ml: &mut ModLower<'_, M>) {
     let free_functions = ml
         .lir
@@ -1494,7 +1494,7 @@ fn lower_lir_module_with<M: Module>(
     for function in &lirm.functions {
         let parameters = explicit_parameter_types(function)?;
         let (key, symbol, resume) = match &function.kind {
-            lir::FunctionKind::Free => {
+            lir::FunctionKind::Free | lir::FunctionKind::SynthesizedHelper => {
                 let index = free_index;
                 free_index += 1;
                 let exported = function.host_entry_traps.is_some() && !function.is_async;
@@ -1626,7 +1626,9 @@ fn lower_lir_module_with<M: Module>(
     // Lambdas have no HIR declaration entity, so declare them here.
     for function in &lirm.functions {
         let target = match &function.kind {
-            lir::FunctionKind::Free => FnKey::Free(function.source_name.clone()),
+            lir::FunctionKind::Free | lir::FunctionKind::SynthesizedHelper => {
+                FnKey::Free(function.source_name.clone())
+            }
             lir::FunctionKind::Constructor { class, .. } => FnKey::Ctor(class.0),
             lir::FunctionKind::Method { class, .. } => {
                 FnKey::Method(class.0, function.source_name.clone())
@@ -1815,6 +1817,9 @@ fn lower_lir_module_with<M: Module>(
         foreign_symbols,
     })
 }
+
+#[cfg(test)]
+mod slot_tests;
 
 #[cfg(test)]
 mod tests {

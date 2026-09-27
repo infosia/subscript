@@ -72,7 +72,7 @@ fn distinct_type_lists_produce_distinct_async_hir_methods() {
     let module = accept(&main_with(
         "await box.load<i32>(1);\n  await box.load<string>(\"x\");\n  await box.load<i32>(2);",
     ));
-    let methods = &module.classes[0].methods;
+    let methods = &module.classes[1].methods;
     assert_eq!(
         methods
             .iter()

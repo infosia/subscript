@@ -111,17 +111,10 @@ fn field_parameter(field: &str) -> &str {
 }
 
 impl Checker<'_> {
-    /// The one Error class, created on first use.
-    pub(crate) fn error_class(&mut self, pos: &Pos) -> ClassId {
-        if let Some(id) = self.error_class {
-            return id;
-        }
-        let name = if self.class_ids.contains_key("Error") {
-            "[[Error]]"
-        } else {
-            "Error"
-        };
-        let id = self.new_class(name, false, false, None, pos.clone());
+    /// Declares the shared Error-family layout (compiler.md §119.1 rule 6).
+    pub(crate) fn declare_error_class(&mut self) -> ClassId {
+        let pos = &Pos::new("", 0, 0);
+        let id = self.new_class("Error", false, false, None, pos.clone());
         let field = |name: &str, ty: Type| hir::Field {
             name: name.to_string(),
             ty,
@@ -145,6 +138,7 @@ impl Checker<'_> {
             pos: pos.clone(),
         };
         self.classes[id.0].ctor = Some(hir::Function {
+            synthesized_helper: false,
             name: "constructor".to_string(),
             can_raise: false,
             exported: false,
@@ -163,7 +157,6 @@ impl Checker<'_> {
             ],
             pos: pos.clone(),
         });
-        self.error_class = Some(id);
         id
     }
 
@@ -175,7 +168,7 @@ impl Checker<'_> {
 
     /// Whether `ty` is the Error class.
     pub(crate) fn is_error_type(&self, ty: &Type) -> bool {
-        matches!((ty, self.error_class), (Type::Class(id), Some(error)) if *id == error)
+        matches!(ty, Type::Class(id) if *id == self.error_class)
     }
 
     /// Whether `ty` is the Error class or holds it at any depth: as an
@@ -219,7 +212,6 @@ impl Checker<'_> {
         let Some(kind) = ErrorKind::from_name(name) else {
             return self.err_expr(pos);
         };
-        self.error_class(&pos);
         if n.type_args.is_some() {
             self.error(
                 RuleCode::S100,
@@ -260,7 +252,7 @@ impl Checker<'_> {
 
     /// The construction of one Error-family object with `message`.
     pub(crate) fn error_new(&mut self, kind: ErrorKind, message: hir::Expr, pos: Pos) -> hir::Expr {
-        let class = self.error_class(&pos);
+        let class = self.error_class;
         hir::Expr {
             kind: ExprKind::New {
                 class,
@@ -408,7 +400,7 @@ impl Checker<'_> {
             .cloned()
             .collect();
         let binding = self.catch_binding(handler);
-        let class = self.error_class(&pos);
+        let class = self.error_class;
         fx.scopes.push(Default::default());
         if let Some((name, binding_pos)) = &binding {
             self.declare_local(
@@ -513,7 +505,7 @@ impl Checker<'_> {
             );
             return self.err_expr(pos);
         };
-        let class = self.error_class(&pos);
+        let class = self.error_class;
         let value = match self.caught_operand(&b.left, fx) {
             Some(caught) => caught,
             None => self.check_expr(&b.left, None, fx),

@@ -795,7 +795,7 @@ mod tests {
         let layouts = layouts_of(
             "@CStruct\nclass Vec3 { x: f32; y: f32; z: f32;\n constructor(x: f32, y: f32, z: f32) { this.x = x; this.y = y; this.z = z; } }\nexport function main(): void { const v: Vec3 = new Vec3(1.0, 2.0, 3.0); print(`${v.x}`); }\n",
         );
-        let l = layouts.class(0).expect("class 0");
+        let l = layouts.class(1).expect("class 1");
         assert_eq!((l.size, l.align), (12, 4));
         assert_eq!(l.field_offsets, vec![0, 4, 8]);
     }
@@ -806,7 +806,7 @@ mod tests {
         let layouts = layouts_of(
             "@CStruct\nclass P { a: boolean; b: f64; c: i32;\n constructor() { this.a = true; this.b = 1.0; this.c = 1; } }\nexport function main(): void { const p: P = new P(); print(`${p.c}`); }\n",
         );
-        let l = layouts.class(0).expect("class 0");
+        let l = layouts.class(1).expect("class 1");
         assert_eq!(l.field_offsets, vec![0, 8, 16]);
         assert_eq!((l.size, l.align), (24, 8));
     }
@@ -816,8 +816,8 @@ mod tests {
         let module = module_of(
             "@CStruct({ align: 16 })\nclass Vec3f { x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0; }\n@CStruct\nclass Mixed { a: f32 = 0.0; p: Vec3f = new Vec3f(); }\nexport function main(): void {}\n",
         );
-        let vec3 = Type::Class(subscript_compiler::ClassId(0));
-        let mixed = Type::Class(subscript_compiler::ClassId(1));
+        let vec3 = Type::Class(subscript_compiler::ClassId(1));
+        let mixed = Type::Class(subscript_compiler::ClassId(2));
         assert_eq!(
             padding_ranges(&module, &vec3).expect("Vec3f padding"),
             vec![12..16]
@@ -844,7 +844,7 @@ mod tests {
                 .expect("size"),
             (64, 4)
         );
-        assert_eq!(layouts.class(0).expect("class 0").size, 64);
+        assert_eq!(layouts.class(1).expect("class 1").size, 64);
     }
 
     #[test]
@@ -864,7 +864,7 @@ mod tests {
         ])
         .expect("clean boundary mirror");
         let layouts = Layouts::build(&module).expect("layouts");
-        let ty = Type::Class(subscript_compiler::ClassId(0));
+        let ty = Type::Class(subscript_compiler::ClassId(1));
         assert!(has_managed_interior(&layouts, &ty).expect("managed interior"));
         assert_eq!(managed_words(&layouts, &ty).expect("managed words"), 2);
     }
@@ -891,14 +891,14 @@ mod tests {
 
     #[test]
     fn forward_nested_value_classes_lay_out_correctly() {
-        // Outer (id 0) embeds Inner (id 1), declared after it: the
+        // Outer (id 1) embeds Inner (id 2), declared after it: the
         // layout build must resolve the forward reference instead of
         // falling back to a wrong layout.
         let layouts = layouts_of(
             "@CStruct\nclass Outer { inner: Inner; pad: f32;\n constructor(inner: Inner, pad: f32) { this.inner = inner; this.pad = pad; } }\n@CStruct\nclass Inner { x: f64;\n constructor(x: f64) { this.x = x; } }\nexport function main(): void {\n  const o: Outer = new Outer(new Inner(2.5), 1.0);\n  print(`${o.inner.x}`);\n}\n",
         );
-        let outer = layouts.class(0).expect("outer");
-        let inner = layouts.class(1).expect("inner");
+        let outer = layouts.class(1).expect("outer");
+        let inner = layouts.class(2).expect("inner");
         assert_eq!((inner.size, inner.align), (8, 8));
         assert_eq!(outer.field_offsets, vec![0, 8]);
         assert_eq!((outer.size, outer.align), (16, 8));
@@ -916,7 +916,8 @@ mod tests {
     #[test]
     fn out_of_range_class_id_is_an_error_not_a_fallback() {
         let layouts = layouts_of("export function main(): void {}\n");
-        assert!(layouts.class(0).is_err());
+        assert!(layouts.class(0).is_ok(), "the Error class is present");
+        assert!(layouts.class(1).is_err());
         assert!(layouts
             .size_align(&Type::Class(subscript_compiler::ClassId(7)))
             .is_err());

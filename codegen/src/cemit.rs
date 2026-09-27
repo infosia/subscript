@@ -1025,9 +1025,9 @@ mod tests {
             "rooted-locals.ts",
             "@CStruct class Boundary { x: i32 = 0; }\nclass Ref {}\nexport function main(): void {}\n",
         );
-        module.classes[0].is_boundary = true;
-        let boundary = Type::Class(module.classes[0].id);
-        let reference = Type::Class(module.classes[1].id);
+        module.classes[1].is_boundary = true;
+        let boundary = Type::Class(module.classes[1].id);
+        let reference = Type::Class(module.classes[2].id);
         let function = || {
             Type::Func(Box::new(subscript_compiler::FuncType {
                 params: vec![Type::I32],

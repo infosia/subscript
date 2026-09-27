@@ -1030,9 +1030,8 @@ pub(crate) struct Checker<'p> {
     pub next_regex_literal_id: usize,
     /// Monotonic suffix for switch-body disposal storage.
     pub next_using_switch_id: usize,
-    /// The one class behind every Error-family name,
-    /// created on first use (compiler.md §115.1).
-    pub error_class: Option<ClassId>,
+    /// The shared Error-family class, declared first (compiler.md §119.1 rule 6).
+    pub error_class: ClassId,
     /// This suffix keeps compound-write operand locals unique.
     pub next_compound_local_id: usize,
     /// Monotonic suffix for the storage that holds a binding pattern's
@@ -1240,7 +1239,7 @@ pub(crate) fn run(
         regex_literals: HashMap::new(),
         next_regex_literal_id: 0,
         next_using_switch_id: 0,
-        error_class: None,
+        error_class: ClassId(0),
         next_compound_local_id: 0,
         next_pattern_id: 0,
     };
@@ -1253,6 +1252,8 @@ pub(crate) fn run(
             ck.collect_mirror_provenance(i);
         }
     }
+
+    ck.error_class = ck.declare_error_class();
 
     // Pass A: collect top-level names. Mirror (`.d.ts`) declarations land
     // in the global ambient scope; program declarations in per-file scopes.
@@ -2626,6 +2627,12 @@ impl<'p> Checker<'p> {
         alignment_override: Option<hir::AlignmentOverride>,
         pos: Pos,
     ) -> ClassId {
+        if name == "Error" && self.class_ids.get(name) == Some(&self.error_class) {
+            self.classes[self.error_class.0].name = "[[Error]]".to_string();
+            self.class_ids.remove(name);
+            self.class_ids
+                .insert("[[Error]]".to_string(), self.error_class);
+        }
         let id = ClassId(self.classes.len());
         self.classes.push(hir::ClassDef {
             name: name.to_string(),
@@ -4901,6 +4908,7 @@ impl<'p> Checker<'p> {
             sig.ret.clone()
         };
         Some(hir::Function {
+            synthesized_helper: false,
             can_raise: false,
             name: name.to_string(),
             exported,
@@ -5137,6 +5145,7 @@ impl<'p> Checker<'p> {
                         body = using_scope::structure(body, &mut self.next_using_switch_id);
                     }
                     self.classes[id.0].ctor = Some(hir::Function {
+                        synthesized_helper: false,
                         can_raise: false,
                         name: "constructor".to_string(),
                         exported: false,

@@ -2074,7 +2074,7 @@ int main(void) {
         const subscript_alloc_position_info* pos =
             &subscript_alloc_positions[triple->pos_id];
         uint32_t expected_line = 0;
-        if (triple->class_id == 0 && name != NULL &&
+        if (triple->class_id == 1 && name != NULL &&
             strcmp(name, "Cell") == 0) {
             expected_line = 6;
         } else if (triple->class_id == 4294967042u && name != NULL &&
@@ -2128,12 +2128,12 @@ int main(void) {
         // semantic sites behind these local ids.
         assert_eq!(
             dev,
-            vec![(0, 2, 4), (0xFFFF_FF02, 3, 32), (0xFFFF_FF03, 6, 16),],
+            vec![(1, 2, 4), (0xFFFF_FF02, 3, 32), (0xFFFF_FF03, 6, 16),],
             "dev attribution triples changed"
         );
         assert_eq!(
             ship,
-            vec![(0, 1, 16), (0xFFFF_FF02, 2, 48), (0xFFFF_FF03, 3, 16),],
+            vec![(1, 1, 16), (0xFFFF_FF02, 2, 48), (0xFFFF_FF03, 3, 16),],
             "ship attribution triples changed"
         );
         let dev_sites: Vec<(u32, &str, u32)> = dev
@@ -2148,7 +2148,7 @@ int main(void) {
         assert_eq!(
             dev_sites,
             vec![
-                (0, "test.ts", 6),
+                (1, "test.ts", 6),
                 (0xFFFF_FF02, "test.ts", 7),
                 (0xFFFF_FF03, "test.ts", 8),
             ],
