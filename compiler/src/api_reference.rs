@@ -651,6 +651,9 @@ mod tests {
             ("string", member) => format!(
                 "export function main(): void {{\n  const value: string = \"x\";\n  value.{member}();\n}}\n"
             ),
+            ("T[]", "flatMap") => {
+                "export function main(): void { [1].flatMap((v: i32): i32 => v); }".to_string()
+            }
             ("T[]", "sort()") => {
                 "export function main(): void {\n  const values: i32[] = [1];\n  values.sort();\n}\n"
                     .to_string()

@@ -112,3 +112,11 @@ declare class Worker<In extends object, Out extends object> {
 }
 
 // N is deliberately unused structurally so plain array literals remain assignable.
+
+// stdlib.md §8.10 and §9.10.
+declare interface Array<T> {
+  at(index: i32): T;
+  findLast(predicate: (value: T, index: i32) => boolean): T | undefined;
+  findLastIndex(predicate: (value: T, index: i32) => boolean): i32;
+}
+declare interface String { at(index: i32): string; }

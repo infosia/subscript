@@ -2976,6 +2976,10 @@ impl<'m> Interpreter<'m> {
                 ffi::subscript_rt_str_substr(context, receiver, integer(1)?, integer(2)?, 0)
             }),
             // SAFETY: live string; runtime owns byte-boundary rules.
+            "At" => Value::Handle(unsafe {
+                ffi::subscript_rt_str_at(context, receiver, integer(1)?, 0)
+            }),
+            // SAFETY: live string; runtime owns byte-boundary rules.
             "CharAt" => Value::Handle(unsafe {
                 ffi::subscript_rt_str_char_at(context, receiver, integer(1)?, 0)
             }),
@@ -3326,6 +3330,10 @@ impl<'m> Interpreter<'m> {
                 | "Some"
                 | "Every"
                 | "FindIndex"
+                | "Find"
+                | "FindLast"
+                | "FindLastIndex"
+                | "FlatMap"
                 | "Sort"
                 | "ReduceRight"
         ) {
@@ -3458,13 +3466,26 @@ impl<'m> Interpreter<'m> {
                     ffi::subscript_rt_arr_splice(context, array, integer(1)?, integer(2)?, 0)
                 })
             }
-            "Shift" => {
+            "Shift" | "At" => {
                 let layout = self
                     .layout_cached(element_ty)
                     .ok_or_else(|| self.invalid(None, "shift element has no layout"))?;
                 let mut bytes = vec![0; layout.size];
                 // SAFETY: live array and writable element storage.
-                unsafe { ffi::subscript_rt_arr_shift(context, array, bytes.as_mut_ptr(), 0) };
+                unsafe {
+                    if operation == "At" {
+                        ffi::subscript_rt_arr_at(
+                            context,
+                            array,
+                            integer(1)?,
+                            bytes.as_mut_ptr(),
+                            0,
+                        );
+                    } else {
+                        ffi::subscript_rt_arr_shift(context, array, bytes.as_mut_ptr(), 0);
+                    }
+                };
+                self.check_runtime(&Pos::new("<array>", 1, 1))?;
                 self.unpack(element_ty, &bytes)?
             }
             "Unshift" => {
@@ -3546,7 +3567,7 @@ impl<'m> Interpreter<'m> {
                 }
                 Ok(Value::Void)
             }
-            "Map" => {
+            "Map" | "FlatMap" => {
                 let result_element = match result_ty {
                     Some(l::ValueType::Data(Type::Array(element))) => element.as_ref(),
                     _ => return Err(self.invalid(None, "Array.map result is not a dynamic array")),
@@ -3560,7 +3581,20 @@ impl<'m> Interpreter<'m> {
                     };
                     let mapped =
                         self.invoke_callable(&callable, callback_arguments(value, index))?;
-                    self.array_push_value(out, result_element, &mapped)?;
+                    if operation == "FlatMap" {
+                        let array_ty = Type::Array(Box::new(result_element.clone()));
+                        let count = self.array_subject_len(&mapped, &array_ty)?;
+                        for inner in 0..count {
+                            let value = self
+                                .array_subject_value(&mapped, &array_ty, result_element, inner)?
+                                .ok_or_else(|| {
+                                    self.invalid(None, "flatMap result element is missing")
+                                })?;
+                            self.array_push_value(out, result_element, &value)?;
+                        }
+                    } else {
+                        self.array_push_value(out, result_element, &mapped)?;
+                    }
                 }
                 Ok(Value::Handle(out))
             }
@@ -3607,15 +3641,24 @@ impl<'m> Interpreter<'m> {
                 }
                 Ok(accumulator)
             }
-            "Some" | "Every" | "FindIndex" => {
-                for index in 0..initial_len {
+            "Some" | "Every" | "FindIndex" | "Find" | "FindLast" | "FindLastIndex" => {
+                let reverse = matches!(operation, "FindLast" | "FindLastIndex");
+                for step in 0..initial_len {
+                    let index = if reverse {
+                        initial_len - 1 - step
+                    } else {
+                        step
+                    };
                     let Some(value) =
                         self.array_subject_value(&receiver, receiver_ty, element_ty, index)?
                     else {
+                        if reverse {
+                            continue;
+                        }
                         break;
                     };
                     let matched = self
-                        .invoke_callable(&callable, callback_arguments(value, index))?
+                        .invoke_callable(&callable, callback_arguments(value.clone(), index))?
                         .as_bool()?;
                     if operation == "Some" && matched {
                         return Ok(Value::Bool(true));
@@ -3623,13 +3666,17 @@ impl<'m> Interpreter<'m> {
                     if operation == "Every" && !matched {
                         return Ok(Value::Bool(false));
                     }
-                    if operation == "FindIndex" && matched {
+                    if matches!(operation, "Find" | "FindLast") && matched {
+                        return Ok(value);
+                    }
+                    if matches!(operation, "FindIndex" | "FindLastIndex") && matched {
                         return Ok(Value::I(index as i64));
                     }
                 }
                 Ok(match operation {
                     "Every" => Value::Bool(true),
-                    "FindIndex" => Value::I(-1),
+                    "FindIndex" | "FindLastIndex" => Value::I(-1),
+                    "Find" | "FindLast" => Value::Handle(std::ptr::null_mut()),
                     _ => Value::Bool(false),
                 })
             }
@@ -4922,10 +4969,15 @@ impl<'m> Interpreter<'m> {
                 out[..8].copy_from_slice(&handle.to_ne_bytes());
             }
             Type::Func(_) => {
-                return Err(self.invalid(
-                    None,
-                    "function values cannot be packed by the reference interpreter",
-                ));
+                let Value::Callable(callable) = value else {
+                    return Err(type_error("callable", value));
+                };
+                if !callable.captures.is_empty() {
+                    return Err(self.invalid(None, "a stored function must not capture"));
+                }
+                // compiler.md §118: stored function values have no captured environment.
+                out[..8].copy_from_slice(&(callable.function.0 as u64 + 1).to_ne_bytes());
+                out[8..16].fill(0);
             }
             Type::Void | Type::Error => {}
             _ => return Err(self.invalid(None, format!("packing {ty:?} is not defined"))),
@@ -5025,6 +5077,19 @@ impl<'m> Interpreter<'m> {
                 } else {
                     Value::Handle(handle)
                 }
+            }
+            Type::Func(_) => {
+                let code = u64::from_ne_bytes(bytes[..8].try_into().unwrap_or([0; 8]));
+                let index = code
+                    .checked_sub(1)
+                    .and_then(|v| u32::try_from(v).ok())
+                    .ok_or_else(|| self.invalid(None, "invalid packed function id"))?;
+                let function = l::FunctionId(index);
+                self.function(function)?;
+                Value::Callable(Rc::new(Callable {
+                    function,
+                    captures: Vec::new(),
+                }))
             }
             Type::Void | Type::Error => Value::Void,
             _ => return Err(self.invalid(None, format!("unpacking {ty:?} is not defined"))),

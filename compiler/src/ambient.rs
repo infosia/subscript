@@ -137,14 +137,6 @@ const NUMBER_CONSTS: &[NamedF64] = &[
 const STRING_REJECTIONS: &[ApiRejection] = &[
     rejection(
         "string",
-        "at",
-        "Q21",
-        Some("slice"),
-        "The language has no scalar miss value.",
-        None,
-    ),
-    rejection(
-        "string",
         "localeCompare",
         "Q21",
         None,
@@ -253,7 +245,7 @@ const ARRAY_REJECTIONS: &[ApiRejection] = &[
         "flatMap",
         "Q22",
         None,
-        "Runtime flattening depth cannot determine a static result type.",
+        "The callback must return an array.",
         None,
     ),
     rejection(
@@ -1448,8 +1440,8 @@ mod tests {
         assert_eq!(arr_method("unshift"), Some(ArrFn::Unshift));
         assert_eq!(arr_method("copyWithin"), Some(ArrFn::CopyWithin));
         // Out-of-subset members resolve to nothing (Q22/Q27).
-        assert_eq!(arr_method("find"), None);
-        assert_eq!(arr_method("flatMap"), None);
+        assert_eq!(arr_method("find"), Some(ArrFn::Find));
+        assert_eq!(arr_method("flatMap"), Some(ArrFn::FlatMap));
     }
 
     #[test]

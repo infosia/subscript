@@ -1666,6 +1666,58 @@ pub unsafe extern "C" fn subscript_rt_str_char_at(
     ctx.alloc_str(&bytes[index..index + width], pos_id)
 }
 
+/// `at(i)`: a code point at a signed byte index; invalid indices trap.
+///
+/// # Safety
+///
+/// Shared contract; `s` is a live string handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_str_at(
+    ctx: *mut Context,
+    s: *const u8,
+    i: i32,
+    pos_id: u32,
+) -> *mut u8 {
+    if s.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: shared contract and live immutable string.
+    let bytes = unsafe { (*ctx).str_view(s) };
+    let index = if i < 0 {
+        bytes.len() as i64 + i64::from(i)
+    } else {
+        i64::from(i)
+    };
+    let index = index as i32;
+    match code_point_at(bytes, index) {
+        Ok(_) => {}
+        Err(CodePointReason::OutOfRange { len }) => {
+            // SAFETY: shared contract.
+            unsafe {
+                (*ctx).trap(
+                    TrapKind::StrRange,
+                    format!("codePointAt({index}) out of range for string length {len}"),
+                    pos_id,
+                )
+            };
+            return std::ptr::null_mut();
+        }
+        Err(CodePointReason::NotBoundary) => {
+            // SAFETY: shared contract.
+            unsafe {
+                (*ctx).trap(
+                    TrapKind::StrRange,
+                    format!("charAt({index}) is not on a UTF-8 boundary"),
+                    pos_id,
+                )
+            };
+            return std::ptr::null_mut();
+        }
+    }
+    // SAFETY: shared contract; the index names a complete code point.
+    unsafe { subscript_rt_str_char_at(ctx, s, index, pos_id) }
+}
+
 /// `codePointAt(i)`: the Unicode scalar value beginning at byte `i`.
 /// Out-of-range and continuation-byte indices trap.
 ///
@@ -4231,6 +4283,38 @@ pub unsafe extern "C" fn subscript_rt_arr_splice(
     unsafe { crate::arrops::splice(ctx, a, start, delete_count, pos_id) }
 }
 
+/// `at(i)`: copies the element at a signed index into `out`.
+///
+/// # Safety
+///
+/// Shared contract; `a` is live and `out` is writable for one element.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_arr_at(
+    ctx: *mut Context,
+    a: *mut u8,
+    index: i32,
+    out: *mut u8,
+    pos_id: u32,
+) {
+    if a.is_null() {
+        return;
+    }
+    // SAFETY: shared contract.
+    let runtime = unsafe { &mut *ctx };
+    // SAFETY: live array.
+    let index = if index < 0 {
+        (unsafe { runtime.array_len(a) }) + index
+    } else {
+        index
+    };
+    // SAFETY: live array; this accessor checks the index.
+    let source = unsafe { runtime.array_elem_ptr(a, index, pos_id) };
+    if !source.is_null() {
+        // SAFETY: source and destination hold one element and do not overlap.
+        unsafe { std::ptr::copy_nonoverlapping(source, out, runtime.array_elem_size(a)) };
+    }
+}
+
 /// `shift()`: removes the first element into `out`; an empty array
 /// traps at `pos_id`.
 ///
@@ -4529,6 +4613,109 @@ pub unsafe extern "C" fn subscript_rt_arr_find_index(
     };
     // SAFETY: shared contract.
     unsafe { crate::arrops::find_index(ctx, a, code, env, kind, indexed != 0) }
+}
+
+/// Returns the first matching reference element, or null.
+///
+/// # Safety
+///
+/// As [`subscript_rt_arr_some`]; elements are pointer-sized references.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_arr_find(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    indexed: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return std::ptr::null_mut();
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::find(ctx, a, code, env, kind, indexed != 0, false) }
+}
+
+/// Returns the last matching reference element, or null.
+///
+/// # Safety
+///
+/// As [`subscript_rt_arr_some`]; elements are pointer-sized references.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_arr_find_last(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    indexed: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return std::ptr::null_mut();
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::find(ctx, a, code, env, kind, indexed != 0, true) }
+}
+
+/// Returns the last matching index, or minus one.
+///
+/// # Safety
+///
+/// As [`subscript_rt_arr_some`].
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_arr_find_last_index(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    indexed: u32,
+) -> i32 {
+    // SAFETY: shared contract.
+    let Some(kind) = (unsafe { decode_elem_kind(ctx, kind) }) else {
+        return -1;
+    };
+    // SAFETY: shared contract.
+    unsafe { crate::arrops::find_last_index(ctx, a, code, env, kind, indexed != 0) }
+}
+
+/// Concatenates callback arrays at depth one.
+///
+/// # Safety
+///
+/// As [`subscript_rt_arr_map`]; the callback returns an array of `ret_size`-byte elements.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_arr_flat_map(
+    ctx: *mut Context,
+    a: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: u32,
+    ret_kind: u32,
+    ret_size: u64,
+    pos_id: u32,
+    indexed: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    let (Some(kind), Some(_)) = (unsafe { decode_elem_kind(ctx, kind) }, unsafe {
+        decode_elem_kind(ctx, ret_kind)
+    }) else {
+        return std::ptr::null_mut();
+    };
+    // SAFETY: shared contract.
+    unsafe {
+        crate::arrops::flat_map(
+            ctx,
+            a,
+            (code, env),
+            kind,
+            ret_size as usize,
+            pos_id,
+            indexed != 0,
+        )
+    }
 }
 
 // Q27 FixedArray callback family. Unlike the dynamic-array entries

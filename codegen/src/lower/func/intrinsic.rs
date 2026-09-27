@@ -386,7 +386,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         };
         let callback_indexed = || -> Result<bool, String> {
             let expected = match name {
-                "ForEach" | "Map" | "Filter" | "Some" | "Every" | "FindIndex" => 2,
+                "ForEach" | "Map" | "FlatMap" | "Filter" | "Some" | "Every" | "FindIndex"
+                | "Find" | "FindLast" | "FindLastIndex" => 2,
                 "Reduce" | "ReduceRight" => 3,
                 other => return Err(internal(format!("Array.{other} has no indexed callback"))),
             };
@@ -488,13 +489,18 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     .ok_or_else(|| internal("Array.Splice has no result"))?;
                 Ok(RV::Scalar(result))
             }
-            "Shift" => {
+            "Shift" | "At" => {
                 let (size, align) = self.ml.layouts.size_align(&element)?;
                 let output = self.stack_slot(size.max(8), align.max(8));
                 self.zero_bytes(output, size.max(8), align.max(8));
                 let position = self.position_id(pos);
                 let position = self.iconst(types::I32, position);
-                self.call_runtime(function, &[self.ctx, receiver, output, position], checked)?;
+                let mut arguments = vec![self.ctx, receiver];
+                if name == "At" {
+                    arguments.push(scalar(self, 1)?);
+                }
+                arguments.extend([output, position]);
+                self.call_runtime(function, &arguments, checked)?;
                 self.load_data(&element, output, 0)
             }
             "Unshift" => {
@@ -516,7 +522,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.call_runtime(function, &[self.ctx, receiver, target, start, end], checked)?;
                 Ok(RV::Scalar(receiver))
             }
-            "ForEach" | "Filter" | "Some" | "Every" | "FindIndex" => {
+            "ForEach" | "Filter" | "Some" | "Every" | "FindIndex" | "Find" | "FindLast"
+            | "FindLastIndex" => {
                 let (code, environment) = callback(self)?;
                 let indexed = callback_indexed()?;
                 let kind = array_element_kind(self.ml.lir, &element)?;
@@ -558,7 +565,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 )?;
                 Ok(RV::Scalar(receiver))
             }
-            "Map" => {
+            "Map" | "FlatMap" => {
                 let (code, environment) = callback(self)?;
                 let indexed = callback_indexed()?;
                 let l::ValueType::Data(Type::Array(result_element)) =
@@ -567,7 +574,11 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     return Err(internal("Array.Map result is not an array"));
                 };
                 let source_kind = array_element_kind(self.ml.lir, &element)?;
-                let result_kind = array_element_kind(self.ml.lir, result_element)?;
+                let result_kind = if name == "FlatMap" {
+                    0
+                } else {
+                    array_element_kind(self.ml.lir, result_element)?
+                };
                 let result_stride = self.ml.layouts.stride(result_element)?;
                 let mut arguments = vec![self.ctx, receiver];
                 if let Some(count) = fixed_count {

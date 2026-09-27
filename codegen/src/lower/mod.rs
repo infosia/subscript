@@ -821,14 +821,18 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             A::ForEach => (&[I64, I64, I64, I64, I32, I32], None),
             // (ctx, recv, code, env, elem_kind, ret_kind, ret_size,
             // pos_id, indexed) -> array handle
-            A::Map => (&[I64, I64, I64, I64, I32, I32, I64, I32, I32], Some(I64)),
+            A::Map | A::FlatMap => (&[I64, I64, I64, I64, I32, I32, I64, I32, I32], Some(I64)),
             // (ctx, recv, code, env, kind, pos_id, indexed) -> array handle
             A::Filter => (&[I64, I64, I64, I64, I32, I32, I32], Some(I64)),
             // (ctx, recv, code, env, elem_kind, acc_kind, acc_size,
             // acc_ptr, indexed)
             A::Reduce | A::ReduceRight => (&[I64, I64, I64, I64, I32, I32, I64, I64, I32], None),
             // (ctx, recv, code, env, kind, indexed) -> i32
-            A::Some | A::Every | A::FindIndex => (&[I64, I64, I64, I64, I32, I32], Some(I32)),
+            A::Some | A::Every | A::FindIndex | A::FindLastIndex => {
+                (&[I64, I64, I64, I64, I32, I32], Some(I32))
+            }
+            A::Find | A::FindLast => (&[I64, I64, I64, I64, I32, I32], Some(I64)),
+            A::At => (&[I64, I64, I32, I64, I32], None),
             // (ctx, recv, code, env, kind)
             A::Sort => (&[I64, I64, I64, I64, I32], None),
             // (ctx, recv, start, delete_count, pos_id) -> array handle

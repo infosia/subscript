@@ -305,7 +305,22 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
+        if matches!(f, A::Find | A::FindLast) && !self.map_get_value_ok(&elem) {
+            self.arr_subset_rejection(f.name(), pos.clone());
+            return self.err_expr(pos);
+        }
         match f {
+            A::At => {
+                let mut args = vec![recv];
+                args.extend(self.check_args(
+                    &[ParamSig::positional(Type::I32)],
+                    &c.args,
+                    fx,
+                    &pos,
+                    name,
+                ));
+                mk(args, elem, pos)
+            }
             A::IndexOf | A::LastIndexOf | A::Includes => {
                 let params = [
                     ParamSig::positional(elem.clone()),
@@ -639,7 +654,16 @@ impl<'p> Checker<'p> {
                 };
                 mk(vec![recv, cb, init], acc_ty, pos)
             }
-            A::ForEach | A::Map | A::Filter | A::Some | A::Every | A::FindIndex => {
+            A::ForEach
+            | A::Map
+            | A::FlatMap
+            | A::Filter
+            | A::Some
+            | A::Every
+            | A::FindIndex
+            | A::Find
+            | A::FindLast
+            | A::FindLastIndex => {
                 if c.args.len() != 1 {
                     self.error(
                         RuleCode::S100,
@@ -654,12 +678,12 @@ impl<'p> Checker<'p> {
                 }
                 let ret_ctx = match f {
                     A::ForEach => Some(Type::Void),
-                    A::Map => None, // `U` inferred from the callback
+                    A::Map | A::FlatMap => None, // `U` inferred from the callback
                     _ => Some(Type::Bool),
                 };
                 let cb = self.check_arr_callback(
                     &c.args[0],
-                    vec![elem],
+                    vec![elem.clone()],
                     ret_ctx,
                     fx,
                     CallbackSpec::new(f.name(), "Q27", true),
@@ -668,7 +692,25 @@ impl<'p> Checker<'p> {
                     A::ForEach => Type::Void,
                     A::Filter => arr_ty,
                     A::Some | A::Every => Type::Bool,
-                    A::FindIndex => Type::I32,
+                    A::FindIndex | A::FindLastIndex => Type::I32,
+                    A::Find | A::FindLast => {
+                        if matches!(elem, Type::Nullable(_)) {
+                            elem
+                        } else {
+                            Type::Nullable(Box::new(elem))
+                        }
+                    }
+                    A::FlatMap => {
+                        let u = match &cb.ty {
+                            Type::Func(ft) => ft.ret.clone(),
+                            _ => return self.err_expr(pos),
+                        };
+                        if !matches!(u, Type::Array(_)) {
+                            self.arr_subset_rejection("flatMap", cb.pos.clone());
+                            return self.err_expr(pos);
+                        }
+                        u
+                    }
                     A::Map => {
                         let u = match &cb.ty {
                             Type::Func(ft) => ft.ret.clone(),

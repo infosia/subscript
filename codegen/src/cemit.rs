@@ -272,6 +272,11 @@ fn array_symbol(name: &str, fixed: bool) -> Result<&'static str, String> {
         });
     }
     Ok(match name {
+        "At" => "subscript_rt_arr_at",
+        "Find" => "subscript_rt_arr_find",
+        "FindLast" => "subscript_rt_arr_find_last",
+        "FindLastIndex" => "subscript_rt_arr_find_last_index",
+        "FlatMap" => "subscript_rt_arr_flat_map",
         "IndexOf" => "subscript_rt_arr_index_of",
         "LastIndexOf" => "subscript_rt_arr_last_index_of",
         "Includes" => "subscript_rt_arr_includes",

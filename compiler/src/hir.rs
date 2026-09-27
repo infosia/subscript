@@ -1937,6 +1937,8 @@ pub enum StrFn {
     CodePointAt,
     /// `concat(other)` — exactly one string argument.
     Concat,
+    /// `at(i)` — a code point at a signed byte index; invalid indices trap.
+    At,
 }
 
 /// Regular-expression intrinsics (stdlib.md §15, Q31).
@@ -2141,7 +2143,7 @@ impl StrFn {
     /// Every accepted `String` method, in declaration order; the index
     /// of each variant equals its discriminant, so `f as usize` indexes
     /// tables built from this list.
-    pub const ALL: [StrFn; 23] = [
+    pub const ALL: [StrFn; 24] = [
         StrFn::Slice,
         StrFn::IndexOf,
         StrFn::LastIndexOf,
@@ -2165,6 +2167,7 @@ impl StrFn {
         StrFn::CharAt,
         StrFn::CodePointAt,
         StrFn::Concat,
+        StrFn::At,
     ];
 
     /// The lib member name (the checker's lookup and diagnostics).
@@ -2193,6 +2196,7 @@ impl StrFn {
             StrFn::Substr => "substr",
             StrFn::CharAt => "charAt",
             StrFn::CodePointAt => "codePointAt",
+            StrFn::At => "at",
             StrFn::Concat => "concat",
         }
     }
@@ -2223,6 +2227,7 @@ impl StrFn {
             StrFn::Substr => "subscript_rt_str_substr",
             StrFn::CharAt => "subscript_rt_str_char_at",
             StrFn::CodePointAt => "subscript_rt_str_code_point_at",
+            StrFn::At => "subscript_rt_str_at",
             StrFn::Concat => "subscript_rt_str_concat",
         }
     }
@@ -2240,7 +2245,7 @@ impl StrFn {
             | StrFn::StartsWith
             | StrFn::EndsWith => &[StrParam::Str, StrParam::I32],
             StrFn::Concat => &[StrParam::Str],
-            StrFn::CharCodeAt | StrFn::Repeat | StrFn::CharAt | StrFn::CodePointAt => {
+            StrFn::At | StrFn::CharCodeAt | StrFn::Repeat | StrFn::CharAt | StrFn::CodePointAt => {
                 &[StrParam::I32]
             }
             StrFn::Trim
@@ -2308,6 +2313,7 @@ impl StrFn {
             StrFn::Substr => "substr(start: i32, length?: i32): string",
             StrFn::CharAt => "charAt(index: i32): string",
             StrFn::CodePointAt => "codePointAt(index: i32): i32",
+            StrFn::At => "at(index: i32): string",
             StrFn::Concat => "concat(other: string): string",
         }
     }
@@ -2348,6 +2354,7 @@ impl StrFn {
             StrFn::CodePointAt => {
                 "Returns the code point starting at a UTF-8 byte index; out of range traps."
             }
+            StrFn::At => "Returns a code point at a signed byte index; invalid indices trap.",
             StrFn::Concat => "Returns a fresh concatenation with exactly one other string.",
         }
     }
@@ -2426,13 +2433,23 @@ pub enum ArrFn {
     /// `copyWithin(target, start, end)` — JS negative/clamp rules; in
     /// place; the expression's value is the receiver.
     CopyWithin,
+    /// Reads an element at a signed index; an out-of-range index traps.
+    At,
+    /// Finds the first matching nullable-capable element, or null.
+    Find,
+    /// Finds the last matching nullable-capable element, or null.
+    FindLast,
+    /// Finds the last matching index, or minus one.
+    FindLastIndex,
+    /// Concatenates callback arrays at depth one.
+    FlatMap,
 }
 
 impl ArrFn {
     /// Every accepted `Array` method, in declaration order; the index
     /// of each variant equals its discriminant, so `f as usize` indexes
     /// tables built from this list.
-    pub const ALL: [ArrFn; 21] = [
+    pub const ALL: [ArrFn; 26] = [
         ArrFn::IndexOf,
         ArrFn::LastIndexOf,
         ArrFn::Includes,
@@ -2454,6 +2471,11 @@ impl ArrFn {
         ArrFn::Shift,
         ArrFn::Unshift,
         ArrFn::CopyWithin,
+        ArrFn::At,
+        ArrFn::Find,
+        ArrFn::FindLast,
+        ArrFn::FindLastIndex,
+        ArrFn::FlatMap,
     ];
 
     /// The checker's spelling of a defaulted missing `end` argument of
@@ -2466,6 +2488,11 @@ impl ArrFn {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
+            ArrFn::At => "at",
+            ArrFn::Find => "find",
+            ArrFn::FindLast => "findLast",
+            ArrFn::FindLastIndex => "findLastIndex",
+            ArrFn::FlatMap => "flatMap",
             ArrFn::IndexOf => "indexOf",
             ArrFn::LastIndexOf => "lastIndexOf",
             ArrFn::Includes => "includes",
@@ -2494,6 +2521,11 @@ impl ArrFn {
     #[must_use]
     pub fn symbol(self) -> &'static str {
         match self {
+            ArrFn::At => "subscript_rt_arr_at",
+            ArrFn::Find => "subscript_rt_arr_find",
+            ArrFn::FindLast => "subscript_rt_arr_find_last",
+            ArrFn::FindLastIndex => "subscript_rt_arr_find_last_index",
+            ArrFn::FlatMap => "subscript_rt_arr_flat_map",
             ArrFn::IndexOf => "subscript_rt_arr_index_of",
             ArrFn::LastIndexOf => "subscript_rt_arr_last_index_of",
             ArrFn::Includes => "subscript_rt_arr_includes",
@@ -2549,6 +2581,10 @@ impl ArrFn {
                 | ArrFn::Some
                 | ArrFn::Every
                 | ArrFn::FindIndex
+                | ArrFn::Find
+                | ArrFn::FindLast
+                | ArrFn::FindLastIndex
+                | ArrFn::FlatMap
                 | ArrFn::Sort
         )
     }
@@ -2565,7 +2601,11 @@ impl ArrFn {
             | ArrFn::Filter
             | ArrFn::Some
             | ArrFn::Every
-            | ArrFn::FindIndex => Some(2),
+            | ArrFn::FindIndex
+            | ArrFn::Find
+            | ArrFn::FindLast
+            | ArrFn::FindLastIndex
+            | ArrFn::FlatMap => Some(2),
             ArrFn::Reduce | ArrFn::ReduceRight => Some(3),
             _ => None,
         }
@@ -2581,7 +2621,9 @@ impl ArrFn {
     pub fn takes_pos_id(self) -> bool {
         matches!(
             self,
-            ArrFn::Join
+            ArrFn::At
+                | ArrFn::FlatMap
+                | ArrFn::Join
                 | ArrFn::Slice
                 | ArrFn::Concat
                 | ArrFn::Map
@@ -2604,6 +2646,11 @@ impl ArrFn {
     #[must_use]
     pub(crate) fn api_signature(self) -> &'static str {
         match self {
+            ArrFn::At => "at(index: i32): T",
+            ArrFn::Find => "find(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): T | null",
+            ArrFn::FindLast => "findLast(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): T | null",
+            ArrFn::FindLastIndex => "findLastIndex(callback: ((value: T) => boolean) | ((value: T, index: i32) => boolean)): i32",
+            ArrFn::FlatMap => "flatMap<U>(callback: ((value: T) => U[]) | ((value: T, index: i32) => U[])): U[]",
             ArrFn::IndexOf => "indexOf(value: T, fromIndex?: i32): i32",
             ArrFn::LastIndexOf => "lastIndexOf(value: T, fromIndex?: i32): i32",
             ArrFn::Includes => "includes(value: T, fromIndex?: i32): boolean",
@@ -2648,6 +2695,11 @@ impl ArrFn {
     #[must_use]
     pub(crate) fn api_summary(self) -> &'static str {
         match self {
+            ArrFn::At => "Reads a signed index; an out-of-range index traps.",
+            ArrFn::Find => "Returns the first matching nullable-capable element, or null.",
+            ArrFn::FindLast => "Returns the last matching nullable-capable element, or null.",
+            ArrFn::FindLastIndex => "Returns the last matching index, or -1.",
+            ArrFn::FlatMap => "Concatenates callback arrays at depth one.",
             ArrFn::IndexOf => "Returns the first `===`-equal element index, or -1.",
             ArrFn::LastIndexOf => "Returns the last `===`-equal element index, or -1.",
             ArrFn::Includes => "Uses SameValueZero equality.",
@@ -5047,7 +5099,7 @@ mod tests {
             .all(|f| f.symbol().starts_with("subscript_rt_arr_")));
         assert_eq!(ArrFn::ForEach.symbol(), "subscript_rt_arr_for_each");
         assert_eq!(ArrFn::FindIndex.name(), "findIndex");
-        // Callback set: exactly the nine closure-taking methods.
+        // The callback set includes each predicate and mapping operation.
         let with_cb: Vec<ArrFn> = ArrFn::ALL
             .iter()
             .copied()
@@ -5065,6 +5117,10 @@ mod tests {
                 ArrFn::FindIndex,
                 ArrFn::Sort,
                 ArrFn::ReduceRight,
+                ArrFn::Find,
+                ArrFn::FindLast,
+                ArrFn::FindLastIndex,
+                ArrFn::FlatMap,
             ]
         );
         for f in [
@@ -5074,6 +5130,10 @@ mod tests {
             ArrFn::Some,
             ArrFn::Every,
             ArrFn::FindIndex,
+            ArrFn::Find,
+            ArrFn::FindLast,
+            ArrFn::FindLastIndex,
+            ArrFn::FlatMap,
         ] {
             assert_eq!(f.callback_index_arity(), Some(2), "{}", f.name());
             assert!(f.api_signature().contains("index: i32"), "{}", f.name());
@@ -5088,7 +5148,9 @@ mod tests {
         for f in ArrFn::ALL {
             let carries_pos = matches!(
                 f,
-                ArrFn::Join
+                ArrFn::At
+                    | ArrFn::FlatMap
+                    | ArrFn::Join
                     | ArrFn::Slice
                     | ArrFn::Concat
                     | ArrFn::Map

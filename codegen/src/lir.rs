@@ -465,6 +465,7 @@ fn intrinsic_runtime_symbol(family: l::IntrinsicFamily, name: &str) -> Option<&'
         (l::IntrinsicFamily::String, "ReplaceAll") => "subscript_rt_str_replace_all",
         (l::IntrinsicFamily::String, "Substring") => "subscript_rt_str_substring",
         (l::IntrinsicFamily::String, "Substr") => "subscript_rt_str_substr",
+        (l::IntrinsicFamily::String, "At") => "subscript_rt_str_at",
         (l::IntrinsicFamily::String, "CharAt") => "subscript_rt_str_char_at",
         (l::IntrinsicFamily::String, "CodePointAt") => "subscript_rt_str_code_point_at",
         (l::IntrinsicFamily::String, "Concat") => "subscript_rt_str_concat",

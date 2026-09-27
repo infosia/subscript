@@ -48,7 +48,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         };
         let indexed = || -> Result<u32, String> {
             let expected = match name {
-                "ForEach" | "Map" | "Filter" | "Some" | "Every" | "FindIndex" => 2,
+                "ForEach" | "Map" | "FlatMap" | "Filter" | "Some" | "Every" | "FindIndex"
+                | "Find" | "FindLast" | "FindLastIndex" => 2,
                 "Reduce" | "ReduceRight" => 3,
                 other => return Err(internal(format!("Array.{other} has no indexed callback"))),
             };
@@ -164,25 +165,19 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.assign(out, result, &receiver)?;
                 return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
-            "Shift" => {
-                let destination = result.ok_or_else(|| internal("Array.Shift has no result"))?;
+            "Shift" | "At" => {
+                let destination =
+                    result.ok_or_else(|| internal("Array element result is missing"))?;
                 let position = self.emitter.pos_id(&instruction.pos);
-                let call = self.emitter.runtime_call(
-                    "void",
-                    symbol,
-                    &[
-                        "void*".into(),
-                        "void*".into(),
-                        "void*".into(),
-                        "uint32_t".into(),
-                    ],
-                    &[
-                        "ctx".into(),
-                        receiver,
-                        format!("&{destination}"),
-                        format!("{position}u"),
-                    ],
-                );
+                let mut types = vec!["void*".into(), "void*".into()];
+                let mut args = vec!["ctx".into(), receiver];
+                if name == "At" {
+                    types.push("int32_t".into());
+                    args.push(argument(1)?);
+                }
+                types.extend(["void*".into(), "uint32_t".into()]);
+                args.extend([format!("&{destination}"), format!("{position}u")]);
+                let call = self.emitter.runtime_call("void", symbol, &types, &args);
                 let _ = writeln!(out, "    {call};");
                 return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
@@ -209,7 +204,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.assign(out, result, &receiver)?;
                 return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
-            "ForEach" | "Filter" | "Some" | "Every" | "FindIndex" => {
+            "ForEach" | "Filter" | "Some" | "Every" | "FindIndex" | "Find" | "FindLast"
+            | "FindLastIndex" => {
                 let callback = argument(1)?;
                 let mut types = vec!["void*".into(), "const void*".into()];
                 let mut args = vec!["ctx".into(), receiver];
@@ -263,7 +259,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.assign(out, result, &receiver)?;
                 return self.consume_runtime_traps(out, &instruction.traps, true, true);
             }
-            "Map" => {
+            "Map" | "FlatMap" => {
                 let callback = argument(1)?;
                 let Type::Array(result_element) =
                     result_type.ok_or_else(|| internal("Array.Map result type is missing"))?
@@ -294,7 +290,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     format!("{}u", array_element_kind(self.emitter.module, element)?),
                     format!(
                         "{}u",
-                        array_element_kind(self.emitter.module, result_element)?
+                        if name == "FlatMap" {
+                            0
+                        } else {
+                            array_element_kind(self.emitter.module, result_element)?
+                        }
                     ),
                     format!("(uint64_t)sizeof({})", self.emitter.ctype(result_element)?),
                     format!("{}u", self.emitter.pos_id(&instruction.pos)),

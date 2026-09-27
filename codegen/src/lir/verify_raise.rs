@@ -309,6 +309,10 @@ fn is_raise_site(
                         | "Some"
                         | "Every"
                         | "FindIndex"
+                        | "Find"
+                        | "FindLast"
+                        | "FindLastIndex"
+                        | "FlatMap"
                         | "Sort"
                 ),
                 l::IntrinsicFamily::Map => {

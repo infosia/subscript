@@ -198,6 +198,7 @@
 | `charAt(index: i32): string` | Returns the code point starting at a UTF-8 byte index, or an empty string. |
 | `codePointAt(index: i32): i32` | Returns the code point starting at a UTF-8 byte index; out of range traps. |
 | `concat(other: string): string` | Returns a fresh concatenation with exactly one other string. |
+| `at(index: i32): string` | Returns a code point at a signed byte index; invalid indices trap. |
 | `string.search(pattern: RegExp): i32` | Returns the first UTF-8 byte offset, or -1. |
 | `string.replace(pattern: RegExp, replacement: string): string` | Replaces the first match with ECMA `$` substitutions. |
 | `string.replaceAll(pattern: RegExp, replacement: string): string` | Replaces every match with ECMA `$` substitutions; the RegExp must be global. |
@@ -252,6 +253,11 @@
 | `shift(): T` | Removes the first element; an empty array traps. |
 | `unshift(value: T): i32` | Prepends one element and returns the new length. |
 | `copyWithin(target: i32, start: i32, end?: i32): T[]` | Copies a clamped range within the receiver and returns the receiver. |
+| `at(index: i32): T` | Reads a signed index; an out-of-range index traps. |
+| `find(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): T \| null` | Returns the first matching nullable-capable element, or null. |
+| `findLast(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): T \| null` | Returns the last matching nullable-capable element, or null. |
+| `findLastIndex(callback: ((value: T) => boolean) \| ((value: T, index: i32) => boolean)): i32` | Returns the last matching index, or -1. |
+| `flatMap<U>(callback: ((value: T) => U[]) \| ((value: T, index: i32) => U[])): U[]` | Concatenates callback arrays at depth one. |
 
 ### FixedArray<T, N>
 
@@ -349,7 +355,6 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 
 | Receiver / form | Rejected surface | S-code | Q-rule | Replacement | Reason | Reject corpus |
 |---|---|---|---|---|---|---|
-| string | `at` | S014 | Q21 | `slice` | The language has no scalar miss value. | — |
 | string | `localeCompare` | S014 | Q21 | — | Locale-dependent collation is unavailable. | `r26-string-localecompare.ts` |
 | string | `toLocaleUpperCase` | S014 | Q21 | `toUpperCase` | Locale-sensitive case conversion is unavailable. | `r28-string-tolocaleupper.ts` |
 | string | `toLocaleLowerCase` | S014 | Q21 | `toLowerCase` | Locale-sensitive case conversion is unavailable. | — |
@@ -359,7 +364,7 @@ These are the checker's named S-code rejections, not a list of every unknown pro
 | T[] | `find` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | `r30-array-find.ts` |
 | T[] | `findLast` | S014 | Q22 | `findIndex` | A scalar element type has no miss value. | — |
 | T[] | `flat` | S014 | Q22 | — | Runtime flattening depth cannot determine a static result type. | — |
-| T[] | `flatMap` | S014 | Q22 | — | Runtime flattening depth cannot determine a static result type. | — |
+| T[] | `flatMap` | S014 | Q22 | — | The callback must return an array. | — |
 | T[] | `entries` | S014 | Q30 | — | `entries()` yields a pair, but the language has no tuple type. | — |
 | T[] | `keys` | S014 | Q30 | — | `keys()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). | — |
 | T[] | `values` | S014 | Q30 | — | `values()` is accepted only as the direct subject of `for…of`; a held view needs a view type the language does not have (stdlib.md §14.3). | — |

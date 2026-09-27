@@ -771,16 +771,25 @@ pub unsafe fn concat(ctx: *mut Context, a: *mut u8, b: *mut u8, pos_id: u32) -> 
         return std::ptr::null_mut();
     }
     for src in [a, b] {
-        // SAFETY: caller contract.
-        let n = unsafe { len_of(ctx, src, pos_id) };
-        // SAFETY: source storage contains `n` initialized elements.
-        let data = unsafe { (*ctx).array_data(src) };
-        // SAFETY: matching element sizes.
-        if !unsafe { (*ctx).array_extend(out, data, n, pos_id) } {
-            return out; // valid partial after an allocation trap
+        // SAFETY: equal-width live arrays.
+        if !unsafe { append_array(ctx, out, src, pos_id) } {
+            return out;
         }
     }
     out
+}
+
+/// Appends one array through the shared contiguous extension operation.
+unsafe fn append_array(ctx: *mut Context, out: *mut u8, src: *mut u8, pos_id: u32) -> bool {
+    if src.is_null() {
+        return false;
+    }
+    // SAFETY: caller supplies live arrays of equal element width.
+    let n = unsafe { len_of(ctx, src, pos_id) };
+    // SAFETY: the source contains `n` initialized elements.
+    let data = unsafe { (*ctx).array_data(src) };
+    // SAFETY: matching element widths and live source storage.
+    unsafe { (*ctx).array_extend(out, data, n, pos_id) }
 }
 
 /// `splice(start, deleteCount)`: returns the removed elements in a
@@ -1039,29 +1048,70 @@ pub unsafe fn map(
         map_source(
             ctx,
             ElementSource::Dynamic(h),
-            code,
-            env,
+            (code, env),
             elem_kind,
-            ret_kind,
-            ret_size,
+            MapResult::Value {
+                kind: ret_kind,
+                size: ret_size,
+            },
             pos_id,
             indexed,
         )
     }
 }
 
-/// Shared dynamic-array and fixed-array `map` loop.
-unsafe fn map_source(
+/// Concatenates each callback array before the next callback runs.
+/// `callback` contains the code pointer and environment pointer.
+///
+/// # Safety
+///
+/// As [`map`]; the callback returns an array of `ret_size`-byte elements.
+pub unsafe fn flat_map(
     ctx: *mut Context,
-    source: ElementSource,
-    code: *const u8,
-    env: *const u8,
+    h: *mut u8,
+    callback: (*const u8, *const u8),
     elem_kind: ElemKind,
-    ret_kind: ElemKind,
     ret_size: usize,
     pos_id: u32,
     indexed: bool,
 ) -> *mut u8 {
+    // SAFETY: forwarded callback and array contract.
+    unsafe {
+        map_source(
+            ctx,
+            ElementSource::Dynamic(h),
+            callback,
+            elem_kind,
+            MapResult::Array {
+                elem_size: ret_size,
+            },
+            pos_id,
+            indexed,
+        )
+    }
+}
+
+/// The callback result shape and output element size.
+enum MapResult {
+    Value { kind: ElemKind, size: usize },
+    Array { elem_size: usize },
+}
+
+/// Shared dynamic-array and fixed-array `map` loop.
+unsafe fn map_source(
+    ctx: *mut Context,
+    source: ElementSource,
+    callback: (*const u8, *const u8),
+    elem_kind: ElemKind,
+    result: MapResult,
+    pos_id: u32,
+    indexed: bool,
+) -> *mut u8 {
+    let (code, env) = callback;
+    let (ret_kind, ret_size, flatten) = match result {
+        MapResult::Value { kind, size } => (kind, size, false),
+        MapResult::Array { elem_size } => (ElemKind::Int, elem_size, true),
+    };
     // SAFETY: caller contract.
     if unsafe { source.cb_blocked(ctx, code) } {
         return std::ptr::null_mut();
@@ -1070,7 +1120,15 @@ unsafe fn map_source(
     let esz = unsafe { source.elem_size(ctx) };
     // SAFETY: caller contract.
     let (Some(ea), Some(ra)) = (unsafe { abi_or_trap(ctx, elem_kind, esz) }, unsafe {
-        abi_or_trap(ctx, ret_kind, ret_size)
+        abi_or_trap(
+            ctx,
+            ret_kind,
+            if flatten {
+                std::mem::size_of::<usize>()
+            } else {
+                ret_size
+            },
+        )
     }) else {
         return std::ptr::null_mut();
     };
@@ -1100,6 +1158,16 @@ unsafe fn map_source(
                 // SAFETY: caller contract.
                 if unsafe { (*ctx).trapped() } {
                     break;
+                }
+                if flatten {
+                    // SAFETY: flatten dispatch uses the pointer-sized integer ABI.
+                    let array =
+                        unsafe { std::ptr::read_unaligned((&r as *const R).cast::<*mut u8>()) };
+                    // SAFETY: the callback returns an array with the output element type.
+                    if !unsafe { append_array(ctx, out, array, pos_id) } {
+                        break;
+                    }
+                    continue;
                 }
                 // SAFETY: `out` is a live `ret_size`-element array;
                 // `size_of::<R>() == ret_size` by dispatch.
@@ -1363,6 +1431,8 @@ enum SearchMode {
     Every,
     /// `findIndex`: stop on the first `true`; result index or −1.
     FindIndex,
+    /// Reverse search for a matching index.
+    FindLastIndex,
 }
 
 /// Shared short-circuiting predicate loop. Returns the defensible
@@ -1380,13 +1450,18 @@ unsafe fn search(
     kind: ElemKind,
     mode: SearchMode,
     indexed: bool,
+    found: *mut u8,
 ) -> i32 {
     let miss = match mode {
         SearchMode::Some => 0,
         SearchMode::Every => 1,
-        SearchMode::FindIndex => -1,
+        SearchMode::FindIndex | SearchMode::FindLastIndex => -1,
     };
-    let trapped_result = if mode == SearchMode::FindIndex { -1 } else { 0 };
+    let trapped_result = if matches!(mode, SearchMode::FindIndex | SearchMode::FindLastIndex) {
+        -1
+    } else {
+        0
+    };
     // SAFETY: caller contract.
     if unsafe { source.cb_blocked(ctx, code) } {
         return trapped_result;
@@ -1400,9 +1475,17 @@ unsafe fn search(
     // SAFETY: caller contract.
     let n = unsafe { source.len(ctx, 0) };
     with_abi!(abi, T, {
-        for i in 0..n {
+        for step in 0..n {
+            let i = if mode == SearchMode::FindLastIndex {
+                n - 1 - step
+            } else {
+                step
+            };
             // SAFETY: caller contract.
             if unsafe { source.len(ctx, 0) } <= i {
+                if mode == SearchMode::FindLastIndex {
+                    continue;
+                }
                 break;
             }
             // SAFETY: `i` in bounds; widths match by dispatch.
@@ -1416,7 +1499,15 @@ unsafe fn search(
             match mode {
                 SearchMode::Some if r != 0 => return 1,
                 SearchMode::Every if r == 0 => return 0,
-                SearchMode::FindIndex if r != 0 => return i as i32,
+                SearchMode::FindIndex | SearchMode::FindLastIndex if r != 0 => {
+                    if !found.is_null() {
+                        // SAFETY: `found` holds one element; `v` retains the pre-callback value.
+                        unsafe {
+                            std::ptr::copy_nonoverlapping((&v as *const T).cast::<u8>(), found, esz)
+                        };
+                    }
+                    return i as i32;
+                }
                 _ => {}
             }
         }
@@ -1448,6 +1539,7 @@ pub unsafe fn some(
             kind,
             SearchMode::Some,
             indexed,
+            std::ptr::null_mut(),
         )
     }
 }
@@ -1476,6 +1568,7 @@ pub unsafe fn every(
             kind,
             SearchMode::Every,
             indexed,
+            std::ptr::null_mut(),
         )
     }
 }
@@ -1503,6 +1596,71 @@ pub unsafe fn find_index(
             kind,
             SearchMode::FindIndex,
             indexed,
+            std::ptr::null_mut(),
+        )
+    }
+}
+
+/// Finds a matching reference element in the selected direction.
+///
+/// # Safety
+///
+/// As [`some`]; each element has pointer width.
+pub unsafe fn find(
+    ctx: *mut Context,
+    h: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    indexed: bool,
+    reverse: bool,
+) -> *mut u8 {
+    let mut value: *mut u8 = std::ptr::null_mut();
+    let mode = if reverse {
+        SearchMode::FindLastIndex
+    } else {
+        SearchMode::FindIndex
+    };
+    // SAFETY: the output holds one reference element.
+    unsafe {
+        search(
+            ctx,
+            ElementSource::Dynamic(h),
+            code,
+            env,
+            kind,
+            mode,
+            indexed,
+            (&mut value as *mut *mut u8).cast(),
+        )
+    };
+    value
+}
+
+/// Finds the last matching index, or minus one.
+///
+/// # Safety
+///
+/// As [`some`].
+pub unsafe fn find_last_index(
+    ctx: *mut Context,
+    h: *mut u8,
+    code: *const u8,
+    env: *const u8,
+    kind: ElemKind,
+    indexed: bool,
+) -> i32 {
+    // SAFETY: forwarded contract.
+    unsafe {
+        search(
+            ctx,
+            ElementSource::Dynamic(h),
+            code,
+            env,
+            kind,
+            SearchMode::FindLastIndex,
+            indexed,
+            std::ptr::null_mut(),
         )
     }
 }
@@ -1571,11 +1729,12 @@ pub unsafe fn fixed_map(
                 len,
                 elem_size,
             },
-            code,
-            env,
+            (code, env),
             elem_kind,
-            ret_kind,
-            ret_size,
+            MapResult::Value {
+                kind: ret_kind,
+                size: ret_size,
+            },
             pos_id,
             indexed,
         )
@@ -1721,6 +1880,7 @@ pub unsafe fn fixed_some(
             kind,
             SearchMode::Some,
             indexed,
+            std::ptr::null_mut(),
         )
     }
 }
@@ -1753,6 +1913,7 @@ pub unsafe fn fixed_every(
             kind,
             SearchMode::Every,
             indexed,
+            std::ptr::null_mut(),
         )
     }
 }
@@ -1785,6 +1946,7 @@ pub unsafe fn fixed_find_index(
             kind,
             SearchMode::FindIndex,
             indexed,
+            std::ptr::null_mut(),
         )
     }
 }

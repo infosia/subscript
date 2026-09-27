@@ -646,6 +646,10 @@ Origin and owner decision as §8.10.
    `[1,10,2,20,3,30]`; `[1,2].flatMap(v => [])` `[]`;
    `[[1],[2]].flatMap(v => v)` `[1,2]`; the index argument `[0,1]`.
 
+`FixedArray` gains none of these members: it keeps the eight
+closure-taking members that §9 Stage 6 names, and a call of `at`,
+`find`, `findLast`, `findLastIndex`, or `flatMap` on it stays rejected.
+
 Corpus: `a268-array-string-at-find-flatmap`, `js-comparable` against
 `node` where no miss traps; the traps go in unit or three-engine tests.
 
