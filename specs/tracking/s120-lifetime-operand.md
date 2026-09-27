@@ -1,5 +1,43 @@
 # Lifetime operand measurements
 
+## Retention-mode lifetime tests
+
+`codegen/tests/lifetime_operands.rs` calls `run_jit_with_freed_handle_diagnostics_and_native_libraries` for every execution probe.
+This entry enables freed-handle diagnostics with a zero-byte payload threshold and a 1 GiB retention budget.
+The zero-byte threshold retains every probe object, including the one-field JSON and Worker objects.
+Each trap probe keeps its live control, operand position, and message check.
+
+The reference interpreter runs the same sources except the Worker cases.
+It creates `Context::new()` without retention mode at `codegen/src/interpreter.rs:408`.
+Its lifetime and release checks call `Context::is_live` independently of that mode at `codegen/src/interpreter.rs:2046`.
+It models live-map membership, not threshold-based retention or budget eviction.
+Worker operations require a runtime worker adapter and a second interpreter Context.
+The exclusion matches `codegen/src/interpreter.rs:2452` and `corpus/accept/a112-worker-echo.ts`.
+The Worker test runs only on the dev JIT; it does not assert an interpreter `Unsupported` error.
+
+These tests move from the deleted `cli/tests/lifetime_operands.rs` to the codegen target:
+
+- `map_constructor_source`
+- `set_constructor_source`
+- `array_from_source`
+- `set_algebra_argument`
+- `spread_container_argument`
+- `runtime_receiver`
+- `stored_value_is_checked_only_when_read`
+- `reduction_accumulator_argument`
+- `worker_message_argument`
+- `synthesized_json_helper_argument`
+- `nullable_json_helper_argument`
+- `for_of_map_keys`
+- `for_of_map_values`
+- `for_of_set_values`
+- `for_of_non_releasable_subjects`
+- `non_storing_generic_arguments`
+- `double_delete_keeps_the_call_position_with_async_owner_fields`
+
+The CLI copies are deleted; no test coverage is removed.
+No `.expected` golden or LIR snapshot changes.
+
 ## Baseline
 
 This command passed without warnings before any file changed:
