@@ -553,6 +553,7 @@ const FORM_REJECTIONS: &[ApiRejection] = &[
     rejection("T[]", "unshift(value, ...values)", "Q27", None, "Variadic parameters are the missing prerequisite for prepending multiple elements.", Some("r51-array-unshift-variadic.ts")),
     rejection("FixedArray<T, N>", "non-callback T[] methods", "Q22/Q27", None, "Q27 accepts the closure-taking callback family; the other checker-owned Array methods remain dynamic-array-only.", None),
     rejection("Map<K, scalar V>", "get(key)", "Q24", Some("getOr"), "A scalar value type has no null miss value.", Some("r41-map-scalar-get.ts")),
+    rejection("Map<K, V with no shared nullable-pointer form>", "get(key)", "Q24", Some("getOr"), "The value type has no `| null` form of the map's value representation.", Some("r250-map-generator-get.ts")),
     rejection("Map", "new Map(iterable)", "Q30", Some("construct empty, then set"), "`new Map([[k, v]])` requires a pair element, but the language has no tuple type.", Some("r43-map-iterable-constructor.ts")),
     rejection("Set", "new Set(Map)", "Q30", Some("pass a T[], FixedArray<T, N>, Set<T>, or string"), "A Map yields a pair, so invariant 5 excludes it: stock `tsc` answers TS2769 for a Map source.", Some("r198-set-source-map.ts")),
     rejection("Set", "new Set(Generator<T>)", "Q30", Some("collect the generator with for…of, then add"), "A generator is single-use, and construction is a value expression (stdlib.md §14.4).", Some("r199-set-source-generator.ts")),

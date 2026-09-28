@@ -111,6 +111,8 @@ pub enum Divergence {
     MapKeyKind,
     /// `get` on a scalar-valued `Map`, which has no miss value.
     MapScalarGet,
+    /// `get` on a `Map` whose value type has no nullable form (compiler.md §123).
+    MapNonNullableGet,
     /// A pair-valued construction or view, which needs a tuple type.
     NoTupleType,
     /// A coercing numeric call, and an omitted radix or digit count.
@@ -246,6 +248,7 @@ impl Divergence {
         Divergence::VariadicArguments,
         Divergence::MapKeyKind,
         Divergence::MapScalarGet,
+        Divergence::MapNonNullableGet,
         Divergence::NoTupleType,
         Divergence::NumberCoercionAndArguments,
         Divergence::JsonSubset,
@@ -671,6 +674,12 @@ impl Divergence {
                 why: "A scalar has no null miss value, so a lookup is a presence check plus \
                       a defaulted read.",
                 collision: "stdlib.md §10",
+            },
+            Divergence::MapNonNullableGet => DivergenceEntry {
+                ts: "map.get(1);",
+                subscript: "map.getOr(1, fallback);",
+                why: "The value type has no `| null` form of the map's value representation; use a default value.",
+                collision: "compiler.md §123",
             },
             Divergence::NoTupleType => DivergenceEntry {
                 ts: "const map: Map<i32, i32> = new Map<i32, i32>([[1, 2]]);\n\

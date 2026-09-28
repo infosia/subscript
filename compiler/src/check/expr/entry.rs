@@ -133,6 +133,7 @@ impl<'p> Checker<'p> {
                 Some(Divergence::VariadicArguments)
             }
             Some("r41-map-scalar-get.ts") => Some(Divergence::MapScalarGet),
+            Some("r250-map-generator-get.ts") => Some(Divergence::MapNonNullableGet),
             Some("r42-map-iterator-member.ts") => Some(Divergence::IteratorTemporary),
             Some("r43-map-iterable-constructor.ts" | "r79-assign-entries.ts") => {
                 Some(Divergence::NoTupleType)

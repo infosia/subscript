@@ -157,11 +157,15 @@ impl<'p> Checker<'p> {
                             prop_pos.clone(),
                         );
                     }
-                    return Some(hir::Expr {
+                    let mut field = hir::Expr {
                         kind: ExprKind::Global(symbol),
                         ty: signature.ty,
                         pos: prop_pos,
-                    });
+                    };
+                    if !for_write {
+                        self.apply_narrowing(&mut field, fx);
+                    }
+                    return Some(field);
                 }
                 if self.class_sigs[id.0].has_static_accessor(prop) {
                     let signature = self.class_sigs[id.0].static_methods.get(prop).cloned();

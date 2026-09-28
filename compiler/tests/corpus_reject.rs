@@ -330,6 +330,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r246-capture-through-loop-back-edge.ts", RuleCode::S009, 12),
     ("r247-generator-parameter-stored.ts", RuleCode::S009, 14),
     ("r248-capture-through-indirect-call.ts", RuleCode::S009, 11),
+    ("r249-unnarrowed-nullable-field-call.ts", RuleCode::S100, 10),
+    ("r250-map-generator-get.ts", RuleCode::S014, 9),
+    ("r251-map-boundary-struct-get.ts", RuleCode::S014, 8),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -358,10 +361,13 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
         let source =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
         let mut files = Vec::new();
-        if file == "r169-embedded-header-copy.ts" {
+        if matches!(
+            file,
+            "r169-embedded-header-copy.ts" | "r251-map-boundary-struct-get.ts"
+        ) {
             let mirror =
                 fs::read_to_string(corpus_dir().join("interop").join("interop.generated.d.ts"))
-                    .expect("read the interop mirror for r169");
+                    .expect("read the interop mirror");
             files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
         }
         files.push(SourceFile::new(file, source));
@@ -410,10 +416,13 @@ fn divergence_blocks_match_every_reject_entry_tsc_header() {
         }
 
         let mut files = Vec::new();
-        if file == "r169-embedded-header-copy.ts" {
+        if matches!(
+            file,
+            "r169-embedded-header-copy.ts" | "r251-map-boundary-struct-get.ts"
+        ) {
             let mirror =
                 fs::read_to_string(corpus_dir().join("interop").join("interop.generated.d.ts"))
-                    .expect("read the interop mirror for r169");
+                    .expect("read the interop mirror");
             files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
         }
         files.push(SourceFile::new(file, source));

@@ -184,32 +184,6 @@ impl Expr {
                 let operation = operation_signature_target(callee);
                 let helper = matches!(callee, Callee::Func(name)
                     if module.synthesized_helpers.contains(name));
-                if operation.is_some() || helper {
-                    for (index, argument) in args.iter().enumerate() {
-                        let execution_index =
-                            index + usize::from(matches!(callee, Callee::Method { .. }));
-                        if reference_value(&argument.ty)
-                            && !operation.as_ref().is_some_and(|(target, _)| {
-                                target.copies_lifetime_operand(execution_index)
-                            })
-                        {
-                            sites.push(TrapSite::DevOnlyLifetime {
-                                operand: LifetimeOperand::Argument(index),
-                                pos: argument.pos.clone(),
-                            });
-                        }
-                    }
-                }
-                if callee.has_call_site() {
-                    sites.push(call(&self.pos));
-                }
-                if (reload && callee.has_call_site())
-                    || crate::raise_sites::call_can_raise(module, callee, args)
-                {
-                    sites.push(TrapSite::Raise {
-                        pos: self.pos.clone(),
-                    });
-                }
                 let parameter_types = match callee {
                     Callee::Func(name) => module
                         .functions
@@ -272,11 +246,43 @@ impl Expr {
                                     .zip(args)
                                     .all(|(parameter, argument)| {
                                         parameter == &argument.ty
+                                            || matches!(parameter, Type::Nullable(inner)
+                                                if argument.ty == Type::Null || inner.as_ref() == &argument.ty)
                                             || boundary_box_store(parameter, &argument.ty)
                                     })
                         })
                         .map(|signature| signature.parameter_types[prefix_count..].to_vec())
                 });
+                if operation.is_some() || helper {
+                    for (index, argument) in args.iter().enumerate() {
+                        let execution_index =
+                            index + usize::from(matches!(callee, Callee::Method { .. }));
+                        let parameter = parameter_types.as_ref().and_then(|types| types.get(index));
+                        let reference = reference_value(&argument.ty)
+                            || (argument.ty == Type::Null
+                                && parameter.is_some_and(reference_value));
+                        if reference
+                            && !operation.as_ref().is_some_and(|(target, _)| {
+                                target.copies_lifetime_operand(execution_index)
+                            })
+                        {
+                            sites.push(TrapSite::DevOnlyLifetime {
+                                operand: LifetimeOperand::Argument(index),
+                                pos: argument.pos.clone(),
+                            });
+                        }
+                    }
+                }
+                if callee.has_call_site() {
+                    sites.push(call(&self.pos));
+                }
+                if (reload && callee.has_call_site())
+                    || crate::raise_sites::call_can_raise(module, callee, args)
+                {
+                    sites.push(TrapSite::Raise {
+                        pos: self.pos.clone(),
+                    });
+                }
                 if let Some(parameter_types) = parameter_types {
                     sites.extend(
                         parameter_types

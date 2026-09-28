@@ -228,6 +228,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         .all(|(expected, argument)| match expected {
                             l::ValueType::Data(expected) => {
                                 expected == &argument.ty
+                                    || matches!(expected, Type::Nullable(inner)
+                                        if argument.ty == Type::Null || inner.as_ref() == &argument.ty)
                                     || self.is_boundary_box_narrowing(expected, &argument.ty)
                                     || self.embedded_header_extension(expected, argument).is_some()
                             }

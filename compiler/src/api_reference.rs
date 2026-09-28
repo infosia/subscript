@@ -759,6 +759,10 @@ mod tests {
                 "export function main(): void {\n  const value: Map<i32, i32> = new Map<i32, i32>();\n  print(`${value.get(1)}`);\n}\n"
                     .to_string()
             }
+            ("Map<K, V with no shared nullable-pointer form>", "get(key)") => {
+                "export function main(): void {\n  const map: Map<i32, Generator<i32>> = new Map<i32, Generator<i32>>();\n  map.get(1);\n}\n"
+                    .to_string()
+            }
             ("FixedArray<T, N>", "non-callback T[] methods") => {
                 "export function main(): void {\n  const value: FixedArray<i32, 1> = [1];\n  print(`${value.indexOf(1)}`);\n}\n"
                     .to_string()

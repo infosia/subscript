@@ -7,7 +7,7 @@ use crate::check::{Checker, FnCtx, ParamSig};
 use crate::diag::{Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::hir::{self, ArrFn, Callee, ExprKind, MapFn, NumFn, SetFn, StrFn};
-use crate::types::{FuncType, Type};
+use crate::types::{FuncType, HandleKind, Type};
 
 use super::CallbackSpec;
 
@@ -749,13 +749,22 @@ impl<'p> Checker<'p> {
         }
     }
 
-    /// True when `V` can carry `get`'s null miss: a reference class or
-    /// opaque handle (including the built-in reference containers), or
-    /// an already-nullable form of one.
+    /// Accepts values with the same nullable-pointer representation (compiler.md §123).
     fn map_get_value_ok(&self, value: &Type) -> bool {
-        self.is_reference_class(value)
-            || matches!(value, Type::Array(_))
-            || matches!(value, Type::Nullable(inner) if self.is_reference_class(inner))
+        let reference = match value {
+            Type::Nullable(inner) => inner.as_ref(),
+            other => other,
+        };
+        matches!(
+            reference.handle_kind(&self.type_handle_classes),
+            Some(
+                HandleKind::ReferenceClass
+                    | HandleKind::Map
+                    | HandleKind::Set
+                    | HandleKind::Func
+                    | HandleKind::Array
+            )
+        )
     }
 
     /// Checks the Q27 static `Map.groupBy` intrinsic. Both generic
@@ -1058,7 +1067,14 @@ impl<'p> Checker<'p> {
         match operation {
             M::Get => {
                 if !self.map_get_value_ok(&value) {
-                    self.reject_api_form("Map<K, scalar V>", "get(key)", "get(key)", prop_pos);
+                    let group = if value.is_numeric()
+                        || matches!(value, Type::Bool | Type::Enum(_) | Type::StringAlias(_))
+                    {
+                        "Map<K, scalar V>"
+                    } else {
+                        "Map<K, V with no shared nullable-pointer form>"
+                    };
+                    self.reject_api_form(group, "get(key)", "get(key)", prop_pos);
                     return self.err_expr(pos);
                 }
                 let params = [ParamSig::positional(key)];
