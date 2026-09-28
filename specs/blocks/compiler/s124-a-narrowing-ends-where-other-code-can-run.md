@@ -95,16 +95,21 @@ header).
    `T | null` value to `T`. Every path that uses a narrowed shared
    location, as a value or as a place (a field store, a compound
    assignment, a boundary box), goes through that conversion first.
-   The LIR verifier checks it on every build, from LIR facts alone: a
-   `NullNarrowing` site is legal only on that conversion, and every
-   conversion of a `T | null` value to `T` either carries the site or
-   is dominated by a branch that tests that same SSA value against
-   `null`. A local copy tested before use is dominated by its own test;
-   a shared location read again after its test is a new SSA value and
-   needs the site. *(Corrected 2026-09-28: a rule that looked only at
-   whether the operand is a shared load rejected 7 corpus entries that
-   copy a shared location to a `const` local, because SSA makes the
-   local the load itself.)* The trap has its
+   The conversion is its own LIR instruction, `NarrowNonNull(origin)`,
+   and it carries where the narrowed value comes from: a shared read,
+   a local (a `const` copy included), or an `as` cast. The lowering
+   sets the origin from the HIR expression kind, by a match with no
+   wildcard arm; the origin has no default. The LIR verifier checks, on
+   every build: a `SharedRead` conversion carries the
+   `SharedNullNarrowing` site; an `AsCast` conversion carries the
+   `NullNarrowing` site; and no other instruction converts a
+   `T | null` value to `T`. The origin and the site come from two
+   separate derivations (the expression kind, and `Expr::trap_sites`),
+   so the check compares two facts (core principle 9). *(Corrected
+   2026-09-28, owner decision: two verifier rules that read only
+   operand shapes rejected legitimate `const`-local copies, because SSA
+   makes the local the load itself and passes tested values through
+   block arguments.)* The trap has its
    own kind and message ("a narrowed shared location is null"); the
    `as` narrowing trap keeps its kind and message.
 3e. A checker-synthesized helper (§119) runs no script code, so a call
