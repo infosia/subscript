@@ -34,7 +34,9 @@ and has no working use: a hole whose fix is mechanical (core principle
    C7. It carries no list of the types it applies to.
 2. `a ?? b` and a conditional expression type a function operand as
    they type a reference-class operand: the same accepted operand
-   pairs, the same result type, the same diagnostics.
+   pairs and the same result type. A rejected pair of function types
+   gets the type-mismatch diagnostic (S100); S005 names nominal class
+   types and does not apply to a structural function type.
 3. The null function value has one representation. Every engine (dev
    JIT, ship C, reference interpreter) builds it, tests it, and passes
    it through a join (a `??`, a conditional arm, a block argument) in
