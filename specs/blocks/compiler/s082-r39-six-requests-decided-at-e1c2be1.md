@@ -144,9 +144,10 @@ message; a call receiver runs once (the a176 pin on both tiers).
    2026-09-02 after the review: `zz()` and `new Nope()` kept S100.)*
 2. **S017, duplicate declaration.** A second declaration of one name
    in one namespace: a block scope, a `switch` body, a module's top
-   level, the program's function set, a class's instance member
-   namespace, or a class's static member namespace (§67.1 rule 3a,
-   §71 rule 1, §65 rule 3).
+   level, the program's host entries (§125 rule 4), a class's
+   instance member namespace, or a class's static member namespace
+   (§67.1 rule 3a, §71 rule 1, §65 rule 3). *(Corrected 2026-09-29 by
+   §125: the program's function set was one namespace.)*
 3. **S018, unknown member.** A field, method, accessor, static
    member, or enum member that the receiver type does not declare,
    where the receiver type is a class, a value class, a mirror type,
