@@ -97,13 +97,21 @@ header).
    assignment, a boundary box), goes through that conversion first.
    The conversion is its own LIR instruction, `NarrowNonNull(origin)`,
    and it carries where the narrowed value comes from: a shared read,
-   a local (a `const` copy included), or an `as` cast. The lowering
+   or a local (a `const` copy included). A type-changing `as` cast
+   keeps its own instruction (`Cast`) with the `NullNarrowing` and
+   `ClassMismatch` sites; the language has no same-type `as` from
+   `T | null` to `T` (S100), so no third origin exists. The lowering
    sets the origin from the HIR expression kind, by a match with no
    wildcard arm; the origin has no default. The LIR verifier checks, on
    every build: a `SharedRead` conversion carries the
-   `SharedNullNarrowing` site; an `AsCast` conversion carries the
-   `NullNarrowing` site; and no other instruction converts a
-   `T | null` value to `T`. The origin and the site come from two
+   `SharedNullNarrowing` site, and no other conversion instruction
+   converts a `T | null` value to the same `T`. The verifier decides
+   "is a conversion" from the instruction kind, by a match over every
+   kind with no wildcard arm, not from operand and result types: a call
+   that takes `T | null` and returns `T` is not a conversion. The HIR
+   site derivation classifies shared and local reads by a match with no
+   wildcard arm too, so a new expression kind states its class in both
+   places. The origin and the site come from two
    separate derivations (the expression kind, and `Expr::trap_sites`),
    so the check compares two facts (core principle 9). *(Corrected
    2026-09-28, owner decision: two verifier rules that read only
@@ -148,8 +156,12 @@ header).
 6. A diagnostic carries the C17 note only when a §124 kill ended the
    narrowing it reports.
 7. No existing `.expected` golden moves. The LIR text snapshot moves
-   by the new `NullNarrowing` sites of rule 3d only; the round reports
-   the lines.
+   only where a `Coerce` becomes `NarrowNonNull` (4 lines at the
+   measurement); the round reports the lines.
+7a. An accept entry pins a call that takes `T | null` and returns `T`
+   (a function, a method, and a function value), on all three
+   engines. The corpus had no such call when the verifier first
+   rejected it.
 8. Rule 3d: trap entries pin the shapes the second review measured
    (an accessor in a compound assignment, a static accessor, an
    optional-chain getter, a destructuring getter): each is accepted and
