@@ -95,9 +95,16 @@ header).
    `T | null` value to `T`. Every path that uses a narrowed shared
    location, as a value or as a place (a field store, a compound
    assignment, a boundary box), goes through that conversion first.
-   The LIR verifier checks it on every build: a `NullNarrowing` site
-   is legal only on that conversion, and every `Field` or `Global` read
-   whose HIR carries the site reaches the conversion. The trap has its
+   The LIR verifier checks it on every build, from LIR facts alone: a
+   `NullNarrowing` site is legal only on that conversion, and every
+   conversion of a `T | null` value to `T` either carries the site or
+   is dominated by a branch that tests that same SSA value against
+   `null`. A local copy tested before use is dominated by its own test;
+   a shared location read again after its test is a new SSA value and
+   needs the site. *(Corrected 2026-09-28: a rule that looked only at
+   whether the operand is a shared load rejected 7 corpus entries that
+   copy a shared location to a `const` local, because SSA makes the
+   local the load itself.)* The trap has its
    own kind and message ("a narrowed shared location is null"); the
    `as` narrowing trap keeps its kind and message.
 3e. A checker-synthesized helper (§119) runs no script code, so a call
