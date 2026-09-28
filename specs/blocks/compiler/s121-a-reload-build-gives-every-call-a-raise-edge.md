@@ -45,13 +45,18 @@ Candidates, measured on the same probes:
    also has a raise site with its handler edge: the handler of the
    enclosing `try`, or the propagate exit. This holds whatever the
    callee's `can_raise` is, in named functions, methods, constructors,
-   and lambdas.
+   and lambdas. A call that creates an async handle is not a raise site:
+   its exception completes the handle, and the `await` of the handle is
+   the raise site (§116.1 rules 1 and 2).
 2. The ship C tier and a dev-JIT module compiled without reload keep
    §115.6 rule 3: a raise site only at a call to a callee that can
    raise.
 3. The compile mode is an input of the one site derivation (§20.2,
    §115.6 rule 3). The LIR of a reload build carries the extra edges;
-   each engine reads them. No engine adds an edge of its own.
+   each engine reads them. No engine adds an edge of its own. The LIR
+   function fact `can_raise` of a reload build is `true` for every
+   function, so the raise verifier accepts the extra edges; it is the
+   HIR fact only in a build without reload.
 4. The success path after a call stays one load and one compare
    (§115.6 rule 4). The extra edges change only the path taken when the
    word is nonzero.
@@ -60,6 +65,11 @@ Candidates, measured on the same probes:
    scope-owned handles (§116 rule 4b).
 6. `can_raise` stays out of the declaration hash. §119.5's first item
    is closed by this section.
+7. The LIR module does not carry its compile mode, so the verifier
+   cannot check rule 1 by itself. Today one guard in the site
+   derivation covers every call form. A call path added outside that
+   derivation must bring the mode into the verifier and a total check
+   with it.
 
 ### 121.2 Acceptance
 
