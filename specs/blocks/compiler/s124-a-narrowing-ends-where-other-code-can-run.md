@@ -40,7 +40,17 @@ header).
    Another frame can write a shared location; no other frame can write
    a local. A field of a value held in a local (an `IterResult` from
    `next()`, a by-value struct copy) is a local: no other name reaches
-   that value. *(Corrected 2026-09-28: the first text counted every
+   that value. A boundary box is not a by-value copy: the storage of a
+   `V | null` where `V` is a boundary value class is a box that
+   `const t2 = t` aliases, so a field of a boxed value is shared
+   wherever the box is held (a local, a field, a global). The HIR local
+   carries its declared storage type, so the predicate tells a box from
+   a by-value copy; the narrowed expression type (`V` in both cases)
+   does not. The origin and the site read this one predicate, so the
+   rule 3d cross-check compares the predicate with the declared-type
+   comparison: it catches a shared read with no nullable declaration,
+   and the exhaustive predicate is the only guard for a shared read
+   classified local. *(Corrected 2026-09-28: the first text counted every
    field path as shared, so `r.value` of a generator result became an
    unchecked shared read.)* "Shared" is one HIR predicate over the path,
    decided by matches with no wildcard arm over the expression kind and
