@@ -9,6 +9,8 @@ mod lir_facts;
 mod native_fixture;
 #[path = "support/pool.rs"]
 mod pool;
+#[path = "lir/reload_raise.rs"]
+mod reload_raise;
 #[path = "lir/snapshot.rs"]
 mod snapshot;
 #[path = "lir/verifier.rs"]

@@ -34,7 +34,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 Vec::new(),
                 Some(l::ValueType::Data(expr.ty.clone())),
                 false,
-                convert_traps(&expr.trap_sites(self.lowering.hir)),
+                convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload)),
                 expr.pos.clone(),
             )?,
             K::This => Some(
@@ -112,7 +112,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     vec![operand],
                     Some(l::ValueType::Data(expr.ty.clone())),
                     false,
-                    convert_traps(&expr.trap_sites(self.lowering.hir)),
+                    convert_traps(
+                        &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                    ),
                     expr.pos.clone(),
                 )?
             }
@@ -134,7 +136,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     vec![left, right],
                     Some(l::ValueType::Data(expr.ty.clone())),
                     false,
-                    convert_traps(&expr.trap_sites(self.lowering.hir)),
+                    convert_traps(
+                        &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                    ),
                     expr.pos.clone(),
                 )?
             }
@@ -163,7 +167,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     vec![value, absent],
                     Some(l::ValueType::Data(Type::Bool)),
                     false,
-                    convert_traps(&expr.trap_sites(self.lowering.hir)),
+                    convert_traps(
+                        &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                    ),
                     expr.pos.clone(),
                 )?
             }
@@ -177,7 +183,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     vec![value],
                     Some(l::ValueType::Data(expr.ty.clone())),
                     false,
-                    convert_traps(&expr.trap_sites(self.lowering.hir)),
+                    convert_traps(
+                        &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                    ),
                     expr.pos.clone(),
                 )?
             }
@@ -199,7 +207,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 Vec::new(),
                 Some(self.allocated_type(*class, &expr.pos)?),
                 false,
-                convert_traps(&expr.trap_sites(self.lowering.hir)),
+                convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload)),
                 expr.pos.clone(),
             )?,
             K::Field { obj, name } => {
@@ -212,7 +220,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         vec![object],
                         Some(l::ValueType::Data(stored_type)),
                         false,
-                        convert_traps(&expr.trap_sites(self.lowering.hir)),
+                        convert_traps(
+                            &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                        ),
                         expr.pos.clone(),
                     )?
                     .expect("field load");
@@ -225,7 +235,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     vec![value],
                     Some(l::ValueType::Data(expr.ty.clone())),
                     false,
-                    convert_traps(&expr.trap_sites(self.lowering.hir)),
+                    convert_traps(
+                        &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                    ),
                     expr.pos.clone(),
                 )?
             }
@@ -262,7 +274,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     operands,
                     stored,
                     (Some(l::ValueType::Data(expr.ty.clone())), false),
-                    convert_traps(&expr.trap_sites(self.lowering.hir)),
+                    convert_traps(
+                        &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                    ),
                     expr.pos.clone(),
                 )?
             }
@@ -305,7 +319,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     operands,
                     stored,
                     (Some(l::ValueType::Data(expr.ty.clone())), false),
-                    convert_traps(&expr.trap_sites(self.lowering.hir)),
+                    convert_traps(
+                        &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                    ),
                     expr.pos.clone(),
                 )?
             }
@@ -353,7 +369,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 let traps = if lowered_parts.is_empty() {
                     Vec::new()
                 } else {
-                    convert_traps(&expr.trap_sites(self.lowering.hir))
+                    convert_traps(
+                        &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                    )
                 };
                 self.emit(
                     l::InstructionKind::Template(lowered_parts),
@@ -532,7 +550,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         value_expr: &hir::Expr,
         whole: &hir::Expr,
     ) -> Result<l::Operand, LowerError> {
-        let traps = convert_traps(&whole.trap_sites(self.lowering.hir));
+        let traps =
+            convert_traps(&whole.trap_sites_for_reload(self.lowering.hir, self.lowering.reload));
         let binary_traps = || {
             traps
                 .iter()

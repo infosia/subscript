@@ -54,18 +54,19 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 vec![source],
                 Some(l::ValueType::Data(expr.ty.clone())),
                 false,
-                convert_traps(&expr.trap_sites(self.lowering.hir)),
+                convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload)),
                 expr.pos.clone(),
             );
         }
         if matches!(callee, hir::Callee::Ambient(hir::AmbientFn::Unreachable)) {
-            let trap = convert_traps(&expr.trap_sites(self.lowering.hir))
-                .into_iter()
-                .find(|trap| trap.kind == l::TrapKind::Unreachable)
-                .unwrap_or(l::Trap {
-                    kind: l::TrapKind::Unreachable,
-                    pos: expr.pos.clone(),
-                });
+            let trap =
+                convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload))
+                    .into_iter()
+                    .find(|trap| trap.kind == l::TrapKind::Unreachable)
+                    .unwrap_or(l::Trap {
+                        kind: l::TrapKind::Unreachable,
+                        pos: expr.pos.clone(),
+                    });
             self.terminate(l::Terminator::Trap(trap), &expr.pos)?;
             return Ok(None);
         }
@@ -151,7 +152,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         // Nullable boundary boxes are emitted while each argument is lowered;
         // keep their allocation sites on those instructions instead of also
         // attaching them to the eventual call.
-        let mut sites = expr.trap_sites(self.lowering.hir);
+        let mut sites = expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload);
         for site in &mut sites {
             if let hir::TrapSite::DevOnlyLifetime {
                 operand: hir::LifetimeOperand::Argument(index),

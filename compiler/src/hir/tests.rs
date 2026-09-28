@@ -861,3 +861,50 @@ fn worker_intrinsic_identity_uses_the_all_table_order() {
     assert_eq!(WorkerFn::Spawn(37).intrinsic_identity(), WorkerFn::ALL[0]);
     assert_eq!(WorkerFn::OutboxPost.intrinsic_identity(), WorkerFn::ALL[7]);
 }
+
+#[test]
+fn reload_site_derivation_keeps_precise_facts_and_adds_quiet_call_edges() {
+    let module = crate::check_program(&[crate::SourceFile::new(
+        "sites.ts",
+        r#"
+function quiet(): void {}
+function raises(): void { throw new Error("control"); }
+export function main(): void { quiet(); raises(); }
+"#,
+    )])
+    .expect("checked source");
+    let main = module.functions.iter().find(|f| f.name == "main").unwrap();
+    let calls = main
+        .body
+        .iter()
+        .filter_map(|stmt| match stmt {
+            Stmt::Expr(expr) if matches!(expr.kind, ExprKind::Call { .. }) => Some(expr),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 2);
+    for reload in [false, true] {
+        let quiet = calls[0].trap_sites_for_reload(&module, reload);
+        assert!(quiet
+            .iter()
+            .any(|site| matches!(site, TrapSite::Call { .. })));
+        assert_eq!(
+            quiet
+                .iter()
+                .any(|site| matches!(site, TrapSite::Raise { .. })),
+            reload
+        );
+        let control = calls[1].trap_sites_for_reload(&module, reload);
+        assert!(control
+            .iter()
+            .any(|site| matches!(site, TrapSite::Raise { .. })));
+    }
+    assert!(
+        !module
+            .functions
+            .iter()
+            .find(|f| f.name == "quiet")
+            .unwrap()
+            .can_raise
+    );
+}

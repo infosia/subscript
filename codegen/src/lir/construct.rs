@@ -16,10 +16,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .get(class_id.0)
             .cloned()
             .ok_or_else(|| self.error(&expr.pos, "constructed class id is missing"))?;
-        let allocation_traps = convert_traps(&expr.trap_sites(self.lowering.hir))
-            .into_iter()
-            .filter(|trap| trap.kind == l::TrapKind::Allocation && trap.pos == expr.pos)
-            .collect();
+        let allocation_traps =
+            convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload))
+                .into_iter()
+                .filter(|trap| trap.kind == l::TrapKind::Allocation && trap.pos == expr.pos)
+                .collect();
         let allocated = self
             .emit(
                 l::InstructionKind::AllocateClass(class_id),
@@ -99,10 +100,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         .map(|parameter| l::ValueType::Data(parameter.ty.clone())),
                 )
                 .collect();
-            let call_traps = convert_traps(&expr.trap_sites(self.lowering.hir))
-                .into_iter()
-                .filter(|trap| matches!(trap.kind, l::TrapKind::Call | l::TrapKind::Raise(_)))
-                .collect();
+            let call_traps =
+                convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload))
+                    .into_iter()
+                    .filter(|trap| matches!(trap.kind, l::TrapKind::Call | l::TrapKind::Raise(_)))
+                    .collect();
             let stored = constructor
                 .params
                 .iter()
@@ -178,7 +180,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 Vec::new(),
                 Some(l::ValueType::Data(Type::Class(class_id))),
                 false,
-                convert_traps(&expr.trap_sites(self.lowering.hir)),
+                convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload)),
                 expr.pos.clone(),
             )?
             .expect("descriptor allocation");

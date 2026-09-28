@@ -603,7 +603,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             return Err(self.error(&callback_expr.pos, "static callback arity is invalid"));
         }
 
-        let expression_traps = convert_traps(&expr.trap_sites(self.lowering.hir));
+        let expression_traps =
+            convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload));
         let reverse = operation == hir::ArrFn::ReduceRight;
         let kind = if reverse {
             l::ForOfKind::ArrayValuesReverse
@@ -970,7 +971,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         };
         let spread = convert_spread(hir::SpreadKind::from(traversal));
         let source_value = self.require_expr(source)?;
-        let traps = convert_traps(&expr.trap_sites(self.lowering.hir));
+        let traps =
+            convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload));
         self.emit(
             l::InstructionKind::SetFromSource(spread),
             vec![source_value],
@@ -993,7 +995,8 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 format!("forEach lowering expected 2 operands, got {}", args.len()),
             ));
         };
-        let expression_traps = convert_traps(&expr.trap_sites(self.lowering.hir));
+        let expression_traps =
+            convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload));
         let subject_value = self.require_expr(subject)?;
         let callback_value = self.require_expr(callback)?;
         let Type::Func(callback_type) = &callback.ty else {

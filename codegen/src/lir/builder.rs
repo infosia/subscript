@@ -120,7 +120,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             is_async: self.function.is_async,
             creation_traps: convert_traps(&self.function.creation_traps),
             host_entry_traps: self.function.host_entry_traps.as_deref().map(convert_traps),
-            can_raise: self.function.can_raise,
+            can_raise: self.function.can_raise || self.lowering.reload,
             parameters: self.parameters,
             return_type: self.function.ret,
             locals: self.locals,

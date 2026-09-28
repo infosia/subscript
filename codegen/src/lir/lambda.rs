@@ -66,7 +66,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 capture_values,
                 Some(l::ValueType::Data(expr.ty.clone())),
                 false,
-                convert_traps(&expr.trap_sites(self.lowering.hir)),
+                convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload)),
                 expr.pos.clone(),
             )?
             .ok_or_else(|| self.error(&expr.pos, "lambda produced no function value"))?;
@@ -184,7 +184,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let resume_value = return_type
             .as_ref()
             .map(|_| self.blocks[successor.0 as usize].parameters[0]);
-        let (raise, traps) = split_await_raise(convert_traps(&expr.trap_sites(self.lowering.hir)));
+        let (raise, traps) = split_await_raise(convert_traps(
+            &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+        ));
         self.terminate(
             l::Terminator::Suspend {
                 kind: l::SuspendKind::AsyncCall {
@@ -222,7 +224,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             operands,
             stored,
             (Some(l::ValueType::Data(expr.ty.clone())), true),
-            convert_traps(&expr.trap_sites(self.lowering.hir)),
+            convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload)),
             expr.pos.clone(),
         )?
         .ok_or_else(|| self.error(&expr.pos, "async handle creation produced no value"))
@@ -243,7 +245,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let resume_value = return_type
             .as_ref()
             .map(|_| self.blocks[successor.0 as usize].parameters[0]);
-        let (raise, traps) = split_await_raise(convert_traps(&expr.trap_sites(self.lowering.hir)));
+        let (raise, traps) = split_await_raise(convert_traps(
+            &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+        ));
         self.terminate(
             l::Terminator::Suspend {
                 kind: l::SuspendKind::AsyncHandle { handle },

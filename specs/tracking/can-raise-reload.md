@@ -592,3 +592,95 @@ Final `git status --short`:
 ```text
 ?? specs/tracking/can-raise-reload.md
 ```
+
+## §121 implementation: Red
+
+At `aa33213`, `retained_lambda_catches_a_newly_raising_callee` accepts the body swap and fails at the retained lambda call.
+Command: `cargo test --offline --locked -p subscript-codegen --test reload retained_lambda_catches_a_newly_raising_callee -- --exact`.
+
+```text
+retained lambda catches x: Trap(TrapReport { rule: UncaughtException, message: "Error: x", pos: Pos { file: "live.ts", line: 2, col: 22 }, stdout: [] })
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.04s
+```
+
+The same test fails against a release build from `git archive 558b231` with the same trap tuple and empty stdout.
+Its result is `FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.01s`.
+The pin test adds only the P4 test function to the archived reload test target.
+
+## §121 implementation: form and tests
+
+`Expr::trap_sites_for_reload` takes the compile mode as an input to the shared HIR site derivation.
+Reload calls with a `Call` site carry a raise site. Direct awaits use the same conservative mode.
+Held-handle creation keeps its exception in the handle; its await carries the raise site.
+HIR keeps precise `can_raise` facts. Reload LIR functions carry conservative `can_raise` facts.
+The existing LIR builder resolves each handler, disposal path, release path, or propagate exit.
+The engines add no edges. The declaration hash is unchanged.
+
+The dev pending-word check is unchanged: one load and one compare precede the success branch.
+Only the nonzero branch compares the loaded word with exception state 2.
+
+The P4 test is Red at both `558b231` and `aa33213`.
+P1, P2, and P3 have quiet-call controls and raising body swaps.
+P5 compares an unchanged resume with a stale resume after the raising body swap.
+The P2 handle test checks disposal before trap 29 for an unobserved handle on normal and exception exits.
+The HIR test directly checks the mode input and keeps a raising-call control.
+The LIR test covers named functions, a method, a constructor, and a lambda, with a raising-call control.
+It also executes the control through both LIR modes on the interpreter.
+No `.expected` file or LIR text snapshot changes. No additional source split is required.
+
+## §121 implementation: paired cost against `558b231`
+
+The baseline sources come from `git archive 558b231`. Both variants use release builds under the pinned toolchain.
+The compile harness uses the same 260 corpus entries, fixtures, timed span, and byte counter as the candidate-C measurement above.
+Each variant has one discarded corpus pass and three timed passes. Source reads precede each timed span.
+The byte counter sums emitted function code buffers, including wrappers, initializers, async runners, and entry adapters.
+The measurement counter is absent from the final sources and the performance-gate binaries.
+All measurements run serially; no build runs during a measurement.
+
+| Corpus pass | Baseline ms | Implementation ms | Baseline bytes | Implementation bytes |
+|---|---:|---:|---:|---:|
+| 0 (discarded) | 798.994916 | 799.568381 | 1,847,972 | 1,869,360 |
+| 1 | 776.688624 | 784.404773 | 1,847,972 | 1,869,360 |
+| 2 | 779.785291 | 782.570504 | 1,847,972 | 1,869,360 |
+| 3 | 776.780202 | 783.359536 | 1,847,972 | 1,869,360 |
+
+Compile median: 776.780202 → 783.359536 ms (+0.85%).
+Code buffers: 1,847,972 → 1,869,360 bytes (+21,388 bytes, +1.16%).
+
+Command: `perf-gate --gate --warmup 3 --timed 11`.
+`SUBSCRIPT_RUNTIME_STATICLIB` selects each variant's release runtime archive.
+The run order is baseline-1, implementation-1, baseline-2, implementation-2, baseline-3, implementation-3.
+Each variant has three invocations and 33 timed samples per subject. All six invocations exit 0 and meet every gate criterion.
+Each invocation discards at least three operations and 200 ms of warm-up per subject.
+
+All table values are milliseconds. Each pair value is its invocation's median.
+
+| Subject | Baseline 1 | Implementation 1 | Baseline 2 | Implementation 2 | Baseline 3 | Implementation 3 | Baseline median | Implementation median | Change |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| a22 C | 4.002 | 3.959 | 3.959 | 3.975 | 3.974 | 4.000 | 3.974 | 3.975 | +0.03% |
+| a22 ship-tier | 5.333 | 5.271 | 5.412 | 5.277 | 5.299 | 5.273 | 5.333 | 5.273 | -1.13% |
+| a22 dev-JIT | 79.124 | 78.994 | 78.987 | 78.949 | 79.039 | 78.939 | 79.039 | 78.949 | -0.11% |
+| collect C | 33.719 | 32.580 | 32.771 | 32.482 | 32.781 | 32.568 | 32.781 | 32.568 | -0.65% |
+| collect ship-tier | 35.872 | 35.329 | 35.667 | 35.489 | 36.821 | 35.638 | 35.872 | 35.489 | -1.07% |
+| collect dev-JIT | 121.204 | 116.810 | 117.302 | 117.701 | 117.194 | 117.108 | 117.302 | 117.108 | -0.17% |
+| dev-iteration | 3.972 | 3.954 | 3.954 | 3.945 | 4.208 | 3.951 | 3.972 | 3.951 | -0.53% |
+| hot-reload | 0.500 | 0.503 | 0.523 | 0.503 | 0.506 | 0.500 | 0.506 | 0.503 | -0.59% |
+
+These values are observations from one host. They carry no statistical significance claim.
+
+## §121 implementation: final checks
+
+| Check | Result |
+|---|---|
+| Pinned `cargo fmt --all --check` | Exit 0. |
+| `cargo build --offline --locked --workspace --all-targets` | Exit 0; no warnings. |
+| Reload tests alone | 34 pass; 0 fail. |
+| HIR compile-mode site test | 1 pass; 0 fail. |
+| LIR tests alone | 52 pass; 0 fail. |
+| Full gate | One invocation; exit 0. |
+| Additional source splits | None; every changed Rust file is below 2,000 lines. |
+| Contract problems | None. |
+
+```text
+gate full aa33213636338ee8300d5a590e74a3455979b701 dirty:16 debug 1800/0/3 release 1797/0/3 skips 2/0 clippy 5/18/13 goldens-moved 0 exit 0
+```

@@ -1097,3 +1097,133 @@ export function main(): void { print("original"); }
     session.call_main().expect("edited body");
     assert_eq!(output(&mut session), "edited\n");
 }
+
+// compiler.md §121.2: a retained lambda keeps its handler after a body swap.
+#[test]
+fn retained_lambda_catches_a_newly_raising_callee() {
+    let source = r#"
+function f(): void {}
+const saved: () => void = (): void => {
+    try { f(); } catch (e) { print("caught"); }
+};
+export function g(): void { saved(); }
+"#;
+    let mut session = ReloadSession::new(&files(source)).expect("session");
+    session.call_export("g").expect("quiet call");
+    assert_eq!(output(&mut session), "");
+    let changed = source.replace(
+        "function f(): void {}",
+        "function f(): void { throw new Error(\"x\"); }",
+    );
+    session.reload(&files(&changed)).expect("body swap");
+    session.call_export("g").expect("retained lambda catches x");
+    assert_eq!(output(&mut session), "caught\n");
+}
+
+// compiler.md §121.2: direct, transitive, and using calls keep their handlers.
+#[test]
+fn named_calls_catch_a_newly_raising_callee() {
+    for (body, quiet, raised) in [
+        (
+            r#"export function g(): void { try { f(); } catch (e) { print("caught"); } }"#,
+            "",
+            "caught\n",
+        ),
+        (
+            r#"function h(): void { f(); }
+export function g(): void { try { h(); } catch (e) { print("caught"); } }"#,
+            "",
+            "caught\n",
+        ),
+        (
+            r#"class R { [Symbol.dispose](): void { print("dispose"); } }
+export function g(): void { try { using r = new R(); f(); } catch (e) { print("caught"); } }"#,
+            "dispose\n",
+            "dispose\ncaught\n",
+        ),
+    ] {
+        let source = format!("function f(): void {{}}\n{body}");
+        let mut session = ReloadSession::new(&files(&source)).expect("session");
+        session.call_export("g").expect("quiet call");
+        assert_eq!(output(&mut session), quiet);
+        let changed = source.replace(
+            "function f(): void {}",
+            "function f(): void { throw new Error(\"x\"); }",
+        );
+        session.reload(&files(&changed)).expect("body swap");
+        session.call_export("g").expect("named handler catches x");
+        assert_eq!(output(&mut session), raised);
+    }
+}
+
+// compiler.md §121.1 rule 5: the exception exit disposes before it releases its failed handle.
+#[test]
+fn reload_exception_exit_disposes_and_releases_scope_handles() {
+    let source = r#"
+function f(): void {}
+class R { [Symbol.dispose](): void { print("dispose"); } }
+async function failed(): Promise<i32> { throw new Error("dropped"); }
+export async function g(): Promise<void> {
+    try {
+        const h: Promise<i32> = failed();
+        using r = new R();
+        f();
+        if (true) { return; }
+        const value = await h;
+    } catch (e) { print("caught"); }
+}
+"#;
+    let changed = source.replace(
+        "function f(): void {}",
+        "function f(): void { throw new Error(\"x\"); }",
+    );
+    for reload in [false, true] {
+        let mut session = ReloadSession::new(&files(source)).expect("session");
+        if reload {
+            session.reload(&files(&changed)).expect("body swap");
+        }
+        let Err(RunError::Trap(trap)) = session.call_export("g") else {
+            panic!("the release must report the unobserved handle");
+        };
+        assert_eq!(trap.rule, TrapKind::UncaughtException);
+        assert_eq!(trap.message, "Error: dropped");
+        assert_eq!(trap.stdout, b"dispose\n");
+        assert_eq!(output(&mut session), "dispose\n");
+    }
+}
+
+// compiler.md §121.2: a suspended frame stays stale after the callee body changes.
+#[test]
+fn newly_raising_callee_keeps_suspended_frames_stale() {
+    let source = r#"
+function f(): void {}
+export async function g(): Promise<void> {
+    await Context.suspend();
+    try { f(); } catch (e) { print("caught"); }
+    print("resumed");
+}
+"#;
+    for reload in [false, true] {
+        let mut session = ReloadSession::new(&files(source)).expect("session");
+        session.call_export("g").expect("suspend");
+        assert_eq!(session.async_pending(), 1);
+        assert_eq!(output(&mut session), "");
+        if reload {
+            let changed = source.replace(
+                "function f(): void {}",
+                "function f(): void { throw new Error(\"x\"); }",
+            );
+            session.reload(&files(&changed)).expect("body swap");
+            let Err(RunError::Trap(trap)) = session.async_step() else {
+                panic!("the suspended frame must be stale");
+            };
+            assert_eq!(trap.rule, TrapKind::StaleCoroutine);
+            assert_eq!(trap.message, "stale coroutine after reload");
+            assert!(trap.stdout.is_empty());
+            assert_eq!(output(&mut session), "");
+        } else {
+            session.async_step().expect("unchanged frame resumes");
+            assert_eq!(output(&mut session), "resumed\n");
+        }
+    }
+}

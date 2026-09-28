@@ -266,11 +266,12 @@ pub struct Function {
     /// empty list when the entry needs no parameter validation.
     pub host_entry_traps: Option<Vec<Trap>>,
     /// Whether a call to this function can leave an exception pending.
-    /// The lowering copies the HIR fact (`compiler.md` §115.6 rule 3). An
-    /// `async` function carries the fact of its body: its propagate exit
-    /// completes its handle, and an `await` raises it (§116.1 rules 1 and
-    /// 2). A generator body carries `false`: its propagate exit is its own
-    /// boundary (§115.4 item 3).
+    /// In a reload build, every function carries `true` (`compiler.md` §121.1 rule 3).
+    /// Without reload, the lowering copies the HIR fact (`compiler.md` §115.6 rule 3).
+    /// In that case, an `async` function carries the fact of its body: its
+    /// propagate exit completes its handle, and an `await` raises it (§116.1
+    /// rules 1 and 2). A generator body carries `false`: its propagate exit
+    /// is its own boundary (§115.4 item 3).
     pub can_raise: bool,
     /// Typed parameters; each parameter value is a definition.
     pub parameters: Vec<Parameter>,

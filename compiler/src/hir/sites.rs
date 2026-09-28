@@ -9,6 +9,13 @@ impl Expr {
     /// a call, literal, cast, or index operation is checked.
     #[must_use]
     pub fn trap_sites(&self, module: &Module) -> Vec<TrapSite> {
+        self.trap_sites_for_reload(module, false)
+    }
+
+    /// Derives operation sites for the selected compile mode (compiler.md §121.1).
+    /// Reload calls carry raise sites even when their callees cannot raise.
+    #[must_use]
+    pub fn trap_sites_for_reload(&self, module: &Module, reload: bool) -> Vec<TrapSite> {
         use BinOp as B;
         use ExprKind as K;
 
@@ -196,7 +203,9 @@ impl Expr {
                 if callee.has_call_site() {
                     sites.push(call(&self.pos));
                 }
-                if crate::raise_sites::call_can_raise(module, callee, args) {
+                if (reload && callee.has_call_site())
+                    || crate::raise_sites::call_can_raise(module, callee, args)
+                {
                     sites.push(TrapSite::Raise {
                         pos: self.pos.clone(),
                     });
@@ -313,11 +322,10 @@ impl Expr {
                     }
                 }
                 sites.push(call(&self.pos));
-                // compiler.md §116.1 rule 2: the `await` of a direct call is
-                // a raise site when its callee can raise. The creation of a
-                // held handle is not.
+                // compiler.md §116.1 and §121.1: direct awaits use the
+                // selected call facts. A held handle raises at its await.
                 if matches!(self.kind, K::AsyncCall { .. })
-                    && crate::raise_sites::async_callee_can_raise(module, callee)
+                    && (reload || crate::raise_sites::async_callee_can_raise(module, callee))
                 {
                     sites.push(TrapSite::Raise {
                         pos: self.pos.clone(),
@@ -354,7 +362,9 @@ impl Expr {
                 if def.ctor.is_some() {
                     sites.push(call(&self.pos));
                 }
-                if crate::raise_sites::construction_call_can_raise(def) {
+                if (reload && def.ctor.is_some())
+                    || crate::raise_sites::construction_call_can_raise(def)
+                {
                     sites.push(TrapSite::Raise {
                         pos: self.pos.clone(),
                     });

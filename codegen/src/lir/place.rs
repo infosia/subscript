@@ -40,7 +40,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         expr: &hir::Expr,
         traps: Option<Vec<l::Trap>>,
     ) -> Result<PreparedPlace, LowerError> {
-        let mut traps = traps.unwrap_or_else(|| convert_traps(&expr.trap_sites(self.lowering.hir)));
+        let mut traps = traps.unwrap_or_else(|| {
+            convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload))
+        });
         let kind = match &expr.kind {
             hir::ExprKind::Local(name) => {
                 let binding = self.lookup_binding(name, &expr.pos)?;

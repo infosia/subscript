@@ -1383,7 +1383,7 @@ pub(crate) fn lower_module_with<M: Module>(
             import.module
         ));
     }
-    let lirm = crate::lir::lower_module(hirm)
+    let lirm = crate::lir::lower_module_for_reload(hirm, opts.reload)
         .map_err(|error| internal(format!("LIR construction failed: {error}")))?;
     lower_lir_module_with(module, &lirm, opts)
 }

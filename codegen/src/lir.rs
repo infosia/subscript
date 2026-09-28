@@ -101,7 +101,18 @@ fn boundary_class_is_embedded_header(module: &hir::Module, header: ClassId) -> b
 /// Returns the first construct whose checked semantics cannot be encoded by
 /// the closed LIR form.
 pub fn lower_module(module: &hir::Module) -> Result<l::Module, LowerError> {
-    let mut lowered = Lowering::new(module)?.run()?;
+    lower_module_for_reload(module, false)
+}
+
+/// Lowers HIR with call edges for the selected compile mode (compiler.md §121.1).
+///
+/// # Errors
+/// Returns a lowering or verification error if the checked form is invalid.
+pub fn lower_module_for_reload(
+    module: &hir::Module,
+    reload: bool,
+) -> Result<l::Module, LowerError> {
+    let mut lowered = Lowering::new(module, reload)?.run()?;
     unroll::run(&mut lowered);
     for function in &mut lowered.functions {
         thread_suspension_live_ins(function)?;
@@ -276,6 +287,7 @@ impl From<&hir::Param> for CallParam {
 
 struct Lowering<'a> {
     hir: &'a hir::Module,
+    reload: bool,
     handle_classes: Vec<subscript_compiler::types::HandleClass>,
     free_functions: HashMap<String, FunctionRecord>,
     methods: HashMap<(usize, String), FunctionRecord>,
