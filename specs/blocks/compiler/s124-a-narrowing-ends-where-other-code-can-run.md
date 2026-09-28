@@ -69,6 +69,29 @@ header).
    prescan alone.
 3b. A location is shared by its binding, not its name: a local that
    shadows a module global name is a local.
+3c. A `switch` is a join: each case starts from the facts at the
+   dispatch, plus the facts that fall through from the case before
+   it; the point after the `switch` keeps only the facts that hold on
+   every `break` edge and at the end of the last case, after the case
+   summaries apply. This holds for a local as well (a narrowing made in
+   one case never reaches another case or the exit through a case that
+   did not make it).
+3d. *(Added 2026-09-28 after the second review, owner decision.)* The
+   static kills of rules 2 to 3c are the diagnostic, not the soundness
+   argument. Two reviews found hand-placed kill sites that missed
+   script code the checker builds itself (an accessor in a compound
+   assignment, an optional chain, a destructuring pattern). So every
+   read through a shared location whose declared storage type is
+   `T | null` and whose expression type is the narrowed `T` carries a
+   `NullNarrowing` trap site (§20.2). The rule compares two types that
+   the checker derives separately (the declared type of the field or
+   global, and the type of the read), so it covers every read the
+   static kills miss. Every engine tests the site: the dev JIT, ship C,
+   and the interpreter trap `null-narrowing` at the read position
+   instead of reading through null. A local read carries no site
+   (rule 4).
+3e. A checker-synthesized helper (§119) runs no script code, so a call
+   of one does not end a narrowing (`JSON.stringify`, `JSON.parse`).
 4. A narrowing of a local does not change.
 5. After a narrowing ends, the use gets the diagnostic of an
    unnarrowed use (S011 for a member read, the §122/§123 diagnostic for
@@ -102,4 +125,15 @@ header).
    narrowing across a call.
 6. A diagnostic carries the C17 note only when a §124 kill ended the
    narrowing it reports.
-7. No existing `.expected` golden moves.
+7. No existing `.expected` golden moves. The LIR text snapshot moves
+   by the new `NullNarrowing` sites of rule 3d only; the round reports
+   the lines.
+8. Rule 3d: trap entries pin the shapes the second review measured
+   (an accessor in a compound assignment, a static accessor, an
+   optional-chain getter, a destructuring getter): each is accepted and
+   traps `null-narrowing` at the read on every engine, where
+   `7bc395d` read through null. A `switch` reject entry pins rule 3c.
+9. The dev-JIT and ship C cost of rule 3d is measured on the benchmark
+   set (paired, the same run count) and recorded. The cost of any
+   second checker pass is measured and stated, or the pass is removed.
+10. The language surface does not grow: `do…while` stays outside it.
