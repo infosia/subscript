@@ -164,3 +164,4 @@ Every section, with its status:
 | §120 | A lifetime site names its operand | active; amends §20.2 | [`s120-a-lifetime-site-names-its-operand.md`](compiler/s120-a-lifetime-site-names-its-operand.md) |
 | §121 | A reload build gives every call a raise edge | active; closes §119.5 item 1 | [`s121-a-reload-build-gives-every-call-a-raise-edge.md`](compiler/s121-a-reload-build-gives-every-call-a-raise-edge.md) |
 | §122 | A nullable function value narrows and joins | active | [`s122-a-nullable-function-value-narrows-and-joins.md`](compiler/s122-a-nullable-function-value-narrows-and-joins.md) |
+| §123 | A function value is a reference in `Map.get` and in a field call | active; amends stdlib §10.5 | [`s123-a-function-value-is-a-reference-in-map-get-and-field-calls.md`](compiler/s123-a-function-value-is-a-reference-in-map-get-and-field-calls.md) |

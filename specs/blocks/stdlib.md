@@ -808,8 +808,9 @@ earlier text saying so was wrong.
 carries it (C7). For a **scalar** `V` there is no miss value — the
 same problem Q22 solved by rejecting `find` in favour of `findIndex`.
 Rule: `get` returns `V | null` **only where `V` is a nullable-capable
-type** (reference class, handle); for every other `V`, `get` is
-rejected (S014) and the program uses `has` plus a total accessor:
+type**: a type whose `| null` form shares its nullable-pointer
+representation (`compiler.md` §123.1 rule 1). For every other `V`, `get` is rejected
+(S014) and the program uses `has` plus a total accessor:
 
 - `getOr(k, fallback: V): V` — this contract's addition, not a lib
   member. It is `tsc`-clean because it is declared in the prelude's
