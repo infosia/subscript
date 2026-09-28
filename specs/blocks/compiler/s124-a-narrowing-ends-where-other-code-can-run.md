@@ -70,8 +70,9 @@ header).
 3b. A location is shared by its binding, not its name: a local that
    shadows a module global name is a local.
 3c. A `switch` is a join: each case starts from the facts at the
-   dispatch, plus the facts that fall through from the case before
-   it; the point after the `switch` keeps only the facts that hold on
+   dispatch (the facts before the `switch`, after the discriminant; no
+   case summary applies there, because no back edge exists), plus the
+   facts that fall through from the case before it; the point after the `switch` keeps only the facts that hold on
    every `break` edge and at the end of the last case, after the case
    summaries apply. This holds for a local as well (a narrowing made in
    one case never reaches another case or the exit through a case that
@@ -90,6 +91,15 @@ header).
    and the interpreter trap `null-narrowing` at the read position
    instead of reading through null. A local read carries no site
    (rule 4).
+   The site belongs to one LIR operation: the conversion of a
+   `T | null` value to `T`. Every path that uses a narrowed shared
+   location, as a value or as a place (a field store, a compound
+   assignment, a boundary box), goes through that conversion first.
+   The LIR verifier checks it on every build: a `NullNarrowing` site
+   is legal only on that conversion, and every `Field` or `Global` read
+   whose HIR carries the site reaches the conversion. The trap has its
+   own kind and message ("a narrowed shared location is null"); the
+   `as` narrowing trap keeps its kind and message.
 3e. A checker-synthesized helper (§119) runs no script code, so a call
    of one does not end a narrowing (`JSON.stringify`, `JSON.parse`).
 4. A narrowing of a local does not change.
