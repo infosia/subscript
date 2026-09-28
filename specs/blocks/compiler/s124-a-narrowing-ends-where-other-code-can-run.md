@@ -34,9 +34,19 @@ header).
 
 ### 124.1 Rules
 
-1. A shared location is a module global or a path through at least one
-   field (`h.c`, `this.cb`, `S.opt`). Another frame can write a shared
-   location; no other frame can write a local.
+1. A shared location is a module global, a static field, or a path
+   through a field of an object that another name can reach (a
+   reference-class instance, `this`: `h.c`, `this.cb`, `S.opt`).
+   Another frame can write a shared location; no other frame can write
+   a local. A field of a value held in a local (an `IterResult` from
+   `next()`, a by-value struct copy) is a local: no other name reaches
+   that value. *(Corrected 2026-09-28: the first text counted every
+   field path as shared, so `r.value` of a generator result became an
+   unchecked shared read.)* "Shared" is one HIR predicate over the path,
+   decided by matches with no wildcard arm over the expression kind and
+   the receiver type; the checker's kills (rules 2 and 3), the
+   `NarrowNonNull` origin, and the rule 3d site all read that one
+   predicate.
 2. A narrowing of a shared location ends at every point where script
    code can run before the use. "Can run script code" is one HIR fact,
    derived by a match over every expression and statement kind with no
