@@ -72,6 +72,24 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         traps: &[l::Trap],
         pos: &Pos,
     ) -> Result<RV, String> {
+        if matches!(op, l::BinaryOp::Eq | l::BinaryOp::Ne)
+            && (matches!(left, RV::Pair(..)) || matches!(right, RV::Pair(..)))
+        {
+            let code = |value| match value {
+                RV::Pair(code, _) | RV::Scalar(code) => Ok(code),
+                _ => Err(internal("function comparison has no code pointer")),
+            };
+            let comparison = if op == l::BinaryOp::Eq {
+                IntCC::Equal
+            } else {
+                IntCC::NotEqual
+            };
+            let result = self
+                .builder
+                .ins()
+                .icmp(comparison, code(left)?, code(right)?);
+            return Ok(RV::Scalar(result));
+        }
         let left = self.expect_scalar(left)?;
         let right = self.expect_scalar(right)?;
         if operand_ty == &Type::Str {
@@ -283,6 +301,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     ) -> Result<RV, String> {
         if source == target {
             return Ok(value);
+        }
+        if target.function_type().is_some() {
+            if source == &Type::Null {
+                return self.zero(target);
+            }
+            if source.function_type() == target.function_type() && matches!(value, RV::Pair(..)) {
+                return Ok(value);
+            }
+            return Err(internal("function conversion requires a matching pair"));
         }
         if let RV::Aggregate(address) = value {
             if matches!(target, Type::Nullable(_)) {

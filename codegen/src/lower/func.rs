@@ -538,7 +538,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let ty = self.value_type(*parameter)?.clone();
                 let mut value = rv_from_params(&self.ml.layouts, &ty, &parameters, &mut cursor)?;
                 if self.closure_environment_layout.is_some()
-                    && matches!(ty, l::ValueType::Data(Type::Func(_)))
+                    && matches!(&ty, l::ValueType::Data(ty) if ty.function_type().is_some())
                 {
                     value = self.snapshot_closure_environment(value)?;
                 }
@@ -602,7 +602,7 @@ fn initialize_storage<M: Module>(body: &mut Body<'_, '_, '_, '_, M>) -> Result<(
     if body.coroutine.is_none() {
         if let Some((environment_size, environment_align)) = body.closure_environment_layout {
             for value in &body.function.values {
-                if !matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
+                if !matches!(&value.ty, l::ValueType::Data(ty) if ty.function_type().is_some()) {
                     continue;
                 }
                 bytes = round_up_layout(

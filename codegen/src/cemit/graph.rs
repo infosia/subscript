@@ -481,6 +481,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 ref other => return Err(internal(format!("float bits have type {other:?}"))),
             },
             l::ConstantKind::Boolean(value) => i32::from(*value).to_string(),
+            l::ConstantKind::Null if constant.ty.function_type().is_some() => "(SubFn){0}".into(),
             l::ConstantKind::Null => "NULL".into(),
         })
     }

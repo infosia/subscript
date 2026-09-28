@@ -620,6 +620,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         if actual == expected {
             return Ok(operand);
         }
+        if let (l::Operand::Constant(constant), l::ValueType::Data(ty)) = (&operand, &expected) {
+            if constant.kind == l::ConstantKind::Null && ty.function_type().is_some() {
+                return Ok(l::Operand::Constant(l::Constant {
+                    ty: ty.clone(),
+                    kind: l::ConstantKind::Null,
+                }));
+            }
+        }
         if let l::ValueType::Data(Type::Nullable(target)) = &expected {
             if let Type::Class(target) = target.as_ref() {
                 let boundary = self

@@ -152,7 +152,7 @@ pub(super) fn plan_coroutine(
     let mut closure_environments = HashMap::new();
     if let Some((size, align)) = closure_environment_layout(module, layouts)? {
         for value in &function.values {
-            if !matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
+            if !matches!(&value.ty, l::ValueType::Data(ty) if ty.function_type().is_some()) {
                 continue;
             }
             offset = round_up_layout(offset, align, "coroutine closure environment layout")?;

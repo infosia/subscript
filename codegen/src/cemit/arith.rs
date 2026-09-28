@@ -20,6 +20,27 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .first()
                 .ok_or_else(|| internal("binary operand type is missing"))?,
         )?;
+        if operand_types
+            .iter()
+            .any(|ty| matches!(ty, l::ValueType::Data(ty) if ty.function_type().is_some()))
+        {
+            let code = |index: usize| {
+                if matches!(&operand_types[index], l::ValueType::Data(ty) if ty.function_type().is_some())
+                {
+                    format!("({}).code", operands[index])
+                } else {
+                    operands[index].clone()
+                }
+            };
+            let symbol = binary_symbol(operator)?;
+            let _ = writeln!(
+                out,
+                "    {destination} = ({}) {symbol} ({});",
+                code(0),
+                code(1)
+            );
+            return Ok(());
+        }
         if *ty == Type::Str {
             return match operator {
                 l::BinaryOp::Add => {
@@ -236,7 +257,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         }
         let source = data_type(operand_type)?;
         let target = data_type(&result_type)?;
-        let expression = if source == target {
+        let expression = if target.function_type().is_some() && source == &Type::Null {
+            "(SubFn){0}".into()
+        } else if source == target
+            || (target.function_type().is_some()
+                && source.function_type() == target.function_type())
+        {
             operand.to_string()
         } else if *target == Type::F16 {
             let value = if *source == Type::F32 {

@@ -523,6 +523,9 @@ fn type_name(m: &hir::Module, t: &Type) -> String {
         Type::Class(id) => m.classes[id.0].name.clone(),
         Type::Array(t) => format!("{}[]", type_name(m, t)),
         Type::FixedArray(t, n) => format!("FixedArray<{}, {n}>", type_name(m, t)),
+        Type::Nullable(t) if matches!(t.as_ref(), Type::Func(_)) => {
+            format!("({}) | null", type_name(m, t))
+        }
         Type::Nullable(t) => format!("{} | null", type_name(m, t)),
         Type::Generator(t) => format!("Generator<{}>", type_name(m, t)),
         Type::Map(k, v) => format!("Map<{}, {}>", type_name(m, k), type_name(m, v)),

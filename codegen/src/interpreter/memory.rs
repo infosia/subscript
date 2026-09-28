@@ -651,6 +651,11 @@ impl Interpreter<'_> {
         value: &Value,
         out: &mut [u8],
     ) -> Result<(), InterpretError> {
+        if let Type::Nullable(inner) = ty {
+            if inner.function_type().is_some() {
+                return self.pack_into(inner, value, out);
+            }
+        }
         let layout = self
             .layout_cached(ty)
             .ok_or_else(|| self.invalid(None, format!("no layout for {ty:?}")))?;
@@ -739,6 +744,10 @@ impl Interpreter<'_> {
                 out[..8].copy_from_slice(&handle.to_ne_bytes());
             }
             Type::Func(_) => {
+                if matches!(value, Value::Null) {
+                    out[..16].fill(0);
+                    return Ok(());
+                }
                 let Value::Callable(callable) = value else {
                     return Err(type_error("callable", value));
                 };
@@ -756,6 +765,11 @@ impl Interpreter<'_> {
     }
 
     pub(super) fn unpack(&self, ty: &Type, bytes: &[u8]) -> Result<Value, InterpretError> {
+        if let Type::Nullable(inner) = ty {
+            if inner.function_type().is_some() {
+                return self.unpack(inner, bytes);
+            }
+        }
         let need = self
             .layout_cached(ty)
             .ok_or_else(|| self.invalid(None, format!("no layout for {ty:?}")))?
@@ -850,6 +864,9 @@ impl Interpreter<'_> {
             }
             Type::Func(_) => {
                 let code = u64::from_ne_bytes(bytes[..8].try_into().unwrap_or([0; 8]));
+                if code == 0 {
+                    return Ok(Value::Null);
+                }
                 let index = code
                     .checked_sub(1)
                     .and_then(|v| u32::try_from(v).ok())

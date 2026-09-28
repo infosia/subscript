@@ -101,8 +101,8 @@ pub enum HandleKind {
     Func,
     /// A reference-class allocation.
     ReferenceClass,
-    /// The managed box for a nullable function.
-    FuncBox,
+    /// A nullable function pair with no allocation (compiler.md §122).
+    NullableFunc,
     /// The managed box for a nullable boundary value class.
     BoundaryBox,
 }
@@ -122,7 +122,6 @@ impl HandleKind {
                 | Self::Generator
                 | Self::AsyncHandle
                 | Self::ReferenceClass
-                | Self::FuncBox
                 | Self::BoundaryBox
         )
     }
@@ -146,7 +145,7 @@ impl HandleKind {
                 | Self::Outbox
                 | Self::Func
                 | Self::ReferenceClass
-                | Self::FuncBox
+                | Self::NullableFunc
                 | Self::BoundaryBox
         )
     }
@@ -177,7 +176,6 @@ impl HandleKind {
                 | Self::Generator
                 | Self::AsyncHandle
                 | Self::ReferenceClass
-                | Self::FuncBox
                 | Self::BoundaryBox
         )
     }
@@ -320,6 +318,9 @@ pub struct FuncType {
 /// scalar layout agreement structural rather than test-only.
 #[must_use]
 pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
+    if ty.function_type().is_some() {
+        return Some((16, 8));
+    }
     Some(match ty {
         Type::Bool | Type::I8 | Type::U8 => (1, 1),
         Type::I16 | Type::U16 | Type::F16 => (2, 2),
@@ -345,6 +346,19 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
 }
 
 impl Type {
+    /// The signature of a bare or nullable function value (compiler.md §122).
+    #[must_use]
+    pub fn function_type(&self) -> Option<&FuncType> {
+        match self {
+            Self::Func(signature) => Some(signature),
+            Self::Nullable(inner) => match inner.as_ref() {
+                Self::Func(signature) => Some(signature),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     /// The immediate type arguments, including function parameters and results.
     #[must_use]
     pub fn contained_types(&self) -> Vec<&Type> {
@@ -459,7 +473,7 @@ impl Type {
             Type::Class(id) => matches!(classes.get(id.0), Some(HandleClass::Reference))
                 .then_some(HandleKind::ReferenceClass),
             Type::Nullable(inner) => match inner.handle_kind(classes) {
-                Some(HandleKind::Func) => Some(HandleKind::FuncBox),
+                Some(HandleKind::Func) => Some(HandleKind::NullableFunc),
                 Some(kind) => Some(kind),
                 None if matches!(
                     inner.as_ref(),
@@ -626,10 +640,12 @@ pub fn display_type(
             )
         }
         Type::Nullable(inner) => {
-            format!(
-                "{} | null",
-                display_type(inner, class_name, enum_name, string_alias_name)
-            )
+            let name = display_type(inner, class_name, enum_name, string_alias_name);
+            if matches!(inner.as_ref(), Type::Func(_)) {
+                format!("({name}) | null")
+            } else {
+                format!("{name} | null")
+            }
         }
         Type::Generator(y) => format!(
             "Generator<{}>",
@@ -856,7 +872,7 @@ mod tests {
             (function(), Some(HandleKind::Func)),
             (
                 Type::Nullable(Box::new(function())),
-                Some(HandleKind::FuncBox),
+                Some(HandleKind::NullableFunc),
             ),
             (
                 Type::Nullable(Box::new(Type::Class(ClassId(1)))),
@@ -898,7 +914,7 @@ mod tests {
             (HandleKind::Outbox, false, true, false, false, false),
             (HandleKind::Func, false, true, false, false, false),
             (HandleKind::ReferenceClass, true, true, true, true, true),
-            (HandleKind::FuncBox, true, true, false, true, true),
+            (HandleKind::NullableFunc, false, true, false, false, false),
             (HandleKind::BoundaryBox, true, true, false, true, true),
         ];
         for (kind, managed, nullable, identity, lifetime, contains) in cases {

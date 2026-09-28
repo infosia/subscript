@@ -524,6 +524,9 @@ impl Layouts {
 
     /// The runtime representation of a type.
     pub fn repr(&self, ty: &Type) -> Result<Repr, String> {
+        if ty.function_type().is_some() {
+            return Ok(Repr::Pair);
+        }
         Ok(match ty {
             Type::Void => Repr::None,
             Type::Bool => Repr::Scalar(types::I8),

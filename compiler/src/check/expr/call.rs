@@ -51,12 +51,8 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let name = id.sym.to_string();
         let ident_pos = self.pos(id.span);
-        if let Some(local) = self.lookup_local(&name, &ident_pos, fx) {
-            let callee = hir::Expr {
-                kind: ExprKind::Local(name),
-                ty: local.ty,
-                pos: ident_pos,
-            };
+        if self.lookup_local(&name, &ident_pos, fx).is_some() {
+            let callee = self.check_ident(id, None, fx);
             return self.check_indirect_call(callee, c, fx, pos);
         }
         let item = self.scope_item(&name);
@@ -101,17 +97,8 @@ impl<'p> Checker<'p> {
                     None => self.err_expr(pos),
                 }
             }
-            Some(ScopeItem::Global(g)) => {
-                let ty = self
-                    .global_sigs
-                    .get(&g)
-                    .map(|s| s.ty.clone())
-                    .unwrap_or(Type::Error);
-                let callee = hir::Expr {
-                    kind: ExprKind::Global(g),
-                    ty,
-                    pos: ident_pos,
-                };
+            Some(ScopeItem::Global(_)) => {
+                let callee = self.check_ident(id, None, fx);
                 self.check_indirect_call(callee, c, fx, pos)
             }
             Some(ScopeItem::Class(_)) | Some(ScopeItem::GenericClass(_)) => {

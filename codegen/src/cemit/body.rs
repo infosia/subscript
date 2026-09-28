@@ -205,7 +205,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     pub(super) fn is_function_value(&self, id: l::ValueId) -> Result<bool, String> {
         Ok(matches!(
             self.value_type(id)?,
-            l::ValueType::Data(Type::Func(_))
+            l::ValueType::Data(ty) if ty.function_type().is_some()
         ))
     }
 
@@ -370,7 +370,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         }
         if owns_closure_environments {
             for value in &self.function.values {
-                if matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
+                if matches!(&value.ty, l::ValueType::Data(ty) if ty.function_type().is_some()) {
                     members.push(format!("        SubEnvStorage env_v{};\n", value.id.0));
                 }
             }

@@ -177,6 +177,9 @@ impl<'m> Emitter<'m> {
     }
 
     fn type_tag(&self, ty: &Type) -> Result<String, String> {
+        if ty.function_type().is_some() {
+            return Ok("fn".into());
+        }
         Ok(match ty {
             Type::I8 => "i8".into(),
             Type::U8 => "u8".into(),
@@ -218,6 +221,9 @@ impl<'m> Emitter<'m> {
     }
 
     pub(super) fn ctype(&self, ty: &Type) -> Result<String, String> {
+        if ty.function_type().is_some() {
+            return Ok("SubFn".into());
+        }
         Ok(match ty {
             Type::I8 => "int8_t".into(),
             Type::U8 => "uint8_t".into(),
@@ -272,7 +278,7 @@ impl<'m> Emitter<'m> {
             ) if !matches!(ty, Type::Class(id) if !self.is_value_class(*id)?) => {
                 format!("({}){{0}}", self.ctype(ty)?)
             }
-            l::ValueType::Data(Type::Func(_)) => "(SubFn){0}".into(),
+            l::ValueType::Data(ty) if ty.function_type().is_some() => "(SubFn){0}".into(),
             _ => "0".into(),
         })
     }
@@ -598,7 +604,7 @@ impl<'m> Emitter<'m> {
         }
         if self.has_closure_environments() {
             for value in &function.values {
-                if matches!(value.ty, l::ValueType::Data(Type::Func(_))) {
+                if matches!(&value.ty, l::ValueType::Data(ty) if ty.function_type().is_some()) {
                     let _ = writeln!(out, "    SubEnvStorage env_v{};", value.id.0);
                 }
             }

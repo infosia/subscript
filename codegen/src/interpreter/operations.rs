@@ -157,6 +157,12 @@ impl Interpreter<'_> {
         right: &Value,
         ty: &Type,
     ) -> Result<bool, InterpretError> {
+        if matches!(
+            (left, right),
+            (Value::Callable(_), Value::Null) | (Value::Null, Value::Callable(_))
+        ) {
+            return Ok(false);
+        }
         Ok(match ty {
             Type::F32 => left.as_f64()? as f32 == right.as_f64()? as f32,
             Type::F64 => left.as_f64()? == right.as_f64()?,

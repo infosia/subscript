@@ -270,7 +270,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     pub(super) fn set_value(&mut self, id: l::ValueId, mut value: RV) -> Result<(), String> {
         let ty = self.value_type(id)?.clone();
         if self.closure_environment_layout.is_some()
-            && matches!(ty, l::ValueType::Data(Type::Func(_)))
+            && matches!(&ty, l::ValueType::Data(ty) if ty.function_type().is_some())
         {
             value = self.own_closure_environment(id, value)?;
         }
@@ -334,7 +334,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             (Type::Bool, l::ConstantKind::Boolean(value)) => {
                 RV::Scalar(self.iconst(types::I8, i64::from(*value)))
             }
-            (_, l::ConstantKind::Null) => RV::Scalar(self.iconst(types::I64, 0)),
+            (_, l::ConstantKind::Null) => self.zero(&constant.ty)?,
             (ty, l::ConstantKind::Integer(value)) => {
                 let Repr::Scalar(repr) = self.ml.layouts.repr(ty)? else {
                     return Err(internal(format!(
