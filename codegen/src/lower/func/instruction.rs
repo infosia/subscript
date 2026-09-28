@@ -269,8 +269,20 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     )?,
                 )
             }
-            l::InstructionKind::Cast | l::InstructionKind::Coerce => {
-                if matches!(
+            l::InstructionKind::Cast
+            | l::InstructionKind::Coerce
+            | l::InstructionKind::NarrowNonNull(_) => {
+                if matches!(result_ty, Some(l::ValueType::Address(_))) {
+                    let pointer = self.expect_scalar(
+                        *operands
+                            .first()
+                            .ok_or_else(|| internal("conversion operand is missing"))?,
+                    )?;
+                    for trap in &instruction.traps {
+                        self.emit_trap(trap, TrapOperand::Value(pointer))?;
+                    }
+                    Some(RV::Scalar(pointer))
+                } else if matches!(
                     (operand_types.first(), result_ty.as_ref()),
                     (
                         Some(l::ValueType::Data(Type::Nullable(source))),
@@ -283,6 +295,14 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                             .first()
                             .ok_or_else(|| internal("conversion operand is missing"))?,
                     )?;
+                    for trap in &instruction.traps {
+                        if matches!(
+                            trap.kind,
+                            l::TrapKind::NullNarrowing | l::TrapKind::SharedNullNarrowing
+                        ) {
+                            self.emit_trap(trap, TrapOperand::Value(pointer))?;
+                        }
+                    }
                     Some(
                         self.clone_value(
                             RV::Aggregate(pointer),

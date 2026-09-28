@@ -73,7 +73,7 @@ pub(crate) fn instanceof_narrowed_path(condition: &hir::Expr) -> Option<String> 
 
 fn local_expr(name: &str, ty: Type, pos: Pos) -> hir::Expr {
     hir::Expr {
-        kind: ExprKind::Local(name.to_string()),
+        kind: ExprKind::Local(name.to_string(), ty.clone()),
         ty,
         pos,
     }
@@ -386,19 +386,12 @@ impl Checker<'_> {
         let Some(handler) = &t.handler else {
             return false;
         };
+        let note_paths = fx.narrowing_note_paths();
         let base = fx.narrowed.clone();
         let (body, body_terminates) = self.check_block(&t.block.stmts, fx);
-        let mut assigned = HashSet::new();
-        for statement in &t.block.stmts {
-            super::stmt::assigned_roots_stmt(statement, &mut assigned);
-        }
-        // The handler starts after any prefix of the `try` block, so a
-        // fact that the block can change does not hold there.
-        fx.narrowed = base
-            .iter()
-            .filter(|key| !assigned.contains(super::stmt::root_of(key)))
-            .cloned()
-            .collect();
+        let mut effects = self.body_narrowing_effects(&body);
+        fx.narrowed = base.clone();
+        self.apply_narrowing_effects(&effects, fx);
         let binding = self.catch_binding(handler);
         let class = self.error_class;
         fx.scopes.push(Default::default());
@@ -417,14 +410,10 @@ impl Checker<'_> {
         }
         let (handler_body, handler_terminates) = self.check_block(&handler.body.stmts, fx);
         fx.scopes.pop();
-        for statement in &handler.body.stmts {
-            super::stmt::assigned_roots_stmt(statement, &mut assigned);
-        }
-        fx.narrowed = base
-            .iter()
-            .filter(|key| !assigned.contains(super::stmt::root_of(key)))
-            .cloned()
-            .collect();
+        effects.merge(self.body_narrowing_effects(&handler_body));
+        fx.narrowed = base;
+        self.apply_narrowing_effects(&effects, fx);
+        fx.finish_narrowing_join(&note_paths);
         out.push(hir::Stmt::Try {
             body,
             binding: binding.map(|(name, _)| (name, Type::Class(class))),
@@ -443,6 +432,7 @@ impl Checker<'_> {
         for statement in statements {
             terminates |= self.check_stmt(statement, fx, &mut body);
         }
+        self.end_scope_narrowing(&body, fx);
         fx.scopes.pop();
         (body, terminates)
     }

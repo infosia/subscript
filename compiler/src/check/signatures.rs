@@ -540,7 +540,7 @@ impl<'p> Checker<'p> {
                 pattern::Pattern::Rejected(rejection) => self.reject_pattern(rejection, fx),
                 _ if pattern.is_destructuring() => {
                     let source = hir::Expr {
-                        kind: hir::ExprKind::Local(signature.name.clone()),
+                        kind: hir::ExprKind::Local(signature.name.clone(), signature.ty.clone()),
                         ty: signature.ty.clone(),
                         pos: self.pos(pattern.span()),
                     };

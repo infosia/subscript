@@ -30,6 +30,10 @@ typedef struct subscript_rt_worker_message_descriptor {
     const uint64_t* string_slot_offsets;
 } subscript_rt_worker_message_descriptor;
 
+/* Null conversion trap kinds (compiler.md §124). */
+#define SUBSCRIPT_RT_TRAP_NULL_NARROWING 4u
+#define SUBSCRIPT_RT_TRAP_SHARED_NULL_NARROWING 31u
+
 /**
  * Host callback invoked when a subscript_rt_context records its first trap.
  *

@@ -63,7 +63,9 @@ pub fn trap_sources(trap: &Path, id: &str) -> Vec<SourceFile> {
     // `object | null` values through the generated host-boundary mirror.
     // Keep the mirror ambient (not a second checked module), exactly as
     // the accept-corpus interop entries do.
-    if sources[0].source.contains("SubCallbackInfo") || sources[0].source.contains("SubRequestInfo")
+    if sources[0].source.contains("SubCallbackInfo")
+        || sources[0].source.contains("SubRequestInfo")
+        || sources[0].source.contains("SGPUProbeBlendState")
     {
         let mirror = trap
             .parent()

@@ -483,6 +483,39 @@ No diagnostic reports this.
 
 Accept: `a184`, `a185`, `a188`. Reject: none — these shapes are legal.
 
+### C17. A narrowing of a shared location ends where other code can run
+
+`tsc` keeps a null-check narrowing across a call and across an `await`,
+so it accepts a read of a field or module global that the call set to
+`null`. This compiler ends the narrowing of a shared location (a module
+global, a static field, or a field of an object that another name can
+reach, including a boundary box) at every point where other code can
+run, and at a store to the same field through any receiver
+(`compiler.md` §124). A local binding keeps its narrowing: a lambda
+captures only `const` locals, by value. A field of a boundary box that a
+local holds is shared, because another name can hold the same box. The program narrows again after the call
+or copies the value to a `const` local first.
+
+The diagnostic is the one for an unnarrowed use: S011 for a member
+read, S100 for a call of a nullable function value.
+
+A read through a narrowed shared location also carries a runtime
+check (§124.1 rule 3d). Where the static rule does not see the code
+that clears the location (for example a getter that the checker calls
+inside a compound assignment), the program traps `null-narrowing` at
+the read. `node` reads `undefined` there and continues, so these trap
+entries are not JS-comparable: `t68`, `t69`, `t70`, `t71`, `t72`,
+`t73`, `t74`.
+
+Measured before the rule landed: 1 of 350 corpus sources and examples
+(`a137`, a module global read twice across a method call) became
+rejected. The owner chose on 2026-09-28 to keep the rule and copy the
+global to a `const` local in `a137`.
+
+Accept: `a274`, `a137`. Reject: `r252`, `r253`, `r254`, `r255`,
+`r256`, `r257`, `r258`, `r259`, `r260`, `r261`, `r262`, `r263`,
+`r265`, `r266`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different

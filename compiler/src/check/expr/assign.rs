@@ -68,7 +68,9 @@ impl<'p> Checker<'p> {
         };
         let place = self.check_assign_target(source, fx, &pos);
         #[cfg(test)]
-        place.record_kind();
+        if self.narrowing_analysis.is_some() {
+            place.record_kind();
+        }
         let target_ty = place.ty().clone();
         let value_ctx = if matches!(target_ty, Type::Error) {
             None
@@ -353,9 +355,9 @@ impl<'p> Checker<'p> {
         if op.is_none() && target_ty.carries_async_handle() {
             let origins = self.expr_async_origins(&value, fx);
             match &target.kind {
-                ExprKind::Local(name) => fx.set_local_async_origins(name, origins),
+                ExprKind::Local(name, _) => fx.set_local_async_origins(name, origins),
                 ExprKind::Index { obj, .. } => {
-                    if let ExprKind::Local(name) = &obj.kind {
+                    if let ExprKind::Local(name, _) = &obj.kind {
                         let mut stored = fx.local_async_origins(name);
                         stored.extend(origins);
                         fx.set_local_async_origins(name, stored);
@@ -364,13 +366,14 @@ impl<'p> Checker<'p> {
                 _ => {}
             }
         }
-        // C7: an assignment invalidates narrowing for the path and its
-        // extensions.
         if let Some(key) = path_key(&target) {
-            let prefix = format!("{}.", key);
-            fx.narrowed.retain(|k| k != &key && !k.starts_with(&prefix));
+            let prefix = format!("{key}.");
+            fx.ended_shared_narrowing
+                .retain(|path| path != &key && !path.starts_with(&prefix));
+            fx.narrowed
+                .retain(|path| path != &key && !path.starts_with(&prefix));
         }
-        hir::Expr {
+        let assigned = hir::Expr {
             kind: ExprKind::Assign {
                 op,
                 target: Box::new(target),
@@ -378,7 +381,9 @@ impl<'p> Checker<'p> {
             },
             ty: result_ty,
             pos,
-        }
+        };
+        self.end_shared_narrowing(&assigned, fx);
+        assigned
     }
 
     pub(super) fn check_assign_target(
@@ -400,7 +405,7 @@ impl<'p> Checker<'p> {
                         );
                     }
                     return Place::Local(hir::Expr {
-                        kind: ExprKind::Local(name),
+                        kind: ExprKind::Local(name, local.ty.clone()),
                         ty: local.ty,
                         pos: ident_pos,
                     });

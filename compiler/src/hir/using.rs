@@ -48,7 +48,14 @@ impl UsingBinding {
     pub fn hook(&self) -> Stmt {
         let pos = &self.pos;
         let local = |name: &str, ty: Type| Expr {
-            kind: ExprKind::Local(name.to_string()),
+            kind: ExprKind::Local(
+                name.to_string(),
+                if name == self.name {
+                    self.ty.clone()
+                } else {
+                    ty.clone()
+                },
+            ),
             ty,
             pos: pos.clone(),
         };
@@ -128,7 +135,10 @@ mod tests {
         assert!(!binding.nullable());
         let hook = binding.hook();
         let receiver = call_receiver(&hook);
-        assert_eq!(receiver.kind, ExprKind::Local("r".to_string()));
+        assert_eq!(
+            receiver.kind,
+            ExprKind::Local("r".to_string(), binding.ty.clone())
+        );
         assert_eq!(receiver.ty, Type::Class(ClassId(1)));
     }
 
@@ -152,7 +162,7 @@ mod tests {
         else {
             panic!("the active-flag guard");
         };
-        assert_eq!(flag.kind, ExprKind::Local("active".to_string()));
+        assert_eq!(flag.kind, ExprKind::Local("active".to_string(), Type::Bool));
         let [Stmt::If {
             cond: null_test,
             then: call,

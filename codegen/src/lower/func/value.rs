@@ -526,7 +526,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     self.emit_lifetime_traps(std::slice::from_ref(trap), operands)?
                 }
                 // Preserve narrowing and lifetime site order (compiler.md §20.2 and §120.1 rule 2).
-                l::TrapKind::NullNarrowing => {
+                l::TrapKind::NullNarrowing | l::TrapKind::SharedNullNarrowing => {
                     let value = *operands
                         .first()
                         .ok_or_else(|| internal("narrowing operand is missing"))?;
@@ -631,7 +631,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                     return Err(internal("index trap received no index/length payload"))
                 }
             },
-            l::TrapKind::NullNarrowing => {
+            l::TrapKind::NullNarrowing | l::TrapKind::SharedNullNarrowing => {
                 let pointer = value.ok_or_else(|| internal("null trap has no pointer"))?;
                 let nonnull = self.builder.ins().icmp_imm(IntCC::NotEqual, pointer, 0);
                 self.guard(nonnull, direct_kind()?, &trap.pos)?;

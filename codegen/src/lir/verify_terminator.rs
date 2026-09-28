@@ -13,6 +13,21 @@ pub(super) fn verify_terminator_types(
     block: &l::BasicBlock,
     errors: &mut Vec<VerifyError>,
 ) {
+    let traps = match &block.terminator {
+        l::Terminator::Trap(trap) => std::slice::from_ref(trap),
+        l::Terminator::Suspend { traps, .. } => traps.as_slice(),
+        _ => &[],
+    };
+    for trap in traps {
+        let message = match trap.kind {
+            l::TrapKind::SharedNullNarrowing => {
+                "shared null narrowing requires a nullable-to-value conversion"
+            }
+            l::TrapKind::NullNarrowing => "as null narrowing requires a checked cast",
+            _ => continue,
+        };
+        errors.push(finding(function, message));
+    }
     if !matches!(block.terminator, l::Terminator::Suspend { .. }) {
         for target in block.terminator.targets() {
             verify_edge(function, block, &target, errors);

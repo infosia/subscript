@@ -73,7 +73,10 @@ fn signed_index_traps_keep_kind_message_and_position() {
         let Err(InterpretError::Execution { source, .. }) = interpret(&lir) else {
             panic!("expected interpreter trap");
         };
-        let InterpretError::Trap { kind, pos, message } = *source else {
+        let InterpretError::Trap {
+            kind, pos, message, ..
+        } = *source
+        else {
             panic!("expected interpreter trap detail");
         };
         assert_eq!(kind, jit.rule.rule());

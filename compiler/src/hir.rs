@@ -8,8 +8,11 @@
 
 mod collections;
 mod definitions;
+mod effects;
 mod expression;
+pub(crate) use effects::NarrowingEffects;
 mod intrinsics;
+mod shared;
 mod sites;
 mod text;
 pub use crate::lifetime::LifetimeOperand;
@@ -1596,8 +1599,8 @@ pub enum ExprKind {
     Null,
     /// `this` inside a constructor or method.
     This,
-    /// Reference to a local (parameter or `let`/`const` binding).
-    Local(String),
+    /// Local name and declared storage type (compiler.md §124).
+    Local(String, Type),
     /// Reference to a module-level variable.
     Global(String),
     /// A named function used as a value (non-capturing — C5).

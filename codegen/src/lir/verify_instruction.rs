@@ -30,7 +30,32 @@ pub(super) fn verify_instruction_contract(
             ),
         ));
     };
+    let nullable_conversion = super::verify_narrowing::is_conversion(&instruction.kind)
+        && match (operand_types.as_slice(), result_type.as_ref()) {
+            ([l::ValueType::Data(Type::Nullable(source))], Some(l::ValueType::Data(target))) => {
+                source.as_ref() == target
+            }
+            (
+                [l::ValueType::Data(Type::Nullable(source))],
+                Some(l::ValueType::Address(address)),
+            ) => {
+                source.as_ref() == &address.pointee
+                    && address.array_base.is_none()
+                    && matches!(&address.pointee, Type::Class(id) if module.classes.get(id.0)
+                .is_some_and(|class| class.is_value && class.is_boundary))
+            }
+            _ => false,
+        };
     for trap in &instruction.traps {
+        if trap.kind == l::TrapKind::SharedNullNarrowing
+            && !(instruction.kind == l::InstructionKind::NarrowNonNull(l::NarrowOrigin::SharedRead)
+                && nullable_conversion)
+        {
+            bad(
+                "shared null narrowing requires NarrowNonNull(SharedRead)",
+                errors,
+            );
+        }
         if let l::TrapKind::DevOnlyLifetime(index) | l::TrapKind::DevOnlyRelease(index) = trap.kind
         {
             if index >= instruction.operands.len() {
@@ -90,6 +115,14 @@ pub(super) fn verify_instruction_contract(
         l::InstructionKind::Copy => {
             if operand_types.len() != 1 || result_type.as_ref() != operand_types.first() {
                 bad("copy input/result types do not match", errors);
+            }
+        }
+        l::InstructionKind::NarrowNonNull(_) => {
+            if instruction.operands.len() != 1 || !nullable_conversion {
+                bad(
+                    "NarrowNonNull requires a nullable-to-value conversion",
+                    errors,
+                );
             }
         }
         l::InstructionKind::Coerce => {

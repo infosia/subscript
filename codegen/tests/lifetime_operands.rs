@@ -52,7 +52,12 @@ fn check_case(
     assert_eq!(output, stdout, "{name}: interpreter");
     match (error, trap) {
         (None, None) => {}
-        (Some(InterpretError::Trap { kind, pos, message }), Some((expected, line, col))) => {
+        (
+            Some(InterpretError::Trap {
+                kind, pos, message, ..
+            }),
+            Some((expected, line, col)),
+        ) => {
             assert_eq!(kind, expected, "{name}: interpreter");
             assert_eq!((pos.line, pos.col), (line, col), "{name}: interpreter");
             if expected == "double-delete" {

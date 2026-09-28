@@ -209,7 +209,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::InstructionKind::Binary(operator) => {
                 self.emit_binary(out, instruction, *operator, &operands, &operand_types)
             }
-            l::InstructionKind::Cast | l::InstructionKind::Coerce => {
+            l::InstructionKind::Cast
+            | l::InstructionKind::Coerce
+            | l::InstructionKind::NarrowNonNull(_) => {
                 self.emit_conversion(out, instruction, &operands[0], &operand_types[0])
             }
             l::InstructionKind::AllocateClass(class) => {

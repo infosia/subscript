@@ -15,6 +15,7 @@ pub(super) fn verify_function(
     verify_counted_stores(function, errors);
     verify_raise_edges(module, function, errors);
     verify_dominance(function, errors);
+    super::verify_narrowing::verify_narrowing(function, errors);
     verify_address_invalidation(function, errors);
 }
 

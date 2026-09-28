@@ -3,7 +3,6 @@
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::check::stmt::narrow_paths;
 use crate::check::{static_member_symbol, Checker, FnCtx};
 use crate::diag::{Pos, RuleCode};
 use crate::divergence::Divergence;
@@ -146,7 +145,7 @@ impl<'p> Checker<'p> {
             pos: pos.clone(),
         });
         hir::Expr {
-            kind: ExprKind::Local(name),
+            kind: ExprKind::Local(name, ty.clone()),
             ty,
             pos,
         }
@@ -623,6 +622,7 @@ impl<'p> Checker<'p> {
                             self.pos(call.span),
                         );
                         index += 2;
+                        self.end_shared_narrowing(&current, fx);
                         ends_in_call = true;
                         continue;
                     }
@@ -646,6 +646,7 @@ impl<'p> Checker<'p> {
                     }
                     let call = opt_call_as_call(call);
                     current = self.check_indirect_call(current, &call, fx, self.pos(call.span));
+                    self.end_shared_narrowing(&current, fx);
                     index += 1;
                     ends_in_call = true;
                 }
@@ -825,7 +826,7 @@ impl<'p> Checker<'p> {
             pos: pos.clone(),
         });
         let target = hir::Expr {
-            kind: ExprKind::Local(name.clone()),
+            kind: ExprKind::Local(name.clone(), nullable.clone()),
             ty: nullable.clone(),
             pos: pos.clone(),
         };
@@ -835,11 +836,11 @@ impl<'p> Checker<'p> {
                 target: Box::new(target),
                 value: Box::new(operand),
             },
-            ty: nullable,
+            ty: nullable.clone(),
             pos: pos.clone(),
         };
         let value = hir::Expr {
-            kind: ExprKind::Local(name),
+            kind: ExprKind::Local(name, nullable),
             ty: inner,
             pos: pos.clone(),
         };
@@ -1044,13 +1045,8 @@ impl<'p> Checker<'p> {
                     B::RShift => BinOp::Shr,
                     _ => BinOp::UShr,
                 };
-                if lt.is_integer() && lt == rt {
+                if lt.is_integer() && (lt == rt || use_kind == BinUse::CompoundAssignment) {
                     (hop, lt.clone(), true)
-                } else if use_kind == BinUse::CompoundAssignment && lt.is_integer() {
-                    (hop, lt.clone(), true)
-                } else if lt.is_integer() && rt.is_integer() {
-                    // Q18: mixed-width bitwise requires `as`.
-                    (hop, Type::Error, suppress_error)
                 } else {
                     (hop, Type::Error, suppress_error)
                 }
@@ -1144,18 +1140,20 @@ impl<'p> Checker<'p> {
                 cond.pos.clone(),
             );
         }
-        let (then_extra, else_extra) = narrow_paths(&cond);
+        let note_paths = fx.narrowing_note_paths();
+        let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
         let mut base = fx.narrowed.clone();
 
         fx.narrowed = base.iter().cloned().chain(then_extra.clone()).collect();
         let then = self.check_expr(&c.cons, ctx, fx);
         // Keep kills: facts removed inside the arm stay removed.
-        base.retain(|key| fx.narrowed.contains(key) || then_extra.contains(key));
+        base.retain(|key| fx.narrowed.contains(key));
 
         fx.narrowed = base.iter().cloned().chain(else_extra.clone()).collect();
         let els = self.check_expr(&c.alt, ctx, fx);
-        base.retain(|key| fx.narrowed.contains(key) || else_extra.contains(key));
+        base.retain(|key| fx.narrowed.contains(key));
         fx.narrowed = base;
+        fx.finish_narrowing_join(&note_paths);
 
         let ty = if let Some(context) = ctx {
             self.require_assignable(

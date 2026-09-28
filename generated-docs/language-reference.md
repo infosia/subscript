@@ -444,6 +444,12 @@ function mutate(bag: Bag, x: f32): void {
 
 ## Feature guide
 
+### Shared-location narrowing
+
+A narrowed field or module global carries a runtime null check. A null read traps with `null-narrowing` and message `a narrowed shared location is null`. Its runtime kind is `SharedNullNarrowing` (31). Checked `as` narrowing keeps `NullNarrowing` (4) and message `` `as` narrowing applied to null ``. A narrowed local has no shared-read check.
+
+Corpus: [`corpus/accept/a274-narrow-again-after-a-call.ts`](../corpus/accept/a274-narrow-again-after-a-call.ts), [`corpus/trap/t72-narrowing-boundary-getter.ts`](../corpus/trap/t72-narrowing-boundary-getter.ts).
+
 ### String constants
 
 String literals and static template parts have no language byte limit. Ordinary allocation and runtime string limits still apply. The ship tier uses C literals through 65,000 decoded UTF-8 bytes and file-scope static byte arrays above that threshold. String-alias members use the same data representation. Static addresses and decoded lengths preserve Context-owned literal interning, collection roots, and traps.

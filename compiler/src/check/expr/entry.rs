@@ -50,7 +50,7 @@ impl<'p> Checker<'p> {
         match &expr.kind {
             K::AsyncHandleCreate { origin, .. } => HashSet::from([*origin]),
             K::AsyncHandleTransfer { origin, .. } => HashSet::from([*origin]),
-            K::Local(name) => fx.local_async_origins(name),
+            K::Local(name, _) => fx.local_async_origins(name),
             K::ArrayLit(elements) => elements
                 .iter()
                 .flat_map(|element| self.expr_async_origins(element, fx))
@@ -312,6 +312,7 @@ impl<'p> Checker<'p> {
                 self.err_expr(p)
             }
         };
+        self.end_shared_narrowing(&checked, fx);
         if !allow_embedded_header_receiver {
             self.reject_embedded_header_copy(&mut checked, ctx);
         }
@@ -395,6 +396,7 @@ impl<'p> Checker<'p> {
                     if ident.sym.as_ref() == "unreachable" {
                         let pos = self.pos(call.span);
                         let checked = self.check_named_call(ident, call, fx, pos, true);
+                        self.end_shared_narrowing(&checked, fx);
                         return vec![hir::Stmt::Expr(checked)];
                     }
                 }
@@ -407,6 +409,7 @@ impl<'p> Checker<'p> {
         if let ast::Expr::Assign(assign) = root {
             let checked =
                 self.check_assign(assign, fx, self.pos(root.span()), true, Some(&mut prefix));
+            self.end_shared_narrowing(&checked, fx);
             let mut out = Vec::new();
             out.extend(prefix);
             out.push(hir::Stmt::Expr(checked));
@@ -415,6 +418,7 @@ impl<'p> Checker<'p> {
         if let ast::Expr::Update(update) = root {
             let checked =
                 self.check_update(update, fx, self.pos(root.span()), true, Some(&mut prefix));
+            self.end_shared_narrowing(&checked, fx);
             let mut out = Vec::new();
             out.extend(prefix);
             out.push(hir::Stmt::Expr(checked));

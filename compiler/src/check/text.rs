@@ -30,7 +30,7 @@ fn call(function: TextFn, args: Vec<hir::Expr>, pos: &Pos) -> hir::Expr {
 
 fn local(name: &str, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
-        kind: ExprKind::Local(name.into()),
+        kind: ExprKind::Local(name.into(), ty.clone()),
         ty,
         pos: pos.clone(),
     }

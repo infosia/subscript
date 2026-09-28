@@ -142,7 +142,7 @@ impl<'a> Analysis<'a> {
     }
     fn expr(&mut self, e: &'a Expr, env: &Env) {
         match &e.kind {
-            E::Local(name) => {
+            E::Local(name, _) => {
                 if let Some(id) = env.get(name) {
                     self.bindings.insert(e as *const Expr as usize, *id);
                 }
@@ -166,7 +166,7 @@ impl<'a> Analysis<'a> {
                 return;
             }
             E::Assign { target, value, .. } => match &target.kind {
-                E::Local(name) => {
+                E::Local(name, _) => {
                     if let Some(id) = env.get(name) {
                         self.equations.push((*id, value));
                     }
@@ -372,7 +372,7 @@ impl<'a> Analysis<'a> {
             E::Null | E::Zero | E::FuncRef(_) | E::Global(_) | E::This | E::AsyncHandleAwait(_) => {
                 false
             }
-            E::Local(_) => self
+            E::Local(..) => self
                 .bindings
                 .get(&(e as *const Expr as usize))
                 .map_or(!self.infer, |id| self.facts[*id]),
@@ -560,7 +560,7 @@ fn record_child(child: hir::HirChildMut<'_>, escaping: &HashSet<usize>) {
 
 fn value_name(module: &hir::Module, expr: &Expr) -> String {
     match &expr.kind {
-        E::Local(name) | E::Global(name) => format!("value `{name}`"),
+        E::Local(name, _) | E::Global(name) => format!("value `{name}`"),
         E::Lambda { captures, .. } => format!(
             "lambda capturing {}",
             captures

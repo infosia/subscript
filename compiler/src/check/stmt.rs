@@ -115,7 +115,7 @@ fn stmt_returns(s: &hir::Stmt) -> bool {
         }
         hir::Stmt::While { cond, body, .. } => is_true_literal(cond) && !contains_break(body),
         hir::Stmt::For { cond, body, .. } => {
-            cond.as_ref().map_or(true, is_true_literal) && !contains_break(body)
+            cond.as_ref().is_none_or(is_true_literal) && !contains_break(body)
         }
         _ => false,
     }
@@ -174,265 +174,6 @@ fn insert_for_step_before_continues(statements: &mut [hir::Stmt], step: &[hir::S
     }
 }
 
-/// Collects root names assigned anywhere in a statement (used to drop
-/// narrowing facts across loop iterations).
-pub(super) fn assigned_roots_stmt(s: &ast::Stmt, out: &mut HashSet<String>) {
-    match s {
-        ast::Stmt::Block(b) => {
-            for s in &b.stmts {
-                assigned_roots_stmt(s, out);
-            }
-        }
-        ast::Stmt::If(i) => {
-            assigned_roots_expr(&i.test, out);
-            assigned_roots_stmt(&i.cons, out);
-            if let Some(alt) = &i.alt {
-                assigned_roots_stmt(alt, out);
-            }
-        }
-        ast::Stmt::While(w) => {
-            assigned_roots_expr(&w.test, out);
-            assigned_roots_stmt(&w.body, out);
-        }
-        ast::Stmt::For(f) => {
-            match &f.init {
-                Some(ast::VarDeclOrExpr::Expr(e)) => assigned_roots_expr(e, out),
-                Some(ast::VarDeclOrExpr::VarDecl(v)) => {
-                    for d in &v.decls {
-                        if let Some(init) = &d.init {
-                            assigned_roots_expr(init, out);
-                        }
-                    }
-                }
-                None => {}
-            }
-            if let Some(test) = &f.test {
-                assigned_roots_expr(test, out);
-            }
-            if let Some(update) = &f.update {
-                assigned_roots_expr(update, out);
-            }
-            assigned_roots_stmt(&f.body, out);
-        }
-        ast::Stmt::ForOf(f) => {
-            assigned_roots_expr(&f.right, out);
-            assigned_roots_stmt(&f.body, out);
-        }
-        ast::Stmt::Switch(sw) => {
-            assigned_roots_expr(&sw.discriminant, out);
-            for case in &sw.cases {
-                for s in &case.cons {
-                    assigned_roots_stmt(s, out);
-                }
-            }
-        }
-        ast::Stmt::Return(r) => {
-            if let Some(arg) = &r.arg {
-                assigned_roots_expr(arg, out);
-            }
-        }
-        ast::Stmt::Expr(e) => assigned_roots_expr(&e.expr, out),
-        ast::Stmt::Decl(ast::Decl::Var(v)) => {
-            for d in &v.decls {
-                if let Some(init) = &d.init {
-                    assigned_roots_expr(init, out);
-                }
-            }
-        }
-        ast::Stmt::Throw(t) => assigned_roots_expr(&t.arg, out),
-        _ => {}
-    }
-}
-
-trait AstExprChildren {
-    fn children(&self) -> Vec<&ast::Expr>;
-}
-
-impl AstExprChildren for ast::Expr {
-    fn children(&self) -> Vec<&ast::Expr> {
-        match self {
-            ast::Expr::Array(array) => array
-                .elems
-                .iter()
-                .flatten()
-                .map(|element| element.expr.as_ref())
-                .collect(),
-            ast::Expr::Object(object) => object
-                .props
-                .iter()
-                .flat_map(|property| match property {
-                    ast::PropOrSpread::Spread(spread) => vec![spread.expr.as_ref()],
-                    ast::PropOrSpread::Prop(property) => match property.as_ref() {
-                        ast::Prop::KeyValue(property) => vec![property.value.as_ref()],
-                        ast::Prop::Assign(property) => vec![property.value.as_ref()],
-                        ast::Prop::Shorthand(_)
-                        | ast::Prop::Getter(_)
-                        | ast::Prop::Setter(_)
-                        | ast::Prop::Method(_) => Vec::new(),
-                    },
-                })
-                .collect(),
-            ast::Expr::Unary(unary) => vec![&unary.arg],
-            ast::Expr::Update(update) => vec![&update.arg],
-            ast::Expr::Bin(binary) => vec![&binary.left, &binary.right],
-            ast::Expr::Assign(assign) => {
-                let mut children = Vec::with_capacity(2);
-                match &assign.left {
-                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(member)) => {
-                        children.push(member.obj.as_ref());
-                        if let ast::MemberProp::Computed(property) = &member.prop {
-                            children.push(property.expr.as_ref());
-                        }
-                    }
-                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::Paren(paren)) => {
-                        children.push(paren.expr.as_ref());
-                    }
-                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::TsAs(as_expr)) => {
-                        children.push(as_expr.expr.as_ref());
-                    }
-                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::TsSatisfies(satisfies)) => {
-                        children.push(satisfies.expr.as_ref());
-                    }
-                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::TsNonNull(non_null)) => {
-                        children.push(non_null.expr.as_ref());
-                    }
-                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::TsTypeAssertion(
-                        assertion,
-                    )) => {
-                        children.push(assertion.expr.as_ref());
-                    }
-                    ast::AssignTarget::Simple(ast::SimpleAssignTarget::TsInstantiation(
-                        instance,
-                    )) => {
-                        children.push(instance.expr.as_ref());
-                    }
-                    _ => {}
-                }
-                children.push(assign.right.as_ref());
-                children
-            }
-            ast::Expr::Member(member) => {
-                let mut children = vec![member.obj.as_ref()];
-                if let ast::MemberProp::Computed(property) = &member.prop {
-                    children.push(property.expr.as_ref());
-                }
-                children
-            }
-            ast::Expr::SuperProp(property) => match &property.prop {
-                ast::SuperProp::Computed(property) => vec![property.expr.as_ref()],
-                ast::SuperProp::Ident(_) => Vec::new(),
-            },
-            ast::Expr::Cond(cond) => vec![&cond.test, &cond.cons, &cond.alt],
-            ast::Expr::Call(call) => {
-                let mut children = Vec::with_capacity(call.args.len() + 1);
-                if let ast::Callee::Expr(callee) = &call.callee {
-                    children.push(callee.as_ref());
-                }
-                children.extend(call.args.iter().map(|argument| argument.expr.as_ref()));
-                children
-            }
-            ast::Expr::New(new) => {
-                let mut children = vec![new.callee.as_ref()];
-                children.extend(
-                    new.args
-                        .iter()
-                        .flatten()
-                        .map(|argument| argument.expr.as_ref()),
-                );
-                children
-            }
-            ast::Expr::Seq(sequence) => sequence.exprs.iter().map(Box::as_ref).collect(),
-            ast::Expr::Tpl(template) => template.exprs.iter().map(Box::as_ref).collect(),
-            ast::Expr::TaggedTpl(template) => std::iter::once(template.tag.as_ref())
-                .chain(template.tpl.exprs.iter().map(Box::as_ref))
-                .collect(),
-            ast::Expr::Arrow(arrow) => match arrow.body.as_ref() {
-                ast::BlockStmtOrExpr::Expr(expr) => vec![expr],
-                ast::BlockStmtOrExpr::BlockStmt(_) => Vec::new(),
-            },
-            ast::Expr::Yield(yield_expr) => yield_expr.arg.iter().map(Box::as_ref).collect(),
-            ast::Expr::Await(await_expr) => vec![&await_expr.arg],
-            ast::Expr::Paren(paren) => vec![&paren.expr],
-            ast::Expr::TsTypeAssertion(assertion) => vec![&assertion.expr],
-            ast::Expr::TsConstAssertion(assertion) => vec![&assertion.expr],
-            ast::Expr::TsNonNull(non_null) => vec![&non_null.expr],
-            ast::Expr::TsAs(as_expr) => vec![&as_expr.expr],
-            ast::Expr::TsInstantiation(instance) => vec![&instance.expr],
-            ast::Expr::TsSatisfies(satisfies) => vec![&satisfies.expr],
-            ast::Expr::OptChain(chain) => match chain.base.as_ref() {
-                ast::OptChainBase::Member(member) => {
-                    let mut children = vec![member.obj.as_ref()];
-                    if let ast::MemberProp::Computed(property) = &member.prop {
-                        children.push(property.expr.as_ref());
-                    }
-                    children
-                }
-                ast::OptChainBase::Call(call) => std::iter::once(call.callee.as_ref())
-                    .chain(call.args.iter().map(|argument| argument.expr.as_ref()))
-                    .collect(),
-            },
-            ast::Expr::This(_)
-            | ast::Expr::Fn(_)
-            | ast::Expr::Ident(_)
-            | ast::Expr::Lit(_)
-            | ast::Expr::Class(_)
-            | ast::Expr::MetaProp(_)
-            | ast::Expr::JSXMember(_)
-            | ast::Expr::JSXNamespacedName(_)
-            | ast::Expr::JSXEmpty(_)
-            | ast::Expr::JSXElement(_)
-            | ast::Expr::JSXFragment(_)
-            | ast::Expr::PrivateName(_)
-            | ast::Expr::Invalid(_) => Vec::new(),
-        }
-    }
-}
-
-fn assigned_roots_expr(e: &ast::Expr, out: &mut HashSet<String>) {
-    match e {
-        ast::Expr::Assign(a) => match &a.left {
-            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Ident(binding)) => {
-                out.insert(binding.id.sym.to_string());
-            }
-            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(m)) => {
-                if let Some(root) = member_root(m) {
-                    out.insert(root);
-                }
-            }
-            _ => {}
-        },
-        ast::Expr::Update(u) => {
-            if let ast::Expr::Ident(id) = &*u.arg {
-                out.insert(id.sym.to_string());
-            }
-        }
-        ast::Expr::Arrow(arrow) => {
-            if let ast::BlockStmtOrExpr::BlockStmt(block) = arrow.body.as_ref() {
-                for statement in &block.stmts {
-                    assigned_roots_stmt(statement, out);
-                }
-            }
-        }
-        _ => {}
-    }
-    for child in e.children() {
-        assigned_roots_expr(child, out);
-    }
-}
-
-fn member_root(m: &ast::MemberExpr) -> Option<String> {
-    let mut obj: &ast::Expr = &m.obj;
-    loop {
-        match obj {
-            ast::Expr::Ident(id) => return Some(id.sym.to_string()),
-            ast::Expr::Member(inner) => obj = &inner.obj,
-            ast::Expr::Paren(p) => obj = &p.expr,
-            ast::Expr::This(_) => return Some("this".to_string()),
-            _ => return None,
-        }
-    }
-}
-
 impl<'p> Checker<'p> {
     /// Checks one statement into `out`. Returns true when the statement
     /// always terminates the enclosing flow (return/break/continue).
@@ -442,6 +183,8 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
+        fx.ended_shared_narrowing
+            .retain(|key| !fx.narrowed.contains(key));
         let start = out.len();
         let (terminates, prefix) = fx.with_synthetic_owner(
             super::SyntheticOwnerKind::Statement(self.pos(s.span())),
@@ -505,6 +248,11 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                     }
+                    if let Some((depth, edges)) = fx.switch_break_facts.last_mut() {
+                        if *depth == fx.loop_depth {
+                            edges.push(fx.narrowed.clone());
+                        }
+                    }
                     out.push(hir::Stmt::Break(pos));
                     true
                 }
@@ -531,6 +279,7 @@ impl<'p> Checker<'p> {
                     for s in &b.stmts {
                         terminates |= self.check_stmt(s, fx, &mut inner);
                     }
+                    self.end_scope_narrowing(&inner, fx);
                     fx.scopes.pop();
                     out.push(hir::Stmt::Block(inner));
                     terminates
@@ -797,6 +546,7 @@ impl<'p> Checker<'p> {
             }
             single => self.check_stmt(single, fx, &mut out),
         };
+        self.end_scope_narrowing(&out, fx);
         fx.scopes.pop();
         (out, terminates)
     }
@@ -805,20 +555,28 @@ impl<'p> Checker<'p> {
         let pos = self.pos(i.span);
         let cond = self.check_expr(&i.test, None, fx);
         self.require_bool(&cond);
-        let (then_extra, else_extra) = narrow_paths(&cond);
+        let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
 
         let mut base = fx.narrowed.clone();
+        let note_paths: HashSet<_> = base.union(&fx.ended_shared_narrowing).cloned().collect();
 
         fx.narrowed = base.iter().cloned().chain(then_extra.clone()).collect();
         let (then_stmts, then_term) = self.check_branch(&i.cons, fx);
-        // Keep kills: facts removed inside the branch stay removed.
-        base.retain(|k| fx.narrowed.contains(k) || then_extra.contains(k));
+        // compiler.md §124: a branch cannot restore a fact that a call ended.
+        let then_facts = fx.narrowed.clone();
+        base.retain(|k| fx.narrowed.contains(k));
 
+        let mut else_facts = base
+            .iter()
+            .cloned()
+            .chain(else_extra.clone())
+            .collect::<HashSet<_>>();
         let (els_stmts, else_term) = match &i.alt {
             Some(alt) => {
                 fx.narrowed = base.iter().cloned().chain(else_extra.clone()).collect();
                 let (stmts, term) = self.check_branch(alt, fx);
-                base.retain(|k| fx.narrowed.contains(k) || else_extra.contains(k));
+                else_facts = fx.narrowed.clone();
+                base.retain(|k| fx.narrowed.contains(k));
                 (Some(stmts), term)
             }
             None => (None, false),
@@ -829,19 +587,33 @@ impl<'p> Checker<'p> {
         match &i.alt {
             Some(_) => {
                 if then_term {
-                    fx.narrowed.extend(else_extra);
+                    fx.narrowed.extend(
+                        else_extra
+                            .into_iter()
+                            .filter(|key| else_facts.contains(key)),
+                    );
                 }
                 if else_term {
-                    fx.narrowed.extend(then_extra);
+                    fx.narrowed.extend(
+                        then_extra
+                            .into_iter()
+                            .filter(|key| then_facts.contains(key)),
+                    );
                 }
             }
             None => {
                 if then_term {
-                    fx.narrowed.extend(else_extra);
+                    fx.narrowed.extend(
+                        else_extra
+                            .into_iter()
+                            .filter(|key| else_facts.contains(key)),
+                    );
                 }
             }
         }
 
+        fx.ended_shared_narrowing
+            .retain(|key| note_paths.contains(key) && !fx.narrowed.contains(key));
         out.push(hir::Stmt::If {
             cond,
             then: then_stmts,
@@ -853,25 +625,22 @@ impl<'p> Checker<'p> {
 
     fn check_while(&mut self, w: &ast::WhileStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(w.span);
-        // Facts about names reassigned in the loop do not survive
-        // iteration boundaries.
-        let mut roots = HashSet::new();
-        assigned_roots_expr(&w.test, &mut roots);
-        assigned_roots_stmt(&w.body, &mut roots);
-        fx.narrowed.retain(|k| !roots.contains(root_of(k)));
+        let note_paths = fx.narrowing_note_paths();
+        self.end_loop_narrowing(&pos, fx);
 
         let cond = self.check_expr(&w.test, None, fx);
         self.require_bool(&cond);
-        let (then_extra, _) = narrow_paths(&cond);
+        let (then_extra, _) = self.narrowing_paths(&cond, fx);
 
         let mut base = fx.narrowed.clone();
         fx.narrowed.extend(then_extra.clone());
         fx.loop_depth += 1;
         let (body, _) = self.check_branch(&w.body, fx);
         fx.loop_depth -= 1;
-        base.retain(|k| fx.narrowed.contains(k) || then_extra.contains(k));
+        base.retain(|k| fx.narrowed.contains(k));
         fx.narrowed = base;
 
+        fx.finish_narrowing_join(&note_paths);
         out.push(hir::Stmt::While { cond, body, pos });
     }
 
@@ -906,15 +675,8 @@ impl<'p> Checker<'p> {
             None => None,
         };
 
-        let mut roots = HashSet::new();
-        if let Some(test) = &f.test {
-            assigned_roots_expr(test, &mut roots);
-        }
-        if let Some(update) = &f.update {
-            assigned_roots_expr(update, &mut roots);
-        }
-        assigned_roots_stmt(&f.body, &mut roots);
-        fx.narrowed.retain(|k| !roots.contains(root_of(k)));
+        let note_paths = fx.narrowing_note_paths();
+        self.end_loop_narrowing(&pos, fx);
 
         let (cond, cond_prefix) = match &f.test {
             Some(test) => {
@@ -930,7 +692,10 @@ impl<'p> Checker<'p> {
             }
             None => (None, super::SyntheticPrefix::default()),
         };
-        let then_extra = cond.as_ref().map(|c| narrow_paths(c).0).unwrap_or_default();
+        let then_extra = cond
+            .as_ref()
+            .map(|c| self.narrowing_paths(c, fx).0)
+            .unwrap_or_default();
 
         let mut base = fx.narrowed.clone();
         fx.narrowed.extend(then_extra.clone());
@@ -946,10 +711,11 @@ impl<'p> Checker<'p> {
             step
         });
         fx.loop_depth -= 1;
-        base.retain(|k| fx.narrowed.contains(k) || then_extra.contains(k));
+        base.retain(|k| fx.narrowed.contains(k));
         fx.narrowed = base;
         fx.scopes.pop();
 
+        fx.finish_narrowing_join(&note_paths);
         let step = step_statements.as_deref().and_then(|statements| {
             let [hir::Stmt::Expr(expression)] = statements else {
                 return None;
@@ -1048,11 +814,10 @@ impl<'p> Checker<'p> {
             );
         }
 
-        let mut roots = HashSet::new();
-        assigned_roots_expr(&f.right, &mut roots);
-        assigned_roots_stmt(&f.body, &mut roots);
-        fx.narrowed.retain(|k| !roots.contains(root_of(k)));
+        let note_paths = fx.narrowing_note_paths();
+        self.end_loop_narrowing(&pos, fx);
 
+        let base = fx.narrowed.clone();
         let binding_async_origins = self.expr_async_origins(&subject, fx);
         fx.scopes.push(Default::default());
         // A pattern binds the element into checker-generated storage and
@@ -1068,7 +833,7 @@ impl<'p> Checker<'p> {
         let mut prologue = Vec::new();
         if pattern.is_destructuring() {
             let element = hir::Expr {
-                kind: ExprKind::Local(name.clone()),
+                kind: ExprKind::Local(name.clone(), elem_ty.clone()),
                 ty: elem_ty.clone(),
                 pos: binding_pos.clone(),
             };
@@ -1093,6 +858,8 @@ impl<'p> Checker<'p> {
         let (body, _) = self.check_branch(&f.body, fx);
         fx.loop_depth -= 1;
         fx.scopes.pop();
+        fx.narrowed.retain(|key| base.contains(key));
+        fx.finish_narrowing_join(&note_paths);
         let body = if prologue.is_empty() {
             body
         } else {
@@ -1105,7 +872,7 @@ impl<'p> Checker<'p> {
         let subject_name = format!("[[for.of#{id}.subject]]");
         let subject_ty = subject.ty.clone();
         let subject_local = hir::Expr {
-            kind: ExprKind::Local(subject_name.clone()),
+            kind: ExprKind::Local(subject_name.clone(), subject_ty.clone()),
             ty: subject_ty.clone(),
             pos: subject.pos.clone(),
         };
@@ -1133,7 +900,7 @@ impl<'p> Checker<'p> {
                 pos: pos.clone(),
             };
             let step_local = || hir::Expr {
-                kind: ExprKind::Local(step_name.clone()),
+                kind: ExprKind::Local(step_name.clone(), step_ty.clone()),
                 ty: step_ty.clone(),
                 pos: pos.clone(),
             };
@@ -1563,11 +1330,18 @@ impl<'p> Checker<'p> {
                 }
             }
         }
+        let note_paths = fx.narrowing_note_paths();
+        let dispatch_notes = fx.ended_shared_narrowing.clone();
+        let mut exit_notes = dispatch_notes.clone();
+        let mut dispatch = fx.narrowed.clone();
+        let mut fallthrough: Option<HashSet<String>> = None;
+        fx.switch_break_facts.push((fx.loop_depth, Vec::new()));
         let mut cases = Vec::new();
         for (case_index, case) in sw.cases.iter().enumerate() {
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.switch_case = Some(case_index);
             }
+            fx.narrowed = dispatch.clone();
             let case_pos = self.pos(case.span);
             let test = if let Some(t) = &case.test {
                 let (checked, _) = fx.with_synthetic_owner(
@@ -1588,16 +1362,41 @@ impl<'p> Checker<'p> {
                 has_default = true;
                 None
             };
-            let mut body = Vec::new();
-            for s in &case.cons {
-                self.check_stmt(s, fx, &mut body);
+            dispatch = fx.narrowed.clone();
+            if let Some(previous) = &fallthrough {
+                fx.narrowed.retain(|key| previous.contains(key));
             }
+            let mut body = Vec::new();
+            let mut terminates = false;
+            for s in &case.cons {
+                terminates |= self.check_stmt(s, fx, &mut body);
+            }
+            self.end_scope_narrowing(&body, fx);
+            exit_notes.extend(fx.ended_shared_narrowing.iter().cloned());
+            fallthrough = (!terminates).then(|| fx.narrowed.clone());
             cases.push(hir::SwitchCase {
                 test,
                 body,
                 pos: case_pos,
             });
         }
+        let mut exits = fx
+            .switch_break_facts
+            .pop()
+            .map_or_else(Vec::new, |(_, edges)| edges);
+        exits.extend(fallthrough);
+        if !has_default {
+            exits.push(dispatch);
+        }
+        fx.narrowed = exits.pop().unwrap_or_default();
+        for edge in exits {
+            fx.narrowed.retain(|key| edge.contains(key));
+        }
+        for case in &cases {
+            self.apply_narrowing_effects(&self.body_narrowing_effects(&case.body), fx);
+        }
+        fx.ended_shared_narrowing.extend(exit_notes);
+        fx.finish_narrowing_join(&note_paths);
         fx.scopes.pop();
         fx.switch_depth -= 1;
         if let Some((alias_name, members)) = &alias_switch {
@@ -1642,7 +1441,10 @@ mod tests {
         let cond = expr(
             ExprKind::Binary {
                 op: BinOp::Ne,
-                left: Box::new(expr(ExprKind::Local("p".into()), nullable.clone())),
+                left: Box::new(expr(
+                    ExprKind::Local("p".into(), nullable.clone()),
+                    nullable.clone(),
+                )),
                 right: Box::new(expr(ExprKind::Null, Type::Null)),
             },
             Type::Bool,
@@ -1654,7 +1456,10 @@ mod tests {
         let cond_eq = expr(
             ExprKind::Binary {
                 op: BinOp::Eq,
-                left: Box::new(expr(ExprKind::Local("p".into()), nullable)),
+                left: Box::new(expr(
+                    ExprKind::Local("p".into(), nullable.clone()),
+                    nullable,
+                )),
                 right: Box::new(expr(ExprKind::Null, Type::Null)),
             },
             Type::Bool,
@@ -1671,7 +1476,7 @@ mod tests {
             expr(
                 ExprKind::Field {
                     obj: Box::new(expr(
-                        ExprKind::Local("sampler".into()),
+                        ExprKind::Local("sampler".into(), Type::Class(crate::types::ClassId(0))),
                         Type::Class(crate::types::ClassId(0)),
                     )),
                     name: "compare".into(),
@@ -1708,28 +1513,5 @@ mod tests {
     fn root_of_takes_first_segment() {
         assert_eq!(root_of("node.next"), "node");
         assert_eq!(root_of("node"), "node");
-    }
-
-    #[test]
-    fn assigned_roots_expr_walks_object_literal_values() {
-        let source = crate::SourceFile::new(
-            "object.ts",
-            "export function f(): void { use({ value: (root.field = 1) }); }\n",
-        );
-        let program = swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-            crate::parse::parse_program(&[source]).expect("object source parses")
-        });
-        let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) =
-            &program.files[0].module.body[0]
-        else {
-            panic!("expected an exported declaration");
-        };
-        let ast::Decl::Fn(function) = &export.decl else {
-            panic!("expected a function declaration");
-        };
-        let body = function.function.body.as_ref().expect("function body");
-        let mut assigned = HashSet::new();
-        assigned_roots_stmt(&body.stmts[0], &mut assigned);
-        assert_eq!(assigned, HashSet::from(["root".to_string()]));
     }
 }

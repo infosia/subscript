@@ -207,7 +207,7 @@ impl Analyzer {
         match &expr.kind {
             K::Int(value) => Some(Interval::point(*value)),
             K::EnumMember { value, .. } => Some(Interval::point(*value)),
-            K::Local(name) => self.ranges.get(name).copied(),
+            K::Local(name, _) => self.ranges.get(name).copied(),
             K::Length(obj) => match obj.ty {
                 Type::FixedArray(_, len) => Some(Interval::point(i64::from(len))),
                 _ => None,
@@ -257,7 +257,7 @@ impl Analyzer {
         }
         let (op, bound) = match &cond?.kind {
             K::Binary { op, left, right } => match &left.kind {
-                K::Local(local) if *local == name => (*op, self.interval_of(right)?),
+                K::Local(local, _) if *local == name => (*op, self.interval_of(right)?),
                 _ => return None,
             },
             _ => return None,
@@ -273,7 +273,7 @@ impl Analyzer {
                 target,
                 value,
             } => match &target.kind {
-                K::Local(local) if *local == name => self.interval_of(value)?,
+                K::Local(local, _) if *local == name => self.interval_of(value)?,
                 _ => return None,
             },
             _ => return None,
@@ -309,7 +309,7 @@ fn expr_assigns_to(expr: &hir::Expr, name: &str) -> bool {
         return false;
     }
     matches!(&expr.kind, K::Assign { target, .. }
-        if matches!(&target.kind, K::Local(local) if local == name))
+        if matches!(&target.kind, K::Local(local, _) if local == name))
         || expr.children().into_iter().any(|child| match child {
             hir::HirChild::Expr(expr) => expr_assigns_to(expr, name),
             hir::HirChild::Stmt(stmt) => stmt_assigns_to(stmt, name),

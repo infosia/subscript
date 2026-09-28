@@ -299,6 +299,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         target: &Type,
         traps: &[l::Trap],
     ) -> Result<RV, String> {
+        for trap in traps {
+            if matches!(
+                trap.kind,
+                l::TrapKind::NullNarrowing | l::TrapKind::SharedNullNarrowing
+            ) {
+                let pointer = match value {
+                    RV::Pair(code, _) => code,
+                    RV::Scalar(pointer) | RV::Aggregate(pointer) => pointer,
+                    RV::None => return Err(internal("narrowing value is missing")),
+                };
+                self.emit_trap(trap, TrapOperand::Value(pointer))?;
+            }
+        }
         if source == target {
             return Ok(value);
         }
@@ -321,10 +334,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         }
         let scalar = self.expect_scalar(value)?;
         for trap in traps {
-            if matches!(
-                trap.kind,
-                l::TrapKind::NullNarrowing | l::TrapKind::ClassMismatch(_)
-            ) {
+            if matches!(trap.kind, l::TrapKind::ClassMismatch(_)) {
                 self.emit_trap(trap, TrapOperand::Value(scalar))?;
             }
         }

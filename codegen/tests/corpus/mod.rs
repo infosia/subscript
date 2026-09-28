@@ -103,6 +103,7 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subProbeProgrammableStage",
         // Recursive lowering through struct-pointer members.
         "subProbeFullRenderPipeline",
+        "SGPUProbeColorTargetState",
         // Two simultaneous reach-through pointer members.
         "subProbeBreadthRenderPipeline",
         // Wide descriptor breadth and depth combined.

@@ -60,7 +60,9 @@ fn agree_on_trap(source: &str) -> TrapReport {
         Err(InterpretError::Execution { output, source }) => {
             assert_eq!(output, jit.stdout, "interpreter stdout before the trap");
             match *source {
-                InterpretError::Trap { kind, pos, message } => {
+                InterpretError::Trap {
+                    kind, pos, message, ..
+                } => {
                     assert_eq!(kind, jit.rule.rule(), "interpreter trap kind");
                     assert_eq!(pos, jit.pos, "interpreter trap position");
                     // The interpreter reports its own text for an emitted

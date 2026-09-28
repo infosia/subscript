@@ -2,7 +2,7 @@
 // interpreter: no — exported main requires a host-supplied handle
 // purpose: Proves that a host passes one opaque handle and one scalar to a script entry.
 // exercises: host-callable-export-parameters, borrowed-opaque-handle, stored-wrapper
-// questions: R30
+// questions: R30, C17
 // tsc: accepts; js-comparable: no Q13: The host C boundary has no JavaScript shim.
 class AdoptedState {
   state: SubHostOwnedState;
@@ -24,10 +24,11 @@ export function adopt(state: SubHostOwnedState, tag: i32): void {
 }
 
 export function main(): void {
-  if (adopted === null) {
+  const local = adopted;
+  if (local === null) {
     print("handle-entry:missing");
     return;
   }
-  print(`handle-entry:first=${adopted.advance()}`);
-  print(`handle-entry:second=${adopted.advance()}`);
+  print(`handle-entry:first=${local.advance()}`);
+  print(`handle-entry:second=${local.advance()}`);
 }

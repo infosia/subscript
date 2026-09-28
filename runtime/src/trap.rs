@@ -87,6 +87,8 @@ pub enum TrapKind {
     /// A dispose hook raised while another exception was pending
     /// (compiler.md §115.5 rule 2).
     DisposeRaisedDuringExit = 30,
+    /// A narrowed shared location is null (compiler.md §124).
+    SharedNullNarrowing = 31,
 }
 
 impl TrapKind {
@@ -120,6 +122,7 @@ impl TrapKind {
             28 => TrapKind::CallbackRegistrationEnded,
             29 => TrapKind::UncaughtException,
             30 => TrapKind::DisposeRaisedDuringExit,
+            31 => TrapKind::SharedNullNarrowing,
             _ => return None,
         })
     }
@@ -131,7 +134,7 @@ impl TrapKind {
             TrapKind::IndexOutOfBounds => "index-out-of-bounds",
             TrapKind::EmptyPop => "empty-pop",
             TrapKind::StringSlice => "string-slice",
-            TrapKind::NullNarrowing => "null-narrowing",
+            TrapKind::NullNarrowing | TrapKind::SharedNullNarrowing => "null-narrowing",
             TrapKind::ClassMismatch => "class-mismatch",
             TrapKind::DoubleDelete => "double-delete",
             TrapKind::UseAfterDelete => "use-after-delete",
@@ -169,6 +172,9 @@ impl TrapKind {
             )),
             (TrapKind::IndexOutOfBounds, None) => Cow::Borrowed("index out of bounds"),
             (TrapKind::NullNarrowing, _) => Cow::Borrowed("`as` narrowing applied to null"),
+            (TrapKind::SharedNullNarrowing, _) => {
+                Cow::Borrowed("a narrowed shared location is null")
+            }
             (TrapKind::ClassMismatch, _) => {
                 Cow::Borrowed("`as` narrowing to a class the instance does not have")
             }
@@ -224,12 +230,12 @@ mod tests {
 
     #[test]
     fn kind_round_trips_through_u32() {
-        for v in (1..=17u32).chain(19..=24).chain([28, 29, 30]) {
+        for v in (1..=17u32).chain(19..=24).chain([28, 29, 30, 31]) {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }
         assert_eq!(TrapKind::from_u32(0), None);
-        assert_eq!(TrapKind::from_u32(31), None);
+        assert_eq!(TrapKind::from_u32(32), None);
         assert_eq!(TrapKind::from_u32(99), None);
     }
 
@@ -298,6 +304,19 @@ mod tests {
         assert_eq!(
             TrapKind::CallbackRegistrationEnded.rule(),
             "callback-registration-ended"
+        );
+    }
+
+    #[test]
+    fn shared_read_and_as_null_checks_have_distinct_kinds_and_messages() {
+        let shared = TrapKind::SharedNullNarrowing;
+        assert_eq!(shared as u32, 31);
+        assert_eq!(shared.rule(), "null-narrowing");
+        assert_eq!(shared.message(None), "a narrowed shared location is null");
+        assert_ne!(shared, TrapKind::NullNarrowing);
+        assert_eq!(
+            TrapKind::NullNarrowing.message(None),
+            "`as` narrowing applied to null"
         );
     }
 

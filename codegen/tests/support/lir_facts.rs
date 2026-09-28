@@ -600,7 +600,7 @@ fn collect_trap_expression(
             | hir::ExprKind::Str(_)
             | hir::ExprKind::Null
             | hir::ExprKind::This
-            | hir::ExprKind::Local(_)
+            | hir::ExprKind::Local(..)
             | hir::ExprKind::Global(_)
             | hir::ExprKind::FuncRef(_)
             | hir::ExprKind::EnumMember { .. }
@@ -838,7 +838,9 @@ fn lir_trap_key(trap: &l::Trap) -> TrapKey {
         l::TrapKind::DivisionByZero => "DivisionByZero".to_string(),
         l::TrapKind::IndexRead => "IndexRead".to_string(),
         l::TrapKind::IndexWrite => "IndexWrite".to_string(),
-        l::TrapKind::NullNarrowing => "NullNarrowing".to_string(),
+        l::TrapKind::NullNarrowing | l::TrapKind::SharedNullNarrowing => {
+            "NullNarrowing".to_string()
+        }
         l::TrapKind::ClassMismatch(class) => format!("ClassMismatch({})", class.0),
         l::TrapKind::DevOnlyRelease(_) => "DevOnlyRelease".to_string(),
         l::TrapKind::DevOnlyLifetime(_) => "DevOnlyLifetime".to_string(),
@@ -1005,7 +1007,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
         | hir::ExprKind::Str(_)
         | hir::ExprKind::Null
         | hir::ExprKind::This
-        | hir::ExprKind::Local(_)
+        | hir::ExprKind::Local(..)
         | hir::ExprKind::Global(_)
         | hir::ExprKind::FuncRef(_)
         | hir::ExprKind::EnumMember { .. }
@@ -1070,6 +1072,7 @@ fn instruction_arity(
         K::Copy
         | K::Unary(_)
         | K::Cast
+        | K::NarrowNonNull(_)
         | K::Coerce
         | K::BoxBoundaryValue { .. }
         | K::AddressOfValue
@@ -1509,7 +1512,7 @@ fn walk_place_children<'a>(
             walk_expr(hir, obj, visit);
             walk_expr(hir, index, visit);
         }
-        hir::ExprKind::Local(_) | hir::ExprKind::Global(_) | hir::ExprKind::This => {}
+        hir::ExprKind::Local(..) | hir::ExprKind::Global(_) | hir::ExprKind::This => {}
         _ => walk_expr(hir, expr, visit),
     }
 }

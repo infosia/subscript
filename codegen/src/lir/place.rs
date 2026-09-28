@@ -44,7 +44,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             convert_traps(&expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload))
         });
         let kind = match &expr.kind {
-            hir::ExprKind::Local(name) => {
+            hir::ExprKind::Local(name, _) => {
                 let binding = self.lookup_binding(name, &expr.pos)?;
                 let ty = match &self.bindings[binding.0].ty {
                     l::ValueType::Data(ty) => ty.clone(),
@@ -129,13 +129,18 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 ));
             }
         };
+        let read_traps = traps
+            .iter()
+            .filter(|trap| matches!(trap.kind, l::TrapKind::NullNarrowing))
+            .cloned()
+            .collect::<Vec<_>>();
+        traps.retain(|trap| !matches!(trap.kind, l::TrapKind::NullNarrowing));
         let mut nested = Vec::new();
         let base = match &kind {
             PreparedPlaceKind::Field { base, .. } | PreparedPlaceKind::Index { base, .. } => {
                 Some(base)
             }
             PreparedPlaceKind::ExistingAddress(..)
-            | PreparedPlaceKind::BoxedBoundary(..)
             | PreparedPlaceKind::Local(..)
             | PreparedPlaceKind::Global(..) => None,
         };
@@ -147,12 +152,24 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 traps.remove(index);
             }
         }
-        let place = PreparedPlace { kind, traps };
+        let mut place = PreparedPlace {
+            kind,
+            traps,
+            read: None,
+        };
         let stored = self.place_type(&place).clone();
+        if stored != expr.ty || !read_traps.is_empty() {
+            place.read = Some((
+                expr.ty.clone(),
+                super::expr::narrow_origin(expr, &self.lowering.hir.classes),
+                read_traps,
+            ));
+        }
         if self.is_boundary_box_narrowing(&stored, &expr.ty) {
             let handle = self.load_place(&place, &expr.pos)?;
             return Ok(PreparedPlace {
-                kind: PreparedPlaceKind::BoxedBoundary(handle, expr.ty.clone()),
+                kind: PreparedPlaceKind::ExistingAddress(handle, expr.ty.clone()),
+                read: None,
                 traps: Vec::new(),
             });
         }
@@ -185,7 +202,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         };
         match &place.kind {
             PreparedPlaceKind::ExistingAddress(address, _) => Ok(address.clone()),
-            PreparedPlaceKind::BoxedBoundary(handle, _) => Ok(handle.clone()),
             PreparedPlaceKind::Local(local, ty) => self
                 .emit(
                     l::InstructionKind::AddressOfLocal(*local),
@@ -276,10 +292,20 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         place: &PreparedPlace,
         pos: &Pos,
     ) -> Result<l::Operand, LowerError> {
+        let value = self.load_place_storage(place, pos)?;
+        if let Some((ty, origin, traps)) = &place.read {
+            self.coerce_read(value, ty, *origin, traps.clone(), pos)
+        } else {
+            Ok(value)
+        }
+    }
+
+    fn load_place_storage(
+        &mut self,
+        place: &PreparedPlace,
+        pos: &Pos,
+    ) -> Result<l::Operand, LowerError> {
         match &place.kind {
-            PreparedPlaceKind::BoxedBoundary(handle, ty) => {
-                self.coerce_operand(handle.clone(), l::ValueType::Data(ty.clone()), pos)
-            }
             PreparedPlaceKind::Local(local, _) => self.load_local(*local, pos),
             PreparedPlaceKind::Global(global, ty) => self
                 .emit(
@@ -404,7 +430,6 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     pub(super) fn place_type<'p>(&self, place: &'p PreparedPlace) -> &'p Type {
         match &place.kind {
             PreparedPlaceKind::ExistingAddress(_, ty)
-            | PreparedPlaceKind::BoxedBoundary(_, ty)
             | PreparedPlaceKind::Local(_, ty)
             | PreparedPlaceKind::Global(_, ty)
             | PreparedPlaceKind::Field { ty, .. }

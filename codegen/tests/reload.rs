@@ -796,9 +796,10 @@ export function start(): void {{
 }}
 
 export function fire(): void {{
-  if (ping !== null) {{
-    subRequestPump(ping.device);
-    print(`released ${{subRequestReleaseCount(ping.device)}}`);
+  const current = ping;
+  if (current !== null) {{
+    subRequestPump(current.device);
+    print(`released ${{subRequestReleaseCount(current.device)}}`);
   }}
 }}
 "

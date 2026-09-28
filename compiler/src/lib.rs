@@ -247,7 +247,7 @@ mod tests {
                         ..
                     }) if matches!(
                         &target.kind,
-                        hir::ExprKind::Local(name) if name.starts_with("[[using.value#")
+                        hir::ExprKind::Local(name, _) if name.starts_with("[[using.value#")
                     ) =>
                     {
                         1
@@ -2971,7 +2971,7 @@ mod tests {
         };
         assert_eq!(*ty, Type::I64);
         assert!(
-            matches!(init.kind, hir::ExprKind::Local(_)),
+            matches!(init.kind, hir::ExprKind::Local(..)),
             "getTime must fold to the receiver, got {:?}",
             init.kind
         );

@@ -219,9 +219,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         let result_type = self.value_type(result)?.clone();
         for trap in &instruction.traps {
             match trap.kind {
-                l::TrapKind::NullNarrowing => {
+                l::TrapKind::NullNarrowing | l::TrapKind::SharedNullNarrowing => {
                     self.consume(trap);
-                    self.emit_guard(out, &format!("({operand}) != NULL"), trap)?;
+                    let pointer = if matches!(operand_type, l::ValueType::Data(ty) if ty.function_type().is_some())
+                    {
+                        format!("({operand}).code")
+                    } else {
+                        operand.to_string()
+                    };
+                    self.emit_guard(out, &format!("({pointer}) != NULL"), trap)?;
                 }
                 l::TrapKind::ClassMismatch(class) => {
                     self.consume(trap);
@@ -241,6 +247,11 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     )))
                 }
             }
+        }
+        if let l::ValueType::Address(address) = &result_type {
+            let target = self.emitter.ctype(&address.pointee)?;
+            let _ = writeln!(out, "    {destination} = ({target}*)({operand});");
+            return Ok(());
         }
         if let (
             l::ValueType::Data(Type::Nullable(source)),

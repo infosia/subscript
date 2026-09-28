@@ -113,6 +113,8 @@ pub enum Divergence {
     MapScalarGet,
     /// `get` on a `Map` whose value type has no nullable form (compiler.md §123).
     MapNonNullableGet,
+    /// A shared location read after a call, suspension, or alias store.
+    SharedLocationNarrowing,
     /// A pair-valued construction or view, which needs a tuple type.
     NoTupleType,
     /// A coercing numeric call, and an omitted radix or digit count.
@@ -249,6 +251,7 @@ impl Divergence {
         Divergence::MapKeyKind,
         Divergence::MapScalarGet,
         Divergence::MapNonNullableGet,
+        Divergence::SharedLocationNarrowing,
         Divergence::NoTupleType,
         Divergence::NumberCoercionAndArguments,
         Divergence::JsonSubset,
@@ -674,6 +677,12 @@ impl Divergence {
                 why: "A scalar has no null miss value, so a lookup is a presence check plus \
                       a defaulted read.",
                 collision: "stdlib.md §10",
+            },
+            Divergence::SharedLocationNarrowing => DivergenceEntry {
+                ts: "if (h.c !== null) { clear(h); print(`${h.c.v}`); }",
+                subscript: "const c = h.c; if (c !== null) { clear(h); print(`${c.v}`); }",
+                why: "Another frame or alias can change a shared location after its null check. Copy the value or narrow again before use.",
+                collision: "C17",
             },
             Divergence::MapNonNullableGet => DivergenceEntry {
                 ts: "map.get(1);",

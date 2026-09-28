@@ -106,7 +106,7 @@ fn expr_children_yield_every_child() {
         ExprKind::Str(String::new()),
         ExprKind::Null,
         ExprKind::This,
-        ExprKind::Local(String::new()),
+        ExprKind::Local(String::new(), Type::I32),
         ExprKind::Global(String::new()),
         ExprKind::FuncRef(String::new()),
         ExprKind::EnumMember {

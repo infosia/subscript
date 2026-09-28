@@ -189,7 +189,7 @@ impl<'p> Checker<'p> {
         let ty = source.ty.clone();
         let pos = source.pos.clone();
         let place = hir::Expr {
-            kind: hir::ExprKind::Local(name.clone()),
+            kind: hir::ExprKind::Local(name.clone(), ty.clone()),
             ty: ty.clone(),
             pos: pos.clone(),
         };

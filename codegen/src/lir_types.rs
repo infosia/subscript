@@ -18,6 +18,7 @@ pub(crate) fn runtime_trap_kind(kind: &l::TrapKind) -> Option<TrapKind> {
         l::TrapKind::DivisionByZero => TrapKind::DivisionByZero,
         l::TrapKind::IndexRead | l::TrapKind::IndexWrite => TrapKind::IndexOutOfBounds,
         l::TrapKind::NullNarrowing => TrapKind::NullNarrowing,
+        l::TrapKind::SharedNullNarrowing => TrapKind::SharedNullNarrowing,
         l::TrapKind::ClassMismatch(_) => TrapKind::ClassMismatch,
         l::TrapKind::DevOnlyLifetime(_) => TrapKind::UseAfterDelete,
         l::TrapKind::DevOnlyRelease(_) => TrapKind::DoubleDelete,
@@ -384,6 +385,10 @@ mod tests {
             (l::TrapKind::IndexWrite, Some(TrapKind::IndexOutOfBounds)),
             (l::TrapKind::NullNarrowing, Some(TrapKind::NullNarrowing)),
             (
+                l::TrapKind::SharedNullNarrowing,
+                Some(TrapKind::SharedNullNarrowing),
+            ),
+            (
                 l::TrapKind::ClassMismatch(ClassId(2)),
                 Some(TrapKind::ClassMismatch),
             ),
@@ -405,7 +410,7 @@ mod tests {
                 Some(TrapKind::DisposeRaisedDuringExit),
             ),
         ];
-        assert_eq!(cases.len(), 14);
+        assert_eq!(cases.len(), 15);
         for (lir, runtime) in cases {
             assert_eq!(runtime_trap_kind(&lir), runtime, "{lir:?}");
         }

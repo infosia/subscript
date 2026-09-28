@@ -3,6 +3,61 @@
 use super::*;
 
 impl<'a, 'm> FunctionBuilder<'a, 'm> {
+    pub(super) fn coerce_shared_read(
+        &mut self,
+        value: l::Operand,
+        expr: &hir::Expr,
+    ) -> Result<l::Operand, LowerError> {
+        let sites = expr
+            .trap_sites_for_reload(self.lowering.hir, self.lowering.reload)
+            .into_iter()
+            .filter(|site| matches!(site, hir::TrapSite::NullNarrowing { .. }))
+            .collect::<Vec<_>>();
+        self.coerce_read(
+            value,
+            &expr.ty,
+            narrow_origin(expr, &self.lowering.hir.classes),
+            convert_traps(&sites),
+            &expr.pos,
+        )
+    }
+
+    pub(super) fn coerce_read(
+        &mut self,
+        value: l::Operand,
+        ty: &Type,
+        origin: l::NarrowOrigin,
+        mut traps: Vec<l::Trap>,
+        pos: &Pos,
+    ) -> Result<l::Operand, LowerError> {
+        let actual = self.operand_type(&value, pos)?;
+        let result = if matches!(&actual, l::ValueType::Data(stored)
+            if self.is_boundary_box_narrowing(stored, ty))
+        {
+            l::ValueType::Address(l::AddressType {
+                pointee: ty.clone(),
+                array_base: None,
+            })
+        } else {
+            l::ValueType::Data(ty.clone())
+        };
+        if !matches!(&actual, l::ValueType::Data(Type::Nullable(inner)) if inner.as_ref() == ty) {
+            return self.coerce_operand(value, result, pos);
+        }
+        for trap in &mut traps {
+            trap.kind = l::TrapKind::SharedNullNarrowing;
+        }
+        self.emit(
+            l::InstructionKind::NarrowNonNull(origin),
+            vec![value],
+            Some(result),
+            false,
+            traps,
+            pos.clone(),
+        )?
+        .ok_or_else(|| self.error(pos, "shared read conversion produced no value"))
+    }
+
     pub(super) fn lower_expr(
         &mut self,
         expr: &hir::Expr,
@@ -42,19 +97,23 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .clone()
                     .ok_or_else(|| self.error(&expr.pos, "`this` has no receiver parameter"))?,
             ),
-            K::Local(name) => {
+            K::Local(name, _) => {
                 if let Some(value) = self.lookup_substitution(name) {
-                    Some(self.coerce_operand(
+                    Some(self.coerce_read(
                         value,
-                        l::ValueType::Data(expr.ty.clone()),
+                        &expr.ty,
+                        narrow_origin(expr, &self.lowering.hir.classes),
+                        Vec::new(),
                         &expr.pos,
                     )?)
                 } else {
                     let binding = self.lookup_binding(name, &expr.pos)?;
                     let value = self.read_binding(binding, &expr.pos)?;
-                    Some(self.coerce_operand(
+                    Some(self.coerce_read(
                         value,
-                        l::ValueType::Data(expr.ty.clone()),
+                        &expr.ty,
+                        narrow_origin(expr, &self.lowering.hir.classes),
+                        Vec::new(),
                         &expr.pos,
                     )?)
                 }
@@ -83,6 +142,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         expr.pos.clone(),
                     )?
                     .expect("global load");
+                let value = self.coerce_shared_read(value, expr)?;
                 Some(self.coerce_operand(value, l::ValueType::Data(expr.ty.clone()), &expr.pos)?)
             }
             K::FuncRef(name) => {
@@ -178,8 +238,18 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
             K::Cast(value) => {
                 let value = self.require_expr(value)?;
+                let kind = if matches!(self.operand_type(&value, &expr.pos)?,
+                    l::ValueType::Data(Type::Nullable(ref inner)) if inner.as_ref() == &expr.ty)
+                {
+                    l::InstructionKind::NarrowNonNull(narrow_origin(
+                        expr,
+                        &self.lowering.hir.classes,
+                    ))
+                } else {
+                    l::InstructionKind::Cast
+                };
                 self.emit(
-                    l::InstructionKind::Cast,
+                    kind,
                     vec![value],
                     Some(l::ValueType::Data(expr.ty.clone())),
                     false,
@@ -221,11 +291,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                         Some(l::ValueType::Data(stored_type)),
                         false,
                         convert_traps(
-                            &expr.trap_sites_for_reload(self.lowering.hir, self.lowering.reload),
+                            &expr
+                                .trap_sites_for_reload(self.lowering.hir, self.lowering.reload)
+                                .into_iter()
+                                .filter(|site| !matches!(site, hir::TrapSite::NullNarrowing { .. }))
+                                .collect::<Vec<_>>(),
                         ),
                         expr.pos.clone(),
                     )?
                     .expect("field load");
+                let value = self.coerce_shared_read(value, expr)?;
                 Some(self.coerce_operand(value, l::ValueType::Data(expr.ty.clone()), &expr.pos)?)
             }
             K::Length(value) => {
@@ -564,7 +639,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .cloned()
                 .collect::<Vec<_>>()
         };
-        if let hir::ExprKind::Local(name) = &target_expr.kind {
+        if let hir::ExprKind::Local(name, _) = &target_expr.kind {
             let binding = self.lookup_binding(name, &target_expr.pos)?;
             let old = if op.is_some() {
                 Some(self.read_binding(binding, &target_expr.pos)?)
@@ -620,5 +695,14 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         };
         self.store_place(&place, result.clone(), &target_expr.pos)?;
         Ok(result)
+    }
+}
+
+// The path classification is shared with the checker and sites (compiler.md §124).
+pub(super) fn narrow_origin(expr: &hir::Expr, classes: &[hir::ClassDef]) -> l::NarrowOrigin {
+    if expr.is_shared_location(classes) {
+        l::NarrowOrigin::SharedRead
+    } else {
+        l::NarrowOrigin::Local
     }
 }

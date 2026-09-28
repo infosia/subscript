@@ -19,7 +19,9 @@ impl<'p> Checker<'p> {
         self.apply_narrowing(&mut checked, fx);
         if let Type::Nullable(_) = checked.ty {
             let name = self.type_name(&checked.ty);
-            self.error(
+            self.nullable_use_error(
+                &checked,
+                fx,
                 RuleCode::S011,
                 format!(
                     "`{}` may be null here; narrow with a null check first",

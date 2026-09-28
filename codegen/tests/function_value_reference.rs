@@ -106,8 +106,10 @@ fn static_nullable_function_path_calls_and_copies() {
         function read(): void {
             if (S.opt !== null) {
                 print(`${S.opt(5)}`);
-                const f = S.opt;
-                print(`${f(6)}`);
+                if (S.opt !== null) {
+                    const f = S.opt;
+                    print(`${f(6)}`);
+                }
             } else { print("null"); }
         }
         export function main(): void { read(); S.opt = null; read(); }

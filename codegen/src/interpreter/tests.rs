@@ -79,6 +79,7 @@ fn an_await_resume_without_a_completion_reports_the_internal_defect() {
         error,
         InterpretError::Trap {
             kind: subscript_runtime::TrapKind::Internal.rule().to_string(),
+            runtime_kind: Some(subscript_runtime::TrapKind::Internal),
             pos,
             message: "async resume without completion".to_string(),
         }
@@ -127,6 +128,7 @@ fn an_exception_resume_without_await_raise_reports_the_internal_defect() {
         *source,
         InterpretError::Trap {
             kind: subscript_runtime::TrapKind::Internal.rule().to_string(),
+            runtime_kind: Some(subscript_runtime::TrapKind::Internal),
             pos,
             message: "async exception resume without AwaitRaise".to_string(),
         }

@@ -143,7 +143,7 @@ impl AddressTaken<'_> {
         match &expr.kind {
             K::Assign { target, value, .. } => {
                 match target.kind {
-                    K::Local(_) | K::Global(_) => {}
+                    K::Local(..) | K::Global(_) => {}
                     _ => self.place(target),
                 }
                 self.expr(value);
@@ -245,7 +245,7 @@ impl AddressTaken<'_> {
 
     fn place(&mut self, expr: &hir::Expr) {
         match &expr.kind {
-            hir::ExprKind::Local(name) => self.mark(name),
+            hir::ExprKind::Local(name, _) => self.mark(name),
             hir::ExprKind::Field { obj, .. } => {
                 if is_stored_aggregate(self.module, &obj.ty) && is_place_expr(obj) {
                     self.place(obj);

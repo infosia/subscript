@@ -280,7 +280,7 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
             let mut expr = hir::Expr {
-                kind: ExprKind::Local(name),
+                kind: ExprKind::Local(name, local.ty.clone()),
                 ty: local.ty,
                 pos,
             };

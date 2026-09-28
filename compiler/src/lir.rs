@@ -493,6 +493,15 @@ pub struct Instruction {
     pub pos: Pos,
 }
 
+/// Source of a nullable-to-value conversion (compiler.md §124).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NarrowOrigin {
+    /// A field or module-global read.
+    SharedRead,
+    /// A local value, including a const copy.
+    Local,
+}
+
 /// Closed instruction set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstructionKind {
@@ -522,6 +531,8 @@ pub enum InstructionKind {
     Cast,
     /// Apply a checker-approved implicit assignment/call conversion.
     Coerce,
+    /// Convert a nullable value to its non-null value or boundary address.
+    NarrowNonNull(NarrowOrigin),
     /// Allocate zeroed class storage.
     AllocateClass(ClassId),
     /// Allocate a managed box and copy one boundary value into its payload.
@@ -1345,6 +1356,8 @@ pub enum TrapKind {
     IndexWrite,
     /// Failed null narrowing.
     NullNarrowing,
+    /// A narrowed shared location is null (compiler.md §124).
+    SharedNullNarrowing,
     /// Failed reference-class narrowing.
     ClassMismatch(ClassId),
     /// Development-tier allocation lifetime check.

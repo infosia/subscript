@@ -1375,7 +1375,7 @@ fn json_param(name: &str, ty: Type, pos: &Pos) -> hir::Param {
 
 fn json_local(name: &str, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
-        kind: ExprKind::Local(name.to_string()),
+        kind: ExprKind::Local(name.to_string(), ty.clone()),
         ty,
         pos: pos.clone(),
     }

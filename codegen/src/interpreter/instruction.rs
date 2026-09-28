@@ -277,7 +277,9 @@ impl Interpreter<'_> {
                     instruction,
                 )?,
             ),
-            l::InstructionKind::Cast | l::InstructionKind::Coerce => Some(
+            l::InstructionKind::Cast
+            | l::InstructionKind::Coerce
+            | l::InstructionKind::NarrowNonNull(_) => Some(
                 self.convert(
                     operands
                         .first()
@@ -791,6 +793,7 @@ impl Interpreter<'_> {
                     if let Some(runtime) = self.context.trap_record() {
                         return Err(InterpretError::Trap {
                             kind: runtime.kind.rule().to_string(),
+                            runtime_kind: Some(runtime.kind),
                             pos: trap.pos.clone(),
                             message: runtime.message.clone(),
                         });
@@ -812,13 +815,14 @@ impl Interpreter<'_> {
                     let length = self.indexed_length(function, instruction, operands)?;
                     index < 0 || index >= length
                 }
-                (l::TrapKind::NullNarrowing, TrapPhase::Before) => {
-                    operands.first().is_some_and(|value| match value {
-                        Value::Null => true,
-                        Value::Handle(handle) => handle.is_null(),
-                        _ => false,
-                    })
-                }
+                (
+                    l::TrapKind::NullNarrowing | l::TrapKind::SharedNullNarrowing,
+                    TrapPhase::Before,
+                ) => operands.first().is_some_and(|value| match value {
+                    Value::Null => true,
+                    Value::Handle(handle) => handle.is_null(),
+                    _ => false,
+                }),
                 (l::TrapKind::ClassMismatch(class), TrapPhase::Before) => operands
                     .first()
                     .is_some_and(|value| !self.value_has_class(value, *class)),
@@ -868,6 +872,7 @@ impl Interpreter<'_> {
                     | l::TrapKind::IndexRead
                     | l::TrapKind::IndexWrite
                     | l::TrapKind::NullNarrowing
+                    | l::TrapKind::SharedNullNarrowing
                     | l::TrapKind::ClassMismatch(_)
                     | l::TrapKind::DevOnlyLifetime(_)
                     | l::TrapKind::DevReloadOnlyStaleCoroutine
@@ -944,9 +949,17 @@ impl Interpreter<'_> {
         );
         InterpretError::Trap {
             kind,
+            runtime_kind: runtime_trap_kind(&trap.kind),
             pos: trap.pos.clone(),
             message: if matches!(trap.kind, l::TrapKind::DevOnlyRelease(_)) {
                 RuntimeTrapKind::DoubleDelete.message(None).into_owned()
+            } else if let Some(kind) = runtime_trap_kind(&trap.kind).filter(|kind| {
+                matches!(
+                    kind,
+                    RuntimeTrapKind::NullNarrowing | RuntimeTrapKind::SharedNullNarrowing
+                )
+            }) {
+                kind.message(None).into_owned()
             } else {
                 "LIR trap terminator/check fired".to_string()
             },
@@ -968,6 +981,7 @@ impl Interpreter<'_> {
         };
         Err(InterpretError::Trap {
             kind: trap.kind.rule().to_string(),
+            runtime_kind: Some(trap.kind),
             pos,
             message: trap.message.clone(),
         })

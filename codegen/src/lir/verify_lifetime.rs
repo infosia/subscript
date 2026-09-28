@@ -165,6 +165,7 @@ fn read_operands(
         | Unary(_)
         | Binary(_)
         | Coerce
+        | NarrowNonNull(_)
         | AllocateClass(_)
         | BoxBoundaryValue { .. }
         | AddressOfValue

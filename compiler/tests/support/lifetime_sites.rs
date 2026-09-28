@@ -16,7 +16,7 @@ fn call(signature: &OperationSignature) -> Expr {
         .enumerate()
         .map(|(index, ty)| {
             let mut expression = template();
-            expression.kind = ExprKind::Local(format!("p{index}"));
+            expression.kind = ExprKind::Local(format!("p{index}"), ty.clone());
             expression.ty = ty.clone();
             expression.pos = Pos::new("signature.ts", 1, index as u32 + 2);
             expression

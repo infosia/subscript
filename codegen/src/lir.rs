@@ -27,6 +27,7 @@ mod verify;
 mod verify_dominance;
 mod verify_instruction;
 mod verify_lifetime;
+mod verify_narrowing;
 mod verify_raise;
 mod verify_terminator;
 
@@ -758,7 +759,7 @@ struct Control {
 fn is_place_expr(expr: &hir::Expr) -> bool {
     matches!(
         expr.kind,
-        hir::ExprKind::Local(_)
+        hir::ExprKind::Local(..)
             | hir::ExprKind::Global(_)
             | hir::ExprKind::Field { .. }
             | hir::ExprKind::Index { .. }
@@ -776,13 +777,13 @@ fn is_stored_aggregate(module: &hir::Module, ty: &Type) -> bool {
 #[derive(Clone)]
 struct PreparedPlace {
     kind: PreparedPlaceKind,
+    read: Option<(Type, l::NarrowOrigin, Vec<l::Trap>)>,
     traps: Vec<l::Trap>,
 }
 
 #[derive(Clone)]
 enum PreparedPlaceKind {
     ExistingAddress(l::Operand, Type),
-    BoxedBoundary(l::Operand, Type),
     Local(l::LocalId, Type),
     Global(l::GlobalId, Type),
     Field {
@@ -822,7 +823,6 @@ fn collect_place_traps(place: &PreparedPlace, traps: &mut Vec<l::Trap>) {
     let base = match &place.kind {
         PreparedPlaceKind::Field { base, .. } | PreparedPlaceKind::Index { base, .. } => base,
         PreparedPlaceKind::ExistingAddress(..)
-        | PreparedPlaceKind::BoxedBoundary(..)
         | PreparedPlaceKind::Local(..)
         | PreparedPlaceKind::Global(..) => return,
     };
@@ -842,7 +842,6 @@ fn prepare_place_after_checked_read(place: &mut PreparedPlace) {
         }
         PreparedPlaceKind::Field { base, .. } => base,
         PreparedPlaceKind::ExistingAddress(..)
-        | PreparedPlaceKind::BoxedBoundary(..)
         | PreparedPlaceKind::Local(..)
         | PreparedPlaceKind::Global(..) => return,
     };

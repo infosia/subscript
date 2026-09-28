@@ -121,6 +121,11 @@ pub fn render() -> Result<String, String> {
     out.push_str("    uint64_t string_slot_count;\n");
     out.push_str("    const uint64_t* string_slot_offsets;\n");
     out.push_str("} subscript_rt_worker_message_descriptor;\n\n");
+    out.push_str(&format!(
+        "/* Null conversion trap kinds (compiler.md §124). */\n#define SUBSCRIPT_RT_TRAP_NULL_NARROWING {}u\n#define SUBSCRIPT_RT_TRAP_SHARED_NULL_NARROWING {}u\n\n",
+        crate::TrapKind::NullNarrowing as u32,
+        crate::TrapKind::SharedNullNarrowing as u32,
+    ));
     push_comment(&mut out, &observer_docs);
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("subscript_rt_trap_observer", &observer)?);
@@ -476,6 +481,13 @@ mod tests {
             "the committed host header drifted; regenerate with \
              `cargo run --offline -p subscript-runtime --bin generate-host-header`"
         );
+    }
+
+    #[test]
+    fn generated_host_header_distinguishes_null_conversion_kinds() {
+        let header = render().expect("render host header");
+        assert!(header.contains("#define SUBSCRIPT_RT_TRAP_NULL_NARROWING 4u"));
+        assert!(header.contains("#define SUBSCRIPT_RT_TRAP_SHARED_NULL_NARROWING 31u"));
     }
 
     #[test]

@@ -2025,7 +2025,7 @@ fn f2 "secondEntry" kind=Free exported=true generator=false async=true -> Void e
     -> Branch(BlockTarget { block: BlockId(3), arguments: [] })
   b3 Some("if.join"):
     %3: Data(Nullable(Class(ClassId(90)))) = LoadGlobal(GlobalId(0))() @ a128-host-owned-state.ts:20:55
-    %4: Data(Class(ClassId(90))) = Coerce(%3) @ a128-host-owned-state.ts:20:55
+    %4: Data(Class(ClassId(90))) = NarrowNonNull(SharedRead)(%3) traps=[Trap { kind: SharedNullNarrowing, pos: Pos { file: "a128-host-owned-state.ts", line: 20, col: 55 } }] @ a128-host-owned-state.ts:20:55
     %5: Data(I32) = Call(CallTarget { kind: Foreign(ForeignFunctionId(63)), parameter_types: [Data(Class(ClassId(90)))], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "a128-host-owned-state.ts", line: 20, col: 30 } }] @ a128-host-owned-state.ts:20:30
     %6: Data(Str) = Template([Text("host-state:second="), Operand { index: 0, format: I32 }])(%5) traps=[Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 20, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 20, col: 30 } }, Trap { kind: Allocation, pos: Pos { file: "a128-host-owned-state.ts", line: 20, col: 9 } }] @ a128-host-owned-state.ts:20:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a128-host-owned-state.ts:20:3
@@ -15380,7 +15380,7 @@ fn f4 "hold" kind=Free exported=false generator=false async=true -> Void entry=b
     %4: Data(Bool) = Binary(Ne)(%9, Null:Null) @ a200-using-nullable-async.ts:16:31
     -> ConditionalBranch { condition: Value(ValueId(4)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [] } }
   b2 Some("if.then"):
-    %5: Data(Class(ClassId(1))) = Coerce(%9) @ a200-using-nullable-async.ts:16:31
+    %5: Data(Class(ClassId(1))) = NarrowNonNull(Local)(%9) @ a200-using-nullable-async.ts:16:31
     Call(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(1)))], return_type: None })(%5) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a200-using-nullable-async.ts", line: 16, col: 31 } }, Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 16, col: 31 } }] @ a200-using-nullable-async.ts:16:31
     -> Branch(BlockTarget { block: BlockId(4), arguments: [] })
   b3 Some("if.else"):
@@ -15389,7 +15389,7 @@ fn f4 "hold" kind=Free exported=false generator=false async=true -> Void entry=b
     %6: Data(Bool) = Binary(Ne)(%8, Null:Null) @ a200-using-nullable-async.ts:16:9
     -> ConditionalBranch { condition: Value(ValueId(6)), then_target: BlockTarget { block: BlockId(5), arguments: [] }, else_target: BlockTarget { block: BlockId(6), arguments: [] } }
   b5 Some("if.then"):
-    %7: Data(Class(ClassId(1))) = Coerce(%8) @ a200-using-nullable-async.ts:16:9
+    %7: Data(Class(ClassId(1))) = NarrowNonNull(Local)(%8) @ a200-using-nullable-async.ts:16:9
     Call(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(1)))], return_type: None })(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a200-using-nullable-async.ts", line: 16, col: 9 } }, Trap { kind: Call, pos: Pos { file: "a200-using-nullable-async.ts", line: 16, col: 9 } }] @ a200-using-nullable-async.ts:16:9
     -> Branch(BlockTarget { block: BlockId(7), arguments: [] })
   b6 Some("if.else"):
@@ -19749,7 +19749,7 @@ fn f9 "heldForms" kind=Free exported=false generator=false async=true -> Void en
     %21: Data(Str) = LoadField(Class(FieldId(2)))(%12) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a258-await-delivers-exception.ts", line: 111, col: 28 } }] @ a258-await-delivers-exception.ts:111:30
     %22: Data(Str) = Template([Text("held:second "), Operand { index: 0, format: Str }])(%21) traps=[Trap { kind: Allocation, pos: Pos { file: "a258-await-delivers-exception.ts", line: 111, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a258-await-delivers-exception.ts", line: 111, col: 13 } }] @ a258-await-delivers-exception.ts:111:13
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%22) @ a258-await-delivers-exception.ts:111:7
-    %23: Data(Class(ClassId(0))) = Coerce(%16) @ a258-await-delivers-exception.ts:112:39
+    %23: Data(Class(ClassId(0))) = NarrowNonNull(Local)(%16) @ a258-await-delivers-exception.ts:112:39
     %24: Data(Bool) = Binary(Eq)(%12, %23) @ a258-await-delivers-exception.ts:112:33
     %25: Data(Str) = Template([Text("held:same object "), Operand { index: 0, format: Bool }])(%24) traps=[Trap { kind: Allocation, pos: Pos { file: "a258-await-delivers-exception.ts", line: 112, col: 13 } }, Trap { kind: Allocation, pos: Pos { file: "a258-await-delivers-exception.ts", line: 112, col: 33 } }, Trap { kind: Allocation, pos: Pos { file: "a258-await-delivers-exception.ts", line: 112, col: 13 } }] @ a258-await-delivers-exception.ts:112:13
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%25) @ a258-await-delivers-exception.ts:112:7

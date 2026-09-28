@@ -498,7 +498,9 @@ impl<'p> Checker<'p> {
             Type::Error => self.err_expr(pos),
             other => {
                 let name = self.type_name(&other);
-                self.error(
+                self.nullable_use_error(
+                    &callee,
+                    fx,
                     RuleCode::S100,
                     format!("type `{}` is not callable", name),
                     pos.clone(),

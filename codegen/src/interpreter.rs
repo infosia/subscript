@@ -35,6 +35,8 @@ pub enum InterpretError {
     Trap {
         /// Stable runtime trap rule.
         kind: String,
+        /// Runtime trap identity, when the LIR site maps to a runtime trap.
+        runtime_kind: Option<RuntimeTrapKind>,
         /// Source position carried by LIR.
         pos: Pos,
         /// Runtime detail, when supplied by the shared runtime.
@@ -84,7 +86,9 @@ impl fmt::Display for InterpretError {
                     write!(f, "invalid LIR: {message}")
                 }
             }
-            InterpretError::Trap { kind, pos, message } => {
+            InterpretError::Trap {
+                kind, pos, message, ..
+            } => {
                 write!(f, "{pos}: trap {kind}: {message}")
             }
             InterpretError::Unsupported { reason } => write!(f, "unsupported: {reason}"),
@@ -121,6 +125,7 @@ impl InterpretError {
         match self {
             InterpretError::Exception { message, pos, .. } => InterpretError::Trap {
                 kind: RuntimeTrapKind::UncaughtException.rule().to_string(),
+                runtime_kind: Some(RuntimeTrapKind::UncaughtException),
                 pos,
                 message,
             },
@@ -748,6 +753,7 @@ impl<'m> Interpreter<'m> {
                 // never a reason to poll or re-register.
                 return Err(InterpretError::Trap {
                     kind: subscript_runtime::TrapKind::Internal.rule().to_string(),
+                    runtime_kind: Some(RuntimeTrapKind::Internal),
                     pos: awaited.pos.clone(),
                     message: "async resume without completion".to_string(),
                 });
@@ -769,6 +775,7 @@ impl<'m> Interpreter<'m> {
                     if !starts_with_raise {
                         return Err(InterpretError::Trap {
                             kind: subscript_runtime::TrapKind::Internal.rule().to_string(),
+                            runtime_kind: Some(RuntimeTrapKind::Internal),
                             pos: awaited.pos.clone(),
                             message: "async exception resume without AwaitRaise".to_string(),
                         });

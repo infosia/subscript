@@ -17,6 +17,7 @@ pub fn references_interop(source: &str) -> bool {
         "subProbeRenderPipeline",
         "subProbeProgrammableStage",
         "subProbeFullRenderPipeline",
+        "SGPUProbeColorTargetState",
         "subProbeBreadthRenderPipeline",
         "subProbeWideRenderPipeline",
         "subProbeQueueSubmit",

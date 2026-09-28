@@ -165,7 +165,7 @@ impl Expr {
             | K::Str(_)
             | K::Null
             | K::This
-            | K::Local(_)
+            | K::Local(..)
             | K::Global(_)
             | K::FuncRef(_)
             | K::EnumMember { .. }
@@ -256,7 +256,7 @@ impl Expr {
             | K::Str(_)
             | K::Null
             | K::This
-            | K::Local(_)
+            | K::Local(..)
             | K::Global(_)
             | K::FuncRef(_)
             | K::EnumMember { .. }

@@ -829,6 +829,11 @@ const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 /// subset. Each entry proves both the trap kind/site and trap-stop stdout.
 #[cfg(debug_assertions)]
 const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
+    ("t72-narrowing-boundary-getter", "getter clears the boundary box", "null-narrowing", 13, 44),
+    ("t68-narrowing-accessor-compound", "getter changes the narrowed field", "null-narrowing", 13, 34),
+    ("t69-narrowing-static-accessor-compound", "static getter changes the narrowed field", "null-narrowing", 13, 34),
+    ("t70-narrowing-optional-getter", "optional getter changes the narrowed field", "null-narrowing", 17, 16),
+    ("t71-narrowing-destructuring-getter", "destructuring getter changes the narrowed field", "null-narrowing", 16, 16),
     (
         "t63-exception-leaves-async",
         "an exception that leaves a host-kicked async export becomes the uncaught-exception trap there",
@@ -1379,6 +1384,10 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
             // tier-differential assertions above.
             continue;
         }
+        // compiler.md §124: this entry has a dedicated origin assertion.
+        if id == "a276-generator-result-narrowing" {
+            continue;
+        }
         let lir = lower_entry(&accept, &id);
         if lir
             .functions
@@ -1819,4 +1828,30 @@ fn exception_exit_fact_check_rejects_an_extra_release() {
         ),
         "{findings:?}"
     );
+}
+
+#[test]
+fn generator_result_narrowing_has_a_local_origin() {
+    use subscript_compiler::lir::{NarrowOrigin, TrapKind};
+    let local = lower_entry(&corpus::corpus_accept(), "a276-generator-result-narrowing");
+    let shared = lower_source("shared.ts", "class Cell { v: i32 = 7; } let g: Cell | null = new Cell(); export function main(): void { if (g !== null) { print(`${g.v}`); } }");
+    for (module, origin) in [
+        (local, NarrowOrigin::Local),
+        (shared, NarrowOrigin::SharedRead),
+    ] {
+        let conversions: Vec<_> = module
+            .functions
+            .iter()
+            .flat_map(|f| &f.blocks)
+            .flat_map(|b| &b.instructions)
+            .filter(|i| matches!(i.kind, InstructionKind::NarrowNonNull(_)))
+            .collect();
+        assert_eq!(conversions.len(), 1);
+        assert_eq!(conversions[0].kind, InstructionKind::NarrowNonNull(origin));
+        let guarded = conversions[0]
+            .traps
+            .iter()
+            .any(|trap| trap.kind == TrapKind::SharedNullNarrowing);
+        assert_eq!(guarded, origin == NarrowOrigin::SharedRead);
+    }
 }

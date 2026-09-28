@@ -16,7 +16,7 @@ fn function_body(source: &str, name: &str) -> Vec<hir::Stmt> {
 
 fn expr_shape(expr: &hir::Expr) -> String {
     let kind = match &expr.kind {
-        hir::ExprKind::Local(name) => format!("local({name})"),
+        hir::ExprKind::Local(name, _) => format!("local({name})"),
         hir::ExprKind::Null => "null".to_string(),
         hir::ExprKind::Binary { op, left, right } => {
             format!("binary({op:?},{},{})", expr_shape(left), expr_shape(right))

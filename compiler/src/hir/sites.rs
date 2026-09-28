@@ -92,7 +92,49 @@ impl Expr {
             })
         };
 
-        match &self.kind {
+        let declared = match &self.kind {
+            K::Global(name) => module
+                .globals
+                .iter()
+                .find(|global| global.name == *name)
+                .map(|global| &global.ty),
+            K::Field { obj, name } => declared_field_type(&obj.ty, name, &module.classes),
+            K::Cast(_)
+            | K::Local(..)
+            | K::This
+            | K::Int(_)
+            | K::Float(_)
+            | K::Bool(_)
+            | K::Str(_)
+            | K::Null
+            | K::FuncRef(_)
+            | K::EnumMember { .. }
+            | K::Unary { .. }
+            | K::Binary { .. }
+            | K::AbsenceTest { .. }
+            | K::Assign { .. }
+            | K::Call { .. }
+            | K::New { .. }
+            | K::DescriptorLit { .. }
+            | K::Zero
+            | K::RawNew { .. }
+            | K::Length(_)
+            | K::Index { .. }
+            | K::ArrayLit(_)
+            | K::ArraySpreadLit(_)
+            | K::Template(_)
+            | K::Lambda { .. }
+            | K::Yield(_)
+            | K::AsyncSuspend
+            | K::AsyncCall { .. }
+            | K::AsyncHandleCreate { .. }
+            | K::AsyncHandleAwait(_)
+            | K::AsyncHandleTransfer { .. }
+            | K::Cond { .. } => None,
+        };
+        let narrowed = self.is_shared_location(&module.classes)
+            && matches!(declared, Some(Type::Nullable(inner)) if inner.as_ref() == &self.ty);
+        let mut sites = match &self.kind {
             K::Str(_) => vec![allocation(&self.pos)],
             K::Binary { op, left, .. } if *op == B::Add && left.ty == Type::Str => {
                 vec![allocation(&self.pos)]
@@ -468,7 +510,7 @@ impl Expr {
             | K::Bool(_)
             | K::Null
             | K::This
-            | K::Local(_)
+            | K::Local(..)
             | K::Global(_)
             | K::FuncRef(_)
             | K::EnumMember { .. }
@@ -482,6 +524,58 @@ impl Expr {
             | K::Yield(_)
             | K::AsyncSuspend
             | K::AsyncHandleTransfer { .. } => Vec::new(),
+        };
+        if narrowed {
+            sites.push(TrapSite::NullNarrowing {
+                pos: self.pos.clone(),
+            });
         }
+        sites
+    }
+}
+
+pub(super) fn declared_field_type<'a>(
+    ty: &Type,
+    name: &str,
+    classes: &'a [ClassDef],
+) -> Option<&'a Type> {
+    match ty {
+        Type::Class(id) => classes
+            .get(id.0)
+            .and_then(|class| class.fields.iter().find(|field| field.name == name))
+            .map(|field| &field.ty),
+        Type::Nullable(inner) => declared_field_type(inner, name, classes),
+        Type::IterResult(_)
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::I64
+        | Type::U64
+        | Type::F32
+        | Type::F64
+        | Type::F16
+        | Type::Bool
+        | Type::Str
+        | Type::Date
+        | Type::RegExp
+        | Type::Void
+        | Type::Null
+        | Type::Object
+        | Type::Enum(_)
+        | Type::StringAlias(_)
+        | Type::FixedArray(..)
+        | Type::Array(_)
+        | Type::Map(..)
+        | Type::Set(_)
+        | Type::Worker(..)
+        | Type::Inbox(_)
+        | Type::Outbox(_)
+        | Type::Func(_)
+        | Type::Generator(_)
+        | Type::AsyncHandle(_)
+        | Type::Error => None,
     }
 }

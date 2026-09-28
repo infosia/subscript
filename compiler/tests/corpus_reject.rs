@@ -333,6 +333,25 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r249-unnarrowed-nullable-field-call.ts", RuleCode::S100, 10),
     ("r250-map-generator-get.ts", RuleCode::S014, 9),
     ("r251-map-boundary-struct-get.ts", RuleCode::S014, 8),
+    ("r252-narrowing-across-call.ts", RuleCode::S011, 13),
+    ("r253-narrowing-alias-store.ts", RuleCode::S100, 13),
+    ("r254-global-narrowing-across-call.ts", RuleCode::S011, 13),
+    ("r255-narrowing-across-await.ts", RuleCode::S011, 13),
+    ("r256-narrowing-loop-call.ts", RuleCode::S011, 15),
+    ("r257-narrowing-loop-alias-store.ts", RuleCode::S011, 14),
+    ("r258-narrowing-loop-global.ts", RuleCode::S011, 15),
+    ("r259-narrowing-loop-await.ts", RuleCode::S011, 15),
+    ("r260-narrowing-try-join.ts", RuleCode::S011, 14),
+    ("r261-narrowing-field-initializer.ts", RuleCode::S011, 15),
+    ("r262-narrowing-generator-resumption.ts", RuleCode::S011, 15),
+    ("r263-narrowing-using-exit.ts", RuleCode::S011, 15),
+    ("r264-narrowing-switch-join.ts", RuleCode::S011, 11),
+    ("r265-boxed-local-narrowing-call.ts", RuleCode::S011, 15),
+    (
+        "r266-boxed-local-narrowing-alias-store.ts",
+        RuleCode::S011,
+        14,
+    ),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -363,7 +382,10 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
         let mut files = Vec::new();
         if matches!(
             file,
-            "r169-embedded-header-copy.ts" | "r251-map-boundary-struct-get.ts"
+            "r169-embedded-header-copy.ts"
+                | "r251-map-boundary-struct-get.ts"
+                | "r265-boxed-local-narrowing-call.ts"
+                | "r266-boxed-local-narrowing-alias-store.ts"
         ) {
             let mirror =
                 fs::read_to_string(corpus_dir().join("interop").join("interop.generated.d.ts"))
@@ -418,7 +440,10 @@ fn divergence_blocks_match_every_reject_entry_tsc_header() {
         let mut files = Vec::new();
         if matches!(
             file,
-            "r169-embedded-header-copy.ts" | "r251-map-boundary-struct-get.ts"
+            "r169-embedded-header-copy.ts"
+                | "r251-map-boundary-struct-get.ts"
+                | "r265-boxed-local-narrowing-call.ts"
+                | "r266-boxed-local-narrowing-alias-store.ts"
         ) {
             let mirror =
                 fs::read_to_string(corpus_dir().join("interop").join("interop.generated.d.ts"))

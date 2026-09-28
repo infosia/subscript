@@ -256,6 +256,13 @@ impl Interpreter<'_> {
         source_ty: Option<&Type>,
         instruction: &l::Instruction,
     ) -> Result<Value, InterpretError> {
+        if let Some(l::ValueType::Address(address)) = result_ty {
+            return Ok(Value::Address(Address {
+                target: AddressTarget::Pointer(value.as_handle()?),
+                pointee: address.pointee.clone(),
+                poison: Rc::new(RefCell::new(None)),
+            }));
+        }
         let ty = self.data_result_type(result_ty, instruction)?;
         if let (Type::Class(target), Some(Type::Nullable(source))) = (ty, source_ty) {
             if matches!(source.as_ref(), Type::Class(source) if source == target)
