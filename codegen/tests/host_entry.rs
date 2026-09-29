@@ -288,12 +288,12 @@ fn all_test_host_bodies_use_the_helper_and_bypass_is_rejected() {
 #[test]
 fn host_entry_owns_the_guard_and_rejects_invalid_bodies() {
     use subscript_codegen::host_entry;
-    assert!(host_entry("void run(void) {}").is_err());
+    assert!(host_entry("void run(void) {}", &test_header()).is_err());
     let body = format!("int {} {{ _setmode(0, 0); }}", "main(void)");
-    assert!(host_entry(&body).is_err());
+    assert!(host_entry(&body, &test_header()).is_err());
     let body = format!("int {} {{ return 0; }}", "main(void)");
-    let host = host_entry(&body).unwrap();
-    assert!(host.starts_with(subscript_codegen::HOST_HEADER_C));
+    let host = host_entry(&body, &test_header()).unwrap();
+    assert!(host.starts_with(&test_header()));
     assert!(host.contains(
         "#ifdef _WIN32\n#include <stdio.h>\n#include <fcntl.h>\n#include <io.h>\n#endif"
     ));
@@ -328,7 +328,7 @@ fn c_definitions_share_recognition_and_compile() {
             violations("definition.rs", &wrapped).is_empty(),
             "{signature}"
         );
-        let host = host_entry(&body).expect("recognized definition");
+        let host = host_entry(&body, &test_header()).expect("recognized definition");
         assert_eq!(host.matches("_setmode").count(), 1);
         // Compile both the bypass and the helper result with the selected host compiler.
         for source in [&body, &host] {
@@ -359,7 +359,7 @@ fn c_definitions_share_recognition_and_compile() {
         format!("const char *s = \"{signature} {{ return 0; }}\";"),
         "int domain(void) { return 0; }".to_owned(),
     ] {
-        assert!(host_entry(&body).is_err(), "{body}");
+        assert!(host_entry(&body, &test_header()).is_err(), "{body}");
         let raw = format!("let body = r#\"{body}\"#;");
         assert!(violations("non-definition.rs", &raw).is_empty(), "{body}");
     }
@@ -376,7 +376,7 @@ fn c_punctuators_and_attributes_preserve_the_insertion_offset() {
         let prefix = format!("{signature} {open}");
         let body = format!("{prefix} return 0; {close}");
         assert_eq!(host_source::main_body_start(&body), Some(prefix.len()));
-        let host = subscript_codegen::host_entry(&body).unwrap();
+        let host = subscript_codegen::host_entry(&body, &test_header()).unwrap();
         assert!(host.contains(&format!("{prefix}\n#ifdef _WIN32")));
         assert_eq!(
             violations("punctuator.rs", &format!("r#\"{body}\"#")).len(),
@@ -462,4 +462,180 @@ fn every_new_source_directory_reports_an_injected_body_in_a_scratch_copy() {
         found.len(),
         found.join("\n")
     );
+}
+
+fn test_header() -> String {
+    let module = subscript_compiler::check_program(&[subscript_compiler::SourceFile::entry(
+        "main.ts",
+        "export function main(): void {}",
+    )])
+    .unwrap();
+    subscript_codegen::emit_c(&module).unwrap().host_header
+}
+
+// Scan declarations, not calls or definitions. Rust literals are decoded first.
+fn hand_entries(source: &str) -> Vec<String> {
+    let source = source.replace("\\\r\n", "").replace("\\\n", "");
+    let list = tokens(&source);
+    let mut found = Vec::new();
+    for (index, token) in list.iter().enumerate() {
+        if token.string
+            || !token.text.starts_with("subscript_export_")
+            || token.text == "subscript_export_"
+        {
+            continue;
+        }
+        let start = list[..index]
+            .iter()
+            .rposition(|t| matches!(t.text, ";" | "{" | "}"))
+            .map_or(0, |i| i + 1);
+        let prefix = &list[start..index];
+        let typed = prefix
+            .iter()
+            .any(|t| matches!(t.text, "void" | "int" | "char" | "float" | "double"))
+            || (!prefix.is_empty()
+                && prefix.iter().all(|t| {
+                    !t.string
+                        && (t
+                            .text
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                            || matches!(t.text, "*" | "(" | ")"))
+                }));
+        if !typed || prefix.iter().any(|t| matches!(t.text, "=" | "return")) {
+            continue;
+        }
+        if list[index + 1..]
+            .iter()
+            .find(|t| matches!(t.text, ";" | "{" | "}"))
+            .is_some_and(|t| t.text == ";")
+        {
+            found.push(token.text.to_string());
+        }
+    }
+    found
+}
+
+fn rust_hand_entries(source: &str) -> Vec<String> {
+    let list = tokens(source);
+    list.iter()
+        .enumerate()
+        .filter(|(_, token)| token.string)
+        // A string comparison is an observation, not C source.
+        .filter(|(i, _)| !(*i >= 2 && list[*i - 1].text == "(" && list[*i - 2].text == "contains"))
+        .flat_map(|(_, token)| hand_entries(&string_value(token.text)))
+        .collect()
+}
+
+#[test]
+fn every_repository_c_source_and_rust_c_string_has_no_hand_entry_declaration() {
+    let symbol = ["subscript_export_", "sample"].concat();
+    let prototype = format!("extern void {symbol}(void *ctx);");
+    assert_eq!(hand_entries(&prototype), [symbol.as_str()]);
+    for return_type in ["int", "ResultType"] {
+        assert_eq!(
+            hand_entries(&format!("{return_type} {symbol}(void *ctx);")),
+            [symbol.as_str()]
+        );
+    }
+    let rust = format!("const HOST: &str = r#\"{prototype}\"#;");
+    assert_eq!(rust_hand_entries(&rust), [symbol.as_str()]);
+    let escaped = format!("const HOST: &str = {:?};", prototype);
+    assert_eq!(rust_hand_entries(&escaped), [symbol.as_str()]);
+    assert!(hand_entries(&format!(
+        "void {symbol}(void *ctx) {{}} void call(void *ctx) {{ {symbol}(ctx); }}"
+    ))
+    .is_empty());
+    assert!(hand_entries(&format!("// {prototype}\n/* {prototype} */")).is_empty());
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let inventory = std::process::Command::new("git")
+        .current_dir(root)
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            "*.c",
+            "*.h",
+            "*.cpp",
+            "*.cc",
+            "*.cxx",
+            "*.rs",
+        ])
+        .output()
+        .unwrap();
+    assert!(inventory.status.success());
+    let mut errors = Vec::new();
+    for file in inventory
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|s| !s.is_empty())
+    {
+        let file = std::str::from_utf8(file).unwrap();
+        let path = root.join(file);
+        if !path.is_file() {
+            continue;
+        }
+        let source = std::fs::read_to_string(path).unwrap();
+        let declarations = if file.ends_with(".rs") {
+            rust_hand_entries(&source)
+        } else {
+            hand_entries(&source)
+        };
+        errors.extend(
+            declarations
+                .into_iter()
+                .map(|name| format!("{file}: hand entry declaration {name}")),
+        );
+    }
+    assert!(errors.is_empty(), "{}", errors.join("\n"));
+}
+
+#[test]
+fn helper_accepts_parameterized_main_and_program_checks_its_header() {
+    use subscript_codegen::{
+        add_c11_optimized_flags, emit_c_without_main, host_c_compiler, host_entry,
+    };
+    let module = subscript_compiler::check_program(&[subscript_compiler::SourceFile::entry(
+        "main.ts",
+        "export function main(n: i32): void {}",
+    )])
+    .unwrap();
+    let program = emit_c_without_main(&module).unwrap();
+    let scratch = Scratch::new();
+    std::fs::write(scratch.0.join("program.c"), &program.source).unwrap();
+    let body = format!("#include \"program.h\"\nint {} {{ subscript_export_main((subscript_rt_context*)0, 7); return 0; }}", "main(void)");
+    let compiler = host_c_compiler().unwrap();
+    for (header, succeeds) in [
+        (program.host_header.clone(), true),
+        (program.host_header.replace(", int32_t a0", ""), false),
+    ] {
+        std::fs::write(scratch.0.join("program.h"), &header).unwrap();
+        std::fs::write(
+            scratch.0.join("host.c"),
+            host_entry(&body, &header).unwrap(),
+        )
+        .unwrap();
+        // Each translation unit independently checks the same header.
+        for name in ["host.c", "program.c"] {
+            let mut command = compiler.command();
+            add_c11_optimized_flags(&mut command, compiler.style());
+            command
+                .arg(if compiler.style().is_msvc() {
+                    "/Zs"
+                } else {
+                    "-fsyntax-only"
+                })
+                .arg(scratch.0.join(name));
+            let output = command.output().unwrap();
+            assert_eq!(
+                output.status.success(),
+                succeeds,
+                "{name}: {}",
+                subscript_codegen::tool_output_report(&output)
+            );
+        }
+    }
 }

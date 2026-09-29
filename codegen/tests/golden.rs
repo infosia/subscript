@@ -965,11 +965,13 @@ fn jit_ship_c_aot_and_golden_agree_byte_for_byte() {
 #[test]
 fn every_corpus_entry_with_a_golden_ends_in_a_newline() {
     // Output shape is part of the corpus convention: every run-set
-    // program prints at least one line.
+    // non-empty output ends at a line boundary. The retired r267 program is silent.
     let accept = corpus::corpus_accept();
     for id in corpus::golden_ids(&accept) {
         let golden = corpus::golden_bytes(&accept, &id);
-        assert!(!golden.is_empty(), "{id}: golden is empty");
+        if golden.is_empty() {
+            continue;
+        }
         assert_eq!(
             golden.last(),
             Some(&b'\n'),

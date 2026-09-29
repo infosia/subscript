@@ -469,8 +469,8 @@ fn two_file_cycle_terminates_and_loads_each_file_once() -> Result<(), String> {
         "main.ts",
         concat!(
             "import { helper } from \"./other\";\n",
-            "export function root(): i32 { return 1; }\n",
-            "export function main(): void { print(`${helper()}`); }\n",
+            "export function root(): void { print(`1`); }\n",
+            "export function main(): void { helper(); }\n",
         )
         .as_bytes(),
     )?;
@@ -478,7 +478,7 @@ fn two_file_cycle_terminates_and_loads_each_file_once() -> Result<(), String> {
         "other.ts",
         concat!(
             "import { root } from \"./main\";\n",
-            "export function helper(): i32 { return root(); }\n",
+            "export function helper(): void { root(); }\n",
         )
         .as_bytes(),
     )?;
@@ -492,6 +492,25 @@ fn two_file_cycle_terminates_and_loads_each_file_once() -> Result<(), String> {
     assert_code(&checked, 0);
     assert!(checked.stdout.is_empty());
     assert_eq!(checked.stderr, b"check: main.ts: no errors\n");
+    let ran = output(
+        subscript()
+            .current_dir(&directory.0)
+            .args(["run", "main.ts"]),
+    )?;
+    assert_code(&ran, 0);
+    assert_eq!(ran.stdout, b"1\n");
+
+    // The cycle must not hide an invalid entry or duplicate its diagnostic.
+    directory.write("main.ts", b"import { helper } from './other';\nexport function root(): i32 { return 1; }\nexport function main(): void { helper(); }\n")?;
+    let rejected = output(
+        subscript()
+            .current_dir(&directory.0)
+            .args(["check", "main.ts"]),
+    )?;
+    assert_code(&rejected, 1);
+    let diagnostic = String::from_utf8_lossy(&rejected.stderr);
+    assert!(diagnostic.contains("entry export `root`: host entries must return void"));
+    assert_eq!(diagnostic.matches("error[S100]").count(), 1);
     Ok(())
 }
 
@@ -964,5 +983,91 @@ fn cli_and_corpus_keep_import_initialization_order() -> Result<(), String> {
     assert_code(&run, 0);
     assert_eq!(run.stdout, b"y=6 b=5\n");
     eprintln!("CLI initialization order test: {:?}", start.elapsed());
+    Ok(())
+}
+
+#[test]
+fn entryless_alias_api_builds_for_a_host_and_cli_main_has_a_control() -> Result<(), String> {
+    let started = std::time::Instant::now();
+    let directory = TestDir::new()?;
+    directory.write(
+        "api.ts",
+        b"export { update as first, update as second } from './lib';",
+    )?;
+    directory.write("lib.ts", b"let count: i32 = 0; export function update(): void { count += 1; print(`${count}`); } export function main(): void { print('library main'); }")?;
+    let checked = output(
+        subscript()
+            .current_dir(&directory.0)
+            .args(["check", "api.ts"]),
+    )?;
+    assert_code(&checked, 0);
+    let missing = output(
+        subscript()
+            .current_dir(&directory.0)
+            .args(["run", "api.ts"]),
+    )?;
+    assert_code(&missing, 1);
+    assert!(String::from_utf8_lossy(&missing.stderr)
+        .contains("error[S100]: entry module exports no host entry `main`"));
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("api.ts:1:1"));
+    let emitted = output(subscript().current_dir(&directory.0).args([
+        "emit",
+        "api.ts",
+        "--no-entry",
+        "-o",
+        "out",
+    ]))?;
+    assert_code(&emitted, 0);
+    let header =
+        std::fs::read_to_string(directory.0.join("out/program.h")).map_err(|e| e.to_string())?;
+    let host = subscript_codegen::host_entry(
+        r#"
+#include "out/program.h"
+#include <stdio.h>
+int main(void) {
+    subscript_rt_context* ctx = subscript_rt_ctx_new();
+    if (ctx == NULL) return 2;
+    subscript_rt_ctx_enter_script(ctx);
+    subscript_init(ctx);
+    subscript_export_first(ctx);
+    subscript_export_second(ctx);
+    subscript_rt_ctx_exit_script(ctx);
+    uint64_t length = 0;
+    const uint8_t* bytes = subscript_rt_ctx_stdout(ctx, &length);
+    if (length != 0) fwrite(bytes, 1, (size_t)length, stdout);
+    int failed = subscript_rt_ctx_trap_kind(ctx) != 0;
+    subscript_rt_ctx_release(ctx);
+    return failed;
+}
+"#,
+        &header,
+    )?;
+    directory.write("host.c", host.as_bytes())?;
+    let runtime = subscript_codegen::runtime_staticlib_path().map_err(|error| error.to_string())?;
+    let include = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../runtime/include");
+    let built = output(
+        subscript()
+            .env("SUBSCRIPT_RUNTIME_LIB", &runtime)
+            .env("SUBSCRIPT_RUNTIME_INCLUDE", &include)
+            .current_dir(&directory.0)
+            .args([
+                "build", "--source", "api.ts", "--host", "host.c", "-o", "out", "--run",
+            ]),
+    )?;
+    assert_code(&built, 0);
+    assert_eq!(built.stdout, b"1\n2\n");
+    let header =
+        std::fs::read_to_string(directory.0.join("out/program.h")).map_err(|e| e.to_string())?;
+    assert!(!header.contains("void subscript_export_main("));
+    assert!(!header.contains("void subscript_export_update("));
+    directory.write("api.ts", b"export { update as main } from './lib';")?;
+    let present = output(
+        subscript()
+            .current_dir(&directory.0)
+            .args(["run", "api.ts"]),
+    )?;
+    assert_code(&present, 0);
+    assert_eq!(present.stdout, b"1\n");
+    eprintln!("host API CLI and ship control: {:?}", started.elapsed());
     Ok(())
 }

@@ -518,7 +518,7 @@ fn spawned_watch_polls_imports_and_keeps_stdout_program_only() -> Result<(), Str
     assert_eq!(captured_stdout, b"1:10\n2:200\nbody 3:200\nfixed 4:200\n");
 
     let broken_files = [
-        SourceFile::new("main.ts", ENTRY_BROKEN),
+        SourceFile::entry("main.ts", ENTRY_BROKEN),
         SourceFile::new("helper.ts", HELPER_V2),
     ];
     let diagnostics = check_program(&broken_files).expect_err("broken edit must be rejected");
@@ -575,5 +575,132 @@ fn spawned_watch_preserves_stdout_before_each_trap() -> Result<(), String> {
     let _ = stderr_thread.join();
     result?;
     assert_eq!(stdout.bytes()?, expected.repeat(2));
+    Ok(())
+}
+
+#[test]
+fn every_runner_path_reports_the_same_missing_main_diagnostic() -> Result<(), String> {
+    let directory = TestDir::new()?;
+    directory.write("api.ts", "export function update(): void {}\n")?;
+    let mut expected = None;
+    for args in [
+        vec!["run", "api.ts"],
+        vec!["build", "--source", "api.ts", "-o", "out"],
+        vec!["build", "--source", "api.ts", "-o", "out", "--run"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_subscript"))
+            .current_dir(&directory.0)
+            .args(args)
+            .output()
+            .map_err(|e| e.to_string())?;
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&output.stderr)
+            .contains("error[S100]: entry module exports no host entry `main`"));
+        if let Some(expected) = &expected {
+            assert_eq!(&output.stderr, expected);
+        } else {
+            expected = Some(output.stderr);
+        }
+    }
+    let mut child = ChildGuard(
+        Command::new(env!("CARGO_BIN_EXE_subscript"))
+            .current_dir(&directory.0)
+            .args(["run", "--watch", "api.ts"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?,
+    );
+    let (stdout, out_thread) = Capture::reader(child.0.stdout.take().unwrap());
+    let (stderr, err_thread) = Capture::reader(child.0.stderr.take().unwrap());
+    let result = (|| {
+        stderr.wait_for_count(b"watch: waiting for a fix\n", 1)?;
+        let mut expected = expected.unwrap();
+        expected.extend_from_slice(b"watch: waiting for a fix\n");
+        assert_eq!(stderr.bytes()?, expected);
+        assert!(child.0.try_wait().map_err(|e| e.to_string())?.is_none());
+        directory.write(
+            "api.ts",
+            "export function main(): void { print('fixed'); }\n",
+        )?;
+        stdout.wait_for_count(b"fixed\n", 1)?;
+        assert_eq!(stdout.bytes()?, b"fixed\n");
+        Ok(())
+    })();
+    drop(child);
+    out_thread.join().unwrap();
+    err_thread.join().unwrap();
+    result
+}
+
+#[test]
+fn watched_async_corpus_matches_run_and_a_body_edit() -> Result<(), String> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    for id in ["a294-async-host-order", "a297-async-export-site-order"] {
+        let directory = TestDir::new()?;
+        let corpus = root.join("corpus/accept");
+        if corpus.join(id).is_dir() {
+            for entry in std::fs::read_dir(corpus.join(id)).map_err(|e| e.to_string())? {
+                let path = entry.map_err(|e| e.to_string())?.path();
+                std::fs::copy(&path, directory.0.join(path.file_name().unwrap()))
+                    .map_err(|e| e.to_string())?;
+            }
+        } else {
+            std::fs::copy(corpus.join(format!("{id}.ts")), directory.0.join("main.ts"))
+                .map_err(|e| e.to_string())?;
+        }
+        let run = Command::new(env!("CARGO_BIN_EXE_subscript"))
+            .current_dir(&directory.0)
+            .args(["run", "main.ts"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        assert!(
+            run.status.success(),
+            "{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let expected =
+            std::fs::read(corpus.join(format!("{id}.expected"))).map_err(|e| e.to_string())?;
+        assert_eq!(run.stdout, expected);
+        let mut child = ChildGuard(
+            Command::new(env!("CARGO_BIN_EXE_subscript"))
+                .current_dir(&directory.0)
+                .args(["run", "--watch", "main.ts"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| e.to_string())?,
+        );
+        let (stdout, out_thread) = Capture::reader(child.0.stdout.take().unwrap());
+        let (stderr, err_thread) = Capture::reader(child.0.stderr.take().unwrap());
+        let result: Result<(), String> = (|| {
+            stdout.wait_for_count(&expected, 1)?;
+            assert_eq!(stdout.bytes()?, expected);
+            let file = if id.starts_with("a297") {
+                "zlib.ts"
+            } else {
+                "main.ts"
+            };
+            let text =
+                std::fs::read_to_string(directory.0.join(file)).map_err(|e| e.to_string())?;
+            assert!(text.contains("zeta"));
+            directory.write(file, &text.replace("print(\"zeta\")", "print(\"edited\")"))?;
+            stderr.wait_for_count(b"watch: swapped\n", 1)?;
+            let changed = String::from_utf8(expected.clone())
+                .unwrap()
+                .replace("zeta", "edited");
+            stdout.wait_for_count(changed.as_bytes(), 1)?;
+            assert_eq!(
+                stdout.bytes()?,
+                [expected.as_slice(), changed.as_bytes()].concat()
+            );
+            Ok(())
+        })();
+        drop(child);
+        out_thread.join().unwrap();
+        err_thread.join().unwrap();
+        result?;
+    }
     Ok(())
 }

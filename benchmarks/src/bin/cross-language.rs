@@ -92,7 +92,7 @@ fn workload_params(id: &str) -> &'static str {
 /// performance-gate harness). Reused verbatim so the ship-tier span
 /// matches the gate.
 const AOT_BENCH_ENTRY_C: &str = concat!(
-    include_str!("../../../runtime/include/subscript_runtime.h"),
+    "#include \"program.h\"\n",
     include_str!("../../aot-entry.c")
 );
 
@@ -667,8 +667,8 @@ fn measure_ship(
             ))
         }
     };
-    let c_source = match emit_c(&module) {
-        Ok(p) => p.source,
+    let program = match emit_c(&module) {
+        Ok(p) => p,
         Err(e) => return Outcome::Error(format!("C emission: {e}")),
     };
     let src = work.path.join(format!("ship-{id}.c"));
@@ -676,8 +676,11 @@ fn measure_ship(
     let exe = work
         .path
         .join(format!("ship-{id}{}", std::env::consts::EXE_SUFFIX));
-    if let Err(e) = std::fs::write(&src, c_source.as_bytes()) {
+    if let Err(e) = std::fs::write(&src, program.source.as_bytes()) {
         return Outcome::Error(format!("write emitted C: {e}"));
+    }
+    if let Err(e) = std::fs::write(work.path.join("program.h"), program.host_header.as_bytes()) {
+        return Outcome::Error(format!("write program header: {e}"));
     }
     if let Err(e) = std::fs::write(&entry, AOT_BENCH_ENTRY_C.as_bytes()) {
         return Outcome::Error(format!("write entry: {e}"));
@@ -1954,4 +1957,13 @@ mod tests {
         let measured = usize::from(workload_has_all_present_timings(&outcomes));
         assert!(!writes_the_record(measured, 1));
     }
+}
+
+#[cfg(test)]
+#[path = "../host_header_test.rs"]
+mod host_header_test;
+
+#[test]
+fn generated_host_header_compiles() {
+    host_header_test::check(AOT_BENCH_ENTRY_C);
 }

@@ -2,6 +2,7 @@ use super::*;
 
 fn empty_module(functions: Vec<l::Function>) -> l::Module {
     l::Module {
+        host_entries: Vec::new(),
         entry: Some(l::FunctionId(0)),
         async_roots: Vec::new(),
         classes: Vec::new(),

@@ -140,10 +140,15 @@ fn wire_entry_rejects_unknown_value_before_the_body_runs() {
 fn missing_main_ends_the_call_but_not_the_entryless_session() {
     let mut session = ReloadSession::new(&files(ENTRYLESS_V1)).expect("entry-less session");
     match session.call_main() {
-        Err(RunError::Internal(message)) => assert!(
-            message.contains("is not an exported zero-argument void function"),
-            "unexpected diagnostic: {message}"
-        ),
+        Err(RunError::Rejected(diagnostics)) => {
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].code, subscript_compiler::RuleCode::S100);
+            assert_eq!(diagnostics[0].pos.file, "live.ts");
+            assert_eq!(
+                diagnostics[0].message,
+                "entry module exports no host entry `main`"
+            );
+        }
         other => panic!("expected a missing-main error, got {other:?}"),
     }
 
@@ -166,12 +171,18 @@ fn entryless_session_observes_an_accepted_body_swap() {
 #[test]
 fn dev_run_still_requires_main_for_an_entryless_module() {
     match run_jit(&files(ENTRYLESS_V1)) {
-        Err(RunError::Internal(message)) => assert!(
-            message.contains("no exported `main(): void` entry point"),
-            "unexpected diagnostic: {message}"
-        ),
-        other => panic!("expected a missing-main error, got {other:?}"),
+        Err(RunError::Rejected(diagnostics)) => {
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].code, subscript_compiler::RuleCode::S100);
+            assert_eq!(diagnostics[0].pos.file, "live.ts");
+            assert!(diagnostics[0]
+                .message
+                .contains("entry module exports no host entry `main`"));
+        }
+        other => panic!("expected a missing-main diagnostic, got {other:?}"),
     }
+    let with_main = format!("{ENTRYLESS_V1}\nexport function main(): void {{ print('main'); }}");
+    assert_eq!(run_jit(&files(&with_main)).unwrap(), b"main\n");
 }
 
 // ----- (a) accepted body edit -----
@@ -668,10 +679,15 @@ fn run_reload_entry(entry: &ReloadEntry) -> Vec<String> {
     let run = parameter_entry
         .and_then(|()| session.call_main())
         .and_then(|()| {
-            for function in &module.functions {
-                if function.exported && function.is_async && function.name != "main" {
-                    session.call_export(&function.name)?;
-                }
+            let lir = subscript_codegen::lir::lower_module(&module)
+                .map_err(|error| RunError::Internal(error.to_string()))?;
+            for target in &lir.async_roots {
+                let entry = lir
+                    .host_entries
+                    .iter()
+                    .find(|entry| entry.target == *target)
+                    .expect("each async root has a checked host entry");
+                session.call_export(&entry.name)?;
             }
             while session.async_pending() != 0 {
                 session.async_step()?;

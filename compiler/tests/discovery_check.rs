@@ -24,7 +24,7 @@ fn discovery_options(specifier: &str) -> CheckOptions {
 
 #[test]
 fn discovery_check_keeps_hir_and_records_named_imports() {
-    let files = [SourceFile::new("main.ts", DISCOVERY_SOURCE)];
+    let files = [SourceFile::entry("main.ts", DISCOVERY_SOURCE)];
     let options = discovery_options("p.typegpu.ts");
     let module = check_program_with(&files, &options).expect("discovery check");
 
@@ -62,7 +62,7 @@ fn discovery_check_keeps_hir_and_records_named_imports() {
 
 #[test]
 fn default_check_reports_the_absent_module() {
-    let diagnostics = check_program(&[SourceFile::new("main.ts", DISCOVERY_SOURCE)])
+    let diagnostics = check_program(&[SourceFile::entry("main.ts", DISCOVERY_SOURCE)])
         .expect_err("default check must reject the absent module");
 
     assert!(diagnostics.iter().any(|diagnostic| {
@@ -81,7 +81,7 @@ export function main(): void {
 }
 "#;
     let options = discovery_options("./p.typegpu");
-    let module = check_program_with(&[SourceFile::new("main.ts", source)], &options)
+    let module = check_program_with(&[SourceFile::entry("main.ts", source)], &options)
         .expect("discovery check");
 
     assert_eq!(
@@ -93,7 +93,7 @@ export function main(): void {
 #[test]
 fn present_listed_module_resolves_normally() {
     let files = [
-        SourceFile::new(
+        SourceFile::entry(
             "main.ts",
             "import { A_SIZE } from \"./p.typegpu.ts\";\n\
              export function main(): void { const size: i32 = A_SIZE; }\n",
@@ -116,7 +116,7 @@ export function main(): void {
 }
 "#;
     let options = discovery_options("./p.typegpu");
-    let diagnostics = check_program_with(&[SourceFile::new("main.ts", source)], &options)
+    let diagnostics = check_program_with(&[SourceFile::entry("main.ts", source)], &options)
         .expect_err("unrelated diagnostic must reject the program");
 
     assert!(
@@ -131,7 +131,7 @@ export function main(): void {
 fn default_import_from_listed_absent_module_is_rejected() {
     let source = "import Value from \"./p.typegpu\";\nexport function main(): void {}\n";
     let options = discovery_options("./p.typegpu");
-    let diagnostics = check_program_with(&[SourceFile::new("main.ts", source)], &options)
+    let diagnostics = check_program_with(&[SourceFile::entry("main.ts", source)], &options)
         .expect_err("default import must remain rejected");
 
     assert!(diagnostics.iter().any(|diagnostic| {
@@ -150,7 +150,7 @@ export function main(): void {
 }
 "#;
     let options = discovery_options("./p.typegpu");
-    let diagnostics = check_program_with(&[SourceFile::new("main.ts", source)], &options)
+    let diagnostics = check_program_with(&[SourceFile::entry("main.ts", source)], &options)
         .expect_err("unknown arguments must reject the program");
     let unknown_names: Vec<_> = diagnostics
         .iter()
@@ -172,7 +172,7 @@ export function main(): void {
 }
 "#;
     let options = discovery_options("./p.typegpu");
-    let diagnostics = check_program_with(&[SourceFile::new("main.ts", source)], &options)
+    let diagnostics = check_program_with(&[SourceFile::entry("main.ts", source)], &options)
         .expect_err("unknown type argument must reject the program");
 
     assert!(diagnostics.iter().any(|diagnostic| {

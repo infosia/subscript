@@ -116,3 +116,53 @@ fn globals_with_one_source_name_keep_distinct_storage() {
         unsafe { module.free_memory() };
     }
 }
+
+#[test]
+fn shared_targets_have_distinct_public_adapter_symbols() {
+    for declaration in [
+        "function local(): void {}",
+        "async function local(): Promise<void> {}",
+    ] {
+        let source = format!("{declaration} export {{ local as first, local as second }}; export function main(): void {{}}");
+        let hir = check_program(&[SourceFile::new("aliases.ts", &source)]).expect("alias source");
+        let isa = cranelift_native::builder()
+            .expect("host ISA")
+            .finish(dev_flags().expect("dev flags"))
+            .expect("ISA flags");
+        let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
+        let lowered =
+            lower_module_with(&mut module, &hir, LowerOptions::default()).expect("dev lowering");
+        let mut symbols = lowered
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.name.clone(),
+                    module
+                        .declarations()
+                        .get_function_decl(entry.id)
+                        .name
+                        .clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        symbols.sort();
+        assert_eq!(
+            symbols,
+            vec![
+                ("first".into(), Some("subscript_export_first".into())),
+                ("main".into(), Some("subscript_export_main".into())),
+                ("second".into(), Some("subscript_export_second".into())),
+            ]
+        );
+        assert_eq!(
+            hir.functions
+                .iter()
+                .filter(|function| function.name == "local")
+                .count(),
+            1
+        );
+        // SAFETY: no code address leaves this test, and no function runs.
+        unsafe { module.free_memory() };
+    }
+}

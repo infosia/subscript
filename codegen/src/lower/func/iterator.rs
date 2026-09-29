@@ -364,7 +364,7 @@ mod tests {
             (
                 r#"
 export function main(): void {}
-export function probe(values: i32[]): i32 {
+function probe(values: i32[]): i32 {
   let total: i32 = 0;
   for (const value of values) { total += value; }
   for (const key of values.keys()) { total += key; }
@@ -384,7 +384,7 @@ export function probe(values: i32[]): i32 {
             (
                 r#"
 export function main(): void {}
-export function probe(value: string): i32 {
+function probe(value: string): i32 {
   let count: i32 = 0;
   for (const point of value) { count += 1; }
   return count;

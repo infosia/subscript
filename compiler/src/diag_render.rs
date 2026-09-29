@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn a_long_line_renders_a_240_byte_window_with_both_cuts() {
-        let files = [SourceFile::new(
+        let files = [SourceFile::entry(
             "main.ts",
             format!("{}\n", "z".repeat(10_000)),
         )];
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn a_column_near_the_start_has_no_left_cut() {
-        let files = [SourceFile::new(
+        let files = [SourceFile::entry(
             "main.ts",
             format!("{}\n", "z".repeat(10_000)),
         )];
@@ -321,7 +321,7 @@ mod tests {
         // 300 bytes. The three columns put the left cut on the
         // character, one byte inside it, and one byte after it.
         let line = format!("{}é{}", "x".repeat(10), "y".repeat(300));
-        let files = [SourceFile::new("main.ts", format!("{line}\n"))];
+        let files = [SourceFile::entry("main.ts", format!("{line}\n"))];
         for (col, window, caret) in [
             (130, format!("é{}", "y".repeat(238)), 120),
             (131, "y".repeat(239), 120),
@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn the_render_stops_at_200_items_and_the_summary_carries_the_total() {
         let source = "const value: number = 1;\n".repeat(201);
-        let files = [SourceFile::new("main.ts", source)];
+        let files = [SourceFile::entry("main.ts", source)];
         let diagnostics = (0..201)
             .map(|line| {
                 Diagnostic::new(
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn renders_the_divergence_block_exactly() {
-        let files = [SourceFile::new("main.ts", "const value: number = 1;\n")];
+        let files = [SourceFile::entry("main.ts", "const value: number = 1;\n")];
         let mut diagnostic =
             Diagnostic::new(RuleCode::S007, "bare number", Pos::new("main.ts", 1, 14));
         diagnostic.divergence = Some(Divergence::BareNumber);
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn renders_one_diagnostic_with_snippet_and_caret_exactly() {
-        let files = [SourceFile::new(
+        let files = [SourceFile::entry(
             "main.ts",
             "function noop(): void {}\n\nconst value: number = 1;\n",
         )];
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn renders_multiple_diagnostics_with_one_gutter_width_and_count() {
-        let files = [SourceFile::new(
+        let files = [SourceFile::entry(
             "main.ts",
             "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n",
         )];
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn unresolved_files_and_lines_degrade_without_a_snippet() {
-        let files = [SourceFile::new("main.ts", "one line\n")];
+        let files = [SourceFile::entry("main.ts", "one line\n")];
         let diagnostics = [
             Diagnostic::new(RuleCode::S100, "missing file", Pos::new("missing.ts", 9, 4)),
             Diagnostic::new(RuleCode::S100, "missing line", Pos::new("main.ts", 2, 1)),
@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn warning_rendering_reuses_the_diagnostic_shape() {
-        let files = [SourceFile::new("main.ts", "const token = allocate();\n")];
+        let files = [SourceFile::entry("main.ts", "const token = allocate();\n")];
         let warnings = [Warning::new(
             WarnCode::W001,
             "allocation repeats",

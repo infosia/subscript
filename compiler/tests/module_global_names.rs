@@ -1,4 +1,4 @@
-//! Module declaration identities and unique host entries (compiler.md §125).
+//! Module declaration identities (§125) and entry-module host names (§129).
 
 use subscript_compiler::{check_program, RuleCode, SourceFile};
 
@@ -6,44 +6,51 @@ fn files(first: &str, second: &str) -> Vec<SourceFile> {
     vec![
         SourceFile::new("first.ts", first),
         SourceFile::new("second.ts", second),
+        SourceFile::entry("api.ts", ""),
     ]
 }
 
 fn host_case(source: &str) {
-    let mut input = files(source, source);
+    let mut input = vec![
+        SourceFile::entry("first.ts", source),
+        SourceFile::new("second.ts", source),
+    ];
     for reverse in [false, true] {
         if reverse {
             input.reverse();
         }
-        let errors = check_program(&input).expect_err("duplicate host entry");
-        assert_eq!(errors.len(), 1, "{errors:?}");
-        assert_eq!(errors[0].code, RuleCode::S017);
-        assert_eq!(errors[0].pos.file, input[1].name);
-        assert!(errors[0].message.contains("first.ts"));
-        assert!(errors[0].message.contains("second.ts"));
-        assert!(errors[0].message.contains("update"));
+        let module = check_program(&input).expect("only the entry export is a host entry");
+        assert_eq!(module.host_entries.len(), 1);
+        assert_eq!(module.host_entries[0].name, "update");
+        assert_eq!(module.host_entries[0].pos.file, "first.ts");
     }
-    check_program(&files(source, &source.replace("update", "other")))
-        .expect("distinct host entry names");
+    input
+        .iter_mut()
+        .find(|file| file.entry)
+        .unwrap()
+        .source
+        .push_str("\nexport { update };\n");
+    let errors = check_program(&input).expect_err("duplicate entry export");
+    assert_eq!(errors[0].code, RuleCode::S017);
 }
 
 #[test]
-fn synchronous_host_entry_names_are_unique() {
+fn synchronous_host_entry_names_are_scoped() {
     host_case("export function update(): void {}");
 }
 
 #[test]
-fn scalar_host_entry_names_are_unique() {
+fn scalar_host_entry_names_are_scoped() {
     host_case("export function update(value: i32, enabled: boolean): void {}");
 }
 
 #[test]
-fn handle_host_entry_names_are_unique() {
+fn handle_host_entry_names_are_scoped() {
     host_case("class Handle {} export function update(value: Handle): void {}");
 }
 
 #[test]
-fn asynchronous_host_entry_names_are_unique() {
+fn asynchronous_host_entry_names_are_scoped() {
     host_case("export async function update(): Promise<void> { await Context.suspend(); }");
 }
 
@@ -131,7 +138,7 @@ fn generic_instance_identity_includes_the_template_module() {
 #[test]
 fn mismatched_nominal_types_name_both_modules() {
     let errors = check_program(&[
-        SourceFile::new("main.ts", "import { take } from \"./lib\"; class C { value: i32 = 7; } export function main(): void { take(new C()); }"),
+        SourceFile::entry("main.ts", "import { take } from \"./lib\"; class C { value: i32 = 7; } export function main(): void { take(new C()); }"),
         SourceFile::new("lib.ts", "class C { value: i32 = 100; } export function take(value: C): i32 { return value.value; }"),
     ]).expect_err("nominal classes differ");
     assert!(
@@ -149,7 +156,7 @@ fn mismatched_nominal_types_name_both_modules() {
 #[test]
 fn initializer_routes_disambiguate_same_name_functions() {
     let errors = check_program(&[
-        SourceFile::new("main.ts", "import { libRead } from \"./lib\"; function read(): i32 { return libRead(); } let x: i32 = read();"),
+        SourceFile::entry("main.ts", "import { libRead } from \"./lib\"; function read(): i32 { return libRead(); } let x: i32 = read();"),
         SourceFile::new("lib.ts", "function read(): i32 { return x; } export function libRead(): i32 { return read(); } let x: i32 = 100;"),
     ]).expect_err("library global is not initialized yet");
     assert!(
@@ -168,7 +175,7 @@ fn initializer_routes_disambiguate_same_name_functions() {
 #[test]
 fn initializer_routes_disambiguate_same_name_constructors() {
     let errors = check_program(&[
-        SourceFile::new("main.ts", "import { libRead } from \"./lib\"; class C { value: i32; constructor() { this.value = libRead(); } } let local: C = new C();"),
+        SourceFile::entry("main.ts", "import { libRead } from \"./lib\"; class C { value: i32; constructor() { this.value = libRead(); } } let local: C = new C();"),
         SourceFile::new("lib.ts", "class C { value: i32; constructor() { this.value = y; } } export function libRead(): i32 { return new C().value; } let y: i32 = 100;"),
     ]).expect_err("library global is not initialized yet");
     assert!(
@@ -187,7 +194,7 @@ fn initializer_routes_disambiguate_same_name_constructors() {
 fn a_module_class_hides_a_mirror_type_alias() {
     let input = [
         SourceFile::ambient("mirror.d.ts", "type C = (value: i32) => i32;"),
-        SourceFile::new(
+        SourceFile::entry(
             "main.ts",
             "class C { value: i32 = 7; } const c: C = new C();",
         ),
@@ -248,7 +255,7 @@ fn each_mirror_scope_kind_yields_to_the_module_scope() {
                 "mirror.d.ts",
                 format!("// @subscript-c-header include=\"mirror.h\"\n{mirror}"),
             ),
-            SourceFile::new(
+            SourceFile::entry(
                 "main.ts",
                 "class K { value: i32 = 7; } const local: K = new K();",
             ),
@@ -275,7 +282,7 @@ fn symbol_bearing_error_paths_render_source_names() {
         ("class C { f<T>(x: T): T { return x; } } new C().f<i32>();", "f<i32>"),
         ("function g(): void { f(); } function* f() { yield 1; }", "f"),
     ] {
-        let errors = check_program(&[SourceFile::new("main.ts", source)]).expect_err("invalid call");
+        let errors = check_program(&[SourceFile::entry("main.ts", source)]).expect_err("invalid call");
         assert!(errors.iter().any(|e| e.message.contains(spelling)), "{errors:?}");
         assert!(errors.iter().all(|e| !e.message.contains("[[identity:")), "{errors:?}");
     }
@@ -297,7 +304,7 @@ fn assert_alias_value_error(expression: &str, name: &str) {
             "mirror.d.ts",
             "type SubAccess = i32; type SubLogCallback = (value: string) => void;",
         ),
-        SourceFile::new("main.ts", expression),
+        SourceFile::entry("main.ts", expression),
     ];
     let errors = check_program(&input).expect_err("a type alias is not a value");
     assert_eq!(errors.len(), 1, "{errors:?}");
@@ -308,37 +315,28 @@ fn assert_alias_value_error(expression: &str, name: &str) {
 }
 
 #[test]
-fn r267_renders_the_host_symbol_collision() {
-    let input = [
-        SourceFile::new(
+fn retired_r267_accepts_two_module_updates() {
+    let mut input = [
+        SourceFile::entry(
             "main.ts",
-            include_str!("../../corpus/reject/r267-duplicate-host-entry/main.ts"),
+            include_str!("../../corpus/accept/a293-module-only-update/main.ts"),
         ),
         SourceFile::new(
             "lib.ts",
-            include_str!("../../corpus/reject/r267-duplicate-host-entry/lib.ts"),
+            include_str!("../../corpus/accept/a293-module-only-update/lib.ts"),
         ),
     ];
-    let errors = check_program(&input).expect_err("duplicate host entry");
-    let rendered = subscript_compiler::render_diagnostics(&input, &errors);
-    assert_eq!(rendered, concat!(
-    "error[S017]: duplicate host entry `update` in modules `main.ts` and `lib.ts`\n" ,
-    " --> lib.ts:8:17\n" ,
-    "  |\n" ,
-    "8 | export function update(): void {}\n" ,
-    "  |                 ^\n" ,
-    "  = rule: One namespace cannot contain two declarations of the same name.\n" ,
-    "  = TypeScript accepts:\n" ,
-    "  |   // main.ts\n" ,
-    "  |   export function update(): void {}\n" ,
-    "  |   // lib.ts\n" ,
-    "  |   export function update(): void {}\n" ,
-    "  = subscript:\n" ,
-    "  |   // main.ts\n" ,
-    "  |   export function update(): void {}\n" ,
-    "  |   // lib.ts\n" ,
-    "  |   export function libUpdate(): void {}\n" ,
-    "  = why: The host sees `subscript_export_<name>` with no module qualifier; C has one symbol namespace. (collisions.md C14)\n" ,
-    "error: 1 error(s)" ,
-));
+    input[0].entry = true;
+    let module = check_program(&input).expect("module exports do not collide");
+    assert_eq!(
+        module
+            .host_entries
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect::<Vec<_>>(),
+        ["main", "update"]
+    );
+    input[0].source.push_str("\nexport { main as update };\n");
+    let errors = check_program(&input).expect_err("entry export names do collide");
+    assert_eq!(errors[0].code, subscript_compiler::RuleCode::S017);
 }

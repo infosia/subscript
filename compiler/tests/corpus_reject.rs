@@ -356,7 +356,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S011,
         14,
     ),
-    ("r267-duplicate-host-entry/lib.ts", RuleCode::S017, 8),
     ("r268-renamed-import-missing/main.ts", RuleCode::S016, 8),
     ("r269-import-assignment/main.ts", RuleCode::S100, 10),
     ("r270-re-export-missing/main.ts", RuleCode::S016, 8),
@@ -366,6 +365,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r274-type-only-export/main.ts", RuleCode::S100, 8),
     ("r275-default-export-name/main.ts", RuleCode::S100, 8),
     ("r276-rejected-declaration-export/lib.ts", RuleCode::S100, 8),
+    ("r277-entry-nonfunction/main.ts", RuleCode::S100, 8),
+    ("r278-entry-signature/main.ts", RuleCode::S100, 8),
+    ("r279-entry-signature-chain/main.ts", RuleCode::S100, 8),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -757,7 +759,7 @@ fn wire_alias_export_return_stays_rejected() {
     assert_eq!(diagnostics[0].pos.line, 2);
     assert_eq!(
         diagnostics[0].message,
-        "exported function `current` has a string-literal union alias in its boundary signature"
+        "entry export `current`: host entries must return void; target `current` in `wire-return.ts`"
     );
 }
 
@@ -1125,7 +1127,7 @@ fn r29_mirror_index_signature_stays_outside_the_surface() {
             "values.generated.d.ts",
             "declare class Values {\n  readonly [index: u32]: i32;\n}\n",
         ),
-        SourceFile::new("main.ts", "export function main(): void {}\n"),
+        SourceFile::entry("main.ts", "export function main(): void {}\n"),
     ])
     .expect_err("a mirror class cannot ingest an index signature");
     assert_eq!(diagnostics[0].code, RuleCode::S100);

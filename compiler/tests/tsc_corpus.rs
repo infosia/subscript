@@ -939,7 +939,7 @@ fn type_only_re_export_value_use_reports_ts1362_and_c18() {
     let sources = [
         SourceFile::new("lib.ts", "export class Box { value: i32 = 4; }"),
         SourceFile::new("surface.ts", "export type { Box } from './lib';"),
-        SourceFile::new(
+        SourceFile::entry(
             "main.ts",
             "import { Box } from './surface'; export function main(): void { new Box(); }",
         ),
@@ -1017,7 +1017,7 @@ fn resolution_count_check_rejects_independent_failures() {
     use subscript_compiler::{check_program, SourceFile};
     let started = Instant::now();
     let sources = [
-        SourceFile::new("main.ts", "export { missing } from './lib';"),
+        SourceFile::entry("main.ts", "export { missing } from './lib';"),
         SourceFile::new("lib.ts", "export const present: i32 = 1;"),
     ];
     let errors = check_program(&sources).unwrap_err();
@@ -1047,7 +1047,7 @@ fn resolution_entry_without_a_count_fails_the_total_check() {
     let entries = corpus_entries(&temporary.0).unwrap();
     assert_eq!(entries.len(), 1);
     let entry = &entries[0];
-    let sources: Vec<_> = entry
+    let mut sources: Vec<_> = entry
         .program_files
         .iter()
         .map(|path| {
@@ -1057,6 +1057,11 @@ fn resolution_entry_without_a_count_fails_the_total_check() {
             )
         })
         .collect();
+    sources
+        .iter_mut()
+        .find(|file| file.name == "main.ts")
+        .unwrap()
+        .entry = true;
     let diagnostics = subscript_compiler::check_program(&sources).unwrap_err();
     assert_eq!(entry.error_count, None);
     assert_eq!(

@@ -23,6 +23,7 @@ pub(crate) struct ParsedFile {
     /// generated mirror, compiler.md §12.2) and does not check it as a
     /// program module.
     pub dts: bool,
+    pub entry: bool,
     /// Fixed-shape C provenance parsed from a generated ambient mirror.
     pub provenance: provenance::Mirror,
 }
@@ -130,7 +131,8 @@ pub fn discover_module_sources<K, E>(
 where
     K: Clone + Eq + std::hash::Hash,
 {
-    let (key, source) = entry;
+    let (key, mut source) = entry;
+    source.entry = true;
     let mut seen = std::collections::HashSet::from([key.clone()]);
     let mut keys = vec![key];
     let mut sources = vec![source];
@@ -201,6 +203,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
                         stem: stem_of(&source.name),
                         module,
                         dts: source.dts,
+                        entry: source.entry,
                         provenance,
                     });
                 }
@@ -268,6 +271,7 @@ mod tests {
             name: name.to_string(),
             source: text.to_string(),
             dts: false,
+            entry: false,
         }
     }
 

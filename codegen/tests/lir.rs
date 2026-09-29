@@ -277,6 +277,7 @@ fn counted_store_verifier_reports_a_missing_retain() {
     let handle = Type::AsyncHandle(Box::new(Type::I32));
     let owner_type = ValueType::Data(handle.clone());
     let module = Module {
+        host_entries: Vec::new(),
         entry: None,
         async_roots: Vec::new(),
         classes: Vec::new(),
@@ -1450,7 +1451,7 @@ export function main(): void {
   const a: V[] = [new V(1), new V(2)];
   a[idx()].x = 9;
 }
-export function read(): i32 {
+function read(): i32 {
   const a: V[] = [new V(1), new V(2)];
   return a[idx()].x;
 }

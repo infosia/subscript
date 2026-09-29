@@ -56,6 +56,9 @@ fn check_entry(files: &[(&str, PathBuf)]) -> hir::Module {
             SourceFile::new(*name, source)
         })
         .collect();
+    if let Some(entry) = sources.first_mut() {
+        entry.entry = true;
+    }
     // Interop entries name a foreign function, boundary struct, or flag
     // member of the synthetic header (§12 device/slice APIs plus the §13.2
     // shapes); prepend the mirror ambient surface so those names resolve. A
@@ -141,7 +144,25 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
     for directory in corpus::directories(&accept) {
         let module = check_program(&corpus::directory_sources(&directory))
             .unwrap_or_else(|errors| panic!("{}: {errors:?}", directory.display()));
+        let main = module
+            .runner_main()
+            .unwrap_or_else(|error| panic!("{}: {error}", directory.display()));
+        assert!(module.functions.iter().any(|f| f.symbol == main.target));
+    }
+
+    // A declaration named main is not a runner entry unless the entry
+    // module exposes it. Changing only the export name fires this check.
+    for (public_name, has_runner) in [("main", true), ("start", false)] {
+        let module = check_program(&[
+            SourceFile::entry(
+                "main.ts",
+                format!("export {{ main as {public_name} }} from './lib';"),
+            ),
+            SourceFile::new("lib.ts", "export function main(): void {}"),
+        ])
+        .unwrap();
         assert!(find_fn(&module, "main").exported);
+        assert_eq!(module.runner_main().is_ok(), has_runner);
     }
 }
 

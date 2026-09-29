@@ -7,6 +7,7 @@ use subscript_compiler::{check_program, Diagnostic, RuleCode, SourceFile};
 #[derive(Clone)]
 struct Block {
     language: String,
+    file: Option<String>,
     line: usize,
     source: String,
     closing_line: Option<usize>,
@@ -39,6 +40,9 @@ fn blocks(markdown: &str) -> Vec<Block> {
                             .next()
                             .unwrap_or("")
                             .into(),
+                        file: trimmed[width..]
+                            .split_whitespace()
+                            .find_map(|word| word.strip_prefix("file=").map(str::to_owned)),
                         line: index + 1,
                         source: String::new(),
                         closing_line: None,
@@ -147,39 +151,105 @@ fn is_program(block: &Block) -> bool {
             .any(|part| part == ["export", "async", "function", "main"])
 }
 
-fn sources(block: &Block, preceding: Option<&Block>) -> Result<Vec<SourceFile>, String> {
+fn sources(block: &Block) -> Vec<SourceFile> {
     let ambient = !is_program(block)
         && words(&block.source)
             .iter()
             .any(|word| matches!(*word, "interface" | "declare"));
-    let entry = if ambient {
+    vec![if ambient {
         SourceFile::ambient("snippet.d.ts", &block.source)
     } else {
         SourceFile::new("snippet.ts", &block.source)
-    };
-    let mut files = vec![entry];
-    for line in block
-        .source
-        .lines()
-        .filter(|line| line.trim_start().starts_with("import "))
-    {
-        let specifier = line
-            .split(['\"', '\''])
-            .nth(1)
-            .ok_or("import has no module string")?;
-        if let Some(name) = specifier.strip_prefix("./") {
-            let sibling = preceding
-                .filter(|block| block.language == "ts")
-                .ok_or("relative import has no preceding TypeScript block")?;
-            let name = if name.ends_with(".ts") {
-                name.to_owned()
-            } else {
-                format!("{name}.ts")
-            };
-            files.push(SourceFile::new(name, &sibling.source));
+    }]
+}
+
+// Consecutive named TypeScript fences form one program, with main.ts as its entry.
+fn source_groups(blocks: &[Block]) -> Result<Vec<(usize, Vec<SourceFile>)>, String> {
+    let mut groups = Vec::new();
+    let mut index = 0;
+    while let Some(block) = blocks.get(index) {
+        if block.language != "ts" {
+            index += 1;
+            continue;
         }
+        if block.file.is_none() {
+            groups.push((index, sources(block)));
+            index += 1;
+            continue;
+        }
+        let start = index;
+        let mut files = Vec::new();
+        let mut entry = None;
+        while let Some(block) = blocks
+            .get(index)
+            .filter(|block| block.language == "ts" && block.file.is_some())
+        {
+            let name = block.file.as_deref().unwrap();
+            if files.iter().any(|file: &SourceFile| file.name == name) {
+                return Err(format!(
+                    "line {}: duplicate example file `{name}`",
+                    block.line
+                ));
+            }
+            files.push(if name == "main.ts" {
+                entry = Some(index);
+                SourceFile::entry(name, &block.source)
+            } else {
+                SourceFile::new(name, &block.source)
+            });
+            index += 1;
+        }
+        let entry = entry.ok_or_else(|| {
+            format!(
+                "line {}: named example has no main.ts entry",
+                blocks[start].line
+            )
+        })?;
+        groups.push((entry, files));
     }
-    Ok(files)
+    Ok(groups)
+}
+
+#[test]
+fn named_fences_form_one_program_with_an_explicit_entry() {
+    let library = "```ts file=math.ts\nexport function triangular(n: i32): i32 { return n * (n + 1) / 2; }\n```\n";
+    let main = "```ts file=main.ts\nimport { triangular } from './math'; export function main(): void { print(`${triangular(5)}`); }\n```\n";
+    for markdown in [format!("{library}\n{main}"), format!("{main}\n{library}")] {
+        let parsed = blocks(&markdown);
+        let groups = source_groups(&parsed).unwrap();
+        assert_eq!(groups.len(), 1);
+        let (index, files) = &groups[0];
+        assert_eq!(parsed[*index].file.as_deref(), Some("main.ts"));
+        assert_eq!(files.iter().filter(|file| file.entry).count(), 1);
+        assert_eq!(subscript_codegen::run_jit(files).unwrap(), b"15\n");
+        let mut invalid = files.clone();
+        invalid
+            .iter_mut()
+            .find(|file| file.name == "math.ts")
+            .unwrap()
+            .source
+            .push_str("\nconst broken: i32 = missingDocName;\n");
+        assert!(check_program(&invalid)
+            .unwrap_err()
+            .iter()
+            .any(|diagnostic| diagnostic.code == RuleCode::S016));
+        let mut wrong_entry = files.clone();
+        for file in &mut wrong_entry {
+            file.entry = file.name == "math.ts";
+        }
+        assert!(check_program(&wrong_entry)
+            .unwrap_err()
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("entry export `triangular`")));
+    }
+    assert!(source_groups(&blocks(library))
+        .unwrap_err()
+        .contains("no main.ts"));
+    assert!(source_groups(&blocks(&format!("{library}{library}{main}")))
+        .unwrap_err()
+        .contains("duplicate example file"));
+    let missing = source_groups(&blocks(main)).unwrap();
+    assert!(check_program(&missing[0].1).is_err());
 }
 
 fn first_diagnostic(diagnostics: &[Diagnostic]) -> String {
@@ -315,12 +385,14 @@ fn documentation_blocks() {
     let mut text_control = false;
     let mut shell_control = false;
     let mut fragment_control = false;
+    let mut module_control = false;
     for document in documents {
         let relative = subscript_compiler::repository_relative(root, &document).unwrap();
         let file = relative.as_str();
         let markdown = std::fs::read_to_string(&document).unwrap();
         let lines = markdown.lines().collect::<Vec<_>>();
         let blocks = blocks(&markdown);
+        let groups = source_groups(&blocks).unwrap_or_else(|error| panic!("{file}: {error}"));
         let expected_ts = match file {
             "README.md" => 1,
             "docs/tutorial-c-cpp.md" => 12,
@@ -348,6 +420,9 @@ fn documentation_blocks() {
             if block.language != "ts" {
                 continue;
             }
+            let Some((_, files)) = groups.iter().find(|(entry, _)| *entry == index) else {
+                continue;
+            };
             let program = is_program(block);
             if program {
                 programs += 1;
@@ -359,12 +434,21 @@ fn documentation_blocks() {
                 compared += 1;
             }
             let result = (|| {
-                let preceding = index.checked_sub(1).and_then(|index| blocks.get(index));
-                let files = sources(block, preceding)?;
+                if files.len() > 1 && !module_control {
+                    let mut invalid = files.clone();
+                    invalid
+                        .iter_mut()
+                        .find(|source| !source.entry)
+                        .unwrap()
+                        .source
+                        .push_str("\nconst docsModuleControl: i32 = docsUndeclaredName;\n");
+                    assert!(check_program(&invalid).is_err());
+                    module_control = true;
+                }
                 if program {
-                    check_program(&files).map_err(|diagnostics| first_diagnostic(&diagnostics))?;
+                    check_program(files).map_err(|diagnostics| first_diagnostic(&diagnostics))?;
                     let actual =
-                        subscript_codegen::run_jit(&files).map_err(|error| error.to_string())?;
+                        subscript_codegen::run_jit(files).map_err(|error| error.to_string())?;
                     check_program_output(file, &markdown, block.line, &actual)?;
                     if let Some(expected) = expected {
                         let control = if expected.language == "sh" {
@@ -392,13 +476,13 @@ fn documentation_blocks() {
                         }
                     }
                 } else {
-                    check_fragment(&files, &mirrors)?;
+                    check_fragment(files, &mirrors)?;
                     if !fragment_control && !files[0].dts {
                         let mut altered = block.clone();
                         altered
                             .source
                             .push_str("\nconst docsNegativeControl: i32 = docsUndeclaredName;\n");
-                        let altered_files = sources(&altered, preceding)?;
+                        let altered_files = sources(&altered);
                         assert!(check_fragment(&altered_files, &mirrors).is_err());
                         println!(
                             "negative control: {file}:{} undeclared fragment name rejected",
@@ -415,6 +499,7 @@ fn documentation_blocks() {
         }
         println!("{file}: programs={programs}, compared outputs={compared}, fragments={fragments}, excerpts={excerpts}");
     }
+    assert!(module_control, "no module negative control ran");
     assert!(text_control, "no text output negative control ran");
     assert!(shell_control, "no shell output negative control ran");
     assert!(fragment_control, "no fragment negative control ran");
@@ -506,4 +591,66 @@ fn shell_transcript_is_program_output() {
         check_program_output("example.md", &other_command, 1, b"hello\n"),
         Ok(false)
     );
+}
+
+#[test]
+fn tutorial_step_two_host_compiles_with_the_emitted_program_header() {
+    use subscript_codegen::{
+        add_c11_optimized_flags, host_c_compiler, host_entry, include_directory_arg,
+    };
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let markdown = std::fs::read_to_string(root.join("docs/tutorial-c-cpp.md")).unwrap();
+    let section = markdown.split("### Step 2 — the host").nth(1).unwrap();
+    let fences = blocks(section);
+    let host = fences.iter().find(|block| block.language == "c").unwrap();
+    let script = blocks(&markdown)
+        .into_iter()
+        .find(|block| block.source.starts_with("// hello.ts"))
+        .unwrap();
+    let program = subscript_codegen::emit_c(&check_program(&sources(&script)).unwrap()).unwrap();
+    let repository = TestRepository::new();
+    let directory = &repository.0;
+    std::fs::write(
+        directory.join("host.c"),
+        host_entry(&host.source, &program.host_header).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(directory.join("program.c"), &program.source).unwrap();
+    let compiler = host_c_compiler().unwrap();
+    for (header, succeeds) in [
+        (program.host_header.clone(), true),
+        (
+            program
+                .host_header
+                .replace("subscript_export_main", "subscript_export_other"),
+            false,
+        ),
+    ] {
+        std::fs::write(directory.join("program.h"), &header).unwrap();
+        let clean = host_entry(&host.source, &header).unwrap();
+        std::fs::write(directory.join("host.c"), clean).unwrap();
+        let mut command = compiler.command();
+        add_c11_optimized_flags(&mut command, compiler.style());
+        command
+            .arg(if compiler.style().is_msvc() {
+                "/we4013"
+            } else {
+                "-Werror=implicit-function-declaration"
+            })
+            .arg(include_directory_arg(compiler.style(), directory))
+            .arg(if compiler.style().is_msvc() {
+                "/Zs"
+            } else {
+                "-fsyntax-only"
+            })
+            .arg(directory.join("host.c"))
+            .arg(directory.join("program.c"));
+        let result = command.output().unwrap();
+        assert_eq!(
+            result.status.success(),
+            succeeds,
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
 }

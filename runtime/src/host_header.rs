@@ -163,22 +163,8 @@ pub fn render() -> Result<String, String> {
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("subscript_rt_worker_entry", &worker_entry)?);
     out.push_str(";\n\n");
-    out.push_str(
-        "/* Every linked program defines subscript_init. A program with an exported main\n",
-    );
-    out.push_str(
-        " * defines subscript_export_main. Each host-callable export is synchronous, returns\n",
-    );
-    out.push_str(
-        " * void, and takes only sized numerics, booleans, or opaque handles. A zero-argument\n",
-    );
-    out.push_str(
-        " * void async export is also host-callable. Its symbol is `subscript_export_<name>`\n",
-    );
-    out.push_str(" * with the same signature. */\n");
+    out.push_str("/* The program header declares the entry module's checked host API. */\n");
     out.push_str(&c_function("subscript_init", &entry)?);
-    out.push_str(";\n");
-    out.push_str(&c_function("subscript_export_main", &entry)?);
     out.push_str(";\n\n");
 
     for function in &functions {
@@ -636,5 +622,12 @@ mod tests {
         assert!(header.contains("`max_retained_bytes` are ignored when `enabled` is 0"));
         assert!(!header.contains("grow without bound"));
         assert!(header.contains("setting is disabled by default"));
+    }
+    #[test]
+    fn runtime_only_header_leaves_program_names_to_the_checker() {
+        let runtime = super::render().unwrap();
+        assert!(runtime.contains("subscript_rt_ctx_new(void)"));
+        assert!(runtime.contains("void subscript_init("));
+        assert!(!runtime.contains("void subscript_export_main("));
     }
 }

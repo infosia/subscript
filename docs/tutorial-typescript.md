@@ -683,18 +683,24 @@ does not know.
 
 ## Exports are the host's entry points
 
-There is no top-level program. The application calls what you export.
-A one-shot program exports `main`. A frame-driven program exports
-entries such as `init`, `update`, and `shutdown`, and the host calls
-them.
+There is no top-level program. The application calls what the entry
+module exports. The entry module is the file you give to
+`subscript run`, `check`, or `build`. A one-shot program exports
+`main`. A frame-driven program exports entries such as `init`,
+`update`, and `shutdown`, and the host calls them.
 
-An export is **host-callable** when three facts hold. It is
-synchronous. It returns `void`. Every parameter is a boundary scalar
-(a sized numeric or a `boolean`) or an opaque handle from the host's C
-API. A host-callable export becomes the C symbol
-`subscript_export_<name>`. A zero-argument `void` async export is
-host-callable too. Any other export stays a legal script function that
-other script code calls; it gets no C symbol.
+Each function that the entry module exports is a host entry, and it
+must be host-callable. Three facts must hold. It is synchronous. It
+returns `void`. Every parameter is a boundary scalar (a sized numeric
+or a `boolean`) or an opaque handle from the host's C API. A
+zero-argument `void` async function is host-callable too. A host entry
+becomes the C symbol `subscript_export_<name>`. The entry module
+exports functions only; any other export there is an error.
+
+An export of any other module is for `import` only: other script
+modules call it, and it gets no C symbol. The entry module can
+re-export such a function under a host name:
+`export { update as physicsUpdate } from "./physics";`.
 
 Module-level variables live in the Context and persist between calls.
 That is how per-frame entries share state:
@@ -780,13 +786,13 @@ and a named replacement. It does not fail at run time.
 `import` and `export` work between script files. `math.ts` exports a
 function, and `main.ts` beside it imports the name:
 
-```ts
+```ts file=math.ts
 export function triangular(n: i32): i32 {
   return (n * (n + 1)) / 2;
 }
 ```
 
-```ts
+```ts file=main.ts
 import { triangular } from "./math";
 
 export function main(): void {

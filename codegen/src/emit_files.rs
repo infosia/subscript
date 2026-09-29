@@ -15,6 +15,8 @@ pub struct EmittedCFiles {
     pub entry: Option<PathBuf>,
     /// Generated program translation unit.
     pub source: PathBuf,
+    /// Program-specific host API header.
+    pub host_header: PathBuf,
     /// Generated allocation-metadata header.
     pub allocation_metadata: PathBuf,
     /// Byte length of the generated program translation unit.
@@ -96,6 +98,8 @@ pub fn emit_c_files(
     })?;
     let hir = check_program(files).map_err(EmitCFilesError::Diagnostics)?;
     let program = if write_entry {
+        hir.runner_main()
+            .map_err(|diagnostic| EmitCFilesError::Diagnostics(vec![diagnostic]))?;
         emit_c(&hir)
     } else {
         emit_c_without_main(&hir)
@@ -104,24 +108,36 @@ pub fn emit_c_files(
 
     let entry = if write_entry {
         let path = out_dir.join("entry.c");
-        write(&path, AOT_ENTRY_C.as_bytes())?;
+        write(
+            &path,
+            AOT_ENTRY_C
+                .replace("program.h", &format!("{label}.h"))
+                .as_bytes(),
+        )?;
         Some(path)
     } else {
         None
     };
     let source = out_dir.join(format!("{label}.c"));
-    write(&source, program.source.as_bytes())?;
+    let source_text = program
+        .source
+        .replacen("\"program.h\"", &format!("\"{label}.h\""), 1);
+    write(&source, source_text.as_bytes())?;
     let allocation_metadata = out_dir.join(format!("{label}.alloc.h"));
     write(
         &allocation_metadata,
         program.allocation_metadata_header.as_bytes(),
     )?;
 
+    let host_header = out_dir.join(format!("{label}.h"));
+    write(&host_header, program.host_header.as_bytes())?;
+
     Ok(EmittedCFiles {
+        host_header,
         entry,
         source,
         allocation_metadata,
-        source_len: program.source.len(),
+        source_len: source_text.len(),
     })
 }
 
@@ -163,7 +179,7 @@ mod tests {
     #[test]
     fn shared_emitter_writes_the_direct_emitter_bytes() -> Result<(), String> {
         let directory = TestDir::new()?;
-        let files = [SourceFile::new(
+        let files = [SourceFile::entry(
             "main.ts",
             "export function main(): void {\n  print(\"shared\");\n}\n",
         )];
@@ -197,6 +213,15 @@ mod tests {
                 .map_err(|error| format!("read metadata: {error}"))?,
             direct.allocation_metadata_header.as_bytes()
         );
+        let labeled =
+            emit_c_files(&files, &directory.0, "custom", true).map_err(|e| e.to_string())?;
+        let source = std::fs::read_to_string(&labeled.source).map_err(|e| e.to_string())?;
+        let entry = std::fs::read_to_string(labeled.entry.unwrap()).map_err(|e| e.to_string())?;
+        for text in [&source, &entry] {
+            assert!(text.contains("#include \"custom.h\""));
+            assert!(!text.contains("#include \"program.h\""));
+        }
+        assert_eq!(labeled.source_len, source.len());
         Ok(())
     }
 
@@ -216,7 +241,7 @@ mod tests {
         let file = directory.0.join("not-a-directory");
         std::fs::write(&file, b"x")
             .map_err(|error| format!("write {}: {error}", file.display()))?;
-        let files = [SourceFile::new(
+        let files = [SourceFile::entry(
             "main.ts",
             "export function main(): void {}\n",
         )];

@@ -2,6 +2,7 @@ use super::*;
 
 fn verifier_module(function: lir::Function) -> Module {
     Module {
+        host_entries: Vec::new(),
         entry: None,
         async_roots: Vec::new(),
         classes: Vec::new(),

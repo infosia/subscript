@@ -110,15 +110,8 @@ pub(super) fn execute_entry(
                 ctx.exit_script();
             }
             if !ctx.trapped() {
-                for entry in &lowered.entries {
-                    if entry.is_async && entry.name != "main" {
-                        let entry_ptr = module.get_finalized_function(entry.id);
-                        call_script_entry(entry_ptr, &mut ctx);
-                        if ctx.trapped() {
-                            break;
-                        }
-                    }
-                }
+                let runner = module.get_finalized_function(lowered.async_runner);
+                call_script_entry(runner, &mut ctx);
             }
             while !ctx.trapped() && ctx.async_pending() != 0 {
                 // SAFETY: every pending item was registered by a generated

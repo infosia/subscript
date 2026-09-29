@@ -7,6 +7,7 @@
 //! declarations are registered as templates in pass A/B and
 //! monomorphized on first use (`identity<i32>`, `Box<f64>`).
 
+mod host_entries;
 mod identity;
 pub(crate) use crate::hir::source_name;
 mod bindings;
@@ -1539,7 +1540,7 @@ mod tests {
     fn reachable_import_of_an_absent_export_uses_s016() {
         let diagnostics = check_program(&[
             SourceFile::new("m.ts", "export const present: i32 = 1;\n"),
-            SourceFile::new(
+            SourceFile::entry(
                 "main.ts",
                 "import { missing } from \"./m\";\n\
                  export function main(): void { missing; }\n",
@@ -1561,7 +1562,7 @@ mod tests {
         use crate::hir::{Callee, ExprKind, SetFn};
         use crate::types::Type;
 
-        let module = check_program(&[SourceFile::new(
+        let module = check_program(&[SourceFile::entry(
             "main.ts",
             "export function main(): void {\n\
                const values: i32[] = [1, 2];\n\
@@ -1627,7 +1628,7 @@ mod tests {
                 "accepts T[], FixedArray<T, N>, Set<T>, or string",
             ),
         ] {
-            let diagnostics = check_program(&[SourceFile::new("main.ts", source)])
+            let diagnostics = check_program(&[SourceFile::entry("main.ts", source)])
                 .expect_err("the rejected source must fail");
             assert_eq!(diagnostics[0].code, RuleCode::S014);
             assert!(
@@ -1642,7 +1643,7 @@ mod tests {
     /// user class keeps `keys`, `values`, and `entries` as members.
     #[test]
     fn a_user_receiver_keeps_the_three_view_names_as_members() {
-        check_program(&[SourceFile::new(
+        check_program(&[SourceFile::entry(
             "main.ts",
             "function* one(): Generator<i32> { yield 1; }\n\
              class Bag {\n\
@@ -1685,7 +1686,7 @@ mod tests {
                 "subject-only fused view",
             ),
         ] {
-            let diagnostics = check_program(&[SourceFile::new("main.ts", source)])
+            let diagnostics = check_program(&[SourceFile::entry("main.ts", source)])
                 .expect_err("a container receiver keeps the view rules");
             assert!(
                 diagnostics[0].message.contains(needle),
@@ -1710,7 +1711,7 @@ mod tests {
              }\n";
         let outcome = |member: &str| -> Vec<String> {
             let source = PROGRAM.replace("MEMBER", member);
-            match check_program(&[SourceFile::new("main.ts", &source)]) {
+            match check_program(&[SourceFile::entry("main.ts", &source)]) {
                 Ok(_) => Vec::new(),
                 Err(diagnostics) => diagnostics
                     .iter()

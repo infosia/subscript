@@ -3,7 +3,7 @@
 //! Polling and terminal I/O belong to the binary-facing command loop. This
 //! module owns only the reload state: it checks one freshly loaded source set,
 //! applies the warning policy, delegates swaps to [`ReloadSession`], and calls
-//! `main` after a start or accepted swap.
+//! the runner main and async roots after a start or accepted swap.
 
 use subscript_codegen::{ReloadError, ReloadSession, RunError, TrapReport};
 use subscript_compiler::{check_program, check_warnings, Diagnostic, SourceFile, Warning};
@@ -118,7 +118,12 @@ impl WatchSession {
         }
         self.last_sources = Some(files.to_vec());
 
-        let checked = check_program(files).map(|module| check_warnings(&module));
+        let checked = check_program(files).and_then(|module| {
+            module
+                .runner_main()
+                .map_err(|diagnostic| vec![diagnostic])?;
+            Ok(check_warnings(&module))
+        });
         let warnings = match checked {
             Ok(warnings) => warnings,
             Err(diagnostics) => return WatchStep::diagnostics(diagnostics),
@@ -190,7 +195,7 @@ impl WatchSession {
 }
 
 fn call_main(session: &mut ReloadSession) -> Result<WatchCall, String> {
-    match session.call_main() {
+    match session.run_main() {
         Ok(()) => Ok(WatchCall {
             output: session.take_output(),
             trap: None,

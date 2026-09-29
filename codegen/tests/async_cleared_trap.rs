@@ -48,14 +48,14 @@ fn ship_c_cleared_continuations_never_replay_or_leak() {
                 .position(|pos| pos.line == line && pos.col == 14)
                 .expect("the independent source position has an emitted entry")
         };
-        std::fs::write(dir.path().join("program.c"), program.source).expect("program");
+        std::fs::write(dir.path().join("program.h"), &program.host_header).unwrap();
+        std::fs::write(dir.path().join("program.c"), &program.source).expect("program");
         let host = host_entry(r#"
 #include "subscript_runtime.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 void subscript_init(subscript_rt_context*);
-void subscript_export_main(subscript_rt_context*);
 static void call(subscript_rt_context* ctx, void (*entry)(subscript_rt_context*)) {
     subscript_rt_ctx_enter_script(ctx);
     entry(ctx);
@@ -103,7 +103,7 @@ int main(void) {
     subscript_rt_ctx_release(ctx);
     return 0;
 }
-"#)
+"#, &program.host_header)
         .unwrap()
         .replace("CONTROL", if control { "1" } else { "0" })
         .replace("UNFINISHED", &unfinished.to_string())

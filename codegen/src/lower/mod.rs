@@ -69,6 +69,8 @@ pub(crate) enum FnKey {
     AsyncExport(lir::FunctionId),
     /// Reload-only adapter for one parameterized host export.
     ReloadExport(lir::FunctionId),
+    /// Additional public adapter for a shared host implementation.
+    HostAlias(usize),
     /// Constructor of a class.
     Ctor(lir::FunctionId),
     /// Method of a class.
@@ -275,8 +277,6 @@ pub(crate) struct EntryPoint {
     pub params: Vec<Type>,
     /// Reload-only uniform argument adapter for a parameterized entry.
     pub reload_adapter: Option<FuncId>,
-    /// Whether this entry is an async root wrapper (Q34).
-    pub is_async: bool,
 }
 
 /// Result of lowering a whole program.
@@ -292,6 +292,8 @@ pub(crate) struct Lowered {
     pub positions: PositionTable,
     /// Every host-callable export in declaration order.
     pub entries: Vec<EntryPoint>,
+    /// Runner for the shared, ordered LIR async roots.
+    pub async_runner: FuncId,
     /// Function-slot table: slot index -> lowered function, `None` for
     /// a slot whose function was never materialized (an env wrapper
     /// for a function never used as a value). Slot numbering is a
@@ -1151,225 +1153,8 @@ pub(crate) fn dev_flags() -> Result<cranelift_codegen::settings::Flags, String> 
     Ok(cranelift_codegen::settings::Flags::new(fb))
 }
 
-/// Assigns an indirection-table slot to every user function the module
-/// declares, in declaration order and *only* from declarations, so
-/// that a recompile with an unchanged declaration hash produces the
-/// same slot for the same function (§8.2). Slots are reserved for env
-/// wrappers too, whether or not the program uses the function as a
-/// value: wrapper creation is body-driven and must not shift the
-/// numbering. Synthesized helpers have no slot (compiler.md §119).
-fn reserve_slots<M: Module>(ml: &mut ModLower<'_, M>) {
-    let free_functions = ml
-        .lir
-        .functions
-        .iter()
-        .filter(|function| function.kind == lir::FunctionKind::Free)
-        .cloned()
-        .collect::<Vec<_>>();
-    for function in free_functions {
-        ml.reserve_slot(FnKey::Free(function.id));
-        if function.is_generator || function.is_async {
-            ml.reserve_slot(FnKey::Resume(function.id));
-            if function.is_async && function.host_entry_traps.is_some() {
-                ml.reserve_slot(FnKey::AsyncExport(function.id));
-            }
-        } else {
-            ml.reserve_slot(FnKey::Wrapper(function.id));
-        }
-    }
-    let classes = ml.lir.classes.clone();
-    for class in classes {
-        if let Some(constructor) = &class.constructor {
-            ml.reserve_slot(FnKey::Ctor(constructor.function));
-        }
-        for method in class.methods {
-            ml.reserve_slot(FnKey::Method(method.function));
-            if ml
-                .lir
-                .functions
-                .get(method.function.0 as usize)
-                .is_some_and(|function| function.is_async)
-            {
-                ml.reserve_slot(FnKey::MethodResume(method.function));
-            }
-        }
-    }
-    ml.reserve_slot(FnKey::Init);
-}
-
-fn reload_entry_signature(call_conv: CallConv) -> Signature {
-    let mut signature = Signature::new(call_conv);
-    signature.params.push(AbiParam::new(types::I64));
-    signature.params.push(AbiParam::new(types::I64));
-    signature
-}
-
-fn explicit_parameter_types(function: &lir::Function) -> Result<Vec<Type>, String> {
-    function
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.kind == lir::ParameterKind::Explicit)
-        .map(|parameter| {
-            function
-                .values
-                .get(parameter.value.0 as usize)
-                .and_then(|value| match &value.ty {
-                    lir::ValueType::Data(ty) => Some(ty.clone()),
-                    lir::ValueType::Address(_) | lir::ValueType::Iterator(_) => None,
-                })
-                .ok_or_else(|| {
-                    internal(format!(
-                        "function {} parameter {} has no data type",
-                        function.id.0, parameter.value.0
-                    ))
-                })
-        })
-        .collect()
-}
-
-fn define_reload_entry_adapter<M: Module>(
-    ml: &mut ModLower<'_, M>,
-    function: &lir::Function,
-) -> Result<(), String> {
-    let id = ml.func_id(&FnKey::ReloadExport(function.id))?;
-    let target = ml.func_id(&FnKey::LirFunction(function.id))?;
-    let parameters = function
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.kind == lir::ParameterKind::Explicit)
-        .map(|parameter| {
-            let ty = function
-                .values
-                .get(parameter.value.0 as usize)
-                .and_then(|value| match &value.ty {
-                    lir::ValueType::Data(ty) => Some(ty),
-                    lir::ValueType::Address(_) | lir::ValueType::Iterator(_) => None,
-                })
-                .ok_or_else(|| internal("host entry parameter has no data value type"))?;
-            Ok((parameter, ty))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let parameter_types = parameters
-        .iter()
-        .map(|(_, ty)| match ml.layouts.repr(ty)? {
-            Repr::Scalar(repr) => Ok(repr),
-            other => Err(internal(format!(
-                "host export `{}` has non-scalar parameter representation {other:?}",
-                function.source_name
-            ))),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let expected_traps = function
-        .host_entry_traps
-        .as_ref()
-        .ok_or_else(|| internal("reload adapter function has no host-entry attachment"))?;
-    let mut matched_traps = vec![false; expected_traps.len()];
-    let wire_validations = parameters
-        .iter()
-        .map(|(parameter, ty)| {
-            let Type::StringAlias(alias) = ty else {
-                return Ok(None);
-            };
-            let definition = ml
-                .lir
-                .string_aliases
-                .get(alias.0)
-                .ok_or_else(|| internal("host entry wire-alias id is out of range"))?;
-            let wire_values = definition
-                .wire_values
-                .clone()
-                .ok_or_else(|| internal("host entry string alias has no wire mapping"))?;
-            let name_len = i64::try_from(definition.source_name.len())
-                .map_err(|_| internal("host entry wire-alias name length does not fit i64"))?;
-            let name_data = ml.literal_data(definition.source_name.as_bytes())?;
-            let trap_index = expected_traps
-                .iter()
-                .zip(&matched_traps)
-                .position(|(trap, matched)| {
-                    !matched
-                        && trap.kind == lir::TrapKind::WireEnumValue(*alias)
-                        && trap.pos == parameter.pos
-                })
-                .ok_or_else(|| internal("host entry wire parameter has no LIR trap"))?;
-            matched_traps[trap_index] = true;
-            let trap = expected_traps[trap_index].clone();
-            let pos_id = ml.pos_id(&trap.pos);
-            Ok(Some((name_data, name_len, wire_values, pos_id, trap)))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let mut consumed_traps = Vec::new();
-    let mut context = ml.module.make_context();
-    context.func.signature = reload_entry_signature(ml.call_conv);
-    let mut builder_context = FunctionBuilderContext::new();
-    {
-        let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
-        let block = builder.create_block();
-        builder.append_block_params_for_function_params(block);
-        builder.switch_to_block(block);
-        let ctx = builder.block_params(block)[0];
-        let values = builder.block_params(block)[1];
-        let mut arguments = Vec::with_capacity(parameter_types.len() + 1);
-        arguments.push(ctx);
-        for (index, (ty, validation)) in parameter_types
-            .into_iter()
-            .zip(wire_validations)
-            .enumerate()
-        {
-            let offset = i32::try_from(index.checked_mul(8).ok_or_else(|| {
-                internal(format!(
-                    "host export `{}` argument layout overflows",
-                    function.source_name
-                ))
-            })?)
-            .map_err(|_| {
-                internal(format!(
-                    "host export `{}` argument layout exceeds i32",
-                    function.source_name
-                ))
-            })?;
-            let value = builder.ins().load(ty, MemFlags::new(), values, offset);
-            if let Some((name_data, name_len, wire_values, pos_id, trap_site)) = validation {
-                let mut valid = builder.ins().iconst(types::I8, 0);
-                for wire_value in wire_values {
-                    let matches =
-                        builder
-                            .ins()
-                            .icmp_imm(IntCC::Equal, value, i64::from(wire_value));
-                    valid = builder.ins().bor(valid, matches);
-                }
-                let accepted = builder.create_block();
-                let rejected = builder.create_block();
-                builder.ins().brif(valid, accepted, &[], rejected, &[]);
-                builder.switch_to_block(rejected);
-                let name_global = ml.module.declare_data_in_func(name_data, builder.func);
-                let name_pointer = builder.ins().symbol_value(types::I64, name_global);
-                let name_len = builder.ins().iconst(types::I64, name_len);
-                let pos_id = builder.ins().iconst(types::I32, i64::from(pos_id));
-                let trap = ml
-                    .module
-                    .declare_func_in_func(ml.rt.trap_wire_enum, builder.func);
-                builder
-                    .ins()
-                    .call(trap, &[ctx, name_pointer, name_len, value, pos_id]);
-                consumed_traps.push(trap_site);
-                builder.ins().return_(&[]);
-                builder.switch_to_block(accepted);
-            }
-            arguments.push(value);
-        }
-        let target_ref = ml.module.declare_func_in_func(target, builder.func);
-        builder.ins().call(target_ref, &arguments);
-        builder.ins().return_(&[]);
-        builder.seal_all_blocks();
-        builder.finalize();
-    }
-    ml.module
-        .define_function(id, &mut context)
-        .map_err(|error| internal(format!("define reload entry adapter: {error}")))?;
-    ml.module.clear_context(&mut context);
-    func::verify_trap_consumption(function, expected_traps, &consumed_traps)?;
-    Ok(())
-}
+mod host_entries;
+use host_entries::*;
 
 /// Lowers a checked program into `module`.
 pub(crate) fn lower_module_with<M: Module>(
@@ -1495,6 +1280,10 @@ fn lower_lir_module_with<M: Module>(
         ml.fns.insert(key, id);
         Ok::<(), String>(())
     };
+    let mut host_by_target = HashMap::new();
+    for (index, entry) in lirm.host_entries.iter().enumerate() {
+        host_by_target.entry(entry.target).or_insert((index, entry));
+    }
     let mut free_index = 0usize;
     for function in &lirm.functions {
         let parameters = explicit_parameter_types(function)?;
@@ -1502,9 +1291,16 @@ fn lower_lir_module_with<M: Module>(
             lir::FunctionKind::Free | lir::FunctionKind::SynthesizedHelper => {
                 let index = free_index;
                 free_index += 1;
-                let exported = function.host_entry_traps.is_some() && !function.is_async;
+                let exported = host_by_target.contains_key(&function.id) && !function.is_async;
                 let symbol = if exported {
-                    format!("subscript_export_{}", function.source_name)
+                    format!(
+                        "subscript_export_{}",
+                        host_by_target
+                            .get(&function.id)
+                            .ok_or_else(|| internal("missing host entry"))?
+                            .1
+                            .name
+                    )
                 } else {
                     format!("subscript_f{index}")
                 };
@@ -1554,24 +1350,32 @@ fn lower_lir_module_with<M: Module>(
             function.return_type.clone()
         };
         let signature = ml.make_sig(&parameters, &return_type, false, has_receiver)?;
-        let export = function.host_entry_traps.is_some() && !function.is_async;
+        let export = host_by_target.contains_key(&function.id) && !function.is_async;
         decl(&mut ml, key, symbol, &signature, export)?;
         if function.is_generator || function.is_async {
             let (resume_key, resume_symbol) =
                 resume.ok_or_else(|| internal("coroutine function has no resume symbol"))?;
             let resume_signature = ml.resume_sig();
             decl(&mut ml, resume_key, resume_symbol, &resume_signature, false)?;
-            if function.is_async && function.host_entry_traps.is_some() {
+            if function.is_async && host_by_target.contains_key(&function.id) {
                 let export_signature = ml.make_sig(&[], &Type::Void, false, false)?;
                 decl(
                     &mut ml,
                     FnKey::AsyncExport(function.id),
-                    format!("subscript_export_{}", function.source_name),
+                    format!(
+                        "subscript_export_{}",
+                        host_by_target
+                            .get(&function.id)
+                            .ok_or_else(|| internal("missing host entry"))?
+                            .1
+                            .name
+                    ),
                     &export_signature,
                     true,
                 )?;
             }
-        } else if opts.reload && function.host_entry_traps.is_some() && !parameters.is_empty() {
+        } else if opts.reload && host_by_target.contains_key(&function.id) && !parameters.is_empty()
+        {
             let adapter_signature = reload_entry_signature(call_conv);
             decl(
                 &mut ml,
@@ -1579,6 +1383,21 @@ fn lower_lir_module_with<M: Module>(
                 format!("subscript_reload_export_{}", function.id.0),
                 &adapter_signature,
                 false,
+            )?;
+        }
+    }
+    for (index, entry) in lirm.host_entries.iter().enumerate() {
+        if host_by_target
+            .get(&entry.target)
+            .is_some_and(|(first, _)| *first != index)
+        {
+            let signature = ml.make_sig(&entry.signature.parameters, &Type::Void, false, false)?;
+            decl(
+                &mut ml,
+                FnKey::HostAlias(index),
+                format!("subscript_export_{}", entry.name),
+                &signature,
+                true,
             )?;
         }
     }
@@ -1709,7 +1528,7 @@ fn lower_lir_module_with<M: Module>(
                 _ => FnKey::Resume(function.id),
             };
             ml.alias_function(FnKey::LirResume(function.id), &resume)?;
-            if function.is_async && function.host_entry_traps.is_some() {
+            if function.is_async && host_by_target.contains_key(&function.id) {
                 ml.alias_function(
                     FnKey::LirAsyncExport(function.id),
                     &FnKey::AsyncExport(function.id),
@@ -1724,7 +1543,7 @@ fn lower_lir_module_with<M: Module>(
         }
         if function.is_generator || function.is_async {
             func::define_coroutine(&mut ml, function)?;
-            if function.is_async && function.host_entry_traps.is_some() {
+            if function.is_async && host_by_target.contains_key(&function.id) {
                 func::define_async_export(&mut ml, function)?;
             }
         } else {
@@ -1736,13 +1555,21 @@ fn lower_lir_module_with<M: Module>(
     }
     for function in &lirm.functions {
         if opts.reload
-            && function.host_entry_traps.is_some()
+            && host_by_target.contains_key(&function.id)
             && function
                 .parameters
                 .iter()
                 .any(|parameter| parameter.kind == lir::ParameterKind::Explicit)
         {
             define_reload_entry_adapter(&mut ml, function)?;
+        }
+    }
+    for (index, entry) in lirm.host_entries.iter().enumerate() {
+        if host_by_target
+            .get(&entry.target)
+            .is_some_and(|(first, _)| *first != index)
+        {
+            host_entries::define_host_alias(&mut ml, entry, index)?;
         }
     }
     func::define_init(&mut ml)?;
@@ -1773,41 +1600,49 @@ fn lower_lir_module_with<M: Module>(
     };
     let init = ml.func_id(&FnKey::Init)?;
     let mut entries = Vec::new();
-    for function in &lirm.functions {
-        if function.host_entry_traps.is_some() {
-            let parameters = explicit_parameter_types(function)?;
-            entries.push(EntryPoint {
-                name: function.source_name.clone(),
-                id: if function.is_async {
-                    ml.func_id(&FnKey::LirAsyncExport(function.id))?
-                } else {
-                    ml.func_id(&FnKey::LirFunction(function.id))?
-                },
-                params: parameters
-                    .iter()
-                    .map(|parameter| match parameter {
-                        Type::StringAlias(alias)
-                            if lirm
-                                .string_aliases
-                                .get(alias.0)
-                                .is_some_and(|definition| definition.wire_values.is_some()) =>
-                        {
-                            Type::I32
-                        }
-                        _ => parameter.clone(),
-                    })
-                    .collect(),
-                reload_adapter: (opts.reload && !parameters.is_empty())
-                    .then(|| ml.func_id(&FnKey::ReloadExport(function.id)))
-                    .transpose()?,
-                is_async: function.is_async,
-            });
-        }
+    for (index, entry) in lirm.host_entries.iter().enumerate() {
+        let function = lirm
+            .functions
+            .get(entry.target.0 as usize)
+            .ok_or_else(|| internal("host entry implementation is missing"))?;
+        let parameters = explicit_parameter_types(function)?;
+        entries.push(EntryPoint {
+            name: entry.name.clone(),
+            id: if host_by_target
+                .get(&entry.target)
+                .is_some_and(|(first, _)| *first != index)
+            {
+                ml.func_id(&FnKey::HostAlias(index))?
+            } else if function.is_async {
+                ml.func_id(&FnKey::LirAsyncExport(function.id))?
+            } else {
+                ml.func_id(&FnKey::LirFunction(function.id))?
+            },
+            params: parameters
+                .iter()
+                .map(|parameter| match parameter {
+                    Type::StringAlias(alias)
+                        if lirm
+                            .string_aliases
+                            .get(alias.0)
+                            .is_some_and(|definition| definition.wire_values.is_some()) =>
+                    {
+                        Type::I32
+                    }
+                    _ => parameter.clone(),
+                })
+                .collect(),
+            reload_adapter: (opts.reload && !parameters.is_empty())
+                .then(|| ml.func_id(&FnKey::ReloadExport(function.id)))
+                .transpose()?,
+        });
     }
     let positions = std::mem::take(&mut ml.positions);
     let slots = std::mem::take(&mut ml.slots);
     let foreign_symbols = std::mem::take(&mut ml.foreign_symbols);
+    let async_runner = ml.func_id(&FnKey::AsyncRunner)?;
     Ok(Lowered {
+        async_runner,
         main,
         init,
         positions,
@@ -1927,7 +1762,7 @@ mod tests {
                       export function main(): void { const size: i32 = A_SIZE; }\n";
         let mut options = CheckOptions::default();
         options.poison_missing_modules = vec!["./p.typegpu".to_string()];
-        let hir = check_program_with(&[SourceFile::new("main.ts", source)], &options)
+        let hir = check_program_with(&[SourceFile::entry("main.ts", source)], &options)
             .expect("discovery check");
 
         let isa = cranelift_native::builder()

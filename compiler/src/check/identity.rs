@@ -29,32 +29,6 @@ impl Checker<'_> {
     }
 }
 
-/// Module order determines which host entry owns a name (compiler.md §125 rule 4).
-pub(super) fn host_entry_diagnostics(module: &hir::Module) -> Vec<Diagnostic> {
-    let mut entries = HashMap::<&str, &Pos>::new();
-    let mut diagnostics = Vec::new();
-    for function in &module.functions {
-        if function.host_entry_trap_sites(module).is_none() {
-            continue;
-        }
-        if let Some(first) = entries.get(function.name.as_str()) {
-            let mut diagnostic = Diagnostic::new(
-                RuleCode::S017,
-                format!(
-                    "duplicate host entry `{}` in modules `{}` and `{}`",
-                    function.name, first.file, function.pos.file
-                ),
-                function.pos.clone(),
-            );
-            diagnostic.divergence = Some(Divergence::HostEntryCollision);
-            diagnostics.push(diagnostic);
-        } else {
-            entries.insert(&function.name, &function.pos);
-        }
-    }
-    diagnostics
-}
-
 pub(super) fn declaration_label<'a>(
     symbol: &str,
     declarations: impl Iterator<Item = (&'a str, &'a str, &'a Pos)> + Clone,

@@ -6,7 +6,7 @@
  */
 
 #include "engine.h"
-#include "subscript_runtime.h"
+#include "program.h"
 
 #include <inttypes.h>
 #include <stdbool.h>
@@ -18,9 +18,6 @@
 #include <fcntl.h>
 #include <io.h>
 #endif
-
-void subscript_export_update(subscript_rt_context *ctx);
-void subscript_export_finish(subscript_rt_context *ctx);
 
 /* Every script entry is bracketed so the runtime can track script depth.
  * Its void return is not a success signal; the trap kind is. */

@@ -413,6 +413,12 @@ fn build_command<O: Write, E: Write>(
             return Ok(PROGRAM_ERROR);
         }
     }
+    if hosts.is_empty() {
+        let module = check_program(&files).map_err(|diagnostics| rejection(&files, diagnostics))?;
+        module
+            .runner_main()
+            .map_err(|diagnostic| rejection(&files, vec![diagnostic]))?;
+    }
     let runtime = resolve_runtime_paths(parsed.runtime, RuntimeEnvironment::current(), &current)
         .map_err(Failure::usage)?;
     let emitted = emit_c_files(&files, &output, "program", hosts.is_empty())
@@ -504,6 +510,7 @@ fn compile_build<E: Write>(
             push_unique(&mut includes, directory.to_path_buf());
         }
     }
+    push_unique(&mut includes, output_directory.to_path_buf());
     push_unique(&mut includes, runtime.include.clone());
     for directory in includes {
         command.arg(include_directory_arg(style, &directory));

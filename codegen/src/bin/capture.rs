@@ -506,30 +506,32 @@ fn main() -> ExitCode {
 
     let dir = accept.join(&id);
     let mut sources: Vec<SourceFile> = if dir.is_dir() {
-        let mut names: Vec<String> = match fs::read_dir(&dir) {
-            Ok(rd) => rd
-                .filter_map(|e| e.ok())
-                .map(|e| e.file_name().to_string_lossy().into_owned())
-                .filter(|n| n.ends_with(".ts"))
-                .collect(),
-            Err(e) => {
-                eprintln!("capture: read {}: {e}", dir.display());
+        let entry = "main.ts".to_owned();
+        let text = match fs::read_to_string(dir.join(&entry)) {
+            Ok(text) => text,
+            Err(error) => {
+                eprintln!("capture: read {id}/{entry}: {error}");
                 return ExitCode::from(2);
             }
         };
-        names.sort();
-        names.sort_by_key(|n| !n.contains("main"));
-        let mut out = Vec::new();
-        for n in names {
-            match fs::read_to_string(dir.join(&n)) {
-                Ok(text) => out.push(SourceFile::new(n, text)),
-                Err(e) => {
-                    eprintln!("capture: read {n}: {e}");
-                    return ExitCode::from(2);
+        match subscript_compiler::discover_module_sources(
+            (entry.clone(), SourceFile::new(entry, text)),
+            |_, specifier| {
+                let name = format!("{}.ts", specifier.trim_start_matches("./"));
+                match fs::read_to_string(dir.join(&name)) {
+                    Ok(text) => Ok(Some((name.clone(), SourceFile::new(name, text)))),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(error) => Err(error.to_string()),
                 }
+            },
+            |_, diagnostics| format!("{diagnostics:?}"),
+        ) {
+            Ok(sources) => sources,
+            Err(error) => {
+                eprintln!("capture: {id}: {error}");
+                return ExitCode::from(2);
             }
         }
-        out
     } else {
         let path = accept.join(format!("{id}.ts"));
         match fs::read_to_string(&path) {

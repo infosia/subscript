@@ -28,6 +28,8 @@ id_type!(ValueId, "Function-local SSA value id.");
 /// One completely lowered checked module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
+    /// Checked host names and their resolved implementations.
+    pub host_entries: Vec<HostEntry>,
     /// Executable program entry, absent for host-callable entryless modules.
     pub entry: Option<FunctionId>,
     /// Exported zero-parameter async functions that the standard runner starts.
@@ -50,6 +52,33 @@ pub struct Module {
     pub intrinsic_operations: Vec<IntrinsicOperation>,
     /// Optional synthetic module-initializer function.
     pub initializer: Option<FunctionId>,
+}
+
+/// One host entry after declaration symbols resolve to function ids.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct HostEntry {
+    /// Public export name.
+    pub name: String,
+    /// Implementation function id.
+    pub target: FunctionId,
+    /// Checker-owned boundary signature.
+    pub signature: crate::hir::HostSignature,
+    /// Position of the exposing export.
+    pub pos: Pos,
+}
+
+impl HostEntry {
+    /// Resolves a checked host entry to its LIR implementation id.
+    #[must_use]
+    pub fn from_checked(entry: &crate::hir::HostEntry, target: FunctionId) -> Self {
+        Self {
+            name: entry.name.clone(),
+            target,
+            signature: entry.signature.clone(),
+            pos: entry.pos.clone(),
+        }
+    }
 }
 
 /// One LIR class declaration.

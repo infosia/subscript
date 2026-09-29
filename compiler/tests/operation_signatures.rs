@@ -339,7 +339,7 @@ fn synthesized_max_call(line: u32) -> hir::Expr {
         "positive-control donor",
         vec![SourceFile::new(
             "donor.ts",
-            "export function donor(): f64 { return Math.max(2.0, 3.0); }",
+            "function donor(): f64 { return Math.max(2.0, 3.0); }",
         )],
     );
     let function = donor

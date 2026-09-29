@@ -1,8 +1,10 @@
-// corpus: accept/a143-async-generic
+// corpus: accept/a143-async-generic/main
 // purpose: Proves async generic functions and generic-class async methods at two instantiations.
 // exercises: generic-async-function, generic-class-async-method, monomorphization, async-export-instance
 // questions: R36, Q34, R13
 // tsc: accepts; js-comparable: no C2 C8: The CStruct decorator has no JavaScript shim.
+import { tick } from "./tick";
+
 @CStruct
 class Vec2 {
   x: f32;
@@ -32,9 +34,6 @@ async function first<T>(items: T[]): Promise<T> {
   return items[0];
 }
 
-export async function tick<T>(): Promise<void> {
-  print("tick");
-}
 
 function printVec2(value: Vec2): void {
   print(`${value.x},${value.y}`);

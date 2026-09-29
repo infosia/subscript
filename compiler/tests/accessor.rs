@@ -7,7 +7,7 @@ fn mirror_class_accessor_has_its_specific_rejection() {
             "values.generated.d.ts",
             "declare class Values {\n  get current(): i32;\n}\n",
         ),
-        SourceFile::new("main.ts", "export function main(): void {}\n"),
+        SourceFile::entry("main.ts", "export function main(): void {}\n"),
     ])
     .expect_err("a mirror class accessor must fail");
 

@@ -6,7 +6,7 @@ fn discovery_hir() -> subscript_compiler::hir::Module {
                   export function main(): void { const size: i32 = A_SIZE; }\n";
     let mut options = CheckOptions::default();
     options.poison_missing_modules = vec!["./p.typegpu".to_string()];
-    check_program_with(&[SourceFile::new("main.ts", source)], &options).expect("discovery check")
+    check_program_with(&[SourceFile::entry("main.ts", source)], &options).expect("discovery check")
 }
 
 #[test]

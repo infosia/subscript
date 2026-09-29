@@ -5,7 +5,7 @@ use super::*;
 #[derive(Clone)]
 pub(super) struct ExportBinding {
     target: ExportTarget,
-    pos: Pos,
+    pub(super) pos: Pos,
     re_export: bool,
 }
 

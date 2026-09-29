@@ -43,7 +43,8 @@ $ subscript run hello.ts
 hello from subscript
 ```
 
-`export function` marks an entry the host can call. `run` executes the
+An `export function` of the entry module (the file you pass to `run`
+or `build`) is an entry the host can call. `run` executes the
 program under the development tier, a JIT; no C compiler runs. Exports
 take parameters — "Step 5" below gives the exact rule and the C
 signature.
@@ -334,7 +335,7 @@ before any export. It defines `subscript_export_main` for the exported
 
 ```c
 /* main.c */
-#include "subscript_runtime.h"
+#include "program.h"
 
 #include <stdio.h>
 
@@ -423,11 +424,12 @@ host is macOS and needs no system library. `link-flags` adds
 `specs/blocks/compiler.md` §11b). `--cc msvc` prints the include path
 as `/I`; the library path is the one this host built.
 
-`emit --no-entry` writes two files into `gen/`:
+`emit --no-entry` writes three files into `gen/`:
 
 - `program.c` — the whole program, C11. Compile it as C, with the
   contracted flags `-std=c11 -O2 -fwrapv -ffp-contract=off`
   (`/std:c11 /O2 /fp:strict` under MSVC).
+- `program.h` — the checked host entry declarations. Include it from the host.
 - `program.alloc.h` — the generated tables that turn a `class_id` and a
   `pos_id` into a class name and a TypeScript source position.
 
@@ -439,33 +441,34 @@ The whole path, run end to end:
 
 ```sh
 cc -std=c11 -O2 -fwrapv -ffp-contract=off \
-   $(subscript link-flags | head -1) \
+   -Igen $(subscript link-flags | head -1) \
    gen/program.c main.c \
    $(subscript link-flags | tail -1) \
    -o frame
 ```
 
-**A C++ host.** `subscript_runtime.h` carries `extern "C"` guards, so a
+**A C++ host.** `program.h` carries `extern "C"` guards, so a
 C++ translation unit includes it directly. Compile `program.c` with the
-C compiler, then link its object into the C++ build. A wrapper you
-declare yourself needs `extern "C"`:
+C compiler, then link its object into the C++ build. The program header
+owns every host entry declaration:
 
 ```c++
-extern "C" void subscript_export_step(subscript_rt_context* ctx,
-                                      int32_t frame, float dt, int32_t paused);
+#include "program.h"
 ```
 
 ```sh
-cc  -std=c11 -O2 -fwrapv -ffp-contract=off $(subscript link-flags | head -1) \
+cc  -std=c11 -O2 -fwrapv -ffp-contract=off -Igen $(subscript link-flags | head -1) \
     -c gen/program.c -o gen/program.o
-c++ -std=c++17 -O2 $(subscript link-flags | head -1) \
+c++ -std=c++17 -O2 -Igen $(subscript link-flags | head -1) \
     host.cpp gen/program.o $(subscript link-flags | tail -1) -o cpphost
 ```
 
 ### Step 5 — host-callable exports: the parameters a host passes
 
-An exported function is **host-callable** when three things hold
-(`specs/blocks/compiler.md` §59, §61):
+Each function that the entry module exports is a host entry, and it
+must be **host-callable** (`specs/blocks/compiler.md` §59, §61, §129).
+An export of any other module is for script imports only and gets no
+C symbol. A function is host-callable when three things hold:
 
 1. It is synchronous, or it is `async` with no parameter.
 2. It returns `void`.
@@ -519,15 +522,12 @@ void subscript_export_step(subscript_rt_context* ctx, int32_t a0, float a1, int3
 and the host calls it with the frame's real data:
 
 ```c
-#include "subscript_runtime.h"
+#include "program.h"
 
 #include <stdint.h>
 #include <stdio.h>
 
-/* The generated header declares only subscript_init and
- * subscript_export_main. Declare each further export yourself. */
-void subscript_export_step(subscript_rt_context* ctx,
-                           int32_t frame, float dt, int32_t paused);
+/* program.h owns the checked declaration of subscript_export_step. */
 
 static void hostPrintLine(void* userdata, const uint8_t* line, uint64_t len) {
     (void)userdata;
@@ -1170,15 +1170,12 @@ against
 Every host-callable export becomes a C symbol
 `subscript_export_<name>` — in both tiers, so the host code below is
 identical whether the script runs under the dev JIT or as emitted C.
-The generated header declares only `subscript_init` and
-`subscript_export_main`; further exports are yours to declare. For a
-zero-argument export the shared function-pointer type
+The generated `program.h` owns all host entry declarations. Include it
+instead of declaring entries by hand. For a zero-argument export, the shared function-pointer type
 `subscript_main_entry` names the signature:
 
 ```c
-void subscript_export_init(subscript_rt_context *ctx);
-void subscript_export_update(subscript_rt_context *ctx);
-void subscript_export_shutdown(subscript_rt_context *ctx);
+#include "program.h"
 ```
 
 The capstone host wraps every call in the same bracket

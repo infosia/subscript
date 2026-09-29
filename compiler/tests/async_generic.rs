@@ -91,8 +91,11 @@ export async function main(): Promise<void> {
   await go<u32>();
 }
 "#;
-    let module = check_program(&[SourceFile::new("test.ts", source)])
-        .expect("the generic async program must check");
+    let module = check_program(&[
+        SourceFile::entry("api.ts", "import './test';"),
+        SourceFile::new("test.ts", source),
+    ])
+    .expect("the generic async program must check");
     let go = module
         .functions
         .iter()

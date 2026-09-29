@@ -170,6 +170,13 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
     let mut entries: Vec<(String, u64)> = Vec::new();
     let mut push = |name: String, text: &str| entries.push((name, fnv1a(text.as_bytes())));
 
+    for entry in &m.host_entries {
+        push(
+            format!("host entry {}", entry.name),
+            &format!("{:?}", entry.signature),
+        );
+    }
+
     for c in &m.classes {
         let ambiguous = m
             .classes
@@ -600,8 +607,10 @@ pub struct ReloadSession {
     table: Vec<*const u8>,
     globals: GlobalBlock,
     entries: HashMap<String, SessionEntry>,
+    async_runner: *const u8,
     positions: PositionTable,
     decls: DeclarationHash,
+    runner_error: Option<subscript_compiler::Diagnostic>,
     native_libraries: Vec<NativeLibrary>,
 }
 
@@ -611,6 +620,7 @@ struct Generation {
     module: JITModule,
     table: Vec<*const u8>,
     entries: HashMap<String, SessionEntry>,
+    async_runner: *const u8,
     init_slot: Option<usize>,
     positions: PositionTable,
     globals_size: u32,
@@ -748,7 +758,9 @@ fn compile(hirm: &hir::Module, libraries: &[NativeLibrary]) -> Result<Generation
         })
         .collect();
 
+    let async_runner = module.get_finalized_function(lowered.async_runner);
     Ok(Generation {
+        async_runner,
         module,
         table,
         entries,
@@ -890,8 +902,10 @@ impl ReloadSession {
             table: gen.table,
             globals,
             entries: gen.entries,
+            async_runner: gen.async_runner,
             positions: gen.positions,
             decls,
+            runner_error: hirm.runner_main().err(),
             native_libraries: libraries.to_vec(),
         };
         session.ctx.set_fn_table(session.table.as_ptr());
@@ -914,6 +928,14 @@ impl ReloadSession {
         &self.decls
     }
 
+    /// Returns the public host names in sorted order.
+    #[must_use]
+    pub fn host_entry_names(&self) -> Vec<&str> {
+        let mut names: Vec<_> = self.entries.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        names
+    }
+
     /// Calls the exported `main(): void` when the session has one.
     /// Session creation does not require this entry.
     ///
@@ -921,7 +943,24 @@ impl ReloadSession {
     ///
     /// As [`ReloadSession::call_export`].
     pub fn call_main(&mut self) -> Result<(), RunError> {
+        if let Some(diagnostic) = &self.runner_error {
+            return Err(RunError::Rejected(vec![diagnostic.clone()]));
+        }
         self.call_export("main")
+    }
+
+    /// Runs main, kicks the shared async root list, and pumps pending jobs.
+    ///
+    /// # Errors
+    /// Returns the runner diagnostic, a backend error, or the first script trap.
+    pub fn run_main(&mut self) -> Result<(), RunError> {
+        self.call_main()?;
+        call_code(&mut self.ctx, self.async_runner).map_err(RunError::Internal)?;
+        self.check_trap()?;
+        while self.async_pending() != 0 {
+            self.async_step()?;
+        }
+        Ok(())
     }
 
     /// Calls the exported zero-argument `void` function `name`. This
@@ -1115,6 +1154,8 @@ impl ReloadSession {
         self.modules.push(gen.module);
         self.table = gen.table;
         self.entries = gen.entries;
+        self.async_runner = gen.async_runner;
+        self.runner_error = hirm.runner_main().err();
         self.positions = gen.positions;
         self.ctx.set_fn_table(self.table.as_ptr());
         self.ctx.bump_reload_epoch();
@@ -1269,6 +1310,7 @@ mod tests {
         assert_eq!(
             h.declarations(),
             vec![
+                "host entry main",
                 "class Error",
                 "constructor Error",
                 "class C",
@@ -1287,6 +1329,7 @@ mod tests {
         assert_eq!(
             h.declarations(),
             vec![
+                "host entry main",
                 "class Error",
                 "constructor Error",
                 "function main",
@@ -1303,7 +1346,12 @@ mod tests {
         );
         assert_eq!(
             after.declarations(),
-            vec!["class Error", "constructor Error", "function main"]
+            vec![
+                "host entry main",
+                "class Error",
+                "constructor Error",
+                "function main"
+            ]
         );
         assert_eq!(before, after);
     }

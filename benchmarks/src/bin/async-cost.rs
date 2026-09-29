@@ -22,7 +22,7 @@ use subscript_compiler::{check_program, SourceFile};
 
 /// The timing entry linked with the emitted ship-tier translation unit.
 const ENTRY_C: &str = concat!(
-    include_str!("../../../runtime/include/subscript_runtime.h"),
+    "#include \"program.h\"\n",
     include_str!("../../async-cost-entry.c")
 );
 
@@ -171,6 +171,8 @@ fn measure(
     let exe = dir.join(format!("{}{}", workload.name, std::env::consts::EXE_SUFFIX));
     std::fs::write(&program, emitted.source.as_bytes())
         .map_err(|error| format!("write {}: {error}", program.display()))?;
+    std::fs::write(dir.join("program.h"), emitted.host_header.as_bytes())
+        .map_err(|error| format!("write program header: {error}"))?;
     std::fs::write(&entry, ENTRY_C.as_bytes())
         .map_err(|error| format!("write {}: {error}", entry.display()))?;
     let staticlib =
@@ -334,4 +336,13 @@ fn report(workload: &Workload, measurement: &Measurement) {
          outside these Context counters."
     );
     println!();
+}
+
+#[cfg(test)]
+#[path = "../host_header_test.rs"]
+mod host_header_test;
+
+#[test]
+fn generated_host_header_compiles() {
+    host_header_test::check(ENTRY_C);
 }

@@ -62,7 +62,7 @@ fn aborting_program(fixture: &Path, mode: &str) -> (Vec<SourceFile>, NativeLibra
                  declare function {foreign_name}(): void;\n"
             ),
         ),
-        SourceFile::new(
+        SourceFile::entry(
             "main.ts",
             format!(
                 "export function main(): void {{\n\
@@ -93,7 +93,7 @@ fn missing_symbol_program() -> Vec<SourceFile> {
             "// @subscript-c-header include=\"missing.h\"\n\
              declare function stage4MissingForeignSymbol(): void;\n",
         ),
-        SourceFile::new(
+        SourceFile::entry(
             "main.ts",
             "export function main(): void {\n  stage4MissingForeignSymbol();\n}\n",
         ),
@@ -108,7 +108,7 @@ fn static_archive_link_input_follows_translation_units_on_all_tiers() {
             "// @subscript-c-header include=\"archive-only.h\"\n\
              declare function subArchiveOnlyProbe(value: i32): i32;\n",
         ),
-        SourceFile::new(
+        SourceFile::entry(
             "main.ts",
             "export function main(): void {\n\
                print(`${subArchiveOnlyProbe(7)}`);\n\
@@ -139,7 +139,7 @@ fn static_archive_link_input_follows_translation_units_on_all_tiers() {
 
 #[test]
 fn empty_library_set_runs_programs_without_foreign_calls() {
-    let files = [SourceFile::new(
+    let files = [SourceFile::entry(
         "main.ts",
         "export function main(): void {\n  print(`local`);\n}\n",
     )];

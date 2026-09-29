@@ -70,7 +70,7 @@ const COLLECT_CHECKSUM: i32 = 1_332_546_592;
 
 /// The timing entry program linked with the ship-tier C translation unit.
 const SHIP_BENCH_ENTRY_C: &str = concat!(
-    include_str!("../../../runtime/include/subscript_runtime.h"),
+    "#include \"program.h\"\n",
     include_str!("../../aot-entry.c")
 );
 
@@ -1455,9 +1455,7 @@ fn measure_ship(
                 .unwrap_or_else(|| "no diagnostic".to_string())
         )
     })?;
-    let c_source = emit_c(&module)
-        .map_err(|e| format!("C emission: {e}"))?
-        .source;
+    let program = emit_c(&module).map_err(|e| format!("C emission: {e}"))?;
     let emit = started.elapsed();
 
     let source = dir.join(format!("{}-ship.c", workload.name));
@@ -1467,7 +1465,8 @@ fn measure_ship(
         workload.name,
         std::env::consts::EXE_SUFFIX
     ));
-    write_file(&source, c_source.as_bytes())?;
+    write_file(&source, program.source.as_bytes())?;
+    write_file(&dir.join("program.h"), program.host_header.as_bytes())?;
     write_file(&entry, SHIP_BENCH_ENTRY_C.as_bytes())?;
     let staticlib = runtime_staticlib_path().map_err(|e| format!("runtime static library: {e}"))?;
 
@@ -1598,4 +1597,13 @@ mod tests {
             RunDecision::Passed
         );
     }
+}
+
+#[cfg(test)]
+#[path = "../host_header_test.rs"]
+mod host_header_test;
+
+#[test]
+fn generated_host_header_compiles() {
+    host_header_test::check(SHIP_BENCH_ENTRY_C);
 }

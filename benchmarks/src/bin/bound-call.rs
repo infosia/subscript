@@ -48,7 +48,7 @@ const SPREAD_LIMIT: f64 = 0.20;
 const QUANTUM_LIMIT: f64 = 0.01;
 
 #[cfg(unix)]
-fn mimic_c() -> Result<String, Fail> {
+fn mimic_c(header: &str) -> Result<String, Fail> {
     host_entry(
         r#"
 #include "boundary-noop.h"
@@ -117,11 +117,12 @@ trapped:
     return 3;
 }
 "#,
+        header,
     )
 }
 
 #[cfg(unix)]
-fn no_trap_c() -> Result<String, Fail> {
+fn no_trap_c(header: &str) -> Result<String, Fail> {
     host_entry(
         r#"
 #include "boundary-noop.h"
@@ -188,11 +189,12 @@ trapped:
     return 3;
 }
 "#,
+        header,
     )
 }
 
 #[cfg(unix)]
-fn hoisted_c() -> Result<String, Fail> {
+fn hoisted_c(header: &str) -> Result<String, Fail> {
     host_entry(
         r#"
 #include "boundary-noop.h"
@@ -261,11 +263,12 @@ trapped:
     return 3;
 }
 "#,
+        header,
     )
 }
 
 #[cfg(unix)]
-fn floor_c() -> Result<String, Fail> {
+fn floor_c(header: &str) -> Result<String, Fail> {
     host_entry(
         r#"
 #include "boundary-noop.h"
@@ -288,6 +291,7 @@ int main(void) {
     return 0;
 }
 "#,
+        header,
     )
 }
 
@@ -408,8 +412,12 @@ fn run() -> Result<bool, Fail> {
     let script_source = emit_script()?;
     let program = work.path.join("script.c");
     let entry = work.path.join("script-entry.c");
-    write_file(&program, script_source.as_bytes())?;
+    write_file(&program, script_source.source.as_bytes())?;
     write_file(&entry, AOT_ENTRY_C.as_bytes())?;
+    write_file(
+        &work.path.join("program.h"),
+        script_source.host_header.as_bytes(),
+    )?;
     let script_exe = work.path.join("script");
     link_sources(
         &compiler,
@@ -425,22 +433,22 @@ fn run() -> Result<bool, Fail> {
     let subjects = [
         Subject {
             name: "mimic",
-            source: mimic_c()?,
+            source: mimic_c(&script_source.host_header)?,
             runtime: true,
         },
         Subject {
             name: "no-trap",
-            source: no_trap_c()?,
+            source: no_trap_c(&script_source.host_header)?,
             runtime: true,
         },
         Subject {
             name: "hoisted",
-            source: hoisted_c()?,
+            source: hoisted_c(&script_source.host_header)?,
             runtime: true,
         },
         Subject {
             name: "floor",
-            source: floor_c()?,
+            source: floor_c(&script_source.host_header)?,
             runtime: false,
         },
     ];
@@ -499,7 +507,7 @@ fn run() -> Result<bool, Fail> {
 }
 
 #[cfg(unix)]
-fn emit_script() -> Result<String, Fail> {
+fn emit_script() -> Result<subscript_codegen::CProgram, Fail> {
     let files = [
         SourceFile::ambient("boundary-noop.generated.d.ts", MIRROR_SOURCE),
         SourceFile::new("bound-call.ts", WORKLOAD_SOURCE),
@@ -513,9 +521,7 @@ fn emit_script() -> Result<String, Fail> {
                 .unwrap_or("no diagnostic")
         )
     })?;
-    emit_c(&module)
-        .map(|program| program.source)
-        .map_err(|error| format!("emit bound-call.ts: {error}"))
+    emit_c(&module).map_err(|error| format!("emit bound-call.ts: {error}"))
 }
 
 #[cfg(unix)]

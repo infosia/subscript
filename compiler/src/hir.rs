@@ -11,6 +11,8 @@ pub use names::{declaration_label, source_name};
 
 mod collections;
 mod definitions;
+mod host_entry;
+pub use host_entry::{HostEntry, HostSignature};
 mod effects;
 mod expression;
 pub(crate) use effects::NarrowingEffects;
@@ -43,6 +45,10 @@ pub const ERROR_KIND_FIELD: &str = "[[kind]]";
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Module {
+    /// Host API resolved from the explicitly named entry module.
+    pub host_entries: Vec<HostEntry>,
+    /// Stable diagnostic position of the program entry module.
+    pub entry_pos: Pos,
     /// Imports that refer to absent modules during a discovery check.
     pub poisoned_imports: Vec<PoisonedImport>,
     /// Class definitions (value and reference), indexed by [`ClassId`].

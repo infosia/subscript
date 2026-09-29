@@ -4,10 +4,11 @@ use subscript_compiler::{
     check_program, check_program_with, divergence::Divergence, CheckOptions, RuleCode, SourceFile,
 };
 
-fn sources(surface: &str, lib: &str) -> [SourceFile; 2] {
+fn sources(surface: &str, lib: &str) -> [SourceFile; 3] {
     [
         SourceFile::new("surface.ts", surface),
         SourceFile::new("lib.ts", lib),
+        SourceFile::entry("api.ts", ""),
     ]
 }
 
@@ -92,7 +93,7 @@ fn a_cycle_reports_once_at_its_first_member_and_poisons_its_prefix() {
         [2, 1, 0],
     ] {
         let mut ordered: Vec<_> = order.iter().map(|i| files[*i].clone()).collect();
-        ordered.push(SourceFile::new(
+        ordered.push(SourceFile::entry(
             "main.ts",
             "import { x } from './head'; function read(): i32 { return x; }",
         ));
@@ -121,7 +122,7 @@ fn a_cycle_reports_once_at_its_first_member_and_poisons_its_prefix() {
 fn re_exported_imports_stay_read_only() {
     for target in ["value = 2", "value += 2", "++value", "value--"] {
         let files = [
-            SourceFile::new("main.ts", format!("import {{ other as value }} from \"./surface\"; function write(): void {{ {target}; }}")),
+            SourceFile::entry("main.ts", format!("import {{ other as value }} from \"./surface\"; function write(): void {{ {target}; }}")),
             SourceFile::new("surface.ts", "export { value as other } from \"./lib\";"),
             SourceFile::new("lib.ts", "export let value: i32 = 1; export function bump(): void { value++; }"),
         ];
@@ -135,15 +136,16 @@ fn re_exported_imports_stay_read_only() {
 }
 
 #[test]
-fn re_exports_do_not_change_the_host_entry_predicate() {
+fn library_re_exports_preserve_declaration_flags() {
     let module = check_program(&sources(
         "function local(): void {} export { local as entry }; export { value as remote } from \"./lib\";",
         "export function value(): void {}",
     )).expect("re-exports preserve declaration flags");
     let local = module.functions.iter().find(|f| f.name == "local").unwrap();
     let remote = module.functions.iter().find(|f| f.name == "value").unwrap();
-    assert!(local.host_entry_trap_sites(&module).is_none());
-    assert!(remote.host_entry_trap_sites(&module).is_some());
+    assert!(!local.exported);
+    assert!(module.host_entries.is_empty());
+    assert!(remote.exported);
     assert_eq!(module.functions.len(), 2);
 }
 
@@ -219,7 +221,7 @@ fn rejected_named_forms_have_controls() {
 fn failed_export_chains_report_only_the_failure_site_in_every_file_order() {
     use subscript_compiler::Pos;
     let files = [
-        SourceFile::new(
+        SourceFile::entry(
             "main.ts",
             "import { y } from \"./surface\"; function read(): i32 { return y; }",
         ),
@@ -299,14 +301,14 @@ fn mirror_export_lists_stay_outside_the_surface() {
         "declare const value: i32;",
     )])
     .expect("mirror declaration");
-    check_program(&[SourceFile::new("main.ts", "export {};")]).expect("program export list");
+    check_program(&[SourceFile::entry("main.ts", "export {};")]).expect("program export list");
 }
 
 #[test]
 fn missing_modules_have_one_origin_per_statement() {
     use subscript_compiler::Pos;
     let files = [
-        SourceFile::new("main.ts", "import { x, y } from './surface';"),
+        SourceFile::entry("main.ts", "import { x, y } from './surface';"),
         SourceFile::new(
             "surface.ts",
             "export { a as x, b as y } from './absent';\nexport { c, d } from './absent';",
@@ -344,7 +346,7 @@ fn declaration_duplicates_belong_to_the_scope() {
         ("export class K {}\nexport enum K { A }", "K", 13),
     ] {
         assert_eq!(
-            check_program(&[SourceFile::new("main.ts", source)]).unwrap_err(),
+            check_program(&[SourceFile::entry("main.ts", source)]).unwrap_err(),
             vec![subscript_compiler::Diagnostic::new(
                 RuleCode::S017,
                 format!("duplicate top-level name `{name}`"),
@@ -358,7 +360,7 @@ fn declaration_duplicates_belong_to_the_scope() {
 fn cycles_use_source_order_and_keep_separate_origins() {
     use subscript_compiler::Pos;
     let files = [
-        SourceFile::new("main.ts", "import { a, z, loop } from './cycle';"),
+        SourceFile::entry("main.ts", "import { a, z, loop } from './cycle';"),
         SourceFile::new(
             "cycle.ts",
             "export { a as z, z as a } from './cycle';\nexport { loop } from './cycle';",
@@ -374,7 +376,7 @@ fn cycles_use_source_order_and_keep_separate_origins() {
 fn missing_import_module_poisons_local_and_remote_consumers() {
     use subscript_compiler::Pos;
     let files = [
-        SourceFile::new("main.ts", "import { y } from './surface'; function read(): i32 { return y; }"),
+        SourceFile::entry("main.ts", "import { y } from './surface'; function read(): i32 { return y; }"),
         SourceFile::new("surface.ts", "import { a, b } from './absent'; export { a as y }; function read(): i32 { return b; }"),
     ];
     assert_eq!(
@@ -411,7 +413,7 @@ fn rejected_declarations_keep_names_through_every_export_edge() {
         for local in [false, true] {
             let source = if local { format!("{declaration}\nexport {{ {names} }};") } else { format!("export {declaration}") };
             let mut files = [
-                SourceFile::new("main.ts", format!("import {{ {names} }} from './surface';")),
+                SourceFile::entry("main.ts", format!("import {{ {names} }} from './surface';")),
                 SourceFile::new("direct.ts", format!("import {{ {names} }} from './lib';")),
                 SourceFile::new("surface.ts", format!("export {{ {names} }} from './lib';")),
                 SourceFile::new("lib.ts", source),
@@ -461,7 +463,7 @@ fn rejected_export_forms_do_not_resolve_missing_sources() {
         let mut expected = Diagnostic::new(RuleCode::S100, message, Pos::new("main.ts", 1, col));
         expected.divergence = Some(Divergence::NamedModuleSurface);
         assert_eq!(
-            check_program(&[SourceFile::new("main.ts", source)]).unwrap_err(),
+            check_program(&[SourceFile::entry("main.ts", source)]).unwrap_err(),
             vec![expected],
             "{source}"
         );

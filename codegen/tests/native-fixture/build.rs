@@ -41,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     build.compiler(clang_resolver::resolve_capable_clang()?);
     build
+        .define("SUBSCRIPT_INTEROP_LIBRARY_ONLY", None)
         .file(&source)
         .file(&external_source)
         .file(&wire_source)

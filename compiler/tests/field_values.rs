@@ -15,11 +15,12 @@ use subscript_compiler::divergence::Divergence;
 use subscript_compiler::{check_program, Diagnostic, RuleCode, SourceFile};
 
 fn diagnostics(source: &str) -> Vec<Diagnostic> {
-    check_program(&[SourceFile::new("main.ts", source)]).expect_err("the program must be rejected")
+    check_program(&[SourceFile::entry("main.ts", source)])
+        .expect_err("the program must be rejected")
 }
 
 fn accepted(source: &str) {
-    if let Err(diagnostics) = check_program(&[SourceFile::new("main.ts", source)]) {
+    if let Err(diagnostics) = check_program(&[SourceFile::entry("main.ts", source)]) {
         panic!("the program must be accepted: {diagnostics:?}");
     }
 }
@@ -197,7 +198,7 @@ fn a_mirror_field_is_outside_the_rule_and_a_program_field_is_not() {
     let program = "export function main(): void {\n  const d: Device = new Device();\n  print(`${d.handle}`);\n}\n";
     let files = [
         SourceFile::ambient("device.d.ts", mirror),
-        SourceFile::new("main.ts", program),
+        SourceFile::entry("main.ts", program),
     ];
     if let Err(diagnostics) = check_program(&files) {
         panic!("a mirror field carries no initializer: {diagnostics:?}");
@@ -277,11 +278,11 @@ fn a_generic_declare_class_inherits_the_template_ambient_status() {
     // with TypeScript 5.9.2 and the repository `tsconfig.json`: `tsc`
     // accepts the ambient form and answers TS2564 for the program form.
     accepted(
-        "declare class Ext<T> {\n  value: T;\n}\nexport function read(e: Ext<i32>): i32 {\n  return e.value;\n}\nexport function main(): void {\n  print(\"ok\");\n}\n",
+        "declare class Ext<T> {\n  value: T;\n}\nfunction read(e: Ext<i32>): i32 {\n  return e.value;\n}\nexport function main(): void {\n  print(\"ok\");\n}\n",
     );
     // Firing control: the same template without `declare`.
     let diagnostics = diagnostics(
-        "class Ext<T> {\n  value: T;\n}\nexport function read(e: Ext<i32>): i32 {\n  return e.value;\n}\nexport function main(): void {\n  print(\"ok\");\n}\n",
+        "class Ext<T> {\n  value: T;\n}\nfunction read(e: Ext<i32>): i32 {\n  return e.value;\n}\nexport function main(): void {\n  print(\"ok\");\n}\n",
     );
     let sites: Vec<(u32, u32)> = diagnostics
         .iter()
@@ -339,7 +340,7 @@ fn new_on_a_program_file_declare_class_reports_the_ambient_variant() {
         "export function main(): void {\n  const d: Device = new Device();\n  print(`${d.handle}`);\n}\n";
     if let Err(diagnostics) = check_program(&[
         SourceFile::ambient("device.d.ts", mirror),
-        SourceFile::new("main.ts", program),
+        SourceFile::entry("main.ts", program),
     ]) {
         panic!("a mirror class is constructed positionally: {diagnostics:?}");
     }

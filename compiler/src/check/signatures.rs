@@ -309,35 +309,6 @@ impl<'p> Checker<'p> {
                 ast::Decl::Fn(f) if f.function.type_params.is_none() => {
                     let name = f.ident.sym.to_string();
                     let sig = self.resolve_fn_sig(&f.function, self.pos(f.ident.span));
-                    if matches!(
-                        item,
-                        ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(_))
-                    ) {
-                        if sig.is_async && (!sig.params.is_empty() || sig.ret != Type::Void) {
-                            self.error(
-                                RuleCode::S100,
-                                format!(
-                                    "exported async function `{name}` must have the host entry signature `(): Promise<void>`"
-                                ),
-                                self.pos(f.ident.span),
-                            );
-                        }
-                        let aliases_boundary = sig.params.iter().any(|parameter| {
-                            Self::contains_string_alias(&parameter.ty)
-                                && !self.is_wire_alias(&parameter.ty)
-                        }) || Self::contains_string_alias(&sig.ret);
-                        if aliases_boundary {
-                            self.error_diverging(
-                                RuleCode::S100,
-                                format!(
-                                    "exported function `{name}` has a string-literal union \
-                                     alias in its boundary signature"
-                                ),
-                                self.pos(f.ident.span),
-                                Divergence::EntryParameterType,
-                            );
-                        }
-                    }
                     self.fn_sigs
                         .insert(self.declaration_symbol(file, &name), sig);
                 }

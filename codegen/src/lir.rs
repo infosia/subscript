@@ -182,15 +182,21 @@ fn verify_module_entries(module: &l::Module, errors: &mut Vec<VerifyError>) {
                 message: format!("module async root function {} occurs twice", root.0),
             });
         }
-        if previous.is_some_and(|previous| previous >= *root) {
+        let site = module
+            .host_entries
+            .iter()
+            .filter(|entry| entry.target == *root)
+            .map(|entry| (entry.pos.line, entry.pos.col))
+            .min();
+        if previous.is_some_and(|previous| Some(previous) > site) {
             errors.push(VerifyError {
-                message: "module async roots are not in declaration order".to_string(),
+                message: "module async roots are not in first export-site order".to_string(),
             });
         }
-        previous = Some(*root);
+        previous = site;
         match function(*root) {
             Some(function)
-                if function.exported
+                if module.host_entries.iter().any(|entry| entry.target == function.id)
                     && function.is_async
                     && function.parameters.is_empty()
                     && Some(function.id) != module.entry => {}
@@ -1188,6 +1194,7 @@ mod verifier_tests {
             pos: pos(),
         };
         l::Module {
+            host_entries: Vec::new(),
             entry: Some(l::FunctionId(0)),
             async_roots: Vec::new(),
             classes: Vec::new(),
@@ -1319,6 +1326,7 @@ mod verifier_tests {
             pos: pos(),
         };
         l::Module {
+            host_entries: Vec::new(),
             entry: Some(l::FunctionId(0)),
             async_roots: Vec::new(),
             classes: Vec::new(),
@@ -1441,6 +1449,7 @@ mod verifier_tests {
             });
         }
         l::Module {
+            host_entries: Vec::new(),
             entry: Some(l::FunctionId(0)),
             async_roots: Vec::new(),
             classes: Vec::new(),

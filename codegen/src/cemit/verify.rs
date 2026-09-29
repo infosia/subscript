@@ -442,6 +442,7 @@ mod empty_aggregate_tests {
     #[test]
     fn the_program_check_names_every_site_and_the_standard() {
         let clean = CProgram {
+            host_header: String::new(),
             source: "struct Frame { int x; };\n".to_string(),
             positions: PositionTable::new(),
             allocation_metadata_header: String::new(),
@@ -476,6 +477,7 @@ mod label_statement_tests {
     #[test]
     fn label_check_reads_the_emitted_text_and_names_the_site() {
         let clean = CProgram {
+            host_header: String::new(),
             source: "resume_b6:\n    ;\n    SubFn t0 = frame->b6_v14;\n".to_string(),
             positions: PositionTable::new(),
             allocation_metadata_header: String::new(),

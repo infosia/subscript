@@ -163,10 +163,7 @@ impl Function {
     /// by [`Function::trap_sites`] and [`Expr::trap_sites`].
     #[must_use]
     pub fn host_entry_trap_sites(&self, module: &Module) -> Option<Vec<TrapSite>> {
-        if !self.exported
-            || self.is_generator
-            || self.ret != Type::Void
-            || (self.is_async && !self.params.is_empty())
+        if self.is_generator || self.ret != Type::Void || (self.is_async && !self.params.is_empty())
         {
             return None;
         }

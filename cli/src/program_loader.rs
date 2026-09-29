@@ -19,7 +19,7 @@ pub(super) fn load_program(entry: &Path, mirrors: &[PathBuf]) -> Result<Vec<Sour
     let entry_text = read_text(entry, "source")?;
     let entry_path = normalize_existing(entry)
         .map_err(|error| Failure::usage(format!("resolve source {}: {error}", entry.display())))?;
-    files.push(SourceFile::new(entry.to_string_lossy(), entry_text));
+    files.push(SourceFile::entry(entry.to_string_lossy(), entry_text));
 
     let source = files.remove(entry_index);
     let has_dependencies = std::cell::Cell::new(false);

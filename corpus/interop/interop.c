@@ -1,3 +1,9 @@
+/* Static dev fixtures expose library functions only. Ship hosts read the
+ * current program's entry declarations and membership flags. */
+#ifndef SUBSCRIPT_INTEROP_LIBRARY_ONLY
+#include "program.h"
+#endif
+
 /*
  * interop.c — minimal, deterministic, headless implementation of the
  * synthetic interop header (corpus/interop/interop.h), for the P5.2b
@@ -38,20 +44,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The generated AOT entry declares these fixture adapters with the same
- * incomplete runtime Context type. The adapters are host code and do not
- * enter or exit script mode. */
+/* Host adapters share the runtime Context type. Static dev fixtures need
+ * only its incomplete form. Adapters do not enter or exit script mode. */
 typedef struct subscript_rt_context subscript_rt_context;
-
-__attribute__((weak)) void subscript_export_adopt(
-    subscript_rt_context *ctx,
-    SubHostOwnedState state,
-    int32_t tag
-) {
-    (void)ctx;
-    (void)state;
-    (void)tag;
-}
 
 /* The three runtime entries the §111 host adapter below calls. The
  * source of truth for each signature is the generated
@@ -185,17 +180,15 @@ void subHostOwnedStatePostRun(subscript_rt_context *ctx) {
     subscript_host_owned_state = NULL;
 }
 
+#ifdef SUBSCRIPT_HOST_ENTRY_adopt
 void subHostOwnedStateAdoptDrive(subscript_rt_context *ctx) {
     subHostOwnedStatePreEntry(ctx);
     SubHostOwnedState state = subHostOwnedStateBorrow();
     (void)subHostOwnedStateAdvance(state);
-    extern void subscript_export_adopt(
-        subscript_rt_context *ctx,
-        SubHostOwnedState state,
-        int32_t tag
-    );
     subscript_export_adopt(ctx, state, 7);
 }
+
+#endif
 
 int32_t subDevicePoll(int32_t attempt) {
     return attempt >= 2 ? 1 : 0;

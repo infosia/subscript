@@ -182,10 +182,11 @@ pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
             .filter(|n| n.ends_with(".ts"))
             .collect();
         names.sort();
-        // The entry file must come first so diagnostics and import
-        // resolution treat it as the root.
-        names.sort_by_key(|n| !n.contains("main"));
-        let entry = names.first().expect("entry source").clone();
+        let entry = "main.ts".to_owned();
+        assert!(
+            names.contains(&entry),
+            "{id}: directory entry requires main.ts"
+        );
         let source = SourceFile::new(
             &entry,
             fs::read_to_string(dir.join(&entry)).expect("read entry"),

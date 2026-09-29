@@ -279,35 +279,38 @@ impl<'a> Lowering<'a> {
             })
             .collect::<Result<Vec<_>, LowerError>>()?;
 
-        let entry = self
+        let host_entries = self
             .hir
-            .functions
+            .host_entries
             .iter()
-            .find(|function| {
-                function.name == "main" && function.host_entry_trap_sites(self.hir).is_some()
-            })
-            .and_then(|function| self.free_functions.get(&function.symbol))
-            .map(|record| record.id);
-        let async_roots = self
-            .hir
-            .functions
-            .iter()
-            .filter(|function| {
-                function.exported
-                    && function.is_async
-                    && function.name != "main"
-                    && function.params.is_empty()
-            })
-            .map(|function| {
-                self.free_functions
-                    .get(&function.symbol)
-                    .map(|record| record.id)
+            .map(|entry| {
+                let target = self
+                    .free_functions
+                    .get(&entry.target)
                     .ok_or_else(|| LowerError {
-                        pos: function.pos.clone(),
-                        message: "async root has no function id".to_string(),
-                    })
+                        pos: entry.pos.clone(),
+                        message: format!("host entry `{}` has no implementation", entry.name),
+                    })?
+                    .id;
+                Ok(l::HostEntry::from_checked(entry, target))
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, LowerError>>()?;
+        let entry = self.hir.runner_main().ok().and_then(|entry| {
+            self.free_functions
+                .get(&entry.target)
+                .map(|record| record.id)
+        });
+        let mut async_entries: Vec<_> = host_entries
+            .iter()
+            .filter(|host| host.signature.is_async && Some(host.target) != entry)
+            .collect();
+        async_entries.sort_by_key(|entry| (entry.pos.line, entry.pos.col));
+        let mut async_roots = Vec::new();
+        for host in async_entries {
+            if !async_roots.contains(&host.target) {
+                async_roots.push(host.target);
+            }
+        }
 
         let mut intrinsic_operations = intrinsic_operations();
         if let Some(row) = intrinsic_operations.first_mut() {
@@ -342,6 +345,7 @@ impl<'a> Lowering<'a> {
             row.signatures.extend(signatures);
         }
         Ok(l::Module {
+            host_entries,
             entry,
             async_roots,
             classes: self.classes,
@@ -579,9 +583,14 @@ impl<'a> Lowering<'a> {
                 message: "internal error: synthesized helper has a carrier parameter (compiler.md §119.1 rule 4)".to_string(),
             });
         }
-        let host_entry_traps = (kind == l::FunctionKind::Free)
-            .then(|| function.host_entry_trap_sites(self.hir))
-            .flatten();
+        let host_entry_traps = (kind == l::FunctionKind::Free
+            && self
+                .hir
+                .host_entries
+                .iter()
+                .any(|e| e.target == function.symbol))
+        .then(|| function.host_entry_trap_sites(self.hir))
+        .flatten();
         let mut input = FunctionInput::from(function);
         input.host_entry_traps = host_entry_traps;
         self.lower_function_input(id, input, kind, receiver, captures)

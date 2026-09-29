@@ -1246,13 +1246,19 @@ fn parameterized_async_export_has_no_host_wrapper() {
                   \x20 print(`${tag}`);\n\
                   }\n\
                   export function main(): void {}\n";
-    let mut hir =
-        check_program(&[SourceFile::new("test.ts", source)]).expect("async function checks");
-    hir.functions
-        .iter_mut()
-        .find(|function| function.name == "later")
-        .expect("later function")
-        .exported = true;
+    let input = [
+        SourceFile::new(
+            "test.ts",
+            source.replace("async function later", "export async function later"),
+        ),
+        SourceFile::entry("api.ts", "export { main } from './test';"),
+    ];
+    let hir = check_program(&input).expect("module-only async export checks");
+    let mut invalid = input.clone();
+    invalid[1]
+        .source
+        .push_str("export { later } from './test';");
+    assert!(check_program(&invalid).is_err());
     let c = emit_c(&hir).expect("async export emits C").source;
     let function = cemit_function::symbol(&hir, "later");
     assert!(c.contains(&format!("static void* {function}(void* ctx, int32_t a0)")));
@@ -1273,8 +1279,11 @@ fn generic_async_instance_has_no_host_wrapper() {
                   export async function main(): Promise<void> {\n\
                   \x20 await go<u32>();\n\
                   }\n";
-    let hir =
-        check_program(&[SourceFile::new("test.ts", source)]).expect("generic async program checks");
+    let hir = check_program(&[
+        SourceFile::new("test.ts", source),
+        SourceFile::entry("api.ts", "export { main } from './test';"),
+    ])
+    .expect("generic async program checks");
     let c = emit_c(&hir).expect("generic async program emits C").source;
 
     assert!(

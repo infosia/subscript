@@ -159,7 +159,7 @@ mod tests {
         let literal = "a".repeat(1 << 20);
         let source = format!("export function main(): void {{\n  print(\"{literal}\");\n}}\n");
         let source = source.as_str();
-        let files = [SourceFile::new("main.ts", source)];
+        let files = [SourceFile::entry("main.ts", source)];
         let (module, lowered) = compile_jit(&files, &[]).expect("the dev JIT compiles the module");
         let main = lowered.main_id().expect("the module exports `main`");
         let code = module.get_finalized_function(main) as usize;

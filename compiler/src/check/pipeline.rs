@@ -164,6 +164,7 @@ fn run_with_effects(
     options: &CheckOptions,
     narrowing_analysis: Option<narrowing::Analysis>,
 ) -> Result<hir::Module, Vec<Diagnostic>> {
+    let entry_file = host_entries::entry_file(prog)?;
     let provisional = narrowing_analysis.is_none();
     let mut ck = Checker {
         narrowing_analysis,
@@ -281,7 +282,14 @@ fn run_with_effects(
     ck.validate_layouts();
 
     if provisional || ck.diags.is_empty() {
+        let host_exports = ck.host_exports(entry_file);
         let mut module = hir::Module {
+            host_entries: Vec::new(),
+            entry_pos: Pos::new(
+                entry_file.map_or("", |index| prog.files[index].name.as_str()),
+                1,
+                1,
+            ),
             poisoned_imports: ck.poisoned_imports,
             classes: ck.classes,
             enums: ck.enums,
@@ -303,9 +311,9 @@ fn run_with_effects(
             source_bytes: prog.source_bytes,
         };
         if ck.diags.is_empty() {
-            let duplicates = identity::host_entry_diagnostics(&module);
-            if !duplicates.is_empty() {
-                return Err(duplicates);
+            let host_diagnostics = host_entries::populate(&mut module, host_exports);
+            if !host_diagnostics.is_empty() {
+                return Err(host_diagnostics);
             }
         }
         if provisional {

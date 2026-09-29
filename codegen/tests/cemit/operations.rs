@@ -829,6 +829,7 @@ fn date_now_reads_the_pinned_context_clock_in_the_ship_tier() {
     let entry_path = dir.join("entry.c");
     let exe_path = dir.join(format!("program{}", std::env::consts::EXE_SUFFIX));
     std::fs::write(&src_path, program.source.as_bytes()).expect("write program.c");
+    std::fs::write(src_path.with_file_name("program.h"), &program.host_header).unwrap();
     std::fs::write(&entry_path, entry.as_bytes()).expect("write entry.c");
 
     // Same compile line as `run_c_aot` (§11/§11c): the platform C

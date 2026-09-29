@@ -442,12 +442,12 @@ programs whose two tiers printed different numbers with no diagnostic.
 
 Each module has its own top-level names (`compiler.md` §125), as
 TypeScript gives an ES module: two modules can declare one name, and
-each keeps its own declaration and value. One name stays program-wide:
-a host entry, because the host sees `subscript_export_<name>` with no
-module qualifier and C has one symbol namespace. A second host entry of
-one name in another module is S017; `tsc` accepts that program.
+each keeps its own declaration and value. The host entries are the
+functions the entry module exports (§129), so they share the entry
+module's one export namespace and no program-wide rule is needed.
 
-Accept: `a147`, `a148`, `a278`–`a286`. Reject: `r148`–`r156`, `r267`.
+Accept: `a147`, `a148`, `a278`–`a286`, `a293`. Reject: `r148`–`r156`,
+`retired:r267-duplicate-host-entry`.
 
 ### C15. String literal length — a ship-tier limit
 
@@ -538,7 +538,15 @@ exists. Measured with `tsc` 5.9.2: `export * from "./m"` alone is
 accepted; two `export *` of distinct declarations named `x` give
 TS2308.
 
-Accept: `a288`, `a289`, `a290`. Reject: `r273`, `r274`, `r275`.
+The entry module is the host API (§129): it exports functions only,
+and each exported function must be a valid host entry (§59). `tsc`
+accepts an exported class, enum, module global, or string alias in any
+module, and an exported function of any signature; this compiler
+rejects them in the entry module with S100. A host sees the entry
+module's exports as C symbols, so each one must have a C form.
+
+Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
+`r274`, `r275`, `r277`, `r278`, `r279`.
 
 ## 2. Q-register resolutions not covered above
 

@@ -5,7 +5,7 @@ use subscript_compiler::{check_program, SourceFile};
 
 fn program(base: i32) -> Vec<SourceFile> {
     vec![
-        SourceFile::new(
+        SourceFile::entry(
             "main.ts",
             r#"
             import { libSnapshot } from "./lib";
@@ -16,7 +16,7 @@ fn program(base: i32) -> Vec<SourceFile> {
             class C { value: i32 = 9; static value: i32 = 13; static read(): i32 { return C.value + 1; } }
             function pick<T>(first: T, second: T): T { return first; }
             class Box<T> { value: T; constructor(first: T, second: T) { this.value = first; } }
-            export function snapshot(): string {
+            function snapshot(): string {
                 return `${x},${read()},${new C().value},${pick<i32>(10, 1000)},${new Box<i32>(11, 2000).value},${C.value},${C.read()},${identity<E>(E.Value)}`;
             }
             export function main(): void { print(`main=${snapshot()} lib=${libSnapshot()}`); }
@@ -100,7 +100,7 @@ fn reload_keeps_each_modules_storage_and_replaces_its_bodies() {
 fn a_non_host_main_does_not_replace_the_host_entry() {
     let files = [
         SourceFile::new("lib.ts", "export function main(): i32 { return 100; }"),
-        SourceFile::new(
+        SourceFile::entry(
             "main.ts",
             "export function main(): void { print(\"host\"); }",
         ),
@@ -114,17 +114,14 @@ fn a_non_host_main_does_not_replace_the_host_entry() {
 #[test]
 fn reload_hash_detects_nominal_type_changes_between_same_name_classes() {
     for (declaration, label) in [
-        ("export function read(value: C): void {}", "function read"),
-        (
-            "export function read(): C { return new C(); }",
-            "function read",
-        ),
+        ("function read(value: C): void {}", "function read"),
+        ("function read(): C { return new C(); }", "function read"),
         ("let value: C = new C();", "variable value"),
         ("class Holder { value: C = new C(); }", "class Holder"),
     ] {
         let hash = |import: &str, body: &str| {
             let files = [
-                SourceFile::new("main.ts", format!("import {{ C }} from \"./{import}\"; {declaration} export function main(): void {{ {body} }}")),
+                SourceFile::entry("main.ts", format!("import {{ C }} from \"./{import}\"; {declaration} export function main(): void {{ {body} }}")),
                 SourceFile::new("first.ts", "export class C { value: i32 = 7; }"),
                 SourceFile::new("second.ts", "export class C { value: i32 = 100; }"),
             ];
@@ -160,7 +157,7 @@ fn worker_program(base: i32) -> Vec<SourceFile> {
         )
     };
     vec![
-        SourceFile::new("main.ts", format!("import {{ libWorker }} from \"./lib\"; {} export function main(): void {{ mainWorker(); libWorker(); }}", module("main", 7, "mainWorker"))),
+        SourceFile::entry("main.ts", format!("import {{ libWorker }} from \"./lib\"; {} export function main(): void {{ mainWorker(); libWorker(); }}", module("main", 7, "mainWorker"))),
         SourceFile::new("lib.ts", module("lib", base, "libWorker")),
     ]
 }
@@ -169,7 +166,7 @@ fn worker_program(base: i32) -> Vec<SourceFile> {
 fn allocation_metadata_names_modules_only_for_shared_class_names() {
     for (other, expected) in [("C", "C (main.ts)"), ("D", "C")] {
         let files = [
-            SourceFile::new("main.ts", "class C {} export function main(): void {}"),
+            SourceFile::entry("main.ts", "class C {} export function main(): void {}"),
             SourceFile::new("lib.ts", format!("class {other} {{}}")),
         ];
         let hir = check_program(&files).expect("classes");
@@ -187,7 +184,7 @@ fn allocation_metadata_names_modules_only_for_shared_class_names() {
 
 #[test]
 fn allocation_metadata_distinguishes_builtin_and_module_error() {
-    let hir = check_program(&[SourceFile::new(
+    let hir = check_program(&[SourceFile::entry(
         "main.ts",
         "class Error {} export function main(): void {}",
     )])
@@ -203,7 +200,7 @@ fn typed_mirror_global_lowering_errors_use_source_names() {
     let body = "print(`${K}`);";
     let files = [
         SourceFile::ambient("mirror.d.ts", "declare const K: i32;"),
-        SourceFile::new(
+        SourceFile::entry(
             "main.ts",
             format!("export function main(): void {{ {body} }}"),
         ),

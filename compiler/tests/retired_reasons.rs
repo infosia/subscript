@@ -31,12 +31,18 @@ use subscript_compiler::{api_reference, check_program, render_diagnostics, RuleC
 /// One retired reason: the phrase, and the record that retired it.
 ///
 /// A phrase is lowercase; the sweep compares lowercase.
-const RETIRED: &[(&str, &str)] = &[(
-    "outlives its call",
-    "compiler.md §103.3: `compiler.md` §70 landed a reference-counted \
+const RETIRED: &[(&str, &str)] = &[
+    (
+        "duplicate host entry",
+        "compiler.md §129 retires the program-wide host name rule",
+    ),
+    (
+        "outlives its call",
+        "compiler.md §103.3: `compiler.md` §70 landed a reference-counted \
      handle and a `Generator<T>` already outlives the call that made it, \
      so the obstacle is the missing view type (stdlib.md §14.3)",
-)];
+    ),
+];
 
 /// The crates whose `.rs` sources build what a `subscript` user reads.
 const SCANNED_CRATES: &[&str] = &["bindgen", "cli", "codegen", "compiler", "runtime"];

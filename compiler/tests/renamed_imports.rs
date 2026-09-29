@@ -4,7 +4,7 @@ use subscript_compiler::{check_program, RuleCode, SourceFile};
 
 fn files(main: &str, lib: &str) -> [SourceFile; 2] {
     [
-        SourceFile::new("main.ts", main),
+        SourceFile::entry("main.ts", main),
         SourceFile::new("lib.ts", lib),
     ]
 }

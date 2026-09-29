@@ -418,6 +418,8 @@ fn host_entry_trap_sites_name_each_wire_parameter() {
         pos: Pos::new("wire-entry.ts", 3, 1),
     };
     let module = Module {
+        host_entries: Vec::new(),
+        entry_pos: Pos::new("test.ts", 1, 1),
         poisoned_imports: Vec::new(),
         synthesized_helpers: Default::default(),
         classes: Vec::new(),
@@ -838,6 +840,8 @@ fn arr_fmt_kind_matches_the_q14_interpolable_set() {
 #[test]
 fn module_is_constructible_empty() {
     let m = Module {
+        host_entries: Vec::new(),
+        entry_pos: Pos::new("test.ts", 1, 1),
         poisoned_imports: Vec::new(),
         synthesized_helpers: Default::default(),
         classes: Vec::new(),

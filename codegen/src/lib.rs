@@ -129,6 +129,11 @@ fn emit_c_program(
     with_main: bool,
 ) -> Result<CProgram, String> {
     reject_discovery_hir_for_c(module)?;
+    if with_main {
+        module
+            .runner_main()
+            .map_err(|diagnostic| diagnostic.to_string())?;
+    }
     let lir = lir::lower_module(module)
         .map_err(|error| format!("internal error: LIR construction failed: {error}"))?;
     cemit::emit_lir_c(&lir, with_main)
@@ -606,7 +611,7 @@ export function main(): void {}
     #[test]
     fn two_file_programs_link_across_modules() {
         let out = run_jit(&[
-            SourceFile::new(
+            SourceFile::entry(
                 "main.ts",
                 "import { double } from \"./util\";\nexport function main(): void {\n  print(`${double(21)}`);\n}\n",
             ),

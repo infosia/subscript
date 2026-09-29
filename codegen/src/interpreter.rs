@@ -147,7 +147,7 @@ impl InterpretError {
 ///
 /// The synthetic initializer, when present, runs before the exported
 /// zero-argument `main`. Every other exported zero-argument async function is
-/// then kicked in declaration order, and host checkpoints run until no work
+/// then kicked in first entry export-site order, and host checkpoints run until no work
 /// can advance (`compiler.md` §26.3 and §94). Runtime-owned strings, arrays,
 /// maps, sets, JSON state, dates, regular expressions, and formatting all go
 /// through `subscript-runtime`.
@@ -467,7 +467,7 @@ impl<'m> Interpreter<'m> {
         let entry_id = entry.id;
         let entry_pos = entry.pos.clone();
         // §26.3 and §94.1 rule 10: the standard runner kicks `main`, then
-        // every other exported async function in declaration order, and then
+        // each other async target in first entry export-site order, and then
         // steps while pending work remains. An export kick starts a body and
         // never drains ready work (rule 7).
         let result = self.call_function(entry_id, Vec::new())?;

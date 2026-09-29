@@ -9,7 +9,7 @@ export function bump(): void { count += 1; }";
 
 fn files(main: &str, lib: &str) -> [SourceFile; 2] {
     [
-        SourceFile::new("main.ts", main),
+        SourceFile::entry("main.ts", main),
         SourceFile::new("lib.ts", lib),
     ]
 }
@@ -138,7 +138,7 @@ fn poisoned_import_write_does_not_add_a_diagnostic() {
     let main = "import { value } from \"./p.typegpu\";\nvalue = 1;";
     let mut options = CheckOptions::default();
     options.poison_missing_modules = vec!["./p.typegpu".to_string()];
-    let module = check_program_with(&[SourceFile::new("main.ts", main)], &options)
+    let module = check_program_with(&[SourceFile::entry("main.ts", main)], &options)
         .expect("discovery suppresses diagnostics for the missing module and its uses");
     assert_eq!(module.poisoned_imports.len(), 1);
     assert_eq!(module.poisoned_imports[0].module, "./p.typegpu");
@@ -148,7 +148,7 @@ fn poisoned_import_write_does_not_add_a_diagnostic() {
     );
 
     let missing_export = [
-        SourceFile::new("main.ts", main),
+        SourceFile::entry("main.ts", main),
         SourceFile::new("p.typegpu.ts", "export let other: i32 = 4;"),
     ];
     let errors = check_program_with(&missing_export, &options)
@@ -163,7 +163,7 @@ fn poisoned_import_write_does_not_add_a_diagnostic() {
     assert_eq!((errors[0].pos.line, errors[0].pos.col), (1, 10));
 
     let present_export = [
-        SourceFile::new("main.ts", main),
+        SourceFile::entry("main.ts", main),
         SourceFile::new("p.typegpu.ts", "export let value: i32 = 4;"),
     ];
     let errors = check_program_with(&present_export, &options)

@@ -7,7 +7,7 @@
  */
 
 #include "engine.h"
-#include "subscript_runtime.h"
+#include "program.h"
 
 #include <inttypes.h>
 #include <stdbool.h>
@@ -19,12 +19,6 @@
 #include <fcntl.h>
 #include <io.h>
 #endif
-
-/* Every exported zero-argument void script function has this generated
- * symbol and the subscript_main_entry signature. */
-void subscript_export_init(subscript_rt_context *ctx);
-void subscript_export_update(subscript_rt_context *ctx);
-void subscript_export_shutdown(subscript_rt_context *ctx);
 
 /* The host brackets every entry so script_depth makes trap clearing safe;
  * this helper returns only the post-hoc trap state, never a script result. */

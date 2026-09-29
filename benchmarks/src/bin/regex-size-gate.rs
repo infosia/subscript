@@ -161,6 +161,7 @@ fn link_subject(
     let entry = work.join(format!("{id}-entry.c"));
     let executable = work.join(id);
     let map = work.join(format!("{id}.map"));
+    std::fs::write(work.join("program.h"), &emitted.host_header).map_err(|e| e.to_string())?;
     std::fs::write(&program, emitted.source)
         .map_err(|error| format!("write {}: {error}", program.display()))?;
     std::fs::write(&entry, AOT_ENTRY_C)

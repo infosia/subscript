@@ -823,6 +823,7 @@ mod tests {
 
     fn layouts() -> Layouts {
         Layouts::build_lir(&l::Module {
+            host_entries: Vec::new(),
             entry: None,
             async_roots: Vec::new(),
             classes: Vec::new(),

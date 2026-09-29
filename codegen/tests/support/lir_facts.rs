@@ -366,55 +366,62 @@ fn compare_entry_and_async_roots(hir: &hir::Module, lir: &l::Module, findings: &
         .iter()
         .map(|class| usize::from(class.ctor.is_some()) + class.methods.len())
         .sum::<usize>();
-    if let Some((index, entry)) = hir
-        .functions
+    let target_id = |symbol: &str| {
+        hir.functions
+            .iter()
+            .position(|f| f.symbol == symbol)
+            .map(|index| l::FunctionId((free_offset + index) as u32))
+    };
+    let expected_entry = hir
+        .host_entries
         .iter()
-        .enumerate()
-        .find(|(_, function)| function.exported && function.name == "main")
-    {
-        let expected = Some(l::FunctionId((free_offset + index) as u32));
-        if lir.entry != expected {
-            findings.push(format!(
-                "{}: executable entry is {:?}, expected {:?}",
-                entry.pos, lir.entry, expected
-            ));
-        }
-    } else if lir.entry.is_some() {
+        .find(|e| e.name == "main" && e.signature.parameters.is_empty())
+        .and_then(|e| target_id(&e.target));
+    if lir.entry != expected_entry {
         findings.push(format!(
-            "<module>:1:1: entryless HIR has unexpected executable entry {:?}",
-            lir.entry
+            "<module>:1:1: executable entry is {:?}, expected {:?}",
+            lir.entry, expected_entry
         ));
     }
-    let expected_roots = hir
-        .functions
+    let eligible: std::collections::BTreeSet<_> = hir
+        .host_entries
         .iter()
-        .enumerate()
-        .filter(|(_, function)| {
-            function.exported
-                && function.is_async
-                && function.name != "main"
-                && function.params.is_empty()
+        .filter(|entry| entry.signature.is_async)
+        .filter_map(|entry| target_id(&entry.target))
+        .filter(|id| Some(*id) != expected_entry)
+        .collect();
+    let roots: std::collections::BTreeSet<_> = lir.async_roots.iter().copied().collect();
+    if roots != eligible || roots.len() != lir.async_roots.len() {
+        findings.push(
+            "<module>:1:1: async roots must contain each non-main async target exactly once".into(),
+        );
+    }
+    let first_sites: Vec<_> = lir
+        .async_roots
+        .iter()
+        .map(|root| {
+            hir.host_entries
+                .iter()
+                .filter(|entry| target_id(&entry.target) == Some(*root))
+                .map(|entry| (entry.pos.line, entry.pos.col))
+                .min()
         })
-        .map(|(index, _)| l::FunctionId((free_offset + index) as u32))
-        .collect::<Vec<_>>();
-    if lir.async_roots != expected_roots {
-        let pos = hir
-            .functions
-            .iter()
-            .find(|function| {
-                function.exported
-                    && function.is_async
-                    && function.name != "main"
-                    && function.params.is_empty()
-            })
-            .map_or_else(
-                || Pos::new("<module>", 1, 1),
-                |function| function.pos.clone(),
-            );
-        findings.push(format!(
-            "{pos}: async roots are {:?}, expected {:?}",
-            lir.async_roots, expected_roots
-        ));
+        .collect();
+    if first_sites.windows(2).any(|pair| pair[0] > pair[1]) {
+        findings.push("<module>:1:1: async roots violate first entry export-site order".into());
+    }
+    let expected_hosts: Vec<_> = hir
+        .host_entries
+        .iter()
+        .map(|e| (&e.name, target_id(&e.target), &e.signature, &e.pos))
+        .collect();
+    let actual_hosts: Vec<_> = lir
+        .host_entries
+        .iter()
+        .map(|e| (&e.name, Some(e.target), &e.signature, &e.pos))
+        .collect();
+    if actual_hosts != expected_hosts {
+        findings.push("<module>:1:1: host entry table differs from the checked exports".to_owned());
     }
 }
 
@@ -481,7 +488,13 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
         for site in function.trap_sites() {
             *expected.entry(hir_trap_key(&site)).or_default() += 1;
         }
-        if let Some(sites) = function.host_entry_trap_sites(hir) {
+        if let Some(sites) = hir
+            .host_entries
+            .iter()
+            .any(|entry| entry.target == function.symbol)
+            .then(|| function.host_entry_trap_sites(hir))
+            .flatten()
+        {
             for site in sites {
                 *expected.entry(hir_trap_key(&site)).or_default() += 1;
             }
@@ -512,7 +525,10 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
         )
     });
     for (expected_function, actual_function) in hir_free_functions.zip(lir_free_functions) {
-        let expected_attachment = expected_function.host_entry_trap_sites(hir).is_some();
+        let expected_attachment = hir
+            .host_entries
+            .iter()
+            .any(|entry| entry.target == expected_function.symbol);
         let actual_attachment = actual_function.host_entry_traps.is_some();
         if expected_attachment != actual_attachment {
             findings.push(format!(

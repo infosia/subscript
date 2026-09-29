@@ -21,6 +21,8 @@ pub(super) fn compile_jit(
     libraries: &[NativeLibrary],
 ) -> Result<(JITModule, Lowered), RunError> {
     let hir = check_program(files).map_err(RunError::Rejected)?;
+    hir.runner_main()
+        .map_err(|diagnostic| RunError::Rejected(vec![diagnostic]))?;
 
     let flags = dev_flags().map_err(RunError::Internal)?;
     let isa = cranelift_native::builder()
