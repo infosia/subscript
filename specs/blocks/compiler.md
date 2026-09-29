@@ -169,3 +169,4 @@ Every section, with its status:
 | §125 | Each module has its own top-level names | active | [`s125-each-module-has-its-own-top-level-names.md`](compiler/s125-each-module-has-its-own-top-level-names.md) |
 | §126 | A renamed import binds the imported declaration | active | [`s126-a-renamed-import-binds-the-imported-declaration.md`](compiler/s126-a-renamed-import-binds-the-imported-declaration.md) |
 | §127 | An import binding is read-only | active | [`s127-an-import-binding-is-read-only.md`](compiler/s127-an-import-binding-is-read-only.md) |
+| §128 | A named re-export is in the surface | active | [`s128-a-named-re-export-is-in-the-surface.md`](compiler/s128-a-named-re-export-is-in-the-surface.md) |
