@@ -5,7 +5,7 @@ f32: 0.25
 boolean: true
 string: café 😀
 FixedArray: 1 -2 3
-CStruct: 3 true
+ValueType: 3 true
 class: ada 36 bob 7
 nullable: true
 array: ok 3

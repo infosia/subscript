@@ -1,9 +1,9 @@
-// corpus: accept/a153-nested-cstruct-array-roundtrip
-// purpose: Round-trips a nested CStruct value through a dynamic array without aliasing either value copy.
-// exercises: CStruct, nested-value-class, dynamic-array, indexed-read, indexed-write, value-copy
+// corpus: accept/a153-nested-valuetype-array-roundtrip
+// purpose: Round-trips a nested ValueType value through a dynamic array without aliasing either value copy.
+// exercises: ValueType, nested-value-class, dynamic-array, indexed-read, indexed-write, value-copy
 // questions: §68
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType
 class NestedValue {
   value: i32 = 0;
 
@@ -12,7 +12,7 @@ class NestedValue {
   }
 }
 
-@CStruct
+@ValueType
 class ArrayValue {
   nested: NestedValue = new NestedValue(0);
   tag: i32 = 0;

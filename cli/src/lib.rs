@@ -646,6 +646,9 @@ enum FileStamp {
         len: u64,
     },
     Missing,
+    /// No stamp precedes the load that read this file, so the next poll
+    /// reloads it once.
+    Unseen,
 }
 
 fn file_stamp(path: &Path) -> FileStamp {
@@ -680,6 +683,22 @@ impl WatchedFiles {
     fn refresh(&mut self) {
         self.stamps = self.paths.iter().map(|path| file_stamp(path)).collect();
     }
+
+    /// Watches `paths` with the stamps taken before the load that read
+    /// them. A write after that load then differs from its stamp.
+    fn after_load(&self, paths: Vec<PathBuf>) -> Self {
+        let stamps = paths
+            .iter()
+            .map(|path| {
+                self.paths
+                    .iter()
+                    .zip(&self.stamps)
+                    .find(|(known, _)| *known == path)
+                    .map_or(FileStamp::Unseen, |(_, stamp)| *stamp)
+            })
+            .collect();
+        Self { paths, stamps }
+    }
 }
 
 fn loaded_file_paths(entry: &Path, files: &[SourceFile]) -> Result<Vec<PathBuf>, Failure> {
@@ -702,25 +721,20 @@ fn loaded_file_paths(entry: &Path, files: &[SourceFile]) -> Result<Vec<PathBuf>,
     Ok(paths)
 }
 
-fn run_watch<O: Write, E: Write>(
+/// The files that the first load read, with the stamps taken before
+/// that load, and the load result. A program error keeps the entry
+/// watched; any other load failure ends the watch.
+type InitialWatch = (WatchedFiles, Result<Vec<SourceFile>, Failure>);
+
+fn initial_watch_load(
     source: &Path,
-    deny_warnings: bool,
-    stdout: &mut O,
-    stderr: &mut E,
-) -> Result<u8, Failure> {
-    let mut session = WatchSession::new(deny_warnings);
-    let mut watched = match load_program(source, &[]) {
-        Ok(initial_files) => {
-            let initial_paths = loaded_file_paths(source, &initial_files)?;
-            let initial = session.step(&initial_files);
-            if let WatchOutcome::Failed { message } = &initial.outcome {
-                if !initial.warnings.is_empty() {
-                    write_warnings(&initial_files, &initial.warnings, stderr)?;
-                }
-                return Err(Failure::usage(message.clone()));
-            }
-            write_watch_step(&initial_files, initial, stdout, stderr)?;
-            WatchedFiles::new(initial_paths)
+    load: impl FnOnce(&Path) -> Result<Vec<SourceFile>, Failure>,
+) -> Result<InitialWatch, Failure> {
+    let before_load = WatchedFiles::new(std::fs::canonicalize(source).into_iter().collect());
+    match load(source) {
+        Ok(files) => {
+            let paths = loaded_file_paths(source, &files)?;
+            Ok((before_load.after_load(paths), Ok(files)))
         }
         Err(failure) if failure.code == PROGRAM_ERROR => {
             // A parser diagnostic can be raised while the loader is
@@ -730,12 +744,36 @@ fn run_watch<O: Write, E: Write>(
             let entry = std::fs::canonicalize(source).map_err(|error| {
                 Failure::usage(format!("resolve source {}: {error}", source.display()))
             })?;
+            Ok((before_load.after_load(vec![entry]), Err(failure)))
+        }
+        Err(failure) => Err(failure),
+    }
+}
+
+fn run_watch<O: Write, E: Write>(
+    source: &Path,
+    deny_warnings: bool,
+    stdout: &mut O,
+    stderr: &mut E,
+) -> Result<u8, Failure> {
+    let mut session = WatchSession::new(deny_warnings);
+    let (mut watched, initial) = initial_watch_load(source, |path| load_program(path, &[]))?;
+    match initial {
+        Ok(initial_files) => {
+            let initial = session.step(&initial_files);
+            if let WatchOutcome::Failed { message } = &initial.outcome {
+                if !initial.warnings.is_empty() {
+                    write_warnings(&initial_files, &initial.warnings, stderr)?;
+                }
+                return Err(Failure::usage(message.clone()));
+            }
+            write_watch_step(&initial_files, initial, stdout, stderr)?;
+        }
+        Err(failure) => {
             session.invalidate_loaded_sources();
             write_watch_failure(&failure, stderr)?;
-            WatchedFiles::new(vec![entry])
         }
-        Err(failure) => return Err(failure),
-    };
+    }
 
     loop {
         std::thread::sleep(WATCH_POLL_INTERVAL);
@@ -760,7 +798,7 @@ fn run_watch<O: Write, E: Write>(
                 continue;
             }
         };
-        watched = WatchedFiles::new(paths);
+        watched = watched.after_load(paths);
         let step = session.step(&files);
         write_watch_step(&files, step, stdout, stderr)?;
     }
@@ -989,6 +1027,64 @@ mod tests {
             PROGRAM_ERROR
         );
         assert!(String::from_utf8_lossy(&stderr).contains("S007"));
+        Ok(())
+    }
+
+    #[test]
+    fn watched_files_keep_the_stamp_taken_before_the_load() -> Result<(), String> {
+        let known = TestFile::program("export function main(): void {}\n")?;
+        let before_load = WatchedFiles::new(vec![known.0.clone()]);
+        let unchanged = before_load.after_load(vec![known.0.clone()]);
+        assert!(!unchanged.changed());
+
+        // Only known paths: a write after the stamp and before the
+        // watcher records the file set is a change.
+        std::fs::write(&known.0, "export function main(): void { print(\"x\"); }\n")
+            .map_err(|error| error.to_string())?;
+        let mut watched = before_load.after_load(vec![known.0.clone()]);
+        assert_eq!(watched.stamps, before_load.stamps);
+        assert!(watched.changed());
+        watched.refresh();
+        assert!(!watched.changed());
+        Ok(())
+    }
+
+    #[test]
+    fn watched_files_mark_a_path_without_a_stamp_unseen() -> Result<(), String> {
+        let known = TestFile::program("export function main(): void {}\n")?;
+        let imported = TestFile::program("export function helper(): void {}\n")?;
+        let before_load = WatchedFiles::new(vec![known.0.clone()]);
+        let mut watched = before_load.after_load(vec![known.0.clone(), imported.0.clone()]);
+        assert_eq!(watched.stamps[0], before_load.stamps[0]);
+        assert_eq!(watched.stamps[1], FileStamp::Unseen);
+        assert!(watched.changed());
+        watched.refresh();
+        assert!(!watched.changed());
+        Ok(())
+    }
+
+    #[test]
+    fn initial_watch_load_stamps_before_the_load() -> Result<(), String> {
+        let entry = TestFile::program("export function main(): void {}\n")?;
+        let (watched, initial) = initial_watch_load(&entry.0, |path| {
+            std::fs::write(path, "export function main(): void { print(\"x\"); }\n")
+                .map_err(|error| Failure::usage(error.to_string()))?;
+            load_program(path, &[])
+        })
+        .map_err(|failure| failure.message)?;
+        assert!(initial.is_ok());
+        assert!(watched.changed());
+
+        // A program error keeps the entry watched with the same stamp.
+        let broken = TestFile::program("export function main(): void {}\n")?;
+        let (watched, initial) = initial_watch_load(&broken.0, |path| {
+            std::fs::write(path, "export function main(: void {\n")
+                .map_err(|error| Failure::usage(error.to_string()))?;
+            load_program(path, &[])
+        })
+        .map_err(|failure| failure.message)?;
+        assert!(initial.is_err_and(|failure| failure.code == PROGRAM_ERROR));
+        assert!(watched.changed());
         Ok(())
     }
 

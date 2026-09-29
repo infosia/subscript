@@ -1,9 +1,9 @@
 // corpus: accept/a190-async-children-across-suspension
 // purpose: Two held children progress together across the holder's own suspension, and carry value-class results.
-// exercises: async-call, held-handle, Context.suspend, checkpoint-order, CStruct-result
+// exercises: async-call, held-handle, Context.suspend, checkpoint-order, ValueType-result
 // questions: §94, Q34, C8
-// tsc: accepts; js-comparable: no C2 C8: The CStruct decorator and the Context API have no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2 C8: The ValueType decorator and the Context API have no JavaScript shim.
+@ValueType
 class Pair {
   x: i32 = 0;
   y: i32 = 0;

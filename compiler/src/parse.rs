@@ -322,7 +322,7 @@ mod tests {
     fn parses_a_decorated_class() {
         let program = parse_program(&[src(
             "t.ts",
-            "@CStruct\nclass V { x: f32;\n constructor(x: f32) { this.x = x; } }\n",
+            "@ValueType\nclass V { x: f32;\n constructor(x: f32) { this.x = x; } }\n",
         )])
         .expect("parse");
         assert_eq!(program.files.len(), 1);

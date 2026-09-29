@@ -394,7 +394,7 @@ fn a12_generics_are_monomorphized_in_hir() {
 
 #[test]
 fn generic_value_classes_carry_alignment_overrides() {
-    let source = "@CStruct({ align: 16 })\nclass Box<T> { value: T; constructor(value: T) { this.value = value; } }\nexport function main(): void { const integer: Box<i32> = new Box<i32>(1); const float: Box<f64> = new Box<f64>(2.0); print(`${integer.value}:${float.value}`); }\n";
+    let source = "@ValueType({ align: 16 })\nclass Box<T> { value: T; constructor(value: T) { this.value = value; } }\nexport function main(): void { const integer: Box<i32> = new Box<i32>(1); const float: Box<f64> = new Box<f64>(2.0); print(`${integer.value}:${float.value}`); }\n";
     let module = subscript_compiler::check_program(&[SourceFile::new("generic-align.ts", source)])
         .expect("generic aligned classes check clean");
     for name in ["Box<i32>", "Box<f64>"] {

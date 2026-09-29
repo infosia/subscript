@@ -5,7 +5,7 @@
 // tsc: accepts
 // expected-error: S100 at the write accessor
 
-@CStruct
+@ValueType
 class Value {
   value: i32 = 0;
 

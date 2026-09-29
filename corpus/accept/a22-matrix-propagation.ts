@@ -3,12 +3,12 @@
 // purpose: Runs the fixed matrix-propagation benchmark and prints one f32 checksum.
 // exercises: value-struct, fixed-array, slices, lcg, matrix-propagation, benchmark
 // questions: Q1, Q2, Q3, Q4, Q12, Q14, Q15, Q17
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
 const NODE_COUNT: i32 = 10000;
 const ITERATION_COUNT: i32 = 100;
 let lcgState: u32 = 0x12345678;
 
-@CStruct
+@ValueType
 class Matrix4 {
   elements: FixedArray<f32, 16>;
 

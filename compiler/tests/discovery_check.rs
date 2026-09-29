@@ -5,7 +5,7 @@ use subscript_compiler::{
 const DISCOVERY_SOURCE: &str = r#"
 import { A_SIZE, B_WGSL } from "./p.typegpu";
 
-@CStruct
+@ValueType
 class Header {
   value: i32 = 0;
 }

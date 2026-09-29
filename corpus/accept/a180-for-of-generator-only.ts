@@ -1,9 +1,9 @@
 // corpus: accept/a180-for-of-generator-only
 // purpose: Drives generators only through for-of across every loop exit shape and a value-class element.
 // observable: Sums pin full traversal, break, continue, and value-class field reads.
-// exercises: generator, for-of, break, continue, cstruct-field-read
+// exercises: generator, for-of, break, continue, valuetype-field-read
 // questions: C8, §83
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
 
 function* values(): Generator<i32> {
   yield 3;
@@ -11,7 +11,7 @@ function* values(): Generator<i32> {
   yield 8;
 }
 
-@CStruct
+@ValueType
 class Item {
   value: i32;
 

@@ -2,8 +2,8 @@
 // purpose: Represents and checks a fallible operation with a result value.
 // exercises: result-value, checked-error, no-throw
 // questions: Q1, Q2, Q9, Q12
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType
 class DivisionResult {
   ok: boolean;
   value: f64;

@@ -3,8 +3,8 @@
 // observable: a fresh instance prints each initializer before any assignment.
 // exercises: class-field, field-initializer, value-class, reference-field
 // questions: compiler section 108
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType
 class Extent {
   width: i32 = 4;
   height: i32 = 3;

@@ -157,7 +157,7 @@ fn conditional_fresh_callback_userdata_does_not_warn() {
 }
 
 const W004_TYPES: &str = "\
-@CStruct
+@ValueType
 class Point {
   x: f32;
   constructor(x: f32) { this.x = x; }
@@ -494,7 +494,7 @@ fn synthesized_storage_never_reaches_a_w004_message() {
 #[test]
 fn local_copied_from_field_chain_rooted_in_index_warns() {
     let result = w004_warnings(
-        "@CStruct\n\
+        "@ValueType\n\
          class Outer {\n\
            inner: Point;\n\
            constructor(inner: Point) { this.inner = inner; }\n\
@@ -647,7 +647,7 @@ fn call_initializer_is_not_a_copy_binding() {
 #[test]
 fn value_class_this_write_does_not_warn() {
     let source = "\
-@CStruct
+@ValueType
 class Point {
   x: f32;
   constructor(x: f32) { this.x = x; }
@@ -676,12 +676,12 @@ export function main(): void { const point: Point = new Point(1.0); point.set(ne
 #[test]
 fn write_only_value_parameter_in_constructor_warns() {
     let source = "\
-@CStruct
+@ValueType
 class Point {
   x: f32;
   constructor(x: f32) { this.x = x; }
 }
-@CStruct
+@ValueType
 class Holder {
   point: Point;
   constructor(other: Point) {

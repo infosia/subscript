@@ -1,14 +1,14 @@
 // example: e02-value-and-reference
 // teaches: Place a C-layout value class beside a reference class and observe copies on assignment and calls.
-// differs-from-typescript: C2 makes @CStruct classes values; C1 makes every class declaration nominal.
+// differs-from-typescript: C2 makes @ValueType classes values; C1 makes every class declaration nominal.
 // see: corpus/accept/a04-value-struct.ts, corpus/accept/a05-nominal-identity.ts, corpus/accept/a21-methods.ts, corpus/accept/a56-map-aggregate-foreach.ts, corpus/reject/r06-structural-substitution.ts, corpus/reject/r07-value-class-extends.ts, collisions.md C1-C2
 
 // Two classes follow with the same single field. The decorator is the only
 // difference between them, and it decides what an assignment does.
-// C2: @CStruct makes this a C-layout value copied on assignment and pass.
+// C2: @ValueType makes this a C-layout value copied on assignment and pass.
 // Rejected alternative: adding extends is S006, "value classes do not
 // inherit"; corpus/reject/r07-value-class-extends.ts pins it.
-@CStruct
+@ValueType
 class ValueSwitch {
   enabled: boolean;
 
@@ -17,7 +17,7 @@ class ValueSwitch {
   }
 }
 
-// C2: without @CStruct this is a Context-allocated reference class.
+// C2: without @ValueType this is a Context-allocated reference class.
 class ReferenceSwitch {
   enabled: boolean;
 

@@ -287,7 +287,7 @@ fn reference_class_method_receiver_runs_before_its_argument() {
 #[test]
 fn value_class_method_receiver_runs_before_its_argument() {
     assert_order(
-        "@CStruct\nclass P {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n  add(v: i32): i32 {\n    return this.n + v;\n  }\n}\nfunction mkP(): P {\n  note(\"P\");\n  return new P(10);\n}\nexport function main(): void {\n  const r: i32 = mkP().add(pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
+        "@ValueType\nclass P {\n  n: i32;\n  constructor(n: i32) {\n    this.n = n;\n  }\n  add(v: i32): i32 {\n    return this.n + v;\n  }\n}\nfunction mkP(): P {\n  note(\"P\");\n  return new P(10);\n}\nexport function main(): void {\n  const r: i32 = mkP().add(pick ? mkR() : 0);\n  print(`${log}:${r}`);\n}\n",
         "PR:12\n",
     );
 }
@@ -734,7 +734,7 @@ fn parameter_storage_is_initialized_once_when_its_address_escapes() {
     use subscript_codegen::lir::lower_module;
     use subscript_compiler::check_program;
 
-    const SOURCE: &str = "@CStruct\nclass Point {\n  x: f32;\n  constructor(x: f32) { this.x = x; }\n  value(): f32 { return this.x; }\n}\nfunction pointValue(point: Point): f32 { return point.value(); }\nexport function main(): void { print(`${pointValue(new Point(3.0))}`); }\n";
+    const SOURCE: &str = "@ValueType\nclass Point {\n  x: f32;\n  constructor(x: f32) { this.x = x; }\n  value(): f32 { return this.x; }\n}\nfunction pointValue(point: Point): f32 { return point.value(); }\nexport function main(): void { print(`${pointValue(new Point(3.0))}`); }\n";
     let files = [SourceFile::new("parameter-storage.ts", SOURCE)];
     let hir = check_program(&files).expect("parameter-storage probe checks cleanly");
     let lir = lower_module(&hir).expect("parameter-storage probe lowers to LIR");

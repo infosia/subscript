@@ -744,7 +744,7 @@ fn map_set_fn_tables_match_the_section_10_contract() {
 #[test]
 fn arr_elem_kind_covers_the_marshalable_types_and_nothing_else() {
     use crate::types::FuncType;
-    let value_class = |id: ClassId| id.0 == 0; // class 0 is @CStruct, class 1 is a reference
+    let value_class = |id: ClassId| id.0 == 0; // class 0 is @ValueType, class 1 is a reference
     let of = |ty: &Type| ArrElemKind::of(ty, &value_class);
     for ty in [
         Type::Bool,

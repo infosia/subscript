@@ -1,10 +1,10 @@
 // corpus: accept/a164-frame-class-locals
 // purpose: Keeps addressable fixed-array locals in coroutine frames across each suspension.
-// exercises: local-storage-class, generator, async-await, fixed-array, cstruct, loop
+// exercises: local-storage-class, generator, async-await, fixed-array, valuetype, loop
 // questions: §68, C2, C8
-// tsc: accepts; js-comparable: no C2 C8: The CStruct decorator and coroutine API have no JavaScript shim.
+// tsc: accepts; js-comparable: no C2 C8: The ValueType decorator and coroutine API have no JavaScript shim.
 
-@CStruct
+@ValueType
 class Cell {
   value: i32;
   constructor(value: i32) { this.value = value; }

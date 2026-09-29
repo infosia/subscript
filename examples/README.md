@@ -42,7 +42,7 @@ or its governing invariant.
 | Example | What it teaches | TypeScript divergence | Rule |
 |---|---|---|---|
 | [`e01-sized-integers`](e01-sized-integers.ts) | `i32`/`u32`/`i64`/`f32`/`f64`, explicit `as` conversions, wrapping | Bare `number` is rejected; literals are contextually typed | C3, C4 |
-| [`e02-value-and-reference`](e02-value-and-reference.ts) | `@CStruct class` beside a plain `class`; copy on assign and on pass | Value classes copy; structurally identical declarations are not interchangeable | C2, C1 |
+| [`e02-value-and-reference`](e02-value-and-reference.ts) | `@ValueType class` beside a plain `class`; copy on assign and on pass | Value classes copy; structurally identical declarations are not interchangeable | C2, C1 |
 | [`e03-memory`](e03-memory.ts) | Context allocation, `Context.free`, explicit `Context.collect()` | Nothing collects unbidden; never collecting is correct but uses more memory | [Invariant 2](../CLAUDE.md#design-invariants-read-second) |
 | [`e04-null`](e04-null.ts) | `T \| null`, narrowing by `!== null` | There is no `undefined` and no general union | C7 |
 | [`e05-errors`](e05-errors.ts) | `throw`/`try`/`catch` of the `Error` family, `JSON.parse` failures, a result-shaped return, and what a trap is | Only `Error`, `SyntaxError`, and `TypeError` objects are thrown, `finally` is rejected, and a trap is not catchable | C6 |

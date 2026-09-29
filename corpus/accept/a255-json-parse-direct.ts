@@ -3,7 +3,7 @@
 // exercises: JSON, typed parse, try-catch, SyntaxError, TypeError, byte offset, depth limit, no partial value
 // questions: Q28, Q9, Q5
 // tsc: accepts; js-comparable: no C2 C6: The parse failure messages are this project's.
-@CStruct
+@ValueType
 class Point {
   x: i32;
   ready: boolean;
@@ -73,7 +73,7 @@ export function main(): void {
   const fixed: FixedArray<i16, 3> = JSON.parse("[1,-2,3]");
   print(`FixedArray: ${fixed[0]} ${fixed[1]} ${fixed[2]}`);
   const point: Point = JSON.parse<Point>('{"x":3,"ready":true}');
-  print(`CStruct: ${point.x} ${point.ready}`);
+  print(`ValueType: ${point.x} ${point.ready}`);
   const person: Person = JSON.parse<Person>(
     '{"name":"ada","age":36,"friend":{"name":"bob","age":7,"friend":null}}',
   );

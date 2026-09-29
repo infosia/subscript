@@ -3,8 +3,8 @@
 // observable: Each type-argument list prints its own result, so one template serves many types.
 // exercises: generic-method, static-generic-method, monomorphization, value-class-receiver
 // questions: R39.6, §82.4, §64
-// tsc: accepts; js-comparable: no C2 C8: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2 C8: The ValueType decorator has no JavaScript shim.
+@ValueType
 class Vec2 {
   x: f32;
   y: f32;

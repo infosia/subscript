@@ -347,10 +347,10 @@ impl Divergence {
                 collision: "C1",
             },
             Divergence::ValueClassLayout => DivergenceEntry {
-                ts: "@CStruct class Base { value: i32 = 4; }\n\
-                     @CStruct class Derived extends Base { extra: i32 = 5; }",
-                subscript: "@CStruct class Base { value: i32 = 4; }\n\
-                            @CStruct class Derived { base: Base = new Base(); extra: i32 = 5; }",
+                ts: "@ValueType class Base { value: i32 = 4; }\n\
+                     @ValueType class Derived extends Base { extra: i32 = 5; }",
+                subscript: "@ValueType class Base { value: i32 = 4; }\n\
+                            @ValueType class Derived { base: Base = new Base(); extra: i32 = 5; }",
                 why: "A value class lowers to a plain C struct, so it has no base class \
                       and no alignment below its natural one.",
                 collision: "C2",
@@ -812,7 +812,7 @@ impl Divergence {
             Divergence::ByteAccessTarget => DivergenceEntry {
                 ts: "class Node { value: i32 = 0; }\n\
                      Context.bytesOf<Node>(node);",
-                subscript: "@CStruct class Point { x: i32 = 0; }\n\
+                subscript: "@ValueType class Point { x: i32 = 0; }\n\
                             Context.bytesOf<Point>(point);",
                 why: "Storage bytes read only where the layout is C-identical, so a \
                       reference class and a handle field have none.",

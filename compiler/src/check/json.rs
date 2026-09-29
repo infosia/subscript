@@ -104,7 +104,7 @@ impl Checker<'_> {
                 RuleCode::S014,
                 format!(
                     "`JSON.stringify` cannot serialize `{name}`; P13 accepts sized numerics \
-                     except f16, boolean, string, Date, arrays, @CStruct values, reference \
+                     except f16, boolean, string, Date, arrays, @ValueType values, reference \
                      classes, and Ref | null"
                 ),
                 member_pos,
@@ -220,7 +220,7 @@ impl Checker<'_> {
                 RuleCode::S014,
                 format!(
                     "`JSON.parse` cannot deserialize `{name}`; Q28 accepts sized numerics \
-                     except f16, boolean, string, arrays, @CStruct values, reference \
+                     except f16, boolean, string, arrays, @ValueType values, reference \
                      classes, and Ref | null"
                 ),
                 member_pos,
@@ -340,7 +340,7 @@ impl Checker<'_> {
                         return false;
                     };
                     // Mirror-ingested boundary structs are not source
-                    // `@CStruct` values and may contain opaque host shapes.
+                    // `@ValueType` values and may contain opaque host shapes.
                     // §115.1 rule 6: the Error classes are not JSON types.
                     if class.is_boundary || checker.is_error_type(ty) {
                         return false;

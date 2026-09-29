@@ -186,7 +186,7 @@ fn a_definite_assignment_assertion_reports_its_variant() {
 
 #[test]
 fn a_value_class_field_is_reached() {
-    let source = format!("@CStruct\nclass Vec2 {{\n  x: f32;\n  y: f32 = 0;\n}}\n{MAIN}");
+    let source = format!("@ValueType\nclass Vec2 {{\n  x: f32;\n  y: f32 = 0;\n}}\n{MAIN}");
     let diagnostics = diagnostics(&source);
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
     assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (3, 3));

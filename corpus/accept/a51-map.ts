@@ -4,8 +4,8 @@
 //          eager clear/delete, and explicit collection of a dropped map.
 // exercises: map-methods, monomorphization, container-collection
 // questions: Q24, C2, C7
-// tsc: accepts; js-comparable: no C2 Q6 Q7 Q24: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2 Q6 Q7 Q24: The ValueType decorator has no JavaScript shim.
+@ValueType
 class Vec2 {
   x: i32;
   y: i32;

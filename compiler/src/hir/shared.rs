@@ -144,7 +144,7 @@ mod tests {
         };
         let module = crate::check_program(&[crate::SourceFile::new(
             "test.ts",
-            "class Ref { } @CStruct class Value { n: i32 = 0; }",
+            "class Ref { } @ValueType class Value { n: i32 = 0; }",
         )])
         .expect("class definitions");
         let class_type = |name: &str| {

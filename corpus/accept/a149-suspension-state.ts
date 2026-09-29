@@ -69,7 +69,7 @@ class SuspensionCell {
   value: i32 = 1;
 }
 
-@CStruct
+@ValueType
 class MachineryValue {
   first: i32;
   second: i32;
@@ -80,7 +80,7 @@ class MachineryValue {
   }
 }
 
-@CStruct
+@ValueType
 class OperandValue {
   a: i32;
   b: i32;

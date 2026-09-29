@@ -1,9 +1,9 @@
-// corpus: accept/a141-cstruct-align
+// corpus: accept/a141-valuetype-align
 // purpose: Proves explicit value-class alignment in nested classes and fixed arrays.
-// exercises: CStruct-alignment, value-copy, nested-value-class, FixedArray-stride
+// exercises: ValueType-alignment, value-copy, nested-value-class, FixedArray-stride
 // questions: R33
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct({ align: 16 })
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType({ align: 16 })
 class Vec3f {
   x: f32 = 0.0;
   y: f32 = 0.0;
@@ -16,7 +16,7 @@ class Vec3f {
   }
 }
 
-@CStruct
+@ValueType
 class Mixed {
   a: f32 = 0.0;
   p: Vec3f = new Vec3f(0.0, 0.0, 0.0);
@@ -27,7 +27,7 @@ class Mixed {
   }
 }
 
-@CStruct
+@ValueType
 class Vec3Buffer {
   values: FixedArray<Vec3f, 4> = [
     new Vec3f(0.0, 0.0, 0.0),

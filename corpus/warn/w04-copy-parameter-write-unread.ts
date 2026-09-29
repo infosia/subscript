@@ -1,10 +1,10 @@
 // corpus: warn/w04-copy-parameter-write-unread
 // warning: W004
-// purpose: Identifies a field write through a by-value @CStruct parameter that nothing reads.
+// purpose: Identifies a field write through a by-value @ValueType parameter that nothing reads.
 // exercises: value-struct, copy-on-pass, write-only-copy
 // questions: Q2, Q17
 
-@CStruct
+@ValueType
 class Vec2f {
   x: f32;
   y: f32;
@@ -15,7 +15,7 @@ class Vec2f {
   }
 }
 
-@CStruct
+@ValueType
 class Bag {
   pos: Vec2f;
 

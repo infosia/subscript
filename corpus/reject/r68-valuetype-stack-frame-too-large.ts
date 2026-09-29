@@ -1,10 +1,10 @@
-// corpus: reject/r68-cstruct-stack-frame-too-large
+// corpus: reject/r68-valuetype-stack-frame-too-large
 // purpose: Rejects a value-class local whose layout fits the aggregate limit and crosses the stack-frame limit.
-// exercises: CStruct local storage, accumulated stack-frame layout
+// exercises: ValueType local storage, accumulated stack-frame layout
 // questions: Q2, Q3
 // tsc: accepts
 // expected-error: S100 at the local declaration
-@CStruct
+@ValueType
 class Accumulated {
   prefix: FixedArray<u8, 2147483640>;
 

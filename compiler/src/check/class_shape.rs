@@ -363,7 +363,7 @@ impl<'p> Checker<'p> {
             let pos = self.pos(method.span);
             self.error_diverging(
                 RuleCode::S100,
-                "async methods on `@CStruct` value classes are not in the decided surface",
+                "async methods on `@ValueType` value classes are not in the decided surface",
                 pos,
                 Divergence::AsyncFunctionShape,
             );

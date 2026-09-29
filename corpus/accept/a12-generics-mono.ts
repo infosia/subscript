@@ -2,12 +2,12 @@
 // purpose: Instantiates one generic function and one generic value struct at two types each.
 // exercises: generic-function, generic-value-struct, monomorphization
 // questions: Q1, Q2, Q12, Q14
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
 function identity<T>(value: T): T {
   return value;
 }
 
-@CStruct
+@ValueType
 class Box<T> {
   value: T;
 

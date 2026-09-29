@@ -16,9 +16,9 @@ const SURFACE_SUMMARY: &str = "subscript is a deliberately closed, TypeScript-sh
 
 const SIZED_NUMERICS: &str = "Numeric types are `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, and `f64`; bare `number` is rejected. Literals are checked against their contextual sized type. Integer shifts use `count & (width - 1)` for every count spelling, including compound assignments. Literal counts must fit their contextual type. Mixed-width operands require an explicit `as`. `>>` preserves signedness; `>>>` fills with zero bits. `f16` is storage-only: convert to `f32` or `f64` before arithmetic.";
 
-const VALUE_REFERENCE_CLASSES: &str = "`@CStruct class` declares a nominal C-layout value class, copied on assignment and argument passing. The `@CStruct({ align: N })` form raises alignment to 2, 4, 8, or 16 bytes and rounds size without changing field offsets. A plain `class` declares a nominal heap reference class: `new` allocates it in the active `Context`, and assignments copy the reference. Value classes do not inherit, and same-shaped nominal types do not substitute for one another.";
+const VALUE_REFERENCE_CLASSES: &str = "`@ValueType class` declares a nominal C-layout value class, copied on assignment and argument passing. The `@ValueType({ align: N })` form raises alignment to 2, 4, 8, or 16 bytes and rounds size without changing field offsets. A plain `class` declares a nominal heap reference class: `new` allocates it in the active `Context`, and assignments copy the reference. Value classes do not inherit, and same-shaped nominal types do not substitute for one another.";
 
-const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for ordinary methods. `get name(): T` becomes the method `name`. `set name(value: T)` becomes the method `name=`. A read `x.name` calls `name` without arguments. A statement write `x.name = value` calls `name=` with the value. Compound assignments and updates in statement position use a read-then-write rewrite. Static accessors use the same rules through the class name. Reference classes and `@CStruct` value classes can declare read accessors. Only reference classes can declare instance write accessors. Value-position writes, value-class instance write accessors, and mirror accessors are outside the surface.";
+const NAMED_ACCESSORS: &str = "R37 defines named accessors as checker sugar for ordinary methods. `get name(): T` becomes the method `name`. `set name(value: T)` becomes the method `name=`. A read `x.name` calls `name` without arguments. A statement write `x.name = value` calls `name=` with the value. Compound assignments and updates in statement position use a read-then-write rewrite. Static accessors use the same rules through the class name. Reference classes and `@ValueType` value classes can declare read accessors. Only reference classes can declare instance write accessors. Value-position writes, value-class instance write accessors, and mirror accessors are outside the surface.";
 
 const NULLISH_OPERATORS: &str = "`a ?? b` requires `a` to have type `Ref | null`. It evaluates `a` once and evaluates `b` only when `a` is `null`. An optional chain can be the whole left operand of `??`. An optional chain can also be a statement when its last step is a call. Other optional-chain positions require `undefined` and are rejected.";
 
@@ -40,7 +40,7 @@ const MODULES: &str = "A program may import named exports from sibling source fi
 
 const COROUTINES: &str = "A `function*` coroutine yields typed values and is driven explicitly through `Generator<T>.next()` or the accepted `for...of` generator path. Suspension is caller- or host-driven; the language does not schedule coroutine steps implicitly.";
 
-const MEMORY_MODEL: &str = "Reference allocations belong to a `Context`. `Context.free(value)` releases one allocation explicitly; `Context.collect()` performs an explicitly requested reachability collection. No collection runs implicitly. `Context.bytesOf<T>` returns zero-padded storage bytes for eligible `@CStruct` and `FixedArray` values. `bytesInto` writes that form, and `fromBytes` reconstructs storage without initialization. W001 flags unreleased loop allocations, W002 flags straight-line use after `Context.free`, and W003 flags fresh rooted callback userdata registered in a loop.";
+const MEMORY_MODEL: &str = "Reference allocations belong to a `Context`. `Context.free(value)` releases one allocation explicitly; `Context.collect()` performs an explicitly requested reachability collection. No collection runs implicitly. `Context.bytesOf<T>` returns zero-padded storage bytes for eligible `@ValueType` and `FixedArray` values. `bytesInto` writes that form, and `fromBytes` reconstructs storage without initialization. W001 flags unreleased loop allocations, W002 flags straight-line use after `Context.free`, and W003 flags fresh rooted callback userdata registered in a loop.";
 
 struct Feature {
     title: &'static str,
@@ -96,11 +96,11 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a05-nominal-identity.ts",
             "corpus/accept/a15-manual-lifetime.ts",
             "corpus/accept/a21-methods.ts",
-            "corpus/accept/a141-cstruct-align.ts",
+            "corpus/accept/a141-valuetype-align.ts",
             "corpus/reject/r06-structural-substitution.ts",
             "corpus/reject/r07-value-class-extends.ts",
-            "corpus/reject/r135-cstruct-align-below-natural.ts",
-            "corpus/reject/r136-cstruct-align-not-in-set.ts",
+            "corpus/reject/r135-valuetype-align-below-natural.ts",
+            "corpus/reject/r136-valuetype-align-not-in-set.ts",
         ],
     },
     Feature {
@@ -199,7 +199,7 @@ const FEATURES: &[Feature] = &[
             "corpus/reject/r100-floating-async-call.ts",
             "corpus/reject/r101-async-static-method.ts",
             "corpus/reject/r102-async-generator-method.ts",
-            "corpus/reject/r103-async-cstruct-method.ts",
+            "corpus/reject/r103-async-valuetype-method.ts",
             "corpus/reject/r105-floating-async-method-call.ts",
             "corpus/reject/r140-async-lambda.ts",
         ],

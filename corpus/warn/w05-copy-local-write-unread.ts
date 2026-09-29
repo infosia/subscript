@@ -4,7 +4,7 @@
 // exercises: value-struct, copy-on-assign, write-only-copy
 // questions: Q2, Q17
 
-@CStruct
+@ValueType
 class Vec2f {
   x: f32;
   y: f32;
@@ -15,7 +15,7 @@ class Vec2f {
   }
 }
 
-@CStruct
+@ValueType
 class Bag {
   pos: Vec2f;
 

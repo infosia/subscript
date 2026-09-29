@@ -365,7 +365,7 @@ fn c1_mutating_value_method_persists_like_the_jit() {
     // A value method that mutates `this` must mutate the receiver;
     // a non-mutating call on a copy must be unaffected.
     assert_tiers_agree(
-        "@CStruct\nclass V { x: i32; constructor(x: i32) { this.x = x; } bump(): void { this.x += 100; } }\nexport function main(): void {\n  const v: V = new V(1);\n  v.bump();\n  const c: V = v;\n  c.bump();\n  print(`${v.x},${c.x}`);\n}\n",
+        "@ValueType\nclass V { x: i32; constructor(x: i32) { this.x = x; } bump(): void { this.x += 100; } }\nexport function main(): void {\n  const v: V = new V(1);\n  v.bump();\n  const c: V = v;\n  c.bump();\n  print(`${v.x},${c.x}`);\n}\n",
     );
 }
 
@@ -957,7 +957,7 @@ fn p20_review_accept_entries_reach_both_generators() {
 }
 
 #[test]
-fn out_of_range_320_byte_cstruct_store_stops_before_the_store() {
+fn out_of_range_320_byte_value_type_store_stops_before_the_store() {
     // An out-of-range `subscript_arr_at` traps. The 320-byte store into
     // its result must be unreachable, and stdout must match the dev
     // tier.
@@ -966,7 +966,7 @@ fn out_of_range_320_byte_cstruct_store_stops_before_the_store() {
         .collect::<Vec<_>>()
         .join(", ");
     let source = format!(
-        "@CStruct\n\
+        "@ValueType\n\
          class Wide {{\n\
            words: FixedArray<i32, 80>;\n\
            constructor(words: FixedArray<i32, 80>) {{ this.words = words; }}\n\
@@ -996,7 +996,7 @@ fn out_of_range_320_byte_cstruct_store_stops_before_the_store() {
             }
         }
     }
-    assert_trap_outcomes_identical("320-byte CStruct array store", &outcomes);
+    assert_trap_outcomes_identical("320-byte ValueType array store", &outcomes);
 }
 
 /// `compiler.md` §115.4 item 1 and §115.7: a parse failure that no
@@ -1152,7 +1152,7 @@ fn aligned_value_class_emits_alignas_on_the_first_field() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
 
-    let source = "@CStruct({ align: 16 })\nclass Vec3f { x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0; }\nexport function main(): void { const value: Vec3f = new Vec3f(); print(`${value.x}`); }\n";
+    let source = "@ValueType({ align: 16 })\nclass Vec3f { x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0; }\nexport function main(): void { const value: Vec3f = new Vec3f(); print(`${value.x}`); }\n";
     let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
     let c = emit_c(&hir).expect("emit C").source;
     assert!(c.contains("    _Alignas(16) float d3;"), "{c}");
@@ -1315,7 +1315,7 @@ fn constructor_less_value_class_emits_field_initializer_store() {
     use subscript_codegen::emit_c;
     use subscript_compiler::check_program;
 
-    let source = "@CStruct\nclass ValueField {\n  value: i32 = 37;\n}\nexport function main(): void {\n  const field: ValueField = new ValueField();\n  print(`${field.value}`);\n}\n";
+    let source = "@ValueType\nclass ValueField {\n  value: i32 = 37;\n}\nexport function main(): void {\n  const field: ValueField = new ValueField();\n  print(`${field.value}`);\n}\n";
     let hir = check_program(&[SourceFile::new("test.ts", source)]).expect("checks clean");
     let c = emit_c(&hir).expect("emit C").source;
     assert!(

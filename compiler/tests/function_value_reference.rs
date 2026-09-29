@@ -29,7 +29,7 @@ fn map_get_reasons_distinguish_scalars_from_non_nullable_types() {
                     "test.ts",
                     format!(
                     "enum E {{ A }} type Label = \"a\" | \"b\";
-                     @CStruct class Value {{ x: i32 = 0; }}
+                     @ValueType class Value {{ x: i32 = 0; }}
                      function read(m: Map<string, {ty}>, fallback: {ty}): void {{ m.{operation}; }}"
                 ),
                 ),

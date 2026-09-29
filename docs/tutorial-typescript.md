@@ -22,7 +22,7 @@ program type-checks under stock `tsc --strict`.
 |---|---|
 | `number` | `i8`–`i64`, `u8`–`u64`, `f16`, `f32`, `f64` |
 | Structural types | Nominal types; same shape is not the same type |
-| `class` | Reference class (`new`, heap) or `@CStruct` value class (copied) |
+| `class` | Reference class (`new`, heap) or `@ValueType` value class (copied) |
 | `undefined`, `T \| U` | `Ref \| null` only, narrowed before use |
 | `enum` of strings | `type Mode = "fast" \| "safe"`, closed and nominal |
 | Garbage collection | `Context.free`, `Context.collect`, `using`; nothing runs unbidden |
@@ -115,12 +115,12 @@ appears later, and no prototype changes.
 A plain `class` is a **reference class**. `new` allocates it in the
 Context, and assignment copies the reference, as in TypeScript.
 
-`@CStruct` marks a **value class**. It has C struct layout, and it is
+`@ValueType` marks a **value class**. It has C struct layout, and it is
 copied on assignment and on every call. Nothing aliases it, so no
 second name observes a write. A value class cannot use `extends`.
 
 ```ts
-@CStruct
+@ValueType
 class Vec2 {
   x: f32;
   y: f32;

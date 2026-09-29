@@ -123,7 +123,7 @@ fn nullish_assignment_stays_rejected() {
 
 #[test]
 fn optional_chain_rejects_a_value_class_receiver() {
-    let source = "@CStruct\nclass Value { v: i32 = 1; }\nfunction run(value: Value): i32 { return value?.v ?? 0; }\n";
+    let source = "@ValueType\nclass Value { v: i32 = 1; }\nfunction run(value: Value): i32 { return value?.v ?? 0; }\n";
     let files = [SourceFile::new("test.ts", source)];
     let result = check_program(&files).expect_err("the optional chain must fail");
     assert_eq!(result[0].code, RuleCode::S100);

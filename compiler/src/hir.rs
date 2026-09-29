@@ -266,7 +266,7 @@ pub struct ForeignFn {
 pub struct ClassDef {
     /// Source name; monomorphized instances use `Name<args>` spelling.
     pub name: String,
-    /// True for `@CStruct class` (C-layout, copy semantics — C2).
+    /// True for `@ValueType class` (C-layout, copy semantics — C2).
     pub is_value: bool,
     /// The explicit value-class alignment and its decorator position.
     pub alignment_override: Option<AlignmentOverride>,
@@ -299,7 +299,7 @@ pub struct ClassDef {
     pub pos: Pos,
 }
 
-/// An explicit alignment on an `@CStruct` value class.
+/// An explicit alignment on an `@ValueType` value class.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct AlignmentOverride {

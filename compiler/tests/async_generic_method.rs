@@ -195,11 +195,11 @@ fn value_class_async_generic_method_reports_only_its_declaration() {
         "await box.load<i32>(1);",
         "box.load(1);",
     ] {
-        let source = format!("@CStruct\n{}", main_with(call));
+        let source = format!("@ValueType\n{}", main_with(call));
         reject(
             &source,
             RuleCode::S100,
-            "async methods on `@CStruct` value classes are not in the decided surface",
+            "async methods on `@ValueType` value classes are not in the decided surface",
             3,
             3,
         );
@@ -305,7 +305,7 @@ fn r187_has_one_diagnostic_and_no_call_cascade() {
     assert_eq!(diagnostics[0].code, RuleCode::S100);
     assert_eq!(
         diagnostics[0].message,
-        "async methods on `@CStruct` value classes are not in the decided surface"
+        "async methods on `@ValueType` value classes are not in the decided surface"
     );
     assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (12, 3));
     assert_eq!(

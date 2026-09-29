@@ -2,8 +2,8 @@
 // purpose: Uses two same-shaped nominal value types without interchanging them.
 // exercises: nominal-identity, value-struct, same-shape-types
 // questions: Q1, Q2, Q12
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType
 class Metres {
   value: f32;
 
@@ -12,7 +12,7 @@ class Metres {
   }
 }
 
-@CStruct
+@ValueType
 class Seconds {
   value: f32;
 

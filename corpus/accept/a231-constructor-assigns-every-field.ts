@@ -3,8 +3,8 @@
 // observable: each field prints the value the constructor stored.
 // exercises: class-field, constructor, value-class, reference-field
 // questions: compiler section 108
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType
 class Vec2 {
   x: i32;
   y: i32;

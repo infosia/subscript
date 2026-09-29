@@ -1445,7 +1445,7 @@ fn place_bases_keep_their_own_trap_sites() {
     let lir = lower_source(
         "place-chain.ts",
         r#"
-@CStruct class V { x: i32; constructor(x: i32) { this.x = x; } }
+@ValueType class V { x: i32; constructor(x: i32) { this.x = x; } }
 function idx(): i32 { return 5; }
 export function main(): void {
   const a: V[] = [new V(1), new V(2)];
@@ -1488,7 +1488,7 @@ fn value_class_array_receiver_signature_ignores_address_provenance() {
     let lir = lower_source(
         "array-receiver.ts",
         r#"
-@CStruct class Cell { v: i32 = 0; bump(): void { this.v = this.v + 1; } }
+@ValueType class Cell { v: i32 = 0; bump(): void { this.v = this.v + 1; } }
 export function main(): void {
   const a: Cell[] = [new Cell()];
   a[0].bump();
@@ -1504,7 +1504,7 @@ fn value_class_rvalue_receivers_materialize_temporary_addresses() {
     let lir = lower_source(
         "rvalue-receiver.ts",
         r#"
-@CStruct class V { x: i32 = 0; get(): i32 { return this.x; } }
+@ValueType class V { x: i32 = 0; get(): i32 { return this.x; } }
 function mk(): V { return new V(); }
 export function main(): void {
   const a: V = new V();
@@ -1601,7 +1601,7 @@ fn started_handles_progress_independently_and_cache_aggregate_results() {
     let sources = [SourceFile::new(
         "started-handles.ts",
         r#"
-@CStruct class Pair {
+@ValueType class Pair {
   x: f64;
   y: f64;
   constructor(x: f64, y: f64) { this.x = x; this.y = y; }

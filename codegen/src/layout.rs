@@ -50,7 +50,7 @@ pub(crate) struct ClassLayout {
     pub field_offsets: Vec<u32>,
     /// Field types in declaration order.
     field_types: Vec<Type>,
-    /// True for `@CStruct class`.
+    /// True for `@ValueType class`.
     pub is_value: bool,
 }
 
@@ -61,7 +61,7 @@ pub(crate) struct Layouts {
     handle_classes: Vec<HandleClass>,
     /// Whether each value class contains one or more managed handles in its
     /// language-layout storage. Boundary structs may contain `string` fields
-    /// even though source `@CStruct` classes keep the narrower whitelist.
+    /// even though source `@ValueType` classes keep the narrower whitelist.
     managed_interior: Vec<bool>,
 }
 
@@ -78,7 +78,7 @@ pub struct FieldLayout {
     pub offset: u32,
 }
 
-/// The C-ABI layout of one `@CStruct class`: total size, alignment, and
+/// The C-ABI layout of one `@ValueType class`: total size, alignment, and
 /// each field's name and byte offset.
 ///
 /// This joins the positional offsets of [`ClassLayout`] with the field
@@ -98,7 +98,7 @@ pub struct StructLayout {
     pub fields: Vec<FieldLayout>,
 }
 
-/// Computes the C-ABI layout of every `@CStruct class` in a checked
+/// Computes the C-ABI layout of every `@ValueType class` in a checked
 /// module (design invariant 1): for each such class, its total size,
 /// alignment, and every field's name and byte offset.
 ///
@@ -796,7 +796,7 @@ mod tests {
     fn value_class_layout_matches_the_c_struct() {
         // struct { float x; float y; float z; } -> size 12, align 4.
         let layouts = layouts_of(
-            "@CStruct\nclass Vec3 { x: f32; y: f32; z: f32;\n constructor(x: f32, y: f32, z: f32) { this.x = x; this.y = y; this.z = z; } }\nexport function main(): void { const v: Vec3 = new Vec3(1.0, 2.0, 3.0); print(`${v.x}`); }\n",
+            "@ValueType\nclass Vec3 { x: f32; y: f32; z: f32;\n constructor(x: f32, y: f32, z: f32) { this.x = x; this.y = y; this.z = z; } }\nexport function main(): void { const v: Vec3 = new Vec3(1.0, 2.0, 3.0); print(`${v.x}`); }\n",
         );
         let l = layouts.class(1).expect("class 1");
         assert_eq!((l.size, l.align), (12, 4));
@@ -807,7 +807,7 @@ mod tests {
     fn padding_follows_c_rules() {
         // struct { bool a; double b; int c; } -> b at 8, c at 16, size 24.
         let layouts = layouts_of(
-            "@CStruct\nclass P { a: boolean; b: f64; c: i32;\n constructor() { this.a = true; this.b = 1.0; this.c = 1; } }\nexport function main(): void { const p: P = new P(); print(`${p.c}`); }\n",
+            "@ValueType\nclass P { a: boolean; b: f64; c: i32;\n constructor() { this.a = true; this.b = 1.0; this.c = 1; } }\nexport function main(): void { const p: P = new P(); print(`${p.c}`); }\n",
         );
         let l = layouts.class(1).expect("class 1");
         assert_eq!(l.field_offsets, vec![0, 8, 16]);
@@ -817,7 +817,7 @@ mod tests {
     #[test]
     fn padding_ranges_cover_aligned_nested_values_and_fixed_arrays() {
         let module = module_of(
-            "@CStruct({ align: 16 })\nclass Vec3f { x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0; }\n@CStruct\nclass Mixed { a: f32 = 0.0; p: Vec3f = new Vec3f(); }\nexport function main(): void {}\n",
+            "@ValueType({ align: 16 })\nclass Vec3f { x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0; }\n@ValueType\nclass Mixed { a: f32 = 0.0; p: Vec3f = new Vec3f(); }\nexport function main(): void {}\n",
         );
         let vec3 = Type::Class(subscript_compiler::ClassId(1));
         let mixed = Type::Class(subscript_compiler::ClassId(2));
@@ -839,7 +839,7 @@ mod tests {
     #[test]
     fn fixed_array_is_in_place() {
         let layouts = layouts_of(
-            "@CStruct\nclass M { e: FixedArray<f32, 16>;\n constructor(e: FixedArray<f32, 16>) { this.e = e; } }\nexport function main(): void { const m: M = new M([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]); print(`${m.e[0]}`); }\n",
+            "@ValueType\nclass M { e: FixedArray<f32, 16>;\n constructor(e: FixedArray<f32, 16>) { this.e = e; } }\nexport function main(): void { const m: M = new M([0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]); print(`${m.e[0]}`); }\n",
         );
         assert_eq!(
             layouts
@@ -898,7 +898,7 @@ mod tests {
         // layout build must resolve the forward reference instead of
         // falling back to a wrong layout.
         let layouts = layouts_of(
-            "@CStruct\nclass Outer { inner: Inner; pad: f32;\n constructor(inner: Inner, pad: f32) { this.inner = inner; this.pad = pad; } }\n@CStruct\nclass Inner { x: f64;\n constructor(x: f64) { this.x = x; } }\nexport function main(): void {\n  const o: Outer = new Outer(new Inner(2.5), 1.0);\n  print(`${o.inner.x}`);\n}\n",
+            "@ValueType\nclass Outer { inner: Inner; pad: f32;\n constructor(inner: Inner, pad: f32) { this.inner = inner; this.pad = pad; } }\n@ValueType\nclass Inner { x: f64;\n constructor(x: f64) { this.x = x; } }\nexport function main(): void {\n  const o: Outer = new Outer(new Inner(2.5), 1.0);\n  print(`${o.inner.x}`);\n}\n",
         );
         let outer = layouts.class(1).expect("outer");
         let inner = layouts.class(2).expect("inner");
@@ -910,7 +910,7 @@ mod tests {
     #[test]
     fn value_class_containment_cycle_is_an_error_not_a_hang() {
         let m = module_of(
-            "@CStruct\nclass S { s: S;\n constructor(s: S) { this.s = s; } }\nexport function main(): void {}\n",
+            "@ValueType\nclass S { s: S;\n constructor(s: S) { this.s = s; } }\nexport function main(): void {}\n",
         );
         let err = Layouts::build(&m).expect_err("cycle must be rejected");
         assert!(err.contains("cycle"), "unexpected error: {err}");
@@ -970,7 +970,7 @@ mod tests {
         // Two value classes plus a reference class: the public API
         // reports only the value classes, with named per-field offsets.
         let module = module_of(
-            "@CStruct\nclass P { a: boolean; b: f64; c: i32;\n constructor() { this.a = true; this.b = 1.0; this.c = 1; } }\nclass R { x: i32; constructor() { this.x = 1; } }\n@CStruct\nclass V { x: f32; y: f32;\n constructor(x: f32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void { const p: P = new P(); const v: V = new V(1.0, 2.0); const r: R = new R(); print(`${p.c}${v.x}${r.x}`); }\n",
+            "@ValueType\nclass P { a: boolean; b: f64; c: i32;\n constructor() { this.a = true; this.b = 1.0; this.c = 1; } }\nclass R { x: i32; constructor() { this.x = 1; } }\n@ValueType\nclass V { x: f32; y: f32;\n constructor(x: f32, y: f32) { this.x = x; this.y = y; } }\nexport function main(): void { const p: P = new P(); const v: V = new V(1.0, 2.0); const r: R = new R(); print(`${p.c}${v.x}${r.x}`); }\n",
         );
         let layouts = value_class_layouts(&module).expect("layouts");
         // R (reference) is excluded; P and V remain in declaration order.
@@ -1014,7 +1014,7 @@ mod tests {
     #[test]
     fn value_class_layouts_report_alignment_overrides() {
         let module = module_of(
-            "@CStruct({ align: 16 })\nclass Vec3f { x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0; }\n@CStruct\nclass Mixed { a: f32 = 0.0; p: Vec3f = new Vec3f(); }\n@CStruct\nclass Mat3x3f { c0: Vec3f = new Vec3f(); c1: Vec3f = new Vec3f(); c2: Vec3f = new Vec3f(); }\nexport function main(): void {}\n",
+            "@ValueType({ align: 16 })\nclass Vec3f { x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0; }\n@ValueType\nclass Mixed { a: f32 = 0.0; p: Vec3f = new Vec3f(); }\n@ValueType\nclass Mat3x3f { c0: Vec3f = new Vec3f(); c1: Vec3f = new Vec3f(); c2: Vec3f = new Vec3f(); }\nexport function main(): void {}\n",
         );
         let layouts = value_class_layouts(&module).expect("layouts");
         assert_eq!(layouts.len(), 3);
@@ -1035,7 +1035,7 @@ mod tests {
     #[test]
     fn value_class_layouts_reports_cycles_as_errors() {
         let module = module_of(
-            "@CStruct\nclass S { s: S;\n constructor(s: S) { this.s = s; } }\nexport function main(): void {}\n",
+            "@ValueType\nclass S { s: S;\n constructor(s: S) { this.s = s; } }\nexport function main(): void {}\n",
         );
         assert!(value_class_layouts(&module).is_err());
     }

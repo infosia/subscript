@@ -3,8 +3,8 @@
 // observable: a getter runs, and a value-class field copies.
 // exercises: binding-pattern, class-field, renamed-field, getter, value-class
 // questions: Q30, compiler section 107
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct class Extent {
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType class Extent {
   width: i32;
   height: i32;
   constructor(width: i32, height: i32) {

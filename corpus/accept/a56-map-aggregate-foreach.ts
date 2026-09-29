@@ -5,8 +5,8 @@
 //          the copy holds the write and the map does not (W004 stays silent).
 // exercises: map-foreach, value-class-copy, fixed-array-copy, callback-abi
 // questions: Q24, C2, C5
-// tsc: accepts; js-comparable: no C2 Q24: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2 Q24: The ValueType decorator has no JavaScript shim.
+@ValueType
 class V3 {
   x: i32;
   y: i32;

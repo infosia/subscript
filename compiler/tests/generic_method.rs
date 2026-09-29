@@ -214,7 +214,7 @@ fn the_declared_name_owns_the_member_namespace() {
 
 #[test]
 fn a_value_class_receiver_carries_a_generic_method() {
-    let source = "@CStruct\n\
+    let source = "@ValueType\n\
                   class Vec2 {\n\
                   \x20 x: f32 = 0;\n\
                   \x20 y: f32 = 0;\n\

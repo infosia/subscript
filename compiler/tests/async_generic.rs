@@ -51,7 +51,7 @@ export async function main(): Promise<void> {
 #[test]
 fn generic_value_class_rejects_an_async_method_at_instantiation() {
     let source = r#"
-@CStruct
+@ValueType
 class Box<T> {
   value: T;
 
@@ -76,7 +76,7 @@ export function main(): void {
     assert_eq!(diagnostics[0].code, RuleCode::S100);
     assert_eq!(
         diagnostics[0].message,
-        "async methods on `@CStruct` value classes are not in the decided surface"
+        "async methods on `@ValueType` value classes are not in the decided surface"
     );
 }
 

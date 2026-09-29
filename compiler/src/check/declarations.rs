@@ -136,21 +136,21 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn cstruct_alignment(call: &ast::CallExpr) -> Result<u32, &'static str> {
+    fn value_type_alignment(call: &ast::CallExpr) -> Result<u32, &'static str> {
         if call.args.len() != 1 || call.args[0].spread.is_some() {
-            return Err("`@CStruct` accepts exactly one object-literal argument");
+            return Err("`@ValueType` accepts exactly one object-literal argument");
         }
         let ast::Expr::Object(options) = &*call.args[0].expr else {
-            return Err("`@CStruct` accepts exactly one object-literal argument");
+            return Err("`@ValueType` accepts exactly one object-literal argument");
         };
         if options.props.len() != 1 {
-            return Err("`@CStruct` options must contain only the `align` key");
+            return Err("`@ValueType` options must contain only the `align` key");
         }
         let ast::PropOrSpread::Prop(prop) = &options.props[0] else {
-            return Err("`@CStruct` options must contain only the `align` key");
+            return Err("`@ValueType` options must contain only the `align` key");
         };
         let ast::Prop::KeyValue(property) = &**prop else {
-            return Err("`@CStruct` options must contain only the `align` key");
+            return Err("`@ValueType` options must contain only the `align` key");
         };
         let is_align = match &property.key {
             ast::PropName::Ident(key) => key.sym.as_ref() == "align",
@@ -158,16 +158,28 @@ impl<'p> Checker<'p> {
             _ => false,
         };
         if !is_align {
-            return Err("`@CStruct` options must contain only the `align` key");
+            return Err("`@ValueType` options must contain only the `align` key");
         }
         let ast::Expr::Lit(ast::Lit::Num(number)) = &*property.value else {
-            return Err("`@CStruct` alignment must be an integer literal in {2, 4, 8, 16}");
+            return Err("`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}");
         };
         let value = number.value;
         if value.fract() != 0.0 || !matches!(value as u32, 2 | 4 | 8 | 16) {
-            return Err("`@CStruct` alignment must be an integer literal in {2, 4, 8, 16}");
+            return Err("`@ValueType` alignment must be an integer literal in {2, 4, 8, 16}");
         }
         Ok(value as u32)
+    }
+
+    /// The former value-class decorator, bare or called with options.
+    fn is_former_value_decorator(expr: &ast::Expr) -> bool {
+        let callee = match expr {
+            ast::Expr::Call(ast::CallExpr {
+                callee: ast::Callee::Expr(callee),
+                ..
+            }) => &**callee,
+            other => other,
+        };
+        matches!(callee, ast::Expr::Ident(id) if id.sym.as_ref() == "CStruct")
     }
 
     fn class_decorators(
@@ -179,7 +191,14 @@ impl<'p> Checker<'p> {
         let mut alignment_override = None;
         for dec in &class.decorators {
             match &*dec.expr {
-                ast::Expr::Ident(id) if id.sym.as_ref() == "CStruct" => is_value = true,
+                ast::Expr::Ident(id) if id.sym.as_ref() == "ValueType" => is_value = true,
+                expr if Self::is_former_value_decorator(expr) => {
+                    self.error(
+                        RuleCode::S100,
+                        "`@CStruct` was renamed to `@ValueType`",
+                        self.pos(dec.span),
+                    );
+                }
                 ast::Expr::Ident(id) if id.sym.as_ref() == "Descriptor" => {
                     is_descriptor = true;
                 }
@@ -187,11 +206,11 @@ impl<'p> Checker<'p> {
                     if matches!(
                         &call.callee,
                         ast::Callee::Expr(callee)
-                            if matches!(&**callee, ast::Expr::Ident(id) if id.sym.as_ref() == "CStruct")
+                            if matches!(&**callee, ast::Expr::Ident(id) if id.sym.as_ref() == "ValueType")
                     ) =>
                 {
                     is_value = true;
-                    match Self::cstruct_alignment(call) {
+                    match Self::value_type_alignment(call) {
                         Ok(value) => {
                             alignment_override = Some(hir::AlignmentOverride {
                                 value,
@@ -221,7 +240,7 @@ impl<'p> Checker<'p> {
                     let pos = self.pos(dec.span);
                     self.error(
                         RuleCode::S100,
-                        "the only decided decorators are the ambient `@CStruct` and `@Descriptor`",
+                        "the only decided decorators are the ambient `@ValueType` and `@Descriptor`",
                         pos,
                     );
                 }
@@ -230,7 +249,7 @@ impl<'p> Checker<'p> {
         if is_value && is_descriptor {
             self.error(
                 RuleCode::S100,
-                "`@Descriptor` declares a reference class and cannot be combined with `@CStruct`",
+                "`@Descriptor` declares a reference class and cannot be combined with `@ValueType`",
                 self.pos(class.span),
             );
         }

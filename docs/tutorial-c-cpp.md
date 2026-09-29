@@ -74,13 +74,13 @@ wide=4000000000 narrow=255 truncated=0
 
 ### 3. Value structs and heap objects are distinct
 
-`@CStruct` declares a value class: C struct layout, copied on
+`@ValueType` declares a value class: C struct layout, copied on
 assignment and on every call, no heap involvement. A plain `class` is a
 reference class: `new` allocates it in the Context (the arena your host
 owns), and it is freed explicitly.
 
 ```ts
-@CStruct
+@ValueType
 class Vec2 {
   x: f32;
   y: f32;
@@ -122,7 +122,7 @@ format demands more than the natural alignment
 at least the natural alignment:
 
 ```ts
-@CStruct({ align: 16 })
+@ValueType({ align: 16 })
 class Vec3f {
   x: f32;
   y: f32;

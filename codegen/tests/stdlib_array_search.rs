@@ -124,7 +124,7 @@ export function main(): void {
 fn at_and_flat_map_preserve_aggregate_and_function_elements() {
     agree(
         r#"
-@CStruct
+@ValueType
 class Pair { x: i32; y: f64; constructor(x: i32, y: f64) { this.x = x; this.y = y; } }
 function seven(): i32 { return 7; }
 export function main(): void {

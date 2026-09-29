@@ -1,9 +1,9 @@
-// corpus: accept/a156-cstruct-this-by-value
+// corpus: accept/a156-valuetype-this-by-value
 // purpose: Uses a value-class receiver as a by-value result and argument.
 // exercises: value-class, method-receiver, return-by-value, argument-by-value
 // questions: §62, §68
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct({ align: 8 })
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType({ align: 8 })
 class V {
   x: f32;
   y: f32;

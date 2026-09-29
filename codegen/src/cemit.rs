@@ -1038,7 +1038,7 @@ mod tests {
     fn managed_word_counts_cover_all_handles_and_iterators() {
         let mut module = lower_test_source(
             "rooted-locals.ts",
-            "@CStruct class Boundary { x: i32 = 0; }\nclass Ref {}\nexport function main(): void {}\n",
+            "@ValueType class Boundary { x: i32 = 0; }\nclass Ref {}\nexport function main(): void {}\n",
         );
         module.classes[1].is_boundary = true;
         let boundary = Type::Class(module.classes[1].id);

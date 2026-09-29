@@ -122,7 +122,7 @@ rejected here with a rule-specific diagnostic at the TypeScript source
 position.
 
 ```ts
-@CStruct
+@ValueType
 class Vec3 {
   x: f32;
   y: f32;
@@ -146,7 +146,7 @@ export function main(): void {
 }
 ```
 
-`@CStruct class` is a C-layout value type (copy-on-assign, copy-on-pass);
+`@ValueType class` is a C-layout value type (copy-on-assign, copy-on-pass);
 `f32`/`i32`/`u32`/`i64`/`u64`/`f64` are sized numerics with C conversion
 semantics; a plain `class` is a heap reference type with manual lifetime.
 There is no default `number` type — a sized type is always required.

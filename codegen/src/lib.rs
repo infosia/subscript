@@ -264,7 +264,7 @@ mod tests {
         // The constructor carries the field value, so the frame limit is
         // the only rule the source reaches (compiler.md §108.1 rule 1).
         let source = "\
-@CStruct
+@ValueType
 class Accumulated {
   prefix: FixedArray<u8, 2147483640>;
   constructor(prefix: FixedArray<u8, 2147483640>) {
@@ -397,7 +397,7 @@ export function main(): void {}
     #[test]
     fn oversized_fixed_array_is_rejected_before_layout() {
         let err = run(
-            "@CStruct\nclass Big {\n  data: FixedArray<u8, 4294967295>;\n}\n\
+            "@ValueType\nclass Big {\n  data: FixedArray<u8, 4294967295>;\n}\n\
              export function main(): void {\n  const b: Big = new Big();\n  \
              print(`${b.data.length}`);\n}\n",
         );
@@ -543,7 +543,7 @@ export function main(): void {}
     #[test]
     fn value_class_copies_on_assign_and_pass() {
         let out = run_ok(
-            "@CStruct\nclass V { x: i32; constructor(x: i32) { this.x = x; } }\nfunction bump(v: V): i32 {\n  v.x += 100;\n  return v.x;\n}\nexport function main(): void {\n  const a: V = new V(1);\n  const b: V = a;\n  b.x = 9;\n  print(`${a.x},${b.x},${bump(a)},${a.x}`);\n}\n",
+            "@ValueType\nclass V { x: i32; constructor(x: i32) { this.x = x; } }\nfunction bump(v: V): i32 {\n  v.x += 100;\n  return v.x;\n}\nexport function main(): void {\n  const a: V = new V(1);\n  const b: V = a;\n  b.x = 9;\n  print(`${a.x},${b.x},${bump(a)},${a.x}`);\n}\n",
         );
         assert_eq!(out, "1,9,101,1\n");
     }
@@ -715,7 +715,7 @@ export function main(): void {}
         // Outer embeds Inner declared after it; the layout must be
         // computed by resolving the forward reference.
         let out = run_ok(
-            "@CStruct\nclass Outer { inner: Inner; pad: f32;\n  constructor(inner: Inner, pad: f32) { this.inner = inner; this.pad = pad; }\n}\n@CStruct\nclass Inner { x: f64;\n  constructor(x: f64) { this.x = x; }\n}\nexport function main(): void {\n  const o: Outer = new Outer(new Inner(2.5), 1.0);\n  print(`${o.inner.x},${o.pad}`);\n}\n",
+            "@ValueType\nclass Outer { inner: Inner; pad: f32;\n  constructor(inner: Inner, pad: f32) { this.inner = inner; this.pad = pad; }\n}\n@ValueType\nclass Inner { x: f64;\n  constructor(x: f64) { this.x = x; }\n}\nexport function main(): void {\n  const o: Outer = new Outer(new Inner(2.5), 1.0);\n  print(`${o.inner.x},${o.pad}`);\n}\n",
         );
         assert_eq!(out, "2.5,1\n");
     }
@@ -723,7 +723,7 @@ export function main(): void {}
     #[test]
     fn n2_value_class_cycle_is_an_internal_error_not_a_crash() {
         let err = run(
-            "@CStruct\nclass S { s: S;\n  constructor(s: S) { this.s = s; }\n}\nexport function main(): void {}\n",
+            "@ValueType\nclass S { s: S;\n  constructor(s: S) { this.s = s; }\n}\nexport function main(): void {}\n",
         );
         match err {
             Err(RunError::Internal(msg)) => assert!(msg.contains("cycle"), "got: {msg}"),
@@ -733,7 +733,7 @@ export function main(): void {}
 
     #[test]
     fn r34_mixed_bytes_clear_padding_on_both_tiers() {
-        let source = "@CStruct({ align: 16 })\nclass Vec3f {\n  x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0;\n  constructor(x: f32, y: f32, z: f32) { this.x = x; this.y = y; this.z = z; }\n}\n@CStruct\nclass Mixed {\n  a: f32 = 0.0; p: Vec3f = new Vec3f(0.0, 0.0, 0.0);\n  constructor(a: f32, p: Vec3f) { this.a = a; this.p = p; }\n}\nexport function main(): void {\n  const mixed: Mixed = new Mixed(1.0, new Vec3f(2.0, 3.0, 4.0));\n  print(Context.bytesOf<Mixed>(mixed).join(\",\"));\n  const source: u8[] = [255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255];\n  const decoded: Mixed = Context.fromBytes<Mixed>(source, 0);\n  print(Context.bytesOf<Mixed>(decoded).join(\",\"));\n}\n";
+        let source = "@ValueType({ align: 16 })\nclass Vec3f {\n  x: f32 = 0.0; y: f32 = 0.0; z: f32 = 0.0;\n  constructor(x: f32, y: f32, z: f32) { this.x = x; this.y = y; this.z = z; }\n}\n@ValueType\nclass Mixed {\n  a: f32 = 0.0; p: Vec3f = new Vec3f(0.0, 0.0, 0.0);\n  constructor(a: f32, p: Vec3f) { this.a = a; this.p = p; }\n}\nexport function main(): void {\n  const mixed: Mixed = new Mixed(1.0, new Vec3f(2.0, 3.0, 4.0));\n  print(Context.bytesOf<Mixed>(mixed).join(\",\"));\n  const source: u8[] = [255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255];\n  const decoded: Mixed = Context.fromBytes<Mixed>(source, 0);\n  print(Context.bytesOf<Mixed>(decoded).join(\",\"));\n}\n";
         let files = [SourceFile::new("test.ts", source)];
         let expected = b"0,0,128,63,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,64,0,0,64,64,0,0,128,64,0,0,0,0\n255,255,255,255,0,0,0,0,0,0,0,0,0,0,0,0,255,255,255,255,255,255,255,255,255,255,255,255,0,0,0,0\n";
         let jit = run_jit(&files).expect("dev Context bytes run");

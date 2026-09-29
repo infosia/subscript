@@ -2,8 +2,8 @@
 // purpose: Proves an async method with type parameters at two instantiations, awaited directly and through a held handle.
 // exercises: generic-method, async-method, monomorphization, held-async-handle
 // questions: §93, §82.4, Q34
-// tsc: accepts; js-comparable: no C2 C8: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2 C8: The ValueType decorator has no JavaScript shim.
+@ValueType
 class Vec2 {
   x: f32;
   y: f32;

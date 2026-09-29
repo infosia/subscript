@@ -227,7 +227,7 @@ fn accepted_body_edit_changes_behaviour_and_keeps_context_state() {
 }
 
 const STATIC_COUNTER_V1: &str = "\
-@CStruct
+@ValueType
 class Counter {
   value: i32 = 7;
   static count: i32 = 0;
@@ -250,7 +250,7 @@ export function main(): void {
 ";
 
 const STATIC_COUNTER_V2: &str = "\
-@CStruct
+@ValueType
 class Counter {
   value: i32 = 7;
   static count: i32 = 0;
@@ -273,7 +273,7 @@ export function main(): void {
 ";
 
 #[test]
-fn accepted_body_edit_keeps_cstruct_static_field_state() {
+fn accepted_body_edit_keeps_value_type_static_field_state() {
     let mut session = ReloadSession::new(&files(STATIC_COUNTER_V1)).expect("session");
     session.call_main().expect("first call");
     session.call_main().expect("second call");
@@ -336,7 +336,7 @@ export function main(): void {
 // ----- (b) rejected layout edit -----
 
 const SHAPE_V1: &str = "\
-@CStruct
+@ValueType
 class Point {
   x: i32;
   y: i32;
@@ -354,7 +354,7 @@ export function main(): void {
 /// Same program with one field added to `Point` — a layout change, so
 /// the swap must be refused.
 const SHAPE_V2: &str = "\
-@CStruct
+@ValueType
 class Point {
   x: i32;
   y: i32;

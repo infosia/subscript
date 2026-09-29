@@ -2,8 +2,8 @@
 // purpose: Places a fixed-size array field inside a value struct.
 // exercises: value-struct, fixed-array, field-layout
 // questions: Q1, Q2, Q3, Q12
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType
 class Matrix4 {
   elements: FixedArray<f32, 16>;
 

@@ -377,7 +377,7 @@ impl<'p> Checker<'p> {
             self.error_diverging(
                 RuleCode::S100,
                 format!(
-                    "`Context.{name}<T>` cannot use `{target_name}`; it is not a @CStruct value class or FixedArray"
+                    "`Context.{name}<T>` cannot use `{target_name}`; it is not a @ValueType value class or FixedArray"
                 ),
                 member_pos,
                 Divergence::ByteAccessTarget,

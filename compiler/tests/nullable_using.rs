@@ -232,7 +232,7 @@ fn retained_rejections_have_positive_controls() {
         ("class R { [Symbol.dispose](): void {} } export async function main(): Promise<void> { await using r = new R(); }",
          "class R { [Symbol.dispose](): void {} } export async function main(): Promise<void> { using r = new R(); }",
          RuleCode::S100, "`await using` is not in the decided surface"),
-        ("@CStruct class R { [Symbol.dispose](): void {} } export function main(): void {}",
+        ("@ValueType class R { [Symbol.dispose](): void {} } export function main(): void {}",
          "class R { [Symbol.dispose](): void {} } export function main(): void { using r = new R(); }",
          RuleCode::S100, "value classes cannot declare `[Symbol.dispose]()`"),
         ("@Descriptor class R { [Symbol.dispose](): void {} } export function main(): void {}",

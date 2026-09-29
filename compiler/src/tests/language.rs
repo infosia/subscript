@@ -303,7 +303,7 @@ fn general_union_is_s011() {
 fn string_literal_union_members_are_contextually_typed() {
     let module = check_one(
         "type Format = \"a\" | \"b\";\n\
-         @CStruct\n\
+         @ValueType\n\
          class Box {\n\
            value: Format;\n\
            constructor(value: Format) { this.value = value; }\n\
@@ -987,7 +987,7 @@ fn contextual_conditional_accepts_nominally_distinct_reference_arms() {
 #[test]
 fn contextual_conditional_does_not_admit_script_value_class_union() {
     let diagnostics = check_one(
-        "@CStruct\n\
+        "@ValueType\n\
          class V { value: i32; constructor(value: i32) { this.value = value; } }\n\
          export function main(): void {\n\
            const value: V | null = true ? new V(1) : null;\n\
@@ -1445,10 +1445,10 @@ fn r13_async_method_boundaries_have_pinned_checker_diagnostics() {
             "async generator methods",
         ),
         (
-            "@CStruct\nclass C {\n  async m(): Promise<void> {}\n}\nexport function main(): void {}\n",
+            "@ValueType\nclass C {\n  async m(): Promise<void> {}\n}\nexport function main(): void {}\n",
             RuleCode::S100,
             3,
-            "`@CStruct` value classes",
+            "`@ValueType` value classes",
         ),
         (
             "class C { async m(): Promise<void> {} }\nexport function main(): void {\n  const c: C = new C();\n  c.m();\n}\n",

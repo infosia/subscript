@@ -4,7 +4,7 @@
 // questions: §97, §60
 // tsc: accepts
 // expected-error: S100: value classes cannot declare Symbol.dispose
-@CStruct
+@ValueType
 class Resource {
   [Symbol.dispose](): void {}
 }

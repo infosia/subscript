@@ -5,9 +5,9 @@
 
 // Failure has three forms here: an exception that a handler catches, a
 // result value that the caller inspects, and a trap that the host observes.
-// C2: @CStruct makes this a C-layout value rather than a Context-allocated
+// C2: @ValueType makes this a C-layout value rather than a Context-allocated
 // reference class.
-@CStruct
+@ValueType
 class DivisionResult {
   ok: boolean;
   value: f64;

@@ -30,11 +30,11 @@ declare interface JSON {
   parse<T>(text: string): T;
 }
 
-declare function CStruct<T extends abstract new (...args: never[]) => object>(
+declare function ValueType<T extends abstract new (...args: never[]) => object>(
   target: T,
   context: ClassDecoratorContext,
 ): T;
-declare function CStruct(options: { align: 2 | 4 | 8 | 16 }):
+declare function ValueType(options: { align: 2 | 4 | 8 | 16 }):
   <T extends abstract new (...args: never[]) => object>(
     target: T, context: ClassDecoratorContext) => T;
 

@@ -1,9 +1,9 @@
 // corpus: accept/a150-receiver-address-invalidation
-// purpose: Recomputes a CStruct array-element receiver address after an argument grows the same array.
-// exercises: CStruct, dynamic-array, method-receiver, argument-evaluation, address-invalidation
+// purpose: Recomputes a ValueType array-element receiver address after an argument grows the same array.
+// exercises: ValueType, dynamic-array, method-receiver, argument-evaluation, address-invalidation
 // questions: §68
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType
 class V {
   a: i32;
 

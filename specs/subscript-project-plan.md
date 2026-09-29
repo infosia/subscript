@@ -95,7 +95,7 @@ vertical slice (P5) exercises them against a neutral synthetic C header.
 Every collision between TS surface syntax and the language's semantics is
 resolved as a written rule with an accept and a reject corpus entry.
 The full set (C1–C8, plus the Q-register) is decided in
-`specs/blocks/collisions.md`: nominal typing per declaration, `@CStruct`
+`specs/blocks/collisions.md`: nominal typing per declaration, `@ValueType`
 classes, sized numerics with bare `number` rejected, contextual integer
 literals, non-escaping capture only, no exceptions, `T | null` as the only
 union, generators-as-coroutines with `async` rejected.

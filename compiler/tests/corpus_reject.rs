@@ -20,6 +20,36 @@ fn check_entry(files: &[SourceFile]) -> Vec<subscript_compiler::Diagnostic> {
     check_program(files).err().unwrap_or_default()
 }
 
+#[test]
+fn former_value_decorator_names_its_replacement() {
+    let file = "r280-cstruct-renamed.ts";
+    let source = fs::read_to_string(corpus_dir().join("reject").join(file))
+        .expect("read former decorator reject entry");
+    let diagnostics = check_program(&[SourceFile::new(file, source)])
+        .expect_err("the former decorator must be rejected");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (7, 1));
+    assert_eq!(
+        diagnostics[0].message,
+        "`@CStruct` was renamed to `@ValueType`"
+    );
+}
+
+#[test]
+fn former_value_decorator_call_names_its_replacement() {
+    let source = "@CStruct({ align: 8 })\nclass V { x: i32 = 0; }\n";
+    let diagnostics = check_program(&[SourceFile::new("former-call.ts", source.to_string())])
+        .expect_err("the former decorator call must be rejected");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (1, 1));
+    assert_eq!(
+        diagnostics[0].message,
+        "`@CStruct` was renamed to `@ValueType`"
+    );
+}
+
 /// Expected (entry, rule code, 1-based line of the offending construct).
 /// Lines are derived from reading the corpus files; r02 and r05 both
 /// map to S002 (no dynamic code evaluation).
@@ -60,7 +90,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r36-f16-arithmetic.ts", RuleCode::S014, 9),
     ("r38-map-f16-key.ts", RuleCode::S014, 8),
     ("r39-map-array-key.ts", RuleCode::S014, 8),
-    ("r40-map-cstruct-key.ts", RuleCode::S014, 16),
+    ("r40-map-valuetype-key.ts", RuleCode::S014, 16),
     ("r41-map-scalar-get.ts", RuleCode::S014, 9),
     ("r42-map-iterator-member.ts", RuleCode::S014, 9),
     ("r43-map-iterable-constructor.ts", RuleCode::S014, 8),
@@ -83,7 +113,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r60-json-parse-no-context.ts", RuleCode::S014, 8),
     ("r61-json-parse-date.ts", RuleCode::S014, 8),
     (
-        "r62-cstruct-fixed-array-layout-too-large.ts",
+        "r62-valuetype-fixed-array-layout-too-large.ts",
         RuleCode::S100,
         9,
     ),
@@ -117,7 +147,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r100-floating-async-call.ts", RuleCode::S013, 13),
     ("r101-async-static-method.ts", RuleCode::S100, 8),
     ("r102-async-generator-method.ts", RuleCode::S100, 8),
-    ("r103-async-cstruct-method.ts", RuleCode::S100, 9),
+    ("r103-async-valuetype-method.ts", RuleCode::S100, 9),
     ("r105-floating-async-method-call.ts", RuleCode::S013, 16),
     ("r106-capturing-lambda-worker-entry.ts", RuleCode::S100, 15),
     ("r107-async-worker-entry.ts", RuleCode::S100, 20),
@@ -145,8 +175,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r132-await-using.ts", RuleCode::S100, 12),
     ("r133-using-without-dispose.ts", RuleCode::S100, 10),
     ("r134-plain-alias-entry-param.ts", RuleCode::S100, 9),
-    ("r135-cstruct-align-below-natural.ts", RuleCode::S100, 7),
-    ("r136-cstruct-align-not-in-set.ts", RuleCode::S100, 7),
+    ("r135-valuetype-align-below-natural.ts", RuleCode::S100, 7),
+    ("r136-valuetype-align-not-in-set.ts", RuleCode::S100, 7),
     ("r137-descriptor-align.ts", RuleCode::S100, 7),
     ("r138-bytes-of-reference-class.ts", RuleCode::S100, 13),
     ("r139-bytes-of-string-element.ts", RuleCode::S100, 9),
@@ -295,13 +325,13 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r238-instanceof-non-error.ts", RuleCode::S100, 13),
     ("r239-stringify-error.ts", RuleCode::S014, 9),
     (
-        "r65-cstruct-field-offset-layout-too-large.ts",
+        "r65-valuetype-field-offset-layout-too-large.ts",
         RuleCode::S100,
         10,
     ),
     ("r66-coroutine-step-layout-too-large.ts", RuleCode::S100, 12),
     ("r67-frame-local-boundary-too-large.ts", RuleCode::S100, 8),
-    ("r68-cstruct-stack-frame-too-large.ts", RuleCode::S100, 17),
+    ("r68-valuetype-stack-frame-too-large.ts", RuleCode::S100, 17),
     (
         "r69-closure-environment-layout-too-large.ts",
         RuleCode::S100,
@@ -368,6 +398,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r277-entry-nonfunction/main.ts", RuleCode::S100, 8),
     ("r278-entry-signature/main.ts", RuleCode::S100, 8),
     ("r279-entry-signature-chain/main.ts", RuleCode::S100, 8),
+    ("r280-cstruct-renamed.ts", RuleCode::S100, 7),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -727,17 +758,17 @@ fn declaration_without_initializer_clears_its_reservation() {
 }
 
 #[test]
-fn cstruct_alignment_rejects_unknown_keys_and_second_arguments() {
+fn value_type_alignment_rejects_unknown_keys_and_second_arguments() {
     for (name, source, message) in [
         (
             "unknown-align-key.ts",
-            "@CStruct({ alignment: 16 })\nclass Value { x: f32 = 0.0; }\nexport function main(): void {}\n",
-            "`@CStruct` options must contain only the `align` key",
+            "@ValueType({ alignment: 16 })\nclass Value { x: f32 = 0.0; }\nexport function main(): void {}\n",
+            "`@ValueType` options must contain only the `align` key",
         ),
         (
             "second-align-argument.ts",
-            "@CStruct({ align: 16 }, { align: 8 })\nclass Value { x: f32 = 0.0; }\nexport function main(): void {}\n",
-            "`@CStruct` accepts exactly one object-literal argument",
+            "@ValueType({ align: 16 }, { align: 8 })\nclass Value { x: f32 = 0.0; }\nexport function main(): void {}\n",
+            "`@ValueType` accepts exactly one object-literal argument",
         ),
     ] {
         let diagnostics = check_program(&[SourceFile::new(name, source)])
@@ -814,10 +845,10 @@ fn omitted_regex_surface_names_each_language_gap() {
 fn aggregate_layout_rejections_pin_the_exact_construct_and_limit() {
     let dir = corpus_dir().join("reject");
     for (file, line, col) in [
-        ("r62-cstruct-fixed-array-layout-too-large.ts", 9, 9),
+        ("r62-valuetype-fixed-array-layout-too-large.ts", 9, 9),
         ("r63-local-fixed-array-layout-too-large.ts", 8, 15),
         ("r64-nested-fixed-array-layout-too-large.ts", 8, 17),
-        ("r65-cstruct-field-offset-layout-too-large.ts", 10, 3),
+        ("r65-valuetype-field-offset-layout-too-large.ts", 10, 3),
         ("r66-coroutine-step-layout-too-large.ts", 12, 23),
     ] {
         let source =
@@ -849,7 +880,7 @@ fn frame_and_synthesized_aggregate_rejections_are_checker_diagnostics() {
             "2147483632 bytes",
         ),
         (
-            "r68-cstruct-stack-frame-too-large.ts",
+            "r68-valuetype-stack-frame-too-large.ts",
             17,
             9,
             "2147483632 bytes",
@@ -1101,7 +1132,7 @@ fn r29_wrong_index_type_is_s007() {
 fn r29_value_class_index_signature_is_s100() {
     let diagnostics = check_program(&[SourceFile::new(
         "value-index.ts",
-        "@CStruct\nclass Values {\n  readonly [index: u32]: i32;\n  get(index: u32): i32 { return index as i32; }\n}\nexport function main(): void {}\n",
+        "@ValueType\nclass Values {\n  readonly [index: u32]: i32;\n  get(index: u32): i32 { return index as i32; }\n}\nexport function main(): void {}\n",
     )])
     .expect_err("a value class cannot declare an index signature");
     assert_eq!(diagnostics[0].code, RuleCode::S100);
@@ -1165,7 +1196,7 @@ fn r31_for_head_using_is_s100() {
 fn r31_value_class_dispose_hook_is_s100() {
     let diagnostics = check_program(&[SourceFile::new(
         "value-dispose.ts",
-        "@CStruct\nclass Resource {\n  [Symbol.dispose](): void {}\n}\nexport function main(): void {}\n",
+        "@ValueType\nclass Resource {\n  [Symbol.dispose](): void {}\n}\nexport function main(): void {}\n",
     )])
     .expect_err("a value class disposal hook must fail");
     assert_eq!(diagnostics[0].code, RuleCode::S100);

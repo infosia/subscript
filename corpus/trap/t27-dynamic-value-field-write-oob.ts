@@ -1,10 +1,10 @@
 // corpus: trap/t27-dynamic-value-field-write-oob
 // purpose: Traps while resolving a field place through a value-class element of a dynamic array.
-// exercises: Array<CStruct>, field-place, compound-assignment, side-effecting-index, index-read
+// exercises: Array<ValueType>, field-place, compound-assignment, side-effecting-index, index-read
 // questions: none
 // expected-trap: index-out-of-bounds at values[index()].x
 
-@CStruct
+@ValueType
 class Vec2 {
   x: i32;
   y: i32;

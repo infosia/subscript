@@ -1,9 +1,9 @@
 // corpus: accept/a76-p20-dynamic-value-field-write
 // purpose: Writes fields through a value-class element of a dynamic array.
-// exercises: Array<CStruct>, field-place, plain-assignment, compound-assignment, side-effecting-index
+// exercises: Array<ValueType>, field-place, plain-assignment, compound-assignment, side-effecting-index
 // questions: none
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType
 class Vec2 {
   x: i32;
   y: i32;

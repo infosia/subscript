@@ -2,10 +2,10 @@
 // purpose: Proves async generic functions and generic-class async methods at two instantiations.
 // exercises: generic-async-function, generic-class-async-method, monomorphization, async-export-instance
 // questions: R36, Q34, R13
-// tsc: accepts; js-comparable: no C2 C8: The CStruct decorator has no JavaScript shim.
+// tsc: accepts; js-comparable: no C2 C8: The ValueType decorator has no JavaScript shim.
 import { tick } from "./tick";
 
-@CStruct
+@ValueType
 class Vec2 {
   x: f32;
   y: f32;

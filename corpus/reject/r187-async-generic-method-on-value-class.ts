@@ -1,10 +1,10 @@
 // corpus: reject/r187-async-generic-method-on-value-class
-// purpose: Rejects an async method with type parameters on a @CStruct value class.
+// purpose: Rejects an async method with type parameters on a @ValueType value class.
 // exercises: generic-method, async-method, value-class
 // questions: §93, §37.1
 // tsc: accepts
 // expected-error: S100 at the method declaration
-@CStruct
+@ValueType
 class Vec2 {
   x: f32 = 0;
   y: f32 = 0;

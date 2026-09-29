@@ -5,7 +5,7 @@
 // tier-policy: both tiers trap with kind 1
 // expected-trap: byte range at offset 5 with size 16 exceeds array length 20
 
-@CStruct({ align: 16 })
+@ValueType({ align: 16 })
 class Vec3f {
   x: f32 = 0.0;
   y: f32 = 0.0;

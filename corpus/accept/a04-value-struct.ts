@@ -2,8 +2,8 @@
 // purpose: Makes value-struct copy-on-assign semantics observable.
 // exercises: value-struct, field-access, copy-on-assign
 // questions: Q1, Q2, Q12, Q14, Q17
-// tsc: accepts; js-comparable: no C2: The CStruct decorator has no JavaScript shim.
-@CStruct
+// tsc: accepts; js-comparable: no C2: The ValueType decorator has no JavaScript shim.
+@ValueType
 class Vec3 {
   x: f32;
   y: f32;

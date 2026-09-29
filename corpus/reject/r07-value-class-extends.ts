@@ -4,12 +4,12 @@
 // questions: none
 // tsc: accepts
 // expected-error: value classes do not inherit
-@CStruct
+@ValueType
 class Base {
   value: i32 = 4;
 }
 
-@CStruct
+@ValueType
 class Derived extends Base {
   extra: i32 = 5;
 }

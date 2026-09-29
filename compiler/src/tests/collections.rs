@@ -242,7 +242,7 @@ fn array_callback_over_value_class_elements_is_s014() {
     // Value-class elements cannot cross the runtime->script element
     // boundary (stdlib.md §9); the checker gates them.
     let err = check_one(
-        "@CStruct\nclass V { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const xs: V[] = [new V(1)];\n  xs.forEach((v: V): void => {});\n}\n",
+        "@ValueType\nclass V { x: i32; constructor(x: i32) { this.x = x; } }\nexport function main(): void {\n  const xs: V[] = [new V(1)];\n  xs.forEach((v: V): void => {});\n}\n",
     )
     .unwrap_err();
     assert_eq!(err[0].code, RuleCode::S014);
@@ -303,7 +303,7 @@ fn map_set_key_whitelist_rejections_name_q24() {
         assert!(err[0].message.contains("Q24"), "{key}: {}", err[0].message);
     }
     let err = check_one(
-        "@CStruct\nclass V { x: i32; constructor() { this.x = 1; } }\n\
+        "@ValueType\nclass V { x: i32; constructor() { this.x = 1; } }\n\
          export function main(): void {\n\
            const set: Set<V> = new Set<V>();\n\
            print(`${set.size}`);\n\
@@ -869,7 +869,7 @@ fn two_file_program_with_import_checks_clean() {
 #[test]
 fn value_class_is_nominal_and_marked_value() {
     let module = check_one(
-        "@CStruct\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  print(`${v.x}`);\n}\n",
+        "@ValueType\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  print(`${v.x}`);\n}\n",
     )
     .expect("clean");
     assert_eq!(module.classes.len(), 2);
@@ -908,7 +908,7 @@ fn const_rebinding_is_rejected_but_field_writes_are_not() {
     assert!(err[0].message.contains("rebind"));
 
     check_one(
-        "@CStruct\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  v.x = 2.0;\n  print(`${v.x}`);\n}\n",
+        "@ValueType\nclass V { x: f32; constructor(x: f32) { this.x = x; } }\nexport function main(): void {\n  const v: V = new V(1.0);\n  v.x = 2.0;\n  print(`${v.x}`);\n}\n",
     )
     .expect("field writes through const value bindings are legal");
 }
@@ -993,7 +993,7 @@ fn context_free_takes_reference_instances_only() {
     .expect("reference instances cross into `object`");
 
     let err = check_one(
-        "@CStruct\nclass V { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const v: V = new V();\n  Context.free(v);\n}\n",
+        "@ValueType\nclass V { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const v: V = new V();\n  Context.free(v);\n}\n",
     )
     .unwrap_err();
     assert_eq!(err[0].code, RuleCode::S100);
@@ -1482,7 +1482,7 @@ fn q35_new_rejects_all_runtime_created_handle_types_in_our_checker() {
 
 #[test]
 fn q35_transferability_diagnostic_names_the_innermost_field() {
-    let source = "enum Kind { First }\n@CStruct class Stamp { kind: Kind = Kind.First; }\nclass BoxedCount { value: i32 = 0; }\nclass BadMessage { stamps: FixedArray<Stamp, 2> = [new Stamp(), new Stamp()]; boxed: BoxedCount = new BoxedCount(); }\nfunction entry(inbox: Inbox<BadMessage>, outbox: Outbox<BadMessage>): void {}\nexport function main(): void { const worker = Worker.spawn(entry); }\n";
+    let source = "enum Kind { First }\n@ValueType class Stamp { kind: Kind = Kind.First; }\nclass BoxedCount { value: i32 = 0; }\nclass BadMessage { stamps: FixedArray<Stamp, 2> = [new Stamp(), new Stamp()]; boxed: BoxedCount = new BoxedCount(); }\nfunction entry(inbox: Inbox<BadMessage>, outbox: Outbox<BadMessage>): void {}\nexport function main(): void { const worker = Worker.spawn(entry); }\n";
     let diagnostics = check_one(source).expect_err("reference message field");
     assert_eq!(diagnostics[0].code, RuleCode::S100);
     assert_eq!(diagnostics[0].pos.line, 4);
@@ -1493,7 +1493,7 @@ fn q35_transferability_diagnostic_names_the_innermost_field() {
 #[test]
 fn r34_context_bytes_call_keeps_the_explicit_type_in_hir() {
     let module = check_one(
-        "@CStruct\nclass Word { value: u32 = 0; }\nexport function main(): void {\n  const word: Word = new Word();\n  const bytes: u8[] = Context.bytesOf<Word>(word);\n  print(`${bytes.length}`);\n}\n",
+        "@ValueType\nclass Word { value: u32 = 0; }\nexport function main(): void {\n  const word: Word = new Word();\n  const bytes: u8[] = Context.bytesOf<Word>(word);\n  print(`${bytes.length}`);\n}\n",
     )
     .expect("Context.bytesOf must check");
     let main = module
@@ -1539,7 +1539,7 @@ fn r34_boundary_string_field_is_s100_with_the_field_name() {
 #[test]
 fn r34_missing_type_argument_is_s014() {
     let diagnostics = check_one(
-        "@CStruct\nclass Word { value: u32 = 0; }\nexport function main(): void {\n  const word: Word = new Word();\n  Context.bytesOf(word);\n}\n",
+        "@ValueType\nclass Word { value: u32 = 0; }\nexport function main(): void {\n  const word: Word = new Word();\n  Context.bytesOf(word);\n}\n",
     )
     .expect_err("the type argument must be explicit");
     assert_eq!(diagnostics[0].code, RuleCode::S014);
