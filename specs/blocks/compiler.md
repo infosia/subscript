@@ -172,3 +172,4 @@ Every section, with its status:
 | §128 | A named re-export is in the surface | active | [`s128-a-named-re-export-is-in-the-surface.md`](compiler/s128-a-named-re-export-is-in-the-surface.md) |
 | §129 | The entry module is the host API | active | [`s129-the-entry-module-is-the-host-api.md`](compiler/s129-the-entry-module-is-the-host-api.md) |
 | §130 | The value class decorator is `@ValueType` | active | [`s130-the-value-class-decorator-is-valuetype.md`](compiler/s130-the-value-class-decorator-is-valuetype.md) |
+| §131 | A declaration symbol is a type | active | [`s131-a-declaration-symbol-is-a-type.md`](compiler/s131-a-declaration-symbol-is-a-type.md) |
