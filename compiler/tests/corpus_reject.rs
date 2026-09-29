@@ -20,34 +20,37 @@ fn check_entry(files: &[SourceFile]) -> Vec<subscript_compiler::Diagnostic> {
     check_program(files).err().unwrap_or_default()
 }
 
+/// compiler.md §130 rule 2: the former value-class decorator has no rule
+/// of its own. The checker rejects it as any unknown decorator.
 #[test]
-fn former_value_decorator_names_its_replacement() {
-    let file = "r280-cstruct-renamed.ts";
-    let source = fs::read_to_string(corpus_dir().join("reject").join(file))
-        .expect("read former decorator reject entry");
-    let diagnostics = check_program(&[SourceFile::new(file, source)])
-        .expect_err("the former decorator must be rejected");
-    assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].code, RuleCode::S100);
-    assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (7, 1));
-    assert_eq!(
-        diagnostics[0].message,
-        "`@CStruct` was renamed to `@ValueType`"
-    );
-}
+fn former_value_decorator_is_an_unknown_decorator() {
+    // The name is built at run time: compiler/tests/decorator_spelling.rs
+    // forbids the former spelling in this file.
+    let former = format!("C{}", "Struct");
+    for form in [former.clone(), format!("{former}({{ align: 8 }})")] {
+        let source = format!("@{form}\nclass V {{ x: i32 = 0; }}\n");
+        let diagnostics = check_program(&[SourceFile::new("former.ts", source)])
+            .expect_err("the former decorator must be rejected");
+        assert_eq!(diagnostics.len(), 1, "{form}");
+        assert_eq!(diagnostics[0].code, RuleCode::S100, "{form}");
+        assert_eq!(
+            (diagnostics[0].pos.line, diagnostics[0].pos.col),
+            (1, 1),
+            "{form}"
+        );
+        assert_eq!(
+            diagnostics[0].message,
+            "the only decided decorators are the ambient `@ValueType` and `@Descriptor`",
+            "{form}"
+        );
+    }
 
-#[test]
-fn former_value_decorator_call_names_its_replacement() {
-    let source = "@CStruct({ align: 8 })\nclass V { x: i32 = 0; }\n";
-    let diagnostics = check_program(&[SourceFile::new("former-call.ts", source.to_string())])
-        .expect_err("the former decorator call must be rejected");
-    assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].code, RuleCode::S100);
-    assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (1, 1));
-    assert_eq!(
-        diagnostics[0].message,
-        "`@CStruct` was renamed to `@ValueType`"
-    );
+    // Control: the same source with the current name is accepted.
+    for form in ["ValueType", "ValueType({ align: 8 })"] {
+        let source = format!("@{form}\nclass V {{ x: i32 = 0; }}\n");
+        let result = check_program(&[SourceFile::new("current.ts", source)]);
+        assert!(result.is_ok(), "{form}: {:?}", result.err());
+    }
 }
 
 /// Expected (entry, rule code, 1-based line of the offending construct).
@@ -398,7 +401,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r277-entry-nonfunction/main.ts", RuleCode::S100, 8),
     ("r278-entry-signature/main.ts", RuleCode::S100, 8),
     ("r279-entry-signature-chain/main.ts", RuleCode::S100, 8),
-    ("r280-cstruct-renamed.ts", RuleCode::S100, 7),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

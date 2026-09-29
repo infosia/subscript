@@ -119,3 +119,28 @@ The gate record shows the failure at 1,579 s, before that bound, because the chi
    `` the only decided decorators are the ambient `@ValueType` and `@Descriptor` ``.
 
 4. MINOR. The Red section cites `6ce5dfe`.
+
+## Contract amendment at `8ffb717`: r280 retires
+
+The owner removed the dedicated rule 2 message. The former decorator is now an unknown decorator.
+
+1. `compiler/src/check/declarations.rs`: `is_former_value_decorator` and its branch in `class_decorators` are removed.
+   Both forms fall to the general S100 `` the only decided decorators are the ambient `@ValueType` and `@Descriptor` ``.
+2. `corpus/reject/r280-cstruct-renamed.ts` is deleted, and its row leaves `EXPECTED` in `compiler/tests/corpus_reject.rs`.
+   The id `r280` stays unused. No collision cited r280, so `collisions.md` needs no `retired:` record.
+   `generated-docs/corpus-index.md` loses the r280 row.
+3. `compiler/tests/corpus_reject.rs`: `former_value_decorator_is_an_unknown_decorator` replaces the two rename tests.
+   It checks the bare form and the `({ align: 8 })` form: one S100 at 1:1 with the general message.
+   The control checks that `@ValueType` and `@ValueType({ align: 8 })` on the same class are accepted.
+4. `compiler/tests/retired_reasons.rs`: the phrase ``was renamed to `@valuetype` `` is a retired reason.
+5. `compiler/tests/decorator_spelling.rs`: the exclusions are only `specs/tracking/`, `compiler-history.md`, and the §130 contract.
+   The named-line exceptions and the entry-name exception are removed. Test sources build the former name at run time.
+   The firing control expects a hit in each of the three record paths.
+
+Firing controls, each with `compiler/src/check/declarations.rs` from `8ffb717` and reverted:
+
+| Test | Result |
+|---|---|
+| `former_value_decorator_is_an_unknown_decorator` | fails, message `` `@CStruct` was renamed to `@ValueType` `` |
+| `no_user_facing_string_states_a_retired_reason` | fails, `declarations.rs:198` |
+| `former_decorator_spelling_is_limited_to_the_record` | fails, `declarations.rs:182`, `declarations.rs:198` |

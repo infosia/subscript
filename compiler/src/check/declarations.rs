@@ -170,18 +170,6 @@ impl<'p> Checker<'p> {
         Ok(value as u32)
     }
 
-    /// The former value-class decorator, bare or called with options.
-    fn is_former_value_decorator(expr: &ast::Expr) -> bool {
-        let callee = match expr {
-            ast::Expr::Call(ast::CallExpr {
-                callee: ast::Callee::Expr(callee),
-                ..
-            }) => &**callee,
-            other => other,
-        };
-        matches!(callee, ast::Expr::Ident(id) if id.sym.as_ref() == "CStruct")
-    }
-
     fn class_decorators(
         &mut self,
         class: &ast::Class,
@@ -192,13 +180,6 @@ impl<'p> Checker<'p> {
         for dec in &class.decorators {
             match &*dec.expr {
                 ast::Expr::Ident(id) if id.sym.as_ref() == "ValueType" => is_value = true,
-                expr if Self::is_former_value_decorator(expr) => {
-                    self.error(
-                        RuleCode::S100,
-                        "`@CStruct` was renamed to `@ValueType`",
-                        self.pos(dec.span),
-                    );
-                }
                 ast::Expr::Ident(id) if id.sym.as_ref() == "Descriptor" => {
                     is_descriptor = true;
                 }

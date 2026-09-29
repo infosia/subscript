@@ -37,6 +37,11 @@ const RETIRED: &[(&str, &str)] = &[
         "compiler.md §129 retires the program-wide host name rule",
     ),
     (
+        "was renamed to `@valuetype`",
+        "compiler.md §130 rule 2: the former value-class decorator has no \
+     rule of its own; the general unknown-decorator message rejects it",
+    ),
+    (
         "outlives its call",
         "compiler.md §103.3: `compiler.md` §70 landed a reference-counted \
      handle and a `Generator<T>` already outlives the call that made it, \

@@ -1,4 +1,4 @@
-//! compiler.md §130: the former value-class decorator remains only in the rejection witness.
+//! compiler.md §130: the former value-class decorator remains only in the record.
 //!
 //! Cost: one `git ls-files` call and one read of every listed file (about
 //! 1,800 files); the two scans below share that one read.
@@ -7,10 +7,9 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-/// The former spelling, lower case. The match ignores ASCII case.
-const FORMER: &str = "cstruct";
-/// The reject entry name. It names the rename that it witnesses.
-const WITNESS: &str = "r280-cstruct-renamed";
+/// The former spelling, lower case. The match ignores ASCII case. The
+/// name is built from two parts, so this file holds no hit of its own.
+const FORMER: &str = concat!("c", "struct");
 
 /// Paths that keep the former spelling as the record.
 fn is_record(path: &str) -> bool {
@@ -19,48 +18,23 @@ fn is_record(path: &str) -> bool {
         || path == "specs/blocks/compiler/s130-the-value-class-decorator-is-valuetype.md"
 }
 
-/// Lines outside the record that keep the former spelling: the rule 2
-/// diagnostic, its tests, and the reject entry.
-fn is_allowed_line(path: &str, line: &str) -> bool {
-    match path {
-        "corpus/reject/r280-cstruct-renamed.ts" | "compiler/tests/decorator_spelling.rs" => true,
-        "compiler/src/check/declarations.rs" => matches!(
-            line.trim(),
-            "matches!(callee, ast::Expr::Ident(id) if id.sym.as_ref() == \"CStruct\")"
-                | "\"`@CStruct` was renamed to `@ValueType`\","
-        ),
-        "compiler/tests/corpus_reject.rs" => matches!(
-            line.trim(),
-            "\"`@CStruct` was renamed to `@ValueType`\""
-                | "let source = \"@CStruct({ align: 8 })\\nclass V { x: i32 = 0; }\\n\";"
-        ),
-        _ => false,
-    }
-}
-
-fn contains_former(text: &str, exceptions: bool) -> bool {
-    let lower = text.to_ascii_lowercase();
-    let lower = if exceptions {
-        lower.replace(WITNESS, "")
-    } else {
-        lower
-    };
-    lower.contains(FORMER)
+fn contains_former(text: &str) -> bool {
+    text.to_ascii_lowercase().contains(FORMER)
 }
 
 /// Every hit as `path` (a hit in the path) or `path:line`. With
-/// `exceptions` false, the record and the allowed lines are hits too.
+/// `exceptions` false, the record is a hit too.
 fn forbidden_hits(path: &str, contents: &[u8], exceptions: bool) -> Vec<String> {
     if exceptions && is_record(path) {
         return Vec::new();
     }
     let mut hits = Vec::new();
-    if contains_former(path, exceptions) {
+    if contains_former(path) {
         hits.push(path.to_string());
     }
     for (index, raw) in contents.split(|byte| *byte == b'\n').enumerate() {
         let line = String::from_utf8_lossy(raw);
-        if contains_former(&line, exceptions) && !(exceptions && is_allowed_line(path, &line)) {
+        if contains_former(&line) {
             hits.push(format!("{path}:{}", index + 1));
         }
     }
@@ -116,14 +90,13 @@ fn tracked_files() -> TrackedFiles {
 
 #[test]
 fn the_scan_detects_the_former_spelling_in_any_case() {
+    let mixed = format!("ok\n@c{}\n", "Struct");
     assert_eq!(
-        forbidden_hits("compiler/src/hir.rs", b"ok\n@cStruct\n", true),
+        forbidden_hits("compiler/src/hir.rs", mixed.as_bytes(), true),
         vec!["compiler/src/hir.rs:2"]
     );
-    assert_eq!(
-        forbidden_hits("docs/CSTRUCT.md", b"", true),
-        vec!["docs/CSTRUCT.md"]
-    );
+    let upper_path = format!("docs/C{}.md", "STRUCT");
+    assert_eq!(forbidden_hits(&upper_path, b"", true), vec![upper_path]);
     assert_eq!(
         forbidden_hits("compiler/src/hir.rs", &[0xff, b'\n', b'C', b'S'], true),
         Vec::<String>::new()
@@ -136,15 +109,16 @@ fn the_scan_detects_the_former_spelling_in_any_case() {
         ),
         vec!["compiler/src/hir.rs:1"]
     );
-    assert!(forbidden_hits("specs/tracking/x.md", b"CStruct", true).is_empty());
+    let record = format!("C{}", "Struct");
+    assert!(forbidden_hits("specs/tracking/x.md", record.as_bytes(), true).is_empty());
     assert_eq!(
-        forbidden_hits("specs/tracking/x.md", b"CStruct", false),
+        forbidden_hits("specs/tracking/x.md", record.as_bytes(), false),
         vec!["specs/tracking/x.md:1"]
     );
 }
 
 #[test]
-fn former_decorator_spelling_is_limited_to_the_rejection_witness() {
+fn former_decorator_spelling_is_limited_to_the_record() {
     let tracked = tracked_files();
     assert!(!tracked.files.is_empty(), "git ls-files listed no file");
     let prelude = tracked
@@ -163,19 +137,15 @@ fn former_decorator_spelling_is_limited_to_the_rejection_witness() {
         );
     }
 
-    // Firing control: without the exceptions, the same enumeration finds
-    // every excepted site. If the enumeration or the match loses a
-    // directory, a file, or a case, this fails.
+    // Firing control: without the record exclusion, the same enumeration
+    // finds a hit in each record path. If the enumeration or the match
+    // loses a directory, a file, or a case, this fails.
     let unexcepted: Vec<String> = tracked
         .files
         .iter()
         .flat_map(|(path, contents)| forbidden_hits(path, contents, false))
         .collect();
     for expected in [
-        "corpus/reject/r280-cstruct-renamed.ts",
-        "compiler/src/check/declarations.rs:",
-        "compiler/tests/corpus_reject.rs:",
-        "generated-docs/corpus-index.md:",
         "specs/tracking/",
         "specs/blocks/compiler-history.md:",
         "specs/blocks/compiler/s130-the-value-class-decorator-is-valuetype.md:",
