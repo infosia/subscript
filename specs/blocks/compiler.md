@@ -168,3 +168,4 @@ Every section, with its status:
 | §124 | A narrowing ends where other code can run | active; adds a collision | [`s124-a-narrowing-ends-where-other-code-can-run.md`](compiler/s124-a-narrowing-ends-where-other-code-can-run.md) |
 | §125 | Each module has its own top-level names | active | [`s125-each-module-has-its-own-top-level-names.md`](compiler/s125-each-module-has-its-own-top-level-names.md) |
 | §126 | A renamed import binds the imported declaration | active | [`s126-a-renamed-import-binds-the-imported-declaration.md`](compiler/s126-a-renamed-import-binds-the-imported-declaration.md) |
+| §127 | An import binding is read-only | active | [`s127-an-import-binding-is-read-only.md`](compiler/s127-an-import-binding-is-read-only.md) |
