@@ -63,6 +63,7 @@ struct Entry {
     accept: bool,
     external_module: bool,
     claim: TscClaim,
+    error_count: Option<usize>,
 }
 
 struct TempProjectDirectory(PathBuf);
@@ -182,6 +183,18 @@ fn corpus_entries(root: &Path) -> Result<Vec<Entry>, String> {
                     ));
                 }
             }
+            let counts: Vec<_> = source
+                .lines()
+                .filter_map(|line| line.strip_prefix("// tsc-error-count: "))
+                .collect();
+            if counts.len() > 1 {
+                return Err(format!("{relative}: duplicate tsc-error-count header"));
+            }
+            let error_count = counts
+                .first()
+                .map(|count| count.parse::<usize>())
+                .transpose()
+                .map_err(|_| format!("{relative}: invalid tsc-error-count header"))?;
             let external_module = source.lines().any(|line| {
                 let line = line.trim_start();
                 line.starts_with("import ") || line.starts_with("export ")
@@ -192,6 +205,7 @@ fn corpus_entries(root: &Path) -> Result<Vec<Entry>, String> {
                 accept,
                 external_module,
                 claim,
+                error_count,
             });
         }
     }
@@ -295,7 +309,7 @@ fn diagnostic_codes(
     root: &Path,
     entries: &[Entry],
     output: &str,
-) -> Result<BTreeMap<String, BTreeSet<String>>, Vec<String>> {
+) -> Result<BTreeMap<String, Vec<String>>, Vec<String>> {
     let entry_names: BTreeMap<String, &str> = entries
         .iter()
         .flat_map(|entry| {
@@ -304,7 +318,7 @@ fn diagnostic_codes(
             })
         })
         .collect();
-    let mut codes = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut codes = BTreeMap::<String, Vec<String>>::new();
     let mut unowned = Vec::new();
     for line in output.lines().filter(|line| line.contains("error TS")) {
         let Some(marker) = line.find("): error TS") else {
@@ -341,7 +355,7 @@ fn diagnostic_codes(
         codes
             .entry((*owner).to_string())
             .or_default()
-            .insert(code.to_string());
+            .push(code.to_string());
     }
     if unowned.is_empty() {
         Ok(codes)
@@ -386,9 +400,41 @@ fn every_corpus_tsc_header_matches_measured_tsc() {
         output.status
     );
 
+    let checker_started = Instant::now();
     let mut disagreements = Vec::new();
     for entry in &entries {
-        let actual = TscClaim::measured(codes.get(&entry.relative).cloned().unwrap_or_default());
+        let measured = codes.get(&entry.relative).cloned().unwrap_or_default();
+        let actual = TscClaim::measured(measured.iter().cloned().collect());
+        if !entry.accept {
+            let sources: Vec<_> = entry
+                .program_files
+                .iter()
+                .map(|path| {
+                    subscript_compiler::SourceFile::new(
+                        path.file_name().unwrap().to_string_lossy(),
+                        fs::read_to_string(path).unwrap(),
+                    )
+                })
+                .collect();
+            let diagnostics = subscript_compiler::check_program(&sources)
+                .err()
+                .unwrap_or_default();
+            if let Err(error) =
+                resolution_count_check(entry.error_count, measured.len(), &diagnostics)
+            {
+                disagreements.push(format!("{}: {error}", entry.relative));
+            }
+            let resolution = diagnostics.iter().any(|diagnostic| diagnostic.resolution);
+            if resolution || entry.error_count.is_some() {
+                eprintln!(
+                    "resolution count: {} header {:?}, tsc {}, checker {}",
+                    entry.relative,
+                    entry.error_count,
+                    measured.len(),
+                    diagnostics.len()
+                );
+            }
+        }
         if entry.claim != actual {
             disagreements.push(format!(
                 "{}: header says `{}`; tsc said `{}`",
@@ -405,6 +451,7 @@ fn every_corpus_tsc_header_matches_measured_tsc() {
             ));
         }
     }
+    eprintln!("resolution total check: {:?}", checker_started.elapsed());
     eprintln!(
         "tsc corpus gate: {} entries measured in {:.3}s",
         entries.len(),
@@ -869,16 +916,155 @@ fn diagnostic_parser_attributes_codes_and_reports_unowned_errors() {
         accept: false,
         external_module: true,
         claim: TscClaim::Accepts,
+        error_count: None,
     };
     let measured = diagnostic_codes(
         root,
         &[entry],
-        "/workspace/corpus/reject/r01.ts(2,3): error TS1234: bad\n",
+        "/workspace/corpus/reject/r01.ts(2,3): error TS1234: bad\n/workspace/corpus/reject/r01.ts(3,3): error TS1234: again\n",
     )
     .expect("diagnostic must belong to r01");
     assert_eq!(
         measured["corpus/reject/r01.ts"],
-        BTreeSet::from(["TS1234".to_string()])
+        vec!["TS1234".to_string(), "TS1234".to_string()]
     );
     assert!(diagnostic_codes(root, &[], "error TS9999: global failure\n").is_err());
+}
+
+#[test]
+fn type_only_re_export_value_use_reports_ts1362_and_c18() {
+    use subscript_compiler::{check_program, divergence::Divergence, RuleCode, SourceFile};
+    let root = project_root();
+    let temporary = TempProjectDirectory::create();
+    let sources = [
+        SourceFile::new("lib.ts", "export class Box { value: i32 = 4; }"),
+        SourceFile::new("surface.ts", "export type { Box } from './lib';"),
+        SourceFile::new(
+            "main.ts",
+            "import { Box } from './surface'; export function main(): void { new Box(); }",
+        ),
+    ];
+    let mut files = vec![root.join("prelude/lang.d.ts")];
+    for source in &sources {
+        let path = temporary.0.join(&source.name);
+        fs::write(&path, &source.source).expect("write probe");
+        files.push(path);
+    }
+    let config = temporary.0.join("tsconfig.json");
+    fs::write(&config, tsconfig(&files)).expect("write config");
+    let start = Instant::now();
+    let output = Command::new(tsc_binary(&root))
+        .arg("--project")
+        .arg(&config)
+        .arg("--pretty")
+        .arg("false")
+        .output()
+        .expect("run tsc");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!output.status.success(), "{stdout}");
+    let diagnostics: Vec<_> = stdout
+        .lines()
+        .filter(|line| line.contains("error TS"))
+        .collect();
+    assert_eq!(diagnostics.len(), 1, "{stdout}");
+    assert!(diagnostics[0].contains("TS1362"), "{stdout}");
+    let errors = check_program(&sources).expect_err("type-only export");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, RuleCode::S100);
+    assert_eq!(errors[0].divergence, Some(Divergence::NamedModuleSurface));
+    fs::write(
+        temporary.0.join("surface.ts"),
+        "export { Box } from './lib';",
+    )
+    .expect("write control");
+    let output = Command::new(tsc_binary(&root))
+        .arg("--project")
+        .arg(&config)
+        .arg("--pretty")
+        .arg("false")
+        .output()
+        .expect("run control");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let mut control = sources;
+    control[1].source = "export { Box } from './lib';".into();
+    check_program(&control).expect("value export control");
+    eprintln!("type-only export TypeScript test: {:?}", start.elapsed());
+}
+
+fn resolution_count_check(
+    recorded: Option<usize>,
+    measured: usize,
+    diagnostics: &[subscript_compiler::Diagnostic],
+) -> Result<(), String> {
+    if !diagnostics.iter().any(|diagnostic| diagnostic.resolution) && recorded.is_none() {
+        return Ok(());
+    }
+    if recorded != Some(measured) || diagnostics.len() != measured {
+        return Err(format!(
+            "resolution diagnostic count: header {recorded:?}, tsc {measured}, checker {}",
+            diagnostics.len()
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn resolution_count_check_rejects_independent_failures() {
+    use subscript_compiler::{check_program, SourceFile};
+    let started = Instant::now();
+    let sources = [
+        SourceFile::new("main.ts", "export { missing } from './lib';"),
+        SourceFile::new("lib.ts", "export const present: i32 = 1;"),
+    ];
+    let errors = check_program(&sources).unwrap_err();
+    assert!(errors[0].resolution);
+    assert!(resolution_count_check(Some(1), 1, &errors).is_ok());
+    assert!(resolution_count_check(None, 1, &errors).is_err());
+    assert!(resolution_count_check(Some(2), 1, &errors).is_err());
+    assert!(resolution_count_check(Some(1), 2, &errors).is_err());
+    let mut changed = sources;
+    changed[0].source = "export { missing, absent } from './lib';".into();
+    let errors = check_program(&changed).unwrap_err();
+    assert!(resolution_count_check(Some(1), 1, &errors).is_err());
+    assert!(resolution_count_check(Some(2), 2, &errors).is_ok());
+    eprintln!("resolution count control: {:?}", started.elapsed());
+}
+
+#[test]
+fn resolution_entry_without_a_count_fails_the_total_check() {
+    // Two tiny files exercise header discovery and checking without another TypeScript process.
+    let start = Instant::now();
+    let temporary = TempProjectDirectory::create();
+    fs::create_dir_all(temporary.0.join("corpus/accept")).unwrap();
+    let directory = temporary.0.join("corpus/reject/missing-export");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("main.ts"), "// tsc: rejects TS2305\n// expected-error: S016 at line 3\nexport { missing } from './lib';").unwrap();
+    fs::write(directory.join("lib.ts"), "export const present: i32 = 1;").unwrap();
+    let entries = corpus_entries(&temporary.0).unwrap();
+    assert_eq!(entries.len(), 1);
+    let entry = &entries[0];
+    let sources: Vec<_> = entry
+        .program_files
+        .iter()
+        .map(|path| {
+            subscript_compiler::SourceFile::new(
+                path.file_name().unwrap().to_string_lossy(),
+                fs::read_to_string(path).unwrap(),
+            )
+        })
+        .collect();
+    let diagnostics = subscript_compiler::check_program(&sources).unwrap_err();
+    assert_eq!(entry.error_count, None);
+    assert_eq!(
+        resolution_count_check(entry.error_count, 1, &diagnostics),
+        Err("resolution diagnostic count: header None, tsc 1, checker 1".into())
+    );
+    fs::write(directory.join("main.ts"), "// tsc: rejects TS2305\n// tsc-error-count: 1\n// expected-error: S016 at line 4\nexport { missing } from './lib';").unwrap();
+    let entries = corpus_entries(&temporary.0).unwrap();
+    assert!(resolution_count_check(entries[0].error_count, 1, &diagnostics).is_ok());
+    eprintln!("resolution entry header control: {:?}", start.elapsed());
 }

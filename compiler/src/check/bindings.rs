@@ -208,6 +208,17 @@ impl<'p> Checker<'p> {
         self.diags.push(Diagnostic::new(code, message, pos));
     }
 
+    pub(super) fn resolution_error(
+        &mut self,
+        code: RuleCode,
+        message: impl Into<String>,
+        pos: Pos,
+    ) {
+        let mut diagnostic = Diagnostic::new(code, message, pos);
+        diagnostic.resolution = true;
+        self.diags.push(diagnostic);
+    }
+
     pub(crate) fn error_diverging(
         &mut self,
         code: RuleCode,

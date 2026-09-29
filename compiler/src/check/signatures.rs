@@ -187,6 +187,10 @@ impl<'p> Checker<'p> {
             let module = &self.prog.files[file].module;
             let mut additions: Vec<(String, ScopeItem, Pos)> = Vec::new();
             for item in &module.body {
+                if let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportNamed(export)) = item {
+                    self.record_discovery_export(export);
+                    continue;
+                }
                 let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) = item else {
                     continue;
                 };
@@ -198,7 +202,7 @@ impl<'p> Checker<'p> {
                         format!("imported module `{raw}` is not among the program's files");
                     if self.poison_missing_modules.contains(&stem) {
                         if import.specifiers.is_empty() {
-                            self.error(RuleCode::S100, missing_message, pos);
+                            self.resolution_error(RuleCode::S100, missing_message, pos);
                             continue;
                         }
                         let mut names = Vec::new();
@@ -231,7 +235,16 @@ impl<'p> Checker<'p> {
                             });
                         }
                     } else {
-                        self.error(RuleCode::S100, missing_message, pos);
+                        self.resolution_error(RuleCode::S100, missing_message, pos);
+                        for spec in &import.specifiers {
+                            if let ast::ImportSpecifier::Named(named) = spec {
+                                additions.push((
+                                    named.local.sym.to_string(),
+                                    ScopeItem::Poisoned,
+                                    self.pos(named.local.span),
+                                ));
+                            }
+                        }
                     }
                     continue;
                 };
@@ -251,23 +264,15 @@ impl<'p> Checker<'p> {
                         imported.map_or_else(|| local.clone(), |name| name.atom().to_string());
                     let imported_pos = self.pos(imported.map_or(named.local.span, Spanned::span));
                     let pos = self.pos(named.local.span);
-                    if !self.exports[target].contains(&imported_name) {
-                        self.error(
-                            RuleCode::S016,
-                            format!("`{}` is not exported by `{}`", imported_name, raw),
-                            imported_pos.clone(),
-                        );
-                        additions.push((local, ScopeItem::Poisoned, pos));
-                        continue;
-                    }
-                    match self.file_scopes[target].get(&imported_name) {
-                        Some(binding) => additions.push((local, binding.item.clone(), pos)),
+                    match self.exports[target].get(&imported_name) {
+                        Some(item) => additions.push((local, item.clone(), pos)),
                         None => {
-                            self.error(
+                            self.resolution_error(
                                 RuleCode::S016,
-                                format!("`{}` is not defined in `{}`", imported_name, raw),
+                                format!("`{imported_name}` is not exported by `{raw}`"),
                                 imported_pos,
                             );
+                            additions.push((local, ScopeItem::Poisoned, pos));
                         }
                     }
                 }
@@ -304,7 +309,10 @@ impl<'p> Checker<'p> {
                 ast::Decl::Fn(f) if f.function.type_params.is_none() => {
                     let name = f.ident.sym.to_string();
                     let sig = self.resolve_fn_sig(&f.function, self.pos(f.ident.span));
-                    if self.exports[file].contains(&name) {
+                    if matches!(
+                        item,
+                        ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(_))
+                    ) {
                         if sig.is_async && (!sig.params.is_empty() || sig.ret != Type::Void) {
                             self.error(
                                 RuleCode::S100,

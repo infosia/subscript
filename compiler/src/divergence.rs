@@ -93,6 +93,8 @@ pub enum Divergence {
     IteratorTemporary,
     /// A name that the two languages resolve to different declarations.
     DeclarationScope,
+    /// A wildcard, namespace, default export, `default` export name, or type-only export.
+    NamedModuleSurface,
     /// Two exported host entries that require the same C symbol.
     HostEntryCollision,
     /// A module or static initializer that reads a later binding.
@@ -243,6 +245,7 @@ impl Divergence {
         Divergence::NamedAccessor,
         Divergence::IteratorTemporary,
         Divergence::DeclarationScope,
+        Divergence::NamedModuleSurface,
         Divergence::HostEntryCollision,
         Divergence::ModuleInitializerOrder,
         Divergence::StaticMemberSurface,
@@ -595,6 +598,12 @@ impl Divergence {
                 subscript: "// main.ts\nexport function update(): void {}\n// lib.ts\nexport function libUpdate(): void {}",
                 why: "The host sees `subscript_export_<name>` with no module qualifier; C has one symbol namespace.",
                 collision: "C14",
+            },
+            Divergence::NamedModuleSurface => DivergenceEntry {
+                ts: "// lib.ts\nexport const value: i32 = 1;\n// main.ts\nexport * from \"./lib\";",
+                subscript: "// lib.ts\nexport const value: i32 = 1;\n// main.ts\nexport { value } from \"./lib\";",
+                why: "Named exports keep each module's public surface explicit.",
+                collision: "C18",
             },
             Divergence::DeclarationScope => DivergenceEntry {
                 ts: "const outer: i32 = 3;\n\

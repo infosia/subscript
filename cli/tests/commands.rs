@@ -846,3 +846,123 @@ fn run_trap_keeps_exit_one_when_stdout_fails() {
         assert!(String::from_utf8_lossy(&stderr).contains("index-out-of-bounds"));
     }
 }
+
+#[test]
+fn named_re_export_chains_load_their_sources() -> Result<(), String> {
+    // One native run checks loading; the failure control only checks types.
+    let start = std::time::Instant::now();
+    let directory = TestDir::new()?;
+    directory.write("lib.ts", b"export function value(): i32 { return 7; }")?;
+    directory.write("bridge.ts", b"export { value as other } from \"./lib\";")?;
+    directory.write("surface.ts", b"export { other } from \"./bridge\";")?;
+    directory.write(
+        "main.ts",
+        b"import { other } from \"./surface\"; export function main(): void { print(`${other()}`); }",
+    )?;
+    let run = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("run")
+            .arg("main.ts"),
+    )?;
+    assert_code(&run, 0);
+    assert_eq!(run.stdout, b"7\n");
+    directory.write("lib.ts", b"export function different(): i32 { return 7; }")?;
+    let checked = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("check")
+            .arg("main.ts"),
+    )?;
+    assert_code(&checked, 1);
+    assert!(String::from_utf8_lossy(&checked.stderr).contains("`value` is not exported by `./lib`"));
+    eprintln!("named re-export CLI chain: {:?}", start.elapsed());
+    Ok(())
+}
+
+#[test]
+fn cli_and_corpus_keep_import_initialization_order() -> Result<(), String> {
+    let start = std::time::Instant::now();
+    let directory = TestDir::new()?;
+    directory.directory("program")?;
+    directory.write(
+        "program/a.ts",
+        b"function init(): i32 { print(\"init a\"); return 1; } export const a: i32 = init();",
+    )?;
+    directory.write(
+        "program/b.ts",
+        b"function init(): i32 { print(\"init b\"); return 2; } export const b: i32 = init();",
+    )?;
+    for (imports, names, expected) in [
+        (
+            "import { b } from './b'; import { a } from './a';",
+            ["main.ts", "b.ts", "a.ts"],
+            "init b\ninit a\n1 2\n",
+        ),
+        (
+            "import { a } from './a'; import { b } from './b';",
+            ["main.ts", "a.ts", "b.ts"],
+            "init a\ninit b\n1 2\n",
+        ),
+    ] {
+        directory.write(
+            "program/main.ts",
+            format!("{imports} export function main(): void {{ print(`${{a}} ${{b}}`); }}")
+                .as_bytes(),
+        )?;
+        let sources = corpus::entry_sources(&directory.0, "program");
+        assert_eq!(
+            sources.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+            names
+        );
+        let module = subscript_compiler::check_program(&sources).map_err(|e| format!("{e:?}"))?;
+        let lir = subscript_codegen::lir::lower_module(&module).map_err(|e| e.to_string())?;
+        assert_eq!(
+            subscript_codegen::interpreter::interpret(&lir).map_err(|e| e.to_string())?,
+            expected.as_bytes()
+        );
+        let run = output(
+            subscript()
+                .current_dir(&directory.0)
+                .arg("run")
+                .arg("program/main.ts"),
+        )?;
+        assert_code(&run, 0);
+        assert_eq!(run.stdout, expected.as_bytes());
+        assert!(run.stderr.is_empty());
+        let emitted = output(
+            subscript()
+                .current_dir(&directory.0)
+                .arg("emit")
+                .arg("program/main.ts")
+                .arg("-o")
+                .arg("cli"),
+        )?;
+        assert_code(&emitted, 0);
+        subscript_codegen::emit_c_files(&sources, &directory.0.join("shared"), "program", true)
+            .map_err(|e| e.to_string())?;
+        for name in ["program.c", "program.alloc.h", "entry.c"] {
+            assert_eq!(
+                std::fs::read(directory.0.join("cli").join(name)).map_err(|e| e.to_string())?,
+                std::fs::read(directory.0.join("shared").join(name)).map_err(|e| e.to_string())?,
+                "{name}"
+            );
+        }
+    }
+    directory.write("program/main.ts", b"import { b } from './b'; import { y } from './a'; export function main(): void { print(`y=${y} b=${b}`); }")?;
+    directory.write("program/b.ts", b"export const b: i32 = 5;")?;
+    directory.write(
+        "program/a.ts",
+        b"import { b } from './b'; export const y: i32 = b + 1;",
+    )?;
+    let run = output(
+        subscript()
+            .current_dir(&directory.0)
+            .arg("run")
+            .arg("program/main.ts"),
+    )?;
+    assert_code(&run, 0);
+    assert_eq!(run.stdout, b"y=6 b=5\n");
+    eprintln!("CLI initialization order test: {:?}", start.elapsed());
+    Ok(())
+}

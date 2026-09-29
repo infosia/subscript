@@ -1,0 +1,8 @@
+function=1
+class=3
+before=4
+after=5
+enum=6
+alias=ready
+generic-function=7
+generic-class=8

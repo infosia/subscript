@@ -15,6 +15,7 @@ mod capture;
 mod class_shape;
 mod declarations;
 pub(crate) mod exception;
+mod exports;
 mod expr;
 pub(crate) mod fallthrough;
 mod generics;
@@ -986,7 +987,8 @@ pub(crate) struct Checker<'p> {
     pub generic_classes: HashMap<String, GenericClass>,
     pub instance_symbols: HashMap<String, String>,
     pub file_scopes: Vec<HashMap<String, ScopeBinding>>,
-    pub exports: Vec<HashSet<String>>,
+    pub exports: Vec<HashMap<String, ScopeItem>>,
+    export_definitions: Vec<BTreeMap<String, exports::ExportBinding>>,
     pub top_level: Vec<hir::Stmt>,
     pub poison_missing_modules: HashSet<String>,
     pub poisoned_imports: Vec<hir::PoisonedImport>,

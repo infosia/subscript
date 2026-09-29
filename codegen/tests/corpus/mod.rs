@@ -185,13 +185,31 @@ pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
         // The entry file must come first so diagnostics and import
         // resolution treat it as the root.
         names.sort_by_key(|n| !n.contains("main"));
-        names
-            .iter()
-            .map(|n| {
-                let text = fs::read_to_string(dir.join(n)).expect("read source");
-                SourceFile::new(n.clone(), text)
-            })
-            .collect()
+        let entry = names.first().expect("entry source").clone();
+        let source = SourceFile::new(
+            &entry,
+            fs::read_to_string(dir.join(&entry)).expect("read entry"),
+        );
+        let discovered = subscript_compiler::discover_module_sources(
+            (entry, source),
+            |_, specifier| {
+                let name = format!("{}.ts", specifier.trim_start_matches("./"));
+                if !names.contains(&name) {
+                    return Ok(None);
+                }
+                let text = fs::read_to_string(dir.join(&name)).expect("read source");
+                Ok(Some((name.clone(), SourceFile::new(name, text))))
+            },
+            |_, diagnostics| diagnostics,
+        )
+        .expect("discover corpus modules");
+        for name in &names {
+            assert!(
+                discovered.iter().any(|source| &source.name == name),
+                "{id}: unreachable corpus source {name}"
+            );
+        }
+        discovered
     } else {
         let path = accept.join(format!("{id}.ts"));
         let text =

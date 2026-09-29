@@ -79,12 +79,11 @@ fn stem_of(name: &str) -> String {
     base.strip_suffix(".ts").unwrap_or(base).to_string()
 }
 
-/// Parses one source and returns its static import module specifiers in
+/// Parses one source and returns its static module dependency specifiers in
 /// source order.
 ///
-/// Only TypeScript `import` declarations in the parsed module are
-/// returned. Import-like text in comments and string literals is not an
-/// import.
+/// Import declarations and re-exports with a source contribute specifiers.
+/// Text in comments and string literals contributes no dependency.
 ///
 /// The parse runs on the thread that calls it
 /// (`specs/blocks/compiler.md` §114.2 rule 1).
@@ -98,13 +97,58 @@ pub fn parse_import_specifiers(source: &SourceFile) -> Result<Vec<String>, Vec<D
         let mut specifiers = Vec::new();
         for file in program.files {
             for item in file.module.body {
-                if let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) = item {
-                    specifiers.push(import.src.value.to_string());
+                match item {
+                    ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) => {
+                        specifiers.push(import.src.value.to_string());
+                    }
+                    ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportNamed(export)) => {
+                        if let Some(source) = export.src {
+                            specifiers.push(source.value.to_string());
+                        }
+                    }
+                    ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportAll(export)) => {
+                        specifiers.push(export.src.value.to_string());
+                    }
+                    _ => {}
                 }
             }
         }
         Ok(specifiers)
     })
+}
+
+/// Discovers modules breadth-first, with dependencies in source order (§128 rule 8).
+/// The loader supplies stable file identities and returns `None` for absent or unsupported modules.
+///
+/// # Errors
+/// Returns loader errors or parser diagnostics converted by `parse_error`.
+pub fn discover_module_sources<K, E>(
+    entry: (K, SourceFile),
+    mut load: impl FnMut(&K, &str) -> Result<Option<(K, SourceFile)>, E>,
+    mut parse_error: impl FnMut(&[SourceFile], Vec<Diagnostic>) -> E,
+) -> Result<Vec<SourceFile>, E>
+where
+    K: Clone + Eq + std::hash::Hash,
+{
+    let (key, source) = entry;
+    let mut seen = std::collections::HashSet::from([key.clone()]);
+    let mut keys = vec![key];
+    let mut sources = vec![source];
+    let mut index = 0;
+    while index < sources.len() {
+        let specifiers = parse_import_specifiers(&sources[index])
+            .map_err(|diagnostics| parse_error(&sources, diagnostics))?;
+        for specifier in specifiers {
+            if let Some((key, source)) = load(&keys[index], &specifier)? {
+                if seen.insert(key.clone()) {
+                    keys.push(key);
+                    sources.push(source);
+                }
+            }
+        }
+        index += 1;
+    }
+    Ok(sources)
 }
 
 /// Parses every source file. Parse failures become `S100` diagnostics;
@@ -228,6 +272,49 @@ mod tests {
     }
 
     #[test]
+    fn discovery_keeps_breadth_first_source_order_and_visits_cycles_once() {
+        let files = [
+            src(
+                "main.ts",
+                "import './b'; export { a } from './a'; import './b';",
+            ),
+            src("a.ts", "export const a: i32 = 1;"),
+            src(
+                "b.ts",
+                "export { deep } from './deep'; import './main'; import './absent';",
+            ),
+            src("deep.ts", "export const deep: i32 = 2;"),
+        ];
+        let discover = |entry: SourceFile| {
+            discover_module_sources(
+                (entry.name.clone(), entry),
+                |_, specifier| {
+                    let name = format!("{}.ts", specifier.trim_start_matches("./"));
+                    Ok(files
+                        .iter()
+                        .find(|file| file.name == name)
+                        .map(|file| (name, file.clone())))
+                },
+                |_, diagnostics| diagnostics,
+            )
+        };
+        let ordered = discover(files[0].clone()).expect("discovery");
+        assert_eq!(
+            ordered.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+            ["main.ts", "b.ts", "a.ts", "deep.ts"]
+        );
+        let control = discover(src("main.ts", "import './a'; import './b';")).expect("control");
+        assert_eq!(
+            control.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+            ["main.ts", "a.ts", "b.ts", "deep.ts"]
+        );
+        assert_eq!(
+            discover(src("bad.ts", "import {")).expect_err("invalid source")[0].code,
+            RuleCode::S100
+        );
+    }
+
+    #[test]
     fn parses_a_decorated_class() {
         let program = parse_program(&[src(
             "t.ts",
@@ -262,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn public_import_parser_returns_only_ast_import_declarations() {
+    fn public_import_parser_returns_only_ast_module_dependencies() {
         let imports = parse_import_specifiers(&src(
             "main.ts",
             concat!(
@@ -270,11 +357,24 @@ mod tests {
                 "const text: string = 'import from \"./string\"';\n",
                 "import { first } from \"./first\";\n",
                 "import \"./side-effect\";\n",
+                "export { value as alias } from \"./named\";\n",
+                "export * from \"./star\";\n",
+                "export * as ns from \"./namespace\";\n",
+                "export { text };\n",
                 "export function main(): void { print(text); }\n",
             ),
         ))
         .expect("valid source parses");
-        assert_eq!(imports, ["./first", "./side-effect"]);
+        assert_eq!(
+            imports,
+            [
+                "./first",
+                "./side-effect",
+                "./named",
+                "./star",
+                "./namespace"
+            ]
+        );
     }
 
     #[test]

@@ -359,6 +359,13 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r267-duplicate-host-entry/lib.ts", RuleCode::S017, 8),
     ("r268-renamed-import-missing/main.ts", RuleCode::S016, 8),
     ("r269-import-assignment/main.ts", RuleCode::S100, 10),
+    ("r270-re-export-missing/main.ts", RuleCode::S016, 8),
+    ("r271-re-export-alias-cycle/main.ts", RuleCode::S016, 8),
+    ("r272-re-export-duplicate/main.ts", RuleCode::S017, 8),
+    ("r273-export-star/main.ts", RuleCode::S100, 8),
+    ("r274-type-only-export/main.ts", RuleCode::S100, 8),
+    ("r275-default-export-name/main.ts", RuleCode::S100, 8),
+    ("r276-rejected-declaration-export/lib.ts", RuleCode::S100, 8),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

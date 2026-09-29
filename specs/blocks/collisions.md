@@ -523,6 +523,23 @@ Accept: `a274`, `a137`. Reject: `r252`, `r253`, `r254`, `r255`,
 `r256`, `r257`, `r258`, `r259`, `r260`, `r261`, `r262`, `r263`,
 `r265`, `r266`.
 
+### C18. The module surface is named exports and named imports
+
+A module exports a name only by an `export` declaration or a named
+export list (`export { a as b }`, `export { a as b } from "./m"`,
+`compiler.md` §128). `tsc` also accepts `export * from`,
+`export * as ns from`, `export default`, the export name `default` in
+a named list (`export { a as default }`, `export { default } from`),
+and type-only export forms (`export type { T }`, `export { type T }`,
+with or without `from`); this compiler rejects them with S100. A named list keeps each module's public surface
+explicit: a reader, the checker, and the host entry rules (§129) see
+every exported name at one place, and no wildcard resolution rule
+exists. Measured with `tsc` 5.9.2: `export * from "./m"` alone is
+accepted; two `export *` of distinct declarations named `x` give
+TS2308.
+
+Accept: `a288`, `a289`, `a290`. Reject: `r273`, `r274`, `r275`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different

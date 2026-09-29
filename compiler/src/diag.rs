@@ -187,6 +187,8 @@ pub struct Diagnostic {
     pub pos: Pos,
     /// The TypeScript divergence that this rejection reports.
     pub divergence: Option<Divergence>,
+    /// True when import or export resolution owns this failure.
+    pub resolution: bool,
 }
 
 impl Diagnostic {
@@ -198,6 +200,7 @@ impl Diagnostic {
             message: message.into(),
             pos,
             divergence: None,
+            resolution: false,
         }
     }
 }
@@ -244,6 +247,7 @@ mod tests {
     #[test]
     fn diagnostic_display_contains_code_and_pos() {
         let d = Diagnostic::new(RuleCode::S007, "bare number", Pos::new("a.ts", 1, 1));
+        assert!(!d.resolution);
         let s = d.to_string();
         assert!(s.contains("S007"));
         assert!(s.contains("a.ts:1:1"));

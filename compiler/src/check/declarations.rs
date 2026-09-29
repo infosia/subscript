@@ -48,12 +48,30 @@ impl<'p> Checker<'p> {
 
     pub(super) fn collect_file(&mut self, file: usize) {
         self.file_scopes.push(HashMap::new());
-        self.exports.push(HashSet::new());
+        self.exports.push(HashMap::new());
+        self.export_definitions.push(BTreeMap::new());
         let module = &self.prog.files[file].module;
         for item in &module.body {
             let (decl, exported) = match item {
                 ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(e)) => (&e.decl, true),
                 ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(_)) => continue,
+                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportNamed(export)) => {
+                    self.collect_named_exports(file, export);
+                    continue;
+                }
+                ast::ModuleItem::ModuleDecl(
+                    other @ (ast::ModuleDecl::ExportAll(_)
+                    | ast::ModuleDecl::ExportDefaultDecl(_)
+                    | ast::ModuleDecl::ExportDefaultExpr(_)),
+                ) => {
+                    self.error_diverging(
+                        RuleCode::S100,
+                        "the module surface requires named exports",
+                        self.pos(other.span()),
+                        Divergence::NamedModuleSurface,
+                    );
+                    continue;
+                }
                 ast::ModuleItem::ModuleDecl(other) => {
                     let pos = self.pos(other.span());
                     self.error(
@@ -66,21 +84,36 @@ impl<'p> Checker<'p> {
                 ast::ModuleItem::Stmt(ast::Stmt::Decl(d)) => (d, false),
                 ast::ModuleItem::Stmt(_) => continue,
             };
-            self.collect_decl(file, decl, exported);
+            self.collect_decl(file, decl);
+            if !self.prog.files[file].dts {
+                for name in super::exports::declaration_names(decl) {
+                    if !self.file_scopes[file].contains_key(name.sym.as_ref()) {
+                        self.register_scope_item(
+                            file,
+                            name.sym.as_ref(),
+                            ScopeItem::Poisoned,
+                            self.pos(name.span),
+                        );
+                    }
+                }
+            }
+            if exported {
+                self.collect_export_declaration(file, decl);
+            }
         }
     }
 
-    fn collect_decl(&mut self, file: usize, decl: &ast::Decl, exported: bool) {
+    fn collect_decl(&mut self, file: usize, decl: &ast::Decl) {
         if self.prog.files[file].dts {
             self.collect_mirror_decl(file, decl);
             return;
         }
         match decl {
-            ast::Decl::Class(c) => self.collect_class(file, c, exported),
-            ast::Decl::Fn(f) => self.collect_fn(file, f, exported),
-            ast::Decl::Var(v) => self.collect_globals(file, v, exported),
-            ast::Decl::TsEnum(e) => self.collect_enum(file, e, exported),
-            ast::Decl::TsTypeAlias(alias) => self.collect_string_alias(file, alias, exported),
+            ast::Decl::Class(c) => self.collect_class(file, c),
+            ast::Decl::Fn(f) => self.collect_fn(file, f),
+            ast::Decl::Var(v) => self.collect_globals(file, v),
+            ast::Decl::TsEnum(e) => self.collect_enum(file, e),
+            ast::Decl::TsTypeAlias(alias) => self.collect_string_alias(file, alias),
             ast::Decl::Using(using) => {
                 self.error(
                     RuleCode::S100,
@@ -204,7 +237,7 @@ impl<'p> Checker<'p> {
         (is_value, is_descriptor, alignment_override)
     }
 
-    fn collect_class(&mut self, file: usize, c: &ast::ClassDecl, exported: bool) {
+    fn collect_class(&mut self, file: usize, c: &ast::ClassDecl) {
         let name = c.ident.sym.to_string();
         let symbol = self.declaration_symbol(file, &name);
         let pos = self.pos(c.ident.span);
@@ -283,9 +316,6 @@ impl<'p> Checker<'p> {
             );
             self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
         }
-        if exported {
-            self.exports[file].insert(name);
-        }
     }
 
     pub(crate) fn new_class(
@@ -319,7 +349,7 @@ impl<'p> Checker<'p> {
         id
     }
 
-    fn collect_fn(&mut self, file: usize, f: &ast::FnDecl, exported: bool) {
+    fn collect_fn(&mut self, file: usize, f: &ast::FnDecl) {
         let name = f.ident.sym.to_string();
         let symbol = self.declaration_symbol(file, &name);
         let pos = self.pos(f.ident.span);
@@ -353,9 +383,6 @@ impl<'p> Checker<'p> {
             );
             self.register_scope_item(file, &name, ScopeItem::Func(symbol.clone()), pos);
         }
-        if exported {
-            self.exports[file].insert(name.clone());
-        }
     }
 
     pub(super) fn collect_type_parameter_names(
@@ -383,7 +410,7 @@ impl<'p> Checker<'p> {
         (names, duplicate)
     }
 
-    fn collect_globals(&mut self, file: usize, v: &ast::VarDecl, exported: bool) {
+    fn collect_globals(&mut self, file: usize, v: &ast::VarDecl) {
         for d in &v.decls {
             let ast::Pat::Ident(binding) = &d.name else {
                 self.reject_outer_pattern(file, &d.name);
@@ -397,9 +424,6 @@ impl<'p> Checker<'p> {
                 ScopeItem::Global(self.declaration_symbol(file, &name)),
                 pos,
             );
-            if exported {
-                self.exports[file].insert(name);
-            }
         }
     }
 
@@ -420,7 +444,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn collect_enum(&mut self, file: usize, e: &ast::TsEnumDecl, exported: bool) {
+    fn collect_enum(&mut self, file: usize, e: &ast::TsEnumDecl) {
         let name = e.id.sym.to_string();
         let pos = self.pos(e.id.span);
         let mut members = Vec::new();
@@ -483,12 +507,9 @@ impl<'p> Checker<'p> {
             pos: pos.clone(),
         });
         self.register_scope_item(file, &name, ScopeItem::Enum(id), pos);
-        if exported {
-            self.exports[file].insert(name);
-        }
     }
 
-    fn collect_string_alias(&mut self, file: usize, alias: &ast::TsTypeAliasDecl, exported: bool) {
+    fn collect_string_alias(&mut self, file: usize, alias: &ast::TsTypeAliasDecl) {
         let name = alias.id.sym.to_string();
         let pos = self.pos(alias.id.span);
         if alias.type_params.is_some() {
@@ -500,7 +521,7 @@ impl<'p> Checker<'p> {
             return;
         }
         if let Some(mapping) = wire_alias_literal(&alias.type_ann) {
-            self.collect_wire_string_alias(file, alias, mapping, exported);
+            self.collect_wire_string_alias(file, alias, mapping);
             return;
         }
         let Some(members) = string_alias_members(&alias.type_ann) else {
@@ -539,9 +560,6 @@ impl<'p> Checker<'p> {
             pos: pos.clone(),
         });
         self.register_scope_item(file, &name, ScopeItem::StringAlias(id), pos);
-        if exported {
-            self.exports[file].insert(name);
-        }
     }
 
     /// Collects and validates one `CEnum<{ key: wire }>` alias (§50.1).
@@ -550,7 +568,6 @@ impl<'p> Checker<'p> {
         file: usize,
         alias: &ast::TsTypeAliasDecl,
         mapping: &ast::TsTypeLit,
-        exported: bool,
     ) {
         let name = alias.id.sym.to_string();
         let pos = self.pos(alias.id.span);
@@ -674,9 +691,6 @@ impl<'p> Checker<'p> {
             pos: pos.clone(),
         });
         self.register_scope_item(file, &name, ScopeItem::StringAlias(id), pos);
-        if exported {
-            self.exports[file].insert(name);
-        }
     }
 
     fn const_int_of(&self, e: &ast::Expr) -> Option<i32> {
@@ -713,7 +727,7 @@ impl<'p> Checker<'p> {
                 if string_alias_members(&t.type_ann).is_some()
                     || wire_alias_literal(&t.type_ann).is_some()
                 {
-                    self.collect_string_alias(file, t, false);
+                    self.collect_string_alias(file, t);
                 } else {
                     // Reserve the name; the aliased type is resolved in pass B.
                     self.type_aliases
@@ -727,7 +741,7 @@ impl<'p> Checker<'p> {
                 self.register_scope_item(file, &name, ScopeItem::Foreign(name.clone()), pos);
             }
             ast::Decl::Var(v) => self.collect_ambient_consts(file, v),
-            ast::Decl::TsEnum(e) => self.collect_enum(file, e, false),
+            ast::Decl::TsEnum(e) => self.collect_enum(file, e),
             other => {
                 let pos = self.pos(other.span());
                 self.error(

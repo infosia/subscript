@@ -4,6 +4,6 @@
 // questions: compiler.md §126
 // tsc: rejects TS2305
 // expected-error: S016 at line 8, the imported name missing
-
+// tsc-error-count: 1
 import { missing as present } from "./lib";
 export function main(): void { print(`${present()}`); }

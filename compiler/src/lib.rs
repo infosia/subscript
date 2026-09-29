@@ -32,7 +32,7 @@ mod warn;
 pub use check::fallthrough::sequence_can_fall_through;
 pub use diag::{Diagnostic, Pos, RuleCode};
 pub use diag_render::{render_diagnostics, render_warnings};
-pub use parse::parse_import_specifiers;
+pub use parse::{discover_module_sources, parse_import_specifiers};
 pub use types::{CallbackLifetime, ClassId, EnumId, FuncType, StringAliasId, Type};
 pub use warn::{check_warnings, WarnCode, Warning};
 

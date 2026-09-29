@@ -184,6 +184,7 @@ fn run_with_effects(
         instance_symbols: HashMap::new(),
         file_scopes: Vec::new(),
         exports: Vec::new(),
+        export_definitions: Vec::new(),
         top_level: Vec::new(),
         poison_missing_modules: options
             .poison_missing_modules
@@ -237,6 +238,7 @@ fn run_with_effects(
         ck.cur_file = i;
         ck.collect_file(i);
     }
+    ck.resolve_exports();
     ck.resolve_imports();
     // Pass B: signatures. Mirror files first, in a boundary context (so
     // the boundary null forms resolve), then program files.
