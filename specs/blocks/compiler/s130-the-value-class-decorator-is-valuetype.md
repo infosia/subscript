@@ -23,9 +23,12 @@ rare.
 1. The value class decorator is `@ValueType`, with the same options
    (`@ValueType({ align: N })`, §62) and the same meaning (C2). The
    ambient prelude declares `ValueType`.
-2. `@CStruct` is S100 at the decorator, with a message that names
-   `@ValueType`. The prelude no longer declares `CStruct`, so `tsc`
-   rejects it too (TS2304).
+2. `@CStruct` has no rule of its own. The prelude no longer declares
+   `CStruct`, so `tsc` rejects it (TS2304), and the checker rejects it
+   as any unknown decorator (S100, "the only decided decorators are
+   ..."). *(Corrected 2026-09-29, owner decision: the first text kept a
+   dedicated message that named `@ValueType`; the owner removed it, and
+   its reject entry r280 retires.)*
 3. Every corpus entry, example, test source, generated doc, and
    diagnostic message spells the decorator `@ValueType`. The contract
    text of the active sections and of `collisions.md`, `corpus.md`,
@@ -44,9 +47,7 @@ rare.
    `ValueType:`; the round records the old and new line. The LIR text
    snapshot does not move. *(Corrected 2026-09-29: the coding agent
    found the label; the first text allowed no golden move.)*
-2. A reject entry pins rule 2: `@CStruct class V { x: i32 = 0; }` is
-   S100 with the message naming `@ValueType`; the header states the
-   measured `tsc` result.
-3. A test pins that `grep` finds `CStruct` in no source, corpus,
-   example, prelude, or generated doc file, other than the rule 2
-   diagnostic and its reject entry.
+2. `r280-cstruct-renamed` retires (rule 2); its id stays unused.
+3. A test pins that `grep` finds `CStruct` (any case) in no tracked
+   file other than `compiler-history.md`, `specs/tracking/`, and this
+   section.
