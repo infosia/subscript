@@ -4,17 +4,10 @@ use super::*;
 
 impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
     pub(super) fn global_address(&mut self, id: l::GlobalId) -> Result<(Value, Type), String> {
-        let definition = self
-            .ml
-            .lir
-            .globals
-            .get(id.0 as usize)
-            .filter(|global| global.id == id)
-            .ok_or_else(|| internal(format!("global {} is missing", id.0)))?;
         let (slot, ty) = self
             .ml
             .globals
-            .get(&definition.source_name)
+            .get(&id)
             .cloned()
             .ok_or_else(|| internal(format!("global {} has no target slot", id.0)))?;
         let address = match slot {

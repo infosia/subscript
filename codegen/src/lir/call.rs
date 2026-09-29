@@ -352,7 +352,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .hir
                     .functions
                     .iter()
-                    .find(|function| function.name == *name)
+                    .find(|function| function.symbol == *name)
                     .ok_or_else(|| self.error(&expr.pos, format!("missing body for `{name}`")))?;
                 Ok((data_params(&function.params), data_result(&function.ret)))
             }
@@ -385,7 +385,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     let method = class
                         .methods
                         .iter()
-                        .find(|method| method.name == *name)
+                        .find(|method| method.symbol == *name)
                         .ok_or_else(|| self.error(&expr.pos, "method body is missing"))?;
                     let receiver = if class.is_value {
                         l::ValueType::Address(l::AddressType {
@@ -433,7 +433,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .hir
                     .functions
                     .iter()
-                    .find(|function| function.name == *name)
+                    .find(|function| function.symbol == *name)
                     .cloned()
                     .ok_or_else(|| self.error(&expr.pos, format!("missing body for `{name}`")))?;
                 Ok((
@@ -605,7 +605,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             let method = class
                 .methods
                 .iter()
-                .find(|method| method.name == name)
+                .find(|method| method.symbol == name)
                 .cloned()
                 .ok_or_else(|| self.error(&expr.pos, "method body is missing"))?;
             let (receiver, prepared) = if class.is_value {

@@ -15,8 +15,8 @@ fn diagnostics(source: &str) -> Vec<Diagnostic> {
     check_program(&[SourceFile::new("test.ts", source)]).expect_err("the program must fail")
 }
 
-/// Every method name that a `Callee::Method` call in this body names.
-fn called_method_names(body: &[hir::Stmt]) -> Vec<String> {
+/// Every method symbol referenced by a `Callee::Method` call in this body.
+fn called_method_symbols(body: &[hir::Stmt]) -> Vec<String> {
     let mut names = Vec::new();
     for statement in body {
         walk_stmt(statement, &mut names);
@@ -77,9 +77,22 @@ fn the_call_names_the_instance_not_the_template() {
         .iter()
         .find(|function| function.name == "main")
         .expect("main must exist");
+    let symbol = |ty| {
+        module.classes[1]
+            .methods
+            .iter()
+            .find(|method| method.ret == ty)
+            .expect("instance return type")
+            .symbol
+            .clone()
+    };
     assert_eq!(
-        called_method_names(&main.body),
-        ["identity<i32>", "identity<i32>", "identity<string>"]
+        called_method_symbols(&main.body),
+        [
+            symbol(subscript_compiler::Type::I32),
+            symbol(subscript_compiler::Type::I32),
+            symbol(subscript_compiler::Type::Str),
+        ]
     );
 }
 

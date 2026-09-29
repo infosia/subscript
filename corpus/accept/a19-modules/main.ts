@@ -2,6 +2,7 @@
 // purpose: Imports and calls a function from a sibling module.
 // exercises: module-import, module-export, entry-point
 // questions: Q1, Q12
+// tsc: accepts; js-comparable: yes
 
 import { triangular } from "./math";
 

@@ -3,10 +3,17 @@ use super::*;
 impl<'p> Checker<'p> {
     // ----- generic monomorphization (in HIR: templates never survive) -----
 
-    /// Mangled instance name, e.g. `identity<i32>`.
-    pub(crate) fn mono_name(&self, base: &str, args: &[Type]) -> String {
-        let rendered: Vec<String> = args.iter().map(|t| self.type_name(t)).collect();
-        format!("{}<{}>", base, rendered.join(", "))
+    /// Assigns an instance symbol from its template identity and nominal argument types.
+    pub(crate) fn mono_name(&mut self, base: &str, args: &[Type]) -> String {
+        let key = format!("{base:?}:{args:?}");
+        if let Some(symbol) = self.instance_symbols.get(&key) {
+            return symbol.clone();
+        }
+        let rendered: Vec<String> = args.iter().map(|ty| self.type_name(ty)).collect();
+        let name = format!("{}<{}>", source_name(base), rendered.join(", "));
+        let symbol = identity::instance_symbol(&key, &name);
+        self.instance_symbols.insert(key, symbol.clone());
+        symbol
     }
 
     /// Instantiates a generic function at explicit type arguments and
@@ -21,7 +28,7 @@ impl<'p> Checker<'p> {
                 RuleCode::S100,
                 format!(
                     "`{}` expects {} type argument(s), got {}",
-                    key,
+                    source_name(key),
                     template.type_params.len(),
                     args.len()
                 ),
@@ -90,7 +97,8 @@ impl<'p> Checker<'p> {
             );
             return None;
         }
-        let instance = self.mono_name(name, args);
+        let base = format!("[[identity:method:{}]]{name}", id.0);
+        let instance = self.mono_name(&base, args);
         let known = if is_static {
             self.class_sigs[id.0].static_methods.contains_key(&instance)
         } else {
@@ -109,7 +117,7 @@ impl<'p> Checker<'p> {
         // The signature lands before the body check, so a recursive call
         // inside the body resolves against this instance.
         let function_name = if is_static {
-            let symbol = static_member_symbol(&self.classes[id.0].name, &instance);
+            let symbol = static_member_symbol(id, &self.classes[id.0].name, &instance);
             self.class_sigs[id.0]
                 .static_methods
                 .insert(instance.clone(), sig.clone());
@@ -157,7 +165,7 @@ impl<'p> Checker<'p> {
                 RuleCode::S100,
                 format!(
                     "`{}` expects {} type argument(s), got {}",
-                    key,
+                    source_name(key),
                     template.type_params.len(),
                     args.len()
                 ),

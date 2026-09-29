@@ -134,7 +134,7 @@ impl Checker<'_> {
                 self.functions
                     .iter()
                     .filter(|function| function.synthesized_helper)
-                    .map(|function| function.name.clone())
+                    .map(|function| function.symbol.clone())
                     .collect()
             },
             |analysis| analysis.helpers.clone(),

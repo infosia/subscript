@@ -359,7 +359,7 @@ fn unused_error_class_precedes_every_user_class() {
         let module = check(source).expect("module without Error-family use");
         let error_id = 0;
         let error = &module.classes[error_id];
-        assert_eq!(error.name, if source.starts_with("class Error ") { "[[Error]]" } else { "Error" });
+        assert_eq!(error.name, "Error");
         if source.starts_with("class Error ") {
             assert_eq!(module.classes[1].name, "Error");
         }

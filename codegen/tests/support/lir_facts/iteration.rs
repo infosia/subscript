@@ -255,7 +255,11 @@ pub(super) fn compare_static_array_callbacks(
                         lir.functions.get(id.0 as usize).is_some_and(|function| {
                             function.id == *id
                                 && function.kind == l::FunctionKind::Free
-                                && function.source_name == *name
+                                && hir.functions.iter().any(|declaration| {
+                                    declaration.symbol == *name
+                                        && declaration.name == function.source_name
+                                        && declaration.pos == function.pos
+                                })
                         })
                     }
                     (hir::ExprKind::Lambda { .. }, l::CallTargetKind::StaticClosure(id)) => {

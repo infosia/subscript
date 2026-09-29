@@ -93,6 +93,8 @@ pub enum Divergence {
     IteratorTemporary,
     /// A name that the two languages resolve to different declarations.
     DeclarationScope,
+    /// Two exported host entries that require the same C symbol.
+    HostEntryCollision,
     /// A module or static initializer that reads a later binding.
     ModuleInitializerOrder,
     /// A static member on a generic class, and `this` in a static method.
@@ -241,6 +243,7 @@ impl Divergence {
         Divergence::NamedAccessor,
         Divergence::IteratorTemporary,
         Divergence::DeclarationScope,
+        Divergence::HostEntryCollision,
         Divergence::ModuleInitializerOrder,
         Divergence::StaticMemberSurface,
         Divergence::MathSubset,
@@ -586,6 +589,12 @@ impl Divergence {
                 why: "A held view needs a view type the language does not have \
                       (stdlib.md §14.3).",
                 collision: "C13",
+            },
+            Divergence::HostEntryCollision => DivergenceEntry {
+                ts: "// main.ts\nexport function update(): void {}\n// lib.ts\nexport function update(): void {}",
+                subscript: "// main.ts\nexport function update(): void {}\n// lib.ts\nexport function libUpdate(): void {}",
+                why: "The host sees `subscript_export_<name>` with no module qualifier; C has one symbol namespace.",
+                collision: "C14",
             },
             Divergence::DeclarationScope => DivergenceEntry {
                 ts: "const outer: i32 = 3;\n\

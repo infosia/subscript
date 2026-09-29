@@ -277,15 +277,11 @@ fn every_executable_source_has_total_operation_signatures() {
         let mut module = checked_module(&name, corpus_sources(&name, &accept.join(&name)));
         append_missing(&format!("corpus/accept/{name}"), &mut module, &mut errors);
     }
-    let modules = accept.join("a19-modules");
-    let mut module = checked_module(
-        "corpus/accept/a19-modules",
-        vec![
-            read_source(&modules.join("main.ts"), "main.ts"),
-            read_source(&modules.join("math.ts"), "math.ts"),
-        ],
-    );
-    append_missing("corpus/accept/a19-modules", &mut module, &mut errors);
+    for directory in corpus::directories(&accept) {
+        let label = directory.display().to_string();
+        let mut module = checked_module(&label, corpus::directory_sources(&directory));
+        append_missing(&label, &mut module, &mut errors);
+    }
 
     let warn = root.join("corpus/warn");
     let mut warn_entries = fs::read_dir(&warn)

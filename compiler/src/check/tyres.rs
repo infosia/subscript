@@ -188,8 +188,8 @@ impl<'p> Checker<'p> {
         }
         // Mirror `type` aliases (function-pointer typedefs, flag-set
         // `u64` aliases) resolve to their aliased language type (§12.2).
-        if let Some(alias) = self.type_aliases.get(name) {
-            return alias.clone();
+        if let Some(ScopeItem::TypeAlias(alias)) = self.scope_item(name) {
+            return alias;
         }
         match name {
             "Worker" | "Inbox" | "Outbox" if self.scope_item(name).is_none() => {

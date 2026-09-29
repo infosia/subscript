@@ -8,13 +8,33 @@ impl<'p> Checker<'p> {
             &|id| {
                 self.classes
                     .get(id.0)
-                    .map(|c| c.name.clone())
+                    .map(|c| {
+                        hir::declaration_label(
+                            &c.name,
+                            &c.pos,
+                            self.classes
+                                .iter()
+                                .filter(|other| other.name == c.name)
+                                .count()
+                                > 1,
+                        )
+                    })
                     .unwrap_or_else(|| format!("<class #{}>", id.0))
             },
             &|id| {
                 self.enums
                     .get(id.0)
-                    .map(|e| e.name.clone())
+                    .map(|e| {
+                        hir::declaration_label(
+                            &e.name,
+                            &e.pos,
+                            self.enums
+                                .iter()
+                                .filter(|other| other.name == e.name)
+                                .count()
+                                > 1,
+                        )
+                    })
                     .unwrap_or_else(|| format!("<enum #{}>", id.0))
             },
             &|id| {

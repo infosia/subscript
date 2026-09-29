@@ -144,16 +144,14 @@ fn accept_corpus_and_examples_have_zero_warnings() {
         );
     }
 
-    let modules = accept.join("a19-modules");
-    let module_files = vec![
-        read_source(&modules.join("main.ts"), "main.ts"),
-        read_source(&modules.join("math.ts"), "math.ts"),
-    ];
-    let warnings = checked_warnings(module_files, "corpus/accept/a19-modules");
-    assert!(
-        warnings.is_empty(),
-        "corpus/accept/a19-modules produced warnings: {warnings:?}"
-    );
+    for directory in corpus::directories(&accept) {
+        let label = directory.display().to_string();
+        let warnings = checked_warnings(corpus::directory_sources(&directory), &label);
+        assert!(
+            warnings.is_empty(),
+            "{label} produced warnings: {warnings:?}"
+        );
+    }
 
     let examples = repository_root().join("examples");
     let engine_mirror_path = examples.join("engine/engine.generated.d.ts");

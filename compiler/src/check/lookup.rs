@@ -11,6 +11,12 @@ impl<'p> Checker<'p> {
             .and_then(|scope| scope.get(name))
             .or_else(|| self.ambient_scope.get(name))
             .cloned()
+            .or_else(|| {
+                self.type_aliases
+                    .get(name)
+                    .cloned()
+                    .map(ScopeItem::TypeAlias)
+            })
     }
 
     /// Looks a name up in the local scope stack. A hit that crosses a

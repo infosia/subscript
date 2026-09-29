@@ -3,7 +3,7 @@
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::check::{static_member_symbol, Checker, FnCtx, ParamSig, ScopeItem};
+use crate::check::{source_name, static_member_symbol, Checker, FnCtx, ParamSig, ScopeItem};
 use crate::diag::{Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::hir::{
@@ -117,6 +117,14 @@ impl<'p> Checker<'p> {
                 );
                 self.err_expr(pos)
             }
+            Some(ScopeItem::TypeAlias(_)) => {
+                self.error(
+                    RuleCode::S100,
+                    format!("type alias `{name}` used as a value"),
+                    ident_pos.clone(),
+                );
+                self.err_expr(pos)
+            }
             Some(ScopeItem::StringAlias(_)) => {
                 self.error(
                     RuleCode::S100,
@@ -206,7 +214,7 @@ impl<'p> Checker<'p> {
                 format!(
                     "generator `{}` is called before its yield type is known; \
                      declare it earlier in the program",
-                    fn_name
+                    source_name(fn_name)
                 ),
                 pos.clone(),
             );
@@ -569,7 +577,7 @@ impl<'p> Checker<'p> {
             else {
                 return Some(self.err_expr(pos));
             };
-            let symbol = static_member_symbol(&self.classes[class.0].name, &instance);
+            let symbol = static_member_symbol(class, &self.classes[class.0].name, &instance);
             return Some(self.check_direct_call(&symbol, call, fx, pos));
         }
         if !self.class_sigs[class.0].static_methods.contains_key(name) {
@@ -582,7 +590,7 @@ impl<'p> Checker<'p> {
                 member_pos,
             );
         }
-        let symbol = static_member_symbol(&self.classes[class.0].name, name);
+        let symbol = static_member_symbol(class, &self.classes[class.0].name, name);
         Some(self.check_direct_call(&symbol, call, fx, pos))
     }
 
@@ -1079,7 +1087,7 @@ impl<'p> Checker<'p> {
                 RuleCode::S100,
                 format!(
                     "`{}` expects {} argument(s) ({} required), got {}",
-                    what,
+                    source_name(what),
                     params.len(),
                     required,
                     args.len()

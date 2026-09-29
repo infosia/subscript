@@ -233,7 +233,7 @@ impl<'p> Checker<'p> {
             );
             return hir::Expr {
                 kind: ExprKind::Call {
-                    callee: Callee::Func(static_member_symbol(&class_name, &write_name)),
+                    callee: Callee::Func(static_member_symbol(id, &class_name, &write_name)),
                     args: vec![value],
                 },
                 ty: Type::Void,
@@ -557,11 +557,11 @@ impl<'p> Checker<'p> {
         };
         let class_name = self.classes[class.0].name.clone();
         if let Some(signature) = self.class_sigs[class.0].static_fields.get(prop).cloned() {
-            let symbol = static_member_symbol(&class_name, prop);
+            let symbol = static_member_symbol(class, &class_name, prop);
             if !signature.mutable {
                 self.error(
                     RuleCode::S100,
-                    format!("cannot rebind `const` binding `{symbol}`"),
+                    format!("cannot rebind `const` binding `{class_name}.{prop}`"),
                     prop_pos.clone(),
                 );
             }

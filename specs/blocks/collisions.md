@@ -440,7 +440,14 @@ a different value.
 would accept the programs §66 and §67 measured, and those are the
 programs whose two tiers printed different numbers with no diagnostic.
 
-Accept: `a147`, `a148`. Reject: `r148`–`r156`.
+Each module has its own top-level names (`compiler.md` §125), as
+TypeScript gives an ES module: two modules can declare one name, and
+each keeps its own declaration and value. One name stays program-wide:
+a host entry, because the host sees `subscript_export_<name>` with no
+module qualifier and C has one symbol namespace. A second host entry of
+one name in another module is S017; `tsc` accepts that program.
+
+Accept: `a147`, `a148`, `a278`–`a286`. Reject: `r148`–`r156`, `r267`.
 
 ### C15. String literal length — a ship-tier limit
 

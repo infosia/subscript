@@ -139,6 +139,7 @@ impl Checker<'_> {
         };
         self.classes[id.0].ctor = Some(hir::Function {
             synthesized_helper: false,
+            symbol: "constructor".to_string(),
             name: "constructor".to_string(),
             can_raise: false,
             exported: false,

@@ -100,6 +100,7 @@ impl<'p> Checker<'p> {
                         pos: pos.clone(),
                     };
                     self.globals.push(hir::Global {
+                        symbol: name.clone(),
                         name: name.clone(),
                         ty: Type::RegExp,
                         mutable: false,
@@ -362,6 +363,14 @@ impl<'p> Checker<'p> {
                 self.error(
                     RuleCode::S100,
                     format!("enum `{}` used as a value; use a member", name),
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+            Some(ScopeItem::TypeAlias(_)) => {
+                self.error(
+                    RuleCode::S100,
+                    format!("type alias `{name}` used as a value"),
                     pos.clone(),
                 );
                 self.err_expr(pos)

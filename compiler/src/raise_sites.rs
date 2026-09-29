@@ -271,7 +271,7 @@ impl Module {
             Callee::Func(name) => self
                 .functions
                 .iter()
-                .find(|function| function.name == *name),
+                .find(|function| function.symbol == *name),
             Callee::Method { recv, name } => self.method(&recv.ty, name),
             _ => None,
         };
@@ -292,7 +292,7 @@ impl Module {
             .get(class.0)?
             .methods
             .iter()
-            .find(|method| method.name == name)
+            .find(|method| method.symbol == name)
     }
 }
 
@@ -303,12 +303,12 @@ pub(crate) fn async_callee_can_raise(module: &Module, callee: &AsyncCallee) -> b
         AsyncCallee::Function(name) => module
             .functions
             .iter()
-            .find(|function| function.name == *name)
+            .find(|function| function.symbol == *name)
             .is_some_and(|function| function.can_raise),
         AsyncCallee::Method { class, name, .. } => module
             .classes
             .get(class.0)
-            .and_then(|class| class.methods.iter().find(|method| method.name == *name))
+            .and_then(|class| class.methods.iter().find(|method| method.symbol == *name))
             .is_some_and(|method| method.can_raise),
     }
 }
@@ -327,7 +327,7 @@ pub(crate) fn call_can_raise(module: &Module, callee: &Callee, _args: &[Expr]) -
         Callee::Func(name) => module
             .functions
             .iter()
-            .find(|function| function.name == *name)
+            .find(|function| function.symbol == *name)
             .is_some_and(|function| function.can_raise && !function.is_async),
         Callee::Method { recv, name } => module
             .method(&recv.ty, name)

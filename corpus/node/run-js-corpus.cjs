@@ -5,7 +5,28 @@ const Module = require("node:module");
 const pathModule = require("node:path");
 const ts = require("typescript");
 
-const shimNames = require("./js-corpus-shim.cjs");
+const shimNames = [...require("./js-corpus-shim.cjs")];
+// Mirror integer constants supply the host values declared by the fixture.
+const mirror = fs.readFileSync(pathModule.join(__dirname, "../interop/interop.generated.d.ts"), "utf8");
+for (const match of mirror.matchAll(/^declare const (\w+) = (-?\d+);$/gm)) {
+  globalThis[match[1]] = Number(match[2]);
+  shimNames.push(match[1]);
+}
+
+const scriptModules = new Set();
+function compileSource(loaded, filename) {
+  const source = fs.readFileSync(filename, "utf8");
+  const javascript = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+    fileName: filename,
+  }).outputText;
+  scriptModules.add(filename);
+  loaded._compile(javascript, filename);
+}
+Module._extensions[".ts"] = compileSource;
 const write = process.stdout.write.bind(process.stdout);
 
 function bytes(value, encoding) {
@@ -28,18 +49,14 @@ async function runEntry(path) {
   };
 
   try {
-    const source = fs.readFileSync(path, "utf8");
-    const javascript = ts.transpileModule(source, {
-      compilerOptions: {
-        module: ts.ModuleKind.CommonJS,
-        target: ts.ScriptTarget.ES2022,
-      },
-      fileName: path,
-    }).outputText;
+    for (const filename of scriptModules) delete require.cache[filename];
+    scriptModules.clear();
+    path = pathModule.resolve(path);
     const loaded = new Module(path, module);
     loaded.filename = path;
     loaded.paths = Module._nodeModulePaths(pathModule.dirname(path));
-    loaded._compile(javascript, path);
+    require.cache[path] = loaded;
+    compileSource(loaded, path);
     const entry = loaded.exports;
     if (typeof entry.main !== "function") {
       throw new Error("the entry does not export main");

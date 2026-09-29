@@ -399,6 +399,7 @@ fn host_entry_trap_sites_name_each_wire_parameter() {
     let parameter_pos = Pos::new("wire-entry.ts", 3, 27);
     let function = Function {
         synthesized_helper: false,
+        symbol: "configure".to_string(),
         name: "configure".to_string(),
         can_raise: false,
         exported: true,

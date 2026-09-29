@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use subscript_compiler::SourceFile;
+#[path = "../../codegen/tests/corpus/mod.rs"]
+#[allow(dead_code)]
+mod corpus;
 
 struct TestDir(PathBuf);
 
@@ -160,28 +162,21 @@ fn run_trap_without_output_keeps_stdout_empty() {
     assert!(String::from_utf8_lossy(&stderr).contains("index-out-of-bounds"));
 }
 
-fn directory_sources(directory: &Path) -> Result<Vec<SourceFile>, String> {
-    let entries = std::fs::read_dir(directory)
-        .map_err(|error| format!("read {}: {error}", directory.display()))?;
-    let mut names = Vec::new();
-    for entry in entries {
-        let entry =
-            entry.map_err(|error| format!("read {} entry: {error}", directory.display()))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.ends_with(".ts") {
-            names.push(name);
-        }
-    }
-    names.sort();
-    names.sort_by_key(|name| !name.contains("main"));
-
-    let mut sources = Vec::with_capacity(names.len());
-    for name in names {
-        let text = std::fs::read_to_string(directory.join(&name))
-            .map_err(|error| format!("read {name}: {error}"))?;
-        sources.push(SourceFile::new(name, text));
-    }
-    Ok(sources)
+fn directory_cases() -> Vec<(String, Vec<std::path::PathBuf>)> {
+    let root = workspace_root();
+    let accept = root.join("corpus/accept");
+    corpus::entry_ids(&accept)
+        .into_iter()
+        .filter(|id| accept.join(id).is_dir())
+        .map(|id| {
+            let mirrors = corpus::entry_sources(&accept, &id)
+                .into_iter()
+                .filter(|source| source.dts)
+                .map(|source| root.join("corpus/interop").join(source.name))
+                .collect();
+            (id, mirrors)
+        })
+        .collect()
 }
 
 fn unresolved_import_output(specifier: &str) -> Vec<u8> {
@@ -306,62 +301,89 @@ fn bind_usage_and_io_failures_exit_two() -> Result<(), String> {
 }
 
 #[test]
-fn a19_check_and_run_match_the_committed_golden() -> Result<(), String> {
+fn directory_programs_check_and_run_with_the_committed_goldens() -> Result<(), String> {
     let root = workspace_root();
-    let entry = Path::new("corpus/accept/a19-modules/main.ts");
-
-    let checked = output(subscript().current_dir(&root).arg("check").arg(entry))?;
-    assert_code(&checked, 0);
-    assert!(checked.stdout.is_empty());
-    assert_eq!(
-        checked.stderr,
-        b"check: corpus/accept/a19-modules/main.ts: no errors\n"
-    );
-
-    let run = output(subscript().current_dir(&root).arg("run").arg(entry))?;
-    assert_code(&run, 0);
-    let golden = std::fs::read(root.join("corpus/accept/a19-modules.expected"))
-        .map_err(|error| format!("read a19 golden: {error}"))?;
-    assert_eq!(run.stdout, golden);
-    assert!(run.stderr.is_empty());
+    for (id, mirrors) in directory_cases() {
+        let entry = Path::new("corpus/accept").join(&id).join("main.ts");
+        let mut command = subscript();
+        command.current_dir(&root).arg("check").arg(&entry);
+        for mirror in &mirrors {
+            command.arg("--mirror").arg(mirror);
+        }
+        let checked = output(&mut command)?;
+        assert_code(&checked, 0);
+        assert!(checked.stdout.is_empty());
+        assert_eq!(
+            checked.stderr,
+            format!("check: {}: no errors\n", entry.display()).as_bytes()
+        );
+        let directory = TestDir::new()?;
+        let mut command = subscript();
+        command.current_dir(&root);
+        if mirrors.is_empty() {
+            command.arg("run").arg(&entry);
+        } else {
+            command
+                .arg("build")
+                .arg("--source")
+                .arg(&entry)
+                .arg("--run")
+                .arg("-o")
+                .arg(&directory.0)
+                .arg("--runtime-lib")
+                .arg(
+                    subscript_codegen::runtime_staticlib_path()
+                        .map_err(|error| error.to_string())?,
+                )
+                .arg("--runtime-include")
+                .arg(root.join("runtime/include"));
+            for mirror in &mirrors {
+                command.arg("--mirror").arg(mirror);
+            }
+        }
+        let run = output(&mut command)?;
+        assert_code(&run, 0);
+        assert_eq!(
+            run.stdout,
+            corpus::golden_bytes(&root.join("corpus/accept"), &id),
+            "{id}"
+        );
+        assert!(run.stderr.is_empty());
+    }
     Ok(())
 }
 
 #[test]
-fn a19_emit_is_byte_identical_to_the_shared_directory_entry() -> Result<(), String> {
+fn directory_emit_matches_the_shared_directory_reader() -> Result<(), String> {
     let root = workspace_root();
-    let directory = TestDir::new()?;
-    let cli_output = directory.0.join("cli");
-    let shared_output = directory.0.join("shared");
-    let entry = Path::new("corpus/accept/a19-modules/main.ts");
-
-    let emitted = output(
-        subscript()
+    for (id, mirrors) in directory_cases() {
+        let directory = TestDir::new()?;
+        let cli_output = directory.0.join("cli");
+        let shared_output = directory.0.join("shared");
+        let entry = Path::new("corpus/accept").join(&id).join("main.ts");
+        let mut command = subscript();
+        command
             .current_dir(&root)
             .arg("emit")
-            .arg(entry)
+            .arg(&entry)
             .arg("-o")
-            .arg(&cli_output),
-    )?;
-    assert_code(&emitted, 0);
-    assert!(emitted.stdout.is_empty());
-    assert!(emitted.stderr.is_empty());
-
-    let module_directory = root.join("corpus/accept/a19-modules");
-    let directory_mode_sources = directory_sources(&module_directory)?;
-    subscript_codegen::emit_c_files(&directory_mode_sources, &shared_output, "a19-modules", true)
-        .map_err(|error| format!("emit a19 directory-mode reference: {error}"))?;
-
-    for (cli_name, shared_name) in [
-        ("program.c", "a19-modules.c"),
-        ("program.alloc.h", "a19-modules.alloc.h"),
-        ("entry.c", "entry.c"),
-    ] {
-        let cli_bytes = std::fs::read(cli_output.join(cli_name))
-            .map_err(|error| format!("read CLI {cli_name}: {error}"))?;
-        let shared_bytes = std::fs::read(shared_output.join(shared_name))
-            .map_err(|error| format!("read shared {shared_name}: {error}"))?;
-        assert_eq!(cli_bytes, shared_bytes, "{cli_name} differs");
+            .arg(&cli_output);
+        for mirror in &mirrors {
+            command.arg("--mirror").arg(mirror);
+        }
+        let emitted = output(&mut command)?;
+        assert_code(&emitted, 0);
+        assert!(emitted.stdout.is_empty());
+        assert!(emitted.stderr.is_empty());
+        let sources = corpus::entry_sources(&root.join("corpus/accept"), &id);
+        subscript_codegen::emit_c_files(&sources, &shared_output, "program", true)
+            .map_err(|error| format!("emit {id}: {error}"))?;
+        for name in ["program.c", "program.alloc.h", "entry.c"] {
+            let cli = std::fs::read(cli_output.join(name)).map_err(|error| error.to_string())?;
+            let shared =
+                std::fs::read(shared_output.join(name)).map_err(|error| error.to_string())?;
+            assert_eq!(cli, shared, "{id}: {name} differs");
+        }
     }
     Ok(())
 }

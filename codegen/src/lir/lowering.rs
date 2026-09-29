@@ -37,7 +37,7 @@ impl<'a> Lowering<'a> {
                 next_function += 1;
                 next_method += 1;
                 if methods
-                    .insert((class_index, method.name.clone()), record)
+                    .insert((class_index, method.symbol.clone()), record)
                     .is_some()
                 {
                     return Err(LowerError {
@@ -57,7 +57,7 @@ impl<'a> Lowering<'a> {
             };
             next_function += 1;
             if free_functions
-                .insert(function.name.clone(), record)
+                .insert(function.symbol.clone(), record)
                 .is_some()
             {
                 return Err(LowerError {
@@ -71,7 +71,7 @@ impl<'a> Lowering<'a> {
             .globals
             .iter()
             .enumerate()
-            .map(|(index, global)| (global.name.clone(), l::GlobalId(index as u32)))
+            .map(|(index, global)| (global.symbol.clone(), l::GlobalId(index as u32)))
             .collect();
         let foreign_functions = module
             .foreign_fns
@@ -128,7 +128,7 @@ impl<'a> Lowering<'a> {
                 )?;
             }
             for method in class.methods {
-                let record = self.method_record(class_index, &method.name, &method.pos)?;
+                let record = self.method_record(class_index, &method.symbol, &method.pos)?;
                 self.lower_function(
                     record.id,
                     method,
@@ -144,7 +144,7 @@ impl<'a> Lowering<'a> {
         for function in self.hir.functions.iter().cloned() {
             let record = self
                 .free_functions
-                .get(&function.name)
+                .get(&function.symbol)
                 .cloned()
                 .ok_or_else(|| LowerError {
                     pos: function.pos.clone(),
@@ -217,7 +217,7 @@ impl<'a> Lowering<'a> {
                     let global_id = builder
                         .lowering
                         .globals
-                        .get(&global.name)
+                        .get(&global.symbol)
                         .copied()
                         .ok_or_else(|| builder.error(&global.pos, "global id is missing"))?;
                     builder.emit_store_instruction(
@@ -283,8 +283,10 @@ impl<'a> Lowering<'a> {
             .hir
             .functions
             .iter()
-            .find(|function| function.exported && function.name == "main")
-            .and_then(|function| self.free_functions.get(&function.name))
+            .find(|function| {
+                function.name == "main" && function.host_entry_trap_sites(self.hir).is_some()
+            })
+            .and_then(|function| self.free_functions.get(&function.symbol))
             .map(|record| record.id);
         let async_roots = self
             .hir
@@ -298,7 +300,7 @@ impl<'a> Lowering<'a> {
             })
             .map(|function| {
                 self.free_functions
-                    .get(&function.name)
+                    .get(&function.symbol)
                     .map(|record| record.id)
                     .ok_or_else(|| LowerError {
                         pos: function.pos.clone(),
@@ -412,7 +414,8 @@ impl<'a> Lowering<'a> {
                     .methods
                     .iter()
                     .map(|method| {
-                        let record = self.method_record(class_index, &method.name, &method.pos)?;
+                        let record =
+                            self.method_record(class_index, &method.symbol, &method.pos)?;
                         Ok(l::Method {
                             id: record.method.expect("method id"),
                             function: record.id,

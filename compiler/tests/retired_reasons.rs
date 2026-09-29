@@ -18,13 +18,15 @@
 //! lives outside those directories, so the sweep does not report
 //! itself.
 
+#[allow(dead_code)]
+#[path = "../../codegen/tests/corpus/mod.rs"]
+mod corpus;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use subscript_compiler::divergence::Divergence;
-use subscript_compiler::{
-    api_reference, check_program, render_diagnostics, RuleCode, SourceFile, WarnCode,
-};
+use subscript_compiler::{api_reference, check_program, render_diagnostics, RuleCode, WarnCode};
 
 /// One retired reason: the phrase, and the record that retired it.
 ///
@@ -137,43 +139,58 @@ fn table_strings() -> Vec<(String, String)> {
 /// message reaches a user through this path and through no table.
 fn rendered_rejections(root: &Path) -> Vec<(String, String)> {
     let dir = root.join("corpus").join("reject");
-    let mut entries: Vec<PathBuf> = fs::read_dir(&dir)
-        .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
-        .map(|entry| entry.expect("a reject corpus directory entry").path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "ts"))
-        .collect();
-    entries.sort();
-
     let mut out = Vec::new();
     let mut names = Vec::new();
     let mut clean = Vec::new();
-    for path in entries {
-        let name = path
-            .file_name()
-            .expect("a corpus file name")
-            .to_string_lossy()
-            .into_owned();
+    let mut selective_cost = std::time::Duration::ZERO;
+    let mut mirrored_cost = std::time::Duration::ZERO;
+    for name in corpus::entry_ids(&dir) {
         names.push(name.clone());
-        let source =
-            fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {name}: {error}"));
-        let mut files = Vec::new();
-        if name == "r169-embedded-header-copy.ts" {
-            let mirror = fs::read_to_string(
-                root.join("corpus")
-                    .join("interop")
-                    .join("interop.generated.d.ts"),
-            )
-            .expect("read the interop mirror for r169");
-            files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
-        }
-        files.push(SourceFile::new(name.clone(), source));
+        let files = corpus::entry_sources(&dir, &name);
+        let start = std::time::Instant::now();
         let checked = check_program(&files);
+        selective_cost += start.elapsed();
         let Err(diagnostics) = checked else {
             clean.push(name);
             continue;
         };
+        source_diagnostic_names(&diagnostics).unwrap();
+        // A missing mirror produces S016 and can hide the intended rejection.
+        // Only those entries need a comparison with the complete fixture set.
+        if diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == RuleCode::S016)
+        {
+            let mut mirrored = files.clone();
+            for mirror in [
+                "interop.generated.d.ts",
+                "external-device.generated.d.ts",
+                "wire-enum.generated.d.ts",
+                "wire-enum-aliases.d.ts",
+            ] {
+                if !mirrored.iter().any(|file| file.name == mirror) {
+                    let source =
+                        fs::read_to_string(root.join("corpus/interop").join(mirror)).unwrap();
+                    mirrored.insert(0, subscript_compiler::SourceFile::ambient(mirror, source));
+                }
+            }
+            let start = std::time::Instant::now();
+            let complete =
+                check_program(&mirrored).expect_err("the reject entry requires an error");
+            mirrored_cost += start.elapsed();
+            source_diagnostic_names(&complete).unwrap();
+            assert_eq!(
+                (diagnostics[0].code, &diagnostics[0].message),
+                (complete[0].code, &complete[0].message),
+                "{name}: the selective reader must supply the mirrors for the intended rejection"
+            );
+        }
         out.push((name, render_diagnostics(&files, &diagnostics)));
     }
+    eprintln!(
+        "reject checks: {} entries, selective {selective_cost:?}, mirrored {mirrored_cost:?}",
+        names.len()
+    );
     guard_every_entry_rendered(out.len(), &names, &clean).unwrap_or_else(|error| panic!("{error}"));
     out
 }
@@ -458,4 +475,56 @@ fn the_sweep_reads_a_literal_and_not_a_comment() {
         literals.iter().all(|(_, text)| !text.starts_with("// a")),
         "a comment is not a literal: {literals:?}"
     );
+}
+
+#[test]
+fn interop_rejections_require_their_mirror() {
+    let dir = repository_root().join("corpus/reject");
+    for (name, code) in [
+        ("r169-embedded-header-copy", RuleCode::S100),
+        ("r251-map-boundary-struct-get", RuleCode::S014),
+    ] {
+        let files = corpus::entry_sources(&dir, name);
+        let diagnostics = check_program(&files).expect_err("the mirrored entry is rejected");
+        assert_eq!(diagnostics[0].code, code, "{name}: {diagnostics:?}");
+        let source = fs::read_to_string(dir.join(format!("{name}.ts"))).unwrap();
+        let bare = [subscript_compiler::SourceFile::new(
+            format!("{name}.ts"),
+            source,
+        )];
+        let missing =
+            check_program(&bare).expect_err("the missing mirror must change the rejection");
+        assert_eq!(missing[0].code, RuleCode::S016, "{name}: {missing:?}");
+    }
+}
+
+fn source_diagnostic_names(diagnostics: &[subscript_compiler::Diagnostic]) -> Result<(), String> {
+    let leaked: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.message.contains("[[identity:") || d.message.contains("[[Error]]"))
+        .collect();
+    if leaked.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("internal symbols in diagnostics: {leaked:?}"))
+    }
+}
+
+#[test]
+fn diagnostic_name_check_detects_a_directly_built_internal_symbol() {
+    use subscript_compiler::{Diagnostic, Pos};
+    for name in ["[[identity:module:00]]C", "[[Error]]"] {
+        let diagnostic = Diagnostic::new(
+            RuleCode::S100,
+            format!("got `{name}`"),
+            Pos::new("main.ts", 1, 1),
+        );
+        assert!(source_diagnostic_names(&[diagnostic]).is_err());
+    }
+    let source = Diagnostic::new(
+        RuleCode::S100,
+        "got `C (main.ts)`",
+        Pos::new("main.ts", 1, 1),
+    );
+    assert!(source_diagnostic_names(&[source]).is_ok());
 }

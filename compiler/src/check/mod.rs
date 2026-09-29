@@ -7,6 +7,8 @@
 //! declarations are registered as templates in pass A/B and
 //! monomorphized on first use (`identity<i32>`, `Box<f64>`).
 
+mod identity;
+pub(crate) use crate::hir::source_name;
 mod bindings;
 mod bodies;
 mod capture;
@@ -317,8 +319,8 @@ enum ClassMemberDeclaration {
     WriteAccessor,
 }
 
-fn static_member_symbol(class: &str, member: &str) -> String {
-    format!("{class}.{member}")
+fn static_member_symbol(id: ClassId, class: &str, member: &str) -> String {
+    format!("[[identity:class:{}]]{class}.{member}", id.0)
 }
 
 /// A module-level variable's declared shape.
@@ -390,6 +392,7 @@ pub(crate) enum ScopeItem {
     GenericClass(String),
     Enum(EnumId),
     StringAlias(StringAliasId),
+    TypeAlias(Type),
     Global(String),
     /// A foreign C-ABI function declared by an ambient mirror (§12.2);
     /// callable but not usable as a value.
@@ -966,7 +969,6 @@ pub(crate) struct Checker<'p> {
     pub class_sigs: Vec<ClassSig>,
     pub class_ids: HashMap<String, ClassId>,
     pub enums: Vec<hir::EnumDef>,
-    pub enum_ids: HashMap<String, EnumId>,
     pub string_aliases: Vec<hir::StringAliasDef>,
     pub fn_sigs: HashMap<String, FnSig>,
     pub functions: Vec<hir::Function>,
@@ -975,6 +977,7 @@ pub(crate) struct Checker<'p> {
     pub globals: Vec<hir::Global>,
     pub generic_fns: HashMap<String, GenericFn>,
     pub generic_classes: HashMap<String, GenericClass>,
+    pub instance_symbols: HashMap<String, String>,
     pub file_scopes: Vec<HashMap<String, ScopeItem>>,
     pub exports: Vec<HashSet<String>>,
     pub top_level: Vec<hir::Stmt>,
@@ -1153,10 +1156,10 @@ impl<'a> ModuleEffectScanner<'a> {
         let Some(class) = self.classes.get(class_id.0) else {
             return;
         };
-        if class.methods.iter().any(|method| method.name == name) {
+        if class.methods.iter().any(|method| method.symbol == name) {
             self.record_call(
                 ModuleFunction::Method(class_id, name.to_string()),
-                format!("{}.{}", class.name, name),
+                identity::class_member_label(self.classes, class, name),
             );
         }
     }
@@ -1173,7 +1176,7 @@ impl<'a> ModuleEffectScanner<'a> {
             } => {
                 let label = self.classes.get(class.0).map_or_else(
                     || name.clone(),
-                    |definition| format!("{}.{}", definition.name, name),
+                    |definition| identity::class_member_label(self.classes, definition, name),
                 );
                 self.record_call(ModuleFunction::Method(*class, name.clone()), label);
             }
@@ -1224,7 +1227,9 @@ impl<'a> ModuleEffectScanner<'a> {
             K::New { class, .. } => {
                 let label = self.classes.get(class.0).map_or_else(
                     || "constructor".to_string(),
-                    |definition| format!("{}.constructor", definition.name),
+                    |definition| {
+                        identity::class_member_label(self.classes, definition, "constructor")
+                    },
                 );
                 self.record_call(ModuleFunction::Constructor(*class), label);
             }
@@ -1306,14 +1311,18 @@ fn module_data_bindings(checker: &Checker<'_>) -> Vec<String> {
                 ast::Decl::Var(variables) if variables.kind != ast::VarDeclKind::Var => {
                     for declarator in &variables.decls {
                         if let ast::Pat::Ident(binding) = &declarator.name {
-                            bindings.push(binding.id.sym.to_string());
+                            bindings.push(
+                                checker.declaration_symbol(file_index, binding.id.sym.as_ref()),
+                            );
                         }
                     }
                 }
                 ast::Decl::Using(using) => {
                     for declarator in &using.decls {
                         if let ast::Pat::Ident(binding) = &declarator.name {
-                            bindings.push(binding.id.sym.to_string());
+                            bindings.push(
+                                checker.declaration_symbol(file_index, binding.id.sym.as_ref()),
+                            );
                         }
                     }
                 }
@@ -1342,7 +1351,11 @@ fn module_data_bindings(checker: &Checker<'_>) -> Vec<String> {
                             .static_fields
                             .contains_key(name.sym.as_ref())
                         {
-                            bindings.push(static_member_symbol(class_name, name.sym.as_ref()));
+                            bindings.push(static_member_symbol(
+                                class_id,
+                                class_name,
+                                name.sym.as_ref(),
+                            ));
                         }
                     }
                 }
@@ -1354,6 +1367,21 @@ fn module_data_bindings(checker: &Checker<'_>) -> Vec<String> {
 }
 
 fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
+    let label = |symbol: &str| {
+        identity::declaration_label(
+            symbol,
+            checker
+                .globals
+                .iter()
+                .map(|g| (g.symbol.as_str(), g.name.as_str(), &g.pos))
+                .chain(
+                    checker
+                        .functions
+                        .iter()
+                        .map(|f| (f.symbol.as_str(), f.name.as_str(), &f.pos)),
+                ),
+        )
+    };
     let bindings = module_data_bindings(checker);
     let binding_order: HashMap<&str, usize> = bindings
         .iter()
@@ -1364,7 +1392,7 @@ fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
 
     for function in &checker.functions {
         let direct = ModuleEffectScanner::new(&bindings, &checker.classes).function(function);
-        effects.insert(ModuleFunction::Free(function.name.clone()), direct);
+        effects.insert(ModuleFunction::Free(function.symbol.clone()), direct);
     }
     for (index, class) in checker.classes.iter().enumerate() {
         let class_id = ClassId(index);
@@ -1373,7 +1401,7 @@ fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
         for method in &class.methods {
             let direct = ModuleEffectScanner::new(&bindings, &checker.classes).function(method);
             effects.insert(
-                ModuleFunction::Method(class_id, method.name.clone()),
+                ModuleFunction::Method(class_id, method.symbol.clone()),
                 direct,
             );
         }
@@ -1401,7 +1429,7 @@ fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
 
     let mut diagnostics = Vec::new();
     for global in &checker.globals {
-        let Some(&initializer_index) = binding_order.get(global.name.as_str()) else {
+        let Some(&initializer_index) = binding_order.get(global.symbol.as_str()) else {
             continue;
         };
         let mut scanner = ModuleEffectScanner::new(&bindings, &checker.classes);
@@ -1423,7 +1451,7 @@ fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
                     if step == "[indirect call]" {
                         "an indirect call".to_string()
                     } else {
-                        format!("`{step}`")
+                        format!("`{}`", label(step))
                     }
                 })
                 .collect::<Vec<_>>()
@@ -1432,7 +1460,10 @@ fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
         };
         let mut diagnostic = Diagnostic::new(
             RuleCode::S100,
-            format!("`{binding}` is accessed before its declaration, {route}"),
+            format!(
+                "`{}` is accessed before its declaration, {route}",
+                label(binding)
+            ),
             global.init.pos.clone(),
         );
         if !path.is_empty() {

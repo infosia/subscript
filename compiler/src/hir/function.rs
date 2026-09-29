@@ -14,6 +14,7 @@ impl Function {
         pos: Pos,
     ) -> Self {
         Self {
+            symbol: name.clone(),
             name,
             synthesized_helper: true,
             exported: false,

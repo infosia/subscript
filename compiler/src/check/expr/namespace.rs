@@ -151,11 +151,11 @@ impl<'p> Checker<'p> {
                 }
                 let class_name = self.classes[id.0].name.clone();
                 if let Some(signature) = self.class_sigs[id.0].static_fields.get(prop).cloned() {
-                    let symbol = static_member_symbol(&class_name, prop);
+                    let symbol = static_member_symbol(id, &class_name, prop);
                     if for_write && !signature.mutable {
                         self.error(
                             RuleCode::S100,
-                            format!("cannot rebind `const` binding `{symbol}`"),
+                            format!("cannot rebind `const` binding `{class_name}.{prop}`"),
                             prop_pos.clone(),
                         );
                     }
@@ -181,7 +181,7 @@ impl<'p> Checker<'p> {
                     };
                     return Some(hir::Expr {
                         kind: ExprKind::Call {
-                            callee: Callee::Func(static_member_symbol(&class_name, prop)),
+                            callee: Callee::Func(static_member_symbol(id, &class_name, prop)),
                             args: Vec::new(),
                         },
                         ty: signature.ret,
@@ -241,6 +241,14 @@ impl<'p> Checker<'p> {
                         Some(self.err_expr(prop_pos))
                     }
                 }
+            }
+            Some(ScopeItem::TypeAlias(_)) => {
+                self.error(
+                    RuleCode::S100,
+                    format!("type alias `{name}` used as a value"),
+                    prop_pos.clone(),
+                );
+                Some(self.err_expr(prop_pos))
             }
             Some(ScopeItem::StringAlias(_)) => {
                 self.error(

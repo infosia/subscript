@@ -29,7 +29,7 @@ Observable obligations only; internal design is the implementer's.
 | S012 | `undefined` banned | C7 | r13 |
 | S013 | no `async` / event loop | C8 | r14 |
 | S016 | unknown name (type, value, or import) | §82.2 | r174, r175 |
-| S017 | duplicate declaration in one namespace | §82.2, C14 | r146, r149–r151, r164 |
+| S017 | duplicate declaration in one namespace | §82.2, §125, C14 | r146, r149–r151, r164, r267 |
 | S018 | unknown member of a receiver type | §82.2 | r176 |
 
   Constructs outside the decided surface (e.g. non-whitelisted

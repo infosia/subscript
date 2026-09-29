@@ -140,7 +140,11 @@ impl Place {
                             name,
                         }
                     } else {
-                        Callee::Func(static_member_symbol(&checker.classes[class.0].name, &name))
+                        Callee::Func(static_member_symbol(
+                            class,
+                            &checker.classes[class.0].name,
+                            &name,
+                        ))
                     },
                     args: Vec::new(),
                 },

@@ -364,6 +364,7 @@ impl<'p> Checker<'p> {
                     }
                 } else {
                     Callee::Func(static_member_symbol(
+                        class,
                         &self.classes[class.0].name,
                         &write_name,
                     ))

@@ -34,7 +34,10 @@ impl<'p> Checker<'p> {
             if class.class.type_params.is_some() {
                 continue;
             }
-            let Some(&id) = self.class_ids.get(class.ident.sym.as_ref()) else {
+            let Some(&id) = self
+                .class_ids
+                .get(&self.declaration_symbol(file, class.ident.sym.as_ref()))
+            else {
                 continue;
             };
             if self.classes[id.0].is_descriptor {
@@ -92,7 +95,7 @@ impl<'p> Checker<'p> {
     fn check_body_decl(&mut self, decl: &ast::Decl, exported: bool) {
         match decl {
             ast::Decl::Fn(f) if f.function.type_params.is_none() => {
-                let name = f.ident.sym.to_string();
+                let name = self.declaration_symbol(self.cur_file, f.ident.sym.as_ref());
                 let pos = self.pos(f.ident.span);
                 let Some(sig) = self.fn_sigs.get(&name).cloned() else {
                     return;
@@ -104,7 +107,7 @@ impl<'p> Checker<'p> {
                 }
             }
             ast::Decl::Class(c) if c.class.type_params.is_none() => {
-                let name = c.ident.sym.to_string();
+                let name = self.declaration_symbol(self.cur_file, c.ident.sym.as_ref());
                 if let Some(&id) = self.class_ids.get(&name) {
                     self.check_class_body(id, &c.class, c.declare);
                 }
@@ -123,7 +126,7 @@ impl<'p> Checker<'p> {
                     let ast::Pat::Ident(binding) = &d.name else {
                         continue;
                     };
-                    let name = binding.id.sym.to_string();
+                    let name = self.declaration_symbol(self.cur_file, binding.id.sym.as_ref());
                     let Some(sig) = self.global_sigs.get(&name).cloned() else {
                         continue;
                     };
@@ -160,7 +163,8 @@ impl<'p> Checker<'p> {
                         }
                     };
                     self.globals.push(hir::Global {
-                        name,
+                        symbol: name.clone(),
+                        name: source_name(&name),
                         ty: sig.ty,
                         mutable: sig.mutable,
                         init,
@@ -254,7 +258,8 @@ impl<'p> Checker<'p> {
         Some(hir::Function {
             synthesized_helper: false,
             can_raise: false,
-            name: name.to_string(),
+            symbol: name.to_string(),
+            name: source_name(name),
             exported,
             is_generator: sig.is_generator,
             is_async: sig.is_async,
@@ -384,7 +389,8 @@ impl<'p> Checker<'p> {
                             }
                         };
                         self.globals.push(hir::Global {
-                            name: static_member_symbol(&self.classes[id.0].name, &name),
+                            symbol: static_member_symbol(id, &self.classes[id.0].name, &name),
+                            name: format!("{}.{}", self.classes[id.0].name, source_name(&name)),
                             ty: signature.ty,
                             mutable: signature.mutable,
                             init,
@@ -491,6 +497,7 @@ impl<'p> Checker<'p> {
                     self.classes[id.0].ctor = Some(hir::Function {
                         synthesized_helper: false,
                         can_raise: false,
+                        symbol: "constructor".to_string(),
                         name: "constructor".to_string(),
                         exported: false,
                         is_generator: false,
@@ -554,7 +561,7 @@ impl<'p> Checker<'p> {
                         continue;
                     };
                     let function_name = if method.is_static {
-                        static_member_symbol(&self.classes[id.0].name, &name)
+                        static_member_symbol(id, &self.classes[id.0].name, &name)
                     } else {
                         name.clone()
                     };

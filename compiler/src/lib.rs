@@ -2926,21 +2926,19 @@ mod tests {
     }
 
     #[test]
-    fn minor3_cross_file_duplicate_class_names_are_s100() {
-        let err = check_program(&[
+    fn cross_file_class_names_have_distinct_identities() {
+        let module = check_program(&[
             SourceFile::new(
                 "a.ts",
                 "export class C { x: i32 = 1; }\nexport function main(): void {}\n",
             ),
             SourceFile::new("b.ts", "export class C { x: i32 = 1; }\n"),
         ])
-        .unwrap_err();
-        assert!(
-            err.iter()
-                .any(|d| d.code == RuleCode::S100 && d.message.contains("duplicate class")),
-            "expected a duplicate-class diagnostic, got: {:?}",
-            err.iter().map(|d| d.message.clone()).collect::<Vec<_>>()
-        );
+        .expect("independent class declarations");
+        let classes: Vec<_> = module.classes.iter().filter(|c| c.name == "C").collect();
+        assert_eq!(classes.len(), 2);
+        assert_eq!(classes[0].pos.file, "a.ts");
+        assert_eq!(classes[1].pos.file, "b.ts");
     }
 
     #[test]
@@ -3129,7 +3127,7 @@ mod tests {
         );
         let module = check_one(&source).expect("Q35 worker program checks");
         assert_eq!(module.worker_entries.len(), 1);
-        assert_eq!(module.worker_entries[0].function, "workerEntry");
+        assert!(module.worker_entries[0].function == module.functions[0].symbol);
         let hir::Stmt::Let { ty, init, .. } = &module.functions[1].body[0] else {
             panic!("expected worker local");
         };

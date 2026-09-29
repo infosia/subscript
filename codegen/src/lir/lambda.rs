@@ -93,7 +93,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .hir
                     .functions
                     .iter()
-                    .find(|function| function.name == *name)
+                    .find(|function| function.symbol == *name)
                     .cloned()
                     .ok_or_else(|| self.error(pos, "async function body is missing"))?;
                 (
@@ -117,7 +117,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .hir
                     .classes
                     .get(class.0)
-                    .and_then(|class| class.methods.iter().find(|method| method.name == *name))
+                    .and_then(|class| class.methods.iter().find(|method| method.symbol == *name))
                     .cloned()
                     .ok_or_else(|| self.error(pos, "async method body is missing"))?;
                 (

@@ -1441,16 +1441,17 @@ fn initialize_module_globals<M: Module>(
         .globals
         .iter()
         .map(|global| {
-            managed_words(&ml.layouts, &global.ty).map(|words| (global.source_name.clone(), words))
+            managed_words(&ml.layouts, &global.ty)
+                .map(|words| (global.id, global.source_name.clone(), words))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    for (source_name, words) in roots {
+    for (id, source_name, words) in roots {
         if words == 0 {
             continue;
         }
         let (slot, _) = ml
             .globals
-            .get(&source_name)
+            .get(&id)
             .cloned()
             .ok_or_else(|| internal(format!("global {source_name} has no target slot")))?;
         let address = match slot {

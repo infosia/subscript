@@ -59,7 +59,7 @@ fn is_diagnostic_code(code: &str) -> bool {
 #[derive(Debug)]
 struct Entry {
     relative: String,
-    absolute: PathBuf,
+    program_files: Vec<PathBuf>,
     accept: bool,
     external_module: bool,
     claim: TscClaim,
@@ -103,10 +103,43 @@ fn corpus_entries(root: &Path) -> Result<Vec<Entry>, String> {
             .map_err(|error| format!("read {}: {error}", directory.display()))?
             .filter_map(Result::ok)
             .map(|entry| entry.path())
-            .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "ts"))
+            .filter(|path| {
+                path.is_dir() || (path.is_file() && path.extension().is_some_and(|ext| ext == "ts"))
+            })
             .collect();
         paths.sort();
-        for absolute in paths {
+        for path in paths {
+            let (absolute, program_files) = if path.is_dir() {
+                let mut files: Vec<_> = fs::read_dir(&path)
+                    .map_err(|error| format!("read {}: {error}", path.display()))?
+                    .map(|entry| entry.map(|entry| entry.path()))
+                    .collect::<Result<_, _>>()
+                    .map_err(|error| format!("read module: {error}"))?;
+                files.retain(|path| path.extension().is_some_and(|ext| ext == "ts"));
+                files.sort();
+                if accept {
+                    (path.join("main.ts"), files)
+                } else {
+                    let headers: Vec<_> = files
+                        .iter()
+                        .filter(|path| {
+                            fs::read_to_string(path).is_ok_and(|source| {
+                                source.lines().any(|line| line.starts_with(HEADER_PREFIX))
+                            })
+                        })
+                        .cloned()
+                        .collect();
+                    if headers.len() != 1 {
+                        return Err(format!(
+                            "{}: expected one module with a tsc header",
+                            path.display()
+                        ));
+                    }
+                    (headers[0].clone(), files)
+                }
+            } else {
+                (path.clone(), vec![path])
+            };
             let relative = repository_relative(root, &absolute)
                 .expect("corpus path must be below the workspace root");
             let source = fs::read_to_string(&absolute)
@@ -155,7 +188,7 @@ fn corpus_entries(root: &Path) -> Result<Vec<Entry>, String> {
             });
             entries.push(Entry {
                 relative,
-                absolute,
+                program_files,
                 accept,
                 external_module,
                 claim,
@@ -235,12 +268,12 @@ fn write_projects(
     let modules: Vec<&PathBuf> = entries
         .iter()
         .filter(|entry| entry.external_module)
-        .map(|entry| &entry.absolute)
+        .flat_map(|entry| entry.program_files.iter())
         .collect();
     let scripts = entries
         .iter()
         .filter(|entry| !entry.external_module)
-        .map(|entry| vec![&entry.absolute]);
+        .map(|entry| entry.program_files.iter().collect::<Vec<_>>());
     std::iter::once(modules)
         .chain(scripts)
         .enumerate()
@@ -263,9 +296,13 @@ fn diagnostic_codes(
     entries: &[Entry],
     output: &str,
 ) -> Result<BTreeMap<String, BTreeSet<String>>, Vec<String>> {
-    let entry_names: BTreeSet<&str> = entries
+    let entry_names: BTreeMap<String, &str> = entries
         .iter()
-        .map(|entry| entry.relative.as_str())
+        .flat_map(|entry| {
+            entry.program_files.iter().filter_map(|path| {
+                repository_relative(root, path).map(|name| (name, entry.relative.as_str()))
+            })
+        })
         .collect();
     let mut codes = BTreeMap::<String, BTreeSet<String>>::new();
     let mut unowned = Vec::new();
@@ -288,10 +325,10 @@ fn diagnostic_codes(
             unowned.push(line.to_string());
             continue;
         };
-        if !entry_names.contains(relative.as_str()) {
+        let Some(owner) = entry_names.get(&relative) else {
             unowned.push(line.to_string());
             continue;
-        }
+        };
         let code_start = marker + "): error ".len();
         let Some(code) = line[code_start..].split(':').next() else {
             unowned.push(line.to_string());
@@ -301,7 +338,10 @@ fn diagnostic_codes(
             unowned.push(line.to_string());
             continue;
         }
-        codes.entry(relative).or_default().insert(code.to_string());
+        codes
+            .entry((*owner).to_string())
+            .or_default()
+            .insert(code.to_string());
     }
     if unowned.is_empty() {
         Ok(codes)
@@ -825,7 +865,7 @@ fn diagnostic_parser_attributes_codes_and_reports_unowned_errors() {
     let root = Path::new("/workspace");
     let entry = Entry {
         relative: "corpus/reject/r01.ts".to_string(),
-        absolute: root.join("corpus/reject/r01.ts"),
+        program_files: vec![root.join("corpus/reject/r01.ts")],
         accept: false,
         external_module: true,
         claim: TscClaim::Accepts,

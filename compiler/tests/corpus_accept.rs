@@ -1,6 +1,6 @@
 //! Gate test (compiler.md §6): every accept-corpus entry checks with
-//! zero diagnostics and produces a well-formed typed HIR; a19-modules
-//! is one two-file program. Spot assertions verify resolved types.
+//! zero diagnostics and produces a well-formed typed HIR. Directory entries
+//! are complete programs. Spot assertions verify resolved types.
 
 #[path = "corpus/mod.rs"]
 mod corpus;
@@ -138,14 +138,11 @@ fn every_accept_entry_checks_clean_and_produces_hir() {
             name
         );
     }
-    // a19-modules is one two-file program.
-    let dir = accept.join("a19-modules");
-    let module = check_entry(&[
-        ("main.ts", dir.join("main.ts")),
-        ("math.ts", dir.join("math.ts")),
-    ]);
-    assert!(find_fn(&module, "main").exported);
-    assert!(find_fn(&module, "triangular").exported);
+    for directory in corpus::directories(&accept) {
+        let module = check_program(&corpus::directory_sources(&directory))
+            .unwrap_or_else(|errors| panic!("{}: {errors:?}", directory.display()));
+        assert!(find_fn(&module, "main").exported);
+    }
 }
 
 #[test]

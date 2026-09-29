@@ -406,13 +406,17 @@ fn entries(root: &Path) -> Result<Vec<Entry>, String> {
         .map_err(|error| format!("read {}: {error}", directory.display()))?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "ts"))
+        .filter(|path| {
+            path.is_dir() || (path.is_file() && path.extension().is_some_and(|ext| ext == "ts"))
+        })
         .collect();
     paths.sort();
 
     paths
         .into_iter()
         .map(|absolute| {
+            let golden = absolute.with_extension("expected");
+            let absolute = if absolute.is_dir() { absolute.join("main.ts") } else { absolute };
             let relative = subscript_compiler::repository_relative(root, &absolute)
                 .expect("corpus path must be below the workspace root");
             let source = fs::read_to_string(&absolute)
@@ -431,7 +435,6 @@ fn entries(root: &Path) -> Result<Vec<Entry>, String> {
             }
             let claim = JsClaim::parse(headers[0])
                 .map_err(|error| format!("{relative}: invalid js-comparable header: {error}"))?;
-            let golden = absolute.with_extension("expected");
             if !golden.is_file() {
                 return Err(format!("{relative}: missing golden {}", golden.display()));
             }
@@ -455,7 +458,7 @@ fn corpus_entry_names(root: &Path) -> Result<BTreeSet<String>, String> {
             let path = entry
                 .map_err(|error| format!("read {} entry: {error}", directory.display()))?
                 .path();
-            if !path.is_file() || !path.extension().is_some_and(|extension| extension == "ts") {
+            if !path.is_dir() && path.extension().is_none_or(|extension| extension != "ts") {
                 continue;
             }
             let name = path
@@ -491,7 +494,7 @@ fn decode_hex(text: &str) -> Result<Vec<u8>, String> {
 }
 
 fn prelude_has_global(prelude: &str, name: &str) -> bool {
-    ["function", "namespace", "class", "interface"]
+    ["function", "namespace", "class", "interface", "const"]
         .iter()
         .any(|kind| {
             let prefix = format!("declare {kind} {name}");
@@ -577,10 +580,12 @@ fn every_accept_entry_has_a_total_js_claim_and_comparable_output_matches() {
         .collect();
     let prelude =
         fs::read_to_string(root.join("prelude/lang.d.ts")).expect("read prelude/lang.d.ts");
+    let mirror = fs::read_to_string(root.join("corpus/interop/interop.generated.d.ts"))
+        .expect("read fixture mirror");
     for name in &shim_names {
         assert!(
-            prelude_has_global(&prelude, name),
-            "the shim defines `{name}`, but prelude/lang.d.ts does not"
+            prelude_has_global(&prelude, name) || prelude_has_global(&mirror, name),
+            "the shim defines `{name}`, but neither the prelude nor the fixture mirror declares it"
         );
     }
 

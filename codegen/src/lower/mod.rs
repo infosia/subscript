@@ -61,24 +61,24 @@ pub(crate) use func::define_function;
 /// Identity of a lowered function.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum FnKey {
-    /// Free function by source name.
-    Free(String),
-    /// Generator resume function by source name.
-    Resume(String),
+    /// Free function by LIR id.
+    Free(lir::FunctionId),
+    /// Generator resume function by LIR id.
+    Resume(lir::FunctionId),
     /// Host ABI wrapper for an exported async function.
-    AsyncExport(String),
+    AsyncExport(lir::FunctionId),
     /// Reload-only adapter for one parameterized host export.
-    ReloadExport(String),
+    ReloadExport(lir::FunctionId),
     /// Constructor of a class.
-    Ctor(usize),
+    Ctor(lir::FunctionId),
     /// Method of a class.
-    Method(usize, String),
+    Method(lir::FunctionId),
     /// Async method resume function.
-    MethodResume(usize, String),
+    MethodResume(lir::FunctionId),
     /// Generated standard-runner helper that kicks non-main async exports.
     AsyncRunner,
     /// Env-taking wrapper for a named function used as a value.
-    Wrapper(String),
+    Wrapper(lir::FunctionId),
     /// Declared LIR function (coroutine creators included).
     LirFunction(lir::FunctionId),
     /// LIR coroutine resume function.
@@ -344,7 +344,7 @@ pub(crate) struct ModLower<'a, M: Module> {
     pub string_alias_tables: HashMap<StringAliasId, DataId>,
     /// Per-message-class runtime descriptors in program-image data.
     pub worker_message_descriptors: HashMap<ClassId, DataId>,
-    pub globals: HashMap<String, (GlobalSlot, Type)>,
+    pub globals: HashMap<lir::GlobalId, (GlobalSlot, Type)>,
     /// Imported foreign C symbols, declared on first use.
     pub foreign_ids: HashMap<String, FuncId>,
     /// Foreign imports in deterministic first-use order.
@@ -1167,30 +1167,30 @@ fn reserve_slots<M: Module>(ml: &mut ModLower<'_, M>) {
         .cloned()
         .collect::<Vec<_>>();
     for function in free_functions {
-        ml.reserve_slot(FnKey::Free(function.source_name.clone()));
+        ml.reserve_slot(FnKey::Free(function.id));
         if function.is_generator || function.is_async {
-            ml.reserve_slot(FnKey::Resume(function.source_name.clone()));
+            ml.reserve_slot(FnKey::Resume(function.id));
             if function.is_async && function.host_entry_traps.is_some() {
-                ml.reserve_slot(FnKey::AsyncExport(function.source_name.clone()));
+                ml.reserve_slot(FnKey::AsyncExport(function.id));
             }
         } else {
-            ml.reserve_slot(FnKey::Wrapper(function.source_name.clone()));
+            ml.reserve_slot(FnKey::Wrapper(function.id));
         }
     }
     let classes = ml.lir.classes.clone();
     for class in classes {
-        if class.constructor.is_some() {
-            ml.reserve_slot(FnKey::Ctor(class.id.0));
+        if let Some(constructor) = &class.constructor {
+            ml.reserve_slot(FnKey::Ctor(constructor.function));
         }
         for method in class.methods {
-            ml.reserve_slot(FnKey::Method(class.id.0, method.source_name.clone()));
+            ml.reserve_slot(FnKey::Method(method.function));
             if ml
                 .lir
                 .functions
                 .get(method.function.0 as usize)
                 .is_some_and(|function| function.is_async)
             {
-                ml.reserve_slot(FnKey::MethodResume(class.id.0, method.source_name.clone()));
+                ml.reserve_slot(FnKey::MethodResume(method.function));
             }
         }
     }
@@ -1231,7 +1231,7 @@ fn define_reload_entry_adapter<M: Module>(
     ml: &mut ModLower<'_, M>,
     function: &lir::Function,
 ) -> Result<(), String> {
-    let id = ml.func_id(&FnKey::ReloadExport(function.source_name.clone()))?;
+    let id = ml.func_id(&FnKey::ReloadExport(function.id))?;
     let target = ml.func_id(&FnKey::LirFunction(function.id))?;
     let parameters = function
         .parameters
@@ -1471,8 +1471,7 @@ fn lower_lir_module_with<M: Module>(
                 .map_err(|e| internal(format!("define global: {e}")))?;
             GlobalSlot::Data(id)
         };
-        ml.globals
-            .insert(g.source_name.clone(), (slot, g.ty.clone()));
+        ml.globals.insert(g.id, (slot, g.ty.clone()));
     }
     globals_size = round_up_layout(globals_size, globals_align, "final Context globals layout")?;
     ml.globals_size = globals_size;
@@ -1510,16 +1509,16 @@ fn lower_lir_module_with<M: Module>(
                     format!("subscript_f{index}")
                 };
                 (
-                    FnKey::Free(function.source_name.clone()),
+                    FnKey::Free(function.id),
                     symbol,
                     Some((
-                        FnKey::Resume(function.source_name.clone()),
+                        FnKey::Resume(function.id),
                         format!("subscript_f{index}_resume"),
                     )),
                 )
             }
             lir::FunctionKind::Constructor { class, .. } => (
-                FnKey::Ctor(class.0),
+                FnKey::Ctor(function.id),
                 format!("subscript_ctor{}", class.0),
                 None,
             ),
@@ -1535,10 +1534,10 @@ fn lower_lir_module_with<M: Module>(
                     })
                     .ok_or_else(|| internal("LIR method has no class-table position"))?;
                 (
-                    FnKey::Method(class.0, function.source_name.clone()),
+                    FnKey::Method(function.id),
                     format!("subscript_m{}_{method_index}", class.0),
                     Some((
-                        FnKey::MethodResume(class.0, function.source_name.clone()),
+                        FnKey::MethodResume(function.id),
                         format!("subscript_m{}_{method_index}_resume", class.0),
                     )),
                 )
@@ -1566,7 +1565,7 @@ fn lower_lir_module_with<M: Module>(
                 let export_signature = ml.make_sig(&[], &Type::Void, false, false)?;
                 decl(
                     &mut ml,
-                    FnKey::AsyncExport(function.source_name.clone()),
+                    FnKey::AsyncExport(function.id),
                     format!("subscript_export_{}", function.source_name),
                     &export_signature,
                     true,
@@ -1576,7 +1575,7 @@ fn lower_lir_module_with<M: Module>(
             let adapter_signature = reload_entry_signature(call_conv);
             decl(
                 &mut ml,
-                FnKey::ReloadExport(function.source_name.clone()),
+                FnKey::ReloadExport(function.id),
                 format!("subscript_reload_export_{}", function.id.0),
                 &adapter_signature,
                 false,
@@ -1633,12 +1632,10 @@ fn lower_lir_module_with<M: Module>(
     for function in &lirm.functions {
         let target = match &function.kind {
             lir::FunctionKind::Free | lir::FunctionKind::SynthesizedHelper => {
-                FnKey::Free(function.source_name.clone())
+                FnKey::Free(function.id)
             }
-            lir::FunctionKind::Constructor { class, .. } => FnKey::Ctor(class.0),
-            lir::FunctionKind::Method { class, .. } => {
-                FnKey::Method(class.0, function.source_name.clone())
-            }
+            lir::FunctionKind::Constructor { .. } => FnKey::Ctor(function.id),
+            lir::FunctionKind::Method { .. } => FnKey::Method(function.id),
             lir::FunctionKind::ModuleInitializer => FnKey::Init,
             lir::FunctionKind::Lambda => {
                 let parameters = function
@@ -1708,16 +1705,14 @@ fn lower_lir_module_with<M: Module>(
         }
         if function.is_generator || function.is_async {
             let resume = match &function.kind {
-                lir::FunctionKind::Method { class, .. } => {
-                    FnKey::MethodResume(class.0, function.source_name.clone())
-                }
-                _ => FnKey::Resume(function.source_name.clone()),
+                lir::FunctionKind::Method { .. } => FnKey::MethodResume(function.id),
+                _ => FnKey::Resume(function.id),
             };
             ml.alias_function(FnKey::LirResume(function.id), &resume)?;
             if function.is_async && function.host_entry_traps.is_some() {
                 ml.alias_function(
                     FnKey::LirAsyncExport(function.id),
-                    &FnKey::AsyncExport(function.source_name.clone()),
+                    &FnKey::AsyncExport(function.id),
                 )?;
             }
         }
@@ -1803,7 +1798,7 @@ fn lower_lir_module_with<M: Module>(
                     })
                     .collect(),
                 reload_adapter: (opts.reload && !parameters.is_empty())
-                    .then(|| ml.func_id(&FnKey::ReloadExport(function.source_name.clone())))
+                    .then(|| ml.func_id(&FnKey::ReloadExport(function.id)))
                     .transpose()?,
                 is_async: function.is_async,
             });

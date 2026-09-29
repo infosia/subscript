@@ -188,6 +188,7 @@ impl<'p> Checker<'p> {
 
     fn collect_class(&mut self, file: usize, c: &ast::ClassDecl, exported: bool) {
         let name = c.ident.sym.to_string();
+        let symbol = self.declaration_symbol(file, &name);
         let pos = self.pos(c.ident.span);
         let (is_value, is_descriptor, alignment_override) = self.class_decorators(&c.class);
         if let Some(tp) = &c.class.type_params {
@@ -239,7 +240,7 @@ impl<'p> Checker<'p> {
             let type_params: Vec<String> =
                 tp.params.iter().map(|p| p.name.sym.to_string()).collect();
             self.generic_classes.insert(
-                name.clone(),
+                symbol.clone(),
                 GenericClass {
                     file,
                     is_value,
@@ -253,10 +254,10 @@ impl<'p> Checker<'p> {
                     pos: pos.clone(),
                 },
             );
-            self.register_scope_item(file, &name, ScopeItem::GenericClass(name.clone()), pos);
+            self.register_scope_item(file, &name, ScopeItem::GenericClass(symbol.clone()), pos);
         } else {
             let id = self.new_class(
-                &name,
+                &symbol,
                 is_value,
                 is_descriptor,
                 alignment_override,
@@ -277,15 +278,9 @@ impl<'p> Checker<'p> {
         alignment_override: Option<hir::AlignmentOverride>,
         pos: Pos,
     ) -> ClassId {
-        if name == "Error" && self.class_ids.get(name) == Some(&self.error_class) {
-            self.classes[self.error_class.0].name = "[[Error]]".to_string();
-            self.class_ids.remove(name);
-            self.class_ids
-                .insert("[[Error]]".to_string(), self.error_class);
-        }
         let id = ClassId(self.classes.len());
         self.classes.push(hir::ClassDef {
-            name: name.to_string(),
+            name: source_name(name),
             is_value,
             alignment_override,
             is_descriptor,
@@ -302,22 +297,13 @@ impl<'p> Checker<'p> {
         self.type_handle_classes
             .push(crate::types::HandleClass::from(&self.classes[id.0]));
         self.class_sigs.push(ClassSig::default());
-        if self.class_ids.contains_key(name) {
-            // Cross-file collisions land here; same-file ones are also
-            // caught by the per-file scope registration.
-            self.error(
-                RuleCode::S100,
-                format!("duplicate class name `{}` in the program", name),
-                pos,
-            );
-        } else {
-            self.class_ids.insert(name.to_string(), id);
-        }
+        self.class_ids.insert(name.to_string(), id);
         id
     }
 
     fn collect_fn(&mut self, file: usize, f: &ast::FnDecl, exported: bool) {
         let name = f.ident.sym.to_string();
+        let symbol = self.declaration_symbol(file, &name);
         let pos = self.pos(f.ident.span);
         if let Some(tp) = &f.function.type_params {
             let bodiless = f.function.body.is_none();
@@ -326,7 +312,7 @@ impl<'p> Checker<'p> {
             }
             let (type_params, duplicate_type_parameter) = self.collect_type_parameter_names(tp);
             self.generic_fns.insert(
-                name.clone(),
+                symbol.clone(),
                 GenericFn {
                     file,
                     type_params,
@@ -334,18 +320,11 @@ impl<'p> Checker<'p> {
                     rejected: bodiless || duplicate_type_parameter,
                 },
             );
-            self.register_scope_item(file, &name, ScopeItem::GenericFunc(name.clone()), pos);
+            self.register_scope_item(file, &name, ScopeItem::GenericFunc(symbol.clone()), pos);
         } else {
-            if self.fn_sigs.contains_key(&name) {
-                self.error(
-                    RuleCode::S017,
-                    format!("duplicate function name `{}` in the program", name),
-                    pos.clone(),
-                );
-            }
             // Placeholder; pass B fills the real signature.
             self.fn_sigs.insert(
-                name.clone(),
+                symbol.clone(),
                 FnSig {
                     params: Vec::new(),
                     ret: Type::Error,
@@ -354,7 +333,7 @@ impl<'p> Checker<'p> {
                     yield_known: false,
                 },
             );
-            self.register_scope_item(file, &name, ScopeItem::Func(name.clone()), pos);
+            self.register_scope_item(file, &name, ScopeItem::Func(symbol.clone()), pos);
         }
         if exported {
             self.exports[file].insert(name.clone());
@@ -394,7 +373,12 @@ impl<'p> Checker<'p> {
             };
             let name = binding.id.sym.to_string();
             let pos = self.pos(binding.id.span);
-            self.register_scope_item(file, &name, ScopeItem::Global(name.clone()), pos);
+            self.register_scope_item(
+                file,
+                &name,
+                ScopeItem::Global(self.declaration_symbol(file, &name)),
+                pos,
+            );
             if exported {
                 self.exports[file].insert(name);
             }
@@ -480,7 +464,6 @@ impl<'p> Checker<'p> {
             members,
             pos: pos.clone(),
         });
-        self.enum_ids.insert(name.clone(), id);
         self.register_scope_item(file, &name, ScopeItem::Enum(id), pos);
         if exported {
             self.exports[file].insert(name);
@@ -745,7 +728,13 @@ impl<'p> Checker<'p> {
     fn collect_handle(&mut self, file: usize, i: &ast::TsInterfaceDecl) {
         let name = i.id.sym.to_string();
         let pos = self.pos(i.id.span);
-        let id = self.new_class(&name, false, false, None, pos.clone());
+        let id = self.new_class(
+            &self.declaration_symbol(file, &name),
+            false,
+            false,
+            None,
+            pos.clone(),
+        );
         self.handle_classes.insert(id);
         self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
     }
@@ -756,7 +745,13 @@ impl<'p> Checker<'p> {
     fn collect_boundary_struct(&mut self, file: usize, c: &ast::ClassDecl) {
         let name = c.ident.sym.to_string();
         let pos = self.pos(c.ident.span);
-        let id = self.new_class(&name, true, false, None, pos.clone());
+        let id = self.new_class(
+            &self.declaration_symbol(file, &name),
+            true,
+            false,
+            None,
+            pos.clone(),
+        );
         self.boundary_classes.insert(id);
         self.classes[id.0].is_boundary = true;
         // §111 rule 2: the form carries the selection. The checker reads
@@ -782,7 +777,12 @@ impl<'p> Checker<'p> {
             };
             let name = binding.id.sym.to_string();
             let pos = self.pos(binding.id.span);
-            self.register_scope_item(file, &name, ScopeItem::Global(name.clone()), pos);
+            self.register_scope_item(
+                file,
+                &name,
+                ScopeItem::Global(self.declaration_symbol(file, &name)),
+                pos,
+            );
         }
     }
 }

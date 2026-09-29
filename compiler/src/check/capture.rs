@@ -240,9 +240,13 @@ impl<'a> Analysis<'a> {
                     self.call(
                         &match callee {
                             Callee::Method { recv, name } => {
-                                format!("{}.{}", type_name(self.module, &recv.ty), name)
+                                format!(
+                                    "{}.{}",
+                                    type_name(self.module, &recv.ty),
+                                    super::source_name(name)
+                                )
                             }
-                            _ => f.name.clone(),
+                            _ => super::identity::module_declaration_label(self.module, &f.symbol),
                         },
                         &f.params,
                         args,
@@ -272,7 +276,7 @@ impl<'a> Analysis<'a> {
             E::AsyncCall { callee, args } | E::AsyncHandleCreate { callee, args, .. } => {
                 let f = match callee {
                     hir::AsyncCallee::Function(name) => {
-                        self.module.functions.iter().find(|f| &f.name == name)
+                        self.module.functions.iter().find(|f| &f.symbol == name)
                     }
                     hir::AsyncCallee::Method { class, name, .. } => {
                         self.module.method(&Type::Class(*class), name)
@@ -282,9 +286,13 @@ impl<'a> Analysis<'a> {
                     self.call(
                         &match callee {
                             hir::AsyncCallee::Method { class, name, .. } => {
-                                format!("{}.{}", self.module.classes[class.0].name, name)
+                                super::identity::class_member_label(
+                                    &self.module.classes,
+                                    &self.module.classes[class.0],
+                                    name,
+                                )
                             }
-                            _ => f.name.clone(),
+                            _ => super::identity::module_declaration_label(self.module, &f.symbol),
                         },
                         &f.params,
                         args,
@@ -299,7 +307,7 @@ impl<'a> Analysis<'a> {
     }
     fn function(&self, callee: &Callee) -> Option<&'a hir::Function> {
         match callee {
-            Callee::Func(name) => self.module.functions.iter().find(|f| &f.name == name),
+            Callee::Func(name) => self.module.functions.iter().find(|f| &f.symbol == name),
             Callee::Method { recv, name } => self.module.method(&recv.ty, name),
             _ => None,
         }
@@ -560,7 +568,11 @@ fn record_child(child: hir::HirChildMut<'_>, escaping: &HashSet<usize>) {
 
 fn value_name(module: &hir::Module, expr: &Expr) -> String {
     match &expr.kind {
-        E::Local(name, _) | E::Global(name) => format!("value `{name}`"),
+        E::Local(name, _) => format!("value `{name}`"),
+        E::Global(symbol) => format!(
+            "value `{}`",
+            super::identity::module_declaration_label(module, symbol)
+        ),
         E::Lambda { captures, .. } => format!(
             "lambda capturing {}",
             captures
@@ -572,7 +584,10 @@ fn value_name(module: &hir::Module, expr: &Expr) -> String {
         E::Call {
             callee: Callee::Func(name),
             ..
-        } => format!("result of `{name}`"),
+        } => format!(
+            "result of `{}`",
+            super::identity::module_declaration_label(module, name)
+        ),
         _ => format!("value of type `{}`", type_name(module, &expr.ty)),
     }
 }

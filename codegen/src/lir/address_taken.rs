@@ -163,7 +163,7 @@ impl AddressTaken<'_> {
                         .module
                         .functions
                         .iter()
-                        .find(|function| function.name == *name)
+                        .find(|function| function.symbol == *name)
                         .map(|function| {
                             function
                                 .params
@@ -196,7 +196,7 @@ impl AddressTaken<'_> {
                                 definition
                                     .methods
                                     .iter()
-                                    .find(|method| method.name == *name)
+                                    .find(|method| method.symbol == *name)
                             })
                             .map(|method| {
                                 method

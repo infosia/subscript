@@ -2,6 +2,10 @@
 //! with its contracted rule code, and the diagnostic points into the
 //! entry's file at the line of the offending construct.
 
+#[allow(dead_code)]
+#[path = "../../codegen/tests/corpus/mod.rs"]
+mod corpus;
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -352,6 +356,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S011,
         14,
     ),
+    ("r267-duplicate-host-entry/lib.ts", RuleCode::S017, 8),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -372,27 +377,16 @@ fn expected_entries() -> Vec<(&'static str, RuleCode, u32)> {
     EXPECTED.iter().chain(REGEX_EXPECTED).copied().collect()
 }
 
+fn reject_sources(dir: &std::path::Path, file: &str) -> Vec<SourceFile> {
+    let id = file.split('/').next().unwrap().trim_end_matches(".ts");
+    corpus::entry_sources(dir, id)
+}
+
 #[test]
 fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
     let dir = corpus_dir().join("reject");
     for (file, code, line) in expected_entries() {
-        let path = dir.join(file);
-        let source =
-            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
-        let mut files = Vec::new();
-        if matches!(
-            file,
-            "r169-embedded-header-copy.ts"
-                | "r251-map-boundary-struct-get.ts"
-                | "r265-boxed-local-narrowing-call.ts"
-                | "r266-boxed-local-narrowing-alias-store.ts"
-        ) {
-            let mirror =
-                fs::read_to_string(corpus_dir().join("interop").join("interop.generated.d.ts"))
-                    .expect("read the interop mirror");
-            files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
-        }
-        files.push(SourceFile::new(file, source));
+        let files = reject_sources(&dir, file);
         let diags = check_entry(&files);
         assert!(
             !diags.is_empty(),
@@ -407,9 +401,15 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
             file, code, first.code, first.message
         );
         assert_eq!(
-            first.pos.file, file,
+            first.pos.file,
+            std::path::Path::new(file)
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
             "{}: diagnostic points at wrong file {}",
-            file, first.pos.file
+            file,
+            first.pos.file
         );
         assert_eq!(
             first.pos.line, line,
@@ -437,20 +437,7 @@ fn divergence_blocks_match_every_reject_entry_tsc_header() {
             continue;
         }
 
-        let mut files = Vec::new();
-        if matches!(
-            file,
-            "r169-embedded-header-copy.ts"
-                | "r251-map-boundary-struct-get.ts"
-                | "r265-boxed-local-narrowing-call.ts"
-                | "r266-boxed-local-narrowing-alias-store.ts"
-        ) {
-            let mirror =
-                fs::read_to_string(corpus_dir().join("interop").join("interop.generated.d.ts"))
-                    .expect("read the interop mirror");
-            files.push(SourceFile::ambient("interop.generated.d.ts", mirror));
-        }
-        files.push(SourceFile::new(file, source));
+        let files = reject_sources(&dir, file);
         let diagnostics = check_program(&files).expect_err("reject entry must fail");
         let rendered = render_diagnostics(&files, &diagnostics[..1]);
         let has_block = rendered.contains("= TypeScript accepts:");
@@ -540,7 +527,33 @@ fn reject_table_covers_every_corpus_entry() {
     let mut entries: Vec<String> = fs::read_dir(&dir)
         .expect("read corpus/reject")
         .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if e.path().is_dir() {
+                let headers: Vec<_> = fs::read_dir(e.path())
+                    .expect("read reject modules")
+                    .map(|entry| entry.expect("read module").path())
+                    .filter(|path| path.extension().is_some_and(|ext| ext == "ts"))
+                    .filter(|path| {
+                        fs::read_to_string(path)
+                            .expect("read module")
+                            .lines()
+                            .any(|line| line.starts_with("// expected-error:"))
+                    })
+                    .collect();
+                assert_eq!(
+                    headers.len(),
+                    1,
+                    "{name}: one diagnostic header per program"
+                );
+                format!(
+                    "{name}/{}",
+                    headers[0].file_name().unwrap().to_string_lossy()
+                )
+            } else {
+                name
+            }
+        })
         .filter(|n| n.ends_with(".ts"))
         .collect();
     let active = expected_entries();

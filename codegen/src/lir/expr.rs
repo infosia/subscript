@@ -119,12 +119,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 }
             }
             K::Global(name) => {
-                let global = self
-                    .lowering
-                    .globals
-                    .get(name)
-                    .copied()
-                    .ok_or_else(|| self.error(&expr.pos, format!("unknown global `{name}`")))?;
+                let global = self.lowering.globals.get(name).copied().ok_or_else(|| {
+                    self.error(
+                        &expr.pos,
+                        format!("unknown global `{}`", hir::source_name(name)),
+                    )
+                })?;
                 let stored_type = self
                     .lowering
                     .hir

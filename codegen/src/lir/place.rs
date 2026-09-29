@@ -64,20 +64,25 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 PreparedPlaceKind::Local(local, ty)
             }
             hir::ExprKind::Global(name) => {
-                let global = self
-                    .lowering
-                    .globals
-                    .get(name)
-                    .copied()
-                    .ok_or_else(|| self.error(&expr.pos, format!("unknown global `{name}`")))?;
+                let global = self.lowering.globals.get(name).copied().ok_or_else(|| {
+                    self.error(
+                        &expr.pos,
+                        format!("unknown global `{}`", hir::source_name(name)),
+                    )
+                })?;
                 let ty = self
                     .lowering
                     .hir
                     .globals
                     .iter()
-                    .find(|definition| definition.name == *name)
+                    .find(|definition| definition.symbol == *name)
                     .map(|definition| definition.ty.clone())
-                    .ok_or_else(|| self.error(&expr.pos, format!("unknown global `{name}`")))?;
+                    .ok_or_else(|| {
+                        self.error(
+                            &expr.pos,
+                            format!("unknown global `{}`", hir::source_name(name)),
+                        )
+                    })?;
                 PreparedPlaceKind::Global(global, ty)
             }
             hir::ExprKind::Field { obj, name } => {

@@ -603,11 +603,21 @@ const subscript_alloc_class_info subscript_alloc_classes[] = {\n",
         );
     }
     for class in &module.classes {
+        let name = subscript_compiler::hir::declaration_label(
+            &class.source_name,
+            &class.pos,
+            module
+                .classes
+                .iter()
+                .filter(|other| other.source_name == class.source_name)
+                .count()
+                > 1,
+        );
         let _ = writeln!(
             out,
             "    {{ {}u, {} }},",
             class.id.0,
-            c_string_literal(class.source_name.as_bytes())
+            c_string_literal(name.as_bytes())
         );
     }
     let _ = writeln!(

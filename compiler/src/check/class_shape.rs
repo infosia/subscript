@@ -235,7 +235,7 @@ impl<'p> Checker<'p> {
                 yield_known: true,
             };
             if method.is_static {
-                let symbol = static_member_symbol(&self.classes[id.0].name, &name);
+                let symbol = static_member_symbol(id, &self.classes[id.0].name, &name);
                 self.class_sigs[id.0]
                     .static_methods
                     .insert(name, sig.clone());
@@ -322,7 +322,7 @@ impl<'p> Checker<'p> {
             };
             write_accessors.push((name.clone(), key_pos, method.is_static));
             if method.is_static {
-                let symbol = static_member_symbol(&self.classes[id.0].name, &write_name);
+                let symbol = static_member_symbol(id, &self.classes[id.0].name, &write_name);
                 self.class_sigs[id.0]
                     .static_methods
                     .insert(write_name, sig.clone());
@@ -428,7 +428,7 @@ impl<'p> Checker<'p> {
             return;
         }
         if method.is_static {
-            let symbol = static_member_symbol(&self.classes[id.0].name, &name);
+            let symbol = static_member_symbol(id, &self.classes[id.0].name, &name);
             self.class_sigs[id.0]
                 .static_methods
                 .insert(name, sig.clone());
@@ -536,7 +536,7 @@ impl<'p> Checker<'p> {
                             ty,
                             mutable: !prop.readonly,
                         };
-                        let symbol = static_member_symbol(&self.classes[id.0].name, &name);
+                        let symbol = static_member_symbol(id, &self.classes[id.0].name, &name);
                         self.global_sigs.insert(symbol, signature.clone());
                         self.class_sigs[id.0].static_fields.insert(name, signature);
                         continue;

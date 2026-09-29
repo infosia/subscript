@@ -46,3 +46,73 @@ export function main(): void { first(); const user = new User(); user.method(); 
         assert_eq!(slots[7].as_deref(), Some("subscript_init"));
     }
 }
+
+#[test]
+fn globals_with_one_source_name_keep_distinct_storage() {
+    use super::{lower_lir_module_with, LowerOptions};
+    use subscript_runtime::Context;
+
+    // compiler.md §125.2 item 4: LIR identity owns the storage slot.
+    let mut hir = check_program(&[SourceFile::new(
+        "slots.ts",
+        "let a: i32 = 7; let b: i32 = 100; function first(): i32 { return a; } function second(): i32 { return b; } export function main(): void { b += 1; print(`${first()} ${second()}`); }",
+    )])
+    .expect("storage source");
+    for global in &mut hir.globals {
+        global.name = "x".to_string();
+    }
+    for function in &mut hir.functions {
+        if !function.exported {
+            function.name = "read".to_string();
+        }
+    }
+    let lir = crate::lir::lower_module(&hir).expect("storage LIR");
+    for reload in [false, true] {
+        let isa = cranelift_native::builder()
+            .expect("host ISA")
+            .finish(dev_flags().expect("dev flags"))
+            .expect("ISA flags");
+        let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
+        builder.memory_provider(Box::new(
+            cranelift_jit::ArenaMemoryProvider::new_with_size(1 << 20).expect("test reservation"),
+        ));
+        crate::jit::register_runtime(&mut builder);
+        let mut module = JITModule::new(builder);
+        let lowered = lower_lir_module_with(
+            &mut module,
+            &lir,
+            LowerOptions {
+                reload,
+                ..LowerOptions::default()
+            },
+        )
+        .expect("storage lowering");
+        module.finalize_definitions().expect("finalized code");
+        let table = lowered
+            .slots
+            .iter()
+            .map(|id| id.map_or(std::ptr::null(), |id| module.get_finalized_function(id)))
+            .collect::<Vec<_>>();
+        let mut ctx = Context::new();
+        ctx.set_fn_table(table.as_ptr());
+        let mut globals = vec![0_u64; (lowered.globals_size as usize).div_ceil(8)];
+        if reload {
+            ctx.set_globals(globals.as_mut_ptr().cast());
+        }
+        type Entry = unsafe extern "C" fn(*mut Context);
+        // SAFETY: both finalized entries take one live Context; the module outlives each call.
+        unsafe {
+            let init: Entry = std::mem::transmute(module.get_finalized_function(lowered.init));
+            init(&mut *ctx);
+            let main: Entry = std::mem::transmute(
+                module.get_finalized_function(lowered.main_id().expect("main entry")),
+            );
+            main(&mut *ctx);
+        }
+        assert!(ctx.trap_record().is_none());
+        assert_eq!(ctx.take_stdout(), b"7 101\n", "reload={reload}");
+        drop(ctx);
+        // SAFETY: execution has returned, and no generated pointer remains in use.
+        unsafe { module.free_memory() };
+    }
+}

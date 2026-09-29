@@ -77,10 +77,12 @@ pub(crate) fn references_interop(src: &str) -> bool {
     const TOKENS: &[&str] = &[
         "subDevice",
         "subChainPayloadValue",
+        "SubChain",
         "subSlice",
         "SubDrawList",
         "subDrawListTotal",
         "SUB_ACCESS",
+        "SubLogCallback",
         "subAccessMatches",
         "subBulk",
         // Async/Future shapes (compiler.md §14).
@@ -114,6 +116,7 @@ pub(crate) fn references_interop(src: &str) -> bool {
         "subProbeSetBindGroup",
         // By-value register-image packing (compiler.md §47).
         "subByValue",
+        "SubByValue",
         // Host-owned state (compiler.md §49).
         "subHostOwnedState",
         // Wire-mapped literal-union boundary crossings.

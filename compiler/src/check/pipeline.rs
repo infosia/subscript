@@ -173,7 +173,6 @@ fn run_with_effects(
         class_sigs: Vec::new(),
         class_ids: HashMap::new(),
         enums: Vec::new(),
-        enum_ids: HashMap::new(),
         string_aliases: Vec::new(),
         fn_sigs: HashMap::new(),
         functions: Vec::new(),
@@ -182,6 +181,7 @@ fn run_with_effects(
         globals: Vec::new(),
         generic_fns: HashMap::new(),
         generic_classes: HashMap::new(),
+        instance_symbols: HashMap::new(),
         file_scopes: Vec::new(),
         exports: Vec::new(),
         top_level: Vec::new(),
@@ -289,7 +289,7 @@ fn run_with_effects(
                 .functions
                 .iter()
                 .filter(|function| function.synthesized_helper)
-                .map(|function| function.name.clone())
+                .map(|function| function.symbol.clone())
                 .collect(),
             functions: ck.functions,
             worker_entries: ck.worker_entries,
@@ -300,6 +300,12 @@ fn run_with_effects(
             initializer_can_raise: false,
             source_bytes: prog.source_bytes,
         };
+        if ck.diags.is_empty() {
+            let duplicates = identity::host_entry_diagnostics(&module);
+            if !duplicates.is_empty() {
+                return Err(duplicates);
+            }
+        }
         if provisional {
             return Ok(module);
         }

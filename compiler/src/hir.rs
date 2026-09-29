@@ -6,6 +6,9 @@
 //! generic template. A discovery HIR can contain [`Type::Error`] and one
 //! or more [`PoisonedImport`] records.
 
+mod names;
+pub use names::{declaration_label, source_name};
+
 mod collections;
 mod definitions;
 mod effects;
@@ -54,10 +57,10 @@ pub struct Module {
     /// Free functions, including monomorphized generic instances.
     /// Constructors and methods live on their [`ClassDef`].
     pub functions: Vec<Function>,
-    /// Names of synthesized helper functions.
+    /// Declaration symbols of synthesized helper functions.
     pub synthesized_helpers: std::collections::HashSet<String>,
     /// Q35 worker-entry adapters required by `Worker.spawn` call sites,
-    /// deduplicated by directly named function and message-class pair.
+    /// deduplicated by function declaration symbol and message-class pair.
     pub worker_entries: Vec<WorkerEntry>,
     /// Checker-derived signatures for intrinsic and built-in calls.
     pub operation_signatures: Vec<OperationSignature>,
@@ -176,7 +179,7 @@ pub struct PoisonedImport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct WorkerEntry {
-    /// Directly named module-level script function.
+    /// Checker-assigned declaration symbol of a module-level script function.
     pub function: String,
     /// Parent-to-worker message class.
     pub input: ClassId,
@@ -255,7 +258,7 @@ pub struct ForeignFn {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct ClassDef {
-    /// Unique name; monomorphized instances use `Name<args>` spelling.
+    /// Source name; monomorphized instances use `Name<args>` spelling.
     pub name: String,
     /// True for `@CStruct class` (C-layout, copy semantics — C2).
     pub is_value: bool,
@@ -366,6 +369,8 @@ pub struct StringAliasDef {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Global {
+    /// Program-unique declaration symbol assigned by the checker (compiler.md §125).
+    pub symbol: String,
     /// Variable name.
     pub name: String,
     /// Resolved type.
@@ -384,12 +389,13 @@ pub struct Global {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Function {
+    /// Program-unique symbol for a free function; members use their class identity.
+    pub symbol: String,
     /// Checker-synthesized helper without a reload slot (compiler.md §119).
     pub synthesized_helper: bool,
-    /// Unique name; monomorphized instances use `name<args>` spelling.
+    /// Source name; monomorphized instances use `name<args>` spelling.
     pub name: String,
-    /// True when declared `export` (every exported function is a host
-    /// entry point — Q12).
+    /// True when declared `export`. The signature determines host-entry eligibility.
     pub exported: bool,
     /// True for `function*` coroutines (C8).
     pub is_generator: bool,
@@ -1426,7 +1432,7 @@ pub enum ArrFmtKind {
 /// What a call dispatches to.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Callee {
-    /// A module function by (possibly monomorphized) name.
+    /// A module function by its checker-assigned declaration symbol.
     Func(String),
     /// A foreign C-ABI function declared by an ambient mirror (§12.2);
     /// carries the symbol name. Both tiers lower the call to an imported
@@ -1479,7 +1485,7 @@ pub enum Callee {
     Method {
         /// Receiver expression.
         recv: Box<Expr>,
-        /// Method name.
+        /// Method declaration symbol within the receiver class, or a built-in member name.
         name: String,
     },
 }
@@ -1601,9 +1607,9 @@ pub enum ExprKind {
     This,
     /// Local name and declared storage type (compiler.md §124).
     Local(String, Type),
-    /// Reference to a module-level variable.
+    /// Reference to a module-level variable by its declaration symbol.
     Global(String),
-    /// A named function used as a value (non-capturing — C5).
+    /// A function declaration symbol used as a value (non-capturing — C5).
     FuncRef(String),
     /// An enum member, e.g. `Status.Complete`.
     EnumMember {
@@ -1779,7 +1785,7 @@ pub enum ExprKind {
 /// the callee frame.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AsyncCallee {
-    /// A module async function by HIR name.
+    /// A module async function by its declaration symbol.
     Function(String),
     /// An async instance method on a plain reference class.
     Method {
@@ -1787,7 +1793,7 @@ pub enum AsyncCallee {
         class: ClassId,
         /// Receiver expression, evaluated exactly once before arguments.
         receiver: Box<Expr>,
-        /// Method name within `class`.
+        /// Method declaration symbol within `class`.
         name: String,
     },
 }

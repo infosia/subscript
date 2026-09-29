@@ -76,7 +76,12 @@ fn corpus_mutations_do_not_panic() {
                 .iter()
                 .zip(&originals)
                 .filter(|(sibling, file)| {
-                    file.dts && sibling.parent() == path.parent() && *sibling != path
+                    (file.dts
+                        || path.parent().is_some_and(|parent| {
+                            parent.parent() == Some(root.join("reject").as_path())
+                        }))
+                        && sibling.parent() == path.parent()
+                        && *sibling != path
                 })
                 .map(|(_, file)| file.clone())
                 .collect();

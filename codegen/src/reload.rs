@@ -63,10 +63,7 @@ use std::ffi::c_void;
 
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::FuncId;
-use subscript_compiler::types::display_type;
-use subscript_compiler::{
-    check_program, hir, ClassId, Diagnostic, EnumId, SourceFile, StringAliasId, Type,
-};
+use subscript_compiler::{check_program, hir, Diagnostic, SourceFile, Type};
 use subscript_runtime::Context;
 
 use crate::jit::{install_reservation, register_runtime, RunError, TrapReport};
@@ -137,41 +134,19 @@ impl DeclarationHash {
     }
 }
 
-/// Renders a type with the module's nominal names, so that a class or
-/// enum rename, or a `FixedArray` length change, changes the hash.
-fn ty_name(m: &hir::Module, ty: &Type) -> String {
-    let class = |id: ClassId| {
-        m.classes
-            .get(id.0)
-            .map_or_else(|| format!("<class #{}>", id.0), |c| c.name.clone())
-    };
-    let enum_ = |id: EnumId| {
-        m.enums
-            .get(id.0)
-            .map_or_else(|| format!("<enum #{}>", id.0), |e| e.name.clone())
-    };
-    let string_alias = |id: StringAliasId| {
-        m.string_aliases.get(id.0).map_or_else(
-            || format!("<string alias #{}>", id.0),
-            |alias| alias.name.clone(),
-        )
-    };
-    display_type(ty, &class, &enum_, &string_alias)
-}
-
 /// Spells a function signature: name, parameter types in order, return
 /// type, and the two shape bits that change the entry surface.
-fn signature_text(m: &hir::Module, f: &hir::Function) -> String {
+fn signature_text(f: &hir::Function) -> String {
     let params: Vec<String> = f
         .params
         .iter()
-        .map(|p| format!("{}:escapes={}", ty_name(m, &p.ty), p.escapes))
+        .map(|p| format!("{:?}:escapes={}", p.ty, p.escapes))
         .collect();
     format!(
-        "{}({}) -> {}{}{}{}",
+        "{}({}) -> {:?}{}{}{}",
         f.name,
         params.join(","),
-        ty_name(m, &f.ret),
+        f.ret,
         if f.exported { " export" } else { "" },
         if f.is_generator { " generator" } else { "" },
         if f.is_async { " async" } else { "" }
@@ -189,32 +164,50 @@ fn signature_text(m: &hir::Module, f: &hir::Function) -> String {
 /// Other body expressions, statements, and default values do not enter it.
 #[must_use]
 pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
+    let label = |kind: &str, name: &str, pos: &subscript_compiler::Pos, ambiguous: bool| {
+        format!("{kind} {}", hir::declaration_label(name, pos, ambiguous))
+    };
     let mut entries: Vec<(String, u64)> = Vec::new();
     let mut push = |name: String, text: &str| entries.push((name, fnv1a(text.as_bytes())));
 
     for c in &m.classes {
+        let ambiguous = m
+            .classes
+            .iter()
+            .filter(|other| other.name == c.name)
+            .count()
+            > 1;
         let fields: Vec<String> = c
             .fields
             .iter()
             .enumerate()
-            .map(|(i, f)| format!("{i}:{}:{}", f.name, ty_name(m, &f.ty)))
+            .map(|(i, f)| format!("{i}:{}:{:?}", f.name, f.ty))
             .collect();
         push(
-            format!("class {}", c.name),
+            label("class", &c.name, &c.pos, ambiguous),
             &format!(
-                "{}|{}|{}",
+                "{}|{}|{}|{}",
+                c.pos.file,
                 c.name,
                 if c.is_value { "value" } else { "reference" },
                 fields.join(";")
             ),
         );
         if let Some(ctor) = &c.ctor {
-            push(format!("constructor {}", c.name), &signature_text(m, ctor));
+            push(
+                label("constructor", &c.name, &c.pos, ambiguous),
+                &signature_text(ctor),
+            );
         }
         for method in &c.methods {
             push(
-                format!("method {}.{}", c.name, method.name),
-                &signature_text(m, method),
+                label(
+                    "method",
+                    &format!("{}.{}", c.name, method.name),
+                    &c.pos,
+                    ambiguous,
+                ),
+                &signature_text(method),
             );
         }
     }
@@ -225,8 +218,13 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
             .map(|(name, value)| format!("{name}={value}"))
             .collect();
         push(
-            format!("enum {}", e.name),
-            &format!("{}|{}", e.name, members.join(";")),
+            label(
+                "enum",
+                &e.name,
+                &e.pos,
+                m.enums.iter().filter(|other| other.name == e.name).count() > 1,
+            ),
+            &format!("{}|{}|{}", e.pos.file, e.name, members.join(";")),
         );
     }
     for alias in &m.string_aliases {
@@ -241,18 +239,53 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
                     .join(",")
             });
         push(
-            format!("string alias {}", alias.name),
-            &format!("{}|{}|{wires}", alias.name, alias.members.join(";")),
+            label(
+                "string alias",
+                &alias.name,
+                &alias.pos,
+                m.string_aliases
+                    .iter()
+                    .filter(|other| other.name == alias.name)
+                    .count()
+                    > 1,
+            ),
+            &format!(
+                "{}|{}|{}|{wires}",
+                alias.pos.file,
+                alias.name,
+                alias.members.join(";")
+            ),
         );
     }
     for g in &m.globals {
         push(
-            format!("variable {}", g.name),
-            &format!("{}:{}", g.name, ty_name(m, &g.ty)),
+            label(
+                "variable",
+                &g.name,
+                &g.pos,
+                m.globals
+                    .iter()
+                    .filter(|other| other.name == g.name)
+                    .count()
+                    > 1,
+            ),
+            &format!("{}:{:?}", g.symbol, g.ty),
         );
     }
     for f in m.functions.iter().filter(|f| !f.synthesized_helper) {
-        push(format!("function {}", f.name), &signature_text(m, f));
+        push(
+            label(
+                "function",
+                &f.name,
+                &f.pos,
+                m.functions
+                    .iter()
+                    .filter(|other| other.name == f.name)
+                    .count()
+                    > 1,
+            ),
+            &format!("{}|{}", f.symbol, signature_text(f)),
+        );
     }
 
     let mut lambdas = Vec::new();

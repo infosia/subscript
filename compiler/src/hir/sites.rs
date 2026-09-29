@@ -96,7 +96,7 @@ impl Expr {
             K::Global(name) => module
                 .globals
                 .iter()
-                .find(|global| global.name == *name)
+                .find(|global| global.symbol == *name)
                 .map(|global| &global.ty),
             K::Field { obj, name } => declared_field_type(&obj.ty, name, &module.classes),
             K::Cast(_)
@@ -230,7 +230,7 @@ impl Expr {
                     Callee::Func(name) => module
                         .functions
                         .iter()
-                        .find(|function| function.name == *name)
+                        .find(|function| function.symbol == *name)
                         .map(|function| {
                             function
                                 .params
@@ -258,7 +258,7 @@ impl Expr {
                             definition
                                 .methods
                                 .iter()
-                                .find(|method| method.name == *name)
+                                .find(|method| method.symbol == *name)
                                 .map(|method| {
                                     method
                                         .params

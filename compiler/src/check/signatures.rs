@@ -30,7 +30,7 @@ impl<'p> Checker<'p> {
             match decl {
                 ast::Decl::Class(c) if c.class.type_params.is_none() => {
                     let name = c.ident.sym.to_string();
-                    if let Some(&id) = self.class_ids.get(&name) {
+                    if let Some(&id) = self.class_ids.get(&self.declaration_symbol(file, &name)) {
                         self.resolve_class_shape(id, &c.class, c.declare);
                     }
                 }
@@ -151,8 +151,10 @@ impl<'p> Checker<'p> {
                                 // annotation, so the value travels here and
                                 // the `u64` flag type is supplied by rule.
                                 Some(value) => {
-                                    self.ambient_int_consts
-                                        .insert(name.clone(), (value, Type::U64));
+                                    self.ambient_int_consts.insert(
+                                        self.declaration_symbol(file, &name),
+                                        (value, Type::U64),
+                                    );
                                     Type::U64
                                 }
                                 None => {
@@ -167,8 +169,10 @@ impl<'p> Checker<'p> {
                                 }
                             },
                         };
-                        self.global_sigs
-                            .insert(name, GlobalSig { ty, mutable: false });
+                        self.global_sigs.insert(
+                            self.declaration_symbol(file, &name),
+                            GlobalSig { ty, mutable: false },
+                        );
                     }
                 }
                 _ => {}
@@ -281,7 +285,7 @@ impl<'p> Checker<'p> {
             match decl {
                 ast::Decl::Class(c) if c.class.type_params.is_none() => {
                     let name = c.ident.sym.to_string();
-                    if let Some(&id) = self.class_ids.get(&name) {
+                    if let Some(&id) = self.class_ids.get(&self.declaration_symbol(file, &name)) {
                         self.resolve_class_shape(id, &c.class, c.declare);
                     }
                 }
@@ -314,7 +318,8 @@ impl<'p> Checker<'p> {
                             );
                         }
                     }
-                    self.fn_sigs.insert(name, sig);
+                    self.fn_sigs
+                        .insert(self.declaration_symbol(file, &name), sig);
                 }
                 ast::Decl::Var(v) => {
                     for d in &v.decls {
@@ -343,7 +348,7 @@ impl<'p> Checker<'p> {
                             );
                         }
                         self.global_sigs.insert(
-                            name,
+                            self.declaration_symbol(file, &name),
                             GlobalSig {
                                 ty,
                                 mutable: v.kind == ast::VarDeclKind::Let,
