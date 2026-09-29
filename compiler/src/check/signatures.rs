@@ -246,23 +246,27 @@ impl<'p> Checker<'p> {
                         continue;
                     };
                     let local = named.local.sym.to_string();
+                    let imported = named.imported.as_ref();
+                    let imported_name =
+                        imported.map_or_else(|| local.clone(), |name| name.atom().to_string());
+                    let imported_pos = self.pos(imported.map_or(named.local.span, Spanned::span));
                     let pos = self.pos(named.local.span);
-                    if !self.exports[target].contains(&local) {
+                    if !self.exports[target].contains(&imported_name) {
                         self.error(
                             RuleCode::S016,
-                            format!("`{}` is not exported by `{}`", local, raw),
-                            pos.clone(),
+                            format!("`{}` is not exported by `{}`", imported_name, raw),
+                            imported_pos.clone(),
                         );
                         additions.push((local, ScopeItem::Poisoned, pos));
                         continue;
                     }
-                    match self.file_scopes[target].get(&local) {
+                    match self.file_scopes[target].get(&imported_name) {
                         Some(item) => additions.push((local, item.clone(), pos)),
                         None => {
                             self.error(
                                 RuleCode::S016,
-                                format!("`{}` is not defined in `{}`", local, raw),
-                                pos,
+                                format!("`{}` is not defined in `{}`", imported_name, raw),
+                                imported_pos,
                             );
                         }
                     }
