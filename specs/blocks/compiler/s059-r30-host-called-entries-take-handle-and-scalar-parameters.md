@@ -31,7 +31,9 @@ Measurements at the pin, on this host:
    synchronous, returns `void`, and every parameter is a boundary
    scalar (sized numeric, `boolean`) or an opaque handle.
    Zero-argument `void` async exports stay host-callable,
-   unchanged.
+   unchanged. *(Corrected 2026-09-29 by §129: only a function that
+   the entry module exports is a host entry; the signature rule here
+   still decides which of those are valid.)*
 2. For every host-callable export, the ship tier emits
    `void subscript_export_<name>(subscript_rt_context* ctx, ...)`
    with the same parameter C types as the internal function.
@@ -42,7 +44,9 @@ Measurements at the pin, on this host:
    fails with `RunError::Internal`, and no script code runs.
    `call_export` keeps its zero-argument behavior.
 4. An exported function that is not host-callable stays a legal
-   script export with no host symbol. The checker changes nothing
+   script export with no host symbol. *(Corrected 2026-09-29 by §129:
+   in the entry module it is an error at the export; in another module
+   every export is a module export only.)* The checker changes nothing
    and rejects nothing new, so this cycle has no reject-corpus
    entry. The convention comments in the emitted C name the
    host-callable subset.

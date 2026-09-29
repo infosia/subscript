@@ -96,5 +96,6 @@ rule 2 and rule 3). C has one symbol namespace.
 ### 125.3 Open
 
 A module-qualified host entry symbol, so two modules can export host
-entries of one name, is the planned next form (owner, 2026-09-29). It
-changes §5, §59, the generated header, and the host example.
+entries of one name, was the planned next form (owner, 2026-09-29).
+*(Withdrawn 2026-09-29, owner decision: §129 makes the entry module
+the host API, so rule 4 and this plan are replaced.)*

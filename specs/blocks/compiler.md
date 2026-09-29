@@ -170,3 +170,4 @@ Every section, with its status:
 | §126 | A renamed import binds the imported declaration | active | [`s126-a-renamed-import-binds-the-imported-declaration.md`](compiler/s126-a-renamed-import-binds-the-imported-declaration.md) |
 | §127 | An import binding is read-only | active | [`s127-an-import-binding-is-read-only.md`](compiler/s127-an-import-binding-is-read-only.md) |
 | §128 | A named re-export is in the surface | active | [`s128-a-named-re-export-is-in-the-surface.md`](compiler/s128-a-named-re-export-is-in-the-surface.md) |
+| §129 | The entry module is the host API | active | [`s129-the-entry-module-is-the-host-api.md`](compiler/s129-the-entry-module-is-the-host-api.md) |

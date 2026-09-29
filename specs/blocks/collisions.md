@@ -706,7 +706,9 @@ Accept: `a288`, `a289`, `a290`. Reject: `r273`, `r274`, `r275`.
   is not a memory operation and it is the most-called name in every corpus
   entry and example; the change would cost more than it names.
 - **Q12 (entry and host API)** — every `export function` is a
-  host-callable entry point. The corpus runner calls `main(): void`;
+  host-callable entry point. *(Corrected 2026-09-29 by `compiler.md`
+  §129: only the functions that the entry module exports are host
+  entries; another module's exports are module exports only.)* The corpus runner calls `main(): void`;
   `a23` exports a lifecycle trio (`init`/`update`/`shutdown`) for
   host-driven use, and for the corpus run its own `main` drives them so
   the run set stays headless. Prelude host API for the corpus:

@@ -62,7 +62,10 @@ Measurements at the pin, on this host:
    sync or async. The `export` keyword on a generic declaration
    affects module imports only. Both tiers emit no
    `subscript_export_*` symbol for an instance, and
-   `subscript_kick_async_exports` kicks none.
+   `subscript_kick_async_exports` kicks none. *(Corrected 2026-09-29
+   by §129 rule 4, owner decision: the entry module cannot export a
+   generic function; another module's export of one affects imports
+   only, as stated here.)*
 6. Unchanged diagnostics: an async arrow function keeps S100 "async
    arrow functions are not in the decided surface; use an async
    function declaration"; `async constructor()` keeps the parse
