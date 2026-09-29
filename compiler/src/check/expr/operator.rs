@@ -282,7 +282,7 @@ impl<'p> Checker<'p> {
                     kind: ExprKind::Call {
                         callee: Callee::Method {
                             recv: Box::new(receiver),
-                            name: "set".to_string(),
+                            name: hir::Symbol::from_full_text("set"),
                         },
                         args: vec![index, result.expr],
                     },
@@ -360,14 +360,14 @@ impl<'p> Checker<'p> {
                 let callee = if let Some(receiver) = receiver {
                     Callee::Method {
                         recv: Box::new(receiver),
-                        name: write_name,
+                        name: hir::Symbol::from_full_text(write_name),
                     }
                 } else {
-                    Callee::Func(static_member_symbol(
+                    Callee::Func(hir::Symbol::from_full_text(static_member_symbol(
                         class,
                         &self.classes[class.0].name,
                         &write_name,
-                    ))
+                    )))
                 };
                 hir::Expr {
                     kind: ExprKind::Call {

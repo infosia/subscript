@@ -239,7 +239,7 @@ fn index_signature_updates_in_for_clauses_use_statement_position() {
                 hir::ExprKind::Call {
                     callee: hir::Callee::Method { name, .. },
                     ..
-                } if name == "set"
+                } if name.full_text() == "set"
             ),
             "the index update must rewrite to the write method: {step:?}"
         );

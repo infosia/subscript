@@ -217,7 +217,7 @@ impl Expr {
                     if reference_value(&recv.ty) {
                         sites.push(lifetime(&recv.pos));
                     }
-                    if name == "next" && matches!(recv.ty, Type::Generator(_)) {
+                    if name.full_text() == "next" && matches!(recv.ty, Type::Generator(_)) {
                         sites.push(TrapSite::DevReloadOnlyStaleCoroutine {
                             pos: self.pos.clone(),
                         });

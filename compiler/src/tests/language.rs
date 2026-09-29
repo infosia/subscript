@@ -1419,7 +1419,7 @@ fn async_instance_method_hir_carries_receiver_before_arguments() {
         panic!("method async callee")
     };
     assert_eq!(target_class.0, worker_index);
-    assert_eq!(name, "sibling");
+    assert_eq!(name.full_text(), "sibling");
     assert!(matches!(receiver.kind, hir::ExprKind::This));
     assert!(matches!(
         callee.receiver().map(|expr| &expr.kind),

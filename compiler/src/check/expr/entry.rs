@@ -581,7 +581,7 @@ impl<'p> Checker<'p> {
                 let args = self.check_args(&sig.params, &call.args, fx, &pos, &checked_name);
                 hir::Expr {
                     kind: ExprKind::AsyncCall {
-                        callee: AsyncCallee::Function(function),
+                        callee: AsyncCallee::Function(hir::Symbol::from_full_text(function)),
                         args,
                     },
                     ty: sig.ret,
@@ -659,7 +659,7 @@ impl<'p> Checker<'p> {
                         callee: AsyncCallee::Method {
                             class,
                             receiver: Box::new(receiver),
-                            name,
+                            name: hir::Symbol::from_full_text(name),
                         },
                         args,
                     },

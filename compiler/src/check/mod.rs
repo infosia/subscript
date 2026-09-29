@@ -1077,9 +1077,9 @@ pub(crate) struct Checker<'p> {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum ModuleFunction {
-    Free(String),
+    Free(hir::Symbol),
     Constructor(ClassId),
-    Method(ClassId, String),
+    Method(ClassId, hir::Symbol),
 }
 
 #[derive(Clone, Default)]
@@ -1159,17 +1159,17 @@ impl<'a> ModuleEffectScanner<'a> {
         }
     }
 
-    fn method_call(&mut self, receiver: &hir::Expr, name: &str) {
+    fn method_call(&mut self, receiver: &hir::Expr, name: &hir::Symbol) {
         let Some(class_id) = Self::class_of(&receiver.ty) else {
             return;
         };
         let Some(class) = self.classes.get(class_id.0) else {
             return;
         };
-        if class.methods.iter().any(|method| method.symbol == name) {
+        if class.methods.iter().any(|method| method.symbol == *name) {
             self.record_call(
-                ModuleFunction::Method(class_id, name.to_string()),
-                identity::class_member_label(self.classes, class, name),
+                ModuleFunction::Method(class_id, name.clone()),
+                identity::class_member_label(self.classes, class, name.full_text()),
             );
         }
     }
@@ -1177,7 +1177,10 @@ impl<'a> ModuleEffectScanner<'a> {
     fn async_callee(&mut self, callee: &hir::AsyncCallee) {
         match callee {
             hir::AsyncCallee::Function(name) => {
-                self.record_call(ModuleFunction::Free(name.clone()), name.clone());
+                self.record_call(
+                    ModuleFunction::Free(name.clone()),
+                    name.full_text().to_owned(),
+                );
             }
             hir::AsyncCallee::Method {
                 class,
@@ -1185,8 +1188,10 @@ impl<'a> ModuleEffectScanner<'a> {
                 name,
             } => {
                 let label = self.classes.get(class.0).map_or_else(
-                    || name.clone(),
-                    |definition| identity::class_member_label(self.classes, definition, name),
+                    || name.full_text().to_owned(),
+                    |definition| {
+                        identity::class_member_label(self.classes, definition, name.full_text())
+                    },
                 );
                 self.record_call(ModuleFunction::Method(*class, name.clone()), label);
             }
@@ -1212,11 +1217,14 @@ impl<'a> ModuleEffectScanner<'a> {
         use hir::ExprKind as K;
 
         match &expression.kind {
-            K::Global(name) => self.record_access(name, Vec::new()),
+            K::Global(name) => self.record_access(name.full_text(), Vec::new()),
             K::Call { callee, .. } => {
                 match callee {
                     hir::Callee::Func(name) => {
-                        self.record_call(ModuleFunction::Free(name.clone()), name.clone());
+                        self.record_call(
+                            ModuleFunction::Free(name.clone()),
+                            name.full_text().to_owned(),
+                        );
                     }
                     hir::Callee::Value(_) => self.record_indirect_call(),
                     hir::Callee::Method { recv, name } => self.method_call(recv, name),
@@ -1384,12 +1392,12 @@ fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
             checker
                 .globals
                 .iter()
-                .map(|g| (g.symbol.as_str(), g.name.as_str(), &g.pos))
+                .map(|g| (g.symbol.full_text(), g.name.as_str(), &g.pos))
                 .chain(
                     checker
                         .functions
                         .iter()
-                        .map(|f| (f.symbol.as_str(), f.name.as_str(), &f.pos)),
+                        .map(|f| (f.symbol.full_text(), f.name.as_str(), &f.pos)),
                 ),
         )
     };
@@ -1440,7 +1448,7 @@ fn module_initializer_diagnostics(checker: &Checker<'_>) -> Vec<Diagnostic> {
 
     let mut diagnostics = Vec::new();
     for global in &checker.globals {
-        let Some(&initializer_index) = binding_order.get(global.symbol.as_str()) else {
+        let Some(&initializer_index) = binding_order.get(global.symbol.full_text()) else {
             continue;
         };
         let mut scanner = ModuleEffectScanner::new(&bindings, &checker.classes);

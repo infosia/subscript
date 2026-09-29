@@ -163,7 +163,7 @@ impl<'p> Checker<'p> {
                         }
                     };
                     self.globals.push(hir::Global {
-                        symbol: name.clone(),
+                        symbol: hir::Symbol::from_full_text(name.clone()),
                         name: source_name(&name),
                         ty: sig.ty,
                         mutable: sig.mutable,
@@ -258,7 +258,7 @@ impl<'p> Checker<'p> {
         Some(hir::Function {
             synthesized_helper: false,
             can_raise: false,
-            symbol: name.to_string(),
+            symbol: hir::Symbol::from_full_text(name),
             name: source_name(name),
             exported,
             is_generator: sig.is_generator,
@@ -389,7 +389,11 @@ impl<'p> Checker<'p> {
                             }
                         };
                         self.globals.push(hir::Global {
-                            symbol: static_member_symbol(id, &self.classes[id.0].name, &name),
+                            symbol: hir::Symbol::from_full_text(static_member_symbol(
+                                id,
+                                &self.classes[id.0].name,
+                                &name,
+                            )),
                             name: format!("{}.{}", self.classes[id.0].name, source_name(&name)),
                             ty: signature.ty,
                             mutable: signature.mutable,
@@ -497,7 +501,7 @@ impl<'p> Checker<'p> {
                     self.classes[id.0].ctor = Some(hir::Function {
                         synthesized_helper: false,
                         can_raise: false,
-                        symbol: "constructor".to_string(),
+                        symbol: hir::Symbol::from_full_text("constructor"),
                         name: "constructor".to_string(),
                         exported: false,
                         is_generator: false,

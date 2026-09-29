@@ -17,7 +17,7 @@ pub struct HostEntry {
     /// Name visible to the host.
     pub name: String,
     /// Stable declaration symbol of the implementation.
-    pub target: String,
+    pub target: Symbol,
     /// Checked boundary signature; the boundary always returns void.
     pub signature: HostSignature,
     /// Position of the exposing export.

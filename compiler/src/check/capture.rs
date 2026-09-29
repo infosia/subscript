@@ -224,7 +224,7 @@ impl<'a> Analysis<'a> {
                     }
                 }
                 Callee::Method { recv, name }
-                    if matches!(recv.ty, Type::Array(_)) && name == "push" =>
+                    if matches!(recv.ty, Type::Array(_)) && name.full_text() == "push" =>
                 {
                     for v in args {
                         self.escapes.push(("array push".to_owned(), v));
@@ -243,7 +243,7 @@ impl<'a> Analysis<'a> {
                                 format!(
                                     "{}.{}",
                                     type_name(self.module, &recv.ty),
-                                    super::source_name(name)
+                                    name.source_name()
                                 )
                             }
                             _ => super::identity::module_declaration_label(self.module, &f.symbol),
@@ -289,7 +289,7 @@ impl<'a> Analysis<'a> {
                                 super::identity::class_member_label(
                                     &self.module.classes,
                                     &self.module.classes[class.0],
-                                    name,
+                                    name.full_text(),
                                 )
                             }
                             _ => super::identity::module_declaration_label(self.module, &f.symbol),

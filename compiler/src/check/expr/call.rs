@@ -200,7 +200,7 @@ impl<'p> Checker<'p> {
             let origin = fx.register_async_origin(pos.clone());
             return hir::Expr {
                 kind: ExprKind::AsyncHandleCreate {
-                    callee: AsyncCallee::Function(fn_name.to_string()),
+                    callee: AsyncCallee::Function(hir::Symbol::from_full_text(fn_name)),
                     args,
                     origin,
                 },
@@ -223,7 +223,7 @@ impl<'p> Checker<'p> {
         let args = self.check_args(&sig.params, &c.args, fx, &pos, fn_name);
         let value = hir::Expr {
             kind: ExprKind::Call {
-                callee: Callee::Func(fn_name.to_string()),
+                callee: Callee::Func(hir::Symbol::from_full_text(fn_name)),
                 args,
             },
             ty: sig.ret,
@@ -776,7 +776,7 @@ impl<'p> Checker<'p> {
             kind: ExprKind::Call {
                 callee: Callee::Method {
                     recv: Box::new(recv),
-                    name: name.clone(),
+                    name: hir::Symbol::from_full_text(name.clone()),
                 },
                 args,
             },
@@ -1020,7 +1020,7 @@ impl<'p> Checker<'p> {
                                     callee: AsyncCallee::Method {
                                         class: id,
                                         receiver: Box::new(recv),
-                                        name,
+                                        name: hir::Symbol::from_full_text(name),
                                     },
                                     args,
                                     origin,

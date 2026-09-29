@@ -122,7 +122,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 let global = self.lowering.globals.get(name).copied().ok_or_else(|| {
                     self.error(
                         &expr.pos,
-                        format!("unknown global `{}`", hir::source_name(name)),
+                        format!("unknown global `{}`", name.source_name()),
                     )
                 })?;
                 let stored_type = self
@@ -151,7 +151,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .free_functions
                     .get(name)
                     .map(|record| record.id)
-                    .ok_or_else(|| self.error(&expr.pos, format!("unknown function `{name}`")))?;
+                    .ok_or_else(|| {
+                        self.error(
+                            &expr.pos,
+                            format!("unknown function `{}`", name.source_name()),
+                        )
+                    })?;
                 self.emit(
                     l::InstructionKind::FunctionRef(function),
                     Vec::new(),

@@ -79,7 +79,11 @@ pub(super) fn populate(
         }
         let reason = match &target {
             ScopeItem::Func(symbol) => {
-                if let Some(function) = module.functions.iter().find(|f| &f.symbol == symbol) {
+                if let Some(function) = module
+                    .functions
+                    .iter()
+                    .find(|f| f.symbol.full_text() == symbol)
+                {
                     let reason = if function.is_generator {
                         Some("generators cannot be host entries")
                     } else if function.is_async && !function.params.is_empty() {
@@ -99,7 +103,7 @@ pub(super) fn populate(
                     } else {
                         module.host_entries.push(hir::HostEntry {
                             name,
-                            target: symbol.clone(),
+                            target: function.symbol.clone(),
                             signature: hir::HostSignature {
                                 parameters: function.params.iter().map(|p| p.ty.clone()).collect(),
                                 is_async: function.is_async,

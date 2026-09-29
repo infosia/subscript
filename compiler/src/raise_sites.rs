@@ -30,7 +30,7 @@
 
 use crate::hir::{
     AsyncCallee, Callee, ClassDef, Expr, ExprKind, ExpressionOwner, ExpressionOwnerMut, Function,
-    HirChild, HirChildMut, Module, Stmt,
+    HirChild, HirChildMut, Module, Stmt, Symbol,
 };
 use crate::types::Type;
 
@@ -284,7 +284,7 @@ impl Module {
         })
     }
 
-    pub(crate) fn method(&self, receiver: &Type, name: &str) -> Option<&Function> {
+    pub(crate) fn method(&self, receiver: &Type, name: &Symbol) -> Option<&Function> {
         let Type::Class(class) = receiver else {
             return None;
         };
@@ -292,7 +292,7 @@ impl Module {
             .get(class.0)?
             .methods
             .iter()
-            .find(|method| method.symbol == name)
+            .find(|method| method.symbol == *name)
     }
 }
 

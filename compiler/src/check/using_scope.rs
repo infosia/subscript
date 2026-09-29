@@ -287,7 +287,7 @@ mod tests {
                 crate::hir::ExprKind::Call {
                     callee: crate::hir::Callee::Method { name, .. },
                     ..
-                } if name == crate::hir::DISPOSE_METHOD_NAME
+                } if name.full_text() == crate::hir::DISPOSE_METHOD_NAME
             )) || statement.children().into_iter().any(|child| match child {
                 crate::hir::HirChild::Stmt(child) => holds_hook_call(std::slice::from_ref(child)),
                 crate::hir::HirChild::Expr(_) => false,

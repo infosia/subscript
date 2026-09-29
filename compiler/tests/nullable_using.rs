@@ -30,7 +30,7 @@ fn disposal_receiver(statement: &hir::Stmt) -> &hir::Expr {
     else {
         panic!("bare disposal call")
     };
-    assert_eq!(name, hir::DISPOSE_METHOD_NAME);
+    assert_eq!(name.full_text(), hir::DISPOSE_METHOD_NAME);
     assert!(args.is_empty());
     recv
 }

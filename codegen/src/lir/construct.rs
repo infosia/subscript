@@ -81,7 +81,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         if let Some(constructor) = &class.ctor {
             let record =
                 self.lowering
-                    .method_record(class_id.0, "constructor", &constructor.pos)?;
+                    .method_record(class_id.0, &constructor.symbol, &constructor.pos)?;
             let mut operands = vec![allocated.clone()];
             operands.extend(constructor_args);
             let receiver_type = if class.is_value {

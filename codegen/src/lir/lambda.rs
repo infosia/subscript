@@ -87,7 +87,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .free_functions
                     .get(name)
                     .cloned()
-                    .ok_or_else(|| self.error(pos, format!("unknown async function `{name}`")))?;
+                    .ok_or_else(|| {
+                        self.error(
+                            pos,
+                            format!("unknown async function `{}`", name.source_name()),
+                        )
+                    })?;
                 let function = self
                     .lowering
                     .hir

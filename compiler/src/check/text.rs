@@ -145,7 +145,7 @@ impl Checker<'_> {
         ));
         hir::Expr {
             kind: ExprKind::Call {
-                callee: Callee::Func(name),
+                callee: Callee::Func(hir::Symbol::from_full_text(name)),
                 args,
             },
             ty: Type::Str,

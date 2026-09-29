@@ -9,7 +9,7 @@ use super::*;
 pub(crate) struct NarrowingEffects {
     pub(crate) script: bool,
     pub(crate) fields: HashSet<String>,
-    pub(crate) globals: HashSet<String>,
+    pub(crate) globals: HashSet<Symbol>,
     pub(crate) locals: HashSet<String>,
 }
 
@@ -21,7 +21,7 @@ impl NarrowingEffects {
         self.locals.extend(other.locals);
     }
 
-    pub(crate) fn body(body: &[Stmt], classes: &[ClassDef], helpers: &HashSet<String>) -> Self {
+    pub(crate) fn body(body: &[Stmt], classes: &[ClassDef], helpers: &HashSet<Symbol>) -> Self {
         let mut effects = Self::default();
         for statement in body {
             effects.merge(statement.narrowing_effects(classes, helpers));
@@ -35,7 +35,7 @@ impl Expr {
     pub(crate) fn ends_shared_narrowing(
         &self,
         classes: &[ClassDef],
-        helpers: &HashSet<String>,
+        helpers: &HashSet<Symbol>,
     ) -> bool {
         self.runs_script(classes, helpers, &mut HashSet::new())
     }
@@ -43,7 +43,7 @@ impl Expr {
     fn runs_script(
         &self,
         classes: &[ClassDef],
-        helpers: &HashSet<String>,
+        helpers: &HashSet<Symbol>,
         visiting: &mut HashSet<ClassId>,
     ) -> bool {
         match &self.kind {
@@ -106,7 +106,7 @@ impl Expr {
     fn subtree_runs_script(
         &self,
         classes: &[ClassDef],
-        helpers: &HashSet<String>,
+        helpers: &HashSet<Symbol>,
         visiting: &mut HashSet<ClassId>,
     ) -> bool {
         if matches!(self.kind, ExprKind::Lambda { .. }) {
@@ -125,7 +125,7 @@ impl Expr {
     pub(crate) fn operation_narrowing_effects(
         &self,
         classes: &[ClassDef],
-        helpers: &HashSet<String>,
+        helpers: &HashSet<Symbol>,
     ) -> NarrowingEffects {
         self.own_effects(classes, helpers, &mut HashSet::new())
     }
@@ -133,7 +133,7 @@ impl Expr {
     fn own_effects(
         &self,
         classes: &[ClassDef],
-        helpers: &HashSet<String>,
+        helpers: &HashSet<Symbol>,
         visiting: &mut HashSet<ClassId>,
     ) -> NarrowingEffects {
         let mut effects = NarrowingEffects {
@@ -182,7 +182,7 @@ impl Expr {
     pub(crate) fn narrowing_effects(
         &self,
         classes: &[ClassDef],
-        helpers: &HashSet<String>,
+        helpers: &HashSet<Symbol>,
     ) -> NarrowingEffects {
         self.effects_with_visiting(classes, helpers, &mut HashSet::new())
     }
@@ -190,7 +190,7 @@ impl Expr {
     fn effects_with_visiting(
         &self,
         classes: &[ClassDef],
-        helpers: &HashSet<String>,
+        helpers: &HashSet<Symbol>,
         visiting: &mut HashSet<ClassId>,
     ) -> NarrowingEffects {
         let mut effects = self.own_effects(classes, helpers, visiting);
@@ -210,7 +210,7 @@ impl Stmt {
     pub(crate) fn narrowing_effects(
         &self,
         classes: &[ClassDef],
-        helpers: &HashSet<String>,
+        helpers: &HashSet<Symbol>,
     ) -> NarrowingEffects {
         let script = match self {
             Stmt::Using { .. } => true,
@@ -243,13 +243,13 @@ impl Stmt {
 }
 
 impl Callee {
-    fn runs_script(&self, helpers: &HashSet<String>) -> bool {
+    fn runs_script(&self, helpers: &HashSet<Symbol>) -> bool {
         match self {
             Callee::Func(name) => !helpers.contains(name),
             Callee::Foreign(_) | Callee::Value(_) => true,
             Callee::Method { recv, name } => {
                 matches!(recv.ty, Type::Class(_))
-                    || (matches!(recv.ty, Type::Generator(_)) && name == "next")
+                    || (matches!(recv.ty, Type::Generator(_)) && name.full_text() == "next")
             }
             Callee::Arr(function) => match function {
                 ArrFn::ForEach

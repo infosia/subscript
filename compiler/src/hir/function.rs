@@ -1,6 +1,6 @@
 //! Synthesized function construction.
 
-use super::{Function, Param, Stmt};
+use super::{Function, Param, Stmt, Symbol};
 use crate::{Pos, Type};
 
 impl Function {
@@ -14,7 +14,7 @@ impl Function {
         pos: Pos,
     ) -> Self {
         Self {
-            symbol: name.clone(),
+            symbol: Symbol::from_full_text(name.clone()),
             name,
             synthesized_helper: true,
             exported: false,

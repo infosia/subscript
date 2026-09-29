@@ -100,7 +100,7 @@ impl<'p> Checker<'p> {
                         pos: pos.clone(),
                     };
                     self.globals.push(hir::Global {
-                        symbol: name.clone(),
+                        symbol: hir::Symbol::from_full_text(name.clone()),
                         name: name.clone(),
                         ty: Type::RegExp,
                         mutable: false,
@@ -112,7 +112,7 @@ impl<'p> Checker<'p> {
                     name
                 };
                 hir::Expr {
-                    kind: ExprKind::Global(name),
+                    kind: ExprKind::Global(hir::Symbol::from_full_text(name)),
                     ty: Type::RegExp,
                     pos,
                 }
@@ -307,7 +307,7 @@ impl<'p> Checker<'p> {
                     .map(|s| s.ty.clone())
                     .unwrap_or(Type::Error);
                 let mut expr = hir::Expr {
-                    kind: ExprKind::Global(g),
+                    kind: ExprKind::Global(hir::Symbol::from_full_text(g)),
                     ty,
                     pos,
                 };
@@ -335,7 +335,7 @@ impl<'p> Checker<'p> {
                     ret: sig.ret,
                 }));
                 hir::Expr {
-                    kind: ExprKind::FuncRef(f),
+                    kind: ExprKind::FuncRef(hir::Symbol::from_full_text(f)),
                     ty,
                     pos,
                 }

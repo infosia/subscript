@@ -353,7 +353,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .functions
                     .iter()
                     .find(|function| function.symbol == *name)
-                    .ok_or_else(|| self.error(&expr.pos, format!("missing body for `{name}`")))?;
+                    .ok_or_else(|| {
+                        self.error(
+                            &expr.pos,
+                            format!("missing body for `{}`", name.source_name()),
+                        )
+                    })?;
                 Ok((data_params(&function.params), data_result(&function.ret)))
             }
             hir::Callee::Foreign(name) => {
@@ -427,7 +432,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .free_functions
                     .get(name)
                     .cloned()
-                    .ok_or_else(|| self.error(&expr.pos, format!("unknown function `{name}`")))?;
+                    .ok_or_else(|| {
+                        self.error(
+                            &expr.pos,
+                            format!("unknown function `{}`", name.source_name()),
+                        )
+                    })?;
                 let function = self
                     .lowering
                     .hir
@@ -435,7 +445,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .iter()
                     .find(|function| function.symbol == *name)
                     .cloned()
-                    .ok_or_else(|| self.error(&expr.pos, format!("missing body for `{name}`")))?;
+                    .ok_or_else(|| {
+                        self.error(
+                            &expr.pos,
+                            format!("missing body for `{}`", name.source_name()),
+                        )
+                    })?;
                 Ok((
                     l::CallTargetKind::Function(record.id),
                     Vec::new(),
@@ -580,7 +595,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         &mut self,
         callee: &hir::Callee,
         recv: &hir::Expr,
-        name: &str,
+        name: &hir::Symbol,
         expr: &hir::Expr,
     ) -> Result<CallResolution, LowerError> {
         if let Type::Class(class_id) = recv.ty {
@@ -594,18 +609,22 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             let record = self
                 .lowering
                 .methods
-                .get(&(class_id.0, name.to_string()))
+                .get(&(class_id.0, name.clone()))
                 .cloned()
                 .ok_or_else(|| {
                     self.error(
                         &expr.pos,
-                        format!("class `{}` has no resolved method `{name}`", class.name),
+                        format!(
+                            "class `{}` has no resolved method `{}`",
+                            class.name,
+                            name.source_name()
+                        ),
                     )
                 })?;
             let method = class
                 .methods
                 .iter()
-                .find(|method| method.symbol == name)
+                .find(|method| method.symbol == *name)
                 .cloned()
                 .ok_or_else(|| self.error(&expr.pos, "method body is missing"))?;
             let (receiver, prepared) = if class.is_value {
@@ -654,7 +673,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         else {
             return Err(self.error(
                 &expr.pos,
-                format!("unrepresented built-in method `{name}` on `{}`", recv.ty),
+                format!(
+                    "unrepresented built-in method `{}` on `{}`",
+                    name.source_name(),
+                    recv.ty
+                ),
             ));
         };
         Ok((

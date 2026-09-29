@@ -43,18 +43,18 @@ pub(super) fn declaration_label<'a>(
     )
 }
 
-pub(super) fn module_declaration_label(module: &hir::Module, symbol: &str) -> String {
+pub(super) fn module_declaration_label(module: &hir::Module, symbol: &hir::Symbol) -> String {
     declaration_label(
-        symbol,
+        symbol.full_text(),
         module
             .globals
             .iter()
-            .map(|g| (g.symbol.as_str(), g.name.as_str(), &g.pos))
+            .map(|g| (g.symbol.full_text(), g.name.as_str(), &g.pos))
             .chain(
                 module
                     .functions
                     .iter()
-                    .map(|f| (f.symbol.as_str(), f.name.as_str(), &f.pos)),
+                    .map(|f| (f.symbol.full_text(), f.name.as_str(), &f.pos)),
             ),
     )
 }

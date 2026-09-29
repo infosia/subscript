@@ -7,7 +7,7 @@
 //! or more [`PoisonedImport`] records.
 
 mod names;
-pub use names::{declaration_label, source_name};
+pub use names::{declaration_label, source_name, Symbol};
 
 mod collections;
 mod definitions;
@@ -64,7 +64,7 @@ pub struct Module {
     /// Constructors and methods live on their [`ClassDef`].
     pub functions: Vec<Function>,
     /// Declaration symbols of synthesized helper functions.
-    pub synthesized_helpers: std::collections::HashSet<String>,
+    pub synthesized_helpers: std::collections::HashSet<Symbol>,
     /// Q35 worker-entry adapters required by `Worker.spawn` call sites,
     /// deduplicated by function declaration symbol and message-class pair.
     pub worker_entries: Vec<WorkerEntry>,
@@ -186,7 +186,7 @@ pub struct PoisonedImport {
 #[non_exhaustive]
 pub struct WorkerEntry {
     /// Checker-assigned declaration symbol of a module-level script function.
-    pub function: String,
+    pub function: Symbol,
     /// Parent-to-worker message class.
     pub input: ClassId,
     /// Worker-to-parent message class.
@@ -264,6 +264,9 @@ pub struct ForeignFn {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct ClassDef {
+    /// Program-unique, module-qualified class identity assigned by the checker
+    /// (compiler.md §125 rule 2, §131 rule 3).
+    pub symbol: Symbol,
     /// Source name; monomorphized instances use `Name<args>` spelling.
     pub name: String,
     /// True for `@ValueType class` (C-layout, copy semantics — C2).
@@ -376,7 +379,7 @@ pub struct StringAliasDef {
 #[non_exhaustive]
 pub struct Global {
     /// Program-unique declaration symbol assigned by the checker (compiler.md §125).
-    pub symbol: String,
+    pub symbol: Symbol,
     /// Variable name.
     pub name: String,
     /// Resolved type.
@@ -396,7 +399,7 @@ pub struct Global {
 #[non_exhaustive]
 pub struct Function {
     /// Program-unique symbol for a free function; members use their class identity.
-    pub symbol: String,
+    pub symbol: Symbol,
     /// Checker-synthesized helper without a reload slot (compiler.md §119).
     pub synthesized_helper: bool,
     /// Source name; monomorphized instances use `name<args>` spelling.
@@ -1439,7 +1442,7 @@ pub enum ArrFmtKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Callee {
     /// A module function by its checker-assigned declaration symbol.
-    Func(String),
+    Func(Symbol),
     /// A foreign C-ABI function declared by an ambient mirror (§12.2);
     /// carries the symbol name. Both tiers lower the call to an imported
     /// C symbol.
@@ -1491,8 +1494,9 @@ pub enum Callee {
     Method {
         /// Receiver expression.
         recv: Box<Expr>,
-        /// Method declaration symbol within the receiver class, or a built-in member name.
-        name: String,
+        /// Method declaration symbol within the receiver class. For a
+        /// built-in member, the full text is the member name.
+        name: Symbol,
     },
 }
 
@@ -1546,7 +1550,7 @@ pub fn operation_signature_target(
         Callee::Set(function) => OperationSignatureTarget::Set(*function),
         Callee::Worker(function) => OperationSignatureTarget::Worker(*function),
         Callee::Method { recv, name } => {
-            let method = match (&recv.ty, name.as_str()) {
+            let method = match (&recv.ty, name.full_text()) {
                 (Type::Array(_), "push") => BuiltinMethod::ArrayPush,
                 (Type::Array(_), "pop") => BuiltinMethod::ArrayPop,
                 (Type::Str, "slice") => BuiltinMethod::StringSlice,
@@ -1614,9 +1618,9 @@ pub enum ExprKind {
     /// Local name and declared storage type (compiler.md §124).
     Local(String, Type),
     /// Reference to a module-level variable by its declaration symbol.
-    Global(String),
+    Global(Symbol),
     /// A function declaration symbol used as a value (non-capturing — C5).
-    FuncRef(String),
+    FuncRef(Symbol),
     /// An enum member, e.g. `Status.Complete`.
     EnumMember {
         /// The enum.
@@ -1792,7 +1796,7 @@ pub enum ExprKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AsyncCallee {
     /// A module async function by its declaration symbol.
-    Function(String),
+    Function(Symbol),
     /// An async instance method on a plain reference class.
     Method {
         /// Declaring/receiver class.
@@ -1800,7 +1804,7 @@ pub enum AsyncCallee {
         /// Receiver expression, evaluated exactly once before arguments.
         receiver: Box<Expr>,
         /// Method declaration symbol within `class`.
-        name: String,
+        name: Symbol,
     },
 }
 

@@ -160,7 +160,7 @@ impl<'p> Checker<'p> {
                         );
                     }
                     let mut field = hir::Expr {
-                        kind: ExprKind::Global(symbol),
+                        kind: ExprKind::Global(hir::Symbol::from_full_text(symbol)),
                         ty: signature.ty,
                         pos: prop_pos,
                     };
@@ -181,7 +181,9 @@ impl<'p> Checker<'p> {
                     };
                     return Some(hir::Expr {
                         kind: ExprKind::Call {
-                            callee: Callee::Func(static_member_symbol(id, &class_name, prop)),
+                            callee: Callee::Func(hir::Symbol::from_full_text(
+                                static_member_symbol(id, &class_name, prop),
+                            )),
                             args: Vec::new(),
                         },
                         ty: signature.ret,
@@ -759,7 +761,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let worker_entry = hir::WorkerEntry {
-            function,
+            function: hir::Symbol::from_full_text(function),
             input: *input_id,
             output: *output_id,
         };

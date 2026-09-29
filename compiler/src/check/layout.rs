@@ -602,7 +602,7 @@ impl<'a> Validator<'a> {
             hir::ExprKind::Call { callee, .. } => match callee {
                 hir::Callee::Func(_) | hir::Callee::Value(_) => true,
                 hir::Callee::Method { recv, name } => {
-                    name != "next" && matches!(recv.ty, Type::Class(_))
+                    name.full_text() != "next" && matches!(recv.ty, Type::Class(_))
                 }
                 _ => false,
             },

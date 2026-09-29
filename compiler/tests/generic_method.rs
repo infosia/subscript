@@ -16,7 +16,7 @@ fn diagnostics(source: &str) -> Vec<Diagnostic> {
 }
 
 /// Every method symbol referenced by a `Callee::Method` call in this body.
-fn called_method_symbols(body: &[hir::Stmt]) -> Vec<String> {
+fn called_method_symbols(body: &[hir::Stmt]) -> Vec<hir::Symbol> {
     let mut names = Vec::new();
     for statement in body {
         walk_stmt(statement, &mut names);
@@ -24,7 +24,7 @@ fn called_method_symbols(body: &[hir::Stmt]) -> Vec<String> {
     names
 }
 
-fn walk_stmt(statement: &hir::Stmt, names: &mut Vec<String>) {
+fn walk_stmt(statement: &hir::Stmt, names: &mut Vec<hir::Symbol>) {
     match statement {
         hir::Stmt::Let { init, .. } => walk_expr(init, names),
         hir::Stmt::Expr(expr) => walk_expr(expr, names),
@@ -35,7 +35,7 @@ fn walk_stmt(statement: &hir::Stmt, names: &mut Vec<String>) {
     }
 }
 
-fn walk_expr(expr: &hir::Expr, names: &mut Vec<String>) {
+fn walk_expr(expr: &hir::Expr, names: &mut Vec<hir::Symbol>) {
     if let hir::ExprKind::Call { callee, args } = &expr.kind {
         if let hir::Callee::Method { recv, name } = callee {
             names.push(name.clone());

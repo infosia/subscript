@@ -119,7 +119,7 @@ impl Place {
                 kind: ExprKind::Call {
                     callee: Callee::Method {
                         recv: Box::new(receiver),
-                        name: "get".to_string(),
+                        name: hir::Symbol::from_full_text("get"),
                     },
                     args: vec![index],
                 },
@@ -137,14 +137,14 @@ impl Place {
                     callee: if let Some(receiver) = receiver {
                         Callee::Method {
                             recv: Box::new(receiver),
-                            name,
+                            name: hir::Symbol::from_full_text(name.clone()),
                         }
                     } else {
-                        Callee::Func(static_member_symbol(
+                        Callee::Func(hir::Symbol::from_full_text(static_member_symbol(
                             class,
                             &checker.classes[class.0].name,
                             &name,
-                        ))
+                        )))
                     },
                     args: Vec::new(),
                 },
@@ -173,7 +173,7 @@ impl Place {
 pub(crate) fn path_key(e: &hir::Expr) -> Option<String> {
     match &e.kind {
         ExprKind::Local(n, _) => Some(n.clone()),
-        ExprKind::Global(n) => Some(format!("[[global]]{n}")),
+        ExprKind::Global(n) => Some(format!("[[global]]{}", n.full_text())),
         ExprKind::This => Some("this".to_string()),
         ExprKind::Field { obj, name } => path_key(obj).map(|p| format!("{}.{}", p, name)),
         _ => None,

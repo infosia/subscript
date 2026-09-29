@@ -48,7 +48,7 @@ fn call(signature: &OperationSignature) -> Expr {
             };
             Callee::Method {
                 recv: Box::new(args.remove(0)),
-                name: name.into(),
+                name: Symbol::from_full_text(name),
             }
         }
     };
@@ -320,7 +320,7 @@ fn synthesized_helper_arguments_follow_the_form_fact() {
     let ExprKind::Call { callee, .. } = &mut expression.kind else {
         panic!("call")
     };
-    *callee = Callee::Func(module.functions[helper].name.clone());
+    *callee = Callee::Func(module.functions[helper].symbol.clone());
     assert!(!expression
         .trap_sites(&module)
         .iter()
@@ -333,7 +333,7 @@ fn synthesized_helper_arguments_follow_the_form_fact() {
     let ExprKind::Call { callee, .. } = &mut expression.kind else {
         panic!("call")
     };
-    *callee = Callee::Func(helper.name.clone());
+    *callee = Callee::Func(helper.symbol.clone());
     assert!(violations(&signature, &expression, &module).is_empty());
 }
 

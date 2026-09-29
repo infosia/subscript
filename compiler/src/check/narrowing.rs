@@ -67,7 +67,7 @@ impl Checker<'_> {
 #[derive(Default)]
 pub(super) struct Analysis {
     classes: Vec<hir::ClassDef>,
-    helpers: std::collections::HashSet<String>,
+    helpers: std::collections::HashSet<hir::Symbol>,
     loops: std::collections::HashMap<(String, u32, u32), hir::NarrowingEffects>,
 }
 
@@ -128,7 +128,7 @@ impl Analysis {
 }
 
 impl Checker<'_> {
-    fn narrowing_helpers(&self) -> std::collections::HashSet<String> {
+    fn narrowing_helpers(&self) -> std::collections::HashSet<hir::Symbol> {
         self.narrowing_analysis.as_ref().map_or_else(
             || {
                 self.functions
@@ -238,7 +238,7 @@ fn path_kills(
                 .skip(1)
                 .any(|field| effects.fields.contains(field)))
         || effects.globals.iter().any(|name| {
-            let stored = format!("[[global]]{name}");
+            let stored = format!("[[global]]{}", name.full_text());
             key == stored || key.starts_with(&format!("{stored}."))
         });
     let local_kill = !global

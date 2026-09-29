@@ -1040,13 +1040,14 @@ fn render_call_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<St
         return None;
     };
     let callee = match callee {
-        Callee::Func(name) | Callee::Foreign(name) => crate::check::source_name(name),
+        Callee::Func(name) => name.source_name(),
+        Callee::Foreign(name) => name.clone(),
         Callee::Value(value) => render_place_expr(value, origins)?,
         Callee::Method { recv, name } => {
             format!(
                 "{}.{}",
                 render_source_expr(recv, origins),
-                crate::check::source_name(name)
+                name.source_name()
             )
         }
         _ => return None,
@@ -1067,7 +1068,7 @@ fn render_local(name: &str, origins: &HashMap<String, String>) -> String {
 fn render_place_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<String> {
     match &expr.kind {
         ExprKind::Local(name, _) => Some(render_local(name, origins)),
-        ExprKind::Global(name) => Some(crate::check::source_name(name)),
+        ExprKind::Global(name) => Some(name.source_name()),
         ExprKind::This => Some("this".to_string()),
         ExprKind::Field { obj, name } => {
             Some(format!("{}.{}", render_place_expr(obj, origins)?, name))
@@ -1084,7 +1085,7 @@ fn render_place_expr(expr: &Expr, origins: &HashMap<String, String>) -> Option<S
 fn render_index_expr(expr: &Expr, origins: &HashMap<String, String>) -> String {
     match &expr.kind {
         ExprKind::Local(name, _) => render_local(name, origins),
-        ExprKind::Global(name) => crate::check::source_name(name),
+        ExprKind::Global(name) => name.source_name(),
         ExprKind::This => "this".to_string(),
         ExprKind::Field { .. } | ExprKind::Index { .. } => {
             render_place_expr(expr, origins).unwrap_or_else(|| "…".to_string())

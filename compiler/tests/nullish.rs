@@ -30,7 +30,7 @@ fn expr_shape(expr: &hir::Expr) -> String {
         hir::ExprKind::Call { callee, args } => {
             let callee = match callee {
                 hir::Callee::Method { recv, name } => {
-                    format!("method({}, {name})", expr_shape(recv))
+                    format!("method({}, {})", expr_shape(recv), name.full_text())
                 }
                 other => format!("{other:?}"),
             };

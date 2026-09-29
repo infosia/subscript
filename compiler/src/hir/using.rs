@@ -1,6 +1,6 @@
 //! The bindings of a `using` scope (`compiler.md` §115.5 rule 5).
 
-use super::{BinOp, Callee, Expr, ExprKind, Stmt, DISPOSE_METHOD_NAME};
+use super::{BinOp, Callee, Expr, ExprKind, Stmt, Symbol, DISPOSE_METHOD_NAME};
 use crate::diag::Pos;
 use crate::types::Type;
 
@@ -67,7 +67,7 @@ impl UsingBinding {
             kind: ExprKind::Call {
                 callee: Callee::Method {
                     recv: Box::new(local(&self.name, receiver_type)),
-                    name: DISPOSE_METHOD_NAME.to_string(),
+                    name: Symbol::from_full_text(DISPOSE_METHOD_NAME),
                 },
                 args: Vec::new(),
             },
@@ -123,7 +123,7 @@ mod tests {
         else {
             panic!("a hook call: {statement:?}");
         };
-        assert_eq!(name, DISPOSE_METHOD_NAME);
+        assert_eq!(name.full_text(), DISPOSE_METHOD_NAME);
         assert!(args.is_empty());
         recv
     }

@@ -20,14 +20,14 @@ impl<'a> Lowering<'a> {
         let mut free_functions = HashMap::new();
         let mut methods = HashMap::new();
         for (class_index, class) in module.classes.iter().enumerate() {
-            if class.ctor.is_some() {
+            if let Some(constructor) = &class.ctor {
                 let record = FunctionRecord {
                     id: l::FunctionId(next_function),
                     method: Some(l::MethodId(next_method)),
                 };
                 next_function += 1;
                 next_method += 1;
-                methods.insert((class_index, "constructor".to_string()), record);
+                methods.insert((class_index, constructor.symbol.clone()), record);
             }
             for method in &class.methods {
                 let record = FunctionRecord {
@@ -115,7 +115,8 @@ impl<'a> Lowering<'a> {
     pub(super) fn run(mut self) -> Result<l::Module, LowerError> {
         for (class_index, class) in self.hir.classes.iter().cloned().enumerate() {
             if let Some(constructor) = class.ctor {
-                let record = self.method_record(class_index, "constructor", &constructor.pos)?;
+                let record =
+                    self.method_record(class_index, &constructor.symbol, &constructor.pos)?;
                 self.lower_function(
                     record.id,
                     constructor,
@@ -268,7 +269,7 @@ impl<'a> Lowering<'a> {
                         pos: Pos::new("<worker entry>", 1, 1),
                         message: format!(
                             "worker entry names unresolved function `{}`",
-                            entry.function
+                            entry.function.source_name()
                         ),
                     })?;
                 Ok(l::WorkerEntry {
@@ -406,7 +407,7 @@ impl<'a> Lowering<'a> {
                     .ctor
                     .as_ref()
                     .map(|constructor| {
-                        self.method_record(class_index, "constructor", &constructor.pos)
+                        self.method_record(class_index, &constructor.symbol, &constructor.pos)
                             .map(|record| l::Method {
                                 id: record.method.expect("constructor method id"),
                                 function: record.id,
@@ -527,15 +528,18 @@ impl<'a> Lowering<'a> {
     pub(super) fn method_record(
         &self,
         class: usize,
-        name: &str,
+        name: &hir::Symbol,
         pos: &Pos,
     ) -> Result<FunctionRecord, LowerError> {
         self.methods
-            .get(&(class, name.to_string()))
+            .get(&(class, name.clone()))
             .cloned()
             .ok_or_else(|| LowerError {
                 pos: pos.clone(),
-                message: format!("missing method id for class #{class} `{name}`"),
+                message: format!(
+                    "missing method id for class #{class} `{}`",
+                    name.source_name()
+                ),
             })
     }
 

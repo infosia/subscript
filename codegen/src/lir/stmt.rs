@@ -479,7 +479,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .get(name)
                     .map(|record| record.id)
                     .ok_or_else(|| {
-                        self.error(&callback.pos, format!("unknown callback function `{name}`"))
+                        self.error(
+                            &callback.pos,
+                            format!("unknown callback function `{}`", name.source_name()),
+                        )
                     })?;
                 let _ = self.require_expr(callback)?;
                 Ok(StaticCallback {

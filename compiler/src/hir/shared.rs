@@ -139,7 +139,7 @@ mod tests {
     fn shared_path_predicate_distinguishes_value_receivers() {
         use crate::{
             diag::Pos,
-            hir::{Expr, ExprKind},
+            hir::{Expr, ExprKind, Symbol},
             types::{ClassId, Type},
         };
         let module = crate::check_program(&[crate::SourceFile::new(
@@ -177,7 +177,7 @@ mod tests {
         for ty in [class_type("Value"), Type::IterResult(Box::new(Type::I32))] {
             let local = expr(ExprKind::Local("r".into(), ty.clone()), ty.clone());
             assert!(!field(local).is_shared_location(&module.classes));
-            let global = expr(ExprKind::Global("r".into()), ty.clone());
+            let global = expr(ExprKind::Global(Symbol::from_full_text("r")), ty.clone());
             assert!(field(global).is_shared_location(&module.classes));
             let this = expr(ExprKind::This, ty);
             assert!(field(this).is_shared_location(&module.classes));
@@ -188,7 +188,7 @@ mod tests {
         );
         assert!(!local_ref.is_shared_location(&module.classes));
         assert!(field(local_ref).is_shared_location(&module.classes));
-        let global = expr(ExprKind::Global("S.opt".into()), Type::I32);
+        let global = expr(ExprKind::Global(Symbol::from_full_text("S.opt")), Type::I32);
         assert!(global.is_shared_location(&module.classes));
     }
 

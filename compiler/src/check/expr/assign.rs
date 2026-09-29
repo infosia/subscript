@@ -151,7 +151,7 @@ impl<'p> Checker<'p> {
                 kind: ExprKind::Call {
                     callee: Callee::Method {
                         recv: Box::new(receiver),
-                        name: "set".to_string(),
+                        name: hir::Symbol::from_full_text("set"),
                     },
                     args: vec![index, value],
                 },
@@ -233,7 +233,11 @@ impl<'p> Checker<'p> {
             );
             return hir::Expr {
                 kind: ExprKind::Call {
-                    callee: Callee::Func(static_member_symbol(id, &class_name, &write_name)),
+                    callee: Callee::Func(hir::Symbol::from_full_text(static_member_symbol(
+                        id,
+                        &class_name,
+                        &write_name,
+                    ))),
                     args: vec![value],
                 },
                 ty: Type::Void,
@@ -319,7 +323,7 @@ impl<'p> Checker<'p> {
                 kind: ExprKind::Call {
                     callee: Callee::Method {
                         recv: Box::new(recv),
-                        name: write_name,
+                        name: hir::Symbol::from_full_text(write_name),
                     },
                     args: vec![value],
                 },
@@ -431,7 +435,7 @@ impl<'p> Checker<'p> {
                             );
                         }
                         return Place::Global(hir::Expr {
-                            kind: ExprKind::Global(g),
+                            kind: ExprKind::Global(hir::Symbol::from_full_text(g)),
                             ty: sig.ty,
                             pos: ident_pos,
                         });
@@ -576,7 +580,7 @@ impl<'p> Checker<'p> {
                 );
             }
             return Some(Place::StaticField(hir::Expr {
-                kind: ExprKind::Global(symbol),
+                kind: ExprKind::Global(hir::Symbol::from_full_text(symbol)),
                 ty: signature.ty,
                 pos: prop_pos,
             }));

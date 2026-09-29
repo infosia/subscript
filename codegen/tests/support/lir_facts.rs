@@ -366,12 +366,22 @@ fn compare_entry_and_async_roots(hir: &hir::Module, lir: &l::Module, findings: &
         .iter()
         .map(|class| usize::from(class.ctor.is_some()) + class.methods.len())
         .sum::<usize>();
-    let target_id = |symbol: &str| {
+    let target_id = |symbol: &hir::Symbol| {
         hir.functions
             .iter()
-            .position(|f| f.symbol == symbol)
+            .position(|f| f.symbol == *symbol)
             .map(|index| l::FunctionId((free_offset + index) as u32))
     };
+    for entry in &hir.host_entries {
+        if target_id(&entry.target).is_none() {
+            findings.push(format!(
+                "{}: malformed HIR: host entry `{}` target symbol {:?} names no module function",
+                entry.pos,
+                entry.name,
+                entry.target.full_text()
+            ));
+        }
+    }
     let expected_entry = hir
         .host_entries
         .iter()
@@ -475,7 +485,7 @@ fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<String>)
 
     let mut expected = BTreeMap::<TrapKey, usize>::new();
     walk_execution_root_expressions(hir, &mut |expr| {
-        collect_trap_expression(expr, hir, &mut expected);
+        collect_trap_expression(expr, hir, &mut expected, findings);
     });
     lifetime::statements(&hir.top_level, hir, &mut expected);
     for function in all_declared_functions(hir) {
@@ -543,6 +553,7 @@ fn collect_trap_expression(
     expression: &hir::Expr,
     hir: &hir::Module,
     expected: &mut BTreeMap<TrapKey, usize>,
+    findings: &mut Vec<String>,
 ) {
     let mut nodes = Vec::new();
     walk_expr(hir, expression, &mut |node| nodes.push(node));
@@ -574,7 +585,7 @@ fn collect_trap_expression(
                     for (slot, field) in fields.iter().zip(&definition.fields) {
                         if slot.is_none() && !field.is_absence_capable {
                             if let Some(default) = &field.init {
-                                collect_trap_expression(default, hir, expected);
+                                collect_trap_expression(default, hir, expected, findings);
                             }
                         }
                     }
@@ -584,7 +595,7 @@ fn collect_trap_expression(
                 if let Some(definition) = hir.classes.get(class.0) {
                     for field in &definition.fields {
                         if let Some(initializer) = &field.init {
-                            collect_trap_expression(initializer, hir, expected);
+                            collect_trap_expression(initializer, hir, expected, findings);
                         }
                     }
                     if let Some(constructor) = &definition.ctor {
@@ -593,21 +604,35 @@ fn collect_trap_expression(
                             args.len(),
                             hir,
                             expected,
+                            findings,
                         );
                     }
                 }
             }
             hir::ExprKind::Call { callee, args } => {
-                let parameters = declared_callee_parameters(hir, callee);
-                if let Some(parameters) = parameters {
-                    collect_missing_parameter_defaults(parameters, args.len(), hir, expected);
+                match declared_callee_parameters(hir, callee, &node.pos) {
+                    Ok(Some(parameters)) => collect_missing_parameter_defaults(
+                        parameters,
+                        args.len(),
+                        hir,
+                        expected,
+                        findings,
+                    ),
+                    Ok(None) => {}
+                    Err(finding) => findings.push(finding),
                 }
             }
             hir::ExprKind::AsyncCall { callee, args }
             | hir::ExprKind::AsyncHandleCreate { callee, args, .. } => {
-                let parameters = declared_async_callee_parameters(hir, callee);
-                if let Some(parameters) = parameters {
-                    collect_missing_parameter_defaults(parameters, args.len(), hir, expected);
+                match declared_async_callee_parameters(hir, callee, &node.pos) {
+                    Ok(parameters) => collect_missing_parameter_defaults(
+                        parameters,
+                        args.len(),
+                        hir,
+                        expected,
+                        findings,
+                    ),
+                    Err(finding) => findings.push(finding),
                 }
             }
             hir::ExprKind::Int(_)
@@ -643,34 +668,74 @@ fn collect_trap_expression(
     }
 }
 
+/// Resolves the module function that a call names. A miss is malformed HIR.
+fn declared_function<'a>(
+    hir: &'a hir::Module,
+    symbol: &hir::Symbol,
+    pos: &Pos,
+) -> Result<&'a hir::Function, String> {
+    hir.functions
+        .iter()
+        .find(|function| function.symbol == *symbol)
+        .ok_or_else(|| {
+            format!(
+                "{pos}: malformed HIR: callee symbol {:?} names no module function",
+                symbol.full_text()
+            )
+        })
+}
+
+/// Resolves the class method that a call names. A miss is malformed HIR.
+fn declared_method<'a>(
+    hir: &'a hir::Module,
+    class: ClassId,
+    symbol: &hir::Symbol,
+    pos: &Pos,
+) -> Result<&'a hir::Function, String> {
+    let definition = hir.classes.get(class.0).ok_or_else(|| {
+        format!(
+            "{pos}: malformed HIR: method callee class {} is absent",
+            class.0
+        )
+    })?;
+    definition
+        .methods
+        .iter()
+        .find(|method| method.symbol == *symbol)
+        .ok_or_else(|| {
+            format!(
+                "{pos}: malformed HIR: callee symbol {:?} names no method of class {}",
+                symbol.full_text(),
+                class.0
+            )
+        })
+}
+
+/// Resolves the foreign function that a call names. A miss is malformed HIR.
+fn declared_foreign<'a>(
+    hir: &'a hir::Module,
+    name: &str,
+    pos: &Pos,
+) -> Result<&'a hir::ForeignFn, String> {
+    hir.foreign_fns
+        .iter()
+        .find(|function| function.name == name)
+        .ok_or_else(|| format!("{pos}: malformed HIR: callee {name:?} names no foreign function"))
+}
+
 fn declared_callee_parameters<'a>(
     hir: &'a hir::Module,
     callee: &'a hir::Callee,
-) -> Option<&'a [hir::Param]> {
-    match callee {
-        hir::Callee::Func(name) => hir
-            .functions
-            .iter()
-            .find(|function| function.name == *name)
-            .map(|function| function.params.as_slice()),
-        hir::Callee::Foreign(name) => hir
-            .foreign_fns
-            .iter()
-            .find(|function| function.name == *name)
-            .map(|function| function.params.as_slice()),
+    pos: &Pos,
+) -> Result<Option<&'a [hir::Param]>, String> {
+    Ok(match callee {
+        hir::Callee::Func(name) => Some(declared_function(hir, name, pos)?.params.as_slice()),
+        hir::Callee::Foreign(name) => Some(declared_foreign(hir, name, pos)?.params.as_slice()),
         hir::Callee::Method { recv, name } => {
             let subscript_compiler::Type::Class(class) = &recv.ty else {
-                return None;
+                return Ok(None);
             };
-            hir.classes
-                .get(class.0)
-                .and_then(|definition| {
-                    definition
-                        .methods
-                        .iter()
-                        .find(|method| method.name == *name)
-                })
-                .map(|function| function.params.as_slice())
+            Some(declared_method(hir, *class, name, pos)?.params.as_slice())
         }
         hir::Callee::Ambient(_)
         | hir::Callee::ContextBytes { .. }
@@ -686,30 +751,19 @@ fn declared_callee_parameters<'a>(
         | hir::Callee::Set(_)
         | hir::Callee::Worker(_)
         | hir::Callee::Value(_) => None,
-    }
+    })
 }
 
 fn declared_async_callee_parameters<'a>(
     hir: &'a hir::Module,
     callee: &'a hir::AsyncCallee,
-) -> Option<&'a [hir::Param]> {
-    match callee {
-        hir::AsyncCallee::Function(name) => hir
-            .functions
-            .iter()
-            .find(|function| function.name == *name)
-            .map(|function| function.params.as_slice()),
-        hir::AsyncCallee::Method { class, name, .. } => hir
-            .classes
-            .get(class.0)
-            .and_then(|definition| {
-                definition
-                    .methods
-                    .iter()
-                    .find(|method| method.name == *name)
-            })
-            .map(|function| function.params.as_slice()),
-    }
+    pos: &Pos,
+) -> Result<&'a [hir::Param], String> {
+    let function = match callee {
+        hir::AsyncCallee::Function(name) => declared_function(hir, name, pos)?,
+        hir::AsyncCallee::Method { class, name, .. } => declared_method(hir, *class, name, pos)?,
+    };
+    Ok(function.params.as_slice())
 }
 
 fn collect_missing_parameter_defaults(
@@ -717,10 +771,11 @@ fn collect_missing_parameter_defaults(
     supplied: usize,
     hir: &hir::Module,
     expected: &mut BTreeMap<TrapKey, usize>,
+    findings: &mut Vec<String>,
 ) {
     for parameter in parameters.iter().skip(supplied) {
         if let Some(default) = &parameter.default {
-            collect_trap_expression(default, hir, expected);
+            collect_trap_expression(default, hir, expected, findings);
         }
     }
 }
@@ -916,8 +971,14 @@ fn compare_call_operands(hir: &hir::Module, lir: &l::Module, findings: &mut Vec<
     }
 
     walk_module_expressions(hir, &mut |expr| {
-        let expected = expected_call_operands(hir, expr);
-        let Some(expected) = expected else { return };
+        let expected = match expected_call_operands(hir, expr) {
+            Ok(Some(expected)) => expected,
+            Ok(None) => return,
+            Err(finding) => {
+                findings.push(finding);
+                return;
+            }
+        };
         let key = (expr.pos.file.clone(), expr.pos.line, expr.pos.col, expected);
         let carried = actual.get(&key).copied().unwrap_or(0);
         if carried == 0 {
@@ -936,38 +997,29 @@ fn suspend_position(terminator: &l::Terminator) -> Option<&Pos> {
     Some(pos)
 }
 
-fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> {
-    match &expr.kind {
+fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<usize>, String> {
+    let pos = &expr.pos;
+    Ok(match &expr.kind {
         hir::ExprKind::Call { callee, args } => match callee {
             hir::Callee::Ambient(hir::AmbientFn::Unreachable) => None,
-            hir::Callee::Func(name) => hir
-                .functions
-                .iter()
-                .find(|function| function.name == *name)
-                .map(|function| function.params.len()),
-            hir::Callee::Foreign(name) => hir
-                .foreign_fns
-                .iter()
-                .find(|function| function.name == *name)
-                .map(|function| {
-                    function
-                        .params
-                        .iter()
-                        .map(|parameter| {
-                            usize::from(matches!(parameter.ty, subscript_compiler::Type::Array(_)))
-                                + 1
-                        })
-                        .sum()
-                }),
+            hir::Callee::Func(name) => Some(declared_function(hir, name, pos)?.params.len()),
+            hir::Callee::Foreign(name) => Some(
+                declared_foreign(hir, name, pos)?
+                    .params
+                    .iter()
+                    .map(|parameter| {
+                        usize::from(matches!(parameter.ty, subscript_compiler::Type::Array(_))) + 1
+                    })
+                    .sum(),
+            ),
             hir::Callee::Arr(operation) if static_array_callback(*operation, args).is_some() => {
-                let callback = static_array_callback(*operation, args)?;
-                match &callback.ty {
+                static_array_callback(*operation, args).and_then(|callback| match &callback.ty {
                     Type::Func(function) => Some(
                         function.params.len()
                             + usize::from(matches!(callback.kind, hir::ExprKind::Lambda { .. })),
                     ),
                     _ => None,
-                }
+                })
             }
             hir::Callee::Map(hir::MapFn::ForEach) | hir::Callee::Set(hir::SetFn::ForEach) => {
                 args.get(1).and_then(|callback| match &callback.ty {
@@ -977,12 +1029,9 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
             }
             hir::Callee::Method { recv, name } => {
                 let Type::Class(class) = &recv.ty else {
-                    return None;
+                    return Ok(None);
                 };
-                hir.classes
-                    .get(class.0)
-                    .and_then(|class| class.methods.iter().find(|method| method.name == *name))
-                    .map(|method| method.params.len() + 1)
+                Some(declared_method(hir, *class, name, pos)?.params.len() + 1)
             }
             hir::Callee::Value(_) => Some(args.len() + 1),
             hir::Callee::Ambient(_)
@@ -1006,16 +1055,12 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
             .map(|constructor| constructor.params.len() + 1),
         hir::ExprKind::AsyncCall { callee, .. }
         | hir::ExprKind::AsyncHandleCreate { callee, .. } => match callee {
-            hir::AsyncCallee::Function(name) => hir
-                .functions
-                .iter()
-                .find(|function| function.name == *name)
-                .map(|function| function.params.len()),
-            hir::AsyncCallee::Method { class, name, .. } => hir
-                .classes
-                .get(class.0)
-                .and_then(|class| class.methods.iter().find(|method| method.name == *name))
-                .map(|method| method.params.len() + 1),
+            hir::AsyncCallee::Function(name) => {
+                Some(declared_function(hir, name, pos)?.params.len())
+            }
+            hir::AsyncCallee::Method { class, name, .. } => {
+                Some(declared_method(hir, *class, name, pos)?.params.len() + 1)
+            }
         },
         hir::ExprKind::Int(_)
         | hir::ExprKind::Float(_)
@@ -1047,7 +1092,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Option<usize> 
         | hir::ExprKind::AsyncHandleAwait(_)
         | hir::ExprKind::AsyncHandleTransfer { .. }
         | hir::ExprKind::Cond { .. } => None,
-    }
+    })
 }
 
 fn compare_instruction_operands(lir: &l::Module, findings: &mut Vec<String>) {
@@ -1532,6 +1577,10 @@ fn walk_place_children<'a>(
         _ => walk_expr(hir, expr, visit),
     }
 }
+
+#[cfg(test)]
+#[path = "lir_facts/call_lookup_tests.rs"]
+mod call_lookup_tests;
 
 #[cfg(test)]
 mod sequence_tests {

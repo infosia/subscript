@@ -118,6 +118,36 @@ fn hir_keeps_source_names_beside_distinct_symbols() {
 }
 
 #[test]
+fn class_symbols_are_unique_for_one_source_name_in_two_modules() {
+    let first = "@ValueType class RandomF32 { a: f32 = 0.0; b: f32 = 0.0; } \
+                 class Box<T> { item: T; constructor(item: T) { this.item = item; } } \
+                 export function one(): f32 { const r = new RandomF32(); return r.a + new Box<f32>(1.0).item; }";
+    let second = "@ValueType class RandomF32 { a: f32 = 0.0; b: f32 = 0.0; c: f32 = 0.0; } \
+                  class Box<T> { item: T; constructor(item: T) { this.item = item; } } \
+                  export function two(): f32 { const r = new RandomF32(); return r.c + new Box<f32>(2.0).item; }";
+    let module = check_program(&files(first, second)).expect("two modules");
+    for name in ["RandomF32", "Box<f32>"] {
+        let classes: Vec<_> = module.classes.iter().filter(|c| c.name == name).collect();
+        // Control: the source name alone does not tell the two classes apart.
+        assert_eq!(classes.len(), 2, "{name}");
+        assert_eq!(classes[0].name, classes[1].name);
+        assert_ne!(classes[0].symbol, classes[1].symbol, "{name}");
+        assert!(classes
+            .iter()
+            .all(|class| class.symbol.source_name() == class.name));
+    }
+    let random: Vec<_> = module
+        .classes
+        .iter()
+        .filter(|c| c.name == "RandomF32")
+        .map(|c| (c.pos.file.as_str(), c.fields.len()))
+        .collect();
+    assert_eq!(random, [("first.ts", 2), ("second.ts", 3)]);
+    let symbols: std::collections::HashSet<_> = module.classes.iter().map(|c| &c.symbol).collect();
+    assert_eq!(symbols.len(), module.classes.len());
+}
+
+#[test]
 fn generic_instance_identity_includes_the_template_module() {
     let source = "function pick<T>(value: T): T { return value; } export function main(): void { print(`${pick<i32>(7)}`); }";
     let instance = |file| {

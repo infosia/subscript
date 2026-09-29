@@ -107,8 +107,8 @@ fn expr_children_yield_every_child() {
         ExprKind::Null,
         ExprKind::This,
         ExprKind::Local(String::new(), Type::I32),
-        ExprKind::Global(String::new()),
-        ExprKind::FuncRef(String::new()),
+        ExprKind::Global(Symbol::from_full_text("")),
+        ExprKind::FuncRef(Symbol::from_full_text("")),
         ExprKind::EnumMember {
             id: EnumId(0),
             member: String::new(),
@@ -159,7 +159,7 @@ fn expr_children_yield_every_child() {
             ExprKind::Call {
                 callee: Callee::Method {
                     recv: Box::new(child_expr(1)),
-                    name: String::new(),
+                    name: Symbol::from_full_text(""),
                 },
                 args: vec![child_expr(2)],
             },
@@ -236,7 +236,7 @@ fn expr_children_yield_every_child() {
                 callee: AsyncCallee::Method {
                     class: ClassId(0),
                     receiver: Box::new(child_expr(1)),
-                    name: String::new(),
+                    name: Symbol::from_full_text(""),
                 },
                 args: vec![child_expr(2)],
             },
@@ -247,7 +247,7 @@ fn expr_children_yield_every_child() {
                 callee: AsyncCallee::Method {
                     class: ClassId(0),
                     receiver: Box::new(child_expr(1)),
-                    name: String::new(),
+                    name: Symbol::from_full_text(""),
                 },
                 args: vec![child_expr(2)],
                 origin: 0,
@@ -399,7 +399,7 @@ fn host_entry_trap_sites_name_each_wire_parameter() {
     let parameter_pos = Pos::new("wire-entry.ts", 3, 27);
     let function = Function {
         synthesized_helper: false,
-        symbol: "configure".to_string(),
+        symbol: Symbol::from_full_text("configure"),
         name: "configure".to_string(),
         can_raise: false,
         exported: true,
@@ -556,7 +556,7 @@ fn callee_trap_policy_delegates_to_operation_predicates() {
     assert!(!Callee::Map(MapFn::Get).has_call_site());
     assert!(Callee::Set(SetFn::Union).has_call_site());
     assert!(!Callee::Set(SetFn::Has).has_call_site());
-    assert!(Callee::Func("script".to_string()).has_call_site());
+    assert!(Callee::Func(Symbol::from_full_text("script")).has_call_site());
     assert!(Callee::Foreign("host".to_string()).has_call_site());
 }
 

@@ -264,7 +264,7 @@ fn a42_date_operations_are_intrinsics_and_the_type_is_nominal() {
                     hir::Callee::Date(f) => dates.push(*f),
                     hir::Callee::Method { recv, name } => {
                         if recv.ty == Type::Date {
-                            methods.push(name.clone());
+                            methods.push(name.full_text().to_owned());
                         }
                         walk_expr(recv, dates, methods);
                     }

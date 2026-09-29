@@ -328,6 +328,7 @@ impl<'p> Checker<'p> {
     ) -> ClassId {
         let id = ClassId(self.classes.len());
         self.classes.push(hir::ClassDef {
+            symbol: hir::Symbol::from_full_text(name),
             name: source_name(name),
             is_value,
             alignment_override,

@@ -67,7 +67,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 let global = self.lowering.globals.get(name).copied().ok_or_else(|| {
                     self.error(
                         &expr.pos,
-                        format!("unknown global `{}`", hir::source_name(name)),
+                        format!("unknown global `{}`", name.source_name()),
                     )
                 })?;
                 let ty = self
@@ -80,7 +80,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     .ok_or_else(|| {
                         self.error(
                             &expr.pos,
-                            format!("unknown global `{}`", hir::source_name(name)),
+                            format!("unknown global `{}`", name.source_name()),
                         )
                     })?;
                 PreparedPlaceKind::Global(global, ty)

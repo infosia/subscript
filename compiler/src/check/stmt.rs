@@ -892,7 +892,7 @@ impl<'p> Checker<'p> {
                 kind: ExprKind::Call {
                     callee: hir::Callee::Method {
                         recv: Box::new(subject_local),
-                        name: "next".to_string(),
+                        name: hir::Symbol::from_full_text("next"),
                     },
                     args: Vec::new(),
                 },

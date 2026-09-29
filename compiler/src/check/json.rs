@@ -126,7 +126,7 @@ impl Checker<'_> {
         };
         hir::Expr {
             kind: ExprKind::Call {
-                callee: Callee::Func(wrapper),
+                callee: Callee::Func(hir::Symbol::from_full_text(wrapper)),
                 args: vec![value],
             },
             ty: Type::Str,
@@ -252,7 +252,7 @@ impl Checker<'_> {
         };
         hir::Expr {
             kind: ExprKind::Call {
-                callee: Callee::Func(wrapper),
+                callee: Callee::Func(hir::Symbol::from_full_text(wrapper)),
                 args: vec![text],
             },
             ty: target,
@@ -1312,7 +1312,7 @@ impl Checker<'_> {
                 kind: ExprKind::Call {
                     callee: Callee::Method {
                         recv: Box::new(locals.value(array_ty.clone())),
-                        name: "push".to_string(),
+                        name: hir::Symbol::from_full_text("push"),
                     },
                     args: vec![child],
                 },
@@ -1567,7 +1567,7 @@ fn json_cast(value: hir::Expr, ty: Type, pos: &Pos) -> hir::Expr {
 fn script_call(name: String, args: Vec<hir::Expr>, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
         kind: ExprKind::Call {
-            callee: Callee::Func(name),
+            callee: Callee::Func(hir::Symbol::from_full_text(name)),
             args,
         },
         ty,

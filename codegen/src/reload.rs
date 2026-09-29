@@ -276,7 +276,7 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
                     .count()
                     > 1,
             ),
-            &format!("{}:{:?}", g.symbol, g.ty),
+            &format!("{}:{:?}", g.symbol.full_text(), g.ty),
         );
     }
     for f in m.functions.iter().filter(|f| !f.synthesized_helper) {
@@ -291,7 +291,7 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
                     .count()
                     > 1,
             ),
-            &format!("{}|{}", f.symbol, signature_text(f)),
+            &format!("{}|{}", f.symbol.full_text(), signature_text(f)),
         );
     }
 

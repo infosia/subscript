@@ -101,7 +101,7 @@ impl<'p> Checker<'p> {
                     kind: ExprKind::Call {
                         callee: Callee::Method {
                             recv: Box::new(obj),
-                            name: "get".to_string(),
+                            name: hir::Symbol::from_full_text("get"),
                         },
                         args: vec![index],
                     },
@@ -214,7 +214,7 @@ impl<'p> Checker<'p> {
                         kind: ExprKind::Call {
                             callee: Callee::Method {
                                 recv: Box::new(obj),
-                                name: name.to_string(),
+                                name: hir::Symbol::from_full_text(name),
                             },
                             args: Vec::new(),
                         },
