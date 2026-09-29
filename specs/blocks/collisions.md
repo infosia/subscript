@@ -32,9 +32,9 @@ Accept: `a05`. Reject: `r06-structural-substitution` (passes a same-shaped
 class instance where the other nominal type is expected — `tsc`-clean by
 design).
 
-### C2. Value types (Q2) — `@CStruct class`
+### C2. Value types (Q2) — `@ValueType class`
 
-A class marked with the ambient `@CStruct` decorator (TC39 standard decorator
+A class marked with the ambient `@ValueType` decorator (TC39 standard decorator
 syntax, TS 5 default; no `experimentalDecorators`) is a value type:
 C-layout, copy-on-assign, copy-on-pass, copy-on-index. Rules:
 
@@ -49,7 +49,7 @@ C-layout, copy-on-assign, copy-on-pass, copy-on-index. Rules:
   through it are legal (Q17 — matches `tsc`; C-style `const struct`
   semantics are not imported).
 
-Accept: `a04`, `a21`. Reject: `r07-value-class-extends` (`@CStruct class`
+Accept: `a04`, `a21`. Reject: `r07-value-class-extends` (`@ValueType class`
 with an `extends` clause; `tsc`-clean).
 
 ### C3. `number` and sized numerics (Q1) — bare `number` rejected
@@ -342,7 +342,7 @@ binding and guards the hook call.)*
 *(R37, 2026-08-25; `compiler.md` §65.)* A class declares
 `get name(): T { ... }` and `set name(value: T) { ... }`, both with
 a body. A read accessor is legal on a reference class and on a
-`@CStruct` value class; a write accessor is legal on a reference
+`@ValueType` value class; a write accessor is legal on a reference
 class only. A read `x.name` checks to the same HIR as a call of the
 read accessor; a statement write `x.name = v` checks to the same
 HIR as a call of the write accessor. The pair records as the
@@ -572,14 +572,14 @@ Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
 
   **Enforced by the checker**, with S100 at the responsible position
   and the limit named in the message, for: `FixedArray` layouts
-  including nested and class-dependent ones; `@CStruct` value-class
+  including nested and class-dependent ones; `@ValueType` value-class
   layouts; reference-class object layouts; `.next` `IterResult<T>`
   layouts; **closure environments**, by the resolved types of captured
   values; **generator frames**, including header, parameters and
   locals; and the accumulated stack-frame storage of (2).
 
   *(Added 2026-07-26. Before it, a program the checker accepted could
-  **panic the compiler** — `@CStruct class Big { data:
+  **panic the compiler** — `@ValueType class Big { data:
   FixedArray<u8, 4294967295>; }` reached `attempt to add with overflow`
   in codegen's layout arithmetic. That violates core principle 5, and
   the shape was reachable from source **by construction** rather than
@@ -592,7 +592,7 @@ Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
   purpose, and the Phase Review measured it.** Two defects:
 
   - It set the limit at `i32::MAX` and bounded **one aggregate rather
-    than the frame**, so `FixedArray<u8, 2147483640>` in a `@CStruct`
+    than the frame**, so `FixedArray<u8, 2147483640>` in a `@ValueType`
     local still panicked — `attempt to negate with overflow` in
     Cranelift's aarch64 ABI. The bisected boundary was 2 147 483 632,
     which is now limit (2). **The value this entry used as its own
@@ -615,7 +615,7 @@ Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
   exactly how the first revision failed.
 
   *(Added 2026-07-26. Before it, a program the checker accepted could
-  **panic the compiler** — `@CStruct class Big { data:
+  **panic the compiler** — `@ValueType class Big { data:
   FixedArray<u8, 4294967295>; }` reached `attempt to add with overflow`
   in codegen's layout arithmetic. That violates core principle 5, and
   the shape was reachable from source **by construction** rather than
@@ -956,7 +956,7 @@ Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
   already defines equality for (sized integers, `boolean`, `enum`,
   `f32`/`f64` by **SameValueZero**, `string` by content, `Date` by
   millis, reference classes by identity); `f16` (Q23 storage-only), `T[]`,
-  `FixedArray`, `@CStruct` value classes, `object`, function types and
+  `FixedArray`, `@ValueType` value classes, `object`, function types and
   `Nullable<T>` are rejected as keys (S014). **Iteration is insertion
   order** and is normative, not incidental — §0.3 determinism and the
   golden corpus both depend on it; overwriting a present key keeps its
@@ -1418,7 +1418,7 @@ Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
   literal: `device.createBuffer({ size: 256, usage: ... })`.)*
 
   - **Declaration.** `@Descriptor class` (ambient decorator beside
-    `@CStruct` in the prelude) declares a **data-only reference
+    `@ValueType` in the prelude) declares a **data-only reference
     class**: no constructor, no methods, no `extends`. Members are
     either **required** — spelled `name!: T`, the definite-assignment
     form stock `tsc` mandates under `strict` for initializer-less
@@ -1556,7 +1556,7 @@ Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
 ## 4. Prelude and gate
 
 - `prelude/lang.d.ts` — ambient declarations for §1/§2: sized-numeric
-  aliases, `print`, `Context.collect`, `Context.free`, `CStruct` decorator
+  aliases, `print`, `Context.collect`, `Context.free`, `ValueType` decorator
   (typed against TS 5 standard `ClassDecoratorContext`), `FixedArray`.
 - `tsconfig.json` (repo root) — `strict`, `noEmit`, ES2022 target/lib,
   `types: []`; includes `prelude/**/*.d.ts` and `corpus/accept/**/*.ts`

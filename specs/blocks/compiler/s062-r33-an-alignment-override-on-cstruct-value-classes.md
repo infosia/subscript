@@ -1,9 +1,9 @@
 <!-- §62 of the compiler contract. The index is `specs/blocks/compiler.md` §0. -->
 
-## 62. R33 — an alignment override on `@CStruct` value classes
+## 62. R33 — an alignment override on `@ValueType` value classes
 
 Origin: downstream request R33, 2026-08-22, at pin `4313dcf`. The
-downstream uploads `FixedArray<T, N>` of `@CStruct` classes to GPU
+downstream uploads `FixedArray<T, N>` of `@ValueType` classes to GPU
 buffers with no encoder. That path is correct only when the C layout
 equals the WGSL layout. WGSL aligns `vec3<f32>` and `vec4<f32>` to 16
 and `vec2<f32>` to 8; C aligns `{ x: f32; y: f32; z: f32 }` to 4. No
@@ -12,10 +12,10 @@ of 2026-08-22: the language gains a class-level override.
 
 Measurements at the pin, on this host:
 
-1. The call form `@CStruct({ align: 16 })` fails with S100 "the only
-   decided decorators are the ambient `@CStruct` and `@Descriptor`"
+1. The call form `@ValueType({ align: 16 })` fails with S100 "the only
+   decided decorators are the ambient `@ValueType` and `@Descriptor`"
    (`compiler/src/check/mod.rs`, `class_decorators`: it matches
-   `Expr::Ident("CStruct")` only). The class is then not a value
+   `Expr::Ident("ValueType")` only). The class is then not a value
    class, and a field of that type fails the value-class whitelist.
 2. Two sites compute the class layout and both take the alignment as
    the maximum field alignment: `codegen/src/layout.rs`
@@ -30,7 +30,7 @@ Measurements at the pin, on this host:
    0,16,32; `Vec3f a[4]` stride 16; `Vec2f` with `_Alignas(8)` 8/8.
    These equal the downstream's table and the WGSL offsets.
 5. Stock `tsc` 5.9.2 with the overload in 62.2 accepts
-   `@CStruct({ align: 16 })` and rejects `align: 3` (TS2322), an
+   `@ValueType({ align: 16 })` and rejects `align: 3` (TS2322), an
    unknown key (TS2353), and `@Descriptor({ align: 16 })` (TS2554).
 6. Heap objects start at a 16-aligned payload (`HEADER_SIZE` 16,
    allocation alignment 16 on both the host allocator and the ship
@@ -39,7 +39,7 @@ Measurements at the pin, on this host:
 
 ### 62.1 Rule
 
-1. `@CStruct({ align: N })` declares a value class whose alignment is
+1. `@ValueType({ align: N })` declares a value class whose alignment is
    `N`. `N` is an integer literal in `{2, 4, 8, 16}`. The size is the
    natural size rounded up to `N`. Field offsets do not change.
 2. `N` must be greater than or equal to the natural alignment. A
@@ -72,7 +72,7 @@ Measurements at the pin, on this host:
   so stock `tsc` accepts the call form:
 
   ```ts
-  declare function CStruct(options: { align: 2 | 4 | 8 | 16 }):
+  declare function ValueType(options: { align: 2 | 4 | 8 | 16 }):
     <T extends abstract new (...args: never[]) => object>(
       target: T, context: ClassDecoratorContext) => T;
   ```
@@ -80,7 +80,7 @@ Measurements at the pin, on this host:
 - `compiler/src/hir.rs` `ClassDef`: one optional field, the alignment
   override, `None` for every class without it.
 - `compiler/src/check/mod.rs` `class_decorators`: accepts
-  `Expr::Call` with callee `CStruct` and one object-literal argument;
+  `Expr::Call` with callee `ValueType` and one object-literal argument;
   reads `align`; reports the 62.1 rule 5 rejections at the decorator
   span. `GenericClass` carries the override (rule 6). The rule 2 check
   runs where the class layout is known.
@@ -104,14 +104,14 @@ Measurements at the pin, on this host:
 Red first, at the contract pin: the S100 in 62 item 1, recorded
 (this host, exit 1).
 
-1. `corpus/accept/a141-cstruct-align.ts` + `.expected`: `Vec3f`
+1. `corpus/accept/a141-valuetype-align.ts` + `.expected`: `Vec3f`
    with `align: 16` and three `f32` fields; `Mixed { a: f32; p: Vec3f
    }`; a `FixedArray<Vec3f, 4>` field; values copied on assignment
    and printed through field reads. Golden from the dev JIT; ship
    byte-identical.
-2. `corpus/reject/r135-cstruct-align-below-natural.ts`: `align: 2`
+2. `corpus/reject/r135-valuetype-align-below-natural.ts`: `align: 2`
    on a class whose natural alignment is 4; S100 with both numbers.
-3. `corpus/reject/r136-cstruct-align-not-in-set.ts`: `align: 3`;
+3. `corpus/reject/r136-valuetype-align-not-in-set.ts`: `align: 3`;
    S100.
 4. `corpus/reject/r137-descriptor-align.ts`: `@Descriptor({ align:
    16 })`; S100.

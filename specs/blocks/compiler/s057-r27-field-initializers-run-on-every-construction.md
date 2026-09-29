@@ -5,7 +5,7 @@
 *(A field with **no** initializer and no unconditional constructor
 assignment is rejected since 2026-09-12: `compiler.md` §108.)*
 
-A downstream report (R27, 2026-08-15): a `@CStruct` class with no
+A downstream report (R27, 2026-08-15): a `@ValueType` class with no
 constructor and a field initializer `value: i32 = 37` prints
 `field:37` on the dev tier and `field:0` on the ship tier. Both
 tiers compile the program clean, and no trap fires. The downstream
@@ -103,7 +103,7 @@ defaults (§25, §43).
 1. Record the red first, at `b1a5dab`: the two new accept entries
    each produce different bytes on the two tiers; the new reject
    entry passes the checker.
-2. New accept entry `a133-field-init-no-ctor`: a `@CStruct` value
+2. New accept entry `a133-field-init-no-ctor`: a `@ValueType` value
    class and a reference class, each with no constructor and a
    non-zero field initializer; `main` prints the fields. The entry
    passes the checker gate, the `tsc` gate, and the

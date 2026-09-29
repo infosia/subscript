@@ -71,7 +71,7 @@ from the committed tree, or quoted from the §66 and §67 records.
    gate does not see it."
 8. **Two defects of that class stay open, and neither program
    suspends.** The §67 record names them as adjacent defects. A
-   `@CStruct` receiver address, taken before an argument grows the
+   `@ValueType` receiver address, taken before an argument grows the
    same array, prints `sync=5` on both tiers, where `sync=12` is
    correct. A second program assigns a lambda inside a loop body,
    and calls it after the loop. The dev tier prints `v=22`. The
@@ -247,7 +247,7 @@ The interface is not the subject. This section moves no part of it.
    reads: the frame holds the live-in set and the frame-class locals.
 
    Corpus: `a164` (a generator and an async function, each with a
-   `FixedArray` local and a `FixedArray<CStruct, N>` local read after
+   `FixedArray` local and a `FixedArray<ValueType, N>` local read after
    a suspension, in a loop and outside one). Red at `2a65724`.
 8. **Storage scope is the live range, never the source block.** If a
    value outlives its source block, the value lives in
@@ -590,7 +590,7 @@ and `lower/mod.rs` did not.
    the form. If either defect needs a hand-written site in a tier,
    LIR is wrong, and the round reports that instead of the fix.
    - `corpus/accept/a150-receiver-address-invalidation`: a
-     `@CStruct` value class in an array, called as a method
+     `@ValueType` value class in an array, called as a method
      receiver, with an argument that grows the same array. Red at
      the contract pin: both tiers print `sync=5`, and `sync=12` is
      correct. The control line `ctl=12` stays correct at the pin.

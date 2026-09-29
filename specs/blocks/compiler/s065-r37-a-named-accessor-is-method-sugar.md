@@ -17,7 +17,7 @@ Measurements at the pin, on this host:
 1. The four probes reproduce. A `get`/`set` pair reports S100
    "static methods and accessors are not decided" once per
    accessor, then S004 and S100 at each use. A read accessor on a
-   `@CStruct` value class reports the same S100. A static method
+   `@ValueType` value class reports the same S100. A static method
    reports the same S100. A method type parameter reports S100
    "unknown type name `T`". One message covers static members and
    accessors together.
@@ -36,7 +36,7 @@ Measurements at the pin, on this host:
    the practice.
 5. Stock `tsc` 5.9.2 accepts the whole asked accept surface: a
    `get`/`set` pair, a second accessor on the same class, a read
-   accessor on a `@CStruct` class, an accessor on a generic class,
+   accessor on a `@ValueType` class, an accessor on a generic class,
    and `$` and `_` members together. It also accepts `x.v += 1`,
    `x.v++`, the write used as a value, a static accessor, and a
    write accessor on a value class; each subscript rejection below
@@ -44,7 +44,7 @@ Measurements at the pin, on this host:
    read-only accessor (TS2540) and a field that shares an accessor
    name (TS2300).
 6. `private` fields check today. A synchronous method on a
-   `@CStruct` value class checks and runs.
+   `@ValueType` value class checks and runs.
 7. The reject harness checks one script file and cannot carry a
    mirror. The mirror rejection is a unit test, as §58.2 did.
 
@@ -69,7 +69,7 @@ Measurements at the pin, on this host:
    nothing enforced it, so the written value took its context from
    the read accessor's type and a valid write reported S008.)*
 2. A read accessor is legal on a reference class and on a
-   `@CStruct` value class. A write accessor is legal on a reference
+   `@ValueType` value class. A write accessor is legal on a reference
    class only. A write accessor on a value class fails with S100
    that names the value class. A value class copies on assignment,
    so the write reaches a copy.
@@ -181,7 +181,7 @@ ship-tier C error in 65 item 3, both recorded (this host).
    dev JIT; ship byte-identical): a reference class with a
    `get`/`set` pair over a private field, read, written, and read
    inside a template string, plus a second accessor on the same
-   class; a `@CStruct` value class with a read accessor; a generic
+   class; a `@ValueType` value class with a read accessor; a generic
    class with an accessor over its type parameter, used at two
    types; one class that holds both an accessor named `$` and a
    member named `_`; and, added 2026-08-25 after the phase review,

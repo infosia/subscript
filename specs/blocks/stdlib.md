@@ -712,7 +712,7 @@ whitelist is exactly the kinds Q22 already defines equality for:
 Rejected as key types (S014, naming Q24): `f16` (storage-only, Q23 —
 no arithmetic domain, and its `as f32` widening would make two
 distinct `f16` bit patterns collide silently), `T[]`, `FixedArray`,
-value classes (`@CStruct` — structural equality is not defined for
+value classes (`@ValueType` — structural equality is not defined for
 them and identity is meaningless for a copied value), `object`
 (boundary-opaque), function types, `Nullable<T>`, `void`.
 
@@ -875,7 +875,7 @@ insert / overwrite-keeps-position / delete / re-insert-appends; a set
 battery; a reference-class-key entry proving identity semantics (two
 equal-shaped instances are distinct keys); and a `forEach` entry
 exercising the trap path. Rejects: an `f16` key, a `T[]` key, a
-`@CStruct` key, `get` on a scalar-valued `Map`, an iterator-protocol
+`@ValueType` key, `get` on a scalar-valued `Map`, an iterator-protocol
 member, and `new Map([[k, v]])` — each S014 at a pinned position.
 
 Gate: standing gate byte-exact on both tiers including the new
@@ -1213,7 +1213,7 @@ compiler requires `T` to be a **serializable type** and emits a
 serializer for it.
 
 Serializable: the sized numerics, `boolean`, `string`, `Date`, `T[]`,
-`FixedArray<T, N>`, `@CStruct` value classes, reference classes, and
+`FixedArray<T, N>`, `@ValueType` value classes, reference classes, and
 `Ref | null`. Rejected (S014): `object` (boundary-opaque — it has no
 type to serialize), function types, `Map`/`Set`, and `f16`.
 
@@ -1301,7 +1301,7 @@ config, or a message, and a malformed one must be reportable rather
 than stopping the Context. The cost, stated rather than hidden: one
 heap allocation per parse, and a caller obligation to release it.
 
-A `@CStruct` result — `a18`'s `DivisionResult` shape — was rejected for
+A `@ValueType` result — `a18`'s `DivisionResult` shape — was rejected for
 a different reason: C2's value-class field whitelist excludes `string`,
 reference-class and nullable fields, so `value: T` would not typecheck
 for most `T`. Extending that whitelist is a type-system change and is
@@ -1401,7 +1401,7 @@ shows `-0` returning as `0` rather than omitting the case.
 Accept (continue `aNN`): a `stringify` battery over each serializable
 kind — scalars, `string` with the escape set (§13.2a), `boolean`,
 `Date`, nested `T[]`,
-`FixedArray`, a `@CStruct`, a reference class, and `Ref | null` with
+`FixedArray`, a `@ValueType`, a reference class, and `Ref | null` with
 both a value and `null` — with the golden generated from node and
 `cmp`-verified; a round-trip entry (§13.4a); a `parse` battery
 covering success, malformed input, a type-mismatched document, a
@@ -2389,7 +2389,7 @@ Three new `Context` members:
 
 1. `T` is explicit, as every generic in subscript. A missing or
    extra type argument is S014.
-2. `T` is a `@CStruct` value class or a `FixedArray<E, N>`. Every
+2. `T` is a `@ValueType` value class or a `FixedArray<E, N>`. Every
    byte of `T`'s storage, transitively through value-class fields
    and `FixedArray` elements, is a sized numeric, a `boolean`, an
    enum, or padding. Any other `T` — a scalar alone, a reference

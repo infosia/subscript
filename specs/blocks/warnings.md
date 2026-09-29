@@ -84,7 +84,7 @@ static analysis can see — is compiler.md §14.4b (B2).
 ### W004 — write to a value copy that nothing reads — 2026-09-01
 
 Fires on an assignment (plain or compound) whose target chain roots in
-a **copy binding** of a value type — a `@CStruct` class or a
+a **copy binding** of a value type — a `@ValueType` class or a
 `FixedArray` — when the binding is
 **write-only** in its function: every occurrence of the binding after
 its declaration is the root of an assignment target. A copy binding is

@@ -1,9 +1,9 @@
 <!-- §81 of the compiler contract. The index is `specs/blocks/compiler.md` §0. -->
 
-## 81. R38 — a write through a `@CStruct` copy that nothing reads
+## 81. R38 — a write through a `@ValueType` copy that nothing reads
 
 *(Owner decision, 2026-09-01.)* Origin: downstream request R38 at
-`2f9ed28`. A `@CStruct` parameter, and a local bound by copy from
+`2f9ed28`. A `@ValueType` parameter, and a local bound by copy from
 another place, each hold a copy (C2). A field write through the copy
 succeeds and the source never changes. No diagnostic reports it. The
 downstream shipped a drag interaction with this shape.
@@ -17,7 +17,7 @@ a parameter copy and returns from it. The reject would move both
 pins and forbid the C idiom "change the copy, then return or store
 it".
 
-R38's alternative, reference semantics for `@CStruct` parameters, is
+R38's alternative, reference semantics for `@ValueType` parameters, is
 rejected: a by-value struct parameter crosses the C ABI by value
 (invariant 1), and C2's model does not change.
 
@@ -27,7 +27,7 @@ The defect is narrower: in both R38 sites the copy is **write-only**.
 ### 81.2 The rule
 
 **W004** (`warnings.md` §2): an assignment whose target roots in a
-copy binding of `@CStruct` type fires when the binding is write-only in
+copy binding of `@ValueType` type fires when the binding is write-only in
 its function. The definition of a copy binding, of a read, and the
 recorded miss live in `warnings.md`; this section does not repeat
 them.
@@ -40,7 +40,7 @@ positive. Warnings surface at every `check`, `emit`, `build`, and
 ### 81.2a `FixedArray`, and the `a56` pin
 
 *(2026-09-01, found by the first implementation round.)* `a56` writes
-a write-only `@CStruct` parameter and a write-only `FixedArray`
+a write-only `@ValueType` parameter and a write-only `FixedArray`
 parameter on purpose, to pin copy-on-pass in `Map.forEach` callbacks.
 That is R38's shape, so W004 fires on it, and no rule keeps `a56` silent
 without keeping R38 silent.

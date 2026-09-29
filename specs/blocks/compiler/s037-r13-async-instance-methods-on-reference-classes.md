@@ -8,7 +8,7 @@ moves. Probed before contracting: stock `tsc` accepts
 `async name(): Promise<T>` as a class method and permits a floating
 async method call, so the floating rejection below is a
 strictly-narrower pin (r105 `tsc`-clean). Checker probes: generic
-classes and `@CStruct` value classes accept synchronous methods
+classes and `@ValueType` value classes accept synchronous methods
 today, so their async variants are explicit rejections here, not
 pre-existing behavior.
 
@@ -24,7 +24,7 @@ through a receiver expression of the declaring class's type
 arguments.
 
 Rejected, with corpus pins: an async static method (r101), an async
-generator method (r102), an async method on a `@CStruct` value
+generator method (r102), an async method on a `@ValueType` value
 class (r103), an async method on a generic class template (r104),
 and a non-awaited async method call — floating statement or value
 position (r105, S013, `tsc`-clean). *(§64, 2026-08-23: the generic-class

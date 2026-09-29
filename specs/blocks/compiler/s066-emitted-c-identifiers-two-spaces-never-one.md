@@ -427,7 +427,7 @@ computed. It never reads emitted C.
 
 **A consumer proves the same property the same way.**
 `subscript_codegen::layout::value_class_layouts` is public. It returns
-one `StructLayout` per `@CStruct` class — `name`, `size`, `align`, and
+one `StructLayout` per `@ValueType` class — `name`, `size`, `align`, and
 one `FieldLayout { name, offset }` per field — keyed by the **source**
 class and field names. The caller compares those against
 `sizeof`/`_Alignof`/`offsetof` taken from its own header. Both sides of

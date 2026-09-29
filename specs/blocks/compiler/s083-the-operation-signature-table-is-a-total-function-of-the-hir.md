@@ -95,7 +95,7 @@ The table is a record written beside the form (core principles 8 and
    generator consumed only through `for…of`, with no `.next()` in the
    program; one loop that runs to the end, one that `break`s at the
    second value, one that `continue`s past a value, and one generator
-   whose element type is a `@CStruct` value class read through a
+   whose element type is a `@ValueType` value class read through a
    field. Red at `088acac`: dev exit 2 with the text above. `tsc:
    accepts`; `js-comparable` measured.
 2. `corpus/accept/a181-operation-in-every-owner.ts` + `.expected`: a

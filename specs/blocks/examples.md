@@ -106,7 +106,7 @@ This is the one thing examples must do that the corpus does not.
    design invariant. "This is not TypeScript" without the rule is not
    acceptable; the reader must be able to reach the contract.
 2. **Comments state the rule and the consequence, not the syntax.**
-   `// C2: a @CStruct class is a value — this assignment copies` is a
+   `// C2: a @ValueType class is a value — this assignment copies` is a
    comment; `// assign b to a` is noise.
 3. **A rejected alternative is shown as a comment, not as code**, with
    the diagnostic the compiler would produce and the reject-corpus entry
@@ -263,7 +263,7 @@ implementer's choice; the committed `.expected` freezes it.
 | id | teaches | the divergence it names |
 |---|---|---|
 | `e01-sized-integers` | `i32`/`u32`/`i64`/`f32`/`f64`, explicit `as` conversions, wrapping | C3 bare `number` rejected; C4 literals are contextually typed |
-| `e02-value-and-reference` | `@CStruct class` beside a plain `class`; copy on assign and on pass | C2 value types; C1 nominal identity — structurally identical is not interchangeable |
+| `e02-value-and-reference` | `@ValueType class` beside a plain `class`; copy on assign and on pass | C2 value types; C1 nominal identity — structurally identical is not interchangeable |
 | `e03-memory` | Context allocation, `Context.free`, explicit `Context.collect()` | invariant 2 — nothing collects unbidden; a program that never collects is correct, merely larger |
 | `e04-null` | `T \| null`, narrowing by `!== null` | C7 — no `undefined`, no general unions |
 | `e05-errors` | `throw`/`try`/`catch` of the `Error` family; `JSON.parse` failures; a result-shaped return; what a trap is | C6 — only `Error`-family values are thrown, `finally` is rejected, and a trap is not catchable *(renamed from `e05-no-exceptions` 2026-09-26, `compiler.md` §115)* |

@@ -25,7 +25,7 @@ Measurements at pin `61c64c3`, this host (aarch64 macOS, rustc
    runs first.
 4. `static async m<T>()`: S100 "async static methods are not in the
    decided surface" (§37.1, C8). That check runs first.
-5. The same method on a `@CStruct` value class: S100 "async generic
+5. The same method on a `@ValueType` value class: S100 "async generic
    methods are not in the decided surface". The value-class rejection
    sits after the generic-method branch in `collect_class`, so the
    branch masks it.
@@ -69,7 +69,7 @@ program is rejected today, and each one names the wrong rule.
 8. These rejections do not change, and each one reports at its own
    site: an async generic method on a generic class (§82.4 rule 5,
    first half); an async generic **static** method (§37.1); an async
-   generic method on a `@CStruct` value class (§37.1); an async
+   generic method on a `@ValueType` value class (§37.1); an async
    generic **generator** method (§37.1); a `@Descriptor` class and a
    mirror class.
 9. Items 5 and 6 of the measurements report the rule that names the
@@ -113,7 +113,7 @@ program is rejected today, and each one names the wrong rule.
 
 - `compiler/src/check/mod.rs` `collect_class`: the `is_async`
   rejection inside the generic-method branch is removed. The
-  `@CStruct` value-class async rejection moves above that branch
+  `@ValueType` value-class async rejection moves above that branch
   (rule 9).
 - `compiler/src/check/expr.rs`, the await path, member callee: when
   the receiver class declares a generic method of that name,
@@ -144,7 +144,7 @@ on this host with exit 1.
 1. `corpus/accept/a187-async-generic-method.ts` + `.expected`: a
    non-generic reference class with `async load<T>(value: T):
    Promise<T>` that awaits `Context.suspend()` and returns the value.
-   Two instances: `i32` and a `@CStruct` value class `Vec2` of two
+   Two instances: `i32` and a `@ValueType` value class `Vec2` of two
    `f32` fields. One await is direct; one handle is held in a local
    and awaited two statements later (rule 6). `main` prints each
    result. The header carries `js-comparable: no C8`. The golden
@@ -153,7 +153,7 @@ on this host with exit 1.
 2. `corpus/reject/r186-async-generic-method-without-type-args.ts`:
    S100 at the call, with the divergence block (rule 4).
 3. `corpus/reject/r187-async-generic-method-on-value-class.ts`: S100
-   "async methods on `@CStruct` value classes are not in the decided
+   "async methods on `@ValueType` value classes are not in the decided
    surface" at the declaration (rule 9).
 4. `corpus/reject/r181-async-generic-method.ts` is deleted, and its
    harness row is removed, as r104 was in §64 rule 7.
@@ -161,7 +161,7 @@ on this host with exit 1.
    diagnostic. For each collection rule that rejects a method with
    type parameters, a program that also calls the method reports
    exactly that rule, and no S018 and no "is not generic" at the call
-   (rule 12). The rules to cover: the `@CStruct` value-class async
+   (rule 12). The rules to cover: the `@ValueType` value-class async
    rejection, the async static rejection, and the async generator
    rejection. The control is a program whose method no rule rejects,
    where the call reports nothing.

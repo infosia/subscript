@@ -35,7 +35,7 @@ rejection. This section decides them.
    v`. Access through an instance (`c.x` where `x` is static) fails
    with S100; `tsc` reports TS2576 for it.
 6. **Where static members are legal.** A reference class and a
-   `@CStruct` value class (a static field does not change the
+   `@ValueType` value class (a static field does not change the
    instance layout). A generic class fails with S100 at the `static`
    keyword: `tsc` gives one storage per class, not per instantiation,
    and this language has no class object to hang it on; recorded as a

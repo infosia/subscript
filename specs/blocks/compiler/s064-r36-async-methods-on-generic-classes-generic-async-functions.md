@@ -39,7 +39,7 @@ Measurements at the pin, on this host:
    class type parameters are in scope in the body and in the
    `Promise<T>` annotation. The body obeys §26.1 and §37.1
    unchanged. The §37.1 rejections that remain (async static, async
-   generator, async on a `@CStruct` value class, `@Descriptor`,
+   generator, async on a `@ValueType` value class, `@Descriptor`,
    floating call) apply to the instance at instantiation, where
    every generic body check runs.
 2. A generic `async function` is accepted. A call requires explicit
@@ -104,7 +104,7 @@ recorded (this host, exit 1).
    `Context.suspend()` and returns the field; `async function
    first<T>(items: T[]): Promise<T>`; `export async function
    tick<T>(): Promise<void>` that prints once; both `Box` and
-   `first` instantiated with `u32` and with a `@CStruct` value class
+   `first` instantiated with `u32` and with a `@ValueType` value class
    (`Vec2`, two `f32` fields); `main` awaits each and prints the
    results through field reads. The golden shows the `tick` print
    once (rule 5). Golden from the dev JIT; ship byte-identical.
@@ -115,7 +115,7 @@ recorded (this host, exit 1).
    the harness row is removed.
 4. Unit tests in the same commit: a floating `first<u32>(items)`
    call is S013; `await first(items)` without type arguments is
-   S100; an async method on a generic `@CStruct` value class is the
+   S100; an async method on a generic `@ValueType` value class is the
    r103 S100 at instantiation; the HIR of a program with an
    exported generic async function has `exported == false` on the
    instance and the emitted C defines no `subscript_export_` symbol

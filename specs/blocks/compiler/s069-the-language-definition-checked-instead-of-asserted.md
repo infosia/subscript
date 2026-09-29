@@ -46,7 +46,7 @@ Measurements at `af5697d`, on this host. `node` is v24.18.0 and
 4. **`r153`'s header already records a `node` observation by hand** —
    "node reports a temporal-dead-zone ReferenceError". The work
    below turns that kind of note into a measurement.
-5. **78 of 148 accept entries use no `Context`, no `@CStruct`, no
+5. **78 of 148 accept entries use no `Context`, no `@ValueType`, no
    `FixedArray`, and no foreign call.** That is the rough upper
    bound of the comparable subset. The real number is lower, because
    an entry that depends on integer wrap or on a trap is not

@@ -103,7 +103,7 @@ Every section, with its status:
 | §59 | R30 — host-called entries take handle and scalar parameters | active | [`s059-r30-host-called-entries-take-handle-and-scalar-parameters.md`](compiler/s059-r30-host-called-entries-take-handle-and-scalar-parameters.md) |
 | §60 | R31 — `using` declarations: deterministic scope-exit dispose | active; rule 8 retired by §115 | [`s060-r31-using-declarations-deterministic-scope-exit-dispose.md`](compiler/s060-r31-using-declarations-deterministic-scope-exit-dispose.md) |
 | §61 | R32 — a wire-mapped alias in an entry signature | active | [`s061-r32-a-wire-mapped-alias-in-an-entry-signature.md`](compiler/s061-r32-a-wire-mapped-alias-in-an-entry-signature.md) |
-| §62 | R33 — an alignment override on `@CStruct` value classes | active | [`s062-r33-an-alignment-override-on-cstruct-value-classes.md`](compiler/s062-r33-an-alignment-override-on-cstruct-value-classes.md) |
+| §62 | R33 — an alignment override on `@ValueType` value classes | active | [`s062-r33-an-alignment-override-on-cstruct-value-classes.md`](compiler/s062-r33-an-alignment-override-on-cstruct-value-classes.md) |
 | §63 | R35 — a discovery check for one unresolved import | active | [`s063-r35-a-discovery-check-for-one-unresolved-import.md`](compiler/s063-r35-a-discovery-check-for-one-unresolved-import.md) |
 | §64 | R36 — async methods on generic classes, generic async functions | active | [`s064-r36-async-methods-on-generic-classes-generic-async-functions.md`](compiler/s064-r36-async-methods-on-generic-classes-generic-async-functions.md) |
 | §65 | R37 — a named accessor is method sugar | active | [`s065-r37-a-named-accessor-is-method-sugar.md`](compiler/s065-r37-a-named-accessor-is-method-sugar.md) |
@@ -122,7 +122,7 @@ Every section, with its status:
 | §78 | The MINOR consolidation pass | active | [`s078-the-minor-consolidation-pass.md`](compiler/s078-the-minor-consolidation-pass.md) |
 | §79 | A divergence diagnostic shows the TypeScript form and the subscript form | active | [`s079-a-divergence-diagnostic-shows-the-typescript-form-and-the-su.md`](compiler/s079-a-divergence-diagnostic-shows-the-typescript-form-and-the-su.md) |
 | §80 | Array data past `len` is zero | active | [`s080-array-data-past-len-is-zero.md`](compiler/s080-array-data-past-len-is-zero.md) |
-| §81 | R38 — a write through a `@CStruct` copy that nothing reads | active | [`s081-r38-a-write-through-a-cstruct-copy-that-nothing-reads.md`](compiler/s081-r38-a-write-through-a-cstruct-copy-that-nothing-reads.md) |
+| §81 | R38 — a write through a `@ValueType` copy that nothing reads | active | [`s081-r38-a-write-through-a-cstruct-copy-that-nothing-reads.md`](compiler/s081-r38-a-write-through-a-cstruct-copy-that-nothing-reads.md) |
 | §82 | R39 — six requests decided at `e1c2be1` | active | [`s082-r39-six-requests-decided-at-e1c2be1.md`](compiler/s082-r39-six-requests-decided-at-e1c2be1.md) |
 | §83 | The operation-signature table is a total function of the HIR | active | [`s083-the-operation-signature-table-is-a-total-function-of-the-hir.md`](compiler/s083-the-operation-signature-table-is-a-total-function-of-the-hir.md) |
 | §84 | Worker messages carry `string` fields by copy | active | [`s084-worker-messages-carry-string-fields-by-copy.md`](compiler/s084-worker-messages-carry-string-fields-by-copy.md) |
@@ -171,3 +171,4 @@ Every section, with its status:
 | §127 | An import binding is read-only | active | [`s127-an-import-binding-is-read-only.md`](compiler/s127-an-import-binding-is-read-only.md) |
 | §128 | A named re-export is in the surface | active | [`s128-a-named-re-export-is-in-the-surface.md`](compiler/s128-a-named-re-export-is-in-the-surface.md) |
 | §129 | The entry module is the host API | active | [`s129-the-entry-module-is-the-host-api.md`](compiler/s129-the-entry-module-is-the-host-api.md) |
+| §130 | The value class decorator is `@ValueType` | active | [`s130-the-value-class-decorator-is-valuetype.md`](compiler/s130-the-value-class-decorator-is-valuetype.md) |

@@ -120,7 +120,7 @@ the table stands as the corpus spelling reference.
 |---|---|---|
 | Sized numerics | `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f16`, `f32`, `f64` ambient type aliases | Q1, Q23 |
 | Bare `number` | Not used anywhere in the corpus; rejected by the compiler | Q1 |
-| Value-type struct | `@CStruct class Vec3 { x: f32; y: f32; z: f32 }` — class with ambient `@CStruct` decorator | Q2 |
+| Value-type struct | `@ValueType class Vec3 { x: f32; y: f32; z: f32 }` — class with ambient `@ValueType` decorator | Q2 |
 | Reference class | plain `class` (heap, manual lifetime) | Q2 |
 | Fixed-size array field | `FixedArray<f32, 16>` ambient generic | Q3 |
 | Slice / `(ptr,len)` | `T[]` parameters lower to `(ptr, len)`; no separate slice type in the surface syntax | Q4 |
@@ -143,7 +143,7 @@ the table stands as the corpus spelling reference.
 | a01-hello | Minimal program: `main`, `print`, string literal |
 | a02-integer-types | `i32`/`u32`/`f32`/`f64` arithmetic, explicit conversions between them |
 | a03-integer-literals | Suffix-less literals flowing into typed contexts (var init, args, array elements) |
-| a04-value-struct | `@CStruct class` declaration, field access, copy-on-assign semantics made observable via `print` |
+| a04-value-struct | `@ValueType class` declaration, field access, copy-on-assign semantics made observable via `print` |
 | a05-nominal-identity | Two identically-shaped nominal types used correctly side by side |
 | a06-fixed-array | `FixedArray` field inside a value struct (C-layout probe) |
 | a07-slice-pair | Function taking `f32[]`, summing it; the `(ptr,len)` lowering probe |
@@ -195,7 +195,7 @@ enforces.
 | Id | Rejected construct | Expected error |
 |---|---|---|
 | r06-structural-substitution | same-shaped class instance where another nominal type is expected | nominal types are not interchangeable |
-| r07-value-class-extends | `@CStruct class` with `extends` | value classes do not inherit |
+| r07-value-class-extends | `@ValueType class` with `extends` | value classes do not inherit |
 | r08-bare-number | `number` in a declaration | no default numeric type; use a sized type |
 | r09-int-literal-overflow | `const x: i32 = 3000000000` | literal out of range for i32 |
 | r10-escaping-capture | returning a capturing lambda | capturing lambdas may not escape |

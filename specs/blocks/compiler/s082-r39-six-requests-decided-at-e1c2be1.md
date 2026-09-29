@@ -274,7 +274,7 @@ fails; `?.[i]` fails; the right operand of `??` runs only on `null`
 ### 82.4 R39.6 — method type parameters, instance and static
 
 1. A method on a non-generic reference class or a non-generic
-   `@CStruct` value class, instance or static, declares type
+   `@ValueType` value class, instance or static, declares type
    parameters as a free function does (§64). The parameters are in
    scope in the signature and the body.
 1a. A template carries a body. A bodiless template, method or free
@@ -337,10 +337,10 @@ Corpus:
 
 - `corpus/accept/a178-generic-method.ts` + `.expected`: a reference
   class with `identity<T>(v: T): T` called at `i32`, at `string`,
-  and at a `@CStruct` value class; a static `create<T>(v: T): Box`;
+  and at a `@ValueType` value class; a static `create<T>(v: T): Box`;
   a method with two type parameters; a generic method that calls a
   generic free function; one instance called twice; a generic
-  instance method on a `@CStruct` class. `tsc: accepts`;
+  instance method on a `@ValueType` class. `tsc: accepts`;
   `js-comparable` measured.
 - `corpus/reject/r179-generic-method-without-type-args.ts`: S100;
   `tsc: accepts`, with a block.

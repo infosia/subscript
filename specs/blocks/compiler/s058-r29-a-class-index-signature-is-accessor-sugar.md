@@ -44,7 +44,7 @@ handles.
    `[index: I]: T` or `readonly [index: I]: T`. `I` is `i32` or
    `u32`.
 2. Reference classes only. An index signature on a value class
-   (`@CStruct`) or a descriptor class fails with S100.
+   (`@ValueType`) or a descriptor class fails with S100.
 3. The class must declare a method `get(index: I): T`. If the
    signature is not `readonly`, the class must also declare
    `set(index: I, value: T): void`. The types must match the

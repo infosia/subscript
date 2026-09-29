@@ -88,7 +88,7 @@ No corpus entry: the surface is a Rust API, not language syntax.
 Unit tests in `compiler/tests/` and `codegen/tests/`, same commit:
 
 1. A program imports `{ A_SIZE, B_WGSL }` from an absent
-   `./p.typegpu`, declares a `@CStruct` class and an exported
+   `./p.typegpu`, declares a `@ValueType` class and an exported
    function that uses both names (one as a value, one as a type).
    With the option: `Ok`, the class is intact,
    `poisoned_imports == [("./p.typegpu", [("A_SIZE","A_SIZE"),
