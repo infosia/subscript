@@ -261,7 +261,7 @@ impl<'p> Checker<'p> {
                         continue;
                     }
                     match self.file_scopes[target].get(&imported_name) {
-                        Some(item) => additions.push((local, item.clone(), pos)),
+                        Some(binding) => additions.push((local, binding.item.clone(), pos)),
                         None => {
                             self.error(
                                 RuleCode::S016,
@@ -273,7 +273,15 @@ impl<'p> Checker<'p> {
                 }
             }
             for (name, item, pos) in additions {
-                self.register_scope_item(file, &name, item, pos);
+                self.register_scope_binding(
+                    file,
+                    &name,
+                    ScopeBinding {
+                        item,
+                        imported: true,
+                    },
+                    pos,
+                );
             }
         }
     }

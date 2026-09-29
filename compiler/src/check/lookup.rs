@@ -6,17 +6,22 @@ impl<'p> Checker<'p> {
     /// Resolves a name against the current file's top-level scope, then
     /// the global ambient scope (mirror declarations, §12.2).
     pub(crate) fn scope_item(&self, name: &str) -> Option<ScopeItem> {
-        self.file_scopes
-            .get(self.cur_file)
-            .and_then(|scope| scope.get(name))
-            .or_else(|| self.ambient_scope.get(name))
-            .cloned()
+        self.scope_binding(name)
+            .map(|binding| binding.item.clone())
             .or_else(|| {
                 self.type_aliases
                     .get(name)
                     .cloned()
                     .map(ScopeItem::TypeAlias)
             })
+    }
+
+    /// Resolves a top-level binding with its import status.
+    pub(crate) fn scope_binding(&self, name: &str) -> Option<&ScopeBinding> {
+        self.file_scopes
+            .get(self.cur_file)
+            .and_then(|scope| scope.get(name))
+            .or_else(|| self.ambient_scope.get(name))
     }
 
     /// Looks a name up in the local scope stack. A hit that crosses a

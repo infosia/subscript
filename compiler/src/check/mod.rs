@@ -399,6 +399,13 @@ pub(crate) enum ScopeItem {
     Foreign(String),
 }
 
+/// A top-level scope entry retains its import status (compiler.md §127).
+#[derive(Debug, Clone)]
+pub(crate) struct ScopeBinding {
+    pub item: ScopeItem,
+    pub imported: bool,
+}
+
 /// A local binding inside a function body.
 #[derive(Debug, Clone)]
 pub(crate) struct Local {
@@ -978,7 +985,7 @@ pub(crate) struct Checker<'p> {
     pub generic_fns: HashMap<String, GenericFn>,
     pub generic_classes: HashMap<String, GenericClass>,
     pub instance_symbols: HashMap<String, String>,
-    pub file_scopes: Vec<HashMap<String, ScopeItem>>,
+    pub file_scopes: Vec<HashMap<String, ScopeBinding>>,
     pub exports: Vec<HashSet<String>>,
     pub top_level: Vec<hir::Stmt>,
     pub poison_missing_modules: HashSet<String>,
@@ -988,7 +995,7 @@ pub(crate) struct Checker<'p> {
     /// Global ambient names contributed by ingested mirror (`.d.ts`)
     /// files (§12.2): handles, boundary structs, enums, foreign functions,
     /// ambient constants. Consulted after the per-file scope.
-    pub ambient_scope: HashMap<String, ScopeItem>,
+    pub ambient_scope: HashMap<String, ScopeBinding>,
     /// Resolved signatures of foreign functions, keyed by symbol name.
     pub foreign_sigs: HashMap<String, FnSig>,
     /// Foreign function definitions, in mirror declaration order.
@@ -1328,12 +1335,13 @@ fn module_data_bindings(checker: &Checker<'_>) -> Vec<String> {
                 }
                 ast::Decl::Class(class) if class.class.type_params.is_none() => {
                     let class_name = class.ident.sym.as_ref();
-                    let class_id = checker.file_scopes[file_index].get(class_name).and_then(
-                        |item| match item {
-                            ScopeItem::Class(id) => Some(*id),
-                            _ => None,
-                        },
-                    );
+                    let class_id =
+                        checker.file_scopes[file_index]
+                            .get(class_name)
+                            .and_then(|binding| match &binding.item {
+                                ScopeItem::Class(id) => Some(*id),
+                                _ => None,
+                            });
                     let Some(class_id) = class_id else {
                         continue;
                     };

@@ -358,6 +358,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ),
     ("r267-duplicate-host-entry/lib.ts", RuleCode::S017, 8),
     ("r268-renamed-import-missing/main.ts", RuleCode::S016, 8),
+    ("r269-import-assignment/main.ts", RuleCode::S100, 10),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

@@ -410,6 +410,16 @@ impl<'p> Checker<'p> {
                         pos: ident_pos,
                     });
                 }
+                if self.scope_binding(&name).is_some_and(|binding| {
+                    binding.imported && !matches!(binding.item, ScopeItem::Poisoned)
+                }) {
+                    self.error(
+                        RuleCode::S100,
+                        format!("cannot assign to `{name}` because it is an import"),
+                        ident_pos.clone(),
+                    );
+                    return Place::Local(self.err_expr(ident_pos));
+                }
                 if let Some(ScopeItem::Global(g)) = self.scope_item(&name) {
                     let sig = self.global_sigs.get(&g).cloned();
                     if let Some(sig) = sig {

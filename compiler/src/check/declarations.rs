@@ -10,6 +10,24 @@ impl<'p> Checker<'p> {
         item: ScopeItem,
         pos: Pos,
     ) {
+        self.register_scope_binding(
+            file,
+            name,
+            ScopeBinding {
+                item,
+                imported: false,
+            },
+            pos,
+        );
+    }
+
+    pub(super) fn register_scope_binding(
+        &mut self,
+        file: usize,
+        name: &str,
+        binding: ScopeBinding,
+        pos: Pos,
+    ) {
         // Mirror (`.d.ts`) declarations populate the global ambient scope;
         // program declarations populate the per-file scope.
         let scope = if self.prog.files[file].dts {
@@ -25,7 +43,7 @@ impl<'p> Checker<'p> {
             );
             return;
         }
-        scope.insert(name.to_string(), item);
+        scope.insert(name.to_string(), binding);
     }
 
     pub(super) fn collect_file(&mut self, file: usize) {
