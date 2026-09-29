@@ -70,11 +70,11 @@ every probe:
    argument of a nullable reference type; it lowers like any other such
    argument (at `8bc6ded` it is an internal compiler error on both
    tiers).
-8. Open item outside §123: §40 says an affine type is illegal as any
-   container type argument, and `r111` pins a module-global
-   `Map<i32, Worker<…>>`. A local `new Map<i32, Worker<M, M>>()` passes
-   `subscript check` (measured on the §123 working tree). The text and
-   the checker disagree; a later section decides which one is right.
+8. Open item, decided in §132: §40 says an affine type is illegal as
+   any container type argument, and `r111` pins a module-global
+   `Map<i32, Worker<…>>`. A local `new Map<i32, Worker<M, M>>()` passed
+   `subscript check` (measured on the §123 working tree). §132 keeps
+   the §40 text and applies it to every form of a container type.
 9. Open item, decided in §124: a narrowed field path is not invalidated
    by a call or by a store through an alias, for a reference-class
    field and for a function field alike. Measured by the §123 review:
