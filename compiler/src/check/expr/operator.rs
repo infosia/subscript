@@ -409,7 +409,7 @@ impl<'p> Checker<'p> {
         match b.op {
             B::LogicalAnd | B::LogicalOr => {
                 let left = self.check_expr(&b.left, None, fx);
-                let right = self.check_expr(&b.right, None, fx);
+                let right = self.check_logical_right(&left, b, fx);
                 for side in [&left, &right] {
                     if !matches!(side.ty, Type::Bool | Type::Error) {
                         let name = self.type_name(&side.ty);
@@ -1123,6 +1123,33 @@ impl<'p> Checker<'p> {
             expr: self.err_expr(pos),
             terminal: false,
         }
+    }
+
+    /// Checks the right operand of `&&` with the facts that hold when the
+    /// left operand is true, and of `||` with the facts that hold when it
+    /// is false (compiler.md §133). A kill inside the operand ends a fact
+    /// (§124), and the facts end with the operand.
+    fn check_logical_right(
+        &mut self,
+        left: &hir::Expr,
+        b: &ast::BinExpr,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
+        let note_paths = fx.narrowing_note_paths();
+        let (when_true, when_false) = self.narrowing_paths(left, fx);
+        let extra = if b.op == ast::BinaryOp::LogicalAnd {
+            when_true
+        } else {
+            when_false
+        };
+        let mut base = fx.narrowed.clone();
+        fx.narrowed = base.iter().cloned().chain(extra).collect();
+        let right = self.check_expr(&b.right, None, fx);
+        // Keep kills: facts removed inside the operand stay removed.
+        base.retain(|key| fx.narrowed.contains(key));
+        fx.narrowed = base;
+        fx.finish_narrowing_join(&note_paths);
+        right
     }
 
     pub(super) fn check_cond(

@@ -24,8 +24,10 @@ fn pattern_type_ann(pat: &ast::Pat) -> Option<&ast::TsTypeAnn> {
     }
 }
 
-/// Narrowing facts derived from a checked condition: paths known non-null
-/// or known present when the condition is true / false.
+/// Narrowing facts derived from a checked leaf condition: paths known
+/// non-null or known present when the condition is true / false.
+/// `Checker::narrowing_paths` splits `&&` and `||` and applies the kills
+/// of compiler.md §124 before it reaches a leaf.
 pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
     if let Some(key) = super::exception::instanceof_narrowed_path(cond) {
         return (vec![key], Vec::new());
@@ -61,12 +63,6 @@ pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
                     }
                 }
                 (Vec::new(), Vec::new())
-            }
-            BinOp::And => {
-                let (mut t1, _) = narrow_paths(left);
-                let (t2, _) = narrow_paths(right);
-                t1.extend(t2);
-                (t1, Vec::new())
             }
             _ => (Vec::new(), Vec::new()),
         }

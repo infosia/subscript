@@ -16,12 +16,16 @@ impl Checker<'_> {
     ) -> (Vec<String>, Vec<String>) {
         register_shared_paths(cond, self.narrowing_classes(), fx);
         if let hir::ExprKind::Binary {
-            op: hir::BinOp::And,
+            op: op @ (hir::BinOp::And | hir::BinOp::Or),
             left,
             right,
         } = &cond.kind
         {
-            let (mut first, _) = self.narrowing_paths(left, fx);
+            // `a && b` is true, and `a || b` is false, when both operands
+            // are; a kill in `b` ends a fact of `a` (compiler.md §124).
+            let and = matches!(op, hir::BinOp::And);
+            let pick = |facts: (Vec<String>, Vec<String>)| if and { facts.0 } else { facts.1 };
+            let mut first = pick(self.narrowing_paths(left, fx));
             let effects =
                 right.narrowing_effects(self.narrowing_classes(), &self.narrowing_helpers());
             let shared_paths = fx.shared_narrowing_paths();
@@ -32,8 +36,12 @@ impl Checker<'_> {
                 }
                 !shared && !local
             });
-            first.extend(self.narrowing_paths(right, fx).0);
-            (first, Vec::new())
+            first.extend(pick(self.narrowing_paths(right, fx)));
+            if and {
+                (first, Vec::new())
+            } else {
+                (Vec::new(), first)
+            }
         } else {
             super::stmt::narrow_paths(cond)
         }
