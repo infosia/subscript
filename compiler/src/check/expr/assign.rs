@@ -402,7 +402,8 @@ impl<'p> Checker<'p> {
                 let ident_pos = self.pos(ident.span);
                 if let Some(local) = self.lookup_local_for_write(&name, &ident_pos, fx) {
                     if !local.mutable {
-                        self.error(
+                        // compiler.md §135.1 rule 2: kept by the opaque check.
+                        self.error_independent(
                             RuleCode::S100,
                             format!("cannot rebind `const` binding `{}`", name),
                             ident_pos.clone(),
@@ -422,7 +423,8 @@ impl<'p> Checker<'p> {
                     .scope_binding(&name)
                     .is_some_and(|binding| binding.imported)
                 {
-                    self.error(
+                    // compiler.md §135.1 rule 2: kept by the opaque check.
+                    self.error_independent(
                         RuleCode::S100,
                         format!("cannot assign to `{name}` because it is an import"),
                         ident_pos.clone(),
@@ -433,7 +435,9 @@ impl<'p> Checker<'p> {
                     let sig = self.global_sigs.get(&g).cloned();
                     if let Some(sig) = sig {
                         if !sig.mutable {
-                            self.error(
+                            // compiler.md §135.1 rule 2: kept by the opaque
+                            // check.
+                            self.error_independent(
                                 RuleCode::S100,
                                 format!("cannot rebind `const` binding `{}`", name),
                                 ident_pos.clone(),

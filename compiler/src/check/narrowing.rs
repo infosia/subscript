@@ -63,10 +63,16 @@ impl Checker<'_> {
         message: String,
         pos: Pos,
     ) {
+        let first = self.diags.len();
         if path_key(expression).is_some_and(|key| fx.ended_shared_narrowing.contains(&key)) {
             self.error_diverging(code, message, pos, Divergence::SharedLocationNarrowing);
         } else {
             self.error(code, message, pos);
+        }
+        // compiler.md §135.1 rule 2: a nullable use whose type involves no
+        // type parameter does not depend on the type argument.
+        if code == RuleCode::S011 && !self.involves_type_parameter(&expression.ty) {
+            self.mark_independent(first);
         }
     }
 }
@@ -106,6 +112,26 @@ impl Analysis {
         analysis
     }
 
+    /// Adds the loop effects of `other` (compiler.md §135.1 rule 1).
+    pub(super) fn merge_loops(&mut self, other: Self) {
+        for (key, effects) in other.loops {
+            self.loops.entry(key).or_default().merge(effects);
+        }
+    }
+
+    fn function(&mut self, function: &hir::Function, classes: &[hir::ClassDef]) {
+        for default in function
+            .params
+            .iter()
+            .filter_map(|parameter| parameter.default.as_ref())
+        {
+            self.expression(default, classes);
+        }
+        for statement in &function.body {
+            self.statement(statement, classes);
+        }
+    }
+
     fn expression(&mut self, expression: &hir::Expr, classes: &[hir::ClassDef]) {
         for child in expression.children() {
             self.child(child, classes);
@@ -136,6 +162,40 @@ impl Analysis {
 }
 
 impl Checker<'_> {
+    /// The loop effects of the bodies that the opaque check added after
+    /// `functions` functions, `classes` classes, and `methods[i]` methods
+    /// of each earlier class (compiler.md §135.1 rule 1).
+    pub(super) fn opaque_body_loop_effects(
+        &self,
+        functions: usize,
+        classes: usize,
+        methods: &[usize],
+    ) -> Analysis {
+        let mut analysis = Analysis {
+            helpers: self.narrowing_helpers(),
+            ..Default::default()
+        };
+        for function in self.functions.iter().skip(functions) {
+            analysis.function(function, &self.classes);
+        }
+        for (index, class) in self.classes.iter().enumerate() {
+            if index < classes {
+                let first = methods.get(index).copied().unwrap_or(0);
+                for method in class.methods.iter().skip(first) {
+                    analysis.function(method, &self.classes);
+                }
+                continue;
+            }
+            for init in class.fields.iter().filter_map(|field| field.init.as_ref()) {
+                analysis.expression(init, &self.classes);
+            }
+            for function in class.ctor.iter().chain(class.methods.iter()) {
+                analysis.function(function, &self.classes);
+            }
+        }
+        analysis
+    }
+
     fn narrowing_helpers(&self) -> std::collections::HashSet<hir::Symbol> {
         self.narrowing_analysis.as_ref().map_or_else(
             || {

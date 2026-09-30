@@ -403,6 +403,23 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r279-entry-signature-chain/main.ts", RuleCode::S100, 8),
     ("r281-affine-new-map.ts", RuleCode::S100, 13),
     ("r282-type-only-import-value/main.ts", RuleCode::S100, 10),
+    ("r283-generic-body-unknown-name.ts", RuleCode::S016, 8),
+    ("r284-generic-body-const-assignment.ts", RuleCode::S100, 10),
+    (
+        "r285-generic-class-method-type-mismatch.ts",
+        RuleCode::S100,
+        11,
+    ),
+    (
+        "r286-generic-body-member-on-type-parameter.ts",
+        RuleCode::S018,
+        12,
+    ),
+    (
+        "r287-type-argument-outside-constraint.ts",
+        RuleCode::S100,
+        12,
+    ),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

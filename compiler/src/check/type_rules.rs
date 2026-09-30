@@ -9,14 +9,24 @@ impl<'p> Checker<'p> {
                 self.classes
                     .get(id.0)
                     .map(|c| {
+                        // compiler.md §135.1: an opaque type is named by its
+                        // type parameter and takes no part in the
+                        // disambiguation of class names.
+                        let opaque =
+                            |index: usize| self.opaque_params.contains_key(&ClassId(index));
                         hir::declaration_label(
                             &c.name,
                             &c.pos,
-                            self.classes
-                                .iter()
-                                .filter(|other| other.name == c.name)
-                                .count()
-                                > 1,
+                            !opaque(id.0)
+                                && self
+                                    .classes
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(index, other)| {
+                                        other.name == c.name && !opaque(*index)
+                                    })
+                                    .count()
+                                    > 1,
                         )
                     })
                     .unwrap_or_else(|| format!("<class #{}>", id.0))
@@ -128,6 +138,23 @@ impl<'p> Checker<'p> {
         if self.assignable(from, to) {
             return;
         }
+        let first = self.diags.len();
+        self.report_not_assignable(from, to, pos, what, divergence);
+        // compiler.md §135.1 rule 2: a type mismatch where neither type
+        // involves a type parameter does not depend on the type argument.
+        if !self.involves_type_parameter(from) && !self.involves_type_parameter(to) {
+            self.mark_independent(first);
+        }
+    }
+
+    fn report_not_assignable(
+        &mut self,
+        from: &Type,
+        to: &Type,
+        pos: Pos,
+        what: &str,
+        divergence: Option<Divergence>,
+    ) {
         let from_n = self.type_name(from);
         let to_n = self.type_name(to);
         let class_like = |t: &Type| match t {

@@ -27,6 +27,7 @@ mod layout;
 mod lookup;
 mod mirror_provenance;
 mod narrowing;
+mod opaque;
 mod pipeline;
 pub(crate) use pipeline::run;
 pub(crate) mod pattern;
@@ -1085,6 +1086,28 @@ pub(crate) struct Checker<'p> {
     /// Monotonic suffix for the storage that holds a binding pattern's
     /// source, which every pattern evaluates one time (§107.2).
     pub next_pattern_id: usize,
+    /// The opaque type parameter types of the running opaque check
+    /// (compiler.md §135.1 rule 1). Empty outside that check.
+    pub opaque_params: HashMap<ClassId, opaque::OpaqueType>,
+    /// The generic class instances that the running opaque check made at
+    /// an opaque type argument (compiler.md §135.1 rule 2).
+    pub opaque_instances: HashSet<ClassId>,
+    /// The index of each diagnostic of the running opaque check that does
+    /// not depend on the type argument (compiler.md §135.1 rule 2).
+    pub independent_diagnostics: HashSet<usize>,
+    /// True while the opaque check starts its root instance, whose body
+    /// is checked (compiler.md §135.1 rule 1).
+    pub opaque_root: bool,
+    /// The diagnostic range of each per-instance check of a generic body,
+    /// read by the merge of §135.1 rule 3.
+    pub instance_diagnostic_ranges: Vec<std::ops::Range<usize>>,
+    /// The template key and the type arguments of each generic class
+    /// instance, read by the constraint relation of compiler.md §135.1
+    /// rule 2b.
+    pub instance_arguments: HashMap<ClassId, (String, Vec<Type>)>,
+    /// The loop narrowing effects of the opaque check's bodies, collected
+    /// by the provisional run (compiler.md §135.1 rule 1).
+    opaque_loop_effects: narrowing::Analysis,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

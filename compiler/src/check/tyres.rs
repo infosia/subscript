@@ -485,7 +485,9 @@ impl<'p> Checker<'p> {
                 };
                 let resolved: Vec<Type> =
                     args.params.iter().map(|t| self.resolve_type(t)).collect();
-                match self.instantiate_class(&key, &resolved, pos) {
+                let positions: Vec<crate::diag::Pos> =
+                    args.params.iter().map(|t| self.pos(t.span())).collect();
+                match self.instantiate_class(&key, &resolved, &positions, pos) {
                     Some(id) => Type::Class(id),
                     None => Type::Error,
                 }

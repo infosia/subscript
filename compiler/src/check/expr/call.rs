@@ -94,7 +94,12 @@ impl<'p> Checker<'p> {
                     .iter()
                     .map(|t| self.resolve_type(t))
                     .collect();
-                match self.instantiate_fn(&key, &resolved, ident_pos) {
+                let positions: Vec<Pos> = type_args
+                    .params
+                    .iter()
+                    .map(|t| self.pos(t.span()))
+                    .collect();
+                match self.instantiate_fn(&key, &resolved, &positions, ident_pos) {
                     Some(mono) => self.check_direct_call(&mono, c, fx, pos),
                     None => self.err_expr(pos),
                 }
@@ -508,6 +513,7 @@ impl<'p> Checker<'p> {
             Type::Error => self.err_expr(pos),
             other => {
                 let name = self.type_name(&other);
+                let first = self.diags.len();
                 self.nullable_use_error(
                     &callee,
                     fx,
@@ -515,6 +521,12 @@ impl<'p> Checker<'p> {
                     format!("type `{}` is not callable", name),
                     pos.clone(),
                 );
+                // compiler.md §135.1 rule 2: a call of a value whose type is
+                // a type parameter with no constraint is an error for every
+                // type argument (`tsc` TS2349).
+                if self.is_unconstrained_type_parameter(&other) {
+                    self.mark_independent(first);
+                }
                 self.err_expr(pos)
             }
         }
@@ -740,7 +752,12 @@ impl<'p> Checker<'p> {
             .iter()
             .map(|ty| self.resolve_type(ty))
             .collect();
-        self.instantiate_method(class, name, &resolved, is_static, pos)
+        let positions: Vec<Pos> = type_args
+            .params
+            .iter()
+            .map(|ty| self.pos(ty.span()))
+            .collect();
+        self.instantiate_method(class, name, &resolved, &positions, is_static, pos)
     }
 
     /// Checks `receiver.name(...)` from an already-checked receiver.
@@ -755,6 +772,18 @@ impl<'p> Checker<'p> {
     ) -> hir::Expr {
         let mut name = property.sym.to_string();
         let prop_pos = self.pos(property.span);
+        // compiler.md §135.1 rule 2: a method call on a type parameter with
+        // no constraint is an error for every type argument (`tsc` TS2339).
+        if self.is_unconstrained_type_parameter(&recv.ty) {
+            let type_name = self.type_name(&recv.ty);
+            self.error_independent(
+                RuleCode::S018,
+                format!("`{type_name}` has no method `{name}`"),
+                prop_pos,
+            );
+            self.check_poisoned_arguments(&c.args, fx);
+            return self.err_expr(pos);
+        }
         // §82.4 rule 3: the call names the instance, not the template.
         if let Type::Class(class) = &recv.ty {
             let class = *class;
@@ -1403,12 +1432,18 @@ impl<'p> Checker<'p> {
                         .iter()
                         .map(|t| self.resolve_type(t))
                         .collect();
+                    let positions: Vec<Pos> = type_args
+                        .params
+                        .iter()
+                        .map(|t| self.pos(t.span()))
+                        .collect();
                     if resolved.contains(&Type::Error) {
                         // compiler.md §132 rule 2a: an error type argument
                         // gives no instance. The type-argument count and
                         // the constructor argument count do not depend on
                         // the argument types, so each still reports.
-                        let _ = self.instantiate_class(&key, &resolved, ident_pos.clone());
+                        let _ =
+                            self.instantiate_class(&key, &resolved, &positions, ident_pos.clone());
                         let arguments: &[ast::ExprOrSpread] = n.args.as_deref().unwrap_or(&[]);
                         let type_argument_count = self
                             .generic_classes
@@ -1422,7 +1457,7 @@ impl<'p> Checker<'p> {
                         self.check_poisoned_arguments(arguments, fx);
                         return self.err_expr(pos);
                     }
-                    self.instantiate_class(&key, &resolved, ident_pos.clone())
+                    self.instantiate_class(&key, &resolved, &positions, ident_pos.clone())
                 }
                 None => {
                     self.error(

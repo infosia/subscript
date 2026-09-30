@@ -173,6 +173,17 @@ impl<'p> Checker<'p> {
         prop_pos: Pos,
         for_write: bool,
     ) -> hir::Expr {
+        // compiler.md §135.1 rule 2: a member read on a type parameter with
+        // no constraint is an error for every type argument (`tsc` TS2339).
+        if !for_write && name != "prototype" && self.is_unconstrained_type_parameter(&obj.ty) {
+            let type_name = self.type_name(&obj.ty);
+            self.error_independent(
+                RuleCode::S018,
+                format!("`{type_name}` has no member `{name}`"),
+                prop_pos.clone(),
+            );
+            return self.err_expr(prop_pos);
+        }
         if name == "prototype" {
             self.error_diverging(
                 RuleCode::S003,

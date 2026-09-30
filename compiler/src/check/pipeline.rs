@@ -154,16 +154,18 @@ pub(crate) fn run(
     options: &CheckOptions,
 ) -> Result<hir::Module, Vec<Diagnostic>> {
     // compiler.md §124: resolved HIR supplies loop effects before the flow check.
-    let mut provisional = run_with_effects(prog, options, None)?;
-    let analysis = narrowing::Analysis::from_module(&mut provisional);
-    run_with_effects(prog, options, Some(analysis))
+    // compiler.md §135.1 rule 1: the bodies of the opaque check add theirs.
+    let (mut provisional, opaque_loops) = run_with_effects(prog, options, None)?;
+    let mut analysis = narrowing::Analysis::from_module(&mut provisional);
+    analysis.merge_loops(opaque_loops);
+    run_with_effects(prog, options, Some(analysis)).map(|(module, _)| module)
 }
 
 fn run_with_effects(
     prog: &ParsedProgram,
     options: &CheckOptions,
     narrowing_analysis: Option<narrowing::Analysis>,
-) -> Result<hir::Module, Vec<Diagnostic>> {
+) -> Result<(hir::Module, narrowing::Analysis), Vec<Diagnostic>> {
     let entry_file = host_entries::entry_file(prog)?;
     let provisional = narrowing_analysis.is_none();
     let mut ck = Checker {
@@ -222,6 +224,13 @@ fn run_with_effects(
         error_class: ClassId(0),
         next_compound_local_id: 0,
         next_pattern_id: 0,
+        opaque_params: HashMap::new(),
+        opaque_instances: HashSet::new(),
+        independent_diagnostics: HashSet::new(),
+        opaque_root: false,
+        instance_diagnostic_ranges: Vec::new(),
+        instance_arguments: HashMap::new(),
+        opaque_loop_effects: narrowing::Analysis::default(),
     };
 
     // Parse-time provenance has a fixed shape; this pass binds each record
@@ -279,6 +288,10 @@ fn run_with_effects(
             ck.check_bodies(i);
         }
     }
+    // compiler.md §135.1 rule 1: the opaque check of every generic body,
+    // in both runs.
+    ck.check_generic_bodies_opaque();
+    let opaque_loops = std::mem::take(&mut ck.opaque_loop_effects);
     let initializer_diags = module_initializer_diagnostics(&ck);
     ck.diags.extend(initializer_diags);
     ck.validate_layouts();
@@ -319,13 +332,13 @@ fn run_with_effects(
             }
         }
         if provisional {
-            return Ok(module);
+            return Ok((module, opaque_loops));
         }
         capture::check(&mut module)?;
         module.operation_signatures = operation_signatures(&mut module);
         crate::trap_sites::decide_index_checks(&mut module);
         crate::raise_sites::decide_can_raise(&mut module);
-        Ok(module)
+        Ok((module, opaque_loops))
     } else {
         Err(ck.diags.take())
     }
