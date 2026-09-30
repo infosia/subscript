@@ -15,6 +15,11 @@ impl<'p> Checker<'p> {
                     let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
                     let mut out = Vec::new();
                     self.check_stmt(s, &mut fx, &mut out);
+                    let out = if has_dispose_binding(&out) {
+                        using_scope::structure(out, &mut self.next_using_switch_id)
+                    } else {
+                        out
+                    };
                     self.top_level.extend(out);
                 }
                 _ => {}
