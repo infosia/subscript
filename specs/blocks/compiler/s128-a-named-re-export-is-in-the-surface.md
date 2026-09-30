@@ -117,6 +117,9 @@ audioUpdate } from`, and `export { local as localEntry }`.
    corpus reader call it. *(Corrected 2026-09-29 after the Phase
    Review: a path-order sort changed the output of a program whose
    module initializers print, and rejected a valid program.)*
+   *(Changed 2026-09-30 by §137: the file order stays the discovery
+   order, and modules initialize in dependency post-order, §137 rule 1.
+   The initializer-order check reads that order.)*
 9. An import can name a re-exported name: `import { b } from "./r"`
    where `./r` re-exports `b` binds the declaration of rule 1.
 10. §125 rule 4 (a host entry name is unique in the program) reads the

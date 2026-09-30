@@ -178,3 +178,4 @@ Every section, with its status:
 | §134 | A type-only import binds a type only | active | [`s134-a-type-only-import-binds-a-type-only.md`](compiler/s134-a-type-only-import-binds-a-type-only.md) |
 | §135 | A generic body is checked for every type argument | active | [`s135-a-generic-body-is-checked-for-every-type-argument.md`](compiler/s135-a-generic-body-is-checked-for-every-type-argument.md) |
 | §136 | A mirror constant carries its value | active | [`s136-a-mirror-constant-carries-its-value.md`](compiler/s136-a-mirror-constant-carries-its-value.md) |
+| §137 | Modules initialize in dependency post-order | active | [`s137-modules-initialize-in-dependency-post-order.md`](compiler/s137-modules-initialize-in-dependency-post-order.md) |

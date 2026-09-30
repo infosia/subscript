@@ -547,22 +547,17 @@ module, and an exported function of any signature; this compiler
 rejects them in the entry module with S100. A host sees the entry
 module's exports as C symbols, so each one must have a C form.
 
-**Initialization order.** This compiler loads the entry module and every module it reaches
-through an import or a re-export, a type-only import included, and
-runs each module's initializer once, in discovery order (`compiler.md`
-§128 rule 8). JavaScript runs module bodies in dependency post-order,
-and `tsc` erases `import type`, so a module reached only through a
-type-only import never runs in `node`. Measured on the §134 working
-tree: `main.ts` with `import type { A } from "./a"` and
-`import { vb } from "./b"`, where each module's initializer prints,
-prints `a init / b init / 2` here and `b init / 2` in `node`. Both
-programs pass `tsc`.
-
-The owner ranked the initialization order low on 2026-09-30: measure
-the cost of dependency post-order first; if it is hard or costs run
-time, keep this order as the rule and record it here. Until then, a
-`js-comparable` entry does not print from a module initializer that
-this order runs differently.
+**Initialization order.** This compiler loads the entry module and
+every module it reaches through an import or a re-export, a type-only
+import included. It runs module initializers in `node`'s ESM evaluation
+order, dependency post-order over the value edges (`compiler.md` §137
+rule 1), and a module that only `import type` reaches does not run its
+initializer (§137 rule 3), as `tsc` erases `import type`. A module
+reached through an import that `tsc`'s `transpileModule` elides (an
+import whose names the file uses only as types, or not at all) still
+runs here and in native ESM, but not under the corpus runner: a
+`js-comparable` entry does not print from the initializer of such a
+module.
 
 Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
 `r274`, `r275`, `r277`, `r278`, `r279`.
