@@ -179,3 +179,4 @@ Every section, with its status:
 | §135 | A generic body is checked for every type argument | active | [`s135-a-generic-body-is-checked-for-every-type-argument.md`](compiler/s135-a-generic-body-is-checked-for-every-type-argument.md) |
 | §136 | A mirror constant carries its value | active | [`s136-a-mirror-constant-carries-its-value.md`](compiler/s136-a-mirror-constant-carries-its-value.md) |
 | §137 | Modules initialize in dependency post-order | active | [`s137-modules-initialize-in-dependency-post-order.md`](compiler/s137-modules-initialize-in-dependency-post-order.md) |
+| §138 | A generic instance body sees every module global | active | [`s138-a-generic-instance-body-sees-every-module-global.md`](compiler/s138-a-generic-instance-body-sees-every-module-global.md) |
