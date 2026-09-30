@@ -1571,6 +1571,17 @@ Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
   until a corpus program needs them; the field-type whitelist stands.
 - Generic constraints/variance beyond monomorphized `a12` shapes: revisit
   with corpus evidence.
+- A generic body is checked per instance for every diagnostic kind that
+  `compiler.md` §135 rule 2 does not keep, so a form that `tsc` rejects
+  for a type parameter stays accepted when no instance exists or every
+  instance accepts it: an operator beside a literal (TS2365), `===` or
+  `as` between two type parameters (TS2367, TS2352), a type mismatch or
+  a nullable use that involves a type parameter (TS2322, TS18047), a
+  call of a constrained `T` (TS2349), a member write on an unconstrained
+  `T` (TS2339), a type parameter as a type argument outside a
+  constraint (TS2344). This is a gap in invariant 5, not a decided
+  divergence; `tsserver` shows each one in the editor. §135.3 states
+  the class and the measured forms.
 
 ## 4. Prelude and gate
 
