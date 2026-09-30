@@ -1123,6 +1123,10 @@ pub(crate) struct Checker<'p> {
     /// instance, read by the constraint relation of compiler.md §135.1
     /// rule 2b.
     pub instance_arguments: HashMap<ClassId, (String, Vec<Type>)>,
+    /// Instance bodies wait until every module signature resolves (§138 rule 1).
+    pub signatures_resolved: bool,
+    /// Instances with bodies that wait for the signature pass (§138 rule 1).
+    pub pending_instance_bodies: Vec<ClassId>,
     /// The loop narrowing effects of the opaque check's bodies, collected
     /// by the provisional run (compiler.md §135.1 rule 1).
     opaque_loop_effects: narrowing::Analysis,

@@ -242,6 +242,8 @@ fn run_with_effects(
         opaque_root: false,
         instance_diagnostic_ranges: Vec::new(),
         instance_arguments: HashMap::new(),
+        signatures_resolved: false,
+        pending_instance_bodies: Vec::new(),
         opaque_loop_effects: narrowing::Analysis::default(),
     };
 
@@ -282,6 +284,8 @@ fn run_with_effects(
             ck.resolve_signatures(i);
         }
     }
+    ck.signatures_resolved = true;
+    ck.check_pending_instance_bodies();
     // Descriptor defaults need every class and function signature, but
     // constructing literals in ordinary bodies need the checked defaults.
     // Check all non-generic descriptor defaults in this intermediate pass.

@@ -1,5 +1,5 @@
 //! Module initializers run in dependency post-order.
-//! Cost: warm debug test execution 0.60 s, 7 ship-C program compiles.
+//! Cost: warm debug test execution 1.15 s, 7 ship-C program compiles.
 //! These compiles check the type-only JSON and module initializers, regex ordering, and the accepted call route on all three engines.
 
 use subscript_codegen::{

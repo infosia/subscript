@@ -501,7 +501,9 @@ impl<'p> Checker<'p> {
             self.opaque_instances.insert(id);
         }
         self.resolve_class_shape(id, &template.class, template.declared);
-        if check_body && template.is_descriptor {
+        if check_body && !self.signatures_resolved {
+            self.pending_instance_bodies.push(id);
+        } else if check_body && template.is_descriptor {
             self.check_descriptor_defaults(id, &template.class);
         } else if check_body {
             self.check_class_body(id, &template.class, template.declared);
@@ -512,6 +514,44 @@ impl<'p> Checker<'p> {
         self.subst = saved_subst;
         self.leave_container_context(saved_context);
         Some(id)
+    }
+
+    /// Checks deferred instance bodies with all module signatures (§138 rule 1).
+    pub(crate) fn check_pending_instance_bodies(&mut self) {
+        for id in std::mem::take(&mut self.pending_instance_bodies) {
+            let Some((key, args)) = self.instance_arguments.get(&id).cloned() else {
+                self.error(
+                    RuleCode::S100,
+                    "internal error: deferred instance has no type arguments",
+                    Pos::new("", 1, 1),
+                );
+                continue;
+            };
+            let Some(template) = self.generic_classes.get(&key).cloned() else {
+                self.error(
+                    RuleCode::S100,
+                    "internal error: deferred instance has no generic template",
+                    Pos::new("", 1, 1),
+                );
+                continue;
+            };
+            let saved_file = self.cur_file;
+            let saved_subst = std::mem::take(&mut self.subst);
+            let saved_context = self.suspend_container_context();
+            self.cur_file = template.file;
+            self.subst = template.type_params.iter().cloned().zip(args).collect();
+            let diagnostics = self.diags.len();
+            if template.is_descriptor {
+                self.check_descriptor_defaults(id, &template.class);
+            } else {
+                self.check_class_body(id, &template.class, template.declared);
+            }
+            self.instance_diagnostic_ranges
+                .push(diagnostics..self.diags.len());
+            self.cur_file = saved_file;
+            self.subst = saved_subst;
+            self.leave_container_context(saved_context);
+        }
     }
 
     /// The constructor parameter counts `(total, required)` of the generic
