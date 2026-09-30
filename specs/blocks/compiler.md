@@ -175,3 +175,4 @@ Every section, with its status:
 | §131 | A declaration symbol is a type | active | [`s131-a-declaration-symbol-is-a-type.md`](compiler/s131-a-declaration-symbol-is-a-type.md) |
 | §132 | An affine type is no container argument in any form | active | [`s132-an-affine-type-is-no-container-argument-in-any-form.md`](compiler/s132-an-affine-type-is-no-container-argument-in-any-form.md) |
 | §133 | A logical operand sees the narrowing of the operand before it | active | [`s133-a-logical-operand-sees-the-narrowing-of-the-operand-before-it.md`](compiler/s133-a-logical-operand-sees-the-narrowing-of-the-operand-before-it.md) |
+| §134 | A type-only import binds a type only | active | [`s134-a-type-only-import-binds-a-type-only.md`](compiler/s134-a-type-only-import-binds-a-type-only.md) |
