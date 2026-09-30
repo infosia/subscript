@@ -887,7 +887,7 @@ impl<'p> Checker<'p> {
 
         let loop_stmt = if generator {
             let step_name = format!("[[for.of#{id}.step]]");
-            let step_ty = Type::IterResult(Box::new(elem_ty.clone()));
+            let step_ty = Type::iter_result(elem_ty.clone());
             let next = hir::Expr {
                 kind: ExprKind::Call {
                     callee: hir::Callee::Method {
@@ -1437,7 +1437,7 @@ mod tests {
 
     #[test]
     fn narrow_paths_reads_null_comparisons() {
-        let nullable = Type::Nullable(Box::new(Type::Object));
+        let nullable = Type::nullable(Type::Object);
         let cond = expr(
             ExprKind::Binary {
                 op: BinOp::Ne,

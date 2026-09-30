@@ -3,11 +3,11 @@
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::check::{Checker, FnCtx, ParamSig};
+use crate::check::{Checker, ContainerSlot, FnCtx, ParamSig};
 use crate::diag::{Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::hir::{self, ArrFn, Callee, ExprKind, MapFn, NumFn, SetFn, StrFn};
-use crate::types::{FuncType, HandleKind, Type};
+use crate::types::{HandleKind, Type};
 
 use super::CallbackSpec;
 
@@ -209,7 +209,7 @@ impl<'p> Checker<'p> {
             hir::StrRet::I32 => Type::I32,
             hir::StrRet::Bool => Type::Bool,
             hir::StrRet::Str => Type::Str,
-            hir::StrRet::StrArray => Type::Array(Box::new(Type::Str)),
+            hir::StrRet::StrArray => Type::array(Type::Str),
         };
         let mut all = Vec::with_capacity(1 + args.len());
         all.push(recv);
@@ -272,7 +272,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         use ArrFn as A;
-        let arr_ty = Type::Array(Box::new(elem.clone()));
+        let arr_ty = Type::array(elem.clone());
         let mk = |args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Arr(f),
@@ -697,7 +697,7 @@ impl<'p> Checker<'p> {
                         if matches!(elem, Type::Nullable(_)) {
                             elem
                         } else {
-                            Type::Nullable(Box::new(elem))
+                            Type::nullable(elem)
                         }
                     }
                     A::FlatMap => {
@@ -727,7 +727,9 @@ impl<'p> Checker<'p> {
                             );
                             return self.err_expr(pos);
                         }
-                        if self.arr_elem_kind(&u).is_none() {
+                        let u =
+                            self.container_argument(ContainerSlot::ArrayElement, u, cb.pos.clone());
+                        if u != Type::Error && self.arr_elem_kind(&u).is_none() {
                             let u_n = self.type_name(&u);
                             self.error(
                                 RuleCode::S014,
@@ -740,7 +742,7 @@ impl<'p> Checker<'p> {
                             );
                             return self.err_expr(pos);
                         }
-                        Type::Array(Box::new(u))
+                        Type::array(u)
                     }
                     _ => Type::Error,
                 };
@@ -829,7 +831,8 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
         };
-        if self.assoc_key_kind(&key).is_none() {
+        let key = self.container_argument(ContainerSlot::MapKey, key, callback.pos.clone());
+        if key != Type::Error && self.assoc_key_kind(&key).is_none() {
             let key_name = self.type_name(&key);
             self.error_diverging(
                 RuleCode::S014,
@@ -847,7 +850,7 @@ impl<'p> Checker<'p> {
                 callee: Callee::Map(MapFn::GroupBy),
                 args: vec![items, callback],
             },
-            ty: Type::Map(Box::new(key), Box::new(Type::Array(Box::new(elem)))),
+            ty: Type::map(key, Type::array(elem)),
             pos,
         }
     }
@@ -899,6 +902,9 @@ impl<'p> Checker<'p> {
         let declared = match &call.type_args {
             Some(type_args) if type_args.params.len() == 1 => {
                 let resolved = self.resolve_type(&type_args.params[0]);
+                let argument_pos = self.pos(type_args.params[0].span());
+                let resolved =
+                    self.container_argument(ContainerSlot::ArrayElement, resolved, argument_pos);
                 if resolved == Type::Error {
                     self.check_poisoned_arguments(&call.args, fx);
                     return self.err_expr(pos);
@@ -952,7 +958,7 @@ impl<'p> Checker<'p> {
             self.check_poisoned_arguments(&call.args, fx);
             return self.err_expr(pos);
         }
-        let context = declared.clone().map(|elem| Type::Array(Box::new(elem)));
+        let context = declared.clone().map(Type::array);
         let source = self.check_expr(&argument.expr, context.as_ref(), fx);
         let selected = match &source.ty {
             Type::Error => None,
@@ -1004,19 +1010,13 @@ impl<'p> Checker<'p> {
             );
         }
         let element = declared.unwrap_or(element);
-        if Self::is_context_affine_type(&element) {
-            self.error(
-                RuleCode::S100,
-                "Worker, Inbox, and Outbox values may not be array elements",
-                pos.clone(),
-            );
-        }
+        let element = self.container_argument(ContainerSlot::ArrayElement, element, pos.clone());
         hir::Expr {
             kind: ExprKind::ArraySpreadLit(vec![hir::ArrayLitElem {
                 expr: source,
                 spread: Some(spread),
             }]),
-            ty: Type::Array(Box::new(element)),
+            ty: Type::array(element),
             pos,
         }
     }
@@ -1055,7 +1055,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
         use crate::ambient::MapMethod as M;
-        let map_ty = Type::Map(Box::new(key.clone()), Box::new(value.clone()));
+        let map_ty = Type::map(key.clone(), value.clone());
         let mk = |f: MapFn, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Map(f),
@@ -1083,7 +1083,7 @@ impl<'p> Checker<'p> {
                 let ty = if matches!(value, Type::Nullable(_)) {
                     value
                 } else {
-                    Type::Nullable(Box::new(value))
+                    Type::nullable(value)
                 };
                 mk(MapFn::Get, args, ty, pos)
             }
@@ -1173,7 +1173,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         };
         use crate::ambient::SetMethod as S;
-        let set_ty = Type::Set(Box::new(key.clone()));
+        let set_ty = Type::set(key.clone());
         let mk = |f: SetFn, args: Vec<hir::Expr>, ty: Type, pos: Pos| hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Set(f),
@@ -1239,15 +1239,22 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                let mut checked = self.check_args(
-                    &[ParamSig::positional(Type::Error)],
-                    &c.args,
-                    fx,
-                    &pos,
-                    &format!("Set.{name}"),
-                );
-                let Some(other) = checked.pop() else {
-                    return self.err_expr(pos);
+                // The argument has no contextual type: its own type
+                // selects the Set form or the rejection below.
+                let other = match c.args.as_slice() {
+                    [argument] if argument.spread.is_none() => {
+                        self.check_expr(&argument.expr, None, fx)
+                    }
+                    _ => {
+                        let _ = self.check_args(
+                            &[ParamSig::positional(Type::Error)],
+                            &c.args,
+                            fx,
+                            &pos,
+                            &format!("Set.{name}"),
+                        );
+                        return self.err_expr(pos);
+                    }
                 };
                 match &other.ty {
                     Type::Set(other_key) => {
@@ -1383,12 +1390,7 @@ impl<'p> Checker<'p> {
         let ctx_ty = (!spec.allow_index)
             .then_some(ret.as_ref())
             .flatten()
-            .map(|r| {
-                Type::Func(Box::new(FuncType {
-                    params: params.clone(),
-                    ret: r.clone(),
-                }))
-            });
+            .map(|r| Type::func(params.clone(), r.clone()));
         let checked = self.check_expr(expr, ctx_ty.as_ref(), fx);
         self.expect_callback_shape(checked, &params, ret.as_ref(), spec)
     }

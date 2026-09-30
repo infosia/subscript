@@ -1,6 +1,8 @@
 //! Fixed-arity array construction and shallow Map copies (stdlib.md §9.11 and §10.9).
 use super::*;
-use crate::check::FnCtx;
+use swc_common::Spanned;
+
+use crate::check::{ContainerSlot, FnCtx};
 use crate::diag::RuleCode;
 use crate::hir::{Callee, MapFn};
 
@@ -49,16 +51,20 @@ impl<'p> Checker<'p> {
     pub(super) fn check_map_copy(
         &mut self,
         call: &ast::NewExpr,
+        ctx: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
         ident_pos: Pos,
     ) -> hir::Expr {
         let declared = match &call.type_args {
             Some(args) if args.params.len() == 2 => {
+                let saved_context = self.enter_container_context(ctx);
                 let saved = self.in_assoc_key;
                 self.in_assoc_key = true;
                 let key = self.resolve_type(&args.params[0]);
                 self.in_assoc_key = saved;
+                let key_pos = self.pos(args.params[0].span());
+                let key = self.container_argument(ContainerSlot::MapKey, key, key_pos);
                 if key != Type::Error && self.assoc_key_kind(&key).is_none() {
                     self.error(
                         RuleCode::S014,
@@ -66,10 +72,11 @@ impl<'p> Checker<'p> {
                         pos.clone(),
                     );
                 }
-                Some(Type::Map(
-                    Box::new(key),
-                    Box::new(self.resolve_type(&args.params[1])),
-                ))
+                let value = self.resolve_type(&args.params[1]);
+                let value_pos = self.pos(args.params[1].span());
+                let value = self.container_argument(ContainerSlot::MapValue, value, value_pos);
+                self.leave_container_context(saved_context);
+                Some(Type::map(key, value))
             }
             Some(_) => {
                 self.error(

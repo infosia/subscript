@@ -6,3 +6,4 @@ fn check_one(src: &str) -> Result<hir::Module, Vec<Diagnostic>> {
 
 mod collections;
 mod language;
+mod poisoned_containers;

@@ -779,7 +779,7 @@ impl<'p> Checker<'p> {
                 callee: Callee::Worker(WorkerFn::Spawn(entry_index)),
                 args: Vec::new(),
             },
-            ty: Type::Worker(Box::new(input), Box::new(output)),
+            ty: Type::worker(input, output),
             pos,
         }
     }
@@ -995,7 +995,7 @@ impl<'p> Checker<'p> {
             let ty = if name == "search" {
                 Type::I32
             } else if name == "split" {
-                Type::Array(Box::new(Type::Str))
+                Type::array(Type::Str)
             } else {
                 Type::Str
             };
@@ -1033,7 +1033,7 @@ impl<'p> Checker<'p> {
         args.push(recv);
         args.extend(checked);
         let ty = if name == "split" {
-            Type::Array(Box::new(Type::Str))
+            Type::array(Type::Str)
         } else {
             Type::Str
         };

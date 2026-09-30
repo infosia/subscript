@@ -411,6 +411,9 @@ impl<'p> Checker<'p> {
             let known = yield_ty.is_some();
             return FnSig {
                 params,
+                // An unknown yield type is a placeholder that `yield_known`
+                // marks, not a poisoned component, so the generator form
+                // keeps it (compiler.md §132 rule 2a).
                 ret: Type::Generator(Box::new(yield_ty.unwrap_or(Type::Error))),
                 is_generator: true,
                 is_async: false,

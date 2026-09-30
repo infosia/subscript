@@ -3,7 +3,7 @@
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::check::{Checker, FnCtx};
+use crate::check::{Checker, ContainerSlot, FnCtx};
 use crate::diag::{Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::hir::{self, ExprKind};
@@ -37,6 +37,16 @@ impl<'p> Checker<'p> {
             }
         }
         match ctx {
+            // compiler.md §132 rule 2: the declaration that gives the
+            // poisoned context reported the failure. Each element takes
+            // the poisoned context, so a nested container reports nothing
+            // more and the element still reports its own errors.
+            Some(Type::Error) => {
+                for e in elems {
+                    let _ = self.check_expr(&e.expr, Some(&Type::Error), fx);
+                }
+                self.err_expr(pos)
+            }
             Some(Type::Array(elem_ty)) => {
                 let elem_ty = (**elem_ty).clone();
                 let mut out = Vec::new();
@@ -52,7 +62,7 @@ impl<'p> Checker<'p> {
                 }
                 hir::Expr {
                     kind: ExprKind::ArrayLit(out),
-                    ty: Type::Array(Box::new(elem_ty)),
+                    ty: Type::array(elem_ty),
                     pos,
                 }
             }
@@ -84,7 +94,7 @@ impl<'p> Checker<'p> {
                 }
                 hir::Expr {
                     kind: ExprKind::ArrayLit(out),
-                    ty: Type::FixedArray(Box::new(elem_ty), n),
+                    ty: Type::fixed_array(elem_ty, n),
                     pos,
                 }
             }
@@ -98,14 +108,11 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 let first = self.check_expr(&elems[0].expr, None, fx);
-                let elem_ty = first.ty.clone();
-                if Self::is_context_affine_type(&elem_ty) {
-                    self.error(
-                        RuleCode::S100,
-                        "Worker, Inbox, and Outbox values may not be array elements",
-                        first.pos.clone(),
-                    );
-                }
+                let elem_ty = self.container_argument(
+                    ContainerSlot::ArrayElement,
+                    first.ty.clone(),
+                    first.pos.clone(),
+                );
                 let mut out = vec![first];
                 for e in &elems[1..] {
                     let checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
@@ -119,7 +126,7 @@ impl<'p> Checker<'p> {
                 }
                 hir::Expr {
                     kind: ExprKind::ArrayLit(out),
-                    ty: Type::Array(Box::new(elem_ty)),
+                    ty: Type::array(elem_ty),
                     pos,
                 }
             }
@@ -345,7 +352,14 @@ impl<'p> Checker<'p> {
                 (None, expr.ty.clone())
             };
             if inferred.is_none() && !matches!(element_ty, Type::Error) {
-                inferred = Some(element_ty.clone());
+                let saved_context = self.enter_container_context(ctx);
+                let admitted = self.container_argument(
+                    ContainerSlot::ArrayElement,
+                    element_ty.clone(),
+                    expr.pos.clone(),
+                );
+                self.leave_container_context(saved_context);
+                inferred = Some(admitted);
             }
             if let Some(expected) = &inferred {
                 self.require_assignable(
@@ -365,16 +379,9 @@ impl<'p> Checker<'p> {
         let Some(elem_ty) = inferred else {
             return self.err_expr(pos);
         };
-        if Self::is_context_affine_type(&elem_ty) {
-            self.error(
-                RuleCode::S100,
-                "Worker, Inbox, and Outbox values may not be array elements",
-                pos.clone(),
-            );
-        }
         hir::Expr {
             kind: ExprKind::ArraySpreadLit(checked),
-            ty: Type::Array(Box::new(elem_ty)),
+            ty: Type::array(elem_ty),
             pos,
         }
     }

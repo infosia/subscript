@@ -10,10 +10,12 @@
 mod host_entries;
 mod identity;
 pub(crate) use crate::hir::source_name;
+pub(crate) use container_argument::ContainerSlot;
 mod bindings;
 mod bodies;
 mod capture;
 mod class_shape;
+mod container_argument;
 mod declarations;
 pub(crate) mod exception;
 mod exports;
@@ -1035,6 +1037,11 @@ pub(crate) struct Checker<'p> {
     /// `T | null`) long enough to emit the Q24-specific S014 diagnostic
     /// instead of an unrelated general type diagnostic.
     pub in_assoc_key: bool,
+    /// True while resolving the type arguments of a container
+    /// construction whose contextual type is the error type. The
+    /// declaration that gives the context reported the failure, so an
+    /// affine argument at any depth reports nothing more (§132 rule 2).
+    pub in_poisoned_context: bool,
     /// True only while checking the argument expression of
     /// `JSON.stringify`. Like `in_assoc_key`, it preserves a banned
     /// `object` assertion long enough for the Q28 call to issue its

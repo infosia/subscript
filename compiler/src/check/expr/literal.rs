@@ -7,7 +7,7 @@ use crate::check::{Checker, FnCtx, ScopeItem};
 use crate::diag::{Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::hir::{self, Callee, ExprKind, RegexFn, TplPart};
-use crate::types::{FuncType, Type};
+use crate::types::Type;
 
 use super::{path_key, synthesized_int_range};
 
@@ -330,10 +330,7 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                let ty = Type::Func(Box::new(FuncType {
-                    params: sig.params.iter().map(|p| p.ty.clone()).collect(),
-                    ret: sig.ret,
-                }));
+                let ty = Type::func(sig.params.iter().map(|p| p.ty.clone()).collect(), sig.ret);
                 hir::Expr {
                     kind: ExprKind::FuncRef(hir::Symbol::from_full_text(f)),
                     ty,

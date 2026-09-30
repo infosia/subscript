@@ -9,7 +9,7 @@ use crate::check::{Checker, FnCtx, Frame, Local, ParamSig, Scope};
 use crate::diag::{Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::hir::{self, ExprKind};
-use crate::types::{FuncType, Type};
+use crate::types::Type;
 
 impl<'p> Checker<'p> {
     pub(super) fn check_lambda(
@@ -214,10 +214,7 @@ impl<'p> Checker<'p> {
         let frame = fx.frames.pop();
         let captures = frame.map(|f| f.captures).unwrap_or_default();
         let ret = ret.unwrap_or(Type::Error);
-        let ty = Type::Func(Box::new(FuncType {
-            params: params.iter().map(|p| p.ty.clone()).collect(),
-            ret: ret.clone(),
-        }));
+        let ty = Type::func(params.iter().map(|p| p.ty.clone()).collect(), ret.clone());
         hir::Expr {
             kind: ExprKind::Lambda {
                 params: hir_params,

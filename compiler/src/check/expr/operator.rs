@@ -759,7 +759,7 @@ impl<'p> Checker<'p> {
         if right.ty == *inner {
             return inner.clone();
         }
-        let nullable = Type::Nullable(Box::new(inner.clone()));
+        let nullable = Type::nullable(inner.clone());
         if right.ty == nullable {
             return nullable;
         }

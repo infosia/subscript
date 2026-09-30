@@ -254,7 +254,7 @@ impl<'p> Checker<'p> {
             ast::Expr::OptChain(chain) => self.reject_unbound_optional_chain(chain, fx, pos),
             ast::Expr::Cond(c) => self.check_cond(c, ctx, fx, pos),
             ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
-            ast::Expr::New(n) => self.check_new(n, fx, pos),
+            ast::Expr::New(n) => self.check_new(n, ctx, fx, pos),
             ast::Expr::Arrow(a) => self.check_lambda(a, ctx, fx, pos),
             ast::Expr::Array(a) => self.check_array_lit(a, ctx, fx, pos),
             ast::Expr::Object(object) => match contextual_object_class(ctx) {
@@ -331,7 +331,7 @@ impl<'p> Checker<'p> {
         let Type::Class(header) = first.ty else {
             return None;
         };
-        let nullable = Type::Nullable(Box::new(Type::Class(header)));
+        let nullable = Type::nullable(Type::Class(header));
         let used_as_link = self.classes.iter().any(|class| {
             class.is_boundary && class.fields.iter().any(|field| field.ty == nullable)
         }) || self.foreign_defs.iter().any(|function| {
@@ -358,7 +358,7 @@ impl<'p> Checker<'p> {
         let Some((extension, header)) = self.embedded_header_projection(expr) else {
             return;
         };
-        let nullable_header = Type::Nullable(Box::new(Type::Class(header)));
+        let nullable_header = Type::nullable(Type::Class(header));
         if expected == Some(&nullable_header) {
             return;
         }

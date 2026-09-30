@@ -1403,6 +1403,8 @@ fn q35_context_affinity_rejects_all_four_escape_positions() {
             Err(diagnostics) => diagnostics,
             Ok(_) => panic!("{position} escape was accepted"),
         };
+        // compiler.md §132.2 acceptance 3: exactly one diagnostic.
+        assert_eq!(diagnostics.len(), 1, "{position}: {diagnostics:?}");
         assert!(
             diagnostics.iter().any(|diagnostic| {
                 diagnostic.code == RuleCode::S100
@@ -1429,13 +1431,147 @@ fn q35_context_affinity_rejects_every_container_type_argument() {
             "{WORKER_DECLS}export function main(): void {{\n  const escaped: {annotation} = new {annotation}();\n}}\n"
         );
         let diagnostics = check_one(&source).expect_err("affine container argument");
-        assert!(
-            diagnostics.iter().any(|diagnostic| {
-                diagnostic.code == RuleCode::S100
-                    && diagnostic.message.contains("container type arguments")
-            }),
-            "{position}: {diagnostics:?}"
+        // compiler.md §132.2 acceptance 3: the annotation reports the
+        // failure once, and the construction reports nothing more.
+        assert_eq!(diagnostics.len(), 1, "{position}: {diagnostics:?}");
+        assert_eq!(diagnostics[0].code, RuleCode::S100, "{position}");
+        assert_eq!(
+            diagnostics[0].message, AFFINE_CONTAINER_ARGUMENT,
+            "{position}"
         );
+        assert_eq!(
+            (diagnostics[0].pos.line, diagnostics[0].pos.col),
+            (
+                7,
+                18 + annotation.find("Worker").expect("Worker argument") as u32
+            ),
+            "{position}"
+        );
+    }
+}
+
+const AFFINE_CONTAINER_ARGUMENT: &str =
+    "Worker, Inbox, and Outbox values may not be container type arguments";
+
+/// compiler.md §132.2 acceptance 3: the r111 program reports the §40.1
+/// S100 and no diagnostic that follows from it.
+#[test]
+fn q35_r111_program_reports_exactly_one_diagnostic() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../corpus/reject/r111-worker-in-map-value.ts"
+    ))
+    .expect("read r111");
+    let diagnostics = check_one(&source).expect_err("r111 is rejected");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(diagnostics[0].message, AFFINE_CONTAINER_ARGUMENT);
+    assert_eq!((diagnostics[0].pos.line, diagnostics[0].pos.col), (19, 25));
+}
+
+/// compiler.md §132.2 acceptance 2: the type arguments of `new` pass
+/// the §40.1 rule, for each affine type in each container slot. The
+/// surface has no type alias for a non-literal type, so no alias form
+/// exists to test.
+#[test]
+fn q35_affine_type_arguments_of_new_report_exactly_one_diagnostic() {
+    let affine = [
+        "Worker<WorkerMessage, WorkerMessage>",
+        "Inbox<WorkerMessage>",
+        "Outbox<WorkerMessage>",
+    ];
+    for ty in affine {
+        for (slot, construction) in [
+            ("Map key", format!("new Map<{ty}, i32>()")),
+            ("Map value", format!("new Map<i32, {ty}>()")),
+            ("Set element", format!("new Set<{ty}>()")),
+        ] {
+            for statement in [
+                format!("const escaped = {construction};"),
+                format!("{construction};"),
+            ] {
+                let source =
+                    format!("{WORKER_DECLS}export function main(): void {{\n  {statement}\n}}\n");
+                let diagnostics = check_one(&source).expect_err("affine type argument of new");
+                assert_eq!(diagnostics.len(), 1, "{slot} {statement}: {diagnostics:?}");
+                assert_eq!(diagnostics[0].code, RuleCode::S100, "{slot} {statement}");
+                assert_eq!(
+                    diagnostics[0].message, AFFINE_CONTAINER_ARGUMENT,
+                    "{slot} {statement}"
+                );
+                let column = 3 + statement.find(ty).expect("affine argument") as u32;
+                assert_eq!(
+                    (diagnostics[0].pos.line, diagnostics[0].pos.col),
+                    (7, column),
+                    "{slot} {statement}"
+                );
+                assert_eq!(
+                    diagnostics[0].divergence,
+                    Some(crate::divergence::Divergence::WorkerContextAffinity),
+                    "{slot} {statement}"
+                );
+            }
+        }
+    }
+
+    // Control: the same constructions with a message class are accepted.
+    for (slot, construction) in [
+        ("Map key", "new Map<WorkerMessage, i32>()"),
+        ("Map value", "new Map<i32, WorkerMessage>()"),
+        ("Set element", "new Set<WorkerMessage>()"),
+    ] {
+        let source = format!(
+            "{WORKER_DECLS}export function main(): void {{\n  const kept = {construction};\n  {construction};\n}}\n"
+        );
+        let result = check_one(&source);
+        assert!(result.is_ok(), "{slot}: {:?}", result.err());
+    }
+}
+
+/// compiler.md §132 rule 2: an annotated declaration with an affine
+/// argument reports once in each slot, whatever the initializer forms.
+#[test]
+fn q35_annotated_affine_container_reports_exactly_one_diagnostic() {
+    let worker = "Worker<WorkerMessage, WorkerMessage>";
+    let cases = [
+        format!("const m: Map<i32, {worker}> = new Map<i32, {worker}>();"),
+        format!("const m: Map<{worker}, i32> = new Map<{worker}, i32>();"),
+        format!("const s: Set<{worker}> = new Set<{worker}>();"),
+        format!("const m: Map<i32, {worker}> | null = new Map<i32, {worker}>();"),
+        format!("const a: {worker}[] = [];"),
+    ];
+    for statement in cases {
+        let source = format!("{WORKER_DECLS}export function main(): void {{\n  {statement}\n}}\n");
+        let diagnostics = check_one(&source).expect_err("annotated affine container");
+        assert_eq!(diagnostics.len(), 1, "{statement}: {diagnostics:?}");
+        assert_eq!(diagnostics[0].code, RuleCode::S100, "{statement}");
+        let message = if statement.contains("[]") {
+            "Worker, Inbox, and Outbox values may not be array elements"
+        } else {
+            "Worker, Inbox, and Outbox values may not be container type arguments"
+        };
+        assert_eq!(diagnostics[0].message, message, "{statement}");
+        let column = 3 + statement.find(worker).expect("affine argument") as u32;
+        assert_eq!(
+            (diagnostics[0].pos.line, diagnostics[0].pos.col),
+            (7, column),
+            "{statement}"
+        );
+    }
+
+    // Control: the same declarations with a message class are accepted.
+    let message = "WorkerMessage";
+    let controls = [
+        format!("const m: Map<i32, {message}> = new Map<i32, {message}>();"),
+        format!("const m: Map<{message}, i32> = new Map<{message}, i32>();"),
+        format!("const s: Set<{message}> = new Set<{message}>();"),
+        format!("const m: Map<i32, {message}> | null = new Map<i32, {message}>();"),
+        format!("const a: {message}[] = [];"),
+    ];
+    for statement in controls {
+        let source = format!("{WORKER_DECLS}export function main(): void {{\n  {statement}\n}}\n");
+        let result = check_one(&source);
+        assert!(result.is_ok(), "{statement}: {:?}", result.err());
     }
 }
 

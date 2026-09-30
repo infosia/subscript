@@ -47,8 +47,10 @@ fn map_get_reasons_distinguish_scalars_from_non_nullable_types() {
     }
 }
 
+/// compiler.md §123 rule 1 and §132 rule 2: `Worker` is no container
+/// type argument, so the `Map` is poisoned and `get` reports nothing.
 #[test]
-fn map_get_rejects_a_worker_value() {
+fn map_get_on_a_worker_value_reports_only_the_affine_argument() {
     let files = [SourceFile::new(
         "test.ts",
         "class M { value: i32 = 0; }
@@ -59,10 +61,24 @@ fn map_get_rejects_a_worker_value() {
     )];
     let diagnostics = check_program(&files).expect_err("Worker map get");
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert_eq!(diagnostics[0].code, RuleCode::S014);
-    assert!(diagnostics[0]
-        .message
-        .contains("The value type has no `| null` form of the map's value representation"));
+    assert_eq!(diagnostics[0].code, RuleCode::S100);
+    assert_eq!(
+        diagnostics[0].message,
+        "Worker, Inbox, and Outbox values may not be container type arguments"
+    );
+    assert_eq!(diagnostics[0].pos.line, 3);
+
+    // Control: the same program with a message-class value is accepted.
+    let control = [SourceFile::new(
+        "test.ts",
+        "class M { value: i32 = 0; }
+         export function main(): void {
+             const m = new Map<i32, M>();
+             m.get(1);
+         }",
+    )];
+    let result = check_program(&control);
+    assert!(result.is_ok(), "{:?}", result.err());
 }
 
 #[test]

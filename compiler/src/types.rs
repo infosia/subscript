@@ -288,6 +288,122 @@ pub enum Type {
     Error,
 }
 
+/// The composite type constructors (compiler.md §132 rule 2a).
+///
+/// A type that contains [`Type::Error`] is [`Type::Error`]: each
+/// constructor returns the error type when any component is the error
+/// type, so a consumer of a poisoned composite sees one poisoned value
+/// and reports nothing more.
+impl Type {
+    /// `T[]`.
+    #[must_use]
+    pub fn array(element: Type) -> Type {
+        if element == Self::Error {
+            return Self::Error;
+        }
+        Self::Array(Box::new(element))
+    }
+
+    /// `FixedArray<T, N>`.
+    #[must_use]
+    pub fn fixed_array(element: Type, len: u32) -> Type {
+        if element == Self::Error {
+            return Self::Error;
+        }
+        Self::FixedArray(Box::new(element), len)
+    }
+
+    /// `Map<K, V>`.
+    #[must_use]
+    pub fn map(key: Type, value: Type) -> Type {
+        if key == Self::Error || value == Self::Error {
+            return Self::Error;
+        }
+        Self::Map(Box::new(key), Box::new(value))
+    }
+
+    /// `Set<T>`.
+    #[must_use]
+    pub fn set(element: Type) -> Type {
+        if element == Self::Error {
+            return Self::Error;
+        }
+        Self::Set(Box::new(element))
+    }
+
+    /// `Worker<In, Out>`.
+    #[must_use]
+    pub fn worker(input: Type, output: Type) -> Type {
+        if input == Self::Error || output == Self::Error {
+            return Self::Error;
+        }
+        Self::Worker(Box::new(input), Box::new(output))
+    }
+
+    /// `Inbox<T>`.
+    #[must_use]
+    pub fn inbox(message: Type) -> Type {
+        if message == Self::Error {
+            return Self::Error;
+        }
+        Self::Inbox(Box::new(message))
+    }
+
+    /// `Outbox<T>`.
+    #[must_use]
+    pub fn outbox(message: Type) -> Type {
+        if message == Self::Error {
+            return Self::Error;
+        }
+        Self::Outbox(Box::new(message))
+    }
+
+    /// `T | null`.
+    #[must_use]
+    pub fn nullable(inner: Type) -> Type {
+        if inner == Self::Error {
+            return Self::Error;
+        }
+        Self::Nullable(Box::new(inner))
+    }
+
+    /// `Generator<T>`.
+    #[must_use]
+    pub fn generator(yielded: Type) -> Type {
+        if yielded == Self::Error {
+            return Self::Error;
+        }
+        Self::Generator(Box::new(yielded))
+    }
+
+    /// The handle of an async call that fulfils with `T`.
+    #[must_use]
+    pub fn async_handle(value: Type) -> Type {
+        if value == Self::Error {
+            return Self::Error;
+        }
+        Self::AsyncHandle(Box::new(value))
+    }
+
+    /// `{ done: boolean; value: T }`.
+    #[must_use]
+    pub fn iter_result(value: Type) -> Type {
+        if value == Self::Error {
+            return Self::Error;
+        }
+        Self::IterResult(Box::new(value))
+    }
+
+    /// `(params) => ret`.
+    #[must_use]
+    pub fn func(params: Vec<Type>, ret: Type) -> Type {
+        if ret == Self::Error || params.contains(&Self::Error) {
+            return Self::Error;
+        }
+        Self::Func(Box::new(FuncType { params, ret }))
+    }
+}
+
 /// The element traversal shared by container consumers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -680,6 +796,55 @@ impl fmt::Display for Type {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn composite_constructors_absorb_the_error_type() {
+        let e = || Type::Error;
+        let i = || Type::I32;
+        for poisoned in [
+            Type::array(e()),
+            Type::fixed_array(e(), 2),
+            Type::map(e(), i()),
+            Type::map(i(), e()),
+            Type::set(e()),
+            Type::worker(e(), i()),
+            Type::worker(i(), e()),
+            Type::inbox(e()),
+            Type::outbox(e()),
+            Type::nullable(e()),
+            Type::generator(e()),
+            Type::async_handle(e()),
+            Type::iter_result(e()),
+            Type::func(vec![i(), e()], i()),
+            Type::func(vec![i()], e()),
+        ] {
+            assert_eq!(poisoned, Type::Error);
+        }
+        let boxed = || Box::new(Type::I32);
+        let pairs = [
+            (Type::array(i()), Type::Array(boxed())),
+            (Type::fixed_array(i(), 2), Type::FixedArray(boxed(), 2)),
+            (Type::map(i(), i()), Type::Map(boxed(), boxed())),
+            (Type::set(i()), Type::Set(boxed())),
+            (Type::worker(i(), i()), Type::Worker(boxed(), boxed())),
+            (Type::inbox(i()), Type::Inbox(boxed())),
+            (Type::outbox(i()), Type::Outbox(boxed())),
+            (Type::nullable(i()), Type::Nullable(boxed())),
+            (Type::generator(i()), Type::Generator(boxed())),
+            (Type::async_handle(i()), Type::AsyncHandle(boxed())),
+            (Type::iter_result(i()), Type::IterResult(boxed())),
+            (
+                Type::func(vec![i()], i()),
+                Type::Func(Box::new(FuncType {
+                    params: vec![i()],
+                    ret: i(),
+                })),
+            ),
+        ];
+        for (built, expected) in pairs {
+            assert_eq!(built, expected);
+        }
+    }
 
     #[test]
     fn contained_types_cover_the_complete_grammar() {

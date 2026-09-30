@@ -3,7 +3,9 @@
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::check::{source_name, static_member_symbol, Checker, FnCtx, ParamSig, ScopeItem};
+use crate::check::{
+    source_name, static_member_symbol, Checker, ContainerSlot, FnCtx, ParamSig, ScopeItem,
+};
 use crate::diag::{Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::hir::{
@@ -204,7 +206,7 @@ impl<'p> Checker<'p> {
                     args,
                     origin,
                 },
-                ty: Type::AsyncHandle(Box::new(sig.ret)),
+                ty: Type::async_handle(sig.ret),
                 pos,
             };
         }
@@ -417,10 +419,10 @@ impl<'p> Checker<'p> {
         let params = match function {
             ContextBytesFn::BytesOf => vec![target.clone()],
             ContextBytesFn::BytesInto => {
-                vec![target.clone(), Type::Array(Box::new(Type::U8)), Type::U32]
+                vec![target.clone(), Type::array(Type::U8), Type::U32]
             }
             ContextBytesFn::FromBytes => {
-                vec![Type::Array(Box::new(Type::U8)), Type::U32]
+                vec![Type::array(Type::U8), Type::U32]
             }
         };
         if call.args.len() != params.len() {
@@ -461,7 +463,7 @@ impl<'p> Checker<'p> {
             args.push(checked);
         }
         let return_type = match function {
-            ContextBytesFn::BytesOf => Type::Array(Box::new(Type::U8)),
+            ContextBytesFn::BytesOf => Type::array(Type::U8),
             ContextBytesFn::BytesInto => Type::Void,
             ContextBytesFn::FromBytes => target.clone(),
         };
@@ -847,7 +849,7 @@ impl<'p> Checker<'p> {
                         callee: Callee::Worker(function),
                         args,
                     },
-                    ty: Type::Nullable(message),
+                    ty: Type::nullable(*message),
                     pos,
                 }
             }
@@ -964,7 +966,7 @@ impl<'p> Checker<'p> {
             Type::Generator(y) => match name.as_str() {
                 "next" => {
                     let args = self.check_args(&[], &c.args, fx, &pos, "next");
-                    let step = Type::IterResult(y.clone());
+                    let step = Type::iter_result((*y).clone());
                     match crate::check::layout::class_independent_layout(&step) {
                         crate::check::layout::IndependentLayout::Fits => mk(recv, args, step, pos),
                         crate::check::layout::IndependentLayout::TooLarge => {
@@ -1025,7 +1027,7 @@ impl<'p> Checker<'p> {
                                     args,
                                     origin,
                                 },
-                                ty: Type::AsyncHandle(Box::new(sig.ret)),
+                                ty: Type::async_handle(sig.ret),
                                 pos,
                             };
                         }
@@ -1072,6 +1074,31 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// Reports an argument count outside `(total, required)` for the
+    /// callee `what`. A spread argument gives no count.
+    fn check_argument_count(
+        &mut self,
+        (total, required): (usize, usize),
+        args: &[ast::ExprOrSpread],
+        pos: &Pos,
+        what: &str,
+    ) {
+        let has_spread = args.iter().any(|arg| arg.spread.is_some());
+        if !has_spread && (args.len() < required || args.len() > total) {
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "`{}` expects {} argument(s) ({} required), got {}",
+                    source_name(what),
+                    total,
+                    required,
+                    args.len()
+                ),
+                pos.clone(),
+            );
+        }
+    }
+
     pub(in crate::check) fn check_args(
         &mut self,
         params: &[ParamSig],
@@ -1081,20 +1108,7 @@ impl<'p> Checker<'p> {
         what: &str,
     ) -> Vec<hir::Expr> {
         let required = params.iter().filter(|p| !p.has_default).count();
-        let has_spread = args.iter().any(|arg| arg.spread.is_some());
-        if !has_spread && (args.len() < required || args.len() > params.len()) {
-            self.error(
-                RuleCode::S100,
-                format!(
-                    "`{}` expects {} argument(s) ({} required), got {}",
-                    source_name(what),
-                    params.len(),
-                    required,
-                    args.len()
-                ),
-                pos.clone(),
-            );
-        }
+        self.check_argument_count((params.len(), required), args, pos, what);
         let mut out = Vec::new();
         for (i, arg) in args.iter().enumerate() {
             if arg.spread.is_some() {
@@ -1183,7 +1197,16 @@ impl<'p> Checker<'p> {
         Some(source)
     }
 
-    pub(super) fn check_new(&mut self, n: &ast::NewExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+    /// Checks a `new` expression. `ctx` is the contextual type; a
+    /// container construction reads the poisoned arguments of it
+    /// (compiler.md §132 rule 2).
+    pub(super) fn check_new(
+        &mut self,
+        n: &ast::NewExpr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        pos: Pos,
+    ) -> hir::Expr {
         let mut callee: &ast::Expr = &n.callee;
         while let ast::Expr::Paren(p) = callee {
             callee = &p.expr;
@@ -1271,7 +1294,7 @@ impl<'p> Checker<'p> {
         }
         if (name == "Map" || name == "Set") && self.assoc_is_ambient(&name, fx) {
             if name == "Map" && n.args.as_ref().is_some_and(|args| !args.is_empty()) {
-                return self.check_map_copy(n, fx, pos, ident_pos);
+                return self.check_map_copy(n, ctx, fx, pos, ident_pos);
             }
             let Some(type_args) = &n.type_args else {
                 self.error(
@@ -1291,10 +1314,18 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
             let arguments: &[ast::ExprOrSpread] = n.args.as_deref().unwrap_or(&[]);
+            let saved_context = self.enter_container_context(ctx);
             let saved = self.in_assoc_key;
             self.in_assoc_key = true;
             let key = self.resolve_type(&type_args.params[0]);
             self.in_assoc_key = saved;
+            let key_slot = if name == "Map" {
+                ContainerSlot::MapKey
+            } else {
+                ContainerSlot::SetElement
+            };
+            let key_pos = self.pos(type_args.params[0].span());
+            let key = self.container_argument(key_slot, key, key_pos);
             if !matches!(key, Type::Error) && self.assoc_key_kind(&key).is_none() {
                 let key_pos = self.pos(type_args.params[0].span());
                 let key_name = self.type_name(&key);
@@ -1306,7 +1337,10 @@ impl<'p> Checker<'p> {
             }
             if name == "Map" {
                 let value = self.resolve_type(&type_args.params[1]);
-                let ty = Type::Map(Box::new(key), Box::new(value));
+                let value_pos = self.pos(type_args.params[1].span());
+                let value = self.container_argument(ContainerSlot::MapValue, value, value_pos);
+                self.leave_container_context(saved_context);
+                let ty = Type::map(key, value);
                 return hir::Expr {
                     kind: ExprKind::Call {
                         callee: Callee::Map(MapFn::New),
@@ -1316,7 +1350,8 @@ impl<'p> Checker<'p> {
                     pos,
                 };
             }
-            let ty = Type::Set(Box::new(key.clone()));
+            self.leave_container_context(saved_context);
+            let ty = Type::set(key.clone());
             // The arity guard and the source index are one match, so no
             // caller holds an emptiness precondition for the other.
             let args = match arguments {
@@ -1367,6 +1402,25 @@ impl<'p> Checker<'p> {
                         .iter()
                         .map(|t| self.resolve_type(t))
                         .collect();
+                    if resolved.contains(&Type::Error) {
+                        // compiler.md §132 rule 2a: an error type argument
+                        // gives no instance. The type-argument count and
+                        // the constructor argument count do not depend on
+                        // the argument types, so each still reports.
+                        let _ = self.instantiate_class(&key, &resolved, ident_pos.clone());
+                        let arguments: &[ast::ExprOrSpread] = n.args.as_deref().unwrap_or(&[]);
+                        let type_argument_count = self
+                            .generic_classes
+                            .get(&key)
+                            .map(|template| template.type_params.len());
+                        if type_argument_count == Some(resolved.len()) {
+                            if let Some(arity) = self.template_constructor_arity(&key) {
+                                self.check_argument_count(arity, arguments, &pos, &name);
+                            }
+                        }
+                        self.check_poisoned_arguments(arguments, fx);
+                        return self.err_expr(pos);
+                    }
                     self.instantiate_class(&key, &resolved, ident_pos.clone())
                 }
                 None => {

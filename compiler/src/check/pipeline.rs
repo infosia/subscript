@@ -208,6 +208,7 @@ fn run_with_effects(
         in_boundary: false,
         allow_wire_alias_boundary: false,
         in_assoc_key: false,
+        in_poisoned_context: false,
         in_json_argument: false,
         in_for_of_subject: false,
         aggregate_type_divergence: None,

@@ -218,6 +218,7 @@ const FEATURES: &[Feature] = &[
             "corpus/reject/r111-worker-in-map-value.ts",
             "corpus/reject/r182-worker-reference-field.ts",
             "corpus/reject/r183-worker-growable-array-field.ts",
+            "corpus/reject/r281-affine-new-map.ts",
         ],
     },
     Feature {

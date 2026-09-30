@@ -42,6 +42,7 @@ impl<'p> Checker<'p> {
         }
         let saved_file = self.cur_file;
         let saved_subst = std::mem::take(&mut self.subst);
+        let saved_context = self.suspend_container_context();
         self.cur_file = template.file;
         for (param, arg) in template.type_params.iter().zip(args) {
             self.subst.insert(param.clone(), arg.clone());
@@ -55,6 +56,7 @@ impl<'p> Checker<'p> {
         }
         self.cur_file = saved_file;
         self.subst = saved_subst;
+        self.leave_container_context(saved_context);
         Some(name)
     }
 
@@ -109,6 +111,7 @@ impl<'p> Checker<'p> {
         }
         let saved_file = self.cur_file;
         let saved_subst = std::mem::take(&mut self.subst);
+        let saved_context = self.suspend_container_context();
         self.cur_file = template.file;
         for (param, arg) in template.type_params.iter().zip(args) {
             self.subst.insert(param.clone(), arg.clone());
@@ -148,11 +151,17 @@ impl<'p> Checker<'p> {
         }
         self.cur_file = saved_file;
         self.subst = saved_subst;
+        self.leave_container_context(saved_context);
         Some(instance)
     }
 
     /// Instantiates a generic class at explicit type arguments, checking
     /// its shape and bodies immediately. Returns the instance id.
+    ///
+    /// An argument that is the error type gives no instance: the instance
+    /// type is the error type (compiler.md §132 rule 2a). The type-argument
+    /// count does not depend on the argument types, so a wrong count
+    /// reports first.
     pub(crate) fn instantiate_class(
         &mut self,
         key: &str,
@@ -173,6 +182,9 @@ impl<'p> Checker<'p> {
             );
             return None;
         }
+        if args.contains(&Type::Error) {
+            return None;
+        }
         if template.has_static_member || !template.rejected_generic_methods.is_empty() {
             return None;
         }
@@ -182,6 +194,7 @@ impl<'p> Checker<'p> {
         }
         let saved_file = self.cur_file;
         let saved_subst = std::mem::take(&mut self.subst);
+        let saved_context = self.suspend_container_context();
         self.cur_file = template.file;
         for (param, arg) in template.type_params.iter().zip(args) {
             self.subst.insert(param.clone(), arg.clone());
@@ -201,6 +214,46 @@ impl<'p> Checker<'p> {
         }
         self.cur_file = saved_file;
         self.subst = saved_subst;
+        self.leave_container_context(saved_context);
         Some(id)
+    }
+
+    /// The constructor parameter counts `(total, required)` of the generic
+    /// class template `key`, read from its declaration.
+    ///
+    /// The counts do not depend on the type arguments, so a construction
+    /// with an error type argument, which gives no instance (§132 rule
+    /// 2a), still reports a wrong argument count. `None` when the template
+    /// gives no constructed instance for another reason: an unknown key, a
+    /// descriptor or ambient template, or a template that
+    /// [`Checker::instantiate_class`] rejects.
+    pub(crate) fn template_constructor_arity(&self, key: &str) -> Option<(usize, usize)> {
+        let template = self.generic_classes.get(key)?;
+        if template.is_descriptor
+            || template.declared
+            || template.has_static_member
+            || !template.rejected_generic_methods.is_empty()
+        {
+            return None;
+        }
+        let mut total = 0;
+        let mut required = 0;
+        for member in &template.class.body {
+            let ast::ClassMember::Constructor(ctor) = member else {
+                continue;
+            };
+            // The shape keeps the last constructor.
+            total = 0;
+            required = 0;
+            for parameter in &ctor.params {
+                if let ast::ParamOrTsParamProp::Param(parameter) = parameter {
+                    total += 1;
+                    if !matches!(parameter.pat, ast::Pat::Assign(_)) {
+                        required += 1;
+                    }
+                }
+            }
+        }
+        Some((total, required))
     }
 }

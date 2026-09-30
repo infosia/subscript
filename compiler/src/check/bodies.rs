@@ -240,7 +240,7 @@ impl<'p> Checker<'p> {
         };
         let ret = if sig.is_generator {
             let yield_ty = fx.frames[0].yield_ty.clone().unwrap_or(Type::Void);
-            let ret = Type::Generator(Box::new(yield_ty));
+            let ret = Type::generator(yield_ty);
             if let Some(entry) = self.fn_sigs.get_mut(name) {
                 entry.ret = ret.clone();
                 entry.yield_known = true;

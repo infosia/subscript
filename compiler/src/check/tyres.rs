@@ -7,9 +7,9 @@ use swc_ecma_ast as ast;
 
 use crate::diag::RuleCode;
 use crate::divergence::Divergence;
-use crate::types::{FuncType, Type};
+use crate::types::Type;
 
-use super::{Checker, ScopeItem};
+use super::{Checker, ContainerSlot, ScopeItem};
 
 impl<'p> Checker<'p> {
     /// Resolves the mandatory source-level `Promise<T>` view of an async
@@ -74,15 +74,9 @@ impl<'p> Checker<'p> {
             ast::TsType::TsTypeRef(r) => self.resolve_type_ref(r),
             ast::TsType::TsArrayType(arr) => {
                 let elem = self.resolve_type(&arr.elem_type);
-                if Self::is_context_affine_type(&elem) {
-                    self.error(
-                        RuleCode::S100,
-                        "Worker, Inbox, and Outbox values may not be array elements",
-                        self.pos(arr.elem_type.span()),
-                    );
-                    return Type::Error;
-                }
-                Type::Array(Box::new(elem))
+                let elem_pos = self.pos(arr.elem_type.span());
+                let elem = self.container_argument(ContainerSlot::ArrayElement, elem, elem_pos);
+                Type::array(elem)
             }
             ast::TsType::TsUnionOrIntersectionType(u) => self.resolve_union(u),
             ast::TsType::TsFnOrConstructorType(f) => self.resolve_fn_type(f),
@@ -240,11 +234,9 @@ impl<'p> Checker<'p> {
                     }
                 }
                 return match name {
-                    "Worker" => {
-                        Type::Worker(Box::new(messages[0].clone()), Box::new(messages[1].clone()))
-                    }
-                    "Inbox" => Type::Inbox(Box::new(messages[0].clone())),
-                    "Outbox" => Type::Outbox(Box::new(messages[0].clone())),
+                    "Worker" => Type::worker(messages[0].clone(), messages[1].clone()),
+                    "Inbox" => Type::inbox(messages[0].clone()),
+                    "Outbox" => Type::outbox(messages[0].clone()),
                     _ => unreachable!("matched worker ambient name"),
                 };
             }
@@ -278,7 +270,7 @@ impl<'p> Checker<'p> {
                     return Type::Error;
                 }
                 let value = self.resolve_type(&args.params[0]);
-                return Type::AsyncHandle(Box::new(value));
+                return Type::async_handle(value);
             }
             "FixedArray" => {
                 let Some(args) = &r.type_params else {
@@ -298,14 +290,8 @@ impl<'p> Checker<'p> {
                     return Type::Error;
                 }
                 let elem = self.resolve_type(&args.params[0]);
-                if Self::is_context_affine_type(&elem) {
-                    self.error(
-                        RuleCode::S100,
-                        "Worker, Inbox, and Outbox values may not be array elements",
-                        self.pos(args.params[0].span()),
-                    );
-                    return Type::Error;
-                }
+                let elem_pos = self.pos(args.params[0].span());
+                let elem = self.container_argument(ContainerSlot::ArrayElement, elem, elem_pos);
                 let len = match &*args.params[1] {
                     ast::TsType::TsLitType(ast::TsLitType {
                         lit: ast::TsLit::Number(n),
@@ -336,7 +322,7 @@ impl<'p> Checker<'p> {
                         return Type::Error;
                     }
                 };
-                let fixed = Type::FixedArray(Box::new(elem), len);
+                let fixed = Type::fixed_array(elem, len);
                 match super::layout::class_independent_layout(&fixed) {
                     super::layout::IndependentLayout::Fits => return fixed,
                     super::layout::IndependentLayout::TooLarge => {
@@ -363,15 +349,10 @@ impl<'p> Checker<'p> {
                 if let Some(args) = &r.type_params {
                     if args.params.len() == 1 {
                         let elem = self.resolve_type(&args.params[0]);
-                        if Self::is_context_affine_type(&elem) {
-                            self.error(
-                                RuleCode::S100,
-                                "Worker, Inbox, and Outbox values may not be array elements",
-                                self.pos(args.params[0].span()),
-                            );
-                            return Type::Error;
-                        }
-                        return Type::Array(Box::new(elem));
+                        let elem_pos = self.pos(args.params[0].span());
+                        let elem =
+                            self.container_argument(ContainerSlot::ArrayElement, elem, elem_pos);
+                        return Type::array(elem);
                     }
                 }
                 self.error(RuleCode::S100, "`Array` takes one type argument", pos);
@@ -381,7 +362,7 @@ impl<'p> Checker<'p> {
                 if let Some(args) = &r.type_params {
                     if let Some(first) = args.params.first() {
                         let y = self.resolve_type(first);
-                        return Type::Generator(Box::new(y));
+                        return Type::generator(y);
                     }
                 }
                 self.error(
@@ -429,16 +410,14 @@ impl<'p> Checker<'p> {
             }
             let saved = self.in_assoc_key;
             self.in_assoc_key = true;
-            let mut key = self.resolve_type(&args.params[0]);
-            if Self::is_context_affine_type(&key) {
-                self.error_diverging(
-                    RuleCode::S100,
-                    "Worker, Inbox, and Outbox values may not be container type arguments",
-                    self.pos(args.params[0].span()),
-                    Divergence::WorkerContextAffinity,
-                );
-                key = Type::Error;
-            }
+            let key = self.resolve_type(&args.params[0]);
+            let key_slot = if name == "Map" {
+                ContainerSlot::MapKey
+            } else {
+                ContainerSlot::SetElement
+            };
+            let key_pos = self.pos(args.params[0].span());
+            let key = self.container_argument(key_slot, key, key_pos);
             // Only this container's key position may temporarily admit
             // boundary-only shapes so the Q24 whitelist can issue S014.
             // A nested container's value is a general declaration even
@@ -459,21 +438,14 @@ impl<'p> Checker<'p> {
                 );
             }
             if name == "Map" {
-                let mut value = self.resolve_type(&args.params[1]);
-                if Self::is_context_affine_type(&value) {
-                    self.error_diverging(
-                        RuleCode::S100,
-                        "Worker, Inbox, and Outbox values may not be container type arguments",
-                        self.pos(args.params[1].span()),
-                        Divergence::WorkerContextAffinity,
-                    );
-                    value = Type::Error;
-                }
+                let value = self.resolve_type(&args.params[1]);
+                let value_pos = self.pos(args.params[1].span());
+                let value = self.container_argument(ContainerSlot::MapValue, value, value_pos);
                 self.in_assoc_key = saved;
-                return Type::Map(Box::new(key), Box::new(value));
+                return Type::map(key, value);
             }
             self.in_assoc_key = saved;
-            return Type::Set(Box::new(key));
+            return Type::set(key);
         }
 
         // The ambient `Date` value type (stdlib.md §3): applies only
@@ -605,11 +577,11 @@ impl<'p> Checker<'p> {
                 // boundary value classes are reference-sized handles. Plain
                 // script value classes remain outside the union surface.
                 if self.in_assoc_key {
-                    return Type::Nullable(Box::new(inner));
+                    return Type::nullable(inner);
                 }
                 let ok = inner.is_reference_shape(&self.type_handle_classes);
                 if ok {
-                    return Type::Nullable(Box::new(inner));
+                    return Type::nullable(inner);
                 }
                 let pos = self.pos(base.span());
                 let name = self.type_name(&inner);
@@ -688,6 +660,6 @@ impl<'p> Checker<'p> {
             }
         }
         let ret = self.resolve_type(&fn_ty.type_ann.type_ann);
-        Type::Func(Box::new(FuncType { params, ret }))
+        Type::func(params, ret)
     }
 }
