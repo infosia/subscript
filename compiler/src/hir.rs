@@ -41,6 +41,11 @@ pub const DISPOSE_METHOD_NAME: &str = "[[Symbol.dispose]]";
 /// Error class (`compiler.md` §115.1 rule 3). No source spelling reaches it.
 pub const ERROR_KIND_FIELD: &str = "[[kind]]";
 
+/// A lambda unit identity for the initializer scan (compiler.md §137 rule 5b).
+/// The checker assigns a separate identity to each generic body instance.
+#[derive(Debug, Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LambdaId(pub usize);
+
 /// A checked program: all source files merged into one module.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -77,17 +82,37 @@ pub struct Module {
     /// Ambient mirrors that contribute foreign functions, with the exact
     /// C header include spelling recovered from generated provenance.
     pub foreign_mirrors: Vec<ForeignMirror>,
-    /// Checked top-level non-declaration statements, in source order.
-    /// The accept corpus uses these statements in entries such as `a168`.
+    /// Checked top-level statements in module run order, with source order inside each module.
     pub top_level: Vec<Stmt>,
-    /// Whether the module initializer (the global initializers, then
-    /// `top_level`) can leave an exception pending (`compiler.md` §115.6
-    /// rule 3). The check derives it; the lowering reads it.
+    /// Source module identities in run order, including modules with no initializer work.
+    pub initializer_modules: Vec<String>,
+    /// Indices of regex literal globals that initialize before all module work.
+    pub regex_literal_globals: Vec<usize>,
+    /// Checker-derived initializer segments, one per identity in `initializer_modules`.
+    pub initializer_segments: Vec<InitializerSegment>,
+    /// Whether the regex initializers and module segments can leave an exception pending (compiler.md §115.6 rule 3).
     pub initializer_can_raise: bool,
     /// Total bytes of the source texts the check read for this module.
     /// The dev JIT derives one module's one memory reservation from
     /// this number (`specs/blocks/compiler.md` §110 rule 3).
     pub source_bytes: usize,
+}
+
+/// The initializer work that one source module owns.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct InitializerSegment {
+    /// The range of top-level statements in this source module.
+    pub top_level: std::ops::Range<usize>,
+    /// Indices into the module's globals vector, in source order.
+    pub globals: Vec<usize>,
+}
+
+impl InitializerSegment {
+    /// Builds the checked ownership of one module initializer.
+    pub fn new(top_level: std::ops::Range<usize>, globals: Vec<usize>) -> Self {
+        Self { top_level, globals }
+    }
 }
 
 /// One root that owns expressions in a checked module.
@@ -1729,6 +1754,8 @@ pub enum ExprKind {
     /// Lambda expression. Non-capturing lambdas are free function
     /// values; capturing ones are stack-only and may not escape (C5).
     Lambda {
+        /// The checker-assigned unit identity. Only the initializer scan reads it.
+        id: LambdaId,
         /// Parameters.
         params: Vec<Param>,
         /// Return type.

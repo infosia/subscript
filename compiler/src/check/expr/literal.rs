@@ -105,7 +105,8 @@ impl<'p> Checker<'p> {
                         ty: Type::RegExp,
                         mutable: false,
                         init,
-                        initializer_index: self.top_level.len(),
+                        // compiler.md §137 rule 3b: regex globals precede all module work.
+                        initializer_index: 0,
                         pos: pos.clone(),
                     });
                     self.regex_literals.insert(key, name.clone());

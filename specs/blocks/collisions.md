@@ -550,16 +550,22 @@ module's exports as C symbols, so each one must have a C form.
 **Initialization order.** This compiler loads the entry module and
 every module it reaches through an import or a re-export, a type-only
 import included. It runs module initializers in `node`'s ESM evaluation
-order, dependency post-order over the value edges (`compiler.md` §137
-rule 1), and a module that only `import type` reaches does not run its
-initializer (§137 rule 3), as `tsc` erases `import type`. A module
+order, dependency post-order (`compiler.md` §137 rule 1), with one
+divergence: every loaded module runs, a module that only `import type`
+reaches included (§137 rule 3). `tsc` erases `import type`, so that
+module never runs in `node`. Here a class type from a type-only import
+reaches a value without a constructor call (`JSON.parse<A>`), and its
+methods read the globals of its module, so the module must run.
+Measured: `main.ts` with `import type { A } from "./a"` and
+`import { vb } from "./b"`, where each module's initializer prints,
+prints `a init / b init / 2` here and `b init / 2` in `node`. A module
 reached through an import that `tsc`'s `transpileModule` elides (an
-import whose names the file uses only as types, or not at all) still
-runs here and in native ESM, but not under the corpus runner: a
-`js-comparable` entry does not print from the initializer of such a
-module.
+import whose names the file uses only as types, or not at all) also
+runs here and in native ESM, but not under the corpus runner. A
+`js-comparable` entry does not print from the initializer of a module
+that `node` or the corpus runner does not run.
 
-Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
+Accept: `a288`, `a289`, `a290`, `a291`, `a292`, `a299`, `a300`, `a301`. Reject: `r273`,
 `r274`, `r275`, `r277`, `r278`, `r279`.
 
 ## 2. Q-register resolutions not covered above

@@ -222,6 +222,7 @@ fn expr_children_yield_every_child() {
         ),
         (
             ExprKind::Lambda {
+                id: LambdaId(0),
                 params: Vec::new(),
                 ret: Type::Void,
                 body: vec![child_stmt(1), child_stmt(2)],
@@ -437,6 +438,9 @@ fn host_entry_trap_sites_name_each_wire_parameter() {
         foreign_fns: Vec::new(),
         foreign_mirrors: Vec::new(),
         top_level: Vec::new(),
+        initializer_modules: Vec::new(),
+        regex_literal_globals: Vec::new(),
+        initializer_segments: Vec::new(),
         initializer_can_raise: false,
         source_bytes: 0,
     };
@@ -854,6 +858,9 @@ fn module_is_constructible_empty() {
         foreign_fns: Vec::new(),
         foreign_mirrors: Vec::new(),
         top_level: Vec::new(),
+        initializer_modules: Vec::new(),
+        regex_literal_globals: Vec::new(),
+        initializer_segments: Vec::new(),
         initializer_can_raise: false,
         source_bytes: 0,
     };

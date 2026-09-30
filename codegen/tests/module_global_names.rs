@@ -121,13 +121,16 @@ fn reload_hash_detects_nominal_type_changes_between_same_name_classes() {
     ] {
         let hash = |import: &str, body: &str| {
             let files = [
-                SourceFile::entry("main.ts", format!("import {{ C }} from \"./{import}\"; {declaration} export function main(): void {{ {body} }}")),
+                SourceFile::entry("main.ts", format!("import './first'; import './second'; import {{ C }} from \"./{import}\"; {declaration} export function main(): void {{ {body} }}")),
                 SourceFile::new("first.ts", "export class C { value: i32 = 7; }"),
                 SourceFile::new("second.ts", "export class C { value: i32 = 100; }"),
             ];
-            subscript_codegen::declaration_hash(
-                &check_program(&files).expect("nominal type program"),
-            )
+            let module = check_program(&files).expect("nominal type program");
+            assert_eq!(
+                module.initializer_modules,
+                ["first.ts", "second.ts", "main.ts"]
+            );
+            subscript_codegen::declaration_hash(&module)
         };
         let before = hash("first", "");
         let after = hash("second", "");

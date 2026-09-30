@@ -6,7 +6,8 @@
 //! unchanged. The hash covers every class (field names, types, and
 //! order), every enum member value, every `FixedArray` shape (as part
 //! of the type spelling it appears in), every module-level variable's
-//! name and type, and every function signature. Function *bodies* are
+//! name and type, every function signature, and the ordered source
+//! module run identities (compiler.md §137 rule 3c). Function *bodies* are
 //! excluded by construction: the hash walks declarations only and
 //! never descends into a body. So only body edits reload; anything
 //! else is refused, with the first differing declaration named.
@@ -161,6 +162,7 @@ fn signature_text(f: &hir::Function) -> String {
 /// functions, constructors, and methods, including parameter escape facts.
 /// Synthesized helpers do not enter the hash (compiler.md §119).
 /// Lambda parameter escape facts also enter the hash (compiler.md §118).
+/// The ordered source module run identities also enter the hash (compiler.md §137 rule 3c).
 /// Other body expressions, statements, and default values do not enter it.
 #[must_use]
 pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
@@ -169,6 +171,11 @@ pub fn declaration_hash(m: &hir::Module) -> DeclarationHash {
     };
     let mut entries: Vec<(String, u64)> = Vec::new();
     let mut push = |name: String, text: &str| entries.push((name, fnv1a(text.as_bytes())));
+
+    push(
+        format!("module run order/set {:?}", m.initializer_modules),
+        &format!("{:?}", m.initializer_modules),
+    );
 
     for entry in &m.host_entries {
         push(
@@ -1310,6 +1317,7 @@ mod tests {
         assert_eq!(
             h.declarations(),
             vec![
+                r#"module run order/set ["live.ts"]"#,
                 "host entry main",
                 "class Error",
                 "constructor Error",
@@ -1329,6 +1337,7 @@ mod tests {
         assert_eq!(
             h.declarations(),
             vec![
+                r#"module run order/set ["live.ts"]"#,
                 "host entry main",
                 "class Error",
                 "constructor Error",
@@ -1347,6 +1356,7 @@ mod tests {
         assert_eq!(
             after.declarations(),
             vec![
+                r#"module run order/set ["live.ts"]"#,
                 "host entry main",
                 "class Error",
                 "constructor Error",

@@ -215,8 +215,11 @@ impl<'p> Checker<'p> {
         let captures = frame.map(|f| f.captures).unwrap_or_default();
         let ret = ret.unwrap_or(Type::Error);
         let ty = Type::func(params.iter().map(|p| p.ty.clone()).collect(), ret.clone());
+        let id = hir::LambdaId(self.next_lambda_id);
+        self.next_lambda_id += 1;
         hir::Expr {
             kind: ExprKind::Lambda {
+                id,
                 params: hir_params,
                 ret,
                 body,

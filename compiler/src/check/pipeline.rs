@@ -155,18 +155,29 @@ pub(crate) fn run(
 ) -> Result<hir::Module, Vec<Diagnostic>> {
     // compiler.md §124: resolved HIR supplies loop effects before the flow check.
     // compiler.md §135.1 rule 1: the bodies of the opaque check add theirs.
-    let (mut provisional, opaque_loops) = run_with_effects(prog, options, None)?;
+    let entry_file = host_entries::entry_file(prog)?;
+    let initializer_files = init_order::files(prog, entry_file);
+    let (mut provisional, opaque_loops) =
+        run_with_effects(prog, options, entry_file, &initializer_files, None)?;
     let mut analysis = narrowing::Analysis::from_module(&mut provisional);
     analysis.merge_loops(opaque_loops);
-    run_with_effects(prog, options, Some(analysis)).map(|(module, _)| module)
+    run_with_effects(
+        prog,
+        options,
+        entry_file,
+        &initializer_files,
+        Some(analysis),
+    )
+    .map(|(module, _)| module)
 }
 
 fn run_with_effects(
     prog: &ParsedProgram,
     options: &CheckOptions,
+    entry_file: Option<usize>,
+    initializer_files: &[usize],
     narrowing_analysis: Option<narrowing::Analysis>,
 ) -> Result<(hir::Module, narrowing::Analysis), Vec<Diagnostic>> {
-    let entry_file = host_entries::entry_file(prog)?;
     let provisional = narrowing_analysis.is_none();
     let mut ck = Checker {
         narrowing_analysis,
@@ -218,6 +229,7 @@ fn run_with_effects(
         pending_layouts: Vec::new(),
         ambient_int_consts: HashMap::new(),
         next_for_of_id: 0,
+        next_lambda_id: 0,
         regex_literals: HashMap::new(),
         next_regex_literal_id: 0,
         next_using_switch_id: 0,
@@ -281,23 +293,64 @@ fn run_with_effects(
         }
     }
     // Pass C: bodies (program files only; mirror declarations have none).
-    for i in 0..prog.files.len() {
+    let mut file_segments = vec![None; prog.files.len()];
+    for (i, segment) in file_segments.iter_mut().enumerate() {
         if !prog.files[i].dts {
+            let global_start = ck.globals.len();
+            let top_start = ck.top_level.len();
             ck.cur_file = i;
             ck.subst.clear();
             ck.check_bodies(i);
+            *segment = Some(hir::InitializerSegment {
+                top_level: top_start..ck.top_level.len(),
+                globals: (global_start..ck.globals.len()).collect(),
+            });
         }
     }
     // compiler.md §135.1 rule 1: the opaque check of every generic body,
     // in both runs.
     ck.check_generic_bodies_opaque();
     let opaque_loops = std::mem::take(&mut ck.opaque_loop_effects);
-    let initializer_diags = module_initializer_diagnostics(&ck);
+    let regex_symbols: HashSet<_> = ck.regex_literals.values().map(String::as_str).collect();
+    let regex_literal_globals: Vec<_> = ck
+        .globals
+        .iter()
+        .enumerate()
+        .filter(|(_, global)| regex_symbols.contains(global.symbol.full_text()))
+        .map(|(index, _)| index)
+        .collect();
+    let regex_indices: HashSet<_> = regex_literal_globals.iter().copied().collect();
+    // compiler.md §137 rule 3b: the scan and HIR share these owners.
+    for segment in file_segments.iter_mut().flatten() {
+        segment
+            .globals
+            .retain(|index| !regex_indices.contains(index));
+    }
+    let initializer_diags = module_initializer_diagnostics(&ck, initializer_files, &file_segments);
     ck.diags.extend(initializer_diags);
     ck.validate_layouts();
 
     if provisional || ck.diags.is_empty() {
         let host_exports = ck.host_exports(entry_file);
+        let mut globals = ck.globals;
+        let mut top_level = Vec::new();
+        let mut initializer_segments = Vec::new();
+        for &file in initializer_files {
+            let Some(segment) = &file_segments[file] else {
+                continue;
+            };
+            let start = top_level.len();
+            top_level.extend_from_slice(&ck.top_level[segment.top_level.clone()]);
+            let module_globals = segment.globals.clone();
+            for &index in &module_globals {
+                globals[index].initializer_index =
+                    start + globals[index].initializer_index - segment.top_level.start;
+            }
+            initializer_segments.push(hir::InitializerSegment {
+                top_level: start..top_level.len(),
+                globals: module_globals,
+            });
+        }
         let mut module = hir::Module {
             host_entries: Vec::new(),
             entry_pos: Pos::new(
@@ -309,7 +362,7 @@ fn run_with_effects(
             classes: ck.classes,
             enums: ck.enums,
             string_aliases: ck.string_aliases,
-            globals: ck.globals,
+            globals,
             synthesized_helpers: ck
                 .functions
                 .iter()
@@ -321,7 +374,13 @@ fn run_with_effects(
             operation_signatures: Vec::new(),
             foreign_fns: ck.foreign_defs,
             foreign_mirrors: ck.foreign_mirrors,
-            top_level: ck.top_level,
+            top_level,
+            initializer_modules: initializer_files
+                .iter()
+                .map(|&file| prog.files[file].name.clone())
+                .collect(),
+            regex_literal_globals,
+            initializer_segments,
             initializer_can_raise: false,
             source_bytes: prog.source_bytes,
         };

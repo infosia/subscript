@@ -186,17 +186,11 @@ fn mismatched_nominal_types_name_both_modules() {
 #[test]
 fn initializer_routes_disambiguate_same_name_functions() {
     let errors = check_program(&[
-        SourceFile::entry("main.ts", "import { libRead } from \"./lib\"; function read(): i32 { return libRead(); } let x: i32 = read();"),
-        SourceFile::new("lib.ts", "function read(): i32 { return x; } export function libRead(): i32 { return read(); } let x: i32 = 100;"),
-    ]).expect_err("library global is not initialized yet");
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message.contains("read (main.ts)")
-                && error.message.contains("read (lib.ts)")
-                && error.message.contains("x (lib.ts)")),
-        "{errors:?}"
-    );
+        SourceFile::entry("main.ts", "import { libRead } from \"./lib\"; export function read(): i32 { return x; } let x: i32 = 100;"),
+        SourceFile::new("lib.ts", "import { read as mainRead } from \"./main\"; function read(): i32 { return mainRead(); } export function libRead(): i32 { return read(); } let y: i32 = libRead();"),
+    ]).expect_err("entry global is not initialized yet");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].message, "`x` is accessed before its declaration, through `libRead` -> `read (lib.ts)` -> `read (main.ts)`");
     assert!(errors
         .iter()
         .all(|error| !error.message.contains("[[identity:")));
@@ -205,16 +199,11 @@ fn initializer_routes_disambiguate_same_name_functions() {
 #[test]
 fn initializer_routes_disambiguate_same_name_constructors() {
     let errors = check_program(&[
-        SourceFile::entry("main.ts", "import { libRead } from \"./lib\"; class C { value: i32; constructor() { this.value = libRead(); } } let local: C = new C();"),
-        SourceFile::new("lib.ts", "class C { value: i32; constructor() { this.value = y; } } export function libRead(): i32 { return new C().value; } let y: i32 = 100;"),
-    ]).expect_err("library global is not initialized yet");
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message.contains("C.constructor (main.ts)")
-                && error.message.contains("C.constructor (lib.ts)")),
-        "{errors:?}"
-    );
+        SourceFile::entry("main.ts", "import { libRead } from \"./lib\"; class C { value: i32; constructor() { this.value = x; } } export function mainRead(): i32 { return new C().value; } let x: i32 = 100;"),
+        SourceFile::new("lib.ts", "import { mainRead } from \"./main\"; class C { value: i32; constructor() { this.value = mainRead(); } } export function libRead(): i32 { return new C().value; } let y: i32 = libRead();"),
+    ]).expect_err("entry global is not initialized yet");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].message, "`x` is accessed before its declaration, through `libRead` -> `C.constructor (lib.ts)` -> `mainRead` -> `C.constructor (main.ts)`");
     assert!(errors
         .iter()
         .all(|error| !error.message.contains("[[identity:")));
@@ -389,4 +378,60 @@ fn retired_r267_accepts_two_module_updates() {
     input[0].source.push_str("\nexport { main as update };\n");
     let errors = check_program(&input).expect_err("entry export names do collide");
     assert_eq!(errors[0].code, subscript_compiler::RuleCode::S017);
+}
+
+#[test]
+fn lambda_ids_are_unique_across_generic_instances() {
+    fn ids(
+        expression: &subscript_compiler::hir::Expr,
+        out: &mut Vec<(subscript_compiler::hir::LambdaId, subscript_compiler::Pos)>,
+    ) {
+        if let subscript_compiler::hir::ExprKind::Lambda { id, .. } = expression.kind {
+            out.push((id, expression.pos.clone()));
+        }
+        for child in expression.children() {
+            match child {
+                subscript_compiler::hir::HirChild::Expr(expression) => ids(expression, out),
+                subscript_compiler::hir::HirChild::Stmt(statement) => {
+                    statements(std::slice::from_ref(statement), out)
+                }
+            }
+        }
+    }
+    fn statements(
+        body: &[subscript_compiler::hir::Stmt],
+        out: &mut Vec<(subscript_compiler::hir::LambdaId, subscript_compiler::Pos)>,
+    ) {
+        for statement in body {
+            for child in statement.children() {
+                match child {
+                    subscript_compiler::hir::HirChild::Expr(expression) => ids(expression, out),
+                    subscript_compiler::hir::HirChild::Stmt(statement) => {
+                        statements(std::slice::from_ref(statement), out)
+                    }
+                }
+            }
+        }
+    }
+    let module = check_program(&[SourceFile::entry("main.ts", "function apply<T>(value: T): T { const copy: T = value; const cb: () => T = (): T => copy; return cb(); } const cb: () => i32 = (): i32 => 1; export function main(): void { print(`${apply<i32>(cb())} ${apply<string>('s')}`); }")]).expect("generic lambdas");
+    let mut found = Vec::new();
+    for global in &module.globals {
+        ids(&global.init, &mut found);
+    }
+    for function in &module.functions {
+        statements(&function.body, &mut found);
+    }
+    assert_eq!(found.len(), 3, "{found:?}");
+    let unique = found
+        .iter()
+        .map(|(id, _)| *id)
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(unique.len(), found.len(), "{found:?}");
+    assert!(
+        found
+            .iter()
+            .enumerate()
+            .any(|(i, (_, pos))| found[i + 1..].iter().any(|(_, other)| other == pos)),
+        "the generic instances must share a source position"
+    );
 }

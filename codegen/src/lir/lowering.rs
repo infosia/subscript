@@ -15,6 +15,85 @@ impl<'a> Lowering<'a> {
             });
         }
 
+        if module.initializer_segments.len() != module.initializer_modules.len() {
+            return Err(LowerError {
+                pos: fallback(),
+                message: format!(
+                    "initializer segment count {} differs from module count {}",
+                    module.initializer_segments.len(),
+                    module.initializer_modules.len()
+                ),
+            });
+        }
+        // compiler.md §137 rule 3b: ownership is total and exclusive.
+        let mut owners = vec![0_usize; module.globals.len()];
+        for index in module
+            .initializer_segments
+            .iter()
+            .flat_map(|segment| segment.globals.iter())
+            .chain(module.regex_literal_globals.iter())
+        {
+            let Some(count) = owners.get_mut(*index) else {
+                return Err(LowerError {
+                    pos: fallback(),
+                    message: format!("initializer owner names missing global index {index}"),
+                });
+            };
+            *count += 1;
+        }
+        for (global, count) in module.globals.iter().zip(owners) {
+            if count != 1 {
+                return Err(LowerError {
+                    pos: global.pos.clone(),
+                    message: format!(
+                        "global `{}` must have exactly one initializer owner; found {count}",
+                        global.name
+                    ),
+                });
+            }
+        }
+
+        let regex_segment =
+            hir::InitializerSegment::new(0..0, module.regex_literal_globals.clone());
+        for segment in std::iter::once(&regex_segment).chain(&module.initializer_segments) {
+            let range = &segment.top_level;
+            if range.start > range.end || range.end > module.top_level.len() {
+                return Err(LowerError {
+                    pos: fallback(),
+                    message: format!(
+                        "initializer segment range {}..{} is outside module body length {}",
+                        range.start,
+                        range.end,
+                        module.top_level.len()
+                    ),
+                });
+            }
+            for &index in &segment.globals {
+                let global = &module.globals[index];
+                if !(range.start..=range.end).contains(&global.initializer_index) {
+                    return Err(LowerError {
+                        pos: global.pos.clone(),
+                        message: format!("global `{}` initializer position {} is outside its owner range {}..={}", global.name, global.initializer_index, range.start, range.end),
+                    });
+                }
+            }
+        }
+
+        let mut statement_owners = vec![0_usize; module.top_level.len()];
+        for segment in &module.initializer_segments {
+            for count in &mut statement_owners[segment.top_level.clone()] {
+                *count += 1;
+            }
+        }
+        for (index, count) in statement_owners.into_iter().enumerate() {
+            if count != 1 {
+                return Err(LowerError {
+                    pos: fallback(),
+                    message: format!("top-level statement {index} must have exactly one initializer owner; found {count}"),
+                });
+            }
+        }
+
         let mut next_function = 0_u32;
         let mut next_method = 0_u32;
         let mut free_functions = HashMap::new();
@@ -184,6 +263,9 @@ impl<'a> Lowering<'a> {
                 pos: pos.clone(),
             };
             let globals = self.hir.globals.clone();
+            let regex_segment =
+                hir::InitializerSegment::new(0..0, self.hir.regex_literal_globals.clone());
+            let segments = self.hir.initializer_segments.clone();
             let mut builder = FunctionBuilder::new(
                 &mut self,
                 id,
@@ -193,50 +275,50 @@ impl<'a> Lowering<'a> {
                 Vec::new(),
             )?;
             let top_level = builder.function.body.clone();
-            if let Some(global) = globals
-                .iter()
-                .find(|global| global.initializer_index > top_level.len())
-            {
-                return Err(builder.error(
-                    &global.pos,
-                    "global initializer position is after the module body",
-                ));
-            }
-            for initializer_index in 0..=top_level.len() {
-                if builder.current.is_none() {
-                    break;
-                }
-                for global in globals
+            for segment in std::iter::once(&regex_segment).chain(&segments) {
+                for (offset, statement) in top_level[segment.top_level.clone()]
                     .iter()
-                    .filter(|global| global.initializer_index == initializer_index)
+                    .map(Some)
+                    .chain(std::iter::once(None))
+                    .enumerate()
                 {
+                    let initializer_index = segment.top_level.start + offset;
                     if builder.current.is_none() {
                         break;
                     }
-                    let value =
-                        builder.lower_stored_expr_at(&global.ty, &global.init, &global.pos)?;
-                    let global_id = builder
-                        .lowering
-                        .globals
-                        .get(&global.symbol)
-                        .copied()
-                        .ok_or_else(|| builder.error(&global.pos, "global id is missing"))?;
-                    builder.emit_store_instruction(
-                        l::InstructionKind::StoreGlobal(global_id),
-                        vec![value],
-                        vec![StoredOperand {
-                            index: 0,
-                            ty: l::ValueType::Data(global.ty.clone()),
-                            action: OwnerStoreAction::Acquire(hir::AsyncCopySite::Binding),
-                            pos: global.pos.clone(),
-                        }],
-                        (None, false),
-                        Vec::new(),
-                        global.pos.clone(),
-                    )?;
-                }
-                if let Some(statement) = top_level.get(initializer_index) {
-                    builder.lower_statements(std::slice::from_ref(statement))?;
+                    for &global_index in &segment.globals {
+                        let global = &globals[global_index];
+                        if global.initializer_index != initializer_index {
+                            continue;
+                        }
+                        let init = &global.init;
+                        if builder.current.is_none() {
+                            break;
+                        }
+                        let value = builder.lower_stored_expr_at(&global.ty, init, &global.pos)?;
+                        let global_id = builder
+                            .lowering
+                            .globals
+                            .get(&global.symbol)
+                            .copied()
+                            .ok_or_else(|| builder.error(&global.pos, "global id is missing"))?;
+                        builder.emit_store_instruction(
+                            l::InstructionKind::StoreGlobal(global_id),
+                            vec![value],
+                            vec![StoredOperand {
+                                index: 0,
+                                ty: l::ValueType::Data(global.ty.clone()),
+                                action: OwnerStoreAction::Acquire(hir::AsyncCopySite::Binding),
+                                pos: global.pos.clone(),
+                            }],
+                            (None, false),
+                            Vec::new(),
+                            global.pos.clone(),
+                        )?;
+                    }
+                    if let Some(statement) = statement {
+                        builder.lower_statements(std::slice::from_ref(statement))?;
+                    }
                 }
             }
             let lowered = builder.finish()?;

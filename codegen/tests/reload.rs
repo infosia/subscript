@@ -33,6 +33,71 @@ fn output(session: &mut ReloadSession) -> String {
     String::from_utf8(session.take_output()).expect("utf-8 output")
 }
 
+#[test]
+fn module_run_set_change_is_refused() {
+    let sources = |include_a: bool, body: &str| {
+        let import = if include_a { "import './a';" } else { "" };
+        let mut files = vec![SourceFile::entry(
+            "main.ts",
+            format!("{import} export function main(): void {{ print('{body}'); }}"),
+        )];
+        if include_a {
+            files.push(SourceFile::new("a.ts", ""));
+        }
+        files
+    };
+    let mut session = ReloadSession::new(&sources(true, "before")).expect("session");
+    session
+        .reload(&sources(true, "control"))
+        .expect("control swap");
+    session.call_main().expect("control call");
+    assert_eq!(output(&mut session), "control\n");
+    let error = session
+        .reload(&sources(false, "refused"))
+        .expect_err("run-set change");
+    assert_eq!(
+        error.to_string(),
+        r#"reload refused: declaration `module run order/set ["main.ts"] (was module run order/set ["a.ts", "main.ts"])` changed; only function bodies can be hot-swapped"#
+    );
+}
+
+#[test]
+fn empty_module_run_order_change_is_refused() {
+    let sources = |imports: &str| {
+        vec![
+            SourceFile::entry(
+                "main.ts",
+                format!("{imports} export function main(): void {{ print('control'); }}"),
+            ),
+            SourceFile::new("a.ts", ""),
+            SourceFile::new("b.ts", ""),
+        ]
+    };
+    let before = sources("import './a'; import './b';");
+    let after = sources("import './b'; import './a';");
+    let before_hir = check_program(&before).expect("initial order");
+    let after_hir = check_program(&after).expect("changed order");
+    assert_eq!(
+        before_hir.initializer_segments,
+        after_hir.initializer_segments
+    );
+    assert_eq!(before_hir.initializer_modules, ["a.ts", "b.ts", "main.ts"]);
+    assert_eq!(after_hir.initializer_modules, ["b.ts", "a.ts", "main.ts"]);
+    assert_eq!(
+        before_hir.initializer_segments.len(),
+        before_hir.initializer_modules.len()
+    );
+    let mut session = ReloadSession::new(&before).expect("session");
+    session.reload(&before).expect("unchanged order control");
+    let error = session
+        .reload(&after)
+        .expect_err("a changed empty-module run order must be refused");
+    assert_eq!(
+        error.to_string(),
+        r#"reload refused: declaration `module run order/set ["b.ts", "a.ts", "main.ts"] (was module run order/set ["a.ts", "b.ts", "main.ts"])` changed; only function bodies can be hot-swapped"#
+    );
+}
+
 // ----- entry-less sessions (§53) -----
 
 const ENTRYLESS_V1: &str = "\

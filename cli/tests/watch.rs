@@ -27,6 +27,38 @@ fn call_output(outcome: WatchOutcome) -> Result<Vec<u8>, String> {
     }
 }
 
+#[test]
+fn module_run_set_refusal_keeps_watch_session_live() -> Result<(), String> {
+    let sources = |include_a: bool, text: &str| {
+        let import = if include_a { "import './a';" } else { "" };
+        let mut files = vec![SourceFile::entry(
+            "main.ts",
+            format!("{import} export function main(): void {{ print('{text}'); }}"),
+        )];
+        if include_a {
+            files.push(SourceFile::new("a.ts", "print('a init');"));
+        }
+        files
+    };
+    let mut watch = WatchSession::new(false);
+    assert_eq!(
+        call_output(watch.step(&sources(true, "old")).outcome)?,
+        b"a init\nold\n"
+    );
+    match watch.step(&sources(false, "refused")).outcome {
+        WatchOutcome::Refused { declaration } => assert_eq!(
+            declaration,
+            r#"module run order/set ["main.ts"] (was module run order/set ["a.ts", "main.ts"])"#
+        ),
+        other => return Err(format!("expected run-set refusal, got {other:?}")),
+    }
+    assert_eq!(
+        call_output(watch.step(&sources(true, "control")).outcome)?,
+        b"control\n"
+    );
+    Ok(())
+}
+
 const COUNTER_V1: &str = "\
 let counter: i32 = 0;
 function editable(): i32 {

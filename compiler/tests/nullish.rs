@@ -185,15 +185,18 @@ fn place_nullish_receiver_in_a_field_initializer_checks() {
 }
 
 #[test]
-fn module_initializer_lambda_call_keeps_the_indirect_call_order_error() {
+fn module_initializer_lambda_call_reads_only_its_followed_body() {
     let source =
         "const n: i32 = ((): i32 => 3)();\nexport function main(): void { print(`${n}`); }\n";
-    let result = diagnostics(source);
+    check_program(&[SourceFile::new("test.ts", source)]).expect("the lambda reads no global");
+
+    let control = "const n: i32 = ((): i32 => later)();\nconst later: i32 = 3;\nexport function main(): void { print(`${n}`); }\n";
+    let result = diagnostics(control);
     assert_eq!(result.len(), 1, "diagnostics: {result:?}");
     assert_eq!(result[0].code, RuleCode::S100);
     assert_eq!(
         result[0].message,
-        "`n` is accessed before its declaration, through an indirect call"
+        "`later` is accessed before its declaration, through an indirect call"
     );
 }
 
