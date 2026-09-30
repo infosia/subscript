@@ -403,11 +403,14 @@ pub(crate) enum ScopeItem {
     Foreign(String),
 }
 
-/// A top-level scope entry retains its import status (compiler.md §127).
+/// A top-level scope entry retains its import status (compiler.md §127)
+/// and whether a type-only import bound it (compiler.md §134).
 #[derive(Debug, Clone)]
 pub(crate) struct ScopeBinding {
     pub item: ScopeItem,
     pub imported: bool,
+    /// The binding names a type only; a value use of it is S100.
+    pub type_only: bool,
 }
 
 /// A local binding inside a function body.
@@ -995,6 +998,8 @@ pub(crate) struct Checker<'p> {
     pub top_level: Vec<hir::Stmt>,
     pub poison_missing_modules: HashSet<String>,
     pub poisoned_imports: Vec<hir::PoisonedImport>,
+    /// Use sites that already report a value use of a type-only import.
+    pub type_only_value_uses: HashSet<(usize, u32, u32)>,
     pub cur_file: usize,
     pub subst: HashMap<String, Type>,
     /// Global ambient names contributed by ingested mirror (`.d.ts`)

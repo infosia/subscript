@@ -288,7 +288,7 @@ impl<'p> Checker<'p> {
             self.apply_narrowing(&mut expr, fx);
             return expr;
         }
-        let item = self.scope_item(&name);
+        let item = self.scope_item(&name, &pos);
         match item {
             Some(ScopeItem::Poisoned) => self.err_expr(pos),
             Some(ScopeItem::Global(g)) => {

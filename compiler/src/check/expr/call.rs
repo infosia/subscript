@@ -57,7 +57,7 @@ impl<'p> Checker<'p> {
             let callee = self.check_ident(id, None, fx);
             return self.check_indirect_call(callee, c, fx, pos);
         }
-        let item = self.scope_item(&name);
+        let item = self.scope_item(&name, &ident_pos);
         if item.is_none() && crate::check::exception::ErrorKind::from_name(&name).is_some() {
             return self.reject_error_call(&name, pos);
         }
@@ -532,7 +532,7 @@ impl<'p> Checker<'p> {
         if fx.owns_local_name(receiver.sym.as_ref()) {
             return false;
         }
-        match self.scope_item(receiver.sym.as_ref()) {
+        match self.peek_scope_item(receiver.sym.as_ref()) {
             Some(ScopeItem::Class(class)) => {
                 self.class_sigs[class.0].generic_method_is_rejected(name, true)
             }
@@ -566,7 +566,8 @@ impl<'p> Checker<'p> {
         if fx.owns_local_name(&class_name) {
             return None;
         }
-        let Some(ScopeItem::Class(class)) = self.scope_item(&class_name) else {
+        let receiver_pos = self.pos(receiver.span);
+        let Some(ScopeItem::Class(class)) = self.scope_item(&class_name, &receiver_pos) else {
             return None;
         };
         if self.class_sigs[class.0].has_static_accessor(name) {
@@ -1249,7 +1250,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         if matches!(name.as_str(), "Worker" | "Inbox" | "Outbox")
-            && self.scope_item(&name).is_none()
+            && self.peek_scope_item(&name).is_none()
         {
             self.error(
                 RuleCode::S100,
@@ -1378,7 +1379,7 @@ impl<'p> Checker<'p> {
                 pos,
             };
         }
-        let class_id = match self.scope_item(&name) {
+        let class_id = match self.scope_item(&name, &ident_pos) {
             Some(ScopeItem::Poisoned) => {
                 if let Some(arguments) = &n.args {
                     self.check_poisoned_arguments(arguments, fx);

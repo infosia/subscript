@@ -531,7 +531,9 @@ export list (`export { a as b }`, `export { a as b } from "./m"`,
 `export * as ns from`, `export default`, the export name `default` in
 a named list (`export { a as default }`, `export { default } from`),
 and type-only export forms (`export type { T }`, `export { type T }`,
-with or without `from`); this compiler rejects them with S100. A named list keeps each module's public surface
+with or without `from`, and a plain `export { T }` of a name that an
+`import type` binds, `compiler.md` §134 rule 5); this compiler rejects
+them with S100. A named list keeps each module's public surface
 explicit: a reader, the checker, and the host entry rules (§129) see
 every exported name at one place, and no wildcard resolution rule
 exists. Measured with `tsc` 5.9.2: `export * from "./m"` alone is
@@ -544,6 +546,23 @@ accepts an exported class, enum, module global, or string alias in any
 module, and an exported function of any signature; this compiler
 rejects them in the entry module with S100. A host sees the entry
 module's exports as C symbols, so each one must have a C form.
+
+**Initialization order.** This compiler loads the entry module and every module it reaches
+through an import or a re-export, a type-only import included, and
+runs each module's initializer once, in discovery order (`compiler.md`
+§128 rule 8). JavaScript runs module bodies in dependency post-order,
+and `tsc` erases `import type`, so a module reached only through a
+type-only import never runs in `node`. Measured on the §134 working
+tree: `main.ts` with `import type { A } from "./a"` and
+`import { vb } from "./b"`, where each module's initializer prints,
+prints `a init / b init / 2` here and `b init / 2` in `node`. Both
+programs pass `tsc`.
+
+The owner ranked the initialization order low on 2026-09-30: measure
+the cost of dependency post-order first; if it is hard or costs run
+time, keep this order as the rule and record it here. Until then, a
+`js-comparable` entry does not print from a module initializer that
+this order runs differently.
 
 Accept: `a288`, `a289`, `a290`, `a291`, `a292`. Reject: `r273`,
 `r274`, `r275`, `r277`, `r278`, `r279`.

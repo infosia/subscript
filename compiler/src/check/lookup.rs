@@ -3,9 +3,42 @@ use super::*;
 impl<'p> Checker<'p> {
     // ----- shared lookups -----
 
-    /// Resolves a name against the current file's top-level scope, then
-    /// the global ambient scope (mirror declarations, §12.2).
-    pub(crate) fn scope_item(&self, name: &str) -> Option<ScopeItem> {
+    /// Resolves a name used as a value at `pos` against the current
+    /// file's top-level scope, then the global ambient scope (mirror
+    /// declarations, §12.2). A type-only import binding reports S100 once
+    /// per use site and resolves poisoned (compiler.md §134 rule 2).
+    pub(crate) fn scope_item(&mut self, name: &str, pos: &Pos) -> Option<ScopeItem> {
+        let type_only = self.scope_binding(name).is_some_and(|binding| {
+            binding.type_only && !matches!(binding.item, ScopeItem::Poisoned)
+        });
+        if type_only
+            && self
+                .type_only_value_uses
+                .insert((self.cur_file, pos.line, pos.col))
+        {
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "`{name}` cannot be used as a value because it was imported with `import type`"
+                ),
+                pos.clone(),
+            );
+        }
+        self.peek_scope_item(name)
+    }
+
+    /// Resolves a name as a value without a use: an existence or shadow
+    /// test. A type-only import binding resolves poisoned.
+    pub(crate) fn peek_scope_item(&self, name: &str) -> Option<ScopeItem> {
+        match self.scope_binding(name) {
+            Some(binding) if binding.type_only => Some(ScopeItem::Poisoned),
+            _ => self.type_scope_item(name),
+        }
+    }
+
+    /// Resolves a name in a type position. A type-only import binding
+    /// resolves to its declaration (compiler.md §134 rule 3).
+    pub(crate) fn type_scope_item(&self, name: &str) -> Option<ScopeItem> {
         self.scope_binding(name)
             .map(|binding| binding.item.clone())
             .or_else(|| {
@@ -91,7 +124,7 @@ impl<'p> Checker<'p> {
             if owns_name && for_read && scope.pending.contains(name) {
                 let message = format!("`{name}` is read before its declaration in {scope_name}");
                 let shadows_program_item = matches!(
-                    self.scope_item(name),
+                    self.peek_scope_item(name),
                     Some(ScopeItem::Class(_) | ScopeItem::GenericClass(_) | ScopeItem::Func(_))
                 );
                 let ambient_namespace = matches!(

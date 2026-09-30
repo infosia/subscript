@@ -15,7 +15,7 @@ use super::contextual_object_class;
 
 impl<'p> Checker<'p> {
     pub(in crate::check) fn ambient_visible(&self, name: &str, fx: &FnCtx) -> bool {
-        !fx.owns_local_name(name) && self.scope_item(name).is_none()
+        !fx.owns_local_name(name) && self.peek_scope_item(name).is_none()
     }
 
     pub(in crate::check) fn ambient_namespace(
@@ -519,7 +519,8 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                let item = self.scope_item(&name);
+                let callee_pos = self.pos(ident.span);
+                let item = self.scope_item(&name, &callee_pos);
                 if matches!(item, Some(ScopeItem::Poisoned)) {
                     self.check_poisoned_arguments(&call.args, fx);
                     return self.err_expr(pos);

@@ -185,7 +185,7 @@ impl<'p> Checker<'p> {
     pub(super) fn resolve_imports(&mut self) {
         for file in 0..self.prog.files.len() {
             let module = &self.prog.files[file].module;
-            let mut additions: Vec<(String, ScopeItem, Pos)> = Vec::new();
+            let mut additions: Vec<(String, ScopeItem, Pos, bool)> = Vec::new();
             for item in &module.body {
                 if let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportNamed(export)) = item {
                     self.record_discovery_export(export);
@@ -224,6 +224,7 @@ impl<'p> Checker<'p> {
                                 local.clone(),
                                 ScopeItem::Poisoned,
                                 self.pos(named.local.span),
+                                type_only_import(import, named),
                             ));
                             names.push((imported, local));
                         }
@@ -242,6 +243,7 @@ impl<'p> Checker<'p> {
                                     named.local.sym.to_string(),
                                     ScopeItem::Poisoned,
                                     self.pos(named.local.span),
+                                    type_only_import(import, named),
                                 ));
                             }
                         }
@@ -264,26 +266,28 @@ impl<'p> Checker<'p> {
                         imported.map_or_else(|| local.clone(), |name| name.atom().to_string());
                     let imported_pos = self.pos(imported.map_or(named.local.span, Spanned::span));
                     let pos = self.pos(named.local.span);
+                    let type_only = type_only_import(import, named);
                     match self.exports[target].get(&imported_name) {
-                        Some(item) => additions.push((local, item.clone(), pos)),
+                        Some(item) => additions.push((local, item.clone(), pos, type_only)),
                         None => {
                             self.resolution_error(
                                 RuleCode::S016,
                                 format!("`{imported_name}` is not exported by `{raw}`"),
                                 imported_pos,
                             );
-                            additions.push((local, ScopeItem::Poisoned, pos));
+                            additions.push((local, ScopeItem::Poisoned, pos, type_only));
                         }
                     }
                 }
             }
-            for (name, item, pos) in additions {
+            for (name, item, pos, type_only) in additions {
                 self.register_scope_binding(
                     file,
                     &name,
                     ScopeBinding {
                         item,
                         imported: true,
+                        type_only,
                     },
                     pos,
                 );
@@ -550,4 +554,14 @@ impl<'p> Checker<'p> {
         }
         prologue
     }
+}
+
+/// Answers whether an import specifier binds a type only: the whole
+/// declaration is `import type`, or the specifier is written `type X`
+/// (compiler.md §134 rule 1).
+pub(super) fn type_only_import(
+    import: &ast::ImportDecl,
+    named: &ast::ImportNamedSpecifier,
+) -> bool {
+    import.type_only || named.is_type_only
 }

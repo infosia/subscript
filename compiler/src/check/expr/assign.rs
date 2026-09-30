@@ -414,9 +414,14 @@ impl<'p> Checker<'p> {
                         pos: ident_pos,
                     });
                 }
-                if self.scope_binding(&name).is_some_and(|binding| {
-                    binding.imported && !matches!(binding.item, ScopeItem::Poisoned)
-                }) {
+                let item = self.scope_item(&name, &ident_pos);
+                if matches!(item, Some(ScopeItem::Poisoned)) {
+                    return Place::Local(self.err_expr(ident_pos));
+                }
+                if self
+                    .scope_binding(&name)
+                    .is_some_and(|binding| binding.imported)
+                {
                     self.error(
                         RuleCode::S100,
                         format!("cannot assign to `{name}` because it is an import"),
@@ -424,7 +429,7 @@ impl<'p> Checker<'p> {
                     );
                     return Place::Local(self.err_expr(ident_pos));
                 }
-                if let Some(ScopeItem::Global(g)) = self.scope_item(&name) {
+                if let Some(ScopeItem::Global(g)) = item {
                     let sig = self.global_sigs.get(&g).cloned();
                     if let Some(sig) = sig {
                         if !sig.mutable {
@@ -440,9 +445,6 @@ impl<'p> Checker<'p> {
                             pos: ident_pos,
                         });
                     }
-                }
-                if matches!(self.scope_item(&name), Some(ScopeItem::Poisoned)) {
-                    return Place::Local(self.err_expr(ident_pos));
                 }
                 self.error(
                     RuleCode::S100,
@@ -564,7 +566,8 @@ impl<'p> Checker<'p> {
         if fx.owns_local_name(&name) {
             return None;
         }
-        let Some(ScopeItem::Class(class)) = self.scope_item(&name) else {
+        let receiver_pos = self.pos(ident.span);
+        let Some(ScopeItem::Class(class)) = self.scope_item(&name, &receiver_pos) else {
             return self
                 .check_namespace_member(obj, prop, prop_pos, fx, true)
                 .map(Place::StaticField);

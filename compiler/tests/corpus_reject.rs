@@ -402,6 +402,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r278-entry-signature/main.ts", RuleCode::S100, 8),
     ("r279-entry-signature-chain/main.ts", RuleCode::S100, 8),
     ("r281-affine-new-map.ts", RuleCode::S100, 13),
+    ("r282-type-only-import-value/main.ts", RuleCode::S100, 10),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

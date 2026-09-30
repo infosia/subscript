@@ -130,7 +130,22 @@ impl Checker<'_> {
                     Divergence::NamedModuleSurface,
                 );
             }
-            let target = if unsupported_form || missing_source {
+            // §134 rule 5: a local re-export of a type-only import is a
+            // type-only export form (§128 rule 7b).
+            let type_only_local = !unsupported
+                && export.src.is_none()
+                && binds_type_only_import(&self.prog.files[file].module, &name);
+            if type_only_local {
+                self.error_diverging(
+                    RuleCode::S100,
+                    format!(
+                        "`{name}` was imported with `import type`; its re-export is a type-only export, outside the named module surface"
+                    ),
+                    self.pos(named.orig.span()),
+                    Divergence::NamedModuleSurface,
+                );
+            }
+            let target = if unsupported_form || missing_source || type_only_local {
                 ExportTarget::Declaration(ScopeItem::Poisoned)
             } else {
                 match &export.src {
@@ -377,6 +392,20 @@ pub(super) fn declaration_names(decl: &ast::Decl) -> Vec<ast::Ident> {
             .map(|b| b.id.clone())
             .collect(),
     }
+}
+
+/// Answers whether a type-only import of `module` binds `local`.
+fn binds_type_only_import(module: &ast::Module, local: &str) -> bool {
+    module.body.iter().any(|item| {
+        let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) = item else {
+            return false;
+        };
+        import.specifiers.iter().any(|specifier| {
+            matches!(specifier, ast::ImportSpecifier::Named(named)
+                if named.local.sym.as_ref() == local
+                    && signatures::type_only_import(import, named))
+        })
+    })
 }
 
 fn unsupported_export_specifier(specifier: &ast::ExportSpecifier) -> bool {

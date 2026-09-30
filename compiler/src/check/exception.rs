@@ -481,6 +481,23 @@ impl Checker<'_> {
         while let ast::Expr::Paren(paren) = right {
             right = &paren.expr;
         }
+        // A type-only import binding as the right operand is a value use
+        // (compiler.md §134 rule 2): its S100 is the only diagnostic.
+        if let ast::Expr::Ident(id) = right {
+            let name = id.sym.as_ref();
+            let type_only = !fx.owns_local_name(name)
+                && self
+                    .scope_binding(name)
+                    .is_some_and(|binding| binding.type_only);
+            if type_only {
+                let right_pos = self.pos(id.span);
+                self.scope_item(name, &right_pos);
+                if self.caught_operand(&b.left, fx).is_none() {
+                    self.check_expr(&b.left, None, fx);
+                }
+                return self.err_expr(pos);
+            }
+        }
         let kind = match right {
             ast::Expr::Ident(id) if self.error_name_is_ambient(id.sym.as_ref(), fx) => {
                 ErrorKind::from_name(id.sym.as_ref())

@@ -16,6 +16,7 @@ impl<'p> Checker<'p> {
             ScopeBinding {
                 item,
                 imported: false,
+                type_only: false,
             },
             pos,
         );

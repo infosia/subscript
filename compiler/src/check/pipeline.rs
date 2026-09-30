@@ -193,6 +193,7 @@ fn run_with_effects(
             .map(|specifier| normalize_module_specifier(specifier))
             .collect(),
         poisoned_imports: Vec::new(),
+        type_only_value_uses: HashSet::new(),
         cur_file: 0,
         subst: HashMap::new(),
         ambient_scope: HashMap::new(),

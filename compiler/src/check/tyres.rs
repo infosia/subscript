@@ -182,11 +182,11 @@ impl<'p> Checker<'p> {
         }
         // Mirror `type` aliases (function-pointer typedefs, flag-set
         // `u64` aliases) resolve to their aliased language type (§12.2).
-        if let Some(ScopeItem::TypeAlias(alias)) = self.scope_item(name) {
+        if let Some(ScopeItem::TypeAlias(alias)) = self.type_scope_item(name) {
             return alias;
         }
         match name {
-            "Worker" | "Inbox" | "Outbox" if self.scope_item(name).is_none() => {
+            "Worker" | "Inbox" | "Outbox" if self.type_scope_item(name).is_none() => {
                 let expected = if name == "Worker" { 2 } else { 1 };
                 let Some(args) = &r.type_params else {
                     self.error(
@@ -240,14 +240,14 @@ impl<'p> Checker<'p> {
                     _ => unreachable!("matched worker ambient name"),
                 };
             }
-            "RegExp" if self.scope_item(name).is_none() => {
+            "RegExp" if self.type_scope_item(name).is_none() => {
                 if r.type_params.is_some() {
                     self.error(RuleCode::S100, "`RegExp` is not generic", pos);
                     return Type::Error;
                 }
                 return Type::RegExp;
             }
-            "RegExpMatchArray" if self.scope_item(name).is_none() => {
+            "RegExpMatchArray" if self.type_scope_item(name).is_none() => {
                 let message = "`RegExpMatchArray` is rejected: `groups` requires an object with dynamic keys, which the language does not have (Q31)";
                 self.error_diverging(RuleCode::S014, message, pos, Divergence::RegExpSubset);
                 return Type::Error;
@@ -378,7 +378,7 @@ impl<'p> Checker<'p> {
         // compiler.md §115.1: the three ambient Error classes are one
         // class; a program declaration shadows the ambient name.
         if crate::check::exception::ErrorKind::from_name(name).is_some()
-            && self.scope_item(name).is_none()
+            && self.type_scope_item(name).is_none()
         {
             if r.type_params.is_some() {
                 self.error(RuleCode::S100, format!("`{name}` is not generic"), pos);
@@ -390,7 +390,7 @@ impl<'p> Checker<'p> {
         // The ES2022 lib supplies the editor declarations; the language
         // checker resolves its accepted, monomorphized subset directly.
         // A program declaration shadows the ambient name, as for Date.
-        if (name == "Map" || name == "Set") && self.scope_item(name).is_none() {
+        if (name == "Map" || name == "Set") && self.type_scope_item(name).is_none() {
             let Some(args) = &r.type_params else {
                 self.error(
                     RuleCode::S100,
@@ -451,7 +451,7 @@ impl<'p> Checker<'p> {
         // The ambient `Date` value type (stdlib.md §3): applies only
         // when no program declaration shadows the name — a user class
         // named `Date` wins, exactly as for `Math`.
-        if name == "Date" && self.scope_item(name).is_none() {
+        if name == "Date" && self.type_scope_item(name).is_none() {
             if r.type_params.is_some() {
                 self.error(RuleCode::S100, "`Date` is not generic", pos);
                 return Type::Error;
@@ -459,7 +459,7 @@ impl<'p> Checker<'p> {
             return Type::Date;
         }
 
-        match self.scope_item(name) {
+        match self.type_scope_item(name) {
             Some(ScopeItem::Poisoned) => {
                 if let Some(arguments) = &r.type_params {
                     for argument in &arguments.params {
