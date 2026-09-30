@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use subscript_compiler::{check_program, hir, Diagnostic, RuleCode, SourceFile, Type};
+use subscript_compiler::{check_program, hir, Diagnostic, Pos, RuleCode, SourceFile, Type};
 
 fn interop_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop")
@@ -492,13 +492,13 @@ fn constructing_an_opaque_handle_is_rejected() {
 
 #[test]
 fn flag_set_alias_and_ambient_const_ingest() {
-    // The flag-set Q13 rule (u64 type alias + `declare const` members) has
-    // no instance in interop.h; this exercises the ingestion path via an
-    // inline mirror. A flag typedef becomes a `u64` alias; the constants
-    // become ambient globals of that alias, usable in `u64` bitwise ops.
+    // The flag-set Q13 rule through an inline mirror: a flag typedef
+    // becomes a `u64` alias, and each member is the accepted mirror
+    // constant form (compiler.md §136.1 rule 1), a folded `u64` value
+    // usable in `u64` bitwise ops.
     let extra = "type SubFlags = u64;\n\
-                 declare const SUB_FLAG_A: SubFlags;\n\
-                 declare const SUB_FLAG_B: SubFlags;\n";
+                 declare const SUB_FLAG_A = 1;\n\
+                 declare const SUB_FLAG_B = 2;\n";
     check_with_two_mirrors(
         extra,
         "export function main(): void {\n  const f: u64 = SUB_FLAG_A | SUB_FLAG_B;\n  print(`${f}`);\n}\n",
@@ -517,4 +517,85 @@ fn foreign_function_used_as_a_value_is_rejected() {
     let _ = code;
     let code2 = first_code("export function main(): void {\n  subDeviceRelease;\n}\n");
     assert_eq!(code2, RuleCode::S100);
+}
+
+/// The one diagnostic for a mirror variable declaration outside the
+/// accepted form (compiler.md §136.1 rule 2).
+fn mirror_variable_diagnostic(name: &str, line: u32, col: u32) -> (RuleCode, String, Pos) {
+    (
+        RuleCode::S100,
+        format!(
+            "mirror variable `{name}` is outside the decided surface; the one accepted \
+             form is `declare const X = <integer literal>;`"
+        ),
+        Pos::new("mirror.d.ts", line, col),
+    )
+}
+
+fn diagnostic_triples(errors: &[Diagnostic]) -> Vec<(RuleCode, String, Pos)> {
+    errors
+        .iter()
+        .map(|error| (error.code, error.message.clone(), error.pos.clone()))
+        .collect()
+}
+
+#[test]
+fn typed_mirror_constant_is_rejected_at_its_name() {
+    let errors = check_program(&[
+        SourceFile::ambient("mirror.d.ts", "declare const K: i32;"),
+        SourceFile::entry("main.ts", "export function main(): void { print(`${K}`); }"),
+    ])
+    .expect_err("a typed mirror constant carries no value");
+    assert_eq!(
+        diagnostic_triples(&errors),
+        vec![mirror_variable_diagnostic("K", 1, 15)]
+    );
+}
+
+#[test]
+fn every_other_mirror_variable_form_reports_once_at_its_name() {
+    let start = std::time::Instant::now();
+    // (declaration, column of the declared name, statements that use it)
+    for (form, col, uses) in [
+        ("declare const N: i32;", 15, "print(`${N}`);"),
+        ("declare let N: i32;", 13, "print(`${N}`); N = 3;"),
+        ("declare var N: i32;", 13, "print(`${N}`); N = 3;"),
+        ("declare let N = 1;", 13, "print(`${N}`); N = 3;"),
+        (
+            "declare const N: u64;",
+            15,
+            "const n: u64 = N | X; print(`${n}`);",
+        ),
+        ("declare const N;", 15, "print(`${N}`);"),
+        ("declare const N = 1.5;", 15, "print(`${N}`);"),
+        ("declare const N = -1;", 15, "print(`${N}`);"),
+        (
+            "declare const N = 18446744073709551616;",
+            15,
+            "print(`${N}`);",
+        ),
+    ] {
+        let mirror = format!("declare const X = 1;\n{form}\n");
+        let errors = check_program(&[
+            SourceFile::ambient("mirror.d.ts", mirror.as_str()),
+            SourceFile::entry(
+                "main.ts",
+                format!("export function main(): void {{ print(`${{X}}`); {uses} }}"),
+            ),
+        ])
+        .expect_err(form);
+        assert_eq!(
+            diagnostic_triples(&errors),
+            vec![mirror_variable_diagnostic("N", 2, col)],
+            "{form}"
+        );
+    }
+    // Control: the accepted form in the same mirror checks clean and folds.
+    let module = check_program(&[
+        SourceFile::ambient("mirror.d.ts", "declare const X = 1;\n"),
+        SourceFile::entry("main.ts", "export function main(): void { print(`${X}`); }"),
+    ])
+    .expect("the accepted mirror constant form");
+    assert!(module.globals.is_empty(), "{:?}", module.globals);
+    eprintln!("mirror variable forms: {:?}", start.elapsed());
 }

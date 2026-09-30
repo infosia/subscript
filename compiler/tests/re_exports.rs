@@ -286,7 +286,7 @@ fn discovery_re_exports_poison_missing_sources_and_record_names() {
 
 #[test]
 fn mirror_export_lists_stay_outside_the_surface() {
-    for source in ["export {};", "declare const value: i32; export { value };"] {
+    for source in ["export {};", "declare const value = 1; export { value };"] {
         let errors = check_program(&[SourceFile::ambient("mirror.d.ts", source)])
             .expect_err("mirror export list");
         assert_eq!(errors.len(), 1);
@@ -298,7 +298,7 @@ fn mirror_export_lists_stay_outside_the_surface() {
     }
     check_program(&[SourceFile::ambient(
         "mirror.d.ts",
-        "declare const value: i32;",
+        "declare const value = 1;",
     )])
     .expect("mirror declaration");
     check_program(&[SourceFile::entry("main.ts", "export {};")]).expect("program export list");

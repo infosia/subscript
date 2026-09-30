@@ -1,6 +1,6 @@
 //! Module declaration identities (§125) and entry-module host names (§129).
 
-use subscript_compiler::{check_program, RuleCode, SourceFile};
+use subscript_compiler::{check_program, Pos, RuleCode, SourceFile};
 
 fn files(first: &str, second: &str) -> Vec<SourceFile> {
     vec![
@@ -254,30 +254,44 @@ fn builtin_error_diagnostics_keep_source_and_module_names() {
 
 #[test]
 fn each_mirror_scope_kind_yields_to_the_module_scope() {
-    for (mirror, sibling) in [
+    // (mirror, sibling, the first diagnostic when the sibling declares its own
+    // `K`: its code and column in `lib.ts`)
+    for (mirror, sibling, code, col) in [
         (
-            "declare const K: string;",
-            "function read(): string { return K; }",
+            "declare const K = 1;",
+            "function read(): u64 { return K; }",
+            RuleCode::S007,
+            47,
         ),
         (
             "declare function K(): i32;",
             "function read(): i32 { return K(); }",
+            RuleCode::S100,
+            47,
         ),
         (
             "interface K {}",
             "function read(value: K): K { return value; }",
+            RuleCode::S016,
+            38,
         ),
         (
             "declare class K { value: i32; }",
             "function read(value: K): i32 { return value.value; }",
+            RuleCode::S016,
+            38,
         ),
         (
             "declare enum K { One = 1 }",
             "function read(): K { return K.One; }",
+            RuleCode::S016,
+            34,
         ),
         (
             "type K = \"one\" | \"two\";",
             "function read(): K { return \"one\"; }",
+            RuleCode::S016,
+            34,
         ),
     ] {
         let input = [
@@ -294,7 +308,13 @@ fn each_mirror_scope_kind_yields_to_the_module_scope() {
         check_program(&input).unwrap_or_else(|errors| panic!("{mirror}: {errors:?}"));
         let mut hidden = input.clone();
         hidden[2] = SourceFile::new("lib.ts", format!("let K: i32 = 7; {sibling}"));
-        check_program(&hidden).expect_err("local value hides the mirror in the sibling too");
+        let errors =
+            check_program(&hidden).expect_err("local value hides the mirror in the sibling too");
+        assert_eq!(
+            (errors[0].code, errors[0].pos.clone()),
+            (code, Pos::new("lib.ts", 1, col)),
+            "{mirror}: {errors:?}"
+        );
     }
 }
 

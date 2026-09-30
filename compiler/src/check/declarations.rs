@@ -801,8 +801,11 @@ impl<'p> Checker<'p> {
         self.register_scope_item(file, &name, ScopeItem::Class(id), pos);
     }
 
-    /// A mirror `declare const` (enum/flag constant, Q13): a read-only
-    /// ambient global of the given type. Type resolved in pass B.
+    /// A mirror `declare const X = <integer literal>;` (flag constant,
+    /// Q13): a read-only ambient global whose value pass B folds. Every
+    /// other mirror variable declaration is one S100 at the declared name,
+    /// and the name binds poisoned, so a use reports nothing more
+    /// (compiler.md §136.1 rules 1 and 2).
     fn collect_ambient_consts(&mut self, file: usize, v: &ast::VarDecl) {
         for d in &v.decls {
             let ast::Pat::Ident(binding) = &d.name else {
@@ -811,6 +814,18 @@ impl<'p> Checker<'p> {
             };
             let name = binding.id.sym.to_string();
             let pos = self.pos(binding.id.span);
+            if mirror_const_value(v, d).is_none() {
+                self.error(
+                    RuleCode::S100,
+                    format!(
+                        "mirror variable `{name}` is outside the decided surface; the one \
+                         accepted form is `declare const X = <integer literal>;`"
+                    ),
+                    pos.clone(),
+                );
+                self.register_scope_item(file, &name, ScopeItem::Poisoned, pos);
+                continue;
+            }
             self.register_scope_item(
                 file,
                 &name,

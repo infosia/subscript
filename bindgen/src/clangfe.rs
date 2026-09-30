@@ -87,8 +87,29 @@ pub struct Constant {
     /// Base type spelling (`const`/`struct` stripped), e.g. `int`,
     /// `SubFlags`.
     pub type_base: String,
-    /// Evaluated integer value.
+    /// Evaluated integer value, as the two's-complement bits of the C value.
     pub value: i64,
+}
+
+impl Constant {
+    /// The mirror value of this constant as a `static const` member of
+    /// `alias`, whose language scalar is `scalar` (compiler.md §136.1
+    /// rule 1a): the unsigned value of the alias width. A member of any
+    /// other scalar alias is an error that names the constant and alias.
+    pub(crate) fn flag_member_value(&self, alias: &str, scalar: &str) -> Result<u64, ParseError> {
+        let bits = self.value as u64;
+        match scalar {
+            "u8" => Ok(bits & u64::from(u8::MAX)),
+            "u16" => Ok(bits & u64::from(u16::MAX)),
+            "u32" => Ok(bits & u64::from(u32::MAX)),
+            "u64" => Ok(bits),
+            _ => Err(ParseError(format!(
+                "`static const` member `{}` of alias `{alias}` is outside the mirror surface: \
+                 a member needs an unsigned integer alias (u8, u16, u32, u64)",
+                self.name
+            ))),
+        }
+    }
 }
 
 /// A scalar `typedef` alias (`typedef <base> <name>;`).

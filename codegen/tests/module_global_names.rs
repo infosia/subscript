@@ -195,18 +195,27 @@ fn allocation_metadata_distinguishes_builtin_and_module_error() {
     }
 }
 
+/// compiler.md §136.1 rules 1 and 1a: a mirror constant value lowers and
+/// prints as its `u64` value on every engine, up to the all-bits value
+/// that `bind` emits for `~(uint64_t)0`. The rejected forms are in
+/// `compiler/tests/interop_mirror.rs`.
 #[test]
-fn typed_mirror_global_lowering_errors_use_source_names() {
-    let body = "print(`${K}`);";
+fn mirror_constant_values_print_as_u64_on_every_engine() {
+    let start = std::time::Instant::now();
     let files = [
-        SourceFile::ambient("mirror.d.ts", "declare const K: i32;"),
+        SourceFile::ambient(
+            "mirror.d.ts",
+            "declare const K = 11;\ndeclare const F_ALL = 18446744073709551615;\n",
+        ),
         SourceFile::entry(
             "main.ts",
-            format!("export function main(): void {{ {body} }}"),
+            "export function main(): void { const all: u64 = F_ALL; print(`${K} ${F_ALL} ${all === F_ALL} ${F_ALL - K}`); }",
         ),
     ];
-    let hir = check_program(&files).expect("typed mirror global checks");
-    let error = lower_module(&hir).expect_err("typed mirror global has no storage");
-    assert_eq!(error.message, "unknown global `K`");
-    eprintln!("typed mirror global: {error}");
+    let expected = b"11 18446744073709551615 true 18446744073709551604\n";
+    let module = lower_module(&check_program(&files).expect("mirror values")).expect("LIR");
+    assert_eq!(interpret(&module).expect("interpreter"), expected);
+    assert_eq!(run_jit(&files).expect("dev JIT"), expected);
+    assert_eq!(run_c_aot(&files).expect("ship C"), expected);
+    eprintln!("mirror constants on every engine: {:?}", start.elapsed());
 }

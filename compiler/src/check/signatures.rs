@@ -3,7 +3,7 @@ use super::*;
 impl<'p> Checker<'p> {
     /// Pass B for a mirror file: resolves type aliases first (so later
     /// declarations may reference them), then boundary-struct shapes,
-    /// foreign-function signatures, and ambient-constant types. Runs with
+    /// foreign-function signatures, and ambient-constant values. Runs with
     /// `in_boundary` set so the boundary null forms are legal.
     pub(super) fn resolve_mirror_signatures(&mut self, file: usize) {
         let module = &self.prog.files[file].module;
@@ -137,41 +137,26 @@ impl<'p> Checker<'p> {
                 }
                 ast::Decl::Var(v) => {
                     for d in &v.decls {
-                        let ast::Pat::Ident(binding) = &d.name else {
+                        // Pass A reports every other form and binds its
+                        // name poisoned (compiler.md §136.1 rule 2).
+                        let (ast::Pat::Ident(binding), Some(value)) =
+                            (&d.name, mirror_const_value(v, d))
+                        else {
                             continue;
                         };
-                        let name = binding.id.sym.to_string();
-                        let ty = match &binding.type_ann {
-                            Some(ann) => self.resolve_type(&ann.type_ann),
-                            None => match d.init.as_deref().and_then(int_literal_value) {
-                                // A mirror flag member (§13.2):
-                                // `declare const X = <int literal>;`. tsc
-                                // accepts a bare literal initializer on an
-                                // ambient const only without a type
-                                // annotation, so the value travels here and
-                                // the `u64` flag type is supplied by rule.
-                                Some(value) => {
-                                    self.ambient_int_consts.insert(
-                                        self.declaration_symbol(file, &name),
-                                        (value, Type::U64),
-                                    );
-                                    Type::U64
-                                }
-                                None => {
-                                    let pos = self.pos(binding.id.span);
-                                    self.error(
-                                        RuleCode::S100,
-                                        "ambient constants require a type annotation \
-                                         or an integer-literal initializer",
-                                        pos,
-                                    );
-                                    Type::Error
-                                }
-                            },
-                        };
+                        // A mirror flag member (§13.2): tsc accepts a bare
+                        // literal initializer on an ambient const only
+                        // without a type annotation, so the value travels
+                        // here and the `u64` flag type is supplied by rule.
+                        let symbol = self.declaration_symbol(file, &binding.id.sym);
+                        self.ambient_int_consts
+                            .insert(symbol.clone(), (value, Type::U64));
                         self.global_sigs.insert(
-                            self.declaration_symbol(file, &name),
-                            GlobalSig { ty, mutable: false },
+                            symbol,
+                            GlobalSig {
+                                ty: Type::U64,
+                                mutable: false,
+                            },
                         );
                     }
                 }

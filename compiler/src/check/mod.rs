@@ -200,6 +200,19 @@ fn int_literal_value(e: &ast::Expr) -> Option<i64> {
     }
 }
 
+/// The value of a mirror variable declarator in the one accepted form,
+/// `declare const X = <integer literal>;` (compiler.md §136.1 rule 1).
+/// Every other form gives `None`.
+fn mirror_const_value(v: &ast::VarDecl, d: &ast::VarDeclarator) -> Option<i64> {
+    let ast::Pat::Ident(binding) = &d.name else {
+        return None;
+    };
+    if !v.declare || v.kind != ast::VarDeclKind::Const || binding.type_ann.is_some() {
+        return None;
+    }
+    d.init.as_deref().and_then(int_literal_value)
+}
+
 /// One declared parameter in a signature.
 #[derive(Debug, Clone)]
 pub(crate) struct ParamSig {

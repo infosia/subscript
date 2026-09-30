@@ -145,10 +145,10 @@ pub fn emit_for_header(
 
     // Flag typedefs (§13.2): a scalar `typedef` alias emitted as a
     // `type X = <scalar>` plus its `static const` members as `declare const`
-    // globals. The member value is folded into the mirror (a bare literal
-    // initializer, which tsc accepts on an ambient const only without a
-    // type annotation); the language types such a mirror member `u64` and
-    // folds the value at each reference. Emitted after the declarations; TS
+    // globals. The member value is the unsigned value of the alias width, and
+    // a member of a signed or non-integer alias fails (§136.1 rule 1a); tsc
+    // accepts the bare literal on an ambient const without an annotation, and
+    // the language types the member `u64`. Emitted after the declarations; TS
     // hoists type aliases, so a foreign signature using the alias may
     // precede it here.
     for alias in &parsed.aliases {
@@ -163,10 +163,13 @@ pub fn emit_for_header(
             continue;
         };
         let mut block = format!("type {} = {scalar};", alias.name);
-        for c in &parsed.constants {
-            if c.type_base == alias.name {
-                block.push_str(&format!("\ndeclare const {} = {};", c.name, c.value));
-            }
+        for c in parsed
+            .constants
+            .iter()
+            .filter(|c| c.type_base == alias.name)
+        {
+            let value = c.flag_member_value(&alias.name, scalar)?;
+            block.push_str(&format!("\ndeclare const {} = {value};", c.name));
         }
         blocks.push(block);
     }

@@ -140,3 +140,51 @@ fn over_aligned_record_fails_loud() {
         "bindgen: record `A` is explicitly aligned to 16 bytes; the language cannot reproduce that alignment"
     );
 }
+
+/// compiler.md §136.1 rule 1a: an unsigned alias member prints as the
+/// unsigned value of the alias width.
+#[test]
+fn unsigned_flag_members_print_as_unsigned_values_of_their_width() {
+    let header = "#include <stdint.h>\n\
+                  typedef uint64_t F; static const F F_ALL = ~(uint64_t)0;\n\
+                  typedef uint32_t H; static const H H_ALL = ~(uint32_t)0;\n\
+                  typedef uint16_t S; static const S S_ALL = (S)-1;\n\
+                  typedef uint8_t B; static const B B_ALL = 255; static const B B_ONE = 1;\n";
+    let mirror = generate(header).expect("unsigned flag members bind");
+    for expect in [
+        "declare const F_ALL = 18446744073709551615;",
+        "declare const H_ALL = 4294967295;",
+        "declare const S_ALL = 65535;",
+        "declare const B_ALL = 255;",
+        "declare const B_ONE = 1;",
+    ] {
+        assert!(mirror.contains(expect), "missing `{expect}` in:\n{mirror}");
+    }
+}
+
+/// compiler.md §136.1 rule 1a: a member of a signed alias fails `bind`,
+/// and the message names the constant and its alias.
+#[test]
+fn a_signed_alias_member_fails_bind_naming_the_constant_and_alias() {
+    for (header, constant, alias) in [
+        (
+            "#include <stdint.h>\ntypedef int32_t G; static const G G_NEG = -1;\n",
+            "G_NEG",
+            "G",
+        ),
+        (
+            "#include <stdint.h>\ntypedef int64_t P; static const P P_ONE = 1;\n",
+            "P_ONE",
+            "P",
+        ),
+    ] {
+        let error = generate(header).expect_err("a signed alias member fails bind");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "bindgen: `static const` member `{constant}` of alias `{alias}` is outside the mirror \
+                 surface: a member needs an unsigned integer alias (u8, u16, u32, u64)"
+            ),
+        );
+    }
+}
