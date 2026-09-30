@@ -180,3 +180,4 @@ Every section, with its status:
 | §136 | A mirror constant carries its value | active | [`s136-a-mirror-constant-carries-its-value.md`](compiler/s136-a-mirror-constant-carries-its-value.md) |
 | §137 | Modules initialize in dependency post-order | active | [`s137-modules-initialize-in-dependency-post-order.md`](compiler/s137-modules-initialize-in-dependency-post-order.md) |
 | §138 | A generic instance body sees every module global | active | [`s138-a-generic-instance-body-sees-every-module-global.md`](compiler/s138-a-generic-instance-body-sees-every-module-global.md) |
+| §139 | A `using` in a top-level block disposes at the block exit | active | [`s139-a-using-in-a-top-level-block-disposes.md`](compiler/s139-a-using-in-a-top-level-block-disposes.md) |
