@@ -41,7 +41,7 @@ export function init(): void {
       [1],
     ),
   );
-  if (appliedFlags !== ENGINE_ENTITY_FLAG_NONE) {
+  if (appliedFlags != ENGINE_ENTITY_FLAG_NONE) {
     // Q14: fractional output uses the runtime formatter, not host libc.
     print(`script:init step=${fixedStep}`);
   }
@@ -55,7 +55,7 @@ export function update(): void {
   const world: EngineWorld = engineFrameWorld();
   const fixedStep: f32 = engineFrameFixedStep();
   const frameIndex: u64 = engineFrameIndex();
-  if (session !== null) {
+  if (session != null) {
     session.distance += fixedStep;
     engineWorldSetTransform(
       world,
@@ -77,7 +77,7 @@ export function update(): void {
     new EngineEntityState(0, emptyTransform(), ENGINE_ENTITY_FLAG_NONE),
   ];
   const stateCount: u64 = engineWorldReadEntities(world, states);
-  if (stateCount !== 0) {
+  if (stateCount != 0) {
     // Q14: positions and fixed time remain script-formatted floats.
     print(
       `script:update x=${states[0].engineTransform.engineX},step=${fixedStep}`,

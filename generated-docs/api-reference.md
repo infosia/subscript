@@ -746,7 +746,7 @@ subscript:
 ```ts
 export function main(): void {
   const value: f64 = Math.random();
-  if (value === 0.7085450778517304) {
+  if (value == 0.7085450778517304) {
     print("context-sequence");
   } else {
     print("host-sequence");
@@ -911,7 +911,7 @@ class Box {
 export function main(): void {
   const values: Map<string, Box> = new Map<string, Box>();
   const missing: Box | null = values.get("missing");
-  print(`${missing === null}`);
+  print(`${missing == null}`);
 }
 ```
 

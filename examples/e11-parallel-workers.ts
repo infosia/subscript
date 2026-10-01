@@ -33,7 +33,7 @@ function isPrime(value: i32): boolean {
   }
   let divisor: i32 = 2;
   while (divisor * divisor <= value) {
-    if (value % divisor === 0) {
+    if (value % divisor == 0) {
       return false;
     }
     divisor += 1;
@@ -47,7 +47,7 @@ function countPrimes(inbox: Inbox<PrimeRange>, outbox: Outbox<PrimeCount>): void
   // Q35: wait blocks on the worker's own thread only. It returns null after
   // the parent closes the inbox and the queue drains.
   const range: PrimeRange | null = inbox.wait();
-  if (range === null) {
+  if (range == null) {
     return;
   }
   let count: i32 = 0;
@@ -99,7 +99,7 @@ export function main(): void {
   // C7: poll returns PrimeCount | null, so each result narrows before a field
   // read. The four counts and the total are fixed, because the ranges do not
   // overlap and the parent adds them in worker order.
-  if (result0 !== null && result1 !== null && result2 !== null && result3 !== null) {
+  if (result0 != null && result1 != null && result2 != null && result3 != null) {
     print(`worker0=${result0.count}`);
     print(`worker1=${result1.count}`);
     print(`worker2=${result2.count}`);

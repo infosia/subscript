@@ -462,7 +462,7 @@ class EchoMessage {
 
 function echo(inbox: Inbox<EchoMessage>, outbox: Outbox<EchoMessage>): void {
   const message: EchoMessage | null = inbox.wait();
-  if (message !== null) {
+  if (message != null) {
     outbox.post(new EchoMessage(message.value * 2));
   }
 }
@@ -473,7 +473,7 @@ export function update(): void {
   worker.close();
   worker.join();
   const reply: EchoMessage | null = worker.poll();
-  if (reply !== null) {
+  if (reply != null) {
     print(`echo=${reply.value}`);
   }
 }

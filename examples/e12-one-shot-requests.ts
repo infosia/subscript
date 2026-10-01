@@ -44,8 +44,8 @@ function startRequest(
   // option; only the lifetime of the crossing differs.
   const info: EngineRequestInfo = new EngineRequestInfo(
     (message, userdata1, userdata2) => {
-      if (userdata1 !== null) {
-        // C7/Q13: !== null removes null from object | null, and C1 names
+      if (userdata1 != null) {
+        // C7/Q13: != null removes null from object | null, and C1 names
         // Request as the distinct nominal target of the checked cast.
         // §111 rule 4: the host passes the registration back in the
         // first userdata slot, and the runtime answers with the object.

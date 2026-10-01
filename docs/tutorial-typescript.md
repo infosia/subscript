@@ -208,6 +208,12 @@ taught you. Here the compiler requires it.
 `a ?? b` works when `a` has type `Ref | null`. It reads `a` once, and
 it evaluates `b` only when `a` is `null`.
 
+`==` and `!=` mean `===` and `!==` here; `==` and `===` are one operator.
+No coercion happens: `tsc` rejects comparisons of unrelated types, and the language has no `undefined`.
+A miss of `Map.get` or `find` is `null` here and `undefined` in JavaScript, so test it with `== null`:
+that test gives the same result in both.
+See [`compiler.md` §144](../specs/blocks/compiler.md).
+
 ```ts
 class Node {
   value: i32;
@@ -220,8 +226,8 @@ class Node {
 
 function find(head: Node | null, value: i32): Node | null {
   let cursor: Node | null = head;
-  while (cursor !== null) {
-    if (cursor.value === value) {
+  while (cursor != null) {
+    if (cursor.value == value) {
       return cursor;
     }
     cursor = cursor.next;
@@ -625,12 +631,12 @@ class Tally {
 
 function countEven(inbox: Inbox<Job>, outbox: Outbox<Tally>): void {
   const job: Job | null = inbox.wait();
-  if (job === null) {
+  if (job == null) {
     return;
   }
   let count: i32 = 0;
   for (let n: i32 = job.from; n < job.to; n += 1) {
-    if (n % 2 === 0) {
+    if (n % 2 == 0) {
       count += 1;
     }
   }
@@ -648,7 +654,7 @@ export function main(): void {
   right.join();
   const a: Tally | null = left.poll();
   const b: Tally | null = right.poll();
-  if (a !== null && b !== null) {
+  if (a != null && b != null) {
     print(`left=${a.count} right=${b.count} total=${a.count + b.count}`);
   }
 }
@@ -717,7 +723,7 @@ export function init(): void {
 }
 
 export function update(dt: f32): void {
-  if (session !== null) {
+  if (session != null) {
     session.distance += dt;
   }
 }

@@ -170,7 +170,7 @@ export function main(): void {
   const head: Node = new Node(1, new Node(2, null));
   let cursor: Node | null = head;
   let sum: i32 = 0;
-  while (cursor !== null) {
+  while (cursor != null) {
     sum += cursor.value;
     cursor = cursor.next;
   }
@@ -845,7 +845,7 @@ class EventLog { hits: i32 = 0; }
 const log: EventLog = new EventLog();     // script-side reference class
 const sink: EngineEventSink = new EngineEventSink(
   (message, userdata1, userdata2) => {    // non-capturing (C5)
-    if (userdata1 !== null) {
+    if (userdata1 != null) {
       const eventLog = userdata1 as EventLog;  // checked nominal cast
       eventLog.hits = eventLog.hits + 1;
     }
@@ -1080,7 +1080,7 @@ function startRequest(
 ): i32 {
   const info: EngineRequestInfo = new EngineRequestInfo(
     (message, userdata1, userdata2) => {
-      if (userdata1 !== null) {
+      if (userdata1 != null) {
         const state = userdata1 as Request;
         print(`done ${state.name} ${state.steps.length + message.length}`);
         if (state.follows > 0) {
@@ -1272,7 +1272,7 @@ class Total {
 
 function accumulate(inbox: Inbox<Job>, outbox: Outbox<Total>): void {
   const job: Job | null = inbox.wait();   // blocks on the worker's own thread
-  if (job === null) {
+  if (job == null) {
     return;                               // the parent closed the inbox
   }
   let sum: i32 = 0;
@@ -1295,7 +1295,7 @@ export function main(): void {
   b.join();
   const first: Total | null = a.poll();   // never blocks
   const second: Total | null = b.poll();
-  if (first !== null && second !== null) {
+  if (first != null && second != null) {
     print(`a=${first.sum} b=${second.sum} total=${first.sum + second.sum}`);
   }
 }

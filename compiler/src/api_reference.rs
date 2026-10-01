@@ -273,7 +273,7 @@ console.log(`${value.charCodeAt(0)}|${value.charAt(2)}|${String(value.codePointA
         summary: "A fresh Context starts a fixed host-reseedable sequence; Node uses its host PRNG.",
         subscript: r#"export function main(): void {
   const value: f64 = Math.random();
-  if (value === 0.7085450778517304) {
+  if (value == 0.7085450778517304) {
     print("context-sequence");
   } else {
     print("host-sequence");
@@ -389,7 +389,7 @@ console.log(value === 0.7085450778517304 ? "context-sequence" : "host-sequence")
 export function main(): void {
   const values: Map<string, Box> = new Map<string, Box>();
   const missing: Box | null = values.get("missing");
-  print(`${missing === null}`);
+  print(`${missing == null}`);
 }
 "#,
         javascript: r#"console.log(`${new Map().get("missing") === null}`);
@@ -697,7 +697,7 @@ mod tests {
                     .to_string()
             }
             ("Date", "direct comparison") => {
-                "export function main(): void {\n  const a: Date = new Date(0);\n  const b: Date = new Date(1);\n  print(`${a === b}`);\n}\n"
+                "export function main(): void {\n  const a: Date = new Date(0);\n  const b: Date = new Date(1);\n  print(`${a == b}`);\n}\n"
                     .to_string()
             }
             ("Date", "set*") => {

@@ -68,14 +68,14 @@ export function main(): void {
   // explicitly as userdata and remain alive through each later pump.
   const sink: EngineEventSink = new EngineEventSink(
     (message, userdata1, userdata2) => {
-      if (userdata1 !== null) {
-        // C7/Q13: !== null removes null from object | null; C1 identifies
+      if (userdata1 != null) {
+        // C7/Q13: != null removes null from object | null; C1 identifies
         // EventLog as the distinct nominal target of the checked narrowing.
         const eventLog = userdata1 as EventLog;
         eventLog.hits = eventLog.hits + 1;
         eventLog.bytes = eventLog.bytes + message.length;
       }
-      if (userdata2 !== null) {
+      if (userdata2 != null) {
         // C7/Q13: the second object | null slot narrows independently; C1
         // identifies EventCounter as its distinct nominal target.
         const eventCounter = userdata2 as EventCounter;

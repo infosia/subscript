@@ -22,7 +22,7 @@ class DivisionResult {
 // flag states which outcome the value carries. This stays one accepted
 // style beside exceptions (C6).
 function divide(numerator: f64, denominator: f64): DivisionResult {
-  if (denominator === 0.0) {
+  if (denominator == 0.0) {
     return new DivisionResult(false, 0.0);
   }
   return new DivisionResult(true, numerator / denominator);
@@ -31,7 +31,7 @@ function divide(numerator: f64, denominator: f64): DivisionResult {
 // compiler.md §115.2: `throw` takes an Error, SyntaxError, or TypeError
 // object. `throw "text"` is S010; corpus/reject/r11-throw.ts pins it.
 function ratio(numerator: f64, denominator: f64): f64 {
-  if (denominator === 0.0) {
+  if (denominator == 0.0) {
     throw new Error("division by zero");
   }
   return numerator / denominator;
