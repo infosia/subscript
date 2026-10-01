@@ -101,7 +101,9 @@ impl<'p> Checker<'p> {
             InstanceRestriction::PartialValueLayout => !matches!(apparent, Type::Error),
             InstanceRestriction::ContainerArgument => !matches!(apparent, Type::Error),
             InstanceRestriction::NullableShape => !matches!(apparent, Type::Error),
-            InstanceRestriction::AggregateLayout => matches!(ty, Type::FixedArray(_, _)),
+            InstanceRestriction::AggregateLayout => {
+                matches!(&self.apparent_type(ty), Type::FixedArray(_, _))
+            }
             InstanceRestriction::SwitchKind => !matches!(apparent, Type::Error),
             InstanceRestriction::CastKind => !matches!(apparent, Type::Error),
             InstanceRestriction::RelationalKind => {
@@ -201,6 +203,25 @@ impl<'p> Checker<'p> {
                 result
             }
             Type::Nullable(inner) => Type::nullable(self.resolve_apparent_type(inner, seen)),
+            Type::GenericUnion(members) => {
+                let mut shapes = Vec::new();
+                for member in members.iter() {
+                    let shape = self.resolve_apparent_type(member, seen);
+                    if !shapes.contains(&shape) {
+                        shapes.push(shape);
+                    }
+                }
+                if shapes
+                    .iter()
+                    .all(|shape| shape.is_numeric() || matches!(shape, Type::GenericNumber))
+                {
+                    return Type::GenericNumber;
+                }
+                if shapes.len() == 1 {
+                    return shapes.remove(0);
+                }
+                Type::GenericUnion(shapes.into_boxed_slice())
+            }
             _ => ty.clone(),
         }
     }

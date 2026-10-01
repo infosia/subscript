@@ -40,7 +40,7 @@ impl<'p> Checker<'p> {
                     crate::check::opaque::InstanceRestriction::UnaryNumeric,
                     &operand.ty,
                 ) && !matches!(apparent, Type::Nullable(_));
-                if operand.ty == Type::F16 {
+                if !parameter && apparent == Type::F16 {
                     self.error_diverging(
                         RuleCode::S014,
                         "arithmetic on `f16` is not supported; compute via `as f32`",
@@ -77,7 +77,7 @@ impl<'p> Checker<'p> {
                 if !self.instance_restriction(
                     crate::check::opaque::InstanceRestriction::BooleanContext,
                     &operand.ty,
-                ) && !matches!(operand.ty, Type::Bool | Type::Error)
+                ) && !matches!(self.apparent_type(&operand.ty), Type::Bool | Type::Error)
                 {
                     let name = self.type_name(&operand.ty);
                     self.error(
@@ -224,7 +224,12 @@ impl<'p> Checker<'p> {
             }
         }
         let target_ty = self.apparent_type(place.ty());
-        if !target_ty.is_numeric() && !matches!(target_ty, Type::GenericNumber | Type::Error) {
+        if !self.apparent_type(&target_ty).is_numeric()
+            && !matches!(
+                self.apparent_type(&target_ty),
+                Type::GenericNumber | Type::Error
+            )
+        {
             let name = self.type_name(&target_ty);
             self.error(
                 RuleCode::S100,
@@ -436,7 +441,7 @@ impl<'p> Checker<'p> {
                     if !self.instance_restriction(
                         crate::check::opaque::InstanceRestriction::BooleanContext,
                         &side.ty,
-                    ) && !matches!(side.ty, Type::Bool | Type::Error)
+                    ) && !matches!(self.apparent_type(&side.ty), Type::Bool | Type::Error)
                     {
                         let name = self.type_name(&side.ty);
                         self.error(
@@ -450,7 +455,7 @@ impl<'p> Checker<'p> {
                     || self.involves_type_parameter(&right.ty)
                 {
                     if b.op == B::LogicalAnd
-                        && right.ty == Type::Bool
+                        && self.apparent_type(&(right.ty)) == Type::Bool
                         && !matches!(self.apparent_type(&left.ty), Type::Nullable(_))
                     {
                         Type::Bool
@@ -497,19 +502,21 @@ impl<'p> Checker<'p> {
             _ => {
                 let arith = matches!(b.op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
                 let outer: Option<Type> = if arith { ctx.cloned() } else { None };
-                let literal_ctx = |t: &Type| -> Option<Type> {
-                    (t.is_numeric() || matches!(t, Type::StringAlias(_))).then(|| t.clone())
+                let literal_ctx = |checker: &Self, t: &Type| -> Option<Type> {
+                    (checker.apparent_type(t).is_numeric()
+                        || matches!(checker.apparent_type(t), Type::StringAlias(_)))
+                    .then(|| t.clone())
                 };
                 let (left, right);
                 if literalish(&b.left) && !literalish(&b.right) {
                     let r = self.check_expr(&b.right, outer.as_ref(), fx);
-                    let c = literal_ctx(&r.ty).or(outer);
+                    let c = literal_ctx(self, &r.ty).or(outer);
                     left = self.check_expr(&b.left, c.as_ref(), fx);
                     right = r;
                 } else {
                     left = self.check_expr(&b.left, outer.as_ref(), fx);
                     let c = if literalish(&b.right) {
-                        literal_ctx(&left.ty).or(outer)
+                        literal_ctx(self, &left.ty).or(outer)
                     } else {
                         outer
                     };
@@ -528,7 +535,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let plan = self.check_optional_plan(chain, fx);
-        if plan.value.ty == Type::Error {
+        if self.apparent_type(&(plan.value.ty)) == Type::Error {
             return self.err_expr(pos);
         }
         let name = self.type_name(&plan.value.ty);
@@ -551,7 +558,7 @@ impl<'p> Checker<'p> {
         let pos = self.pos(chain.span);
         let plan = self.check_optional_plan(chain, fx);
         let mut out = Vec::new();
-        if plan.value.ty == Type::Error {
+        if self.apparent_type(&(plan.value.ty)) == Type::Error {
             out.push(hir::Stmt::Expr(self.err_expr(pos)));
             return out;
         }
@@ -590,7 +597,7 @@ impl<'p> Checker<'p> {
         let mut ends_in_call = false;
         let mut index = 0;
 
-        if current.ty == Type::Error {
+        if self.apparent_type(&(current.ty)) == Type::Error {
             return OptionalPlan {
                 tests,
                 value: current,
@@ -716,7 +723,7 @@ impl<'p> Checker<'p> {
                 false,
             ),
             ast::MemberProp::Computed(property) => {
-                let index_context = match &receiver.ty {
+                let index_context = match &self.apparent_type(&receiver.ty) {
                     Type::Class(id) => self.classes[id.0]
                         .index_signature
                         .as_ref()
@@ -747,7 +754,7 @@ impl<'p> Checker<'p> {
         }
 
         let left = self.check_expr(&binary.left, None, fx);
-        if left.ty == Type::Error {
+        if self.apparent_type(&(left.ty)) == Type::Error {
             return self.err_expr(pos);
         }
         if self.involves_type_parameter(&left.ty) {
@@ -790,11 +797,11 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        if plan.value.ty == Type::Error {
+        if self.apparent_type(&(plan.value.ty)) == Type::Error {
             return self.err_expr(pos);
         }
         let value_ty = plan.value.ty.clone();
-        match value_ty {
+        match self.apparent_type(&value_ty) {
             Type::Nullable(inner) => {
                 let (test, value) =
                     self.stabilize_nullable_operand(plan.value, (*inner).clone(), fx);
@@ -824,7 +831,7 @@ impl<'p> Checker<'p> {
         if right.ty == nullable {
             return nullable;
         }
-        if right.ty != Type::Error {
+        if self.apparent_type(&(right.ty)) != Type::Error {
             self.require_assignable(&right.ty.clone(), inner, right.pos.clone(), what);
         }
         Type::Error
@@ -836,8 +843,8 @@ impl<'p> Checker<'p> {
         what: &str,
         divergence: Divergence,
     ) -> Option<Type> {
-        if let Type::Nullable(inner) = &operand.ty {
-            return Some((**inner).clone());
+        if let Type::Nullable(_) = self.apparent_type(&operand.ty) {
+            return Some(self.non_null_type(&operand.ty));
         }
         let name = self.type_name(&operand.ty);
         self.error_diverging(
@@ -1012,7 +1019,10 @@ impl<'p> Checker<'p> {
         let rt = self.apparent_type(&right.ty);
         let parameter =
             self.involves_type_parameter(&left.ty) || self.involves_type_parameter(&right.ty);
-        let numeric = |ty: &Type| ty.is_numeric() || matches!(ty, Type::GenericNumber);
+        let numeric = |ty: &Type| {
+            self.apparent_type(ty).is_numeric()
+                || matches!(&self.apparent_type(ty), Type::GenericNumber)
+        };
         let numeric_pair = numeric(&lt)
             && numeric(&rt)
             && (lt == rt
@@ -1128,7 +1138,8 @@ impl<'p> Checker<'p> {
                                     &right.ty
                                 },
                             ))
-                        || (same_parameter && !matches!(left.ty, Type::Nullable(_)))
+                        || (same_parameter
+                            && !matches!(self.apparent_type(&left.ty), Type::Nullable(_)))
                         || (parameter
                             && ((self.is_unconstrained_type_parameter(&left.ty)
                                 && matches!(rt, Type::Str | Type::Bool))
@@ -1186,7 +1197,7 @@ impl<'p> Checker<'p> {
                     hop,
                     if operand_error {
                         Type::Error
-                    } else if parameter && ty.is_numeric() {
+                    } else if parameter && self.apparent_type(&ty).is_numeric() {
                         Type::GenericNumber
                     } else {
                         ty
@@ -1315,7 +1326,7 @@ impl<'p> Checker<'p> {
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::BooleanContext,
             &cond.ty,
-        ) && !matches!(cond.ty, Type::Bool | Type::Error)
+        ) && !matches!(self.apparent_type(&cond.ty), Type::Bool | Type::Error)
         {
             let name = self.type_name(&cond.ty);
             self.error(
@@ -1339,7 +1350,10 @@ impl<'p> Checker<'p> {
         fx.narrowed = base;
         fx.finish_narrowing_join(&note_paths);
 
-        let ty = if let Some(context) = ctx {
+        let ty = if self.involves_type_parameter(&then.ty) || self.involves_type_parameter(&els.ty)
+        {
+            self.generic_union(&then.ty, &els.ty)
+        } else if let Some(context) = ctx {
             self.require_assignable(
                 &then.ty.clone(),
                 context,
@@ -1439,26 +1453,34 @@ impl<'p> Checker<'p> {
                 &target,
             ))
             && self.generic_overlap(&src, &target);
+        let concrete_cast =
+            !self.involves_type_parameter(&src) && !self.involves_type_parameter(&target);
         let ok = generic_cast
-            || matches!(src, Type::Error)
-            || matches!(target, Type::Error)
-            || (src.is_numeric()
-                && target.is_numeric()
-                && if src == Type::F16 || target == Type::F16 {
+            || matches!(self.apparent_type(&src), Type::Error)
+            || matches!(self.apparent_type(&target), Type::Error)
+            || (concrete_cast
+                && self.apparent_type(&src).is_numeric()
+                && self.apparent_type(&target).is_numeric()
+                && if self.apparent_type(&(src)) == Type::F16
+                    || self.apparent_type(&(target)) == Type::F16
+                {
                     matches!(
-                        (&src, &target),
+                        (&self.apparent_type(&src), &self.apparent_type(&target)),
                         (Type::F16, Type::F16 | Type::F32 | Type::F64)
                             | (Type::F32 | Type::F64, Type::F16)
                     )
                 } else {
                     true
                 })
-            || (matches!(src, Type::Enum(_)) && target.is_integer())
-            || (matches!(src, Type::Object) && self.is_reference_class(&target))
-            || (matches!(&src, Type::Nullable(inner) if **inner == Type::Object)
+            || (concrete_cast
+                && matches!(self.apparent_type(&src), Type::Enum(_))
+                && self.apparent_type(&target).is_integer())
+            || (matches!(self.apparent_type(&src), Type::Object)
+                && self.is_reference_class(&target))
+            || (matches!(&self.apparent_type(&src), Type::Nullable(inner) if self.apparent_type(inner) == Type::Object)
                 && self.is_reference_class(&target))
             || ((self.in_json_argument || self.in_for_of_subject)
-                && target == Type::Object
+                && self.apparent_type(&(target)) == Type::Object
                 && self.is_reference_class(&src));
         if !ok {
             let from_n = self.type_name(&src);

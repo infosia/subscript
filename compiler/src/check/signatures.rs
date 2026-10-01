@@ -319,7 +319,7 @@ impl<'p> Checker<'p> {
                                 Type::Error
                             }
                         };
-                        if Self::is_context_affine_type(&ty) {
+                        if self.is_context_affine_type(&ty) {
                             self.error_diverging(
                                 RuleCode::S100,
                                 "Worker, Inbox, and Outbox values may not be module globals",

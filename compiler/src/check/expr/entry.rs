@@ -257,31 +257,33 @@ impl<'p> Checker<'p> {
             ast::Expr::New(n) => self.check_new(n, ctx, fx, pos),
             ast::Expr::Arrow(a) => self.check_lambda(a, ctx, fx, pos),
             ast::Expr::Array(a) => self.check_array_lit(a, ctx, fx, pos),
-            ast::Expr::Object(object) => match contextual_object_class(ctx) {
-                Some(id) if self.classes[id.0].is_descriptor => {
-                    self.check_descriptor_lit(object, id, fx, pos)
+            ast::Expr::Object(object) => {
+                match contextual_object_class(ctx, |ty| self.apparent_type(ty)) {
+                    Some(id) if self.classes[id.0].is_descriptor => {
+                        self.check_descriptor_lit(object, id, fx, pos)
+                    }
+                    Some(_) => {
+                        self.error_diverging(
+                            RuleCode::S005,
+                            "object literals do not satisfy nominal class types",
+                            pos.clone(),
+                            Divergence::ObjectLiteralConstruction,
+                        );
+                        self.err_expr(pos)
+                    }
+                    _ => {
+                        // C1: the literal has no standalone type, so only a
+                        // `@Descriptor` context constructs from one.
+                        self.error_diverging(
+                            RuleCode::S100,
+                            "object literals are not in the decided surface",
+                            pos.clone(),
+                            Divergence::ObjectLiteralConstruction,
+                        );
+                        self.err_expr(pos)
+                    }
                 }
-                Some(_) => {
-                    self.error_diverging(
-                        RuleCode::S005,
-                        "object literals do not satisfy nominal class types",
-                        pos.clone(),
-                        Divergence::ObjectLiteralConstruction,
-                    );
-                    self.err_expr(pos)
-                }
-                _ => {
-                    // C1: the literal has no standalone type, so only a
-                    // `@Descriptor` context constructs from one.
-                    self.error_diverging(
-                        RuleCode::S100,
-                        "object literals are not in the decided surface",
-                        pos.clone(),
-                        Divergence::ObjectLiteralConstruction,
-                    );
-                    self.err_expr(pos)
-                }
-            },
+            }
             ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
             ast::Expr::Yield(y) => self.check_yield(y, fx, pos),
             ast::Expr::Await(a) => self.check_await(a, fx, pos),
@@ -323,12 +325,12 @@ impl<'p> Checker<'p> {
         let ExprKind::Field { obj, name } = &expr.kind else {
             return None;
         };
-        let Type::Class(extension) = obj.ty else {
+        let Type::Class(extension) = self.apparent_type(&obj.ty) else {
             return None;
         };
         let definition = self.classes.get(extension.0)?;
         let first = definition.fields.first()?;
-        let Type::Class(header) = first.ty else {
+        let Type::Class(header) = self.apparent_type(&first.ty) else {
             return None;
         };
         let nullable = Type::nullable(Type::Class(header));
@@ -352,7 +354,7 @@ impl<'p> Checker<'p> {
     }
 
     fn reject_embedded_header_copy(&mut self, expr: &mut hir::Expr, expected: Option<&Type>) {
-        if expr.ty == Type::Error {
+        if self.apparent_type(&(expr.ty)) == Type::Error {
             return;
         }
         let Some((extension, header)) = self.embedded_header_projection(expr) else {
@@ -450,8 +452,8 @@ impl<'p> Checker<'p> {
         }
         let ast::Expr::Call(call) = operand else {
             let handle = self.check_expr(operand, None, fx);
-            let Type::AsyncHandle(value) = handle.ty.clone() else {
-                if handle.ty != Type::Error {
+            let Type::AsyncHandle(value) = self.apparent_type(&handle.ty.clone()) else {
+                if self.apparent_type(&(handle.ty)) != Type::Error {
                     self.error(
                         RuleCode::S100,
                         "`await` requires `Context.suspend()`, an async call, or a held async handle",
@@ -508,7 +510,7 @@ impl<'p> Checker<'p> {
                     let ident_pos = self.pos(ident.span);
                     if self
                         .lookup_local(&name, &ident_pos, fx)
-                        .is_some_and(|local| matches!(local.ty, Type::Error))
+                        .is_some_and(|local| matches!(self.apparent_type(&local.ty), Type::Error))
                     {
                         return self.err_expr(pos);
                     }
@@ -600,8 +602,8 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 let receiver = self.check_receiver(&member.obj, fx);
-                let Type::Class(class) = receiver.ty.clone() else {
-                    if receiver.ty != Type::Error {
+                let Type::Class(class) = self.apparent_type(&receiver.ty.clone()) else {
+                    if self.apparent_type(&(receiver.ty)) != Type::Error {
                         let receiver_ty = self.type_name(&receiver.ty);
                         self.error(
                             RuleCode::S018,

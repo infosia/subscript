@@ -358,10 +358,13 @@ fn diagnostic_expr_spelling(expression: &ast::Expr) -> String {
 /// Returns the nominal class supplied by an object literal's context.
 /// Descriptor construction goes through either `D` or `D | null` (§25,
 /// §25.3a); a plain class here keeps its specific S005 rejection.
-fn contextual_object_class(ctx: Option<&Type>) -> Option<ClassId> {
-    match ctx? {
+fn contextual_object_class(
+    ctx: Option<&Type>,
+    apparent_type: impl Fn(&Type) -> Type,
+) -> Option<ClassId> {
+    match &apparent_type(ctx?) {
         Type::Class(id) => Some(*id),
-        Type::Nullable(inner) => match inner.as_ref() {
+        Type::Nullable(inner) => match &apparent_type(inner.as_ref()) {
             Type::Class(id) => Some(*id),
             _ => None,
         },

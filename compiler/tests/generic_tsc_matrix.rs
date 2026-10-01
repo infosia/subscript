@@ -1,6 +1,6 @@
 //! The generic body matrix of §143 rule 4.
-//! Measured cost: 5,896 cells in 5.903 seconds, with one TypeScript process.
-//! The product covers every value-role/site pair; it adds 4.28 seconds to the gate.
+//! Measured cost: 17,488 cells in 22.174 seconds, with one TypeScript process.
+//! The 30-second budget covers each distinct value-role/site pair; no cell is removed for cost.
 //! Concrete controls check instance admission apart from the opaque diagnostics (§143 rule 4).
 
 use std::{
@@ -15,6 +15,9 @@ use subscript_compiler::{check_program, Diagnostic, RuleCode, SourceFile};
 
 #[path = "generic_tsc_matrix/product.rs"]
 mod product;
+
+#[path = "generic_tsc_matrix/findings.rs"]
+mod findings;
 
 struct Kind {
     name: &'static str,
@@ -1219,6 +1222,7 @@ fn cells() -> Vec<Cell> {
         }
     }
     cells.extend(product::cells());
+    cells.extend(findings::cells());
     cells
 }
 
@@ -1407,6 +1411,12 @@ fn generic_forms_follow_tsc() {
     assert!(output.status.success() || !rejected.is_empty(), "{text}");
     let mut failures = Vec::new();
     for cell in &cells {
+        if cell.name.starts_with("derived-") && rejected.contains(&cell.name) {
+            failures.push(format!(
+                "{}: the TypeScript accept control rejects",
+                cell.name
+            ));
+        }
         let record_result = cell
             .divergence
             .map_or(Ok(()), |record| check_record(&root, record));
@@ -1514,4 +1524,21 @@ fn a_restriction_in_another_section_does_not_count() {
     assert!(check_record_text(text, "### C1.", "rejects `==`").is_err());
     assert!(check_record_text(text, "### C1.", "This detail belongs to C1.").is_ok());
     assert!(check_record_text(text, "### C2.", "rejects `==`").is_ok());
+}
+
+#[test]
+fn every_union_member_must_supply_the_member() {
+    let source = "class Box { v: i32 = 1; } class Other { w: i32 = 2; } function g<T extends Box, U extends Other>(x: T, y: U, c: boolean): i32 { return (c ? x : y).v; }";
+    let errors = check_program(&[SourceFile::new("union.ts", source)]).unwrap_err();
+    assert!(errors.iter().any(|error| error.code == RuleCode::S018));
+}
+
+#[test]
+fn lambda_defaults_use_the_declared_parameter_type() {
+    for (source, accepts) in [
+        ("function g(): void { const v: i32 = 1; const f = (x: i32 = v): void => {}; }", true),
+        ("function g<T extends i32>(v: i32): void { const value = v; const f = (x: T = value): void => {}; }", false),
+    ] {
+        assert_eq!(check_program(&[SourceFile::new("default.ts", source)]).is_ok(), accepts);
+    }
 }

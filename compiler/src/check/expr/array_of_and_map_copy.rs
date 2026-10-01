@@ -44,7 +44,7 @@ impl<'p> Checker<'p> {
         };
         let context = declared
             .as_ref()
-            .or_else(|| ctx.filter(|ty| matches!(ty, Type::Array(_))));
+            .or_else(|| ctx.filter(|ty| matches!(&self.apparent_type(ty), Type::Array(_))));
         self.check_array_lit(&literal, context, fx, pos)
     }
 
@@ -68,7 +68,7 @@ impl<'p> Checker<'p> {
                 if !self.instance_restriction(
                     crate::check::opaque::InstanceRestriction::AssociativeKey,
                     &key,
-                ) && key != Type::Error
+                ) && self.apparent_type(&(key)) != Type::Error
                     && self.assoc_key_kind(&key).is_none()
                 {
                     self.error(
@@ -98,10 +98,12 @@ impl<'p> Checker<'p> {
             if argument.spread.is_none() {
                 let diagnostics_before = self.diags.len();
                 let source = self.check_expr(&argument.expr, declared.as_ref(), fx);
-                if source.ty == Type::Error || self.diags.len() > diagnostics_before {
+                if self.apparent_type(&(source.ty)) == Type::Error
+                    || self.diags.len() > diagnostics_before
+                {
                     return self.err_expr(pos);
                 }
-                if matches!(source.ty, Type::Nullable(_)) {
+                if matches!(self.apparent_type(&source.ty), Type::Nullable(_)) {
                     self.error(
                         RuleCode::S011,
                         format!(
@@ -112,7 +114,7 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                if matches!(source.ty, Type::Map(_, _)) {
+                if matches!(self.apparent_type(&source.ty), Type::Map(_, _)) {
                     let ty = declared.unwrap_or_else(|| source.ty.clone());
                     self.require_assignable(&source.ty, &ty, source.pos.clone(), "the Map source");
                     return hir::Expr {

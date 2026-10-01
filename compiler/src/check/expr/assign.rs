@@ -72,7 +72,7 @@ impl<'p> Checker<'p> {
             place.record_kind();
         }
         let target_ty = place.ty().clone();
-        let value_ctx = if matches!(target_ty, Type::Error) {
+        let value_ctx = if matches!(self.apparent_type(&target_ty), Type::Error) {
             None
         } else {
             Some(target_ty.clone())
@@ -477,7 +477,7 @@ impl<'p> Checker<'p> {
         match &m.prop {
             ast::MemberProp::Computed(c) => {
                 let obj = self.check_receiver(&m.obj, fx);
-                let index_context = match &obj.ty {
+                let index_context = match &self.apparent_type(&obj.ty) {
                     Type::Class(id) => self.classes[id.0]
                         .index_signature
                         .as_ref()
@@ -486,7 +486,7 @@ impl<'p> Checker<'p> {
                     _ => Type::I32,
                 };
                 let index = self.check_expr(&c.expr, Some(&index_context), fx);
-                if let Type::Class(id) = &obj.ty {
+                if let Type::Class(id) = &self.apparent_type(&obj.ty) {
                     if let Some(signature) = self.classes[id.0].index_signature.clone() {
                         self.require_assignable(
                             &index.ty.clone(),
@@ -512,7 +512,7 @@ impl<'p> Checker<'p> {
                     return place;
                 }
                 let obj = self.check_receiver(&m.obj, fx);
-                if let Type::Class(id) = &obj.ty {
+                if let Type::Class(id) = &self.apparent_type(&obj.ty) {
                     if self.classes[id.0]
                         .fields
                         .iter()

@@ -288,10 +288,15 @@ impl<'p> Checker<'p> {
         path: Option<&str>,
         visiting: &mut std::collections::HashSet<ClassId>,
     ) -> Option<(Option<String>, Type, &'static str)> {
-        if ty.is_numeric() || matches!(ty, Type::Bool | Type::Enum(_) | Type::Error) {
+        if self.apparent_type(ty).is_numeric()
+            || matches!(
+                &self.apparent_type(ty),
+                Type::Bool | Type::Enum(_) | Type::Error
+            )
+        {
             return None;
         }
-        match ty {
+        match &self.apparent_type(ty) {
             Type::FixedArray(element, _) => {
                 self.context_bytes_storage_rejection(element, path, visiting)
             }
@@ -362,10 +367,10 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let target = self.resolve_type(&type_args.params[0]);
-        if target == Type::Error {
+        if self.apparent_type(&(target)) == Type::Error {
             return self.err_expr(pos);
         }
-        let top_level_ok = match &target {
+        let top_level_ok = match &self.apparent_type(&target) {
             Type::FixedArray(..) => true,
             Type::Class(id) => self.classes.get(id.0).is_some_and(|class| class.is_value),
             _ => false,
@@ -445,7 +450,7 @@ impl<'p> Checker<'p> {
                 return self.err_expr(spread_pos);
             }
             let checked = self.check_expr(&argument.expr, Some(expected), fx);
-            if checked.ty != *expected && checked.ty != Type::Error {
+            if checked.ty != *expected && self.apparent_type(&(checked.ty)) != Type::Error {
                 self.error(
                     RuleCode::S100,
                     format!(
@@ -483,8 +488,23 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        if let Type::GenericUnion(members) = &callee.ty {
+            let members = members.clone();
+            let mut result: Option<hir::Expr> = None;
+            for member in members.iter() {
+                let mut value = callee.clone();
+                value.ty = member.clone();
+                let checked = self.check_indirect_call(value, c, fx, pos.clone());
+                if let Some(result) = &mut result {
+                    result.ty = self.generic_union(&result.ty, &checked.ty);
+                } else {
+                    result = Some(checked);
+                }
+            }
+            return result.unwrap_or_else(|| self.err_expr(pos));
+        }
         let callee = self.apparent_expr(callee);
-        match callee.ty.clone() {
+        match self.apparent_type(&callee.ty.clone()) {
             Type::Func(ft) => {
                 let params: Vec<ParamSig> = ft
                     .params
@@ -701,7 +721,7 @@ impl<'p> Checker<'p> {
             self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)
         {
             // Enum members are values, not callables.
-            if matches!(handled.ty, Type::Error) {
+            if matches!(self.apparent_type(&handled.ty), Type::Error) {
                 return handled;
             }
             return self.check_indirect_call(handled, c, fx, pos);
@@ -746,6 +766,21 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        if let Type::GenericUnion(members) = &recv.ty {
+            let members = members.clone();
+            let mut result: Option<hir::Expr> = None;
+            for member in members.iter() {
+                let mut value = recv.clone();
+                value.ty = member.clone();
+                let checked = self.check_method_call_on(value, property, c, ctx, fx, pos.clone());
+                if let Some(result) = &mut result {
+                    result.ty = self.generic_union(&result.ty, &checked.ty);
+                } else {
+                    result = Some(checked);
+                }
+            }
+            return result.unwrap_or_else(|| self.err_expr(pos));
+        }
         let recv = self.apparent_expr(recv);
         let mut name = property.sym.to_string();
         let prop_pos = self.pos(property.span);
@@ -762,7 +797,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         // §82.4 rule 3: the call names the instance, not the template.
-        if let Type::Class(class) = &recv.ty {
+        if let Type::Class(class) = &self.apparent_type(&recv.ty) {
             let class = *class;
             if self.class_sigs[class.0].has_generic_method(&name, false) {
                 let Some(instance) =
@@ -792,9 +827,11 @@ impl<'p> Checker<'p> {
             ty,
             pos,
         };
-        match recv.ty.clone() {
+        match self.apparent_type(&recv.ty.clone()) {
             Type::Error => self.err_expr(pos),
-            ty if ty.is_numeric() => self.check_number_method(recv, &name, c, fx, pos, prop_pos),
+            ty if self.apparent_type(&ty).is_numeric() => {
+                self.check_number_method(recv, &name, c, fx, pos, prop_pos)
+            }
             Type::Date => self.check_date_method(recv, &name, c, fx, pos, prop_pos),
             Type::Map(key, value) => {
                 self.check_map_method(recv, *key, *value, &name, c, ctx, fx, pos, prop_pos)
@@ -1136,7 +1173,10 @@ impl<'p> Checker<'p> {
                     checked.pos.clone(),
                     "the argument",
                 );
-                if matches!(param_ty, Type::AsyncHandle(_) | Type::Array(_)) {
+                if matches!(
+                    &self.apparent_type(&param_ty),
+                    Type::AsyncHandle(_) | Type::Array(_)
+                ) {
                     let origins = self.expr_async_origins(&checked, fx);
                     fx.handle_async_origins(&origins);
                 }
@@ -1167,7 +1207,7 @@ impl<'p> Checker<'p> {
             return None;
         }
         let source = self.check_expr(&argument.expr, None, fx);
-        let element = match &source.ty {
+        let element = match &self.apparent_type(&source.ty) {
             Type::Error => return None,
             // Stock `tsc` answers TS2769 here, because `Map<K, V>` is
             // `Iterable<[K, V]>` and not `Iterable<K>`.
@@ -1184,7 +1224,7 @@ impl<'p> Checker<'p> {
                 );
                 return None;
             }
-            other => match other.iteration_element() {
+            other => match self.apparent_type(other).iteration_element() {
                 Some((_, element)) => element,
                 None => {
                     let actual = self.type_name(other);
@@ -1227,7 +1267,7 @@ impl<'p> Checker<'p> {
         if fx.owns_local_name(&name) {
             if self
                 .lookup_local(&name, &ident_pos, fx)
-                .is_some_and(|local| !matches!(local.ty, Type::Error))
+                .is_some_and(|local| !matches!(self.apparent_type(&local.ty), Type::Error))
             {
                 self.error(
                     RuleCode::S100,
@@ -1336,7 +1376,7 @@ impl<'p> Checker<'p> {
             if !self.instance_restriction(
                 crate::check::opaque::InstanceRestriction::AssociativeKey,
                 &key,
-            ) && !matches!(key, Type::Error)
+            ) && !matches!(self.apparent_type(&key), Type::Error)
                 && self.assoc_key_kind(&key).is_none()
             {
                 let key_pos = self.pos(type_args.params[0].span());

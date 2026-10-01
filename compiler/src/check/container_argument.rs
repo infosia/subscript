@@ -40,7 +40,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> Type {
         if self.instance_restriction(opaque::InstanceRestriction::ContainerArgument, &argument)
-            || !Self::is_context_affine_type(&argument)
+            || !self.is_context_affine_type(&argument)
         {
             return argument;
         }
@@ -68,7 +68,8 @@ impl<'p> Checker<'p> {
     /// previous value for [`Checker::leave_container_context`].
     pub(crate) fn enter_container_context(&mut self, context: Option<&Type>) -> bool {
         let saved = self.in_poisoned_context;
-        self.in_poisoned_context = saved || matches!(context, Some(Type::Error));
+        self.in_poisoned_context =
+            saved || matches!(context.map(|ty| self.apparent_type(ty)), Some(Type::Error));
         saved
     }
 

@@ -525,7 +525,7 @@ impl<'p> Checker<'p> {
                                 Type::Error
                             }
                         };
-                        if Self::is_context_affine_type(&ty) {
+                        if self.is_context_affine_type(&ty) {
                             self.error(
                                 RuleCode::S100,
                                 "Worker, Inbox, and Outbox values may not be static fields",
@@ -634,12 +634,12 @@ impl<'p> Checker<'p> {
                         && !prop.definite
                         && prop.is_optional
                         && prop.value.is_none()
-                        && matches!(ty, Type::StringAlias(_));
+                        && matches!(&self.apparent_type(&ty), Type::StringAlias(_));
                     if is_descriptor
                         && !prop.definite
                         && prop.is_optional
                         && prop.value.is_none()
-                        && !matches!(ty, Type::StringAlias(_) | Type::Error)
+                        && !matches!(&self.apparent_type(&ty), Type::StringAlias(_) | Type::Error)
                     {
                         self.error_diverging(
                             RuleCode::S012,
@@ -648,7 +648,7 @@ impl<'p> Checker<'p> {
                             Divergence::OptionalDescriptorMember,
                         );
                     }
-                    let context_affine = Self::is_context_affine_type(&ty);
+                    let context_affine = self.is_context_affine_type(&ty);
                     if context_affine {
                         self.error(
                             RuleCode::S100,
@@ -656,17 +656,18 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                     }
-                    let foreign_provenance = if self.in_boundary && matches!(ty, Type::Func(_)) {
-                        self.callback_provenance(
-                            self.cur_file,
-                            prop.type_ann
-                                .as_deref()
-                                .map(|annotation| annotation.type_ann.as_ref()),
-                            pos.clone(),
-                        )
-                    } else {
-                        None
-                    };
+                    let foreign_provenance =
+                        if self.in_boundary && matches!(&self.apparent_type(&ty), Type::Func(_)) {
+                            self.callback_provenance(
+                                self.cur_file,
+                                prop.type_ann
+                                    .as_deref()
+                                    .map(|annotation| annotation.type_ann.as_ref()),
+                                pos.clone(),
+                            )
+                        } else {
+                            None
+                        };
                     // Boundary structs (mirror-ingested) relax the C2
                     // value-field whitelist: they may carry `X | null`,
                     // `object | null`, and function-pointer fields.
@@ -804,7 +805,10 @@ impl<'p> Checker<'p> {
                             Type::Error
                         }
                     };
-                    if !matches!(index_ty, Type::I32 | Type::U32 | Type::Error) {
+                    if !matches!(
+                        self.apparent_type(&index_ty),
+                        Type::I32 | Type::U32 | Type::Error
+                    ) {
                         let actual = self.type_name(&index_ty);
                         self.error(
                             RuleCode::S100,
@@ -941,7 +945,7 @@ impl<'p> Checker<'p> {
 
     pub(crate) fn plain_value_leaf(&self, ty: &Type) -> bool {
         matches!(
-            ty,
+            &self.apparent_type(ty),
             Type::I8
                 | Type::U8
                 | Type::I16
@@ -966,7 +970,7 @@ impl<'p> Checker<'p> {
         {
             return true;
         }
-        match ty {
+        match &self.apparent_type(ty) {
             Type::Class(id) => self.classes[id.0].is_value,
             Type::FixedArray(elem, _) => self.value_field_ok(elem),
             _ => false,

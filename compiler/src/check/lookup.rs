@@ -171,7 +171,7 @@ impl<'p> Checker<'p> {
         }
         let (crossed, local) = found?;
         if crossed > 0 {
-            if Self::is_context_affine_type(&local.ty) {
+            if self.is_context_affine_type(&local.ty) {
                 self.error(
                     RuleCode::S100,
                     format!(

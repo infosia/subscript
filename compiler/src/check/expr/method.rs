@@ -40,7 +40,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        if !matches!(&recv.ty, Type::F32 | Type::F64) {
+        if !matches!(&self.apparent_type(&recv.ty), Type::F32 | Type::F64) {
             self.reject_api_form(
                 "sized integers",
                 "toFixed/toString/toExponential/toPrecision",
@@ -57,7 +57,7 @@ impl<'p> Checker<'p> {
                 "`toFixed` takes zero or one i32 digit count",
             ),
             "toString" => (
-                if recv.ty == Type::F32 {
+                if self.apparent_type(&(recv.ty)) == Type::F32 {
                     NumFn::ToStringF32
                 } else {
                     NumFn::ToStringF64
@@ -116,7 +116,7 @@ impl<'p> Checker<'p> {
         }
 
         let recv_pos = recv.pos.clone();
-        let recv = if recv.ty == Type::F32 && f != NumFn::ToStringF32 {
+        let recv = if self.apparent_type(&(recv.ty)) == Type::F32 && f != NumFn::ToStringF32 {
             hir::Expr {
                 kind: ExprKind::Cast(Box::new(recv)),
                 ty: Type::F64,
@@ -609,7 +609,7 @@ impl<'p> Checker<'p> {
                 // un-annotated arrow leaves `U` to `init` itself.
                 let (acc_ctx, checked_cb, resolved_acc) = self.reduce_acc_context(&c.args[0], fx);
                 let init = self.check_expr(&c.args[1].expr, acc_ctx.as_ref(), fx);
-                if matches!(init.ty, Type::Error) {
+                if matches!(self.apparent_type(&init.ty), Type::Error) {
                     return self.err_expr(pos);
                 }
                 let acc_ty = match &acc_ctx {
@@ -626,7 +626,7 @@ impl<'p> Checker<'p> {
                     }
                     None => init.ty.clone(),
                 };
-                if matches!(acc_ty, Type::Error) {
+                if matches!(self.apparent_type(&acc_ty), Type::Error) {
                     return self.err_expr(pos);
                 }
                 if !self.instance_restriction(
@@ -707,32 +707,32 @@ impl<'p> Checker<'p> {
                     A::Some | A::Every => Type::Bool,
                     A::FindIndex | A::FindLastIndex => Type::I32,
                     A::Find | A::FindLast => {
-                        if matches!(elem, Type::Nullable(_)) {
+                        if matches!(self.apparent_type(&elem), Type::Nullable(_)) {
                             elem
                         } else {
                             Type::nullable(elem)
                         }
                     }
                     A::FlatMap => {
-                        let u = match &cb.ty {
+                        let u = match &self.apparent_type(&cb.ty) {
                             Type::Func(ft) => ft.ret.clone(),
                             _ => return self.err_expr(pos),
                         };
-                        if !matches!(u, Type::Array(_)) {
+                        if !matches!(&self.apparent_type(&u), Type::Array(_)) {
                             self.arr_subset_rejection("flatMap", cb.pos.clone());
                             return self.err_expr(pos);
                         }
                         u
                     }
                     A::Map => {
-                        let u = match &cb.ty {
+                        let u = match &self.apparent_type(&cb.ty) {
                             Type::Func(ft) => ft.ret.clone(),
                             _ => Type::Error,
                         };
-                        if matches!(u, Type::Error) {
+                        if matches!(&self.apparent_type(&u), Type::Error) {
                             return self.err_expr(pos);
                         }
-                        if matches!(u, Type::Void) {
+                        if matches!(&self.apparent_type(&u), Type::Void) {
                             self.error(
                                 RuleCode::S100,
                                 "the `map` callback must return a value",
@@ -745,7 +745,7 @@ impl<'p> Checker<'p> {
                         if !self.instance_restriction(
                             crate::check::opaque::InstanceRestriction::ArrayElementKind,
                             &u,
-                        ) && u != Type::Error
+                        ) && self.apparent_type(&(u)) != Type::Error
                             && self.arr_elem_kind(&u).is_none()
                         {
                             let u_n = self.type_name(&u);
@@ -777,7 +777,8 @@ impl<'p> Checker<'p> {
         ) {
             return true;
         }
-        let reference = match value {
+        let shape = self.apparent_type(value);
+        let reference = match &shape {
             Type::Nullable(inner) => inner.as_ref(),
             other => other,
         };
@@ -814,7 +815,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let items = self.check_expr(&c.args[0].expr, None, fx);
-        let elem = match &items.ty {
+        let elem = match &self.apparent_type(&items.ty) {
             Type::Array(elem) => (**elem).clone(),
             Type::Error => return self.err_expr(pos),
             other => {
@@ -834,7 +835,7 @@ impl<'p> Checker<'p> {
             fx,
             CallbackSpec::new("Map.groupBy", "Q27", false),
         );
-        let key = match &callback.ty {
+        let key = match &self.apparent_type(&callback.ty) {
             Type::Func(ft) if ft.ret != Type::Void => ft.ret.clone(),
             Type::Func(_) => {
                 self.error(
@@ -859,7 +860,7 @@ impl<'p> Checker<'p> {
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::AssociativeKey,
             &key,
-        ) && key != Type::Error
+        ) && self.apparent_type(&(key)) != Type::Error
             && self.assoc_key_kind(&key).is_none()
         {
             let key_name = self.type_name(&key);
@@ -934,7 +935,7 @@ impl<'p> Checker<'p> {
                 let argument_pos = self.pos(type_args.params[0].span());
                 let resolved =
                     self.container_argument(ContainerSlot::ArrayElement, resolved, argument_pos);
-                if resolved == Type::Error {
+                if self.apparent_type(&(resolved)) == Type::Error {
                     self.check_poisoned_arguments(&call.args, fx);
                     return self.err_expr(pos);
                 }
@@ -989,7 +990,7 @@ impl<'p> Checker<'p> {
         }
         let context = declared.clone().map(Type::array);
         let source = self.check_expr(&argument.expr, context.as_ref(), fx);
-        let selected = match &source.ty {
+        let selected = match &self.apparent_type(&source.ty) {
             Type::Error => None,
             // compiler.md §104.1: the source is rejected on its resolved
             // type, in this position as in the other two.
@@ -1011,7 +1012,7 @@ impl<'p> Checker<'p> {
                 );
                 None
             }
-            other => match other.iteration_element() {
+            other => match self.apparent_type(other).iteration_element() {
                 Some((kind, element)) => Some((hir::SpreadKind::from(kind), element)),
                 None => {
                     let actual = self.type_name(other);
@@ -1096,9 +1097,11 @@ impl<'p> Checker<'p> {
         match operation {
             M::Get => {
                 if !self.map_get_value_ok(&value) {
-                    let group = if value.is_numeric()
-                        || matches!(value, Type::Bool | Type::Enum(_) | Type::StringAlias(_))
-                    {
+                    let group = if self.apparent_type(&value).is_numeric()
+                        || matches!(
+                            &self.apparent_type(&value),
+                            Type::Bool | Type::Enum(_) | Type::StringAlias(_)
+                        ) {
                         "Map<K, scalar V>"
                     } else {
                         "Map<K, V with no shared nullable-pointer form>"
@@ -1109,7 +1112,7 @@ impl<'p> Checker<'p> {
                 let params = [ParamSig::positional(key)];
                 let mut args = vec![recv];
                 args.extend(self.check_args(&params, &c.args, fx, &pos, "Map.get"));
-                let ty = if matches!(value, Type::Nullable(_)) {
+                let ty = if matches!(&self.apparent_type(&value), Type::Nullable(_)) {
                     value
                 } else {
                     Type::nullable(value)
@@ -1285,7 +1288,7 @@ impl<'p> Checker<'p> {
                         return self.err_expr(pos);
                     }
                 };
-                match &other.ty {
+                match &self.apparent_type(&other.ty) {
                     Type::Set(other_key) => {
                         self.require_assignable(
                             other_key,
@@ -1346,13 +1349,13 @@ impl<'p> Checker<'p> {
             };
             let ty = self.resolve_type(&ann.type_ann);
             return (
-                (!matches!(ty, Type::Error)).then_some(ty.clone()),
+                (!matches!(&self.apparent_type(&ty), Type::Error)).then_some(ty.clone()),
                 None,
                 Some(ty),
             );
         }
         let checked = self.check_expr(&arg.expr, None, fx);
-        let acc = match &checked.ty {
+        let acc = match &self.apparent_type(&checked.ty) {
             Type::Func(ft) => ft.params.first().cloned(),
             _ => None,
         };
@@ -1494,7 +1497,7 @@ impl<'p> Checker<'p> {
             allow_index,
             ..
         } = spec;
-        let ok = match &checked.ty {
+        let ok = match &self.apparent_type(&checked.ty) {
             Type::Error => true,
             Type::Func(ft) => {
                 let indexed = allow_index
@@ -1508,7 +1511,7 @@ impl<'p> Checker<'p> {
         if ok {
             return checked;
         }
-        if let Type::Func(ft) = &checked.ty {
+        if let Type::Func(ft) = &self.apparent_type(&checked.ty) {
             let accepted_arity = ft.params.len() == params.len()
                 || (allow_index && ft.params.len() == params.len() + 1);
             if !accepted_arity {

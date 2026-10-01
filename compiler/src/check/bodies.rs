@@ -203,7 +203,7 @@ impl<'p> Checker<'p> {
         fx.frames[0].missing_this_divergence = missing_this_divergence;
         fx.frames[0].is_async = sig.is_async;
         if sig.is_generator {
-            if let Type::Generator(y) = &sig.ret {
+            if let Type::Generator(y) = &self.apparent_type(&sig.ret) {
                 if sig.yield_known {
                     fx.frames[0].yield_ty = Some((**y).clone());
                 }
@@ -255,7 +255,7 @@ impl<'p> Checker<'p> {
             ret
         } else {
             if f.body.is_some()
-                && !matches!(sig.ret, Type::Void | Type::Error)
+                && !matches!(self.apparent_type(&sig.ret), Type::Void | Type::Error)
                 && !stmt::always_returns(&body)
             {
                 self.error(RuleCode::S100, "not all paths return a value", pos.clone());
@@ -676,7 +676,7 @@ impl<'p> Checker<'p> {
         let unassigned: Vec<(String, Type, Pos)> = self.classes[id.0]
             .fields
             .iter()
-            .filter(|field| field.init.is_none() && field.ty != Type::Error)
+            .filter(|field| field.init.is_none() && self.apparent_type(&field.ty) != Type::Error)
             .map(|field| (field.name.clone(), field.ty.clone(), field.pos.clone()))
             .collect();
         for (name, ty, pos) in unassigned {
@@ -766,7 +766,7 @@ impl<'p> Checker<'p> {
         let rule_one_fields: Vec<String> = self.classes[id.0]
             .fields
             .iter()
-            .filter(|field| field.init.is_none() && field.ty != Type::Error)
+            .filter(|field| field.init.is_none() && self.apparent_type(&field.ty) != Type::Error)
             .filter(|field| !spellings.get(&field.name).is_some_and(|s| s.optional))
             .map(|field| field.name.clone())
             .collect();

@@ -17,7 +17,7 @@ impl<'p> Checker<'p> {
             ast::Lit::Num(n) => self.check_num_lit(n, false, ctx, pos),
             ast::Lit::Str(s) => {
                 let value = s.value.to_string();
-                if let Some(Type::StringAlias(id)) = ctx {
+                if let Some(Type::StringAlias(id)) = ctx.map(|ty| self.apparent_type(ty)).as_ref() {
                     if let Some(discriminant) = self.string_aliases.get(id.0).and_then(|alias| {
                         alias
                             .members
@@ -154,7 +154,7 @@ impl<'p> Checker<'p> {
         let fractional = raw.contains('.') || (!hex && (raw.contains('e') || raw.contains('E')));
         let value = if negate { -n.value } else { n.value };
         let target = match ctx {
-            Some(t) if t.is_numeric() => t.clone(),
+            Some(t) if self.apparent_type(t).is_numeric() => self.apparent_type(t),
             _ => {
                 if fractional {
                     Type::F64
@@ -163,10 +163,10 @@ impl<'p> Checker<'p> {
                 }
             }
         };
-        if target.is_float() {
+        if self.apparent_type(&target).is_float() {
             // Round-to-nearest-even first overflows binary16 at the
             // midpoint 65520: values below it still round to 65504.
-            if target == Type::F16 && value.abs() >= 65_520.0 {
+            if self.apparent_type(&(target)) == Type::F16 && value.abs() >= 65_520.0 {
                 self.error(
                     RuleCode::S008,
                     format!("numeric literal {} out of range for `f16`", raw),
@@ -235,12 +235,12 @@ impl<'p> Checker<'p> {
                 let printable = self.instance_restriction(
                     crate::check::opaque::InstanceRestriction::TemplateInterpolation,
                     &checked.ty,
-                ) || checked.ty.is_numeric()
+                ) || self.apparent_type(&checked.ty).is_numeric()
                     || matches!(
-                        checked.ty,
+                        self.apparent_type(&checked.ty),
                         Type::Str | Type::Bool | Type::Enum(_) | Type::StringAlias(_) | Type::Error
                     );
-                if checked.ty == Type::Date {
+                if !printable && self.apparent_type(&checked.ty) == Type::Date {
                     // Q20: a Date has no implicit string form (the lib's
                     // would be local-time `toString`).
                     self.reject_api_form(
@@ -280,7 +280,10 @@ impl<'p> Checker<'p> {
                 RuleCode::S012,
                 "`undefined` is banned; the single null story is `null`",
                 pos.clone(),
-                if matches!(ctx, Some(Type::StringAlias(_))) {
+                if matches!(
+                    ctx.map(|ty| self.apparent_type(ty)),
+                    Some(Type::StringAlias(_))
+                ) {
                     Divergence::OptionalDescriptorMember
                 } else {
                     Divergence::GeneralUnionAndUndefined

@@ -19,7 +19,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        let ctx_fn = match ctx {
+        let ctx_fn = match ctx.map(|ty| self.apparent_type(ty)).as_ref() {
             Some(Type::Func(ft)) => Some((**ft).clone()),
             _ => None,
         };
@@ -119,6 +119,18 @@ impl<'p> Checker<'p> {
         let saved_narrowed = std::mem::take(&mut fx.narrowed);
         let mut hir_params = Vec::new();
         for (p, pattern) in params.iter().zip(&a.params) {
+            let default = if let ast::Pat::Assign(assign) = pattern {
+                let value = self.check_expr(&assign.right, Some(&p.ty), fx);
+                self.require_assignable(
+                    &value.ty.clone(),
+                    &p.ty,
+                    value.pos.clone(),
+                    "the default value",
+                );
+                Some(value)
+            } else {
+                None
+            };
             let param_pos = self.pos(pattern.span());
             self.declare_local(
                 &p.name,
@@ -135,7 +147,7 @@ impl<'p> Checker<'p> {
                 escapes: false,
                 name: p.name.clone(),
                 ty: p.ty.clone(),
-                default: None,
+                default,
                 foreign_provenance: None,
                 pos: pos.clone(),
             });
@@ -162,7 +174,10 @@ impl<'p> Checker<'p> {
                     } else {
                         ret = Some(checked.ty.clone());
                     }
-                    if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
+                    if matches!(
+                        self.apparent_type(&checked.ty),
+                        Type::AsyncHandle(_) | Type::Array(_)
+                    ) {
                         let origins = self.expr_async_origins(&checked, fx);
                         fx.handle_async_origins(&origins);
                     }
@@ -190,7 +205,7 @@ impl<'p> Checker<'p> {
                         self.check_stmt(s, fx, &mut out);
                     }
                     if let Some(ret) = &ret {
-                        if !matches!(ret, Type::Void | Type::Error)
+                        if !matches!(&self.apparent_type(ret), Type::Void | Type::Error)
                             && !crate::check::stmt::always_returns(&out)
                         {
                             self.error(RuleCode::S100, "not all paths return a value", pos.clone());

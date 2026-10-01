@@ -82,7 +82,7 @@ impl Checker<'_> {
         self.in_json_argument = true;
         let value = self.check_expr(&call.args[0].expr, None, fx);
         self.in_json_argument = saved_json_argument;
-        if value.ty == Type::Error {
+        if self.apparent_type(&(value.ty)) == Type::Error {
             return self.err_expr(pos);
         }
         if self.type_holds_error(&value.ty) {
@@ -192,7 +192,7 @@ impl Checker<'_> {
             return self.err_expr(pos);
         };
         let spelling = spelling.unwrap_or_else(|| self.type_name(&target));
-        if target == Type::Error {
+        if self.apparent_type(&(target)) == Type::Error {
             return self.err_expr(pos);
         }
         if self.type_holds_error(&target) {
@@ -201,7 +201,7 @@ impl Checker<'_> {
         }
         if self.json_type_contains_date(&target) {
             let rejection = crate::ambient::json_parse_date_rejection();
-            let actual = if target == Type::Date {
+            let actual = if self.apparent_type(&(target)) == Type::Date {
                 "JSON.parse<Date>"
             } else {
                 "JSON.parse target containing Date"
@@ -235,7 +235,7 @@ impl Checker<'_> {
             text.pos.clone(),
             "`JSON.parse` text",
         );
-        if text.ty == Type::Error {
+        if self.apparent_type(&(text.ty)) == Type::Error {
             return self.err_expr(pos);
         }
 
@@ -284,7 +284,7 @@ impl Checker<'_> {
     /// merely subject to a data-dependent mismatch.
     fn json_type_contains_date(&self, ty: &Type) -> bool {
         fn visit(checker: &Checker<'_>, ty: &Type, seen: &mut HashSet<ClassId>) -> bool {
-            match ty {
+            match &checker.apparent_type(ty) {
                 Type::Date => true,
                 Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
                     visit(checker, element, seen)
@@ -314,7 +314,7 @@ impl Checker<'_> {
             active: &mut HashSet<ClassId>,
             done: &mut HashSet<ClassId>,
         ) -> bool {
-            match ty {
+            match &checker.apparent_type(ty) {
                 Type::I8
                 | Type::U8
                 | Type::I16
@@ -332,7 +332,7 @@ impl Checker<'_> {
                     visit(checker, element, active, done)
                 }
                 Type::Nullable(inner) => {
-                    matches!(&**inner, Type::Class(id) if !checker.classes[id.0].is_value)
+                    matches!(&checker.apparent_type(inner), Type::Class(id) if !checker.classes[id.0].is_value)
                         && visit(checker, inner, active, done)
                 }
                 Type::Class(id) => {
@@ -395,7 +395,7 @@ impl Checker<'_> {
             active: &mut Vec<ClassId>,
             done: &mut HashSet<ClassId>,
         ) -> bool {
-            match ty {
+            match &checker.apparent_type(ty) {
                 Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
                     walk(checker, element, active, done)
                 }
@@ -506,6 +506,9 @@ impl Checker<'_> {
     }
 
     fn collect_json_types(&self, ty: &Type, out: &mut Vec<Type>) {
+        let shape = self.apparent_type(ty);
+        let ty = &shape;
+
         if out.contains(ty) {
             return;
         }
@@ -531,6 +534,9 @@ impl Checker<'_> {
         names: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
+        let shape = self.apparent_type(ty);
+        let ty = &shape;
+
         let locals = JsonLocals::new(pos);
         let append = |function: JsonFn, argument: hir::Expr| {
             hir::Stmt::Expr(self.json_call(
@@ -928,6 +934,9 @@ impl Checker<'_> {
         validators: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
+        let shape = self.apparent_type(ty);
+        let ty = &shape;
+
         let locals = JsonLocals::new(pos);
         let kind = |code: i64| {
             self.json_call(
@@ -941,7 +950,7 @@ impl Checker<'_> {
             value: Some(value),
             pos: pos.clone(),
         };
-        if let Some(target) = json_number_target(ty) {
+        if let Some(target) = json_number_target(&self.apparent_type(ty)) {
             return Ok(vec![return_value(self.json_call(
                 JsonFn::ParseNumberFits,
                 vec![locals.parser(), locals.node(), json_int(target, pos)],
@@ -1017,6 +1026,9 @@ impl Checker<'_> {
         validators: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
+        let shape = self.apparent_type(array_ty);
+        let array_ty = &shape;
+
         let locals = JsonLocals::new(pos);
         let mut body = vec![
             json_return_false_unless(
@@ -1114,12 +1126,15 @@ impl Checker<'_> {
         constructors: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
+        let shape = self.apparent_type(ty);
+        let ty = &shape;
+
         let locals = JsonLocals::new(pos);
         let return_value = |value: hir::Expr| hir::Stmt::Return {
             value: Some(value),
             pos: pos.clone(),
         };
-        if let Some(target) = json_number_target(ty) {
+        if let Some(target) = json_number_target(&self.apparent_type(ty)) {
             if matches!(ty, Type::F32 | Type::F64) {
                 let number = self.json_call(
                     JsonFn::ParseNumber,
@@ -1127,7 +1142,7 @@ impl Checker<'_> {
                     Type::F64,
                     pos,
                 );
-                return Ok(vec![return_value(if *ty == Type::F64 {
+                return Ok(vec![return_value(if self.apparent_type(ty) == Type::F64 {
                     number
                 } else {
                     json_cast(number, ty.clone(), pos)
@@ -1139,7 +1154,7 @@ impl Checker<'_> {
                 Type::U64,
                 pos,
             );
-            return Ok(vec![return_value(if *ty == Type::U64 {
+            return Ok(vec![return_value(if self.apparent_type(ty) == Type::U64 {
                 integer
             } else {
                 json_cast(integer, ty.clone(), pos)
@@ -1247,6 +1262,9 @@ impl Checker<'_> {
         constructors: &[String],
         pos: &Pos,
     ) -> Result<Vec<hir::Stmt>, String> {
+        let shape = self.apparent_type(array_ty);
+        let array_ty = &shape;
+
         let locals = JsonLocals::new(pos);
         let (length, init) = match array_ty {
             Type::FixedArray(_, length) => (

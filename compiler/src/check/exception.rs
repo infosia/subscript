@@ -169,7 +169,7 @@ impl Checker<'_> {
 
     /// Whether `ty` is the Error class.
     pub(crate) fn is_error_type(&self, ty: &Type) -> bool {
-        matches!(ty, Type::Class(id) if *id == self.error_class)
+        matches!(self.apparent_type(ty), Type::Class(id) if id == self.error_class)
     }
 
     /// Whether `ty` is the Error class or holds it at any depth: as an
@@ -180,7 +180,7 @@ impl Checker<'_> {
             if checker.is_error_type(ty) {
                 return true;
             }
-            match ty {
+            match &checker.apparent_type(ty) {
                 Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
                     visit(checker, element, seen)
                 }
@@ -229,7 +229,7 @@ impl Checker<'_> {
             },
             [argument] if argument.spread.is_none() => {
                 let message = self.check_expr(&argument.expr, Some(&Type::Str), fx);
-                if !matches!(message.ty, Type::Str | Type::Error) {
+                if !matches!(self.apparent_type(&message.ty), Type::Str | Type::Error) {
                     let found = self.type_name(&message.ty);
                     self.error(
                         RuleCode::S100,
@@ -348,7 +348,9 @@ impl Checker<'_> {
             Some(caught) => caught,
             None => {
                 let value = self.check_expr(&t.arg, None, fx);
-                if !matches!(value.ty, Type::Error) && !self.is_error_type(&value.ty) {
+                if !matches!(self.apparent_type(&value.ty), Type::Error)
+                    && !self.is_error_type(&value.ty)
+                {
                     let found = self.type_name(&value.ty);
                     self.error_diverging(
                         RuleCode::S010,
@@ -518,7 +520,7 @@ impl Checker<'_> {
             Some(caught) => caught,
             None => self.check_expr(&b.left, None, fx),
         };
-        if !matches!(value.ty, Type::Error) && !self.is_error_type(&value.ty) {
+        if !matches!(self.apparent_type(&value.ty), Type::Error) && !self.is_error_type(&value.ty) {
             let found = self.type_name(&value.ty);
             self.error_diverging(
                 RuleCode::S100,

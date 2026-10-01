@@ -25,7 +25,7 @@ impl<'p> Checker<'p> {
         match &m.prop {
             ast::MemberProp::Computed(c) => {
                 let obj = self.check_receiver(&m.obj, fx);
-                let index_context = match &obj.ty {
+                let index_context = match &self.apparent_type(&obj.ty) {
                     Type::Class(id) => self.classes[id.0]
                         .index_signature
                         .as_ref()
@@ -74,7 +74,7 @@ impl<'p> Checker<'p> {
         let ExprKind::Field { obj, name } = &expr.kind else {
             return false;
         };
-        let Type::Class(class) = &obj.ty else {
+        let Type::Class(class) = &self.apparent_type(&obj.ty) else {
             return false;
         };
         self.classes[class.0]
@@ -90,7 +90,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let obj = self.apparent_expr(obj);
-        if let Type::Class(id) = &obj.ty {
+        if let Type::Class(id) = &self.apparent_type(&obj.ty) {
             if let Some(signature) = self.classes[id.0].index_signature.clone() {
                 self.require_assignable(
                     &index.ty.clone(),
@@ -111,7 +111,7 @@ impl<'p> Checker<'p> {
                 };
             }
         }
-        let elem = match &obj.ty {
+        let elem = match &self.apparent_type(&obj.ty) {
             Type::Array(t) => {
                 if !self.assignable(&index.ty, &Type::I32) {
                     let name = self.type_name(&index.ty);
@@ -194,8 +194,23 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(prop_pos);
         }
+        if let Type::GenericUnion(members) = &obj.ty {
+            let members = members.clone();
+            let mut result: Option<hir::Expr> = None;
+            for member in members.iter() {
+                let mut value = obj.clone();
+                value.ty = member.clone();
+                let checked = self.member_on(value, name, prop_pos.clone(), for_write);
+                if let Some(result) = &mut result {
+                    result.ty = self.generic_union(&result.ty, &checked.ty);
+                } else {
+                    result = Some(checked);
+                }
+            }
+            return result.unwrap_or_else(|| self.err_expr(prop_pos));
+        }
         let obj = self.apparent_expr(obj);
-        match obj.ty.clone() {
+        match self.apparent_type(&obj.ty.clone()) {
             Type::Error => self.err_expr(prop_pos),
             Type::Class(id) => {
                 let field = self.classes[id.0]
@@ -298,7 +313,7 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     };
                 }
-                if matches!(obj.ty, Type::Array(_)) {
+                if matches!(self.apparent_type(&obj.ty), Type::Array(_)) {
                     // A member on an array outside a call position
                     // (stdlib.md §9): the accepted members beyond
                     // `length` are all methods.
@@ -530,7 +545,7 @@ impl<'p> Checker<'p> {
                 }
                 self.err_expr(prop_pos)
             }
-            ty if ty.is_numeric() => {
+            ty if self.apparent_type(&ty).is_numeric() => {
                 let known = matches!(
                     name,
                     "toFixed" | "toPrecision" | "toExponential" | "toLocaleString" | "toString"

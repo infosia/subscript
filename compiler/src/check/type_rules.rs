@@ -62,7 +62,7 @@ impl<'p> Checker<'p> {
     }
 
     pub(crate) fn is_value_class(&self, ty: &Type) -> bool {
-        matches!(ty, Type::Class(id) if self.classes[id.0].is_value)
+        matches!(&self.apparent_type(ty), Type::Class(id) if self.classes[id.0].is_value)
     }
 
     pub(crate) fn is_reference_class(&self, ty: &Type) -> bool {

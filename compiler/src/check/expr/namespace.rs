@@ -580,9 +580,13 @@ impl<'p> Checker<'p> {
         if self.plain_value_leaf(ty) {
             return None;
         }
-        match ty {
+        match &self.apparent_type(ty) {
             Type::Str if string_slot_allowed => None,
-            Type::FixedArray(element, _) if string_slot_allowed && **element == Type::Str => None,
+            Type::FixedArray(element, _)
+                if string_slot_allowed && self.apparent_type(element) == Type::Str =>
+            {
+                None
+            }
             Type::FixedArray(element, _) => {
                 self.non_transferable_message_field(element, path, pos, false, visiting)
             }
@@ -670,7 +674,7 @@ impl<'p> Checker<'p> {
             let ident_pos = self.pos(ident.span);
             if self
                 .lookup_local(ident.sym.as_ref(), &ident_pos, fx)
-                .is_some_and(|local| matches!(local.ty, Type::Error))
+                .is_some_and(|local| matches!(self.apparent_type(&local.ty), Type::Error))
             {
                 return self.err_expr(pos);
             }
@@ -719,7 +723,10 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let (input, output) = match (&sig.params[0].ty, &sig.params[1].ty) {
+        let (input, output) = match (
+            &self.apparent_type(&sig.params[0].ty),
+            &self.apparent_type(&sig.params[1].ty),
+        ) {
             (Type::Inbox(input), Type::Outbox(output)) => ((**input).clone(), (**output).clone()),
             _ => {
                 self.error(
@@ -730,7 +737,9 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
         };
-        let (Type::Class(input_id), Type::Class(output_id)) = (&input, &output) else {
+        let (Type::Class(input_id), Type::Class(output_id)) =
+            (&self.apparent_type(&input), &self.apparent_type(&output))
+        else {
             return self.err_expr(pos);
         };
 
@@ -983,7 +992,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
 
-        if pattern.ty == Type::RegExp {
+        if self.apparent_type(&(pattern.ty)) == Type::RegExp {
             let function = match name {
                 "search" => RegexFn::Search,
                 "replace" => RegexFn::Replace,
@@ -1012,7 +1021,7 @@ impl<'p> Checker<'p> {
         }
 
         if name == "search" {
-            if pattern.ty != Type::Error {
+            if self.apparent_type(&(pattern.ty)) != Type::Error {
                 let message = "`string.search` requires a `RegExp`; string-pattern search is not in the P23 surface (Q31)";
                 self.error(RuleCode::S014, message, prop_pos);
             }
@@ -1168,7 +1177,7 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 let mut value = self.check_expr(&arg.expr, Some(&Type::I64), fx);
-                if value.ty == Type::Date {
+                if self.apparent_type(&(value.ty)) == Type::Date {
                     value.ty = Type::I64;
                 } else {
                     self.require_assignable(

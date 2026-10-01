@@ -36,7 +36,7 @@ impl<'p> Checker<'p> {
                 }
             }
         }
-        match ctx {
+        match ctx.map(|ty| self.apparent_type(ty)).as_ref() {
             // compiler.md §132 rule 2: the declaration that gives the
             // poisoned context reported the failure. Each element takes
             // the poisoned context, so a nested container reports nothing
@@ -108,22 +108,30 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 let first = self.check_expr(&elems[0].expr, None, fx);
-                let elem_ty = self.container_argument(
-                    ContainerSlot::ArrayElement,
-                    first.ty.clone(),
-                    first.pos.clone(),
-                );
+                let mut elem_ty = first.ty.clone();
                 let mut out = vec![first];
                 for e in &elems[1..] {
-                    let checked = self.check_expr(&e.expr, Some(&elem_ty), fx);
-                    self.require_assignable(
-                        &checked.ty.clone(),
-                        &elem_ty,
-                        checked.pos.clone(),
-                        "the array element",
-                    );
+                    let context = (!self.involves_type_parameter(&elem_ty)).then_some(&elem_ty);
+                    let checked = self.check_expr(&e.expr, context, fx);
+                    if self.involves_type_parameter(&elem_ty)
+                        || self.involves_type_parameter(&checked.ty)
+                    {
+                        elem_ty = self.generic_union(&elem_ty, &checked.ty);
+                    } else {
+                        self.require_assignable(
+                            &checked.ty.clone(),
+                            &elem_ty,
+                            checked.pos.clone(),
+                            "the array element",
+                        );
+                    }
                     out.push(checked);
                 }
+                let elem_ty = self.container_argument(
+                    ContainerSlot::ArrayElement,
+                    elem_ty,
+                    out[0].pos.clone(),
+                );
                 hir::Expr {
                     kind: ExprKind::ArrayLit(out),
                     ty: Type::array(elem_ty),
@@ -218,7 +226,7 @@ impl<'p> Checker<'p> {
                 Some(DescriptorProp::Shorthand(ident)) => Some(self.check_ident(ident, None, fx)),
                 None if field.is_defaulted => None,
                 None if field.is_absence_capable => {
-                    let sentinel = match &field.ty {
+                    let sentinel = match &self.apparent_type(&field.ty) {
                         Type::StringAlias(id) => self
                             .string_aliases
                             .get(id.0)
@@ -274,14 +282,17 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
-        if matches!(ctx, Some(Type::FixedArray(..))) {
+        if matches!(
+            ctx.map(|ty| self.apparent_type(ty)),
+            Some(Type::FixedArray(..))
+        ) {
             self.error(
                 RuleCode::S014,
                 "array-literal spread produces a fresh T[]; it cannot construct a FixedArray",
                 pos.clone(),
             );
         }
-        let context_elem = match ctx {
+        let context_elem = match ctx.map(|ty| self.apparent_type(ty)).as_ref() {
             Some(Type::Array(elem)) => Some((**elem).clone()),
             _ => None,
         };
@@ -301,7 +312,7 @@ impl<'p> Checker<'p> {
             let (spread, element_ty) = if is_spread {
                 let spread_pos = self.pos(slot.spread.unwrap_or(a.span));
                 let apparent = self.apparent_type(&expr.ty);
-                let selected = match &apparent {
+                let selected = match &self.apparent_type(&apparent) {
                     // compiler.md §104.1 rules 1 and 4: the operand is
                     // rejected on its resolved type. §79 rule 6: the site
                     // serves both `tsc` classes, and its variant explains
@@ -329,7 +340,7 @@ impl<'p> Checker<'p> {
                         None
                     }
                     Type::Error => None,
-                    other => match other.iteration_element() {
+                    other => match self.apparent_type(other).iteration_element() {
                         Some((kind, element)) => Some((hir::SpreadKind::from(kind), element)),
                         None => {
                             let actual = self.type_name(other);
@@ -352,7 +363,7 @@ impl<'p> Checker<'p> {
             } else {
                 (None, expr.ty.clone())
             };
-            if inferred.is_none() && !matches!(element_ty, Type::Error) {
+            if inferred.is_none() && !matches!(self.apparent_type(&element_ty), Type::Error) {
                 let saved_context = self.enter_container_context(ctx);
                 let admitted = self.container_argument(
                     ContainerSlot::ArrayElement,

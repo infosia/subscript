@@ -81,16 +81,19 @@ impl<'p> Checker<'p> {
     /// pattern reads by index, a field pattern reads by field name
     /// (§107.1).
     fn pattern_source_fits(&mut self, pattern: &pattern::Pattern<'_>, ty: &Type) -> bool {
-        if matches!(ty, Type::Error) {
+        if matches!(&self.apparent_type(ty), Type::Error) {
             return false;
         }
         let (fits, shape) = match pattern {
             pattern::Pattern::Array { .. } => (
-                matches!(ty, Type::Array(_) | Type::FixedArray(_, _)),
+                matches!(
+                    &self.apparent_type(ty),
+                    Type::Array(_) | Type::FixedArray(_, _)
+                ),
                 "an array binding pattern reads a `T[]` or a `FixedArray<T, N>`",
             ),
             pattern::Pattern::Fields { .. } => (
-                matches!(ty, Type::Class(_)),
+                matches!(&self.apparent_type(ty), Type::Class(_)),
                 "a field binding pattern reads a reference or value class",
             ),
             _ => return true,
@@ -237,10 +240,10 @@ impl<'p> Checker<'p> {
 
     /// True for the three Q35 Context-affine runtime handle types, including
     /// their nullable local form.
-    pub(crate) fn is_context_affine_type(ty: &Type) -> bool {
-        match ty {
+    pub(crate) fn is_context_affine_type(&self, ty: &Type) -> bool {
+        match &self.apparent_type(ty) {
             Type::Worker(..) | Type::Inbox(_) | Type::Outbox(_) => true,
-            Type::Nullable(inner) => Self::is_context_affine_type(inner),
+            Type::Nullable(inner) => self.is_context_affine_type(inner),
             _ => false,
         }
     }

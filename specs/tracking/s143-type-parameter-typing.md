@@ -2855,3 +2855,4786 @@ gate full cf7cce9480bb85b8e47ed574d32e27e29c784abe dirty:13 debug 2149/0/3 relea
 The product matrix costs 5.90 s, above the 5 s aim of the handoff. No
 cell was cut: the cost is 0.5 % of a full gate, and each cell is a
 distinct pair of value role and consumer site.
+
+
+## Final review fix round
+Every value-shape test uses `apparent_type`, directly or through an immutable local that the same function resolves.
+`apparent_expr` uses that function. Type identity, assignability, constraints, and storage layout retain their raw type form.
+No per-site deferral flag was added. No test expectation or golden changed.
+
+### Findings and tests
+
+| Finding | Change | Test |
+|---|---|---|
+| Object and array patterns reject constrained parameters | `pattern_source_fits` reads the apparent source shape. | `derived-object-pattern`, `derived-parameter-pattern`, `derived-iteration-pattern`, `derived-narrowed-pattern`, `derived-array-pattern`; both columns. |
+| Context-free ternaries lose parameter identity | `check_cond` uses `generic_union` when either arm involves a parameter. Assignment checks retain the union. | `derived-ternary-number`, `derived-ternary-class`, `derived-ternary-parameters`, `derived-ternary-number-operation`; both columns. |
+| Context-free array literals reject concrete values beside T | The inferred element uses `generic_union`; concrete literal inference retains its context. | `derived-array-class`, `derived-array-number`; both columns. |
+| GenericUnion receivers reject members and methods | Each member must supply the operation through its apparent type. The result preserves each member's type. | `derived-nullish-member`, `derived-nullish-new-member`, `derived-nullish-method`; both columns. |
+| A union member lacks the requested property | Every branch is checked. Different declared classes retain C1 at concrete instantiation. | `derived-union-shared-member`; `every_union_member_must_supply_the_member` keeps a reject control. |
+| Constrained Error operands fail S010 | `is_error_type` uses the apparent type. | `derived-throw-error`; both columns. |
+| Unconstrained throw stays S010 | The matrix names `compiler.md §115` and its Error-family operand rule. | `derived-throw-unconstrained`; both columns. |
+| Product instances disappear when controls reject | Each control runs once. The product asserts exactly 4,468 omitted instances. | `generic_forms_follow_tsc`; the full omitted list follows. |
+| Arrow defaults skip assignability | The arrow checker checks each default against its declared parameter type. | Product default-parameter cells; `lambda_defaults_use_the_declared_parameter_type`. |
+| Project restrictions use constrained shapes too early | The existing UnaryNumeric and TemplateInterpolation admission tests still defer f16 arithmetic and Date formatting. | `derived-f16-unary`; both columns. `derived-date-template`; no-instance only. |
+
+All `derived-*` cells must pass TypeScript. The test reports a rejected TypeScript accept control separately.
+The Date formatter's concrete control rejects under the existing Date template-interpolation restriction; its instance cell is omitted.
+The shared-member instance names S005 and C1 because distinct concrete class types retain nominal identity.
+The source scan routes variant equality, including Date and RegExp dispatch, through the same function.
+
+### Total source check
+
+`compiler/tests/apparent_type_shapes.rs::every_value_shape_test_uses_the_apparent_type` scans every Rust file under `compiler/src/check` recursively.
+The scan reads token groups. It ignores comments, character literals, regular strings, and raw strings.
+It reports Type patterns in `match`, `let`, and `matches!`, variant equality in both orders, and numeric or iteration predicates.
+Each Type-bearing tuple member must have its own route. Immutable local routes follow lexical scope; a child scope cannot cover its parent.
+A named allowlist group pins each raw function's input and pattern sequence with a fingerprint.
+A new raw test changes that fingerprint, including a test inside an allowed function.
+The test also rejects stale allowlist entries.
+
+The scan reports 479 tests. The allowlist has 14 named groups and 42 fixed function fingerprints.
+Its measured cost is 0.133 seconds. Six scanner tests include raw/routed controls, tuple coverage, scope coverage, equality orders, and fingerprint changes.
+
+| Allowlist group | Reason |
+|---|---|
+| `concrete-captures` | Capture validation runs on the final concrete HIR after opaque instances leave it (§135 rule 1). |
+| `union-members` | Union decomposition preserves T identity; each member then uses apparent_type (§143 rule 1c). |
+| `instance-identity` | Instance keys compare declared type arguments and preserve T identity (§143 rule 1b). |
+| `concrete-initializers` | Initializer effect analysis runs on the final concrete HIR (§135 rule 1). |
+| `json-number` | The callers supply apparent_type to this scalar conversion-code selector. |
+| `concrete-layout` | Layout validation runs after opaque instances leave the HIR (§135 rule 1). |
+| `storage-layout` | Storage layout inspects the declared type form; T has no concrete layout (§143 rule 2a). |
+| `mirror-declarations` | C mirror declarations have concrete boundary types and cannot declare type parameters. |
+| `parameter-form` | These tests resolve or preserve T identity; they do not select a value operation (§143 rules 1a–1d). |
+| `operation-signatures` | The operation dispatcher constructs these outer container, function, and Worker shapes before this pass. |
+| `closed-alias` | The switch checker admits exhaustive aliases only from a declared StringAlias, never T. |
+| `assignability` | Assignability and its diagnostics must inspect T itself (§143 rule 1b). |
+| `wire-declarations` | Wire boundary declarations come from concrete mirror types, which cannot declare type parameters. |
+| `signature-identity` | These declarations and return checks require exactly Void; constraint projection changes that identity (§143 rule 1b). |
+
+The raw type-form groups implement §143 rules 1a–1d or rule 2a, rather than select an operation on a value.
+The other groups inspect concrete declarations, final HIR, or dispatcher-built outer shapes that cannot be a type parameter.
+The following table enumerates every scanned site by file and function. Counts include each Type-bearing match arm.
+
+| File under `compiler/src/check` | Function | Routed tests | Allowlisted raw tests |
+|---|---|---:|---:|
+| `bindings.rs` | `is_context_affine_type` | 2 | 0 |
+| `bindings.rs` | `pattern_source_fits` | 3 | 0 |
+| `bodies.rs` | `check_function` | 2 | 0 |
+| `bodies.rs` | `check_this_in_assignment_prefix` | 1 | 0 |
+| `bodies.rs` | `require_field_values` | 1 | 0 |
+| `capture.rs` | `expr` | 0 | 2 |
+| `capture.rs` | `fact` | 0 | 4 |
+| `capture.rs` | `type_name` | 0 | 9 |
+| `class_shape.rs` | `plain_value_leaf` | 1 | 0 |
+| `class_shape.rs` | `resolve_class_method` | 0 | 1 |
+| `class_shape.rs` | `resolve_class_shape` | 4 | 0 |
+| `class_shape.rs` | `validate_class_index_accessors` | 0 | 1 |
+| `class_shape.rs` | `value_field_ok` | 2 | 0 |
+| `container_argument.rs` | `enter_container_context` | 1 | 0 |
+| `exception.rs` | `check_error_new` | 1 | 0 |
+| `exception.rs` | `check_instanceof` | 1 | 0 |
+| `exception.rs` | `check_throw` | 1 | 0 |
+| `exception.rs` | `is_error_type` | 1 | 0 |
+| `exception.rs` | `visit` | 2 | 0 |
+| `expr.rs` | `contextual_object_class` | 3 | 0 |
+| `expr/aggregate.rs` | `check_array_lit` | 3 | 0 |
+| `expr/aggregate.rs` | `check_array_spread_lit` | 7 | 0 |
+| `expr/aggregate.rs` | `check_descriptor_lit` | 1 | 0 |
+| `expr/array_of_and_map_copy.rs` | `check_array_of` | 1 | 0 |
+| `expr/array_of_and_map_copy.rs` | `check_map_copy` | 4 | 0 |
+| `expr/assign.rs` | `check_assign` | 1 | 0 |
+| `expr/assign.rs` | `check_member_place` | 3 | 0 |
+| `expr/call.rs` | `check_args` | 1 | 0 |
+| `expr/call.rs` | `check_context_bytes_call` | 4 | 0 |
+| `expr/call.rs` | `check_indirect_call` | 2 | 1 |
+| `expr/call.rs` | `check_method_call` | 1 | 0 |
+| `expr/call.rs` | `check_method_call_on` | 15 | 1 |
+| `expr/call.rs` | `check_new` | 2 | 0 |
+| `expr/call.rs` | `check_set_source` | 4 | 0 |
+| `expr/call.rs` | `context_bytes_storage_rejection` | 4 | 0 |
+| `expr/entry.rs` | `check_await` | 5 | 0 |
+| `expr/entry.rs` | `embedded_header_projection` | 2 | 0 |
+| `expr/entry.rs` | `reject_embedded_header_copy` | 1 | 0 |
+| `expr/lambda.rs` | `check_lambda` | 1 | 0 |
+| `expr/lambda.rs` | `check_lambda_with` | 2 | 0 |
+| `expr/literal.rs` | `apply_narrowing` | 1 | 0 |
+| `expr/literal.rs` | `check_ident` | 1 | 0 |
+| `expr/literal.rs` | `check_lit` | 1 | 0 |
+| `expr/literal.rs` | `check_num_lit` | 3 | 0 |
+| `expr/literal.rs` | `check_template` | 3 | 0 |
+| `expr/member.rs` | `check_index` | 4 | 0 |
+| `expr/member.rs` | `check_member_read_inner` | 1 | 0 |
+| `expr/member.rs` | `is_absence_capable_member_expr` | 1 | 0 |
+| `expr/member.rs` | `member_on` | 12 | 1 |
+| `expr/method.rs` | `check_array_from` | 5 | 0 |
+| `expr/method.rs` | `check_array_method` | 9 | 0 |
+| `expr/method.rs` | `check_map_group_by` | 6 | 1 |
+| `expr/method.rs` | `check_map_method` | 3 | 0 |
+| `expr/method.rs` | `check_number_method` | 3 | 0 |
+| `expr/method.rs` | `check_set_method` | 2 | 0 |
+| `expr/method.rs` | `expect_callback_shape` | 3 | 0 |
+| `expr/method.rs` | `map_get_value_ok` | 1 | 0 |
+| `expr/method.rs` | `reduce_acc_context` | 2 | 0 |
+| `expr/namespace.rs` | `check_date_new` | 1 | 0 |
+| `expr/namespace.rs` | `check_receiver` | 1 | 0 |
+| `expr/namespace.rs` | `check_string_pattern_method` | 2 | 0 |
+| `expr/namespace.rs` | `check_worker_spawn` | 3 | 1 |
+| `expr/namespace.rs` | `non_transferable_message_field` | 5 | 0 |
+| `expr/operator.rs` | `bin_result` | 33 | 0 |
+| `expr/operator.rs` | `check_as` | 13 | 0 |
+| `expr/operator.rs` | `check_bin` | 5 | 0 |
+| `expr/operator.rs` | `check_cond` | 1 | 0 |
+| `expr/operator.rs` | `check_nullish` | 2 | 0 |
+| `expr/operator.rs` | `check_optional_chain_statement` | 1 | 0 |
+| `expr/operator.rs` | `check_optional_member` | 1 | 0 |
+| `expr/operator.rs` | `check_optional_plan` | 1 | 0 |
+| `expr/operator.rs` | `check_unary` | 8 | 0 |
+| `expr/operator.rs` | `check_update` | 4 | 0 |
+| `expr/operator.rs` | `finish_nullish_plan` | 2 | 0 |
+| `expr/operator.rs` | `nullish_result_type` | 1 | 0 |
+| `expr/operator.rs` | `reject_unbound_optional_chain` | 1 | 0 |
+| `expr/operator.rs` | `require_nullable_operand` | 1 | 0 |
+| `generics.rs` | `numeric_normal_form` | 0 | 14 |
+| `generics.rs` | `same_normal_form` | 0 | 4 |
+| `host_entries.rs` | `populate` | 0 | 1 |
+| `init_effects.rs` | `class_of` | 0 | 2 |
+| `instance_chain.rs` | `argument_has_error` | 0 | 2 |
+| `json.rs` | `check_json_call` | 1 | 0 |
+| `json.rs` | `check_json_parse` | 3 | 0 |
+| `json.rs` | `collect_json_types` | 2 | 0 |
+| `json.rs` | `json_array_construction_body` | 4 | 0 |
+| `json.rs` | `json_array_validation_body` | 1 | 0 |
+| `json.rs` | `json_construction_body` | 8 | 0 |
+| `json.rs` | `json_helper_body` | 14 | 0 |
+| `json.rs` | `json_number_target` | 0 | 10 |
+| `json.rs` | `json_validation_body` | 5 | 0 |
+| `json.rs` | `visit` | 9 | 0 |
+| `json.rs` | `walk` | 2 | 0 |
+| `layout.rs` | `expression_builds_into_destination` | 0 | 2 |
+| `layout.rs` | `has_managed_interior` | 0 | 2 |
+| `layout.rs` | `independent_type_layout` | 0 | 3 |
+| `layout.rs` | `is_aggregate` | 0 | 2 |
+| `layout.rs` | `type_layout` | 0 | 3 |
+| `layout.rs` | `validate_expr_frame` | 0 | 1 |
+| `mirror_provenance.rs` | `foreign_parameter_provenance` | 0 | 6 |
+| `opaque.rs` | `constrain_opaque_param` | 0 | 2 |
+| `opaque.rs` | `constraint_cycle` | 0 | 1 |
+| `opaque.rs` | `direct_constraint` | 0 | 1 |
+| `opaque.rs` | `generic_overlap` | 0 | 8 |
+| `opaque.rs` | `generic_union` | 0 | 1 |
+| `opaque.rs` | `instance_restriction` | 15 | 0 |
+| `opaque.rs` | `involves_type_parameter` | 0 | 2 |
+| `opaque.rs` | `is_type_parameter` | 0 | 1 |
+| `opaque.rs` | `is_unconstrained_type_parameter` | 0 | 1 |
+| `opaque.rs` | `non_null_type` | 0 | 2 |
+| `opaque.rs` | `resolve_apparent_type` | 0 | 5 |
+| `pipeline.rs` | `normalize_operation_parameter_types` | 0 | 6 |
+| `pipeline.rs` | `visit_expr` | 0 | 1 |
+| `signatures.rs` | `resolve_mirror_signatures` | 0 | 5 |
+| `stmt.rs` | `check_bindings` | 6 | 0 |
+| `stmt.rs` | `check_for_of` | 2 | 0 |
+| `stmt.rs` | `check_for_of_subject_under_flag` | 5 | 0 |
+| `stmt.rs` | `check_return` | 2 | 2 |
+| `stmt.rs` | `check_switch` | 3 | 0 |
+| `stmt.rs` | `for_of_subject_from` | 5 | 0 |
+| `stmt.rs` | `is_fused_view_receiver` | 1 | 0 |
+| `stmt.rs` | `narrow_paths` | 1 | 0 |
+| `stmt.rs` | `require_bool` | 1 | 0 |
+| `stmt.rs` | `stmt_returns` | 0 | 1 |
+| `type_rules.rs` | `assignable_through_constraints` | 1 | 17 |
+| `type_rules.rs` | `contains_string_alias` | 0 | 4 |
+| `type_rules.rs` | `is_value_class` | 1 | 0 |
+| `type_rules.rs` | `report_not_assignable` | 0 | 8 |
+| `type_rules.rs` | `supported_wire_alias_boundary_type` | 0 | 3 |
+| `tyres.rs` | `resolve_type_ref` | 4 | 0 |
+| `tyres.rs` | `resolve_union` | 1 | 0 |
+
+### Product and cost
+
+| Axis or count | Result |
+|---|---:|
+| Value roles | 20 |
+| Consumer sites | 74 |
+| Parameter kinds | 7 |
+| Instance columns | 2 |
+| Product candidates | 20,720 |
+| Product no-instance cells | 10,360 |
+| Product admitted instance cells | 5,892 |
+| Product omitted instance cells | 4,468 |
+| Product cells | 16,252 |
+| Kept hand-written and finding cells | 1,236 |
+| Total no-instance cells | 11,178 |
+| Total instance cells | 6,310 |
+| Total cells | 17,488 |
+| Failures | 0 |
+| Final measured matrix time | 22.173609084 s |
+
+The first expanded product cost 44.667767875 seconds: 17,205 cells, 268 failures, and 4,714 omitted instances.
+It had 20 roles, 74 sites, seven kinds, and two columns. That exceeded ten seconds and was reported before further work.
+No cell was removed for cost. Each product cell is a distinct pair of value role and consumer site.
+The generator emits only the helpers each role needs. It checks product admission controls once, rather than twice.
+The matrix states a 30-second budget. TypeScript runs once over all admitted cells in one temporary project.
+Field-initializer cells use a declared generic field and name S100/C9 for its prohibited `this` read.
+Default-parameter cells use a const source value, so the closure's capture rule does not hide default-value assignability.
+The field and default-parameter cells preserve all 20 roles and seven kinds.
+
+### Rule 5 measurement
+
+The harness uses `codegen/tests/corpus/mod.rs::entry_ids` and `entry_sources`.
+It copies the trap loaders from `codegen/tests/support/trap_corpus.rs`, including all ambient mirrors.
+It discovers every example recursively and adds its required engine mirror.
+The same harness runs against HEAD `1e901ca9` and the final checker. The temporary test is removed after measurement.
+
+| Measurement | Result |
+|---|---:|
+| Programs | 387 |
+| Sources | 511 |
+| Rejected programs at the pin | 0 |
+| Rejected programs after the change | 0 |
+| Pin debug checker time | 1.438187333 s |
+| Final debug checker time | 1.411691125 s |
+| TypeScript version | 5.9.2 |
+| TypeScript unconstrained throw verdict | exit 0, no diagnostic |
+
+TypeScript uses the same strict, ES2022, ESNext.Disposable, Bundler, noEmit, and empty-types options as the matrix.
+The library clippy check retains its two existing argument-count warnings; the existing library-test warning makes the prior count three.
+
+### Changed Rust file sizes
+
+| File | Lines |
+|---|---:|
+| `compiler/src/check/bindings.rs` | 250 |
+| `compiler/src/check/bodies.rs` | 845 |
+| `compiler/src/check/class_shape.rs` | 979 |
+| `compiler/src/check/container_argument.rs` | 93 |
+| `compiler/src/check/exception.rs` | 591 |
+| `compiler/src/check/expr.rs` | 553 |
+| `compiler/src/check/expr/aggregate.rs` | 400 |
+| `compiler/src/check/expr/array_of_and_map_copy.rs` | 134 |
+| `compiler/src/check/expr/assign.rs` | 624 |
+| `compiler/src/check/expr/call.rs` | 1555 |
+| `compiler/src/check/expr/entry.rs` | 679 |
+| `compiler/src/check/expr/lambda.rs` | 248 |
+| `compiler/src/check/expr/literal.rs` | 538 |
+| `compiler/src/check/expr/member.rs` | 590 |
+| `compiler/src/check/expr/method.rs` | 1570 |
+| `compiler/src/check/expr/namespace.rs` | 1282 |
+| `compiler/src/check/expr/operator.rs` | 1505 |
+| `compiler/src/check/json.rs` | 1597 |
+| `compiler/src/check/lookup.rs` | 212 |
+| `compiler/src/check/opaque.rs` | 624 |
+| `compiler/src/check/signatures.rs` | 552 |
+| `compiler/src/check/stmt.rs` | 1538 |
+| `compiler/src/check/type_rules.rs` | 269 |
+| `compiler/src/check/tyres.rs` | 678 |
+| `compiler/tests/apparent_type_shapes.rs` | 640 |
+| `compiler/tests/generic_tsc_matrix.rs` | 1544 |
+| `compiler/tests/generic_tsc_matrix/findings.rs` | 60 |
+| `compiler/tests/generic_tsc_matrix/product.rs` | 483 |
+
+Each changed Rust file stays below 2,000 lines. No source outside the authorized compiler and tracking-note file set changes.
+No corpus-rejection or file-scope stop occurs. The quick gate verdict is recorded below.
+
+### Omitted product instances
+
+Each concrete candidate rejects outside the accepted body form. These 4,468 cells stay outside the instance column under §143 rule 4.
+The asserted count detects an additional omission. Each reason is the diagnostic message, with Markdown pipes escaped.
+
+| Omitted cell | Concrete rejection |
+|---|---|
+| `product-plain-ternary-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-initializer-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-assignment-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-return-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-argument-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-push-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-compound-add-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `+=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `+=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `+=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-sub-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `-=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `-=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `-=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-mul-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `*=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `*=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `*=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-div-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `/=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `/=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `/=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-mod-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `%=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `%=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `%=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-and-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `&=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `&=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `&=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-or-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `\|=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `\|=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `\|=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-xor-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `^=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `^=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `^=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-shl-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `<<=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `<<=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `<<=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-shr-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `>>=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `>>=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-ushr-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `>>>=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `>>>=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>>=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-initializer-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-assignment-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-return-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-argument-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-push-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-compound-add-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `+=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `+=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `+=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-sub-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `-=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `-=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `-=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-mul-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `*=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `*=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `*=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-div-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `/=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `/=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `/=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-mod-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `%=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `%=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `%=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-and-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `&=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `&=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `&=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-or-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `\|=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `\|=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `\|=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-xor-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `^=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `^=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `^=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-shl-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `<<=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `<<=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `<<=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-shr-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `>>=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `>>=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-compound-ushr-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `>>>=` is not defined for `boolean` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `>>>=` is not defined for `string` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>>=` is not defined for `Box` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullish-result-initializer-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-assignment-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-return-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-argument-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-push-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-compound-add-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `+=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `+=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `+=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-compound-sub-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `-=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `-=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `-=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-compound-mul-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `*=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `*=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `*=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-compound-div-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `/=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `/=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `/=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-compound-mod-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `%=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `%=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `%=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-compound-and-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `&=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `&=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `&=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-compound-or-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-compound-xor-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `^=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `^=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `^=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-compound-shl-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-compound-shr-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-compound-ushr-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>`; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>`; `string`: the left operand of `??` has type `string`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>`; `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>`; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-plain-nullish-result-equality-left-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-equality-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-relational-left-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-relational-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-switch-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-case-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `boolean`; the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; the left operand of `??` has type `Box`, which is not nullable; `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]`; the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-case-number-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-case-string-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-condition-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-index-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-map-key-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24); the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-map-key-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-ternary-arm-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-array-literal-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-object-pattern-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-array-pattern-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-throw-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-default-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-for-of-binding-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-member-read-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullish-result-method-call-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-array-literal-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-destructuring-source-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-throw-operand-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-array-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-fixed-array-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-generic-field-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-generic-method-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-closure-parameter-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-await-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-await-result-field-initializer-instance` | `i32`: `await` is only legal inside an async function; `boolean`: `await` is only legal inside an async function; `string`: `await` is only legal inside an async function; `Box`: `await` is only legal inside an async function; `i32[]`: `await` is only legal inside an async function |
+| `product-plain-yield-value-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-call-return-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-parameter-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullable-initializer-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the initializer expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-assignment-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the assignment expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-return-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the return value expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-argument-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-push-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-compound-add-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `+=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `+=` is not defined for `string` and `<error>`; `Box`: operator `+=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-sub-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `-=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `-=` is not defined for `string` and `<error>`; `Box`: operator `-=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-mul-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `*=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `*=` is not defined for `string` and `<error>`; `Box`: operator `*=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-div-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `/=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `/=` is not defined for `string` and `<error>`; `Box`: operator `/=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-mod-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `%=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `%=` is not defined for `string` and `<error>`; `Box`: operator `%=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-and-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `&=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `&=` is not defined for `string` and `<error>`; `Box`: operator `&=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-or-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `\|=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `\|=` is not defined for `string` and `<error>`; `Box`: operator `\|=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-xor-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `^=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `^=` is not defined for `string` and `<error>`; `Box`: operator `^=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-shl-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `<<=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `<<=` is not defined for `string` and `<error>`; `Box`: operator `<<=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-shr-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `>>=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `>>=` is not defined for `string` and `<error>`; `Box`: operator `>>=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-ushr-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `>>>=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `>>>=` is not defined for `string` and `<error>`; `Box`: operator `>>>=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-initializer-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the initializer expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-assignment-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the assignment expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-return-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the return value expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-argument-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-push-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-compound-add-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `+=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `+=` is not defined for `string` and `<error>`; `Box`: operator `+=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-sub-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `-=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `-=` is not defined for `string` and `<error>`; `Box`: operator `-=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-mul-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `*=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `*=` is not defined for `string` and `<error>`; `Box`: operator `*=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-div-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `/=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `/=` is not defined for `string` and `<error>`; `Box`: operator `/=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-mod-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `%=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `%=` is not defined for `string` and `<error>`; `Box`: operator `%=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-and-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `&=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `&=` is not defined for `string` and `<error>`; `Box`: operator `&=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-or-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `\|=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `\|=` is not defined for `string` and `<error>`; `Box`: operator `\|=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-xor-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `^=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `^=` is not defined for `string` and `<error>`; `Box`: operator `^=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-shl-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `<<=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `<<=` is not defined for `string` and `<error>`; `Box`: operator `<<=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-shr-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `>>=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `>>=` is not defined for `string` and `<error>`; `Box`: operator `>>=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-compound-ushr-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `>>>=` is not defined for `boolean` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `>>>=` is not defined for `string` and `<error>`; `Box`: operator `>>>=` is not defined for `Box` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-plain-nullable-initializer-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: type mismatch: the initializer expects `i32`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-assignment-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: type mismatch: the assignment expects `i32`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-return-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: type mismatch: the return value expects `i32`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-argument-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: type mismatch: the argument expects `i32`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-push-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: type mismatch: the argument expects `i32`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-compound-add-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>`; `Box`: operator `+=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-compound-sub-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>`; `Box`: operator `-=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-compound-mul-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>`; `Box`: operator `*=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-compound-div-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>`; `Box`: operator `/=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-compound-mod-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>`; `Box`: operator `%=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-compound-and-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>`; `Box`: operator `&=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-compound-or-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>`; `Box`: operator `\|=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-compound-xor-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>`; `Box`: operator `^=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-compound-shl-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>`; `Box`: operator `<<=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-compound-shr-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>`; `Box`: operator `>>=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-compound-ushr-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>`; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>`; `Box`: operator `>>>=` is not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-plain-nullable-equality-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: operator not defined for `Box \| null` and `i32`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-equality-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: operator not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-relational-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: operator not defined for `Box \| null` and `i32`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-relational-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: operator not defined for `i32` and `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-switch-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-case-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; switch discriminants are integers, enums, strings, or string-literal union aliases; got `boolean`; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; nominal types are not interchangeable: the case label expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-plain-nullable-case-number-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: type mismatch: the case label expects `i32`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-case-string-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: type mismatch: the case label expects `string`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-condition-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: condition must be boolean, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-index-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: array indices are `i32`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-map-key-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-plain-nullable-map-key-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: type mismatch: the argument expects `i32`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-nullish-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; the left operand of `??` has type `i32`, which is not nullable; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; the left operand of `??` has type `boolean`, which is not nullable; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-nullable-object-pattern-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: a field binding pattern reads a reference or value class; the source is `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-array-pattern-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-default-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: nominal types are not interchangeable: the default value expects `Box`, got `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-for-of-binding-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: a field binding pattern reads a reference or value class; the source is `Box \| null`; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-member-read-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: `Box \| null` may be null here; narrow with a null check first; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-nullable-method-call-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `boolean`: unions are limited to `Ref \| null`; `boolean \| null` is not a reference type union; `string`: unions are limited to `Ref \| null`; `string \| null` is not a reference type union; `Box`: `Box \| null` may be null here; narrow with a null check first; `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-plain-fresh-add-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32`; `boolean`: operator not defined for `boolean` and `i32`; `string`: operator not defined for `string` and `i32`; `Box`: operator not defined for `Box` and `i32`; `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-plain-fresh-add-condition-instance` | `i32`: condition must be boolean, got `i32`; `boolean`: operator not defined for `boolean` and `i32`; `string`: operator not defined for `string` and `i32`; `Box`: operator not defined for `Box` and `i32`; `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-plain-fresh-add-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-fresh-add-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32`; `boolean`: operator not defined for `boolean` and `i32`; `string`: operator not defined for `string` and `i32`; `Box`: operator not defined for `Box` and `i32`; `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-plain-fresh-add-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32`; `boolean`: operator not defined for `boolean` and `i32`; `string`: operator not defined for `string` and `i32`; `Box`: operator not defined for `Box` and `i32`; `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-plain-fresh-add-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32`; `boolean`: operator not defined for `boolean` and `i32`; `string`: operator not defined for `string` and `i32`; `Box`: operator not defined for `Box` and `i32`; `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-plain-fresh-add-member-read-instance` | `i32`: `i32` has no member `v`; `boolean`: operator not defined for `boolean` and `i32`; `string`: operator not defined for `string` and `i32`; `Box`: operator not defined for `Box` and `i32`; `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-plain-fresh-add-method-call-instance` | `i32`: `i32` has no method `get`; `boolean`: operator not defined for `boolean` and `i32`; `string`: operator not defined for `string` and `i32`; `Box`: operator not defined for `Box` and `i32`; `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-plain-fresh-minus-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32`; `boolean`: unary `-` requires a numeric operand, got `boolean`; `string`: unary `-` requires a numeric operand, got `string`; `Box`: unary `-` requires a numeric operand, got `Box`; `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-plain-fresh-minus-condition-instance` | `i32`: condition must be boolean, got `i32`; `boolean`: unary `-` requires a numeric operand, got `boolean`; `string`: unary `-` requires a numeric operand, got `string`; `Box`: unary `-` requires a numeric operand, got `Box`; `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-plain-fresh-minus-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-fresh-minus-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32`; `boolean`: unary `-` requires a numeric operand, got `boolean`; `string`: unary `-` requires a numeric operand, got `string`; `Box`: unary `-` requires a numeric operand, got `Box`; `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-plain-fresh-minus-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32`; `boolean`: unary `-` requires a numeric operand, got `boolean`; `string`: unary `-` requires a numeric operand, got `string`; `Box`: unary `-` requires a numeric operand, got `Box`; `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-plain-fresh-minus-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32`; `boolean`: unary `-` requires a numeric operand, got `boolean`; `string`: unary `-` requires a numeric operand, got `string`; `Box`: unary `-` requires a numeric operand, got `Box`; `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-plain-fresh-minus-member-read-instance` | `i32`: `i32` has no member `v`; `boolean`: unary `-` requires a numeric operand, got `boolean`; `string`: unary `-` requires a numeric operand, got `string`; `Box`: unary `-` requires a numeric operand, got `Box`; `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-plain-fresh-minus-method-call-instance` | `i32`: `i32` has no method `get`; `boolean`: unary `-` requires a numeric operand, got `boolean`; `string`: unary `-` requires a numeric operand, got `string`; `Box`: unary `-` requires a numeric operand, got `Box`; `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-plain-linked-backward-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-plain-linked-backward-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-plain-linked-backward-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-plain-linked-backward-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-plain-linked-backward-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-plain-linked-backward-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-plain-linked-backward-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-plain-linked-backward-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-plain-linked-backward-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-plain-linked-backward-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-plain-linked-backward-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-plain-linked-backward-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-plain-linked-backward-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-plain-linked-backward-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-plain-linked-backward-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-plain-linked-backward-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-plain-linked-backward-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-plain-linked-backward-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-plain-linked-backward-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-plain-linked-backward-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-plain-linked-forward-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-plain-linked-forward-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-plain-linked-forward-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-plain-linked-forward-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-plain-linked-forward-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-plain-linked-forward-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-plain-linked-forward-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-plain-linked-forward-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-plain-linked-forward-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-plain-linked-forward-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-plain-linked-forward-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-plain-linked-forward-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-plain-linked-forward-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-plain-linked-forward-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-plain-linked-forward-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-plain-linked-forward-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-plain-linked-forward-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-plain-linked-forward-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-plain-linked-forward-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-plain-linked-forward-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-plain-concrete-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32`; `boolean`: type mismatch: the case label expects `string`, got `i32`; `string`: type mismatch: the case label expects `string`, got `i32`; `Box`: type mismatch: the case label expects `string`, got `i32`; `i32[]`: type mismatch: the case label expects `string`, got `i32` |
+| `product-plain-concrete-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; `boolean`: the left operand of `??` has type `boolean`, which is not nullable; `string`: the left operand of `??` has type `string`, which is not nullable; `Box`: the left operand of `??` has type `Box`, which is not nullable; `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-plain-concrete-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32`; `boolean`: a field binding pattern reads a reference or value class; the source is `i32`; `string`: a field binding pattern reads a reference or value class; the source is `i32`; `Box`: a field binding pattern reads a reference or value class; the source is `i32`; `i32[]`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-plain-concrete-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32`; `boolean`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32`; `string`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32`; `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32`; `i32[]`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-plain-concrete-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32`; `boolean`: a field binding pattern reads a reference or value class; the source is `i32`; `string`: a field binding pattern reads a reference or value class; the source is `i32`; `Box`: a field binding pattern reads a reference or value class; the source is `i32`; `i32[]`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-plain-concrete-member-read-instance` | `i32`: `i32` has no member `v`; `boolean`: `i32` has no member `v`; `string`: `i32` has no member `v`; `Box`: `i32` has no member `v`; `i32[]`: `i32` has no member `v` |
+| `product-plain-concrete-method-call-instance` | `i32`: `i32` has no method `get`; `boolean`: `i32` has no method `get`; `string`: `i32` has no method `get`; `Box`: `i32` has no method `get`; `i32[]`: `i32` has no method `get` |
+| `product-class-ternary-result-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-ternary-result-initializer-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-assignment-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-return-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-argument-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-push-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-add-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-sub-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-mul-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-div-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-mod-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-and-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-or-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-xor-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-shl-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-shr-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-compound-ushr-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-ternary-result-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-ternary-result-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-ternary-result-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-ternary-result-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-ternary-result-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-ternary-result-case-number-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-case-string-instance` | `Box`: type mismatch: the then branch expects `string`, got `Box`; type mismatch: the else branch expects `string`, got `Box` |
+| `product-class-ternary-result-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-ternary-result-index-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-map-key-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-ternary-result-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-ternary-result-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-nullish-result-initializer-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-assignment-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-return-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-argument-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-push-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-compound-add-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `+=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-sub-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `-=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-mul-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `*=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-div-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `/=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-mod-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `%=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-and-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `&=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-or-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-xor-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `^=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-shl-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-shr-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-ushr-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-initializer-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-assignment-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-return-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-argument-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-push-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-compound-add-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `+=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-sub-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `-=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-mul-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `*=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-div-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `/=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-mod-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `%=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-and-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `&=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-or-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-xor-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `^=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-shl-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-shr-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-compound-ushr-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-class-nullish-result-initializer-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-assignment-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-return-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-argument-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-push-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-compound-add-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-compound-sub-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-compound-mul-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-compound-div-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-compound-mod-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-compound-and-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-compound-or-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-compound-xor-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-compound-shl-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-compound-shr-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-compound-ushr-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-class-nullish-result-equality-left-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-equality-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-relational-left-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-relational-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-switch-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-case-number-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-case-string-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-condition-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-index-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-map-key-parameter-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-map-key-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-ternary-arm-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-array-literal-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-object-pattern-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-array-pattern-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-throw-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-default-parameter-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-for-of-binding-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-member-read-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullish-result-method-call-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-array-literal-element-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-array-literal-element-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-array-literal-element-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-array-literal-element-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-array-literal-element-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-array-literal-element-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-array-literal-element-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-array-literal-element-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-array-literal-element-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-array-literal-element-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-array-literal-element-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-array-literal-element-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-array-literal-element-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-array-literal-element-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-array-literal-element-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-array-literal-element-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-array-literal-element-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-array-literal-element-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-array-literal-element-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-array-literal-element-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-destructuring-source-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-destructuring-source-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-destructuring-source-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-destructuring-source-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-destructuring-source-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-destructuring-source-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-destructuring-source-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-destructuring-source-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-destructuring-source-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-destructuring-source-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-destructuring-source-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-destructuring-source-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-destructuring-source-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-destructuring-source-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-destructuring-source-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-destructuring-source-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-destructuring-source-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-destructuring-source-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-destructuring-source-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-destructuring-source-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-throw-operand-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-throw-operand-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-throw-operand-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-throw-operand-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-throw-operand-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-throw-operand-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-throw-operand-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-throw-operand-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-throw-operand-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-throw-operand-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-throw-operand-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-throw-operand-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-throw-operand-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-throw-operand-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-throw-operand-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-throw-operand-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-throw-operand-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-throw-operand-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-throw-operand-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-throw-operand-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-array-element-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-array-element-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-array-element-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-array-element-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-array-element-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-array-element-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-array-element-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-array-element-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-array-element-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-array-element-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-array-element-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-array-element-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-array-element-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-array-element-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-array-element-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-array-element-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-array-element-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-array-element-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-array-element-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-array-element-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-array-element-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-array-element-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-array-element-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-array-element-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-array-element-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-array-element-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-array-element-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-array-element-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-array-element-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-array-element-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-array-element-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-fixed-array-element-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-fixed-array-element-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-fixed-array-element-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-fixed-array-element-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-fixed-array-element-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-fixed-array-element-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-fixed-array-element-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fixed-array-element-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fixed-array-element-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-fixed-array-element-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-fixed-array-element-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-fixed-array-element-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-fixed-array-element-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-fixed-array-element-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-fixed-array-element-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-fixed-array-element-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-fixed-array-element-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-fixed-array-element-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-generic-field-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-generic-field-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-generic-field-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-generic-field-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-generic-field-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-generic-field-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-generic-field-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-generic-field-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-generic-field-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-generic-field-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-generic-field-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-generic-field-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-generic-field-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-generic-field-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-generic-field-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-generic-field-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-generic-field-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-generic-field-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-generic-field-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-generic-field-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-generic-method-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-generic-method-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-generic-method-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-generic-method-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-generic-method-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-generic-method-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-generic-method-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-generic-method-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-generic-method-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-generic-method-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-generic-method-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-generic-method-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-generic-method-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-generic-method-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-generic-method-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-generic-method-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-generic-method-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-generic-method-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-generic-method-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-generic-method-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-closure-parameter-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-closure-parameter-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-closure-parameter-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-closure-parameter-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-closure-parameter-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-closure-parameter-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-closure-parameter-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-closure-parameter-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-closure-parameter-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-closure-parameter-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-closure-parameter-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-closure-parameter-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-closure-parameter-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-closure-parameter-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-closure-parameter-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-closure-parameter-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-closure-parameter-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-closure-parameter-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-closure-parameter-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-closure-parameter-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-await-result-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-await-result-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-await-result-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-await-result-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-await-result-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-await-result-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-await-result-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-await-result-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-await-result-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-await-result-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-await-result-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-await-result-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-await-result-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-await-result-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-await-result-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-await-result-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-await-result-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-await-result-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-await-result-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-await-result-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-await-result-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-await-result-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-await-result-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-await-result-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-await-result-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-await-result-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-await-result-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-await-result-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-await-result-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-await-result-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-await-result-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-await-result-field-initializer-instance` | `Box`: `await` is only legal inside an async function |
+| `product-class-yield-value-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-yield-value-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-yield-value-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-yield-value-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-yield-value-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-yield-value-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-yield-value-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-yield-value-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-yield-value-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-yield-value-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-yield-value-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-yield-value-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-yield-value-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-yield-value-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-yield-value-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-yield-value-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-yield-value-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-yield-value-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-yield-value-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-yield-value-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-call-return-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-call-return-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-call-return-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-call-return-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-call-return-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-call-return-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-call-return-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-call-return-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-call-return-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-call-return-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-call-return-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-call-return-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-call-return-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-call-return-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-call-return-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-call-return-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-call-return-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-call-return-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-call-return-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-call-return-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-call-return-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-call-return-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-call-return-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-call-return-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-call-return-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-call-return-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-call-return-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-call-return-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-call-return-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-call-return-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-call-return-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-parameter-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-parameter-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-parameter-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-parameter-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-parameter-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-parameter-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-parameter-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-parameter-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-parameter-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-parameter-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-parameter-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-parameter-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-parameter-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-parameter-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-parameter-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-parameter-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-parameter-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-parameter-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-parameter-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-parameter-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-parameter-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-parameter-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-parameter-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-parameter-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-parameter-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-parameter-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-parameter-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-parameter-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-parameter-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-parameter-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-parameter-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-nullable-initializer-u-instance` | `Box`: nominal types are not interchangeable: the initializer expects `Box`, got `Box \| null` |
+| `product-class-nullable-assignment-u-instance` | `Box`: nominal types are not interchangeable: the assignment expects `Box`, got `Box \| null` |
+| `product-class-nullable-return-u-instance` | `Box`: nominal types are not interchangeable: the return value expects `Box`, got `Box \| null` |
+| `product-class-nullable-argument-u-instance` | `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `product-class-nullable-push-u-instance` | `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `product-class-nullable-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-initializer-t-instance` | `Box`: nominal types are not interchangeable: the initializer expects `Box`, got `Box \| null` |
+| `product-class-nullable-assignment-t-instance` | `Box`: nominal types are not interchangeable: the assignment expects `Box`, got `Box \| null` |
+| `product-class-nullable-return-t-instance` | `Box`: nominal types are not interchangeable: the return value expects `Box`, got `Box \| null` |
+| `product-class-nullable-argument-t-instance` | `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `product-class-nullable-push-t-instance` | `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `product-class-nullable-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box \| null` |
+| `product-class-nullable-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box \| null` |
+| `product-class-nullable-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box \| null` |
+| `product-class-nullable-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box \| null` |
+| `product-class-nullable-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box \| null` |
+| `product-class-nullable-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box \| null` |
+| `product-class-nullable-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box \| null` |
+| `product-class-nullable-equality-left-instance` | `Box`: operator not defined for `Box \| null` and `i32` |
+| `product-class-nullable-equality-right-instance` | `Box`: operator not defined for `i32` and `Box \| null` |
+| `product-class-nullable-relational-left-instance` | `Box`: operator not defined for `Box \| null` and `i32` |
+| `product-class-nullable-relational-right-instance` | `Box`: operator not defined for `i32` and `Box \| null` |
+| `product-class-nullable-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box \| null` |
+| `product-class-nullable-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; nominal types are not interchangeable: the case label expects `Box`, got `Box \| null` |
+| `product-class-nullable-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box \| null` |
+| `product-class-nullable-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box \| null` |
+| `product-class-nullable-condition-instance` | `Box`: condition must be boolean, got `Box \| null` |
+| `product-class-nullable-index-instance` | `Box`: array indices are `i32`, got `Box \| null` |
+| `product-class-nullable-map-key-parameter-instance` | `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `product-class-nullable-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box \| null` |
+| `product-class-nullable-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-nullable-object-pattern-instance` | `Box`: a field binding pattern reads a reference or value class; the source is `Box \| null` |
+| `product-class-nullable-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box \| null` |
+| `product-class-nullable-default-parameter-instance` | `Box`: nominal types are not interchangeable: the default value expects `Box`, got `Box \| null` |
+| `product-class-nullable-for-of-binding-instance` | `Box`: a field binding pattern reads a reference or value class; the source is `Box \| null` |
+| `product-class-nullable-member-read-instance` | `Box`: `Box \| null` may be null here; narrow with a null check first |
+| `product-class-nullable-method-call-instance` | `Box`: `Box \| null` may be null here; narrow with a null check first |
+| `product-class-fresh-add-initializer-u-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-assignment-u-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-return-u-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-argument-u-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-push-u-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-compound-add-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `+=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-sub-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `-=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-mul-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `*=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-div-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `/=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-mod-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `%=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-and-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `&=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-or-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-xor-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `^=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-shl-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-shr-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-ushr-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-initializer-t-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-assignment-t-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-return-t-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-argument-t-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-push-t-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-compound-add-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `+=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-sub-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `-=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-mul-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `*=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-div-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `/=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-mod-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `%=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-and-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `&=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-or-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-xor-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `^=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-shl-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-shr-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-compound-ushr-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-add-initializer-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-assignment-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-return-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-argument-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-push-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-compound-add-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `+=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-compound-sub-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `-=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-compound-mul-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `*=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-compound-div-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `/=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-compound-mod-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `%=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-compound-and-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `&=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-compound-or-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-compound-xor-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `^=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-compound-shl-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-compound-shr-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-compound-ushr-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-add-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-equality-right-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-relational-right-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-switch-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-case-number-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-case-string-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-condition-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-index-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-map-key-parameter-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-map-key-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-ternary-arm-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-fresh-add-array-literal-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-object-pattern-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-array-pattern-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-throw-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-default-parameter-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-for-of-binding-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-member-read-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-add-method-call-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-fresh-minus-initializer-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-assignment-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-return-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-argument-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-push-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-compound-add-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `+=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-sub-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `-=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-mul-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `*=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-div-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `/=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-mod-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `%=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-and-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `&=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-or-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-xor-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `^=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-shl-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-shr-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-ushr-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-initializer-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-assignment-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-return-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-argument-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-push-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-compound-add-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `+=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-sub-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `-=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-mul-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `*=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-div-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `/=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-mod-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `%=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-and-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `&=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-or-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-xor-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `^=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-shl-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-shr-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-compound-ushr-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-class-fresh-minus-initializer-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-assignment-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-return-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-argument-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-push-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-compound-add-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `+=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-compound-sub-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `-=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-compound-mul-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `*=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-compound-div-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `/=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-compound-mod-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `%=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-compound-and-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `&=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-compound-or-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-compound-xor-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `^=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-compound-shl-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-compound-shr-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-compound-ushr-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-class-fresh-minus-equality-left-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-equality-right-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-relational-left-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-relational-right-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-switch-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-case-number-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-case-string-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-condition-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-index-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-map-key-parameter-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-map-key-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-ternary-arm-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-fresh-minus-array-literal-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-object-pattern-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-array-pattern-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-throw-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-default-parameter-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-for-of-binding-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-member-read-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-fresh-minus-method-call-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-class-linked-backward-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-linked-backward-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-linked-backward-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-linked-backward-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-linked-backward-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-linked-backward-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-linked-backward-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-linked-backward-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-linked-backward-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-linked-backward-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-linked-backward-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-linked-backward-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-linked-backward-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-linked-backward-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-linked-backward-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-linked-backward-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-linked-backward-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-linked-backward-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-linked-backward-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-linked-backward-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-linked-forward-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-class-linked-forward-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-class-linked-forward-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-class-linked-forward-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-class-linked-forward-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-linked-forward-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-linked-forward-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-class-linked-forward-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-linked-forward-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-linked-forward-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-class-linked-forward-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-class-linked-forward-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-linked-forward-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-class-linked-forward-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-class-linked-forward-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-class-linked-forward-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-class-linked-forward-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-class-linked-forward-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-class-linked-forward-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-linked-forward-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-class-concrete-initializer-u-instance` | `Box`: type mismatch: the initializer expects `Box`, got `i32` |
+| `product-class-concrete-assignment-u-instance` | `Box`: type mismatch: the assignment expects `Box`, got `i32` |
+| `product-class-concrete-return-u-instance` | `Box`: type mismatch: the return value expects `Box`, got `i32` |
+| `product-class-concrete-argument-u-instance` | `Box`: type mismatch: the argument expects `Box`, got `i32` |
+| `product-class-concrete-push-u-instance` | `Box`: type mismatch: the argument expects `Box`, got `i32` |
+| `product-class-concrete-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `i32` |
+| `product-class-concrete-initializer-t-instance` | `Box`: type mismatch: the initializer expects `Box`, got `i32` |
+| `product-class-concrete-assignment-t-instance` | `Box`: type mismatch: the assignment expects `Box`, got `i32` |
+| `product-class-concrete-return-t-instance` | `Box`: type mismatch: the return value expects `Box`, got `i32` |
+| `product-class-concrete-argument-t-instance` | `Box`: type mismatch: the argument expects `Box`, got `i32` |
+| `product-class-concrete-push-t-instance` | `Box`: type mismatch: the argument expects `Box`, got `i32` |
+| `product-class-concrete-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `i32` |
+| `product-class-concrete-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `i32` |
+| `product-class-concrete-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; type mismatch: the case label expects `Box`, got `i32` |
+| `product-class-concrete-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `i32` |
+| `product-class-concrete-map-key-parameter-instance` | `Box`: type mismatch: the argument expects `Box`, got `i32` |
+| `product-class-concrete-ternary-arm-instance` | `Box`: type mismatch: the else branch expects `i32`, got `Box` |
+| `product-class-concrete-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-class-concrete-array-literal-instance` | `Box`: type mismatch: the array element expects `i32`, got `Box` |
+| `product-class-concrete-object-pattern-instance` | `Box`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-class-concrete-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-class-concrete-default-parameter-instance` | `Box`: type mismatch: the default value expects `Box`, got `i32` |
+| `product-class-concrete-for-of-binding-instance` | `Box`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-class-concrete-member-read-instance` | `Box`: `i32` has no member `v` |
+| `product-class-concrete-method-call-instance` | `Box`: `i32` has no method `get` |
+| `product-numeric-ternary-result-case-string-instance` | `i32`: type mismatch: the then branch expects `string`, got `i32`; type mismatch: the else branch expects `string`, got `i32` |
+| `product-numeric-ternary-result-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-ternary-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-ternary-result-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-ternary-result-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-ternary-result-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-ternary-result-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-ternary-result-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-nullish-result-initializer-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-assignment-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-return-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-argument-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-push-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-compound-add-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-sub-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-mul-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-div-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-mod-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-and-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-or-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-xor-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-shl-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-shr-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-ushr-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-initializer-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-assignment-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-return-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-argument-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-push-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-compound-add-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-sub-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-mul-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-div-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-mod-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-and-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-or-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-xor-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-shl-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-shr-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-ushr-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-initializer-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-assignment-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-return-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-argument-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-push-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-compound-add-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-sub-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-mul-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-div-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-mod-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-and-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-or-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-xor-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-shl-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-shr-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-compound-ushr-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullish-result-equality-left-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-equality-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-relational-left-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-relational-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-switch-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-case-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-case-number-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-case-string-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-condition-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-index-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-map-key-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-map-key-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-ternary-arm-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-array-literal-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-object-pattern-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-array-pattern-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-throw-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-default-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-for-of-binding-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-member-read-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullish-result-method-call-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-array-literal-element-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-array-literal-element-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-array-literal-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-array-literal-element-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-array-literal-element-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-array-literal-element-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-array-literal-element-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-array-literal-element-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-destructuring-source-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-destructuring-source-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-destructuring-source-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-destructuring-source-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-destructuring-source-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-destructuring-source-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-destructuring-source-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-destructuring-source-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-throw-operand-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-throw-operand-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-throw-operand-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-throw-operand-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-throw-operand-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-throw-operand-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-throw-operand-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-throw-operand-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-array-element-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-array-element-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-array-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-array-element-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-array-element-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-array-element-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-array-element-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-array-element-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-fixed-array-element-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-fixed-array-element-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-fixed-array-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-fixed-array-element-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-fixed-array-element-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-fixed-array-element-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-fixed-array-element-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-fixed-array-element-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-generic-field-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-generic-field-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-generic-field-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-generic-field-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-generic-field-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-generic-field-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-generic-field-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-generic-field-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-generic-method-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-generic-method-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-generic-method-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-generic-method-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-generic-method-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-generic-method-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-generic-method-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-generic-method-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-closure-parameter-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-closure-parameter-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-closure-parameter-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-closure-parameter-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-closure-parameter-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-closure-parameter-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-closure-parameter-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-closure-parameter-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-await-result-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-await-result-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-await-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-await-result-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-await-result-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-await-result-field-initializer-instance` | `i32`: `await` is only legal inside an async function |
+| `product-numeric-await-result-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-await-result-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-await-result-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-yield-value-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-yield-value-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-yield-value-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-yield-value-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-yield-value-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-yield-value-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-yield-value-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-yield-value-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-call-return-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-call-return-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-call-return-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-call-return-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-call-return-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-call-return-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-call-return-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-call-return-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-parameter-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-parameter-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-parameter-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-parameter-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-parameter-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-parameter-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-parameter-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-parameter-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-nullable-initializer-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-assignment-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-return-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-argument-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-push-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-compound-add-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-sub-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-mul-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-div-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-mod-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-and-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-or-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-xor-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-shl-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-shr-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-ushr-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-initializer-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-assignment-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-return-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-argument-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-push-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-compound-add-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-sub-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-mul-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-div-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-mod-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-and-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-or-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-xor-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-shl-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-shr-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-ushr-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-initializer-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-assignment-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-return-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-argument-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-push-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-compound-add-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-sub-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-mul-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-div-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-mod-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-and-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-or-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-xor-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-shl-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-shr-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-compound-ushr-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-numeric-nullable-equality-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-equality-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-loose-equality-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; loose equality is not in the language; use `===` / `!==` |
+| `product-numeric-nullable-loose-equality-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; loose equality is not in the language; use `===` / `!==` |
+| `product-numeric-nullable-relational-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-relational-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-switch-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-case-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-case-number-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-case-string-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-condition-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-template-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-index-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-map-key-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-map-key-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-ternary-arm-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-nullish-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-nullable-array-literal-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-object-pattern-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-array-pattern-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-throw-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-field-initializer-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `this` is only available in constructors and methods |
+| `product-numeric-nullable-default-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-for-of-binding-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-member-read-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-nullable-method-call-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-numeric-fresh-add-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-fresh-add-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-fresh-add-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-fresh-add-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-fresh-add-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-fresh-add-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-fresh-add-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-fresh-add-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-fresh-minus-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-fresh-minus-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-fresh-minus-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-fresh-minus-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-fresh-minus-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-fresh-minus-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-fresh-minus-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-fresh-minus-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-linked-backward-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-linked-backward-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-linked-backward-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-linked-backward-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-linked-backward-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-linked-backward-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-linked-backward-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-linked-backward-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-linked-forward-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-linked-forward-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-numeric-linked-forward-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-linked-forward-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-linked-forward-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-linked-forward-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-linked-forward-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-linked-forward-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-numeric-concrete-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-numeric-concrete-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-numeric-concrete-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-concrete-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-numeric-concrete-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-numeric-concrete-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-numeric-concrete-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-ternary-result-case-string-instance` | `i32`: type mismatch: the then branch expects `string`, got `i32`; type mismatch: the else branch expects `string`, got `i32` |
+| `product-f64-ternary-result-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-ternary-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-ternary-result-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-ternary-result-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-ternary-result-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-ternary-result-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-ternary-result-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-nullish-result-initializer-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-assignment-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-return-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-argument-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-push-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-compound-add-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-sub-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-mul-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-div-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-mod-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-and-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-or-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-xor-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-shl-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-shr-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-ushr-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-initializer-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-assignment-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-return-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-argument-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-push-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-compound-add-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-sub-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-mul-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-div-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-mod-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-and-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-or-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-xor-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-shl-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-shr-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-ushr-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-initializer-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-assignment-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-return-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-argument-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-push-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-compound-add-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-sub-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-mul-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-div-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-mod-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-and-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-or-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-xor-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-shl-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-shr-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-compound-ushr-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullish-result-equality-left-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-equality-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-relational-left-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-relational-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-switch-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-case-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-case-number-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-case-string-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-condition-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-index-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-map-key-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-map-key-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-ternary-arm-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-array-literal-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-object-pattern-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-array-pattern-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-throw-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-default-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-for-of-binding-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-member-read-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullish-result-method-call-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-array-literal-element-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-array-literal-element-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-array-literal-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-array-literal-element-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-array-literal-element-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-array-literal-element-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-array-literal-element-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-array-literal-element-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-destructuring-source-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-destructuring-source-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-destructuring-source-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-destructuring-source-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-destructuring-source-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-destructuring-source-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-destructuring-source-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-destructuring-source-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-throw-operand-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-throw-operand-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-throw-operand-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-throw-operand-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-throw-operand-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-throw-operand-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-throw-operand-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-throw-operand-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-array-element-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-array-element-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-array-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-array-element-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-array-element-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-array-element-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-array-element-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-array-element-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-fixed-array-element-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-fixed-array-element-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-fixed-array-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-fixed-array-element-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-fixed-array-element-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-fixed-array-element-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-fixed-array-element-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-fixed-array-element-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-generic-field-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-generic-field-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-generic-field-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-generic-field-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-generic-field-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-generic-field-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-generic-field-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-generic-field-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-generic-method-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-generic-method-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-generic-method-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-generic-method-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-generic-method-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-generic-method-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-generic-method-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-generic-method-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-closure-parameter-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-closure-parameter-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-closure-parameter-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-closure-parameter-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-closure-parameter-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-closure-parameter-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-closure-parameter-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-closure-parameter-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-await-result-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-await-result-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-await-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-await-result-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-await-result-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-await-result-field-initializer-instance` | `i32`: `await` is only legal inside an async function |
+| `product-f64-await-result-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-await-result-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-await-result-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-yield-value-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-yield-value-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-yield-value-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-yield-value-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-yield-value-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-yield-value-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-yield-value-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-yield-value-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-call-return-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-call-return-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-call-return-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-call-return-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-call-return-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-call-return-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-call-return-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-call-return-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-parameter-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-parameter-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-parameter-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-parameter-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-parameter-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-parameter-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-parameter-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-parameter-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-nullable-initializer-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-assignment-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-return-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-argument-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-push-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-compound-add-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-sub-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-mul-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-div-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-mod-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-and-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-or-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-xor-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-shl-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-shr-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-ushr-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-initializer-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-assignment-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-return-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-argument-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-push-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-compound-add-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-sub-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-mul-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-div-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-mod-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-and-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-or-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-xor-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-shl-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-shr-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-ushr-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-initializer-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-assignment-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-return-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-argument-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-push-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-compound-add-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-sub-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-mul-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-div-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-mod-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-and-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-or-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-xor-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-shl-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-shr-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-compound-ushr-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-f64-nullable-equality-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-equality-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-loose-equality-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; loose equality is not in the language; use `===` / `!==` |
+| `product-f64-nullable-loose-equality-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; loose equality is not in the language; use `===` / `!==` |
+| `product-f64-nullable-relational-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-relational-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-switch-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-case-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-case-number-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-case-string-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-condition-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-template-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-index-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-map-key-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-map-key-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-ternary-arm-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-nullish-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-nullable-array-literal-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-object-pattern-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-array-pattern-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-throw-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-field-initializer-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `this` is only available in constructors and methods |
+| `product-f64-nullable-default-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-for-of-binding-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-member-read-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-nullable-method-call-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-f64-fresh-add-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-fresh-add-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-fresh-add-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-fresh-add-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-fresh-add-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-fresh-add-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-fresh-add-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-fresh-add-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-fresh-minus-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-fresh-minus-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-fresh-minus-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-fresh-minus-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-fresh-minus-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-fresh-minus-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-fresh-minus-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-fresh-minus-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-linked-backward-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-linked-backward-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-linked-backward-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-linked-backward-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-linked-backward-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-linked-backward-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-linked-backward-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-linked-backward-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-linked-forward-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-linked-forward-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-f64-linked-forward-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-linked-forward-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-linked-forward-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-linked-forward-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-linked-forward-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-linked-forward-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-f64-concrete-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-f64-concrete-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-f64-concrete-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-concrete-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-f64-concrete-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-f64-concrete-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-f64-concrete-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-ternary-result-case-string-instance` | `i32`: type mismatch: the then branch expects `string`, got `i32`; type mismatch: the else branch expects `string`, got `i32` |
+| `product-u8-ternary-result-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-ternary-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-ternary-result-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-ternary-result-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-ternary-result-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-ternary-result-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-ternary-result-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-nullish-result-initializer-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-assignment-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-return-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-argument-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-push-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-compound-add-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-sub-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-mul-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-div-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-mod-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-and-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-or-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-xor-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-shl-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-shr-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-ushr-u-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-initializer-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-assignment-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-return-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-argument-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-push-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-compound-add-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-sub-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-mul-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-div-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-mod-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-and-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-or-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-xor-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-shl-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-shr-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-ushr-t-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-initializer-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-assignment-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-return-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-argument-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-push-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-compound-add-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-sub-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-mul-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-div-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-mod-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-and-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-or-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-xor-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-shl-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-shr-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-compound-ushr-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullish-result-equality-left-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-equality-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-relational-left-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-relational-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-switch-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-case-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-case-number-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-case-string-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-condition-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-index-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-map-key-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-map-key-concrete-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-ternary-arm-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-array-literal-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-object-pattern-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-array-pattern-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-throw-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-default-parameter-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-for-of-binding-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-member-read-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullish-result-method-call-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-array-literal-element-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-array-literal-element-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-array-literal-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-array-literal-element-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-array-literal-element-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-array-literal-element-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-array-literal-element-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-array-literal-element-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-destructuring-source-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-destructuring-source-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-destructuring-source-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-destructuring-source-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-destructuring-source-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-destructuring-source-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-destructuring-source-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-destructuring-source-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-throw-operand-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-throw-operand-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-throw-operand-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-throw-operand-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-throw-operand-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-throw-operand-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-throw-operand-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-throw-operand-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-array-element-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-array-element-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-array-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-array-element-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-array-element-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-array-element-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-array-element-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-array-element-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-fixed-array-element-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-fixed-array-element-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-fixed-array-element-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-fixed-array-element-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-fixed-array-element-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-fixed-array-element-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-fixed-array-element-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-fixed-array-element-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-generic-field-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-generic-field-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-generic-field-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-generic-field-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-generic-field-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-generic-field-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-generic-field-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-generic-field-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-generic-method-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-generic-method-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-generic-method-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-generic-method-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-generic-method-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-generic-method-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-generic-method-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-generic-method-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-closure-parameter-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-closure-parameter-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-closure-parameter-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-closure-parameter-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-closure-parameter-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-closure-parameter-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-closure-parameter-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-closure-parameter-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-await-result-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-await-result-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-await-result-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-await-result-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-await-result-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-await-result-field-initializer-instance` | `i32`: `await` is only legal inside an async function |
+| `product-u8-await-result-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-await-result-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-await-result-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-yield-value-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-yield-value-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-yield-value-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-yield-value-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-yield-value-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-yield-value-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-yield-value-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-yield-value-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-call-return-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-call-return-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-call-return-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-call-return-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-call-return-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-call-return-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-call-return-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-call-return-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-parameter-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-parameter-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-parameter-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-parameter-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-parameter-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-parameter-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-parameter-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-parameter-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-nullable-initializer-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-assignment-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-return-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-argument-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-push-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-compound-add-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-sub-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-mul-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-div-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-mod-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-and-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-or-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-xor-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-shl-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-shr-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-ushr-u-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-initializer-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-assignment-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-return-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-argument-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-push-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-compound-add-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-sub-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-mul-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-div-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-mod-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-and-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-or-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-xor-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-shl-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-shr-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-ushr-t-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-initializer-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-assignment-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-return-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-argument-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-push-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-compound-add-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-sub-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-mul-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-div-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-mod-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-and-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-or-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-xor-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-shl-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-shr-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-compound-ushr-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-u8-nullable-equality-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-equality-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-loose-equality-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; loose equality is not in the language; use `===` / `!==` |
+| `product-u8-nullable-loose-equality-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; loose equality is not in the language; use `===` / `!==` |
+| `product-u8-nullable-relational-left-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-relational-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-switch-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-case-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-case-number-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-case-string-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-condition-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-template-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-index-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-map-key-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-map-key-concrete-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-ternary-arm-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-nullish-right-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-nullable-array-literal-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-object-pattern-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-array-pattern-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-throw-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-field-initializer-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union; `this` is only available in constructors and methods |
+| `product-u8-nullable-default-parameter-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-for-of-binding-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-member-read-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-nullable-method-call-instance` | `i32`: unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `product-u8-fresh-add-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-fresh-add-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-fresh-add-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-fresh-add-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-fresh-add-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-fresh-add-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-fresh-add-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-fresh-add-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-fresh-minus-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-fresh-minus-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-fresh-minus-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-fresh-minus-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-fresh-minus-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-fresh-minus-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-fresh-minus-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-fresh-minus-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-linked-backward-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-linked-backward-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-linked-backward-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-linked-backward-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-linked-backward-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-linked-backward-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-linked-backward-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-linked-backward-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-linked-forward-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-linked-forward-condition-instance` | `i32`: condition must be boolean, got `i32` |
+| `product-u8-linked-forward-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-linked-forward-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-linked-forward-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-linked-forward-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-linked-forward-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-linked-forward-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-u8-concrete-case-string-instance` | `i32`: type mismatch: the case label expects `string`, got `i32` |
+| `product-u8-concrete-nullish-right-instance` | `i32`: the left operand of `??` has type `i32`, which is not nullable |
+| `product-u8-concrete-object-pattern-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-concrete-array-pattern-instance` | `i32`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-u8-concrete-for-of-binding-instance` | `i32`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-u8-concrete-member-read-instance` | `i32`: `i32` has no member `v` |
+| `product-u8-concrete-method-call-instance` | `i32`: `i32` has no method `get` |
+| `product-array-ternary-result-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-ternary-result-initializer-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-assignment-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-return-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-argument-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-push-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-add-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-sub-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-mul-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-div-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-mod-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-and-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-or-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-xor-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-shl-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-shr-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-compound-ushr-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-ternary-result-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-ternary-result-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-ternary-result-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-ternary-result-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-ternary-result-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-ternary-result-case-number-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-case-string-instance` | `i32[]`: type mismatch: the then branch expects `string`, got `i32[]`; type mismatch: the else branch expects `string`, got `i32[]` |
+| `product-array-ternary-result-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-ternary-result-index-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-ternary-result-map-key-concrete-instance` | `i32[]`: type mismatch: the then branch expects `i32`, got `i32[]`; type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-ternary-result-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-ternary-result-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-ternary-result-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-ternary-result-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-ternary-result-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-nullish-result-initializer-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-assignment-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-return-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-argument-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-push-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-compound-add-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-sub-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-mul-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-div-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-mod-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-and-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-or-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-xor-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-shl-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-shr-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-ushr-u-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-initializer-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-assignment-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-return-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-argument-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-push-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-compound-add-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-sub-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-mul-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-div-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-mod-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-and-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-or-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-xor-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-shl-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-shr-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-compound-ushr-t-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullish-result-initializer-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-assignment-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-return-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-argument-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-push-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-compound-add-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-compound-sub-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-compound-mul-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-compound-div-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-compound-mod-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-compound-and-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-compound-or-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-compound-xor-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-compound-shl-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-compound-shr-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-compound-ushr-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-array-nullish-result-equality-left-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-equality-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-relational-left-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-relational-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-switch-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]`; the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-case-number-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-case-string-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-condition-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-index-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24); the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-map-key-concrete-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-ternary-arm-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-array-literal-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-object-pattern-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-array-pattern-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-throw-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-default-parameter-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-for-of-binding-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-member-read-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullish-result-method-call-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-array-literal-element-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-literal-element-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-array-literal-element-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-array-literal-element-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-array-literal-element-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-array-literal-element-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-array-literal-element-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-array-literal-element-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-array-literal-element-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-array-literal-element-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-array-literal-element-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-array-literal-element-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-array-literal-element-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-array-literal-element-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-array-literal-element-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-array-literal-element-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-array-literal-element-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-array-literal-element-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-array-literal-element-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-array-literal-element-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-array-literal-element-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-array-literal-element-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-destructuring-source-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-destructuring-source-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-destructuring-source-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-destructuring-source-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-destructuring-source-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-destructuring-source-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-destructuring-source-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-destructuring-source-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-destructuring-source-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-destructuring-source-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-destructuring-source-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-destructuring-source-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-destructuring-source-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-destructuring-source-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-destructuring-source-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-destructuring-source-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-destructuring-source-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-destructuring-source-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-destructuring-source-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-destructuring-source-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-destructuring-source-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-destructuring-source-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-throw-operand-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-throw-operand-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-throw-operand-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-throw-operand-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-throw-operand-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-throw-operand-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-throw-operand-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-throw-operand-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-throw-operand-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-throw-operand-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-throw-operand-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-throw-operand-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-throw-operand-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-throw-operand-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-throw-operand-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-throw-operand-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-throw-operand-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-throw-operand-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-throw-operand-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-throw-operand-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-throw-operand-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-throw-operand-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-array-element-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-array-element-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-array-element-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-array-element-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-array-element-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-array-element-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-array-element-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-array-element-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-array-element-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-array-element-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-array-element-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-array-element-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-array-element-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-array-element-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-array-element-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-array-element-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-array-element-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-array-element-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-array-element-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-array-element-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-array-element-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-array-element-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-array-element-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-array-element-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-fixed-array-element-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-fixed-array-element-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-fixed-array-element-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-fixed-array-element-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-fixed-array-element-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-fixed-array-element-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-fixed-array-element-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fixed-array-element-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fixed-array-element-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-fixed-array-element-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-fixed-array-element-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-fixed-array-element-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-fixed-array-element-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-fixed-array-element-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-fixed-array-element-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-fixed-array-element-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-fixed-array-element-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-fixed-array-element-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-fixed-array-element-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-fixed-array-element-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-fixed-array-element-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-fixed-array-element-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-generic-field-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-field-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-generic-field-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-generic-field-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-generic-field-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-generic-field-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-generic-field-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-field-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-generic-field-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-generic-field-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-generic-field-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-generic-field-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-generic-field-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-generic-field-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-generic-field-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-generic-field-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-generic-field-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-generic-field-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-generic-field-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-generic-field-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-generic-field-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-generic-field-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-generic-field-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-generic-field-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-generic-method-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-generic-method-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-generic-method-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-generic-method-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-generic-method-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-generic-method-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-generic-method-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-generic-method-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-generic-method-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-generic-method-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-generic-method-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-generic-method-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-generic-method-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-generic-method-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-generic-method-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-generic-method-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-generic-method-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-generic-method-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-generic-method-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-generic-method-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-generic-method-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-generic-method-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-generic-method-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-generic-method-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-closure-parameter-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-closure-parameter-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-closure-parameter-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-closure-parameter-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-closure-parameter-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-closure-parameter-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-closure-parameter-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-closure-parameter-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-closure-parameter-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-closure-parameter-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-closure-parameter-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-closure-parameter-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-closure-parameter-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-closure-parameter-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-closure-parameter-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-closure-parameter-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-closure-parameter-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-closure-parameter-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-closure-parameter-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-closure-parameter-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-closure-parameter-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-closure-parameter-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-await-result-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-await-result-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-await-result-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-await-result-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-await-result-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-await-result-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-await-result-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-await-result-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-await-result-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-await-result-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-await-result-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-await-result-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-await-result-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-await-result-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-await-result-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-await-result-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-await-result-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-await-result-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-await-result-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-await-result-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-await-result-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-await-result-field-initializer-instance` | `i32[]`: `await` is only legal inside an async function |
+| `product-array-await-result-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-await-result-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-await-result-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-yield-value-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-yield-value-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-yield-value-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-yield-value-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-yield-value-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-yield-value-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-yield-value-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-yield-value-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-yield-value-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-yield-value-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-yield-value-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-yield-value-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-yield-value-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-yield-value-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-yield-value-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-yield-value-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-yield-value-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-yield-value-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-yield-value-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-yield-value-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-yield-value-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-yield-value-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-yield-value-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-yield-value-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-call-return-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-call-return-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-call-return-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-call-return-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-call-return-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-call-return-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-call-return-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-call-return-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-call-return-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-call-return-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-call-return-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-call-return-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-call-return-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-call-return-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-call-return-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-call-return-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-call-return-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-call-return-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-call-return-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-call-return-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-call-return-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-call-return-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-call-return-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-call-return-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-parameter-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-parameter-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-parameter-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-parameter-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-parameter-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-parameter-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-parameter-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-parameter-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-parameter-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-parameter-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-parameter-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-parameter-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-parameter-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-parameter-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-parameter-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-parameter-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-parameter-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-parameter-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-parameter-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-parameter-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-parameter-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-parameter-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-parameter-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-parameter-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-nullable-initializer-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-assignment-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-return-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-argument-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-push-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-compound-add-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-sub-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-mul-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-div-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-mod-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-and-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-or-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-xor-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-shl-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-shr-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-ushr-u-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-initializer-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-assignment-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-return-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-argument-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-push-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-compound-add-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-sub-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-mul-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-div-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-mod-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-and-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-or-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-xor-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-shl-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-shr-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-compound-ushr-t-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-nullable-initializer-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-assignment-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-return-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-argument-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-push-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-compound-add-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `+=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-compound-sub-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `-=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-compound-mul-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `*=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-compound-div-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `/=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-compound-mod-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `%=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-compound-and-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `&=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-compound-or-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-compound-xor-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `^=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-compound-shl-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-compound-shr-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-compound-ushr-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-array-nullable-equality-left-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-equality-right-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-loose-equality-left-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; loose equality is not in the language; use `===` / `!==` |
+| `product-array-nullable-loose-equality-right-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; loose equality is not in the language; use `===` / `!==` |
+| `product-array-nullable-relational-left-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-relational-right-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-switch-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-case-parameter-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-nullable-case-number-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-case-string-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-condition-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-template-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-index-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-map-key-parameter-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-nullable-map-key-concrete-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-ternary-arm-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-nullish-right-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-nullable-array-literal-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-object-pattern-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-array-pattern-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-throw-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-field-initializer-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union; `this` is only available in constructors and methods |
+| `product-array-nullable-default-parameter-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-for-of-binding-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-member-read-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-nullable-method-call-instance` | `i32[]`: unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `product-array-fresh-add-initializer-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-assignment-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-return-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-argument-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-push-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-compound-add-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-sub-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-mul-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-div-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-mod-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-and-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-or-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-xor-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-shl-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-shr-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-ushr-u-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-initializer-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-assignment-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-return-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-argument-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-push-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-compound-add-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-sub-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-mul-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-div-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-mod-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-and-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-or-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-xor-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-shl-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-shr-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-compound-ushr-t-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-add-initializer-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-assignment-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-return-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-argument-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-push-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-compound-add-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `+=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-compound-sub-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `-=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-compound-mul-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `*=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-compound-div-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `/=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-compound-mod-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `%=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-compound-and-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `&=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-compound-or-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-compound-xor-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `^=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-compound-shl-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-compound-shr-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-compound-ushr-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32`; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-add-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-equality-right-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-relational-right-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-switch-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]`; operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-case-number-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-case-string-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-condition-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-index-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24); operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-map-key-concrete-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-ternary-arm-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-fresh-add-array-literal-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-object-pattern-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-array-pattern-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-throw-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-default-parameter-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-for-of-binding-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-member-read-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-add-method-call-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-fresh-minus-initializer-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-assignment-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-return-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-argument-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-push-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-compound-add-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-sub-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-mul-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-div-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-mod-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-and-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-or-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-xor-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-shl-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-shr-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-ushr-u-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-initializer-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-assignment-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-return-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-argument-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-push-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-compound-add-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `+=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-sub-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `-=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-mul-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `*=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-div-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `/=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-mod-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `%=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-and-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `&=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-or-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `\|=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-xor-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `^=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-shl-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `<<=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-shr-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-compound-ushr-t-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `>>>=` is not defined for `i32[]` and `<error>` |
+| `product-array-fresh-minus-initializer-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-assignment-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-return-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-argument-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-push-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-compound-add-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `+=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-compound-sub-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `-=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-compound-mul-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `*=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-compound-div-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `/=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-compound-mod-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `%=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-compound-and-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `&=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-compound-or-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-compound-xor-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `^=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-compound-shl-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-compound-shr-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-compound-ushr-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]`; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-array-fresh-minus-equality-left-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-equality-right-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-relational-left-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-relational-right-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-switch-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]`; unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-case-number-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-case-string-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-condition-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-index-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24); unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-map-key-concrete-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-ternary-arm-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-fresh-minus-array-literal-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-object-pattern-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-array-pattern-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-throw-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-default-parameter-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-for-of-binding-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-member-read-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-fresh-minus-method-call-instance` | `i32[]`: unary `-` requires a numeric operand, got `i32[]` |
+| `product-array-linked-backward-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-backward-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-linked-backward-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-linked-backward-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-linked-backward-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-linked-backward-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-linked-backward-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-linked-backward-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-linked-backward-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-linked-backward-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-linked-backward-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-linked-backward-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-linked-backward-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-linked-backward-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-linked-backward-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-linked-backward-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-linked-backward-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-linked-backward-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-linked-backward-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-linked-backward-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-linked-backward-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-linked-backward-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-linked-forward-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32[]` |
+| `product-array-linked-forward-initializer-concrete-instance` | `i32[]`: type mismatch: the initializer expects `i32`, got `i32[]` |
+| `product-array-linked-forward-assignment-concrete-instance` | `i32[]`: type mismatch: the assignment expects `i32`, got `i32[]` |
+| `product-array-linked-forward-return-concrete-instance` | `i32[]`: type mismatch: the return value expects `i32`, got `i32[]` |
+| `product-array-linked-forward-argument-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-linked-forward-push-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-linked-forward-compound-add-concrete-instance` | `i32[]`: operator `+=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-compound-sub-concrete-instance` | `i32[]`: operator `-=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-compound-mul-concrete-instance` | `i32[]`: operator `*=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-compound-div-concrete-instance` | `i32[]`: operator `/=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-compound-mod-concrete-instance` | `i32[]`: operator `%=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-compound-and-concrete-instance` | `i32[]`: operator `&=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-compound-or-concrete-instance` | `i32[]`: operator `\|=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-compound-xor-concrete-instance` | `i32[]`: operator `^=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-compound-shl-concrete-instance` | `i32[]`: operator `<<=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-compound-shr-concrete-instance` | `i32[]`: operator `>>=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-compound-ushr-concrete-instance` | `i32[]`: operator `>>>=` is not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-equality-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-linked-forward-equality-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-relational-left-instance` | `i32[]`: operator not defined for `i32[]` and `i32` |
+| `product-array-linked-forward-relational-right-instance` | `i32[]`: operator not defined for `i32` and `i32[]` |
+| `product-array-linked-forward-switch-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-linked-forward-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
+| `product-array-linked-forward-case-number-instance` | `i32[]`: type mismatch: the case label expects `i32`, got `i32[]` |
+| `product-array-linked-forward-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32[]` |
+| `product-array-linked-forward-condition-instance` | `i32[]`: condition must be boolean, got `i32[]` |
+| `product-array-linked-forward-index-instance` | `i32[]`: array indices are `i32`, got `i32[]` |
+| `product-array-linked-forward-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24) |
+| `product-array-linked-forward-map-key-concrete-instance` | `i32[]`: type mismatch: the argument expects `i32`, got `i32[]` |
+| `product-array-linked-forward-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-linked-forward-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-linked-forward-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32[]` |
+| `product-array-linked-forward-member-read-instance` | `i32[]`: `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-linked-forward-method-call-instance` | `i32[]`: `get` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
+| `product-array-concrete-initializer-u-instance` | `i32[]`: type mismatch: the initializer expects `i32[]`, got `i32` |
+| `product-array-concrete-assignment-u-instance` | `i32[]`: type mismatch: the assignment expects `i32[]`, got `i32` |
+| `product-array-concrete-return-u-instance` | `i32[]`: type mismatch: the return value expects `i32[]`, got `i32` |
+| `product-array-concrete-argument-u-instance` | `i32[]`: type mismatch: the argument expects `i32[]`, got `i32` |
+| `product-array-concrete-push-u-instance` | `i32[]`: type mismatch: the argument expects `i32[]`, got `i32` |
+| `product-array-concrete-compound-add-u-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-sub-u-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-mul-u-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-div-u-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-mod-u-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-and-u-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-or-u-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-xor-u-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-shl-u-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-shr-u-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-ushr-u-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-initializer-t-instance` | `i32[]`: type mismatch: the initializer expects `i32[]`, got `i32` |
+| `product-array-concrete-assignment-t-instance` | `i32[]`: type mismatch: the assignment expects `i32[]`, got `i32` |
+| `product-array-concrete-return-t-instance` | `i32[]`: type mismatch: the return value expects `i32[]`, got `i32` |
+| `product-array-concrete-argument-t-instance` | `i32[]`: type mismatch: the argument expects `i32[]`, got `i32` |
+| `product-array-concrete-push-t-instance` | `i32[]`: type mismatch: the argument expects `i32[]`, got `i32` |
+| `product-array-concrete-compound-add-t-instance` | `i32[]`: operator `+=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-sub-t-instance` | `i32[]`: operator `-=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-mul-t-instance` | `i32[]`: operator `*=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-div-t-instance` | `i32[]`: operator `/=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-mod-t-instance` | `i32[]`: operator `%=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-and-t-instance` | `i32[]`: operator `&=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-or-t-instance` | `i32[]`: operator `\|=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-xor-t-instance` | `i32[]`: operator `^=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-shl-t-instance` | `i32[]`: operator `<<=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-shr-t-instance` | `i32[]`: operator `>>=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-compound-ushr-t-instance` | `i32[]`: operator `>>>=` is not defined for `i32[]` and `i32` |
+| `product-array-concrete-case-parameter-instance` | `i32[]`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]`; type mismatch: the case label expects `i32[]`, got `i32` |
+| `product-array-concrete-case-string-instance` | `i32[]`: type mismatch: the case label expects `string`, got `i32` |
+| `product-array-concrete-map-key-parameter-instance` | `i32[]`: `i32[]` is not a permitted Map/Set key kind (Q24); type mismatch: the argument expects `i32[]`, got `i32` |
+| `product-array-concrete-ternary-arm-instance` | `i32[]`: type mismatch: the else branch expects `i32`, got `i32[]` |
+| `product-array-concrete-nullish-right-instance` | `i32[]`: the left operand of `??` has type `i32[]`, which is not nullable |
+| `product-array-concrete-array-literal-instance` | `i32[]`: type mismatch: the array element expects `i32`, got `i32[]` |
+| `product-array-concrete-object-pattern-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-array-concrete-array-pattern-instance` | `i32[]`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-array-concrete-default-parameter-instance` | `i32[]`: type mismatch: the default value expects `i32[]`, got `i32` |
+| `product-array-concrete-for-of-binding-instance` | `i32[]`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-array-concrete-member-read-instance` | `i32[]`: `i32` has no member `v` |
+| `product-array-concrete-method-call-instance` | `i32[]`: `i32` has no method `get` |
+| `product-nullable-ternary-result-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-ternary-result-initializer-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-assignment-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-return-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-argument-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-push-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-add-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-sub-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-mul-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-div-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-mod-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-and-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-or-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-xor-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-shl-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-shr-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-compound-ushr-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-ternary-result-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-ternary-result-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-ternary-result-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-ternary-result-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-ternary-result-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-ternary-result-case-number-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-case-string-instance` | `Box`: type mismatch: the then branch expects `string`, got `Box`; type mismatch: the else branch expects `string`, got `Box` |
+| `product-nullable-ternary-result-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-ternary-result-index-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-map-key-concrete-instance` | `Box`: type mismatch: the then branch expects `i32`, got `Box`; type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-ternary-result-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-ternary-result-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-nullish-result-initializer-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-assignment-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-return-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-argument-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-push-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-compound-add-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `+=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-sub-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `-=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-mul-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `*=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-div-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `/=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-mod-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `%=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-and-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `&=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-or-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-xor-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `^=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-shl-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-shr-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-ushr-u-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-initializer-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-assignment-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-return-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-argument-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-push-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-compound-add-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `+=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-sub-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `-=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-mul-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `*=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-div-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `/=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-mod-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `%=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-and-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `&=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-or-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-xor-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `^=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-shl-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-shr-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-compound-ushr-t-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-nullish-result-initializer-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-assignment-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-return-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-argument-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-push-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-compound-add-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `+=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-compound-sub-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `-=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-compound-mul-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `*=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-compound-div-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `/=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-compound-mod-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `%=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-compound-and-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `&=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-compound-or-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-compound-xor-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `^=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-compound-shl-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-compound-shr-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-compound-ushr-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-nullable-nullish-result-equality-left-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-equality-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-relational-left-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-relational-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-switch-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-case-number-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-case-string-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-condition-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-index-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-map-key-parameter-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-map-key-concrete-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-ternary-arm-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-array-literal-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-object-pattern-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-array-pattern-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-throw-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-default-parameter-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-for-of-binding-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-member-read-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullish-result-method-call-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-array-literal-element-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-array-literal-element-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-array-literal-element-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-array-literal-element-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-array-literal-element-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-array-literal-element-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-array-literal-element-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-array-literal-element-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-array-literal-element-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-array-literal-element-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-array-literal-element-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-array-literal-element-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-array-literal-element-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-array-literal-element-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-array-literal-element-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-array-literal-element-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-array-literal-element-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-array-literal-element-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-destructuring-source-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-destructuring-source-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-destructuring-source-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-destructuring-source-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-destructuring-source-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-destructuring-source-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-destructuring-source-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-destructuring-source-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-destructuring-source-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-destructuring-source-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-destructuring-source-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-destructuring-source-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-destructuring-source-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-destructuring-source-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-destructuring-source-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-destructuring-source-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-destructuring-source-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-destructuring-source-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-throw-operand-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-throw-operand-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-throw-operand-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-throw-operand-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-throw-operand-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-throw-operand-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-throw-operand-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-throw-operand-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-throw-operand-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-throw-operand-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-throw-operand-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-throw-operand-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-throw-operand-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-throw-operand-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-throw-operand-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-throw-operand-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-throw-operand-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-throw-operand-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-array-element-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-array-element-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-array-element-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-array-element-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-array-element-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-array-element-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-array-element-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-array-element-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-array-element-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-array-element-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-array-element-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-array-element-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-array-element-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-array-element-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-array-element-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-array-element-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-array-element-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-array-element-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-array-element-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-array-element-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-fixed-array-element-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-fixed-array-element-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-fixed-array-element-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-fixed-array-element-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-fixed-array-element-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-fixed-array-element-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-fixed-array-element-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fixed-array-element-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fixed-array-element-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-fixed-array-element-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-fixed-array-element-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-fixed-array-element-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-fixed-array-element-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-fixed-array-element-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-fixed-array-element-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-fixed-array-element-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-fixed-array-element-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-fixed-array-element-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-generic-field-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-field-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-generic-field-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-generic-field-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-generic-field-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-generic-field-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-generic-field-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-field-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-generic-field-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-generic-field-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-generic-field-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-generic-field-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-generic-field-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-generic-field-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-generic-field-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-generic-field-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-generic-field-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-generic-field-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-generic-field-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-generic-field-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-generic-method-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-generic-method-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-generic-method-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-generic-method-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-generic-method-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-generic-method-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-generic-method-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-generic-method-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-generic-method-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-generic-method-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-generic-method-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-generic-method-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-generic-method-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-generic-method-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-generic-method-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-generic-method-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-generic-method-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-generic-method-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-generic-method-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-generic-method-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-closure-parameter-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-closure-parameter-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-closure-parameter-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-closure-parameter-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-closure-parameter-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-closure-parameter-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-closure-parameter-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-closure-parameter-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-closure-parameter-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-closure-parameter-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-closure-parameter-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-closure-parameter-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-closure-parameter-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-closure-parameter-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-closure-parameter-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-closure-parameter-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-closure-parameter-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-closure-parameter-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-await-result-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-await-result-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-await-result-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-await-result-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-await-result-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-await-result-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-await-result-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-await-result-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-await-result-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-await-result-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-await-result-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-await-result-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-await-result-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-await-result-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-await-result-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-await-result-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-await-result-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-await-result-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-await-result-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-await-result-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-await-result-field-initializer-instance` | `Box`: `await` is only legal inside an async function |
+| `product-nullable-yield-value-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-yield-value-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-yield-value-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-yield-value-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-yield-value-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-yield-value-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-yield-value-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-yield-value-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-yield-value-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-yield-value-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-yield-value-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-yield-value-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-yield-value-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-yield-value-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-yield-value-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-yield-value-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-yield-value-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-yield-value-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-yield-value-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-yield-value-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-call-return-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-call-return-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-call-return-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-call-return-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-call-return-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-call-return-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-call-return-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-call-return-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-call-return-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-call-return-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-call-return-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-call-return-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-call-return-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-call-return-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-call-return-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-call-return-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-call-return-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-call-return-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-call-return-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-call-return-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-parameter-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-parameter-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-parameter-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-parameter-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-parameter-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-parameter-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-parameter-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-parameter-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-parameter-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-parameter-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-parameter-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-parameter-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-parameter-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-parameter-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-parameter-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-parameter-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-parameter-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-parameter-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-parameter-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-parameter-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-nullable-initializer-u-instance` | `Box`: nominal types are not interchangeable: the initializer expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-assignment-u-instance` | `Box`: nominal types are not interchangeable: the assignment expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-return-u-instance` | `Box`: nominal types are not interchangeable: the return value expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-argument-u-instance` | `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-push-u-instance` | `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-initializer-t-instance` | `Box`: nominal types are not interchangeable: the initializer expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-assignment-t-instance` | `Box`: nominal types are not interchangeable: the assignment expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-return-t-instance` | `Box`: nominal types are not interchangeable: the return value expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-argument-t-instance` | `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-push-t-instance` | `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box \| null` |
+| `product-nullable-nullable-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box \| null` |
+| `product-nullable-nullable-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box \| null` |
+| `product-nullable-nullable-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box \| null` |
+| `product-nullable-nullable-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box \| null` |
+| `product-nullable-nullable-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box \| null` |
+| `product-nullable-nullable-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-equality-left-instance` | `Box`: operator not defined for `Box \| null` and `i32` |
+| `product-nullable-nullable-equality-right-instance` | `Box`: operator not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-relational-left-instance` | `Box`: operator not defined for `Box \| null` and `i32` |
+| `product-nullable-nullable-relational-right-instance` | `Box`: operator not defined for `i32` and `Box \| null` |
+| `product-nullable-nullable-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box \| null` |
+| `product-nullable-nullable-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; nominal types are not interchangeable: the case label expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box \| null` |
+| `product-nullable-nullable-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box \| null` |
+| `product-nullable-nullable-condition-instance` | `Box`: condition must be boolean, got `Box \| null` |
+| `product-nullable-nullable-index-instance` | `Box`: array indices are `i32`, got `Box \| null` |
+| `product-nullable-nullable-map-key-parameter-instance` | `Box`: nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box \| null` |
+| `product-nullable-nullable-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-nullable-object-pattern-instance` | `Box`: a field binding pattern reads a reference or value class; the source is `Box \| null` |
+| `product-nullable-nullable-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box \| null` |
+| `product-nullable-nullable-default-parameter-instance` | `Box`: nominal types are not interchangeable: the default value expects `Box`, got `Box \| null` |
+| `product-nullable-nullable-for-of-binding-instance` | `Box`: a field binding pattern reads a reference or value class; the source is `Box \| null` |
+| `product-nullable-nullable-member-read-instance` | `Box`: `Box \| null` may be null here; narrow with a null check first |
+| `product-nullable-nullable-method-call-instance` | `Box`: `Box \| null` may be null here; narrow with a null check first |
+| `product-nullable-fresh-add-initializer-u-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-assignment-u-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-return-u-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-argument-u-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-push-u-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-compound-add-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `+=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-sub-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `-=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-mul-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `*=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-div-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `/=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-mod-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `%=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-and-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `&=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-or-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-xor-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `^=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-shl-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-shr-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-ushr-u-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-initializer-t-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-assignment-t-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-return-t-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-argument-t-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-push-t-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-compound-add-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `+=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-sub-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `-=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-mul-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `*=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-div-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `/=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-mod-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `%=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-and-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `&=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-or-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-xor-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `^=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-shl-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-shr-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-compound-ushr-t-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-add-initializer-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-assignment-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-return-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-argument-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-push-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-compound-add-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `+=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-compound-sub-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `-=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-compound-mul-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `*=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-compound-div-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `/=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-compound-mod-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `%=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-compound-and-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `&=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-compound-or-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-compound-xor-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `^=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-compound-shl-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-compound-shr-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-compound-ushr-concrete-instance` | `Box`: operator not defined for `Box` and `i32`; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-add-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-equality-right-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-relational-right-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-switch-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-case-number-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-case-string-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-condition-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-index-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-map-key-parameter-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-map-key-concrete-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-ternary-arm-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-fresh-add-array-literal-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-object-pattern-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-array-pattern-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-throw-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-default-parameter-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-for-of-binding-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-member-read-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-add-method-call-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-fresh-minus-initializer-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-assignment-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-return-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-argument-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-push-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-compound-add-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `+=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-sub-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `-=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-mul-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `*=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-div-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `/=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-mod-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `%=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-and-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `&=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-or-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-xor-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `^=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-shl-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-shr-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-ushr-u-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-initializer-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-assignment-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-return-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-argument-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-push-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-compound-add-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `+=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-sub-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `-=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-mul-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `*=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-div-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `/=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-mod-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `%=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-and-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `&=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-or-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `\|=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-xor-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `^=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-shl-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `<<=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-shr-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-compound-ushr-t-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>>=` is not defined for `Box` and `<error>` |
+| `product-nullable-fresh-minus-initializer-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-assignment-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-return-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-argument-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-push-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-compound-add-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `+=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-compound-sub-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `-=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-compound-mul-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `*=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-compound-div-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `/=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-compound-mod-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `%=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-compound-and-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `&=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-compound-or-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `\|=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-compound-xor-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `^=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-compound-shl-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `<<=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-compound-shr-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-compound-ushr-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box`; operator `>>>=` is not defined for `i32` and `<error>` |
+| `product-nullable-fresh-minus-equality-left-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-equality-right-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-relational-left-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-relational-right-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-switch-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-case-number-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-case-string-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-condition-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-index-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-map-key-parameter-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-map-key-concrete-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-ternary-arm-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-fresh-minus-array-literal-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-object-pattern-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-array-pattern-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-throw-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-default-parameter-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-for-of-binding-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-member-read-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-fresh-minus-method-call-instance` | `Box`: unary `-` requires a numeric operand, got `Box` |
+| `product-nullable-linked-backward-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-backward-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-linked-backward-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-linked-backward-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-linked-backward-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-linked-backward-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-linked-backward-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-linked-backward-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-linked-backward-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-linked-backward-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-linked-backward-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-linked-backward-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-linked-backward-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-linked-backward-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-linked-backward-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-linked-backward-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-linked-backward-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-linked-backward-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-linked-forward-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `Box` |
+| `product-nullable-linked-forward-initializer-concrete-instance` | `Box`: type mismatch: the initializer expects `i32`, got `Box` |
+| `product-nullable-linked-forward-assignment-concrete-instance` | `Box`: type mismatch: the assignment expects `i32`, got `Box` |
+| `product-nullable-linked-forward-return-concrete-instance` | `Box`: type mismatch: the return value expects `i32`, got `Box` |
+| `product-nullable-linked-forward-argument-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-linked-forward-push-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-linked-forward-compound-add-concrete-instance` | `Box`: operator `+=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-compound-sub-concrete-instance` | `Box`: operator `-=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-compound-mul-concrete-instance` | `Box`: operator `*=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-compound-div-concrete-instance` | `Box`: operator `/=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-compound-mod-concrete-instance` | `Box`: operator `%=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-compound-and-concrete-instance` | `Box`: operator `&=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-compound-or-concrete-instance` | `Box`: operator `\|=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-compound-xor-concrete-instance` | `Box`: operator `^=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-compound-shl-concrete-instance` | `Box`: operator `<<=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-compound-shr-concrete-instance` | `Box`: operator `>>=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-compound-ushr-concrete-instance` | `Box`: operator `>>>=` is not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-equality-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-linked-forward-equality-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-relational-left-instance` | `Box`: operator not defined for `Box` and `i32` |
+| `product-nullable-linked-forward-relational-right-instance` | `Box`: operator not defined for `i32` and `Box` |
+| `product-nullable-linked-forward-switch-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-linked-forward-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
+| `product-nullable-linked-forward-case-number-instance` | `Box`: type mismatch: the case label expects `i32`, got `Box` |
+| `product-nullable-linked-forward-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `Box` |
+| `product-nullable-linked-forward-condition-instance` | `Box`: condition must be boolean, got `Box` |
+| `product-nullable-linked-forward-index-instance` | `Box`: array indices are `i32`, got `Box` |
+| `product-nullable-linked-forward-map-key-concrete-instance` | `Box`: type mismatch: the argument expects `i32`, got `Box` |
+| `product-nullable-linked-forward-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-linked-forward-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `Box` |
+| `product-nullable-concrete-initializer-u-instance` | `Box`: type mismatch: the initializer expects `Box`, got `i32` |
+| `product-nullable-concrete-assignment-u-instance` | `Box`: type mismatch: the assignment expects `Box`, got `i32` |
+| `product-nullable-concrete-return-u-instance` | `Box`: type mismatch: the return value expects `Box`, got `i32` |
+| `product-nullable-concrete-argument-u-instance` | `Box`: type mismatch: the argument expects `Box`, got `i32` |
+| `product-nullable-concrete-push-u-instance` | `Box`: type mismatch: the argument expects `Box`, got `i32` |
+| `product-nullable-concrete-compound-add-u-instance` | `Box`: operator `+=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-sub-u-instance` | `Box`: operator `-=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-mul-u-instance` | `Box`: operator `*=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-div-u-instance` | `Box`: operator `/=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-mod-u-instance` | `Box`: operator `%=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-and-u-instance` | `Box`: operator `&=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-or-u-instance` | `Box`: operator `\|=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-xor-u-instance` | `Box`: operator `^=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-shl-u-instance` | `Box`: operator `<<=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-shr-u-instance` | `Box`: operator `>>=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-ushr-u-instance` | `Box`: operator `>>>=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-initializer-t-instance` | `Box`: type mismatch: the initializer expects `Box`, got `i32` |
+| `product-nullable-concrete-assignment-t-instance` | `Box`: type mismatch: the assignment expects `Box`, got `i32` |
+| `product-nullable-concrete-return-t-instance` | `Box`: type mismatch: the return value expects `Box`, got `i32` |
+| `product-nullable-concrete-argument-t-instance` | `Box`: type mismatch: the argument expects `Box`, got `i32` |
+| `product-nullable-concrete-push-t-instance` | `Box`: type mismatch: the argument expects `Box`, got `i32` |
+| `product-nullable-concrete-compound-add-t-instance` | `Box`: operator `+=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-sub-t-instance` | `Box`: operator `-=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-mul-t-instance` | `Box`: operator `*=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-div-t-instance` | `Box`: operator `/=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-mod-t-instance` | `Box`: operator `%=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-and-t-instance` | `Box`: operator `&=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-or-t-instance` | `Box`: operator `\|=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-xor-t-instance` | `Box`: operator `^=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-shl-t-instance` | `Box`: operator `<<=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-shr-t-instance` | `Box`: operator `>>=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-compound-ushr-t-instance` | `Box`: operator `>>>=` is not defined for `Box` and `i32` |
+| `product-nullable-concrete-case-parameter-instance` | `Box`: switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box`; type mismatch: the case label expects `Box`, got `i32` |
+| `product-nullable-concrete-case-string-instance` | `Box`: type mismatch: the case label expects `string`, got `i32` |
+| `product-nullable-concrete-map-key-parameter-instance` | `Box`: type mismatch: the argument expects `Box`, got `i32` |
+| `product-nullable-concrete-ternary-arm-instance` | `Box`: type mismatch: the else branch expects `i32`, got `Box` |
+| `product-nullable-concrete-nullish-right-instance` | `Box`: the left operand of `??` has type `Box`, which is not nullable |
+| `product-nullable-concrete-array-literal-instance` | `Box`: type mismatch: the array element expects `i32`, got `Box` |
+| `product-nullable-concrete-object-pattern-instance` | `Box`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-nullable-concrete-array-pattern-instance` | `Box`: an array binding pattern reads a `T[]` or a `FixedArray<T, N>`; the source is `i32` |
+| `product-nullable-concrete-default-parameter-instance` | `Box`: type mismatch: the default value expects `Box`, got `i32` |
+| `product-nullable-concrete-for-of-binding-instance` | `Box`: a field binding pattern reads a reference or value class; the source is `i32` |
+| `product-nullable-concrete-member-read-instance` | `Box`: `i32` has no member `v` |
+| `product-nullable-concrete-method-call-instance` | `Box`: `i32` has no method `get` |
+
+
+### Final validation
+
+`cargo fmt --check` passes. The quick gate reports 2,157 passed tests, zero failures, and three ignored tests.
+It reports two skips and zero changed goldens. `tools/hygiene.sh` and `git diff --check` pass.
+Gate record: `target/gate/20261001T170728Z-quick.md`.
+
+```text
+gate quick 1e901ca96f6856195cfafa856a92eb8b002fe35d dirty:29 debug 2157/0/3 skips 2 goldens-moved 0 exit 0
+```
+
+No file-scope, corpus-rejection, undecided-record, or gate-failure stop occurs.
+The matrix exceeds ten seconds; its axis counts and measured cost are stated above. No cell is removed for cost.
+All changes stay uncommitted.
+
+## Final review fix round landing gate
+
+The orchestrator ran the full gate on the round 10 tree.
+
+```text
+gate full 1e901ca96f6856195cfafa856a92eb8b002fe35d dirty:29 debug 2157/0/3 release 2154/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```
+
+The matrix costs 22.17 s in debug, above the 10 s bound of the round
+handoff; the round did not report it before landing. The cost is open:
+see the next review.

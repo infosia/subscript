@@ -209,7 +209,7 @@ impl<'p> Checker<'p> {
                 let mut messages = Vec::with_capacity(expected);
                 for argument in &args.params {
                     let message = self.resolve_type(argument);
-                    let plain_reference = match message {
+                    let plain_reference = match self.apparent_type(&message) {
                         Type::Class(id) => self.classes.get(id.0).is_some_and(|class| {
                             !class.is_value
                                 && !class.is_descriptor
@@ -219,7 +219,7 @@ impl<'p> Checker<'p> {
                         Type::Error => true,
                         _ => false,
                     };
-                    if !plain_reference && !matches!(message, Type::Error) {
+                    if !plain_reference && !matches!(self.apparent_type(&message), Type::Error) {
                         let type_name = self.type_name(&message);
                         self.error(
                             RuleCode::S100,
@@ -432,7 +432,7 @@ impl<'p> Checker<'p> {
             if !self.instance_restriction(
                 crate::check::opaque::InstanceRestriction::AssociativeKey,
                 &key,
-            ) && !matches!(key, Type::Error)
+            ) && !matches!(self.apparent_type(&key), Type::Error)
                 && self.assoc_key_kind(&key).is_none()
             {
                 let key_pos = self.pos(args.params[0].span());
@@ -580,7 +580,7 @@ impl<'p> Checker<'p> {
             };
             if has_null {
                 let inner = self.resolve_type(base);
-                if matches!(inner, Type::Error) {
+                if matches!(self.apparent_type(&inner), Type::Error) {
                     return Type::Error;
                 }
                 // C7 and §33.5: nullable reference shapes and nullable

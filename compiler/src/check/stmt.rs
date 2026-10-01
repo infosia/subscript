@@ -386,7 +386,7 @@ impl<'p> Checker<'p> {
                     );
                     ann
                 }
-                None => match &init.ty {
+                None => match &self.apparent_type(&init.ty) {
                     Type::Null => {
                         self.error(
                             RuleCode::S100,
@@ -399,15 +399,16 @@ impl<'p> Checker<'p> {
                         self.error(RuleCode::S100, "cannot bind a `void` value", pos.clone());
                         Type::Error
                     }
-                    t => t.clone(),
+                    _ => init.ty.clone(),
                 },
             };
-            if dispose && !matches!(ty, Type::Error) {
-                let resource_type = match &ty {
+            if dispose && !matches!(&self.apparent_type(&ty), Type::Error) {
+                let shape = self.apparent_type(&ty);
+                let resource_type = match &shape {
                     Type::Nullable(inner) => inner.as_ref(),
                     other => other,
                 };
-                let valid = match resource_type {
+                let valid = match self.apparent_type(resource_type) {
                     Type::Class(id) => {
                         !self.classes[id.0].is_value
                             && !self.classes[id.0].is_descriptor
@@ -418,7 +419,7 @@ impl<'p> Checker<'p> {
                     _ => false,
                 };
                 if !valid {
-                    let message = if matches!(resource_type, Type::Class(id)
+                    let message = if matches!(&self.apparent_type(resource_type), Type::Class(id)
                         if !self.classes[id.0].is_value && !self.classes[id.0].is_descriptor)
                     {
                         "the class of a `using` binding must declare `[Symbol.dispose](): void`"
@@ -496,7 +497,10 @@ impl<'p> Checker<'p> {
                         checked.pos.clone(),
                         "the return value",
                     );
-                    if matches!(checked.ty, Type::AsyncHandle(_) | Type::Array(_)) {
+                    if matches!(
+                        self.apparent_type(&checked.ty),
+                        Type::AsyncHandle(_) | Type::Array(_)
+                    ) {
                         let origins = self.expr_async_origins(&checked, fx);
                         fx.handle_async_origins(&origins);
                     }
@@ -504,7 +508,10 @@ impl<'p> Checker<'p> {
                 }
             }
             None => {
-                if ret != Type::Void && !is_generator && !matches!(ret, Type::Error) {
+                if ret != Type::Void
+                    && !is_generator
+                    && !matches!(&self.apparent_type(&ret), Type::Error)
+                {
                     let name = self.type_name(&ret);
                     self.error(
                         RuleCode::S100,
@@ -522,7 +529,7 @@ impl<'p> Checker<'p> {
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::BooleanContext,
             &cond.ty,
-        ) && !matches!(cond.ty, Type::Bool | Type::Error)
+        ) && !matches!(self.apparent_type(&cond.ty), Type::Bool | Type::Error)
         {
             let name = self.type_name(&cond.ty);
             self.error(
@@ -799,7 +806,9 @@ impl<'p> Checker<'p> {
             fx.scopes.pop();
             return;
         }
-        if matches!(subject.ty, Type::Error) || matches!(elem_ty, Type::Error) {
+        if matches!(self.apparent_type(&subject.ty), Type::Error)
+            || matches!(self.apparent_type(&elem_ty), Type::Error)
+        {
             return;
         }
         if let Some(annotation) = annotation {
@@ -1073,7 +1082,7 @@ impl<'p> Checker<'p> {
                             // The view rules reach the §14.1 containers
                             // only. On any other receiver the three names
                             // are ordinary members (compiler.md §103.2).
-                            if !Self::is_fused_view_receiver(&recv.ty) {
+                            if !self.is_fused_view_receiver(&recv.ty) {
                                 let call_pos = self.pos(call.span);
                                 let subject =
                                     self.check_method_call_on(recv, prop, call, None, fx, call_pos);
@@ -1097,7 +1106,7 @@ impl<'p> Checker<'p> {
                                 );
                                 return (recv, None, Type::Error, false);
                             }
-                            let selected = match (&recv.ty, name) {
+                            let selected = match (&self.apparent_type(&recv.ty), name) {
                                 (Type::Array(_), "keys") => {
                                     Some((hir::ForOfKind::ArrayKeys, Type::I32))
                                 }
@@ -1140,9 +1149,9 @@ impl<'p> Checker<'p> {
 
     /// True when the `keys`/`values`/`entries` view rules of stdlib.md
     /// §14.1 reach this receiver type (compiler.md §103.2 rule 1).
-    fn is_fused_view_receiver(ty: &Type) -> bool {
+    fn is_fused_view_receiver(&self, ty: &Type) -> bool {
         matches!(
-            ty,
+            &self.apparent_type(ty),
             Type::Array(_) | Type::FixedArray(..) | Type::Map(..) | Type::Set(_)
         )
     }
@@ -1156,7 +1165,7 @@ impl<'p> Checker<'p> {
         // compiler.md §104.1 rules 1, 2 and 4: the check reads the
         // resolved subject type, and it does not read how the bound
         // value is used.
-        if matches!(subject.ty, Type::Map(..)) {
+        if matches!(self.apparent_type(&subject.ty), Type::Map(..)) {
             self.error_diverging(
                 RuleCode::S014,
                 "a bare `Map` is not a `for…of` subject: this language binds `K` and \
@@ -1172,18 +1181,18 @@ impl<'p> Checker<'p> {
             .ty
             .iteration_element()
             .map(|(kind, element)| (Some(hir::ForOfKind::from(kind)), element, false))
-            .or_else(|| match &subject.ty {
+            .or_else(|| match &self.apparent_type(&subject.ty) {
                 Type::Generator(value) => Some((None, (**value).clone(), true)),
                 _ => None,
             });
-        if matches!(subject.ty, Type::Error) {
+        if matches!(self.apparent_type(&subject.ty), Type::Error) {
             return (subject, None, Type::Error, false);
         }
         if let Some((kind, elem, generator)) = selected {
             return (subject, kind, elem, generator);
         }
         let actual = self.type_name(&subject.ty);
-        if let Type::Class(id) = subject.ty {
+        if let Type::Class(id) = self.apparent_type(&subject.ty) {
             let class = &self.classes[id.0].name;
             self.error(
                 RuleCode::S014,
@@ -1285,7 +1294,7 @@ impl<'p> Checker<'p> {
             &disc.ty,
         ) && !self.apparent_type(&disc.ty).is_integer()
             && !matches!(
-                disc.ty,
+                self.apparent_type(&disc.ty),
                 Type::Enum(_) | Type::Str | Type::StringAlias(_) | Type::Error
             )
         {
@@ -1300,7 +1309,7 @@ impl<'p> Checker<'p> {
             );
         }
         let disc_ty = disc.ty.clone();
-        let alias_switch = match &disc_ty {
+        let alias_switch = match &self.apparent_type(&disc_ty) {
             Type::StringAlias(id) => self
                 .string_aliases
                 .get(id.0)

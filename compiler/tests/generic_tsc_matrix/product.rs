@@ -12,6 +12,84 @@ struct Role {
 
 const ROLES: &[Role] = &[
     Role {
+        name: "ternary-result",
+        expression: "true ? x : y",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "nullish-result",
+        expression: "x ?? y",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "array-literal-element",
+        expression: "[x, y][0]",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "destructuring-source",
+        expression: "derived",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "throw-operand",
+        expression: "identity<T>(x)",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "array-element",
+        expression: "xs[0]",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "fixed-array-element",
+        expression: "fixed[0]",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "generic-field",
+        expression: "holder.value",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "generic-method",
+        expression: "holder.get()",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "closure-parameter",
+        expression: "closure<T>(x)",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "await-result",
+        expression: "await promise<T>(x)",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "yield-value",
+        expression: "yielded",
+        nullable: false,
+        order: None,
+    },
+    Role {
+        name: "call-return",
+        expression: "identity<T>(x)",
+        nullable: false,
+        order: None,
+    },
+    Role {
         name: "parameter",
         expression: "x",
         nullable: false,
@@ -151,7 +229,50 @@ fn sites() -> Vec<Site> {
             divergence: None,
         });
     }
+    for (name, body) in [
+        ("ternary-arm", "const a = true ? $ : y;"),
+        ("nullish-right", "const a = y ?? $;"),
+        ("array-literal", "const a = [$, y];"),
+        ("object-pattern", "const { v } = $;"),
+        ("array-pattern", "const [a] = $;"),
+        ("throw", "throw $;"),
+        ("field-initializer", "const a = $;"),
+        (
+            "default-parameter",
+            "const default_value = $; const callback = (a: T = default_value): void => {};",
+        ),
+        ("for-of-binding", "for (const { v } of [$]) {}"),
+        ("member-read", "const a = ($).v;"),
+        ("method-call", "const a = ($).get();"),
+    ] {
+        sites.push(Site {
+            name: name.into(),
+            body: body.into(),
+            result: "void",
+            divergence: None,
+        });
+    }
     sites
+}
+
+fn field_value(source: &str) -> String {
+    let mut result = String::new();
+    let mut word = String::new();
+    for character in source.chars().chain(std::iter::once(' ')) {
+        if character.is_ascii_alphanumeric() || character == '_' {
+            word.push(character);
+        } else {
+            result.push_str(match word.as_str() {
+                "x" => "this.read_x()",
+                "y" => "this.read_y()",
+                "n" => "this.read_n()",
+                _ => &word,
+            });
+            word.clear();
+            result.push(character);
+        }
+    }
+    result
 }
 
 pub(super) fn cells() -> Vec<Cell> {
@@ -175,14 +296,75 @@ pub(super) fn cells() -> Vec<Cell> {
             let x_type = if role.nullable { "T | null" } else { "T" };
             for site in &sites {
                 let body = site.body.replace('$', &format!("({})", role.expression));
-                let declaration = format!(
-                    "class Box {{ v: i32 = 1; }} function take<A>(a: A): void {{}} \
-                     function g<{parameters}>(x: {x_type}, y: T, u: U, n: i32, \
-                     s: string, numbers: i32[]): {} {{ {body} }}",
-                    site.result,
+                let asynchronous = role.name == "await-result";
+                let asynchronous_word = if asynchronous { "async " } else { "" };
+                let result = if asynchronous {
+                    format!("Promise<{}>", site.result)
+                } else {
+                    site.result.to_string()
+                };
+                let setup = match role.name {
+                    "destructuring-source" => "const { value: derived } = new G<T>(y);",
+                    "array-element" => "const xs: T[] = [y];",
+                    "fixed-array-element" => "const fixed: FixedArray<T, 1> = [y];",
+                    "generic-field" | "generic-method" => "const holder = new G<T>(y);",
+                    "yield-value" => "let yielded: T = y; for (const value of generator<T>(y)) { yielded = value; }",
+                    _ => "",
+                };
+                let helpers = match role.name {
+                    "destructuring-source" | "generic-field" | "generic-method" =>
+                        "class G<A> { value: A; constructor(value: A) { this.value = value; } get(): A { return this.value; } }",
+                    "throw-operand" | "call-return" => "function identity<A>(value: A): A { return value; }",
+                    "closure-parameter" => "function closure<A>(value: A): A { const cb = (p: A): A => p; return cb(value); }",
+                    "await-result" => "async function promise<A>(value: A): Promise<A> { return value; }",
+                    "yield-value" => "function* generator<A>(value: A): Generator<A> { yield value; }",
+                    _ => "",
+                };
+                let mut declaration = format!(
+                    "class Box {{ v: i32 = 1; get(): i32 {{ return this.v; }} }} \
+                     {helpers} function take<A>(a: A): void {{}} \
+                     {asynchronous_word}function g<{parameters}>(x: {x_type}, y: T, u: U, n: i32, \
+                     s: string, numbers: i32[]): {result} {{ {setup} {body} }}",
                 );
+                if site.name == "field-initializer" {
+                    let value = match role.name {
+                        "destructuring-source" => "new G<T>(y).value".to_string(),
+                        "array-element" => "[y][0]".to_string(),
+                        "fixed-array-element" => "this.fixed()[0]".to_string(),
+                        "generic-field" => "new G<T>(y).value".to_string(),
+                        "generic-method" => "new G<T>(y).get()".to_string(),
+                        "yield-value" => "this.yielded()".to_string(),
+                        _ => role.expression.to_string(),
+                    };
+                    let value = field_value(&value);
+                    let fields = format!(
+                        "class Field<{parameters}> {{ x: {x_type}; y: T; n: i32; \
+                         value: T = {value}; \
+                         constructor(x: {x_type}, y: T, n: i32) {{ this.x = x; this.y = y; this.n = n; }} \
+                         read_x(): {x_type} {{ return this.x; }} read_y(): T {{ return this.y; }} \
+                         read_n(): i32 {{ return this.n; }} {} }}",
+                        match role.name {
+                            "fixed-array-element" => "fixed(): FixedArray<T, 1> { return [this.read_y()]; }",
+                            "yield-value" => "yielded(): T { let value: T = this.read_y(); for (const item of generator<T>(this.read_y())) { value = item; } return value; }",
+                            _ => "",
+                        },
+                    );
+                    declaration.push_str(&fields);
+                }
                 let name = format!("product-{}-{}-{}", kind.name, role.name, site.name);
-                let divergence = if role.name == "concrete" && site.name == "condition" {
+                let divergence = if site.name == "field-initializer" {
+                    Some(Divergence {
+                        code: RuleCode::S100,
+                        record: "C9",
+                        token: "A field initializer must not read `this`.",
+                    })
+                } else if site.name == "throw" {
+                    Some(Divergence {
+                        code: RuleCode::S010,
+                        record: "compiler.md §115",
+                        token: "`throw expr` requires the static type of an Error-family class",
+                    })
+                } else if role.name == "concrete" && site.name == "condition" {
                     Some(Divergence {
                         code: RuleCode::S100,
                         record: "compiler.md §68",
@@ -207,14 +389,30 @@ pub(super) fn cells() -> Vec<Cell> {
                 let mut admitted = None;
                 let mut reasons = Vec::new();
                 for (ty, value) in candidates {
-                    let main = format!("g<{ty}, {ty}>({value}, {value}, {value}, 1, \"s\", [1]);");
+                    let field_instance = if site.name == "field-initializer" {
+                        format!(" new Field<{ty}, {ty}>({value}, {value}, 1);")
+                    } else {
+                        String::new()
+                    };
+                    let main = format!(
+                        "{}g<{ty}, {ty}>({value}, {value}, {value}, 1, \"s\", [1]);{field_instance}",
+                        if asynchronous { "await " } else { "" }
+                    );
                     let concrete = replace_parameter_names(
-                        &declaration.replace(&format!("g<{parameters}>"), "g"),
+                        &declaration
+                            .replace(&format!("g<{parameters}>"), "g")
+                            .replace(&format!("Field<{parameters}>"), "Field"),
                         ty,
                     );
                     let concrete_source = format!(
-                        "{concrete}\nexport function main(): void {{ {} }}",
-                        main.replace(&format!("g<{ty}, {ty}>"), "g"),
+                        "{concrete}\nexport {asynchronous_word}function main(): {} {{ {} }}",
+                        if asynchronous {
+                            "Promise<void>"
+                        } else {
+                            "void"
+                        },
+                        main.replace(&format!("g<{ty}, {ty}>"), "g")
+                            .replace(&format!("Field<{ty}, {ty}>"), "Field"),
                     );
                     let errors = controls.entry(concrete_source.clone()).or_insert_with(|| {
                         check_program(&[SourceFile::new("control.ts", &concrete_source)])
@@ -226,7 +424,7 @@ pub(super) fn cells() -> Vec<Cell> {
                             errors.iter().all(|error| error.code == record.code)
                         })
                     {
-                        admitted = Some(main);
+                        admitted = Some((main, concrete_source));
                         break;
                     }
                     reasons.push(format!(
@@ -244,22 +442,31 @@ pub(super) fn cells() -> Vec<Cell> {
                         omitted.push(format!("| `{name}-instance` | {} |", reasons.join("; ")));
                         continue;
                     }
-                    cells.push(build_cell(CellInput {
+                    let mut cell = build_cell(CellInput {
                         name: &name,
                         declaration: &declaration,
                         main_body: if instance {
-                            admitted.as_ref().unwrap()
+                            &admitted.as_ref().unwrap().0
                         } else {
                             ""
                         },
                         instance,
+                        // The builder checks each concrete control once above.
                         concrete_source: None,
                         divergence,
-                    }));
+                    });
+                    if asynchronous {
+                        cell.source = cell.source.replace(
+                            "export function main(): void",
+                            "export async function main(): Promise<void>",
+                        );
+                    }
+                    cells.push(cell);
                 }
             }
         }
     }
+    assert_eq!(omitted.len(), 4468, "the admitted instance set changed");
     eprintln!(
         "product candidates: {} roles × {} sites × {} kinds × 2 = {}; omitted instances={}",
         ROLES.len(),
