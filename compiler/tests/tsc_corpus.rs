@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use subscript_compiler::repository_relative;
 
@@ -70,12 +71,14 @@ struct TempProjectDirectory(PathBuf);
 
 impl TempProjectDirectory {
     fn create() -> Self {
+        static NEXT_DIRECTORY_ID: AtomicU64 = AtomicU64::new(0);
+        let directory_id = NEXT_DIRECTORY_ID.fetch_add(1, Ordering::Relaxed);
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock must follow the Unix epoch")
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "subscript-tsc-corpus-{}-{nonce}",
+            "subscript-tsc-corpus-{}-{nonce}-{directory_id}",
             std::process::id()
         ));
         fs::create_dir(&path).unwrap_or_else(|error| panic!("create {}: {error}", path.display()));
@@ -87,6 +90,35 @@ impl Drop for TempProjectDirectory {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+#[test]
+fn temporary_project_directories_are_unique_across_threads() {
+    // This test costs about one second for 8,000 directories on the measured host.
+    // Concurrent creation checks that different threads use distinct paths.
+    const THREADS: usize = 8;
+    const DIRECTORIES_PER_THREAD: usize = 1_000;
+    let start = std::sync::Barrier::new(THREADS);
+    let directories = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let start = &start;
+                scope.spawn(move || {
+                    start.wait();
+                    (0..DIRECTORIES_PER_THREAD)
+                        .map(|_| TempProjectDirectory::create())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("directory creation must succeed"))
+            .collect::<Vec<_>>()
+    });
+    let paths: BTreeSet<_> = directories.iter().map(|directory| &directory.0).collect();
+    assert_eq!(directories.len(), THREADS * DIRECTORIES_PER_THREAD);
+    assert_eq!(paths.len(), directories.len());
 }
 
 fn project_root() -> PathBuf {
