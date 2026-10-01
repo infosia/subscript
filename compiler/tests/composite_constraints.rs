@@ -106,7 +106,10 @@ fn equality_diagnostics_name_declared_parameters() {
     let errors = check_program(&[SourceFile::new("names.ts", source)]).unwrap_err();
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].code, RuleCode::S100);
-    assert_eq!(errors[0].message, "operator not defined for `T` and `U`");
+    assert_eq!(
+        errors[0].message,
+        "operator `===` not defined for `T` and `U`"
+    );
 }
 
 #[test]

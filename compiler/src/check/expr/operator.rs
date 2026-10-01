@@ -428,7 +428,7 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         use ast::BinaryOp as B;
-        if matches!(b.op, B::EqEqEq | B::NotEqEq) {
+        if matches!(b.op, B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq) {
             if let Some(presence) = self.check_absence_presence_comparison(b, fx, pos.clone()) {
                 return presence;
             }
@@ -479,15 +479,6 @@ impl<'p> Checker<'p> {
                     ty,
                     pos,
                 }
-            }
-            B::EqEq | B::NotEq => {
-                self.error_diverging(
-                    RuleCode::S100,
-                    "loose equality is not in the language; use `===` / `!==`",
-                    pos.clone(),
-                    Divergence::LooseEquality,
-                );
-                self.err_expr(pos)
             }
             B::NullishCoalescing => self.check_nullish(b, fx, pos),
             B::InstanceOf => self.check_instanceof(b, fx, pos),
@@ -999,7 +990,7 @@ impl<'p> Checker<'p> {
         Some(hir::Expr {
             kind: ExprKind::AbsenceTest {
                 value: Box::new(checked),
-                negated: binary.op == ast::BinaryOp::NotEqEq,
+                negated: matches!(binary.op, ast::BinaryOp::NotEq | ast::BinaryOp::NotEqEq),
             },
             ty: Type::Bool,
             pos,
@@ -1015,6 +1006,13 @@ impl<'p> Checker<'p> {
         use_kind: BinUse,
     ) -> BinResult {
         use ast::BinaryOp as B;
+        let equality_operator = match op {
+            B::EqEq => Some("=="),
+            B::NotEq => Some("!="),
+            B::EqEqEq => Some("==="),
+            B::NotEqEq => Some("!=="),
+            _ => None,
+        };
         let lt = self.apparent_type(&left.ty);
         let rt = self.apparent_type(&right.ty);
         let parameter =
@@ -1158,8 +1156,8 @@ impl<'p> Checker<'p> {
                                     && matches!(lt, Type::Str | Type::Bool)))),
                 )
             }
-            B::EqEqEq | B::NotEqEq => {
-                let hop = if op == B::EqEqEq {
+            B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq => {
+                let hop = if matches!(op, B::EqEq | B::EqEqEq) {
                     BinOp::Eq
                 } else {
                     BinOp::Ne
@@ -1252,13 +1250,16 @@ impl<'p> Checker<'p> {
             && rt == Type::Date
             && matches!(
                 op,
-                B::EqEqEq | B::NotEqEq | B::Lt | B::LtEq | B::Gt | B::GtEq
+                B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq | B::Lt | B::LtEq | B::Gt | B::GtEq
             )
         {
             self.reject_api_form(
                 "Date",
                 "direct comparison",
-                "Date direct comparison",
+                &equality_operator.map_or_else(
+                    || "Date direct comparison".to_string(),
+                    |operator| format!("Date direct comparison `{operator}`"),
+                ),
                 pos.clone(),
             );
             return BinResult {
@@ -1269,13 +1270,15 @@ impl<'p> Checker<'p> {
         let ln = self.type_name(&left.ty);
         let rn = self.type_name(&right.ty);
         if mixed_numeric {
-            let family = if matches!(
+            let family = if let Some(operator) = equality_operator {
+                format!("comparison `{operator}`")
+            } else if matches!(
                 op,
                 B::BitAnd | B::BitOr | B::BitXor | B::LShift | B::RShift | B::ZeroFillRShift
             ) {
-                "bitwise"
+                "bitwise".to_string()
             } else {
-                "arithmetic"
+                "arithmetic".to_string()
             };
             self.error_diverging(
                 RuleCode::S007,
@@ -1289,7 +1292,10 @@ impl<'p> Checker<'p> {
         } else {
             self.error(
                 RuleCode::S100,
-                format!("operator not defined for `{}` and `{}`", ln, rn),
+                equality_operator.map_or_else(
+                    || format!("operator not defined for `{ln}` and `{rn}`"),
+                    |operator| format!("operator `{operator}` not defined for `{ln}` and `{rn}`"),
+                ),
                 pos.clone(),
             );
         }

@@ -190,7 +190,7 @@ fn sites() -> Vec<Site> {
     }
     for (name, operator, divergence) in [
         ("equality", "===", None),
-        ("loose-equality", "==", Some(LOOSE_EQUALITY)),
+        ("loose-equality", "==", None),
         ("relational", "<", None),
     ] {
         for (side, left, right) in [("left", "$", "n"), ("right", "n", "$")] {
@@ -518,7 +518,7 @@ pub(super) fn cells() -> Vec<Cell> {
             }
         }
     }
-    assert_eq!(omitted.len(), 7473, "the admitted instance set changed");
+    assert_eq!(omitted.len(), 7719, "the admitted instance set changed");
     let additional_pairs: usize = kinds::additional()
         .iter()
         .map(|kind| 2 + usize::from(kinds::numeric(kind)))

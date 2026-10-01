@@ -588,19 +588,8 @@ Measured with `tsc` 5.9.2: `r288` is accepted; `node` prints `3`.
 
 Accept: `a304`. Reject: `r288`.
 
-### C20. Loose equality is not in the language
-
-The checker rejects `==` and `!=` with S100 on every operand type,
-and names `===` and `!==` in the diagnostic. `tsc` accepts both
-operators where the operand types overlap. The rule holds since the
-first checker; this record names it.
-
-Measured with `tsc` 5.9.2 (`specs/tracking/s143-type-parameter-typing.md`):
-`tsc` accepts `x == y` and `x != y` on a type parameter with no
-constraint, a class constraint, a numeric constraint, an array
-constraint, and on `T | null`.
-
-Reject: `r294`.
+C20 is deleted by `compiler.md` §144: `==` and `!=` are `===` and
+`!==`. `retired:r294-loose-equality`.
 
 ### C21. `void` is a return type, not a value
 

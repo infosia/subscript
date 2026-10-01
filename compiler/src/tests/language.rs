@@ -1028,12 +1028,12 @@ fn array_and_regexp_identity_keep_the_s100_acceptance_boundary() {
     assert_eq!(diagnostics[0].code, RuleCode::S100);
     assert_eq!(
         diagnostics[0].message,
-        "operator not defined for `i32[]` and `i32[]`"
+        "operator `===` not defined for `i32[]` and `i32[]`"
     );
     assert_eq!(diagnostics[1].code, RuleCode::S100);
     assert_eq!(
         diagnostics[1].message,
-        "operator not defined for `RegExp` and `RegExp`"
+        "operator `===` not defined for `RegExp` and `RegExp`"
     );
 }
 

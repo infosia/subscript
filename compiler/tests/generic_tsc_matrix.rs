@@ -563,13 +563,6 @@ struct Divergence {
     message: &'static str,
 }
 
-const LOOSE_EQUALITY: Divergence = Divergence {
-    code: RuleCode::S100,
-    record: "C20",
-    message: "loose equality",
-    token: "rejects `==` and `!=` with S100 on every operand type",
-};
-
 const DO_WHILE: Divergence = Divergence {
     code: RuleCode::S100,
     record: "compiler.md §124",
@@ -963,7 +956,11 @@ fn instance_argument(kind: &Kind, form: &Form) -> Option<(&'static str, &'static
         ],
         _ => unreachable!("matrix kind"),
     };
-    if omitted.contains(&form.name) {
+    let operand_form = match form.name {
+        "loose-equality" | "loose-inequality" => "equality-same",
+        name => name,
+    };
+    if omitted.contains(&operand_form) {
         return None;
     }
     if kind.name == "plain" {
@@ -1015,9 +1012,7 @@ fn cells() -> Vec<Cell> {
         for form in FORMS {
             let name = format!("{}-{}", kind.name, form.name);
             let declaration = form_declaration(kind, form);
-            let divergence = if form.name.starts_with("loose-") {
-                Some(LOOSE_EQUALITY)
-            } else if form.name == "do-condition" {
+            let divergence = if form.name == "do-condition" {
                 Some(DO_WHILE)
             } else {
                 None
@@ -1669,8 +1664,8 @@ fn a_record_that_does_not_state_the_restriction_fails_the_cell() {
     let errors = check_program(&[SourceFile::new("restriction.ts", source)]).unwrap_err();
     let record = Divergence {
         code: RuleCode::S100,
-        record: "C20",
-        message: "loose equality",
+        record: "C1",
+        message: "unrelated restriction",
         token: VALUE_FIELD.token,
     };
     let cell = build_cell(CellInput {
@@ -1719,7 +1714,7 @@ fn lambda_defaults_use_the_declared_parameter_type() {
 fn restriction_records_resolve_each_supported_source() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     for (record, token) in [
-        ("C20", "=="),
+        ("C2", VALUE_FIELD.token),
         ("Q3", "non-negative integer literal"),
         ("compiler.md §124", "do…while"),
         (
