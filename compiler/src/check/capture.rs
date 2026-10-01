@@ -529,7 +529,17 @@ pub(super) fn check(module: &mut hir::Module) -> Result<(), Vec<Diagnostic>> {
 fn type_name(m: &hir::Module, t: &Type) -> String {
     match t {
         Type::Class(id) => m.classes[id.0].name.clone(),
-        Type::Array(t) => format!("{}[]", type_name(m, t)),
+        Type::Array(t) => {
+            let name = type_name(m, t);
+            if matches!(
+                t.as_ref(),
+                Type::Nullable(_) | Type::GenericUnion(_) | Type::Func(_)
+            ) {
+                format!("({name})[]")
+            } else {
+                format!("{name}[]")
+            }
+        }
         Type::FixedArray(t, n) => format!("FixedArray<{}, {n}>", type_name(m, t)),
         Type::Nullable(t) if matches!(t.as_ref(), Type::Func(_)) => {
             format!("({}) | null", type_name(m, t))
@@ -589,5 +599,42 @@ fn value_name(module: &hir::Module, expr: &Expr) -> String {
             super::identity::module_declaration_label(module, name)
         ),
         _ => format!("value of type `{}`", type_name(module, &expr.ty)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn array_names_preserve_element_precedence() {
+        let module = crate::check_program(&[crate::SourceFile::new(
+            "names.ts",
+            "class Box { v: i32 = 1; }",
+        )])
+        .unwrap();
+        let class = Type::Class(crate::types::ClassId(
+            module
+                .classes
+                .iter()
+                .position(|class| class.name == "Box")
+                .unwrap(),
+        ));
+        for (element, expected) in [
+            (Type::Nullable(Box::new(class.clone())), "(Box | null)[]"),
+            (
+                Type::Func(Box::new(crate::types::FuncType {
+                    params: vec![Type::I32],
+                    ret: Type::I32,
+                })),
+                "((i32) => i32)[]",
+            ),
+            (
+                Type::GenericUnion(vec![Type::I32, Type::Bool].into_boxed_slice()),
+                "(i32 | boolean)[]",
+            ),
+        ] {
+            assert_eq!(type_name(&module, &Type::array(element)), expected);
+        }
     }
 }

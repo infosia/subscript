@@ -89,13 +89,15 @@ pub(super) fn cells() -> Vec<Cell> {
                 divergence: if name == "throw-unconstrained" {
                     Some(Divergence {
                         code: RuleCode::S010,
-                        record: "compiler.md §115",
-                        token: "`throw expr` requires the static type of an Error-family class",
+                        record: "C6",
+                        message: "`throw` requires an Error-family object",
+                        token: "`throw` of a non-Error value is rejected",
                     })
                 } else if instance && name == "union-shared-member" {
                     Some(Divergence {
                         code: RuleCode::S005,
                         record: "C1",
+                        message: "nominal types are not interchangeable",
                         token: "nominal",
                     })
                 } else {

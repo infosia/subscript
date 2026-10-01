@@ -8,6 +8,7 @@ const CONSTRUCTORS: &[(&str, &str, &str)] = &[
     ("Array", "array", "A[]"),
     ("FixedArray", "fixed-array", "FixedArray<A, 2>"),
     ("Map", "map-value", "Map<string, A>"),
+    ("Map", "map-array-value", "Map<string, A[]>"),
     ("Map", "map-key", "Map<A, i32>"),
     ("Set", "set", "Set<A>"),
     ("Class", "class", "G<A>"),
@@ -73,62 +74,70 @@ pub(super) fn cells() -> Vec<Cell> {
             } else {
                 api::substitute(spelling, &[("A".into(), format!("({constraint})"))])
             };
-            for site in ["initializer", "return", "argument"] {
-                let body = match site {
-                    "initializer" => format!("const result: {to} = x;"),
-                    "return" => "return x;".into(),
-                    _ => "take(x);".into(),
-                };
-                let ret = if site == "return" {
-                    to.as_str()
-                } else {
-                    "void"
-                };
-                let prelude = format!(
-                    "class Box {{ v: i32 = 1; }} {} \
+            for reverse in [false, true] {
+                let (from, to) = if reverse { (&to, &from) } else { (&from, &to) };
+                for site in ["initializer", "return", "argument"] {
+                    let body = match site {
+                        "initializer" => format!("const result: {to} = x;"),
+                        "return" => "return x;".into(),
+                        _ => "take(x);".into(),
+                    };
+                    let ret = if site == "return" {
+                        to.as_str()
+                    } else {
+                        "void"
+                    };
+                    let prelude = format!(
+                        "class Box {{ v: i32 = 1; }} {} \
                      class G<A> {{ value: A; constructor(value: A) {{ this.value = value; }} }} \
                      function take(x: {to}): void {{}}",
-                    kinds::prelude(kind)
-                );
-                let declaration = format!(
-                    "{prelude} function g<T{}>(x: {from}): {ret} {{ {body} }}",
-                    kind.constraint
-                );
-                let argument = if kind.name == "nullable-class" {
-                    "Box"
-                } else {
-                    constraint
-                };
-                let main = format!("function admitted(x: {to}): void {{ g<{argument}>(x); }}");
-                let concrete = format!("{prelude} function g(x: {to}): {ret} {{ {body} }} export function main(): void {{}}");
-                for instance in [false, true] {
-                    if instance
-                        && check_program(&[SourceFile::new("control.ts", &concrete)]).is_err()
-                    {
-                        omitted += 1;
-                        continue;
+                        kinds::prelude(kind)
+                    );
+                    let declaration = format!(
+                        "{prelude} function g<T{}>(x: {from}): {ret} {{ {body} }}",
+                        kind.constraint
+                    );
+                    let argument = constraint;
+                    let concrete_from =
+                        api::substitute(spelling, &[("A".into(), format!("({argument})"))]);
+                    let main = format!(
+                        "function admitted(x: {concrete_from}): void {{ g<{argument}>(x); }}"
+                    );
+                    let concrete = format!("{prelude} function g(x: {from}): {ret} {{ {body} }} function admitted(x: {concrete_from}): void {{ g(x); }} export function main(): void {{}}");
+                    let concrete = replace_parameter_names(&concrete, &format!("({argument})"));
+                    for instance in [false, true] {
+                        if instance
+                            && check_program(&[SourceFile::new("control.ts", &concrete)]).is_err()
+                        {
+                            omitted += 1;
+                            continue;
+                        }
+                        cells.push(build_cell(CellInput {
+                            name: &format!(
+                                "destination-{}-{}{constructor}-{site}",
+                                kind.name,
+                                if reverse { "reverse-" } else { "" }
+                            ),
+                            declaration: &format!(
+                                "{declaration} {}",
+                                if instance { &main } else { "" }
+                            ),
+                            main_body: "",
+                            instance,
+                            concrete_source: if instance {
+                                Some(concrete.clone())
+                            } else {
+                                None
+                            },
+                            divergence: None,
+                        }));
                     }
-                    cells.push(build_cell(CellInput {
-                        name: &format!("destination-{}-{constructor}-{site}", kind.name),
-                        declaration: &format!(
-                            "{declaration} {}",
-                            if instance { &main } else { "" }
-                        ),
-                        main_body: "",
-                        instance,
-                        concrete_source: if instance {
-                            Some(concrete.clone())
-                        } else {
-                            None
-                        },
-                        divergence: None,
-                    }));
                 }
             }
         }
     }
-    assert_eq!(omitted, 712, "destination instance admission changed");
-    eprintln!("destination axis: 35 constrained kinds, 16 constructors, 3 sites, {} cells, {omitted} omitted instances", cells.len());
+    assert_eq!(omitted, 1448, "destination instance admission changed");
+    eprintln!("destination axis: 35 constrained kinds, 17 constructors, 2 directions, 3 sites, {} cells, {omitted} omitted instances", cells.len());
     cells
 }
 
@@ -160,10 +169,19 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
         .name
         .strip_prefix(&format!("destination-{}-", kind.name))
         .unwrap();
+    let site = site.strip_prefix("reverse-").unwrap_or(site);
     let record = |code, record, token| Divergence {
         code,
         record,
         token,
+        message: match record {
+            "C21" => "a `void` function cannot return a value",
+            "C7" => "unions are limited to `Ref | null`",
+            "stdlib.md §10" => "key",
+            "stdlib.md §16.2" => "worker message type",
+            "compiler.md §40" => "Worker, Inbox, and Outbox values may not be",
+            _ => "unused",
+        },
     };
     if kind.name == "void" && site.starts_with("identity-return-") {
         records.push(record(
@@ -216,7 +234,7 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
     {
         records.push(record(
             RuleCode::S014,
-            "stdlib.md §10.2",
+            "stdlib.md §10",
             "A key type must have a defined equality",
         ));
     }
@@ -231,14 +249,21 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
         ));
     }
     if matches!(kind.name, "worker" | "inbox" | "outbox") {
-        if ["array-", "fixed-array-", "map-value-", "map-key-", "set-"]
-            .iter()
-            .any(|prefix| site.starts_with(prefix))
+        if [
+            "array-",
+            "fixed-array-",
+            "map-value-",
+            "map-array-value-",
+            "map-key-",
+            "set-",
+        ]
+        .iter()
+        .any(|prefix| site.starts_with(prefix))
         {
             records.push(record(
                 RuleCode::S100,
-                "compiler.md §132",
-                "illegal as any container type argument",
+                "compiler.md §40",
+                "an affine type is illegal as ANY container type",
             ));
         }
         if site.starts_with("class-") {

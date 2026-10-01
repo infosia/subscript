@@ -281,6 +281,7 @@ pub(super) fn cells() -> Vec<Cell> {
                         Some(Divergence {
                             code: RuleCode::S100,
                             record: "Q3",
+                            message: "non-negative integer literal",
                             token: "non-negative integer literal",
                         })
                     } else if api.name == "FixedArray.map"
@@ -291,18 +292,22 @@ pub(super) fn cells() -> Vec<Cell> {
                         Some(Divergence {
                             code: RuleCode::S100,
                             record: "C21",
+                            message: "the `map` callback must return a value",
                             token: "`map` callback that returns `void`",
                         })
                     } else if api.name == "Worker.spawn" {
                         Some(Divergence {
                             code: RuleCode::S100,
                             record: "compiler.md §40",
+                            message:
+                                "`Worker.spawn` entry must name a module-level function directly",
                             token: "`entry` is a directly named module-level",
                         })
                     } else if matches!(api.owner.as_str(), "Worker" | "Inbox" | "Outbox") {
                         Some(Divergence {
                             code: RuleCode::S100,
                             record: "compiler.md §40",
+                            message: "worker message type",
                             token: "Message classes are transferable per stdlib §16.2",
                         })
                     } else if matches!(api.name.as_str(), "Context.bytesOf" | "Context.bytesInto")
@@ -312,12 +317,18 @@ pub(super) fn cells() -> Vec<Cell> {
                         Some(Divergence {
                             code: RuleCode::S100,
                             record: "stdlib.md §18.1",
+                            message: if api.name == "Context.bytesOf" {
+                                "type mismatch: `Context.bytesOf` argument expects"
+                            } else {
+                                "type mismatch: `Context.bytesInto` argument expects"
+                            },
                             token: "The argument `value` has type `T` (nominal equality)",
                         })
                     } else if api.name == "Context.free" && (role == "array" || role == "value") {
                         Some(Divergence {
                             code: RuleCode::S100,
                             record: "corpus.md §5 Q6",
+                            message: "type mismatch: the argument expects `object`",
                             token: "reference-class instance immediately",
                         })
                     } else if api.owner == "FixedArray"
@@ -328,6 +339,7 @@ pub(super) fn cells() -> Vec<Cell> {
                         Some(Divergence {
                             code: RuleCode::S014,
                             record: "stdlib.md §9",
+                            message: "callbacks take",
                             token: "two arities accepted since Q27",
                         })
                     } else if api.name == "MapConstructor.groupBy"
@@ -337,7 +349,8 @@ pub(super) fn cells() -> Vec<Cell> {
                     {
                         Some(Divergence {
                             code: RuleCode::S014,
-                            record: "stdlib.md §10.4",
+                            record: "stdlib.md §10",
+                            message: "callbacks take",
                             token: "as Q22 fixes callback arities",
                         })
                     } else {

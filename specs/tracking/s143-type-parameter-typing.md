@@ -291,11 +291,32 @@ The generator adds r299 to the corpus index. The 36,057-cell matrix passes; its 
 `cargo fmt --check` and `git diff --check` pass. No collision record or existing golden changes in this repair.
 No gate runs, no gate verdict line exists, and no commit occurs. No stop condition remains.
 
+## Final review round 6 fix round
+
+Rule 4b and product instance admission now match each diagnostic to its own record ID or message fingerprint.
+The matrix names C7, C21, and §40 beside C9 where those restrictions apply.
+The measured diagnostic IDs select C6, §70, §107.1, and stdlib §10; untagged API errors have specific message fingerprints.
+The compiler index resolves §107.1 through §107. The shared-code regression test rejects both tagged and untagged unrelated S100 diagnostics.
+The destination axis has 17 constructors, both directions, and three sites; it includes `Map<string, C[]>` to `Map<string, T[]>`.
+Its concrete controls retain the source type and supplied argument. The nullable-class argument uses its full constraint, so 45 more instances qualify.
+The destination axis omits 1,448 instances; the product omits 7,473.
+The reverse composite tests assert each code and full message. Each printer encloses union and function array elements in parentheses.
+No existing test pins the old unparenthesized text. Two direct printer tests pin the new text.
+`concrete_component_rules_stay_with_the_instance` now pins five codes and messages; its array text uses `(Box | null)[]`.
+The capture printer allowlist fingerprint changes from `0xfc88c0f8d7cdf95b` to `0x538ecbfbc819af8a`; its concrete-HIR reason stays the same.
+The shape scan measures 521 sites in 0.26 seconds.
+The matrix has 39,160 cells: 28,628 without an instance and 10,532 with one; all pass.
+The measured cost is 24.999 seconds, or 28.17 seconds with cleanup; the 396-cell operator matrix takes 0.374 seconds.
+Regenerate the counts with `cargo test --offline --locked -p subscript-compiler --test generic_tsc_matrix -- --nocapture`.
+The compiler suite passes all 52 targets: 871 passed, zero failed, one ignored.
+`cargo fmt --check` and `git diff --check` pass. No stop condition remains. No gate runs and no commit occurs.
+
 ## Final Rust file sizes
 
 | File | Lines |
 |---|---:|
 | `compiler/src/check/bindings.rs` | 250 |
+| `compiler/src/check/capture.rs` | 640 |
 | `compiler/src/check/bodies.rs` | 845 |
 | `compiler/src/check/class_shape.rs` | 979 |
 | `compiler/src/check/container_argument.rs` | 93 |
@@ -327,19 +348,19 @@ No gate runs, no gate verdict line exists, and no commit occurs. No stop conditi
 | `compiler/src/divergence.rs` | 1325 |
 | `compiler/src/hir/shared.rs` | 259 |
 | `compiler/src/hir/sites.rs` | 583 |
-| `compiler/src/types.rs` | 1307 |
+| `compiler/src/types.rs` | 1351 |
 | `compiler/tests/apparent_type_shapes.rs` | 791 |
 | `compiler/tests/apparent_type_shapes/comparisons.rs` | 200 |
-| `compiler/tests/composite_constraints.rs` | 89 |
+| `compiler/tests/composite_constraints.rs` | 140 |
 | `compiler/tests/corpus_reject.rs` | 1366 |
 | `compiler/tests/corpus_warn.rs` | 216 |
 | `compiler/tests/field_values.rs` | 646 |
-| `compiler/tests/generic_tsc_matrix.rs` | 1774 |
-| `compiler/tests/generic_tsc_matrix/api.rs` | 536 |
-| `compiler/tests/generic_tsc_matrix/destinations.rs` | 253 |
-| `compiler/tests/generic_tsc_matrix/findings.rs` | 108 |
-| `compiler/tests/generic_tsc_matrix/kinds.rs` | 339 |
-| `compiler/tests/generic_tsc_matrix/product.rs` | 560 |
+| `compiler/tests/generic_tsc_matrix.rs` | 1839 |
+| `compiler/tests/generic_tsc_matrix/api.rs` | 549 |
+| `compiler/tests/generic_tsc_matrix/destinations.rs` | 278 |
+| `compiler/tests/generic_tsc_matrix/findings.rs` | 110 |
+| `compiler/tests/generic_tsc_matrix/kinds.rs` | 412 |
+| `compiler/tests/generic_tsc_matrix/product.rs` | 572 |
 | `compiler/tests/opaque_generics.rs` | 1091 |
 
 Every listed Rust file has fewer than 2,000 lines.
@@ -385,4 +406,10 @@ return form to it, measured at `5f707367`.
 
 ```text
 gate full 5f707367d052e9e7e3a6f9e8c53920d958d1b9c6 dirty:17 debug 2177/0/3 release 2174/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```
+
+## Final review round 6 landing gate
+
+```text
+gate full 7c79cbbc86eb4f8fd8cfdf0ac577cebce2df7458 dirty:11 debug 2181/0/3 release 2178/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```

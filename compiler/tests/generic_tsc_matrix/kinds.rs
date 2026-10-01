@@ -265,14 +265,16 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
         records.push(Divergence {
             code: RuleCode::S100,
             record: "C21",
+            message: "cannot bind a `void` value",
             token: "binding whose type is inferred from a `void`",
         });
     }
     if name.contains("async-handle-") {
         records.push(Divergence {
             code: RuleCode::S013,
-            record: "C8",
-            token: "dropping one without an await stays rejected",
+            record: "compiler.md §70",
+            message: "an async handle is dropped without any await",
+            token: "Dropping it without awaiting remains",
         });
     }
     if [
@@ -289,8 +291,9 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
     {
         records.push(Divergence {
             code: RuleCode::S100,
-            record: "compiler.md §107",
-            token: "a **non-array, non-class** source",
+            record: "compiler.md §107.1",
+            message: "an array binding pattern reads",
+            token: "An array binding pattern over a `T[]` or a `FixedArray<T, N>`",
         });
     }
     if name.starts_with("product-")
@@ -308,6 +311,7 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
         records.push(Divergence {
             code: RuleCode::S100,
             record: "compiler.md §40",
+            message: "Worker, Inbox, and Outbox values may not be class fields",
             token: "class field, array element, or lambda capture rejects",
         });
     }
@@ -315,6 +319,7 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
         records.push(Divergence {
             code: RuleCode::S100,
             record: "compiler.md §97",
+            message: "null",
             token: "bare `null` initializer infers no",
         });
     }
@@ -324,6 +329,11 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
         records.push(Divergence {
             code: RuleCode::S100,
             record: "Q32",
+            message: if name.starts_with("api-print-") {
+                "type mismatch: the argument expects `string`"
+            } else {
+                "type mismatch: `JSON.parse` text expects `string`"
+            },
             token: "Comparison or assignment with plain",
         });
     }
@@ -331,7 +341,70 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
         records.push(Divergence {
             code: RuleCode::S100,
             record: "compiler.md §41",
+            message: "case",
             token: "label must be a string literal naming a member",
+        });
+    }
+    if name.starts_with("product-") && name.contains("-field-initializer-") {
+        if name.starts_with("product-void-") {
+            records.push(Divergence {
+                code: RuleCode::S100,
+                record: "C21",
+                token: "binding whose type is inferred from a `void`",
+                message: "cannot bind a `void` value",
+            });
+        }
+        if name.contains("-nullish-result-") {
+            records.push(Divergence {
+                code: RuleCode::S100,
+                record: "C7",
+                token: "A non-nullable left",
+                message: "left operand of `??` is not nullable",
+            });
+        }
+        if ["worker", "inbox", "outbox"]
+            .iter()
+            .any(|kind| name.starts_with(&format!("product-{kind}-")))
+        {
+            records.push(Divergence {
+                code: RuleCode::S100,
+                record: "compiler.md §40",
+                token: "class field, array element, or lambda capture rejects",
+                message: "Worker, Inbox, and Outbox values may not be class fields",
+            });
+        }
+    }
+    if ["worker", "inbox", "outbox"]
+        .iter()
+        .any(|kind| name.starts_with(&format!("product-{kind}-")))
+        && name.contains("-default-parameter-")
+    {
+        records.push(Divergence {
+            code: RuleCode::S100,
+            record: "compiler.md §40",
+            token: "class field, array element, or lambda capture rejects",
+            message: "values may not be captured",
+        });
+    }
+    if name.starts_with("api-")
+        && ["Outbox-post-", "Worker-post-"]
+            .iter()
+            .any(|api| name.contains(api))
+        && name.contains("-value-value-class-")
+    {
+        records.push(Divergence {
+            code: RuleCode::S100,
+            record: "compiler.md §40",
+            token: "Message classes are transferable per stdlib §16.2",
+            message: "type mismatch: the argument expects `Box`",
+        });
+    }
+    if name.starts_with("api-Worker-spawn-") {
+        records.push(Divergence {
+            code: RuleCode::S100,
+            record: "compiler.md §40",
+            token: "Message classes are transferable per stdlib §16.2",
+            message: "worker message type",
         });
     }
     records.extend(super::destinations::records(cell));

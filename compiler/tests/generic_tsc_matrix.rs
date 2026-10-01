@@ -1,5 +1,5 @@
 //! The generic body matrix of §143 rule 4.
-//! Measured cost: 36,057 cells in 22.113 seconds; 24.86 seconds with cleanup.
+//! Measured cost: 39,160 cells in 24.999 seconds; 28.17 seconds with cleanup.
 //! One TypeScript process checks all cells.
 //! The API axis reads prelude/lang.d.ts: 96 positions across 42 callables; eight declarations need other forms.
 //! ES-lib methods admitted by method.rs have role/site cells only where a site names them.
@@ -7,9 +7,10 @@
 //! The other compound operators had identical verdicts in all 633 measured groups (§143 rule 4).
 //! TypeScript runs beside at most eight scoped checker workers.
 //! Nine current kinds retain every role/site pair. The 27 added kinds have every site with x: T and T | null.
-//! Numeric added kinds also have x + 1. This cut bounds debug cost below 25 seconds as the kind axis grows.
+//! Numeric added kinds also have x + 1. This cut bounds debug cost below 30 seconds as the kind axis grows.
 //! types.rs supplies the variants; kinds.rs supplies each named constraint or a reason that source cannot name it.
-//! The destination axis adds 16 constructors at initializer, return, and argument sites for each constrained kind.
+//! The destination axis adds 17 constructors in both directions for each constrained kind.
+//! Each destination has initializer, return, and argument sites.
 //! Concrete controls check instance admission apart from the opaque diagnostics (§143 rule 4).
 
 use std::{
@@ -559,23 +560,27 @@ struct Divergence {
     code: RuleCode,
     record: &'static str,
     token: &'static str,
+    message: &'static str,
 }
 
 const LOOSE_EQUALITY: Divergence = Divergence {
     code: RuleCode::S100,
     record: "C20",
+    message: "loose equality",
     token: "rejects `==` and `!=` with S100 on every operand type",
 };
 
 const DO_WHILE: Divergence = Divergence {
     code: RuleCode::S100,
     record: "compiler.md §124",
+    message: "statement form outside the decided surface",
     token: "`do…while` stays outside it",
 };
 
 const VALUE_FIELD: Divergence = Divergence {
     code: RuleCode::S100,
     record: "C2",
+    message: "outside the value-class whitelist",
     token: concat!(
         "Reference-class fields, `string` fields, and\n",
         "  nullable fields inside value classes are deferred",
@@ -1283,12 +1288,24 @@ fn extra_concrete_source(name: &str, declaration: &str, main_body: &str) -> Stri
     )
 }
 
+// A diagnostic supplies its own record id; an untagged diagnostic supplies its message (§143 rule 4b).
+fn diagnostic_matches(diagnostic: &Diagnostic, record: &Divergence) -> bool {
+    diagnostic.code == record.code
+        && match diagnostic.divergence {
+            Some(divergence) => divergence.entry().collision == record.record,
+            None => !record.message.is_empty() && diagnostic.message.contains(record.message),
+        }
+}
+
 fn disagreement(
     cell: &Cell,
     tsc_accepts: bool,
     diagnostics: &[Diagnostic],
     record_result: Result<(), String>,
 ) -> Option<String> {
+    if let Err(error) = record_result {
+        return Some(format!("{}: §143 rule 4b {error}", cell.name));
+    }
     if !tsc_accepts && diagnostics.is_empty() {
         return Some(format!("{}: §143 rule 4a", cell.name));
     }
@@ -1296,13 +1313,10 @@ fn disagreement(
         if !diagnostics.iter().all(|d| {
             kinds::records(cell)
                 .iter()
-                .any(|record| d.code == record.code)
+                .any(|record| diagnostic_matches(d, record))
         }) {
             return Some(format!("{}: §143 rule 4b {diagnostics:?}", cell.name));
         }
-    }
-    if let Err(error) = record_result {
-        return Some(format!("{}: §143 rule 4b {error}", cell.name));
     }
     None
 }
@@ -1376,14 +1390,21 @@ fn check_record(root: &Path, record: Divergence) -> Result<(), String> {
         let section = record_section(&index, "## 0.")?;
         let row = section
             .lines()
-            .find(|line| line.starts_with(&format!("| §{number} |")))
+            .find(|line| line.starts_with(&format!("| §{} |", number.split('.').next().unwrap())))
             .ok_or_else(|| format!("missing index entry {}", record.record))?;
         let link = row
             .split_once("](")
             .and_then(|(_, rest)| rest.split_once(')'))
             .map(|(link, _)| link)
             .ok_or_else(|| format!("missing index link {}", record.record))?;
-        (blocks.join(link), format!("## {number}."))
+        (
+            blocks.join(link),
+            if number.contains('.') {
+                format!("### {number} ")
+            } else {
+                format!("## {number}.")
+            },
+        )
     } else if let Some(number) = record.record.strip_prefix("stdlib.md §") {
         let level = if number.contains('.') { "###" } else { "##" };
         (
@@ -1447,7 +1468,7 @@ fn check_cell(cell: &Cell, root: &Path) -> (Vec<Diagnostic>, Option<String>, Res
             && !errors.iter().all(|error| {
                 kinds::records(cell)
                     .iter()
-                    .any(|record| error.code == record.code)
+                    .any(|record| diagnostic_matches(error, record))
             })
         {
             Some(format!(
@@ -1649,6 +1670,7 @@ fn a_record_that_does_not_state_the_restriction_fails_the_cell() {
     let record = Divergence {
         code: RuleCode::S100,
         record: "C20",
+        message: "loose equality",
         token: VALUE_FIELD.token,
     };
     let cell = build_cell(CellInput {
@@ -1713,6 +1735,7 @@ fn restriction_records_resolve_each_supported_source() {
             code: RuleCode::S100,
             record,
             token,
+            message: "unused record-text test",
         };
         assert!(check_record(root, divergence).is_ok(), "{record}");
         assert!(check_record(
@@ -1729,6 +1752,7 @@ fn restriction_records_resolve_each_supported_source() {
         Divergence {
             code: RuleCode::S100,
             record: "corpus.md §5 Q3",
+            message: "unused record-text test",
             token: "slice lowering"
         }
     )
@@ -1738,6 +1762,7 @@ fn restriction_records_resolve_each_supported_source() {
         Divergence {
             code: RuleCode::S100,
             record: "stdlib.md §18.1",
+            message: "nominal types are not interchangeable",
             token: "### 18.2 Changes by site"
         }
     )
@@ -1756,6 +1781,7 @@ fn a_question_bullet_without_the_restriction_fails_the_cell() {
     let record = Divergence {
         code: RuleCode::S100,
         record: "Q3",
+        message: "non-negative integer literal",
         token: "non-negative integer literal",
     };
     let cell = build_cell(CellInput {
@@ -1771,4 +1797,43 @@ fn a_question_bullet_without_the_restriction_fails_the_cell() {
     assert!(failure.contains("§143 rule 4b"), "{failure}");
     assert!(failure.contains("does not state restriction"), "{failure}");
     assert!(check_question_text(text, "Q4", "token beyond the heading").is_err());
+}
+
+#[test]
+fn a_shared_code_does_not_excuse_another_restriction() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let record = Divergence {
+        code: RuleCode::S100,
+        record: "C9",
+        token: "A field initializer must not read `this`.",
+        message: "`this` is only available in constructors and methods",
+    };
+    for source in [
+        "function g(x: i32): i32 { return x ?? 1; }",
+        "function g(): void { let value: i32; }",
+    ] {
+        let cell = build_cell(CellInput {
+            name: "wrong-shared-code",
+            declaration: source,
+            main_body: "",
+            instance: false,
+            concrete_source: None,
+            divergence: Some(record),
+        });
+        let errors = check_program(&[SourceFile::new("wrong.ts", source)]).unwrap_err();
+        assert!(errors.iter().all(|error| error.code == RuleCode::S100));
+        assert!(
+            disagreement(&cell, true, &errors, check_record(root, record))
+                .unwrap()
+                .contains("4b")
+        );
+        assert!(errors
+            .iter()
+            .all(|error| !diagnostic_matches(error, &record)));
+    }
+    let source = "class Box { value: i32 = 1; other: i32 = this.value; }";
+    let errors = check_program(&[SourceFile::new("right.ts", source)]).unwrap_err();
+    assert!(errors
+        .iter()
+        .all(|error| diagnostic_matches(error, &record)));
 }

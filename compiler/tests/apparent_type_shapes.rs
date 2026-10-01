@@ -1,7 +1,7 @@
 //! §143 rule 1a: every value-shape test reads the apparent type.
 //! The source scan uses Rust token groups, so comments and strings do not count.
 //! It checks match arms, patterns, variant equality, typed comparisons, collection searches, and derived Type helpers.
-//! Measured cost: 520 sites in 0.25 seconds; 19 named groups pin 49 justified raw-test functions.
+//! Measured cost: 521 sites in 0.26 seconds; 19 named groups pin 49 justified raw-test functions.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -561,7 +561,7 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "concrete-captures", reason: "Capture validation runs on the final concrete HIR after opaque instances leave it (§135 rule 1).", sites: &[
         ("capture.rs", "expr", 0x4c573ebc382cad42),
         ("capture.rs", "fact", 0x80bc8ebc9b829d3a),
-        ("capture.rs", "type_name", 0xfc88c0f8d7cdf95b),
+        ("capture.rs", "type_name", 0x538ecbfbc819af8a),
     ] },
     AllowGroup { name: "union-members", reason: "Union decomposition preserves T identity; each member then uses apparent_type (§143 rule 1c).", sites: &[
         ("expr/call.rs", "check_indirect_call", 0xed9d360786d01965),

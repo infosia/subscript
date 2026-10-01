@@ -392,13 +392,15 @@ pub(super) fn cells() -> Vec<Cell> {
                     Some(Divergence {
                         code: RuleCode::S100,
                         record: "C9",
+                        message: "`this` is only available in constructors and methods",
                         token: "A field initializer must not read `this`.",
                     })
                 } else if site.name == "throw" {
                     Some(Divergence {
                         code: RuleCode::S010,
-                        record: "compiler.md §115",
-                        token: "`throw expr` requires the static type of an Error-family class",
+                        record: "C6",
+                        message: "`throw` requires an Error-family object",
+                        token: "`throw` of a non-Error value is rejected",
                     })
                 } else if site.name == "condition"
                     && (role.name == "concrete" || kind.name.starts_with("function-"))
@@ -406,6 +408,7 @@ pub(super) fn cells() -> Vec<Cell> {
                     Some(Divergence {
                         code: RuleCode::S100,
                         record: "compiler.md §68",
+                        message: "condition must be boolean",
                         token: "the condition is a `boolean` value",
                     })
                 } else {
@@ -424,6 +427,13 @@ pub(super) fn cells() -> Vec<Cell> {
                 } else {
                     &[(kind.argument_type, kind.argument)]
                 };
+                let admission_cell = Cell {
+                    name: format!("{name}-instance"),
+                    source: declaration.clone(),
+                    divergence,
+                    concrete_source: None,
+                };
+                let records = kinds::records(&admission_cell);
                 let mut admitted = None;
                 let mut reasons = Vec::new();
                 for (ty, value) in candidates {
@@ -460,8 +470,10 @@ pub(super) fn cells() -> Vec<Cell> {
                     // A callable constraint cannot admit a boolean condition (§143 rule 4).
                     if errors.is_empty()
                         || (!(kind.name.starts_with("function-") && site.name == "condition")
-                            && divergence.is_some_and(|record| {
-                                errors.iter().all(|error| error.code == record.code)
+                            && errors.iter().all(|error| {
+                                records
+                                    .iter()
+                                    .any(|record| diagnostic_matches(error, record))
                             }))
                     {
                         admitted = Some((main, concrete_source));
@@ -506,7 +518,7 @@ pub(super) fn cells() -> Vec<Cell> {
             }
         }
     }
-    assert_eq!(omitted.len(), 7532, "the admitted instance set changed");
+    assert_eq!(omitted.len(), 7473, "the admitted instance set changed");
     let additional_pairs: usize = kinds::additional()
         .iter()
         .map(|kind| 2 + usize::from(kinds::numeric(kind)))

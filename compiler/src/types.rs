@@ -750,10 +750,17 @@ pub fn display_type(
             display_type(elem, class_name, enum_name, string_alias_name),
             n
         ),
-        Type::Array(elem) => format!(
-            "{}[]",
-            display_type(elem, class_name, enum_name, string_alias_name)
-        ),
+        Type::Array(elem) => {
+            let name = display_type(elem, class_name, enum_name, string_alias_name);
+            if matches!(
+                elem.as_ref(),
+                Type::Nullable(_) | Type::GenericUnion(_) | Type::Func(_)
+            ) {
+                format!("({name})[]")
+            } else {
+                format!("{name}[]")
+            }
+        }
         Type::Map(key, value) => format!(
             "Map<{}, {}>",
             display_type(key, class_name, enum_name, string_alias_name),
@@ -1247,6 +1254,43 @@ mod tests {
             );
             assert_eq!(scalar_size_align(&ty), Some((0, 1)));
             assert!(!ty.is_numeric());
+        }
+    }
+
+    #[test]
+    fn array_elements_preserve_type_precedence() {
+        let parameter = Type::TypeParameter(Box::new(TypeParameterType {
+            identity: 1,
+            name: "T".into(),
+            constraint: None,
+        }));
+        for (element, expected) in [
+            (Type::Nullable(Box::new(parameter.clone())), "(T | null)[]"),
+            (
+                Type::Nullable(Box::new(Type::Class(ClassId(0)))),
+                "(Box | null)[]",
+            ),
+            (
+                Type::GenericUnion(vec![parameter, Type::Bool].into_boxed_slice()),
+                "(T | boolean)[]",
+            ),
+            (
+                Type::Func(Box::new(FuncType {
+                    params: vec![Type::Class(ClassId(0))],
+                    ret: Type::I32,
+                })),
+                "((Box) => i32)[]",
+            ),
+        ] {
+            assert_eq!(
+                display_type(
+                    &Type::array(element),
+                    &|_| "Box".into(),
+                    &|_| "".into(),
+                    &|_| "".into()
+                ),
+                expected
+            );
         }
     }
 
