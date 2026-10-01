@@ -118,3 +118,22 @@ a check must compare every form against `tsc`.
 6. `specs/tracking/s143-type-parameter-typing.md` records the rule 5
    numbers, the list of rule 2a, the matrix size and cost, and the
    checker time against the pin.
+
+### 143.3 Open
+
+These items are MINOR under CLAUDE.md invariant 6. They do not block
+§143.
+
+1. A waived diagnostic that carries no divergence tag matches its record
+   by a message fingerprint. A short fingerprint matches messages that
+   the record does not state: the §97 fingerprint `null` matches every
+   untagged S100 that prints the type `null`, so rule 4b checks nothing
+   for the `null` kind. The form change is a divergence tag at the
+   emitter of every waived restriction, so a record matches by id only.
+2. The `map` element-kind diagnostic (`compiler/src/check/expr/method.rs`)
+   builds the array spelling by hand and prints `(i32) => i32[]` for an
+   array of functions.
+3. A condition must be `boolean`: `const n: i32 = 3; if (n) {}` gives
+   S100 "condition must be boolean", and `tsc` accepts it. No collision
+   record states this rule. The matrix cites §68, which states an IR
+   fact, not the source rule.

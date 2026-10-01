@@ -413,3 +413,14 @@ gate full 5f707367d052e9e7e3a6f9e8c53920d958d1b9c6 dirty:17 debug 2177/0/3 relea
 ```text
 gate full 7c79cbbc86eb4f8fd8cfdf0ac577cebce2df7458 dirty:11 debug 2181/0/3 release 2178/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```
+
+## Phase Review result
+
+Ten review passes ran over `51bf01a5..5b788225`. Each pass after the
+first found defects in a class the previous form did not close; each
+fix changed the form (one apparent-type function, a source scan of
+shape tests, and a matrix whose role, site, API, kind, and destination
+axes are a product or are derived from `Type` and the prelude).
+
+The last pass found CRITICAL 0, MAJOR 0, MINOR 3. The three MINOR items
+are in §143.3. `tools/hygiene.sh` exits 0. §143 is COMPLETE.
