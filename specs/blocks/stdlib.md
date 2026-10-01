@@ -631,7 +631,7 @@ Origin and owner decision as §8.10.
 2. `find(f: (v: T, i: i32) => boolean): T | null` and `findLast(…)`
    for a **reference-class** `T` (and any nullable-capable `T`): `null`
    on a miss, by the `Map.get` rule (§10.5). The `tsc` view is the lib's
-   `T | undefined`, so a program tests the result with `=== null` or
+   `T | undefined`, so a program tests the result with `== null` or
    `??`, as it does for `Map.get`. A scalar `T` stays rejected. The
    reason of Q22 ("a scalar has no miss value") does not reach a
    reference element (compiler §103). `findLast` is ES2023, so the

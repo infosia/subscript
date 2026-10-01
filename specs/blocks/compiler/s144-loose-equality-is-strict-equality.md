@@ -24,10 +24,19 @@ Measured with `tsc` 5.9.2 and this project's options: `i32 == string`,
 TS2367. `i32 == f64`, `(Box | null) == null`, and `object == Box` give
 no error.
 
-So no program that passes `tsc` and this checker reaches a pair where
-`==` and `===` differ: `tsc` rejects each pair of different primitive
-kinds and each object-to-string pair, the language has no `undefined`
-(S012), and no bigint (`i64` is `number` in `prelude/lang.d.ts`).
+So in this language `==` and `===` give the same result: `tsc` rejects
+each pair of different primitive kinds and each object-to-string pair,
+the type system has no `undefined` (S012), and there is no bigint (`i64`
+is `number` in `prelude/lang.d.ts`).
+
+Under `node`, one source of `undefined` reaches a checked program: a
+miss of `Map.get`, `find`, or `findLast` on a reference element is
+`undefined` there and `null` here (`stdlib.md` §10.5). For that value
+`node` gives `x == null` true and `x === null` false; both tiers give
+true for both. So `== null` agrees with `node` and `=== null` does not.
+*(Corrected 2026-10-02 after the Phase Review: the first text said that
+no checked program reaches a pair where the two operators differ under
+`node`.)*
 
 ### 144.1 Rules
 
@@ -35,9 +44,9 @@ kinds and each object-to-string pair, the language has no `undefined`
    `a === b`. `a != b` has those of `a !== b`. Each diagnostic that
    `===` or `!==` gives for an operand pair, `==` or `!=` gives for the
    same pair, with the operator spelled as written.
-2. The premise of rule 1 is that the language has no `undefined` value
-   and no bigint type. A section that adds either one must restate rule
-   1 first.
+2. The premise of rule 1 is that the type system has no `undefined` and
+   no bigint. A section that adds either one, or a new value that is
+   `undefined` under `node`, must restate rule 1 first.
 3. `collisions.md` C20 is deleted, with its `Divergence` variant. The
    reject entry `r294-loose-equality` retires
    (`retired:r294-loose-equality`).
