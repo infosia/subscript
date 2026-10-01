@@ -568,6 +568,26 @@ that `node` or the corpus runner does not run.
 Accept: `a288`, `a289`, `a290`, `a291`, `a292`, `a299`, `a300`, `a301`. Reject: `r273`,
 `r274`, `r275`, `r277`, `r278`, `r279`.
 
+### C19. A generic instance chain that grows without bound is rejected
+
+`tsc` accepts polymorphic recursion and erases type arguments.
+This compiler makes one instance per distinct type argument list (`compiler.md` §140).
+Each request records edges from the requesting instance's parameter positions to its argument positions before substitution.
+An edge is plain for the parameter itself and expanding for a type that contains the parameter.
+The checker composes these edges along the active instance chain.
+If an expanding path returns to the same position of the same template, the request reports S100.
+The diagnostic names the template, both instances, and the growing argument.
+Such a chain has no finite compiled form.
+Every other request stays accepted, including plain recursion, swaps, constant arguments, and growth from a position that becomes constant.
+The check applies to functions, methods, classes, and the signature pass.
+The opaque check checks each root body and resolves the signatures and shapes of nested instances with opaque arguments.
+Program instances report growth through another template body (`compiler.md` §140 rule 4a).
+An S011 inside a growing argument takes precedence.
+
+Measured with `tsc` 5.9.2: `r288` is accepted; `node` prints `3`.
+
+Accept: `a304`. Reject: `r288`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different

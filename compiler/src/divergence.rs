@@ -99,6 +99,8 @@ pub enum Divergence {
     HostApiSurface,
     /// A module or static initializer that reads a later binding.
     ModuleInitializerOrder,
+    /// A recursive generic request whose type arguments grow without bound.
+    GrowingInstanceChain,
     /// A static member on a generic class, and `this` in a static method.
     StaticMemberSurface,
     /// `Math` as a value, and the variadic `Math.max`.
@@ -248,6 +250,7 @@ impl Divergence {
         Divergence::NamedModuleSurface,
         Divergence::HostApiSurface,
         Divergence::ModuleInitializerOrder,
+        Divergence::GrowingInstanceChain,
         Divergence::StaticMemberSurface,
         Divergence::MathSubset,
         Divergence::DateSubset,
@@ -624,6 +627,12 @@ impl Divergence {
                 why: "Modules initialize in dependency order and each module in declaration \
                       order, so an initializer must not read a binding that is initialized later.",
                 collision: "C14",
+            },
+            Divergence::GrowingInstanceChain => DivergenceEntry {
+                ts: "function f<T>(x: T): void { f<T[]>([x]); }",
+                subscript: "function f<T>(x: T): void { f<T>(x); }",
+                why: "This compiler makes one instance per type argument list, so a chain that grows without bound has no finite compiled form.",
+                collision: "C19",
             },
             Divergence::StaticMemberSurface => DivergenceEntry {
                 ts: "class Box<T> { static count: i32 = 0; }\n\

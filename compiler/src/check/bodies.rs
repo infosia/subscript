@@ -212,6 +212,8 @@ impl<'p> Checker<'p> {
         let (params, prologue) = self.bind_params(f, sig, &mut fx);
         let body = match &f.body {
             Some(block) => {
+                #[cfg(test)]
+                super::body_check_cost::record();
                 self.reserve_block_declarations(&block.stmts, &mut fx);
                 let mut out = prologue;
                 for s in &block.stmts {

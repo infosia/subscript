@@ -140,11 +140,28 @@ impl<'p> Checker<'p> {
         }
         self.restore_opaque_snapshot(snapshot);
         let diagnostics = self.diags.take();
+        // An S011 inside a growing argument takes precedence (§140 acceptance 2).
+        let suppressed: HashSet<_> = self
+            .growth_reports
+            .iter()
+            .filter_map(|(index, start, end)| {
+                diagnostics
+                    .iter()
+                    .any(|diagnostic| {
+                        diagnostic.code == RuleCode::S011
+                            && diagnostic.pos.file == start.file
+                            && (diagnostic.pos.line, diagnostic.pos.col) >= (start.line, start.col)
+                            && (diagnostic.pos.line, diagnostic.pos.col) < (end.line, end.col)
+                    })
+                    .then_some(*index)
+            })
+            .collect();
         let merged = merge_opaque_diagnostics(
             diagnostics,
             first,
             &checks,
             &independent,
+            &suppressed,
             &std::mem::take(&mut self.instance_diagnostic_ranges),
         );
         self.diags.extend(merged);
@@ -199,8 +216,8 @@ impl<'p> Checker<'p> {
     }
 
     /// Makes one opaque type parameter type per parameter name.
-    fn opaque_arguments(&mut self, parameters: &[String], pos: &Pos) -> Vec<Type> {
-        parameters
+    fn opaque_arguments(&mut self, parameters: &[String], pos: &Pos) -> InstanceArguments {
+        let types = parameters
             .iter()
             .map(|parameter| {
                 let name = format!("[[identity:opaque:{}]]{parameter}", self.classes.len());
@@ -208,7 +225,13 @@ impl<'p> Checker<'p> {
                 self.opaque_params.insert(id, OpaqueType::default());
                 Type::Class(id)
             })
-            .collect()
+            .collect();
+        InstanceArguments {
+            types,
+            positions: Vec::new(),
+            edges: vec![Vec::new(); parameters.len()],
+            ends: Vec::new(),
+        }
     }
 
     fn check_opaque_template(&mut self, template: OpaqueTemplate) {
@@ -220,7 +243,7 @@ impl<'p> Checker<'p> {
                 let parameters = generic.type_params.clone();
                 let pos = self.pos(generic.function.span);
                 let arguments = self.opaque_arguments(&parameters, &pos);
-                self.instantiate_fn(&key, &arguments, &[], pos);
+                self.instantiate_fn(&key, &arguments, pos);
             }
             OpaqueTemplate::Class(key) => {
                 let Some(generic) = self.generic_classes.get(&key) else {
@@ -229,7 +252,7 @@ impl<'p> Checker<'p> {
                 let parameters = generic.type_params.clone();
                 let pos = generic.pos.clone();
                 let arguments = self.opaque_arguments(&parameters, &pos);
-                self.instantiate_class(&key, &arguments, &[], pos);
+                self.instantiate_class(&key, &arguments, pos);
             }
             OpaqueTemplate::Method {
                 class,
@@ -248,7 +271,7 @@ impl<'p> Checker<'p> {
                 let parameters = generic.type_params.clone();
                 let pos = self.pos(generic.function.span);
                 let arguments = self.opaque_arguments(&parameters, &pos);
-                self.instantiate_method(class, &name, &arguments, &[], is_static, pos);
+                self.instantiate_method(class, &name, &arguments, is_static, pos);
             }
         }
     }
@@ -340,6 +363,7 @@ fn merge_opaque_diagnostics(
     first: usize,
     checks: &[std::ops::Range<usize>],
     independent: &HashSet<usize>,
+    suppressed: &HashSet<usize>,
     instance_ranges: &[std::ops::Range<usize>],
 ) -> Vec<Diagnostic> {
     let mut opaque: Vec<Option<Diagnostic>> = Vec::new();
@@ -353,6 +377,9 @@ fn merge_opaque_diagnostics(
             .enumerate()
             .map(|(offset, diagnostic)| (range.start + offset, diagnostic))
         {
+            if suppressed.contains(&index) {
+                continue;
+            }
             // S016 is only ever an unknown name.
             if diagnostic.code != RuleCode::S016 && !independent.contains(&index) {
                 continue;
@@ -384,6 +411,9 @@ fn merge_opaque_diagnostics(
     let mut seen_instance: HashSet<Identity> = HashSet::new();
     let mut merged = Vec::with_capacity(diagnostics.len());
     for (index, diagnostic) in diagnostics[..first].iter().enumerate() {
+        if suppressed.contains(&index) {
+            continue;
+        }
         if !in_instance[index] {
             merged.push(diagnostic.clone());
             continue;

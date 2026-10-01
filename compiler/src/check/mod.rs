@@ -16,6 +16,8 @@ pub(crate) use container_argument::ContainerSlot;
 use init_effects::module_initializer_diagnostics;
 mod bindings;
 mod bodies;
+#[cfg(test)]
+mod body_check_cost;
 mod capture;
 mod class_shape;
 mod container_argument;
@@ -25,6 +27,8 @@ mod exports;
 mod expr;
 pub(crate) mod fallthrough;
 mod generics;
+mod instance_chain;
+use instance_chain::InstanceArguments;
 mod json;
 mod layout;
 mod lookup;
@@ -1126,7 +1130,13 @@ pub(crate) struct Checker<'p> {
     /// Instance bodies wait until every module signature resolves (§138 rule 1).
     pub signatures_resolved: bool,
     /// Instances with bodies that wait for the signature pass (§138 rule 1).
-    pub pending_instance_bodies: Vec<ClassId>,
+    pub pending_instance_bodies: Vec<(ClassId, Vec<instance_chain::InstanceRequest>)>,
+    /// The active requests for generic instances (compiler.md §140 rule 1).
+    pub instance_chain: Vec<instance_chain::InstanceRequest>,
+    /// One request site per cycle, including rotations of its templates (§140 acceptance 2).
+    pub growing_cycles: Vec<(Vec<Pos>, Pos)>,
+    /// Diagnostic indices and argument ranges for S011 priority (§140 acceptance 2).
+    pub growth_reports: Vec<(usize, Pos, Pos)>,
     /// The loop narrowing effects of the opaque check's bodies, collected
     /// by the provisional run (compiler.md §135.1 rule 1).
     opaque_loop_effects: narrowing::Analysis,

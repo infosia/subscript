@@ -540,18 +540,9 @@ impl<'p> Checker<'p> {
                             );
                             return self.err_expr(pos);
                         };
-                        let resolved: Vec<Type> = type_args
-                            .params
-                            .iter()
-                            .map(|ty| self.resolve_type(ty))
-                            .collect();
-                        let positions: Vec<Pos> = type_args
-                            .params
-                            .iter()
-                            .map(|ty| self.pos(ty.span()))
-                            .collect();
+                        let arguments = self.resolve_instance_arguments(type_args);
                         let Some(instance) =
-                            self.instantiate_fn(&key, &resolved, &positions, self.pos(ident.span))
+                            self.instantiate_fn(&key, &arguments, self.pos(ident.span))
                         else {
                             return self.err_expr(pos);
                         };

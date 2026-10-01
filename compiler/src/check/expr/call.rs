@@ -89,17 +89,8 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 };
-                let resolved: Vec<Type> = type_args
-                    .params
-                    .iter()
-                    .map(|t| self.resolve_type(t))
-                    .collect();
-                let positions: Vec<Pos> = type_args
-                    .params
-                    .iter()
-                    .map(|t| self.pos(t.span()))
-                    .collect();
-                match self.instantiate_fn(&key, &resolved, &positions, ident_pos) {
+                let arguments = self.resolve_instance_arguments(type_args);
+                match self.instantiate_fn(&key, &arguments, ident_pos) {
                     Some(mono) => self.check_direct_call(&mono, c, fx, pos),
                     None => self.err_expr(pos),
                 }
@@ -747,17 +738,8 @@ impl<'p> Checker<'p> {
             );
             return None;
         };
-        let resolved: Vec<Type> = type_args
-            .params
-            .iter()
-            .map(|ty| self.resolve_type(ty))
-            .collect();
-        let positions: Vec<Pos> = type_args
-            .params
-            .iter()
-            .map(|ty| self.pos(ty.span()))
-            .collect();
-        self.instantiate_method(class, name, &resolved, &positions, is_static, pos)
+        let arguments = self.resolve_instance_arguments(type_args);
+        self.instantiate_method(class, name, &arguments, is_static, pos)
     }
 
     /// Checks `receiver.name(...)` from an already-checked receiver.
@@ -1427,37 +1409,33 @@ impl<'p> Checker<'p> {
             }
             Some(ScopeItem::GenericClass(key)) => match &n.type_args {
                 Some(type_args) => {
-                    let resolved: Vec<Type> = type_args
-                        .params
-                        .iter()
-                        .map(|t| self.resolve_type(t))
-                        .collect();
-                    let positions: Vec<Pos> = type_args
-                        .params
-                        .iter()
-                        .map(|t| self.pos(t.span()))
-                        .collect();
-                    if resolved.contains(&Type::Error) {
+                    let arguments = self.resolve_instance_arguments(type_args);
+                    if arguments.types.contains(&Type::Error) {
                         // compiler.md §132 rule 2a: an error type argument
                         // gives no instance. The type-argument count and
                         // the constructor argument count do not depend on
                         // the argument types, so each still reports.
-                        let _ =
-                            self.instantiate_class(&key, &resolved, &positions, ident_pos.clone());
-                        let arguments: &[ast::ExprOrSpread] = n.args.as_deref().unwrap_or(&[]);
+                        let _ = self.instantiate_class(&key, &arguments, ident_pos.clone());
+                        let constructor_arguments: &[ast::ExprOrSpread] =
+                            n.args.as_deref().unwrap_or(&[]);
                         let type_argument_count = self
                             .generic_classes
                             .get(&key)
                             .map(|template| template.type_params.len());
-                        if type_argument_count == Some(resolved.len()) {
+                        if type_argument_count == Some(arguments.types.len()) {
                             if let Some(arity) = self.template_constructor_arity(&key) {
-                                self.check_argument_count(arity, arguments, &pos, &name);
+                                self.check_argument_count(
+                                    arity,
+                                    constructor_arguments,
+                                    &pos,
+                                    &name,
+                                );
                             }
                         }
-                        self.check_poisoned_arguments(arguments, fx);
+                        self.check_poisoned_arguments(constructor_arguments, fx);
                         return self.err_expr(pos);
                     }
-                    self.instantiate_class(&key, &resolved, &positions, ident_pos.clone())
+                    self.instantiate_class(&key, &arguments, ident_pos.clone())
                 }
                 None => {
                     self.error(

@@ -420,6 +420,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         12,
     ),
+    ("r288-growing-instance-chain.ts", RuleCode::S100, 11),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

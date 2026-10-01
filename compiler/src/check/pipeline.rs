@@ -244,6 +244,9 @@ fn run_with_effects(
         instance_arguments: HashMap::new(),
         signatures_resolved: false,
         pending_instance_bodies: Vec::new(),
+        instance_chain: Vec::new(),
+        growing_cycles: Vec::new(),
+        growth_reports: Vec::new(),
         opaque_loop_effects: narrowing::Analysis::default(),
     };
 

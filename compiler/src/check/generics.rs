@@ -16,13 +16,7 @@ impl<'p> Checker<'p> {
         symbol
     }
 
-    /// True when an instance at `args` has its body checked.
-    ///
-    /// Inside the opaque check (compiler.md §135), an instance whose type
-    /// arguments carry an opaque type parameter type resolves its
-    /// signature and shape only: the template's own opaque check checks
-    /// the body. The root instance of each opaque check has its body
-    /// checked.
+    /// Checks roots and concrete instances; nested opaque instances resolve signatures only (§140 rule 4a).
     fn instance_body_is_checked(&self, args: &[Type], root: bool) -> bool {
         root || !args
             .iter()
@@ -233,10 +227,11 @@ impl<'p> Checker<'p> {
     pub(crate) fn instantiate_fn(
         &mut self,
         key: &str,
-        args: &[Type],
-        positions: &[Pos],
+        arguments: &InstanceArguments,
         pos: Pos,
     ) -> Option<String> {
+        let args = &arguments.types;
+        let positions = &arguments.positions;
         let template = self.generic_fns.get(key)?.clone();
         if template.rejected {
             return None;
@@ -254,6 +249,9 @@ impl<'p> Checker<'p> {
             );
             return None;
         }
+        if !self.enter_instance(key, &template.type_params, arguments, &pos) {
+            return None;
+        }
         let name = self.mono_name(key, args);
         if self.fn_sigs.contains_key(&name) {
             self.check_constraints_at_site(
@@ -264,6 +262,7 @@ impl<'p> Checker<'p> {
                 positions,
                 &pos,
             );
+            self.instance_chain.pop();
             return Some(name);
         }
         let saved_file = self.cur_file;
@@ -296,6 +295,7 @@ impl<'p> Checker<'p> {
         self.cur_file = saved_file;
         self.subst = saved_subst;
         self.leave_container_context(saved_context);
+        self.instance_chain.pop();
         Some(name)
     }
 
@@ -311,11 +311,12 @@ impl<'p> Checker<'p> {
         &mut self,
         id: ClassId,
         name: &str,
-        args: &[Type],
-        positions: &[Pos],
+        arguments: &InstanceArguments,
         is_static: bool,
         pos: Pos,
     ) -> Option<String> {
+        let args = &arguments.types;
+        let positions = &arguments.positions;
         let template = if is_static {
             self.class_sigs[id.0]
                 .static_generic_methods
@@ -341,6 +342,10 @@ impl<'p> Checker<'p> {
             return None;
         }
         let base = format!("[[identity:method:{}]]{name}", id.0);
+        let chain_key = format!("[[identity:method:{}:{is_static}]]{name}", id.0);
+        if !self.enter_instance(&chain_key, &template.type_params, arguments, &pos) {
+            return None;
+        }
         let instance = self.mono_name(&base, args);
         let known = if is_static {
             self.class_sigs[id.0].static_methods.contains_key(&instance)
@@ -356,6 +361,7 @@ impl<'p> Checker<'p> {
                 positions,
                 &pos,
             );
+            self.instance_chain.pop();
             return Some(instance);
         }
         let saved_file = self.cur_file;
@@ -418,6 +424,7 @@ impl<'p> Checker<'p> {
         self.cur_file = saved_file;
         self.subst = saved_subst;
         self.leave_container_context(saved_context);
+        self.instance_chain.pop();
         Some(instance)
     }
 
@@ -432,10 +439,11 @@ impl<'p> Checker<'p> {
     pub(crate) fn instantiate_class(
         &mut self,
         key: &str,
-        args: &[Type],
-        positions: &[Pos],
+        arguments: &InstanceArguments,
         pos: Pos,
     ) -> Option<ClassId> {
+        let args = &arguments.types;
+        let positions = &arguments.positions;
         let template = self.generic_classes.get(key)?.clone();
         if template.type_params.len() != args.len() {
             self.error(
@@ -456,6 +464,9 @@ impl<'p> Checker<'p> {
         if template.has_static_member || !template.rejected_generic_methods.is_empty() {
             return None;
         }
+        if !self.enter_instance(key, &template.type_params, arguments, &pos) {
+            return None;
+        }
         let name = self.mono_name(key, args);
         if let Some(&id) = self.class_ids.get(&name) {
             self.check_constraints_at_site(
@@ -466,6 +477,7 @@ impl<'p> Checker<'p> {
                 positions,
                 &pos,
             );
+            self.instance_chain.pop();
             return Some(id);
         }
         let saved_file = self.cur_file;
@@ -502,7 +514,8 @@ impl<'p> Checker<'p> {
         }
         self.resolve_class_shape(id, &template.class, template.declared);
         if check_body && !self.signatures_resolved {
-            self.pending_instance_bodies.push(id);
+            self.pending_instance_bodies
+                .push((id, self.instance_chain.clone()));
         } else if check_body && template.is_descriptor {
             self.check_descriptor_defaults(id, &template.class);
         } else if check_body {
@@ -513,12 +526,13 @@ impl<'p> Checker<'p> {
         self.cur_file = saved_file;
         self.subst = saved_subst;
         self.leave_container_context(saved_context);
+        self.instance_chain.pop();
         Some(id)
     }
 
     /// Checks deferred instance bodies with all module signatures (§138 rule 1).
     pub(crate) fn check_pending_instance_bodies(&mut self) {
-        for id in std::mem::take(&mut self.pending_instance_bodies) {
+        for (id, chain) in std::mem::take(&mut self.pending_instance_bodies) {
             let Some((key, args)) = self.instance_arguments.get(&id).cloned() else {
                 self.error(
                     RuleCode::S100,
@@ -540,6 +554,7 @@ impl<'p> Checker<'p> {
             let saved_context = self.suspend_container_context();
             self.cur_file = template.file;
             self.subst = template.type_params.iter().cloned().zip(args).collect();
+            let saved_chain = std::mem::replace(&mut self.instance_chain, chain);
             let diagnostics = self.diags.len();
             if template.is_descriptor {
                 self.check_descriptor_defaults(id, &template.class);
@@ -548,6 +563,7 @@ impl<'p> Checker<'p> {
             }
             self.instance_diagnostic_ranges
                 .push(diagnostics..self.diags.len());
+            self.instance_chain = saved_chain;
             self.cur_file = saved_file;
             self.subst = saved_subst;
             self.leave_container_context(saved_context);

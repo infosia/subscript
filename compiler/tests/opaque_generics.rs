@@ -392,13 +392,13 @@ fn no_opaque_instance_reaches_the_hir() {
 }
 
 #[test]
-fn a_generic_body_that_instantiates_itself_at_a_larger_argument_is_checked() {
-    let source = "function g<T>(x: T, n: i32): i32 { if (n > 0) { return g<T[]>([x], n - 1); } return 0; }\nexport function main(): void {}\n";
+fn a_generic_body_that_instantiates_itself_at_equal_arguments_is_checked() {
+    let source = "function g<T>(x: T, n: i32): i32 { if (n > 0) { return g<T>(x, n - 1); } return 0; }\nexport function main(): void {}\n";
     let accepted = check(source);
     assert!(accepted.is_ok(), "{:?}", accepted.err());
 
     // Control: an error in the same body is reported once.
-    let rejected = "function g<T>(x: T, n: i32): i32 { if (n > 0) { return g<T[]>([x], n - 1); } return nope(); }\nexport function main(): void {}\n";
+    let rejected = "function g<T>(x: T, n: i32): i32 { if (n > 0) { return g<T>(x, n - 1); } return nope(); }\nexport function main(): void {}\n";
     let diagnostics = check(rejected).expect_err("an unknown name");
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
     assert_eq!(diagnostics[0].code, RuleCode::S016);

@@ -18,15 +18,20 @@ impl<'p> Checker<'p> {
                             &c.name,
                             &c.pos,
                             !opaque(id.0)
-                                && self
-                                    .classes
-                                    .iter()
-                                    .enumerate()
-                                    .filter(|(index, other)| {
-                                        other.name == c.name && !opaque(*index)
-                                    })
-                                    .count()
-                                    > 1,
+                                && self.classes.iter().enumerate().any(|(index, other)| {
+                                    // compiler.md §140: instances of one template share one declaration.
+                                    let declaration = |index| {
+                                        self.instance_arguments
+                                            .get(&ClassId(index))
+                                            .map(|(key, _)| key.as_str())
+                                            .unwrap_or_else(|| {
+                                                self.classes[index].symbol.full_text()
+                                            })
+                                    };
+                                    other.name == c.name
+                                        && !opaque(index)
+                                        && declaration(index) != declaration(id.0)
+                                }),
                         )
                     })
                     .unwrap_or_else(|| format!("<class #{}>", id.0))
