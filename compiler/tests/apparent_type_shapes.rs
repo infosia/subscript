@@ -1,9 +1,14 @@
 //! §143 rule 1a: every value-shape test reads the apparent type.
 //! The source scan uses Rust token groups, so comments and strings do not count.
-//! It checks match arms, let patterns, matches!, variant equality, and numeric/iteration predicates.
-//! Measured cost: 479 tests in 0.133 seconds; 14 named groups pin 42 raw-test functions.
+//! It checks match arms, let patterns, matches!, variant equality, and helpers derived from Type source.
+//! Measured cost: 495 sites in 0.205 seconds; 16 named groups pin 45 justified raw-test functions.
 
-use std::{collections::HashMap, fs, path::Path, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::Path,
+    time::Instant,
+};
 
 #[derive(Clone)]
 struct Token {
@@ -211,13 +216,91 @@ fn routed_pattern(expression: &str, pattern: &str, prefix: &str) -> bool {
     routed(expression, prefix)
 }
 
+#[derive(Default)]
+struct ShapeHelpers {
+    methods: HashSet<String>,
+    functions: HashMap<String, Vec<usize>>,
+}
+
+fn shape_helpers(source: &str) -> ShapeHelpers {
+    fn tests_input(nodes: &[Token], input: &str) -> bool {
+        nodes.iter().enumerate().any(|(index, token)| {
+            (token.text == "match" && nodes.get(index + 1).is_some_and(|t| t.text == input))
+                || (token.text == "matches"
+                    && nodes.get(index + 1).is_some_and(|t| t.text == "!")
+                    && nodes.get(index + 2).is_some_and(|t| {
+                        t.children
+                            .iter()
+                            .find(|t| t.text != "&" && t.text != "*")
+                            .is_some_and(|t| t.text == input)
+                    }))
+                || tests_input(&token.children, input)
+        })
+    }
+    fn collect(nodes: &[Token], in_type: bool, helpers: &mut ShapeHelpers) {
+        for (index, token) in nodes.iter().enumerate() {
+            if token.text == "impl" && nodes.get(index + 1).is_some_and(|t| t.text == "Type") {
+                if let Some(body) = nodes[index + 2..].iter().find(|t| t.text.starts_with('{')) {
+                    collect(&body.children, true, helpers);
+                }
+            }
+            if token.text != "fn" {
+                continue;
+            }
+            let name = &nodes[index + 1].text;
+            let Some(params) = nodes[index + 2..].iter().find(|t| t.text.starts_with('(')) else {
+                continue;
+            };
+            let Some(body) = nodes[index + 2..].iter().find(|t| t.text.starts_with('{')) else {
+                continue;
+            };
+            if in_type && tests_input(&body.children, "self") {
+                helpers.methods.insert(name.clone());
+            } else if !in_type {
+                for (position, parameter) in params.children.split(|t| t.text == ",").enumerate() {
+                    if parameter
+                        .iter()
+                        .position(|t| t.text == "&")
+                        .is_some_and(|reference| {
+                            let mut target = reference + 1;
+                            if parameter.get(target).is_some_and(|t| t.text == "'") {
+                                target += 2;
+                            }
+                            parameter.get(target).is_some_and(|t| t.text == "Type")
+                        })
+                        && parameter
+                            .first()
+                            .is_some_and(|t| tests_input(&body.children, &t.text))
+                    {
+                        helpers
+                            .functions
+                            .entry(name.clone())
+                            .or_default()
+                            .push(position);
+                    }
+                }
+            }
+        }
+    }
+    let mut helpers = ShapeHelpers::default();
+    collect(&tokens(source, &mut 0, None), false, &mut helpers);
+    helpers
+}
+
 fn scan(source: &str) -> Vec<Site> {
+    let types =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/types.rs")).unwrap();
+    scan_with_helpers(source, &shape_helpers(&types))
+}
+
+fn scan_with_helpers(source: &str, helpers: &ShapeHelpers) -> Vec<Site> {
     fn walk(
         nodes: &[Token],
         source: &str,
         function: &str,
         bindings: &HashMap<String, bool>,
         out: &mut Vec<Site>,
+        helpers: &ShapeHelpers,
     ) {
         let mut function = function.to_string();
         let mut bindings = bindings.clone();
@@ -370,12 +453,7 @@ fn scan(source: &str) -> Vec<Site> {
                 }
             }
             // Methods that test a Type shape also require the resolver.
-            if matches!(
-                token.text.as_str(),
-                "is_numeric" | "is_integer" | "is_float" | "iteration_element"
-            ) && index >= 2
-                && nodes[index - 1].text == "."
-            {
+            if helpers.methods.contains(&token.text) && index >= 2 && nodes[index - 1].text == "." {
                 let mut begin = index - 2;
                 loop {
                     if nodes[begin].text.starts_with('(')
@@ -401,14 +479,45 @@ fn scan(source: &str) -> Vec<Site> {
                     routed: routed(expression, &prefix),
                 });
             }
+            if helpers.functions.contains_key(&token.text)
+                && nodes
+                    .get(index + 1)
+                    .is_some_and(|t| t.text.starts_with('('))
+                && (index == 0 || nodes[index - 1].text != "fn")
+            {
+                let arguments = &nodes[index + 1].children;
+                for &position in &helpers.functions[&token.text] {
+                    let input = arguments
+                        .split(|t| t.text == ",")
+                        .nth(position)
+                        .unwrap_or(&[]);
+                    if let (Some(first), Some(last)) = (input.first(), input.last()) {
+                        let expression = &source[first.start..last.end];
+                        out.push(Site {
+                            function: function.clone(),
+                            expression: compact(expression),
+                            pattern: token.text.clone(),
+                            line: source[..token.start].lines().count(),
+                            routed: routed(expression, &prefix),
+                        });
+                    }
+                }
+            }
             if !token.children.is_empty() {
-                walk(&token.children, source, &function, &bindings, out);
+                walk(&token.children, source, &function, &bindings, out, helpers);
             }
         }
     }
     let nodes = tokens(source, &mut 0, None);
     let mut result = Vec::new();
-    walk(&nodes, source, "module", &HashMap::new(), &mut result);
+    walk(
+        &nodes,
+        source,
+        "module",
+        &HashMap::new(),
+        &mut result,
+        helpers,
+    );
     result
 }
 
@@ -421,6 +530,12 @@ struct AllowGroup {
 }
 
 const ALLOWLIST: &[AllowGroup] = &[
+    AllowGroup { name: "numeric-literal-range", reason: "The numeric literal caller supplies a concrete apparent numeric target (§143 rule 1a).", sites: &[
+        ("expr.rs", "synthesized_int_range", 0x862a788d604204fc),
+    ] },
+    AllowGroup { name: "diagnostic-type-name", reason: "Diagnostic names preserve the declared parameter identity (§143 rule 1b).", sites: &[
+        ("type_rules.rs", "type_name", 0x8245fa141bdc8bec),
+    ] },
     AllowGroup { name: "concrete-captures", reason: "Capture validation runs on the final concrete HIR after opaque instances leave it (§135 rule 1).", sites: &[
         ("capture.rs", "expr", 0x4c573ebc382cad42),
         ("capture.rs", "fact", 0x80bc8ebc9b829d3a),
@@ -433,8 +548,9 @@ const ALLOWLIST: &[AllowGroup] = &[
     ] },
     AllowGroup { name: "instance-identity", reason: "Instance keys compare declared type arguments and preserve T identity (§143 rule 1b).", sites: &[
         ("generics.rs", "numeric_normal_form", 0x58518f62e52b0a50),
-        ("generics.rs", "same_normal_form", 0x2fd47040c5fb3214),
-        ("instance_chain.rs", "argument_has_error", 0x889d72a958931ef6),
+        ("generics.rs", "same_normal_form", 0x40ae5472edfe0ac7),
+        ("generics.rs", "satisfies_constraint_through_parameters", 0x967a092b7f73d8c0),
+        ("instance_chain.rs", "argument_has_error", 0xa9def2fd9d81a55),
     ] },
     AllowGroup { name: "concrete-initializers", reason: "Initializer effect analysis runs on the final concrete HIR (§135 rule 1).", sites: &[
         ("init_effects.rs", "class_of", 0xb041c5dbb9a8f91),
@@ -445,12 +561,13 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "concrete-layout", reason: "Layout validation runs after opaque instances leave the HIR (§135 rule 1).", sites: &[
         ("layout.rs", "expression_builds_into_destination", 0x749d74fbcd88c2ea),
         ("layout.rs", "has_managed_interior", 0x85b9753494a323a4),
+        ("layout.rs", "is_managed", 0x21addcb1ee53ba12),
         ("layout.rs", "is_aggregate", 0x7641530cd3f750a2),
         ("layout.rs", "type_layout", 0x27b75ab225bb5ce7),
         ("layout.rs", "validate_expr_frame", 0xdfca9be927a9059),
     ] },
     AllowGroup { name: "storage-layout", reason: "Storage layout inspects the declared type form; T has no concrete layout (§143 rule 2a).", sites: &[
-        ("layout.rs", "independent_type_layout", 0x4538f7ca9f08815f),
+        ("layout.rs", "independent_type_layout", 0x2dc7ba25d703f629),
     ] },
     AllowGroup { name: "mirror-declarations", reason: "C mirror declarations have concrete boundary types and cannot declare type parameters.", sites: &[
         ("mirror_provenance.rs", "foreign_parameter_provenance", 0xdb604f5c10d571),
@@ -459,10 +576,9 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "parameter-form", reason: "These tests resolve or preserve T identity; they do not select a value operation (§143 rules 1a–1d).", sites: &[
         ("opaque.rs", "constrain_opaque_param", 0xae68ef4a8c9974a),
         ("opaque.rs", "constraint_cycle", 0x7903218a6714cb24),
-        ("opaque.rs", "direct_constraint", 0xc5ad84fe151d4647),
         ("opaque.rs", "generic_overlap", 0x26896e6b772a01e2),
         ("opaque.rs", "generic_union", 0x4d201cd57ca0060d),
-        ("opaque.rs", "involves_type_parameter", 0xc5b557772ad0005c),
+        ("opaque.rs", "involves_type_parameter", 0x73713f5554ee1dc7),
         ("opaque.rs", "is_type_parameter", 0x291d692ffcac9b32),
         ("opaque.rs", "is_unconstrained_type_parameter", 0xc11d80573c40a67b),
         ("opaque.rs", "non_null_type", 0x2c00558477fad7c),
@@ -523,6 +639,8 @@ fn files(directory: &Path, out: &mut Vec<std::path::PathBuf>) {
 fn every_value_shape_test_uses_the_apparent_type() {
     let start = Instant::now();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/check");
+    let types = fs::read_to_string(root.parent().unwrap().join("types.rs")).unwrap();
+    let helpers = shape_helpers(&types);
     let mut paths = Vec::new();
     files(&root, &mut paths);
     paths.sort();
@@ -532,7 +650,7 @@ fn every_value_shape_test_uses_the_apparent_type() {
     for path in paths {
         let file = path.strip_prefix(&root).unwrap().to_str().unwrap();
         let source = fs::read_to_string(&path).unwrap();
-        let sites = scan(&source);
+        let sites = scan_with_helpers(&source, &helpers);
         let mut raw = HashMap::<&str, Vec<&Site>>::new();
         for site in &sites {
             inventory.push(format!(
@@ -634,6 +752,17 @@ fn a_route_in_a_child_scope_does_not_cover_the_parent_value() {
 #[test]
 fn variant_equality_requires_a_route_in_both_orders() {
     let sites = scan("fn f() { x.ty == Type::Str; Type::Str != x.ty; self.apparent_type(&x.ty) == Type::Str; Type::Str == self.apparent_type(&x.ty); }");
+    assert_eq!(sites.len(), 4);
+    assert!(!sites[0].routed && !sites[1].routed);
+    assert!(sites[2].routed && sites[3].routed);
+}
+
+#[test]
+fn a_new_shape_helper_requires_an_apparent_type() {
+    let helpers = shape_helpers("impl Type { fn new_shape(&self) -> bool { matches!(self, Type::Str) } } fn free_shape(ignored: bool, ty: &'a Type) -> bool { match ty { Type::Str => true, _ => false } }");
+    assert!(helpers.methods.contains("new_shape"));
+    assert!(helpers.functions.contains_key("free_shape"));
+    let sites = scan_with_helpers("fn consume() { x.ty.new_shape(); free_shape(true, &x.ty); self.apparent_type(&x.ty).new_shape(); free_shape(true, &self.apparent_type(&x.ty)); }", &helpers);
     assert_eq!(sites.len(), 4);
     assert!(!sites[0].routed && !sites[1].routed);
     assert!(sites[2].routed && sites[3].routed);

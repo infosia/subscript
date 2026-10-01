@@ -360,7 +360,7 @@ impl<'p> Checker<'p> {
             value.pos.clone(),
             "the assignment",
         );
-        if op.is_none() && target_ty.carries_async_handle() {
+        if op.is_none() && self.apparent_type(&target_ty).carries_async_handle() {
             let origins = self.expr_async_origins(&value, fx);
             match &target.kind {
                 ExprKind::Local(name, _) => fx.set_local_async_origins(name, origins),

@@ -89,7 +89,32 @@ impl<'p> Checker<'p> {
     /// True when the type argument `argument` satisfies the constraint
     /// `constraint` (compiler.md §135.1 rule 2b): the checker's
     /// assignability after [`Self::numeric_normal_form`] of both types.
+    /// Parameter arguments first follow direct constraints and preserve identity (§143 rule 1b).
     fn satisfies_constraint(&self, argument: &Type, constraint: &Type) -> bool {
+        self.satisfies_constraint_through_parameters(argument, constraint, &mut Vec::new())
+    }
+
+    fn satisfies_constraint_through_parameters(
+        &self,
+        argument: &Type,
+        constraint: &Type,
+        seen: &mut Vec<usize>,
+    ) -> bool {
+        // §143 rule 1b preserves identity before each constraint step.
+        if self.involves_type_parameter(argument) && self.assignable(argument, constraint) {
+            return true;
+        }
+        if let Type::TypeParameter(parameter) = argument {
+            if seen.contains(&parameter.identity) {
+                return false;
+            }
+            seen.push(parameter.identity);
+            let result = self.direct_constraint(parameter).is_some_and(|bound| {
+                self.satisfies_constraint_through_parameters(bound, constraint, seen)
+            });
+            seen.pop();
+            return result;
+        }
         self.assignable(
             &self.numeric_normal_form(argument),
             &self.numeric_normal_form(constraint),

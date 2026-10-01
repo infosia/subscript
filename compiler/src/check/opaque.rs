@@ -42,9 +42,11 @@ struct OpaqueSnapshot {
     top_level: usize,
 }
 
-/// One opaque type parameter type of the opaque check (compiler.md §135.1).
+/// The constraint of one opaque parameter identity (§143 rule 1d).
 #[derive(Debug, Clone, Default)]
-pub(crate) struct OpaqueType;
+pub(crate) struct OpaqueType {
+    constraint: Option<Type>,
+}
 
 /// Restrictions whose verdict needs a concrete argument (§143 rule 2a).
 #[derive(Clone, Copy)]
@@ -137,9 +139,12 @@ impl<'p> Checker<'p> {
                 .any(|inner| self.involves_type_parameter(inner))
     }
 
-    /// Stores the constraint in each binding of this parameter (§143 rule 1).
+    /// Stores the constraint by identity and in each binding of this parameter (§143 rules 1b and 1d).
     pub(crate) fn constrain_opaque_param(&mut self, ty: &Type, constraint: Type) {
         if let Type::TypeParameter(parameter) = ty {
+            if let Some(opaque) = self.opaque_params.get_mut(&ClassId(parameter.identity)) {
+                opaque.constraint = Some(constraint.clone());
+            }
             for binding in self.subst.values_mut() {
                 if let Type::TypeParameter(other) = binding {
                     if parameter.identity == other.identity {
@@ -161,12 +166,9 @@ impl<'p> Checker<'p> {
         parameter: &'a TypeParameterType,
     ) -> Option<&'a Type> {
         parameter.constraint.as_deref().or_else(|| {
-            self.subst.values().find_map(|binding| match binding {
-                Type::TypeParameter(other) if other.identity == parameter.identity => {
-                    other.constraint.as_deref()
-                }
-                _ => None,
-            })
+            self.opaque_params
+                .get(&ClassId(parameter.identity))
+                .and_then(|opaque| opaque.constraint.as_ref())
         })
     }
 
@@ -409,7 +411,8 @@ impl<'p> Checker<'p> {
             .map(|parameter| {
                 let name = format!("[[identity:opaque:{}]]{parameter}", self.classes.len());
                 let id = self.new_class(&name, false, false, None, pos.clone());
-                self.opaque_params.insert(id, OpaqueType);
+                self.opaque_params
+                    .insert(id, OpaqueType { constraint: None });
                 Type::TypeParameter(Box::new(TypeParameterType {
                     identity: id.0,
                     name: parameter.clone(),

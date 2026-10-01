@@ -66,7 +66,8 @@ impl<'p> Checker<'p> {
     }
 
     pub(crate) fn is_reference_class(&self, ty: &Type) -> bool {
-        ty.uses_reference_identity(&self.type_handle_classes)
+        self.apparent_type(ty)
+            .uses_reference_identity(&self.type_handle_classes)
     }
 
     /// The Q24 hash/equality kind of a key, or `None` outside the

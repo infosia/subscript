@@ -4,6 +4,8 @@ use super::*;
 
 pub(super) fn cells() -> Vec<Cell> {
     let forms = [
+        ("function-field-return", "class G<T extends () => i32> { f: T; constructor(f: T) { this.f = f; } run(): i32 { return this.f(); } } function one(): i32 { return 1; }", "const g = new G<() => i32>(one); g.run();"),
+        ("function-field-parameter", "class G<T extends (x: i32) => void> { f: T; constructor(f: T) { this.f = f; } run(): void { this.f(1); } } function consume(x: i32): void {}", "const g = new G<(x: i32) => void>(consume); g.run();"),
         ("object-pattern", "function g<T extends Box>(x: T): i32 { const { v } = x; return v; }", "g<Box>(new Box());"),
         ("parameter-pattern", "function g<T extends Box>({ v }: T): i32 { return v; }", "g<Box>(new Box());"),
         ("iteration-pattern", "function g<T extends Box>(xs: T[]): i32 { let n: i32 = 0; for (const { v } of xs) { n += v; } return n; }", "g<Box>([new Box()]);"),
@@ -25,6 +27,48 @@ pub(super) fn cells() -> Vec<Cell> {
         ("date-template", "function g<T extends Date>(x: T): string { return `${x}`; }", "g<Date>(new Date(0 as i64));"),
     ];
     let mut cells = Vec::new();
+    for (kind, constraint, argument, value) in [
+        ("array", "i32[]", "i32[]", "[1, 2]"),
+        (
+            "map",
+            "Map<i32, i32>",
+            "Map<i32, i32>",
+            "new Map<i32, i32>()",
+        ),
+        ("function-return", "() => i32", "() => i32", "one"),
+        (
+            "function-parameter",
+            "(x: i32) => void",
+            "(x: i32) => void",
+            "consume",
+        ),
+    ] {
+        for (site, body) in [
+            ("forward-argument", "return inner<T>(x);"),
+            (
+                "class-field-type",
+                "const holder = new G<T>(x); return holder.value;",
+            ),
+        ] {
+            let declaration = format!(
+                "function one(): i32 {{ return 1; }} function consume(x: i32): void {{}} \
+                 function inner<A extends {constraint}>(x: A): A {{ return x; }} \
+                 class G<A extends {constraint}> {{ value: A; constructor(value: A) {{ this.value = value; }} }} \
+                 function g<T extends {constraint}>(x: T): T {{ {body} }}"
+            );
+            let main = format!("g<{argument}>({value});");
+            for instance in [false, true] {
+                cells.push(build_cell(CellInput {
+                    name: &format!("derived-{kind}-{site}"),
+                    declaration: &declaration,
+                    main_body: if instance { &main } else { "" },
+                    instance,
+                    concrete_source: None,
+                    divergence: None,
+                }));
+            }
+        }
+    }
     for (name, body, main) in forms {
         let declaration =
             format!("class Box {{ v: i32 = 1; get(): i32 {{ return this.v; }} }} {body}");

@@ -76,7 +76,7 @@ impl<'p> Checker<'p> {
         value: hir::Expr,
         fx: &mut FnCtx,
     ) -> hir::Expr {
-        if !value.ty.carries_async_handle() {
+        if !self.apparent_type(&value.ty).carries_async_handle() {
             return value;
         }
         let pos = value.pos.clone();

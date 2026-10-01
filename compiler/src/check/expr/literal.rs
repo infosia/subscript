@@ -190,7 +190,8 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let integer = if let Some(raw) = n.raw.as_deref() {
-            let (lo, hi) = target
+            let (lo, hi) = self
+                .apparent_type(&target)
                 .int_bounds()
                 .unwrap_or((i128::from(i64::MIN), i128::from(i64::MAX)));
             crate::check::parse_integer_spelling(raw, negate)

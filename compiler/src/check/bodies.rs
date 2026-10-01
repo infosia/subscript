@@ -315,7 +315,7 @@ impl<'p> Checker<'p> {
                 Local {
                     ty: ps.ty.clone(),
                     mutable: true,
-                    async_origins: if ps.ty.carries_async_handle() {
+                    async_origins: if self.apparent_type(&ps.ty).carries_async_handle() {
                         HashSet::from([fx.register_async_origin(pos.clone())])
                     } else {
                         HashSet::new()

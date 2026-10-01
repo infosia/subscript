@@ -592,7 +592,9 @@ impl<'p> Checker<'p> {
                 let ok = self.instance_restriction(
                     super::opaque::InstanceRestriction::NullableShape,
                     &inner,
-                ) || inner.is_reference_shape(&self.type_handle_classes);
+                ) || self
+                    .apparent_type(&inner)
+                    .is_reference_shape(&self.type_handle_classes);
                 if ok {
                     return Type::nullable(inner);
                 }

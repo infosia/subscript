@@ -3,6 +3,23 @@
 use super::*;
 use std::collections::HashMap;
 
+const FUNCTION_KINDS: &[Kind] = &[
+    Kind {
+        name: "function-return",
+        constraint: " extends () => i32",
+        value_type: "T",
+        argument_type: "() => i32",
+        argument: "(): i32 => 1",
+    },
+    Kind {
+        name: "function-parameter",
+        constraint: " extends (x: i32) => void",
+        value_type: "T",
+        argument_type: "(x: i32) => void",
+        argument: "(x: i32): void => {}",
+    },
+];
+
 struct Role {
     name: &'static str,
     expression: &'static str,
@@ -161,19 +178,7 @@ fn sites() -> Vec<Site> {
                 divergence: None,
             });
         }
-        for (name_op, operator) in [
-            ("add", "+="),
-            ("sub", "-="),
-            ("mul", "*="),
-            ("div", "/="),
-            ("mod", "%="),
-            ("and", "&="),
-            ("or", "|="),
-            ("xor", "^="),
-            ("shl", "<<="),
-            ("shr", ">>="),
-            ("ushr", ">>>="),
-        ] {
+        for (name_op, operator) in [("add", "+="), ("sub", "-="), ("and", "&=")] {
             sites.push(Site {
                 name: format!("compound-{name_op}-{name}"),
                 body: format!("{target} {operator} $;"),
@@ -197,6 +202,13 @@ fn sites() -> Vec<Site> {
         }
     }
     for (name, body) in [
+        ("call-value", "const a = ($)();"),
+        ("call-value-argument", "($)(n);"),
+        ("forward-argument", "const a = forward<T>($);"),
+        (
+            "class-field-type",
+            "const a: Constrained<T> = new Constrained<T>($);",
+        ),
         ("switch", "switch ($) { default: break; }"),
         (
             "case-parameter",
@@ -280,7 +292,7 @@ pub(super) fn cells() -> Vec<Cell> {
     let sites = sites();
     let mut omitted = Vec::new();
     let mut controls = HashMap::new();
-    for kind in KINDS {
+    for kind in KINDS.iter().chain(FUNCTION_KINDS) {
         for role in ROLES {
             // Linked roles always have a constrained intermediate parameter (§143 rule 1d).
             let constraint = if role.order.is_some() && kind.constraint.is_empty() {
@@ -320,9 +332,18 @@ pub(super) fn cells() -> Vec<Cell> {
                     "yield-value" => "function* generator<A>(value: A): Generator<A> { yield value; }",
                     _ => "",
                 };
+                let constraint_helpers = if matches!(
+                    site.name.as_str(),
+                    "forward-argument" | "class-field-type"
+                ) {
+                    format!("function forward<A{constraint}>(a: A): A {{ return a; }} class Constrained<A{constraint}> {{ value: A; constructor(value: A) {{ this.value = value; }} }}")
+                } else {
+                    String::new()
+                };
                 let mut declaration = format!(
                     "class Box {{ v: i32 = 1; get(): i32 {{ return this.v; }} }} \
                      {helpers} function take<A>(a: A): void {{}} \
+                     {constraint_helpers} \
                      {asynchronous_word}function g<{parameters}>(x: {x_type}, y: T, u: U, n: i32, \
                      s: string, numbers: i32[]): {result} {{ {setup} {body} }}",
                 );
@@ -364,7 +385,9 @@ pub(super) fn cells() -> Vec<Cell> {
                         record: "compiler.md §115",
                         token: "`throw expr` requires the static type of an Error-family class",
                     })
-                } else if role.name == "concrete" && site.name == "condition" {
+                } else if site.name == "condition"
+                    && (role.name == "concrete" || kind.name.starts_with("function-"))
+                {
                     Some(Divergence {
                         code: RuleCode::S100,
                         record: "compiler.md §68",
@@ -419,10 +442,12 @@ pub(super) fn cells() -> Vec<Cell> {
                             .err()
                             .unwrap_or_default()
                     });
+                    // A callable constraint cannot admit a boolean condition (§143 rule 4).
                     if errors.is_empty()
-                        || divergence.is_some_and(|record| {
-                            errors.iter().all(|error| error.code == record.code)
-                        })
+                        || (!(kind.name.starts_with("function-") && site.name == "condition")
+                            && divergence.is_some_and(|record| {
+                                errors.iter().all(|error| error.code == record.code)
+                            }))
                     {
                         admitted = Some((main, concrete_source));
                         break;
@@ -466,13 +491,13 @@ pub(super) fn cells() -> Vec<Cell> {
             }
         }
     }
-    assert_eq!(omitted.len(), 4468, "the admitted instance set changed");
+    assert_eq!(omitted.len(), 4696, "the admitted instance set changed");
     eprintln!(
         "product candidates: {} roles × {} sites × {} kinds × 2 = {}; omitted instances={}",
         ROLES.len(),
         sites.len(),
-        KINDS.len(),
-        ROLES.len() * sites.len() * KINDS.len() * 2,
+        KINDS.len() + FUNCTION_KINDS.len(),
+        ROLES.len() * sites.len() * (KINDS.len() + FUNCTION_KINDS.len()) * 2,
         omitted.len()
     );
     // The measurement destination is optional and does not change the gate's cell set.
@@ -480,4 +505,37 @@ pub(super) fn cells() -> Vec<Cell> {
         fs::write(path, omitted.join("\n")).unwrap();
     }
     cells
+}
+
+// §143 rule 4 covers every surface compound operator on one parameter pair per kind.
+// Measured cost: 99 cells in 0.236 seconds, with one TypeScript process.
+pub(super) fn compound_cells() -> Vec<Cell> {
+    let mut result = Vec::new();
+    for kind in KINDS.iter().chain(FUNCTION_KINDS) {
+        for (name, operator) in [
+            ("add", "+="),
+            ("sub", "-="),
+            ("mul", "*="),
+            ("div", "/="),
+            ("mod", "%="),
+            ("and", "&="),
+            ("or", "|="),
+            ("xor", "^="),
+            ("shl", "<<="),
+            ("shr", ">>="),
+            ("ushr", ">>>="),
+        ] {
+            let constraint = kind.constraint;
+            let declaration = format!("class Box {{ v: i32 = 1; }} function g<T{constraint}>(x: T, y: T): void {{ y {operator} x; }}");
+            result.push(build_cell(CellInput {
+                name: &format!("compound-{}-{name}", kind.name),
+                declaration: &declaration,
+                main_body: "",
+                instance: false,
+                concrete_source: None,
+                divergence: None,
+            }));
+        }
+    }
+    result
 }

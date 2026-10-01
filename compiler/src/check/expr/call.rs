@@ -1046,11 +1046,9 @@ impl<'p> Checker<'p> {
                 }
             },
             Type::Class(id) => {
-                if self.classes[id.0]
-                    .fields
-                    .iter()
-                    .any(|field| field.name == name && field.ty.function_type().is_some())
-                {
+                if self.classes[id.0].fields.iter().any(|field| {
+                    field.name == name && self.apparent_type(&field.ty).function_type().is_some()
+                }) {
                     let mut field = self.member_on(recv, &name, prop_pos, false);
                     self.apply_narrowing(&mut field, fx);
                     return self.check_indirect_call(field, c, fx, pos);

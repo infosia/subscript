@@ -783,7 +783,8 @@ impl<'p> Checker<'p> {
             other => other,
         };
         matches!(
-            reference.handle_kind(&self.type_handle_classes),
+            self.apparent_type(&reference)
+                .handle_kind(&self.type_handle_classes),
             Some(
                 HandleKind::ReferenceClass
                     | HandleKind::Map

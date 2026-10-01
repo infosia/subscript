@@ -1,13 +1,15 @@
 //! The generic body matrix of §143 rule 4.
-//! Measured cost: 17,488 cells in 22.174 seconds, with one TypeScript process.
-//! The 30-second budget covers each distinct value-role/site pair; no cell is removed for cost.
+//! Measured cost: 16,000 cells in 9.448 seconds (10.40 seconds with cleanup), with one TypeScript process.
+//! The product keeps +=, -=, and &=, one per checker arm; a separate 99-cell test covers all operators.
+//! The other compound operators had identical verdicts in all 633 measured groups (§143 rule 4).
+//! TypeScript runs beside at most eight scoped checker workers; each value-role/site pair remains.
 //! Concrete controls check instance admission apart from the opaque diagnostics (§143 rule 4).
 
 use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -1343,9 +1345,51 @@ impl Drop for Project {
     }
 }
 
+fn check_cell(cell: &Cell, root: &Path) -> (Vec<Diagnostic>, Option<String>, Result<(), String>) {
+    let record_result = cell
+        .divergence
+        .map_or(Ok(()), |record| check_record(root, record));
+    let control_failure = cell.concrete_source.as_ref().and_then(|source| {
+        let errors = check_program(&[SourceFile::new("concrete.ts", source.clone())])
+            .err()
+            .unwrap_or_default();
+        if !errors.is_empty()
+            && !cell
+                .divergence
+                .is_some_and(|record| errors.iter().all(|error| error.code == record.code))
+        {
+            Some(format!(
+                "{}: per-instance control rejected: {errors:?}",
+                cell.name
+            ))
+        } else {
+            None
+        }
+    });
+    let errors = check_program(&[SourceFile::new(
+        format!("{}.ts", cell.name),
+        cell.source.clone(),
+    )])
+    .err()
+    .unwrap_or_default();
+    (errors, control_failure, record_result)
+}
+
 #[test]
 fn generic_forms_follow_tsc() {
     let start = Instant::now();
+    run_matrix(cells(), start);
+}
+
+#[test]
+fn every_compound_operator_follows_tsc() {
+    let start = Instant::now();
+    let cells = product::compound_cells();
+    assert_eq!(cells.len(), 99);
+    run_matrix(cells, start);
+}
+
+fn run_matrix(cells: Vec<Cell>, start: Instant) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -1359,7 +1403,6 @@ fn generic_forms_follow_tsc() {
                 .as_nanos()
         )));
     fs::create_dir(&project.0).unwrap();
-    let cells = cells();
     let mut files = vec![root.join("prelude/lang.d.ts")];
     for cell in &cells {
         let path = project.0.join(format!("{}.ts", cell.name));
@@ -1382,14 +1425,38 @@ fn generic_forms_follow_tsc() {
         format!(r#"{{"compilerOptions":{{{options}}},"files":[{listed}]}}"#),
     )
     .unwrap();
-    let output = Command::new(root.join(if cfg!(windows) {
+    let child = Command::new(root.join(if cfg!(windows) {
         "node_modules/.bin/tsc.cmd"
     } else {
         "node_modules/.bin/tsc"
     }))
     .args(["--project", config.to_str().unwrap(), "--pretty", "false"])
-    .output()
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
     .unwrap();
+    let tsc = std::thread::spawn(move || child.wait_with_output().unwrap());
+    let workers = std::thread::available_parallelism().unwrap().get().min(8);
+    let chunk_size = cells.len().div_ceil(workers);
+    let checked: Vec<_> = std::thread::scope(|scope| {
+        let handles: Vec<_> = cells
+            .chunks(chunk_size)
+            .map(|chunk| {
+                let root = &root;
+                scope.spawn(move || {
+                    chunk
+                        .iter()
+                        .map(|cell| check_cell(cell, root))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().unwrap())
+            .collect()
+    });
+    let output = tsc.join().unwrap();
     let text = String::from_utf8_lossy(&output.stdout);
     let cell_names: HashSet<_> = cells.iter().map(|cell| cell.name.as_str()).collect();
     let mut rejected = HashSet::new();
@@ -1410,37 +1477,17 @@ fn generic_forms_follow_tsc() {
     }
     assert!(output.status.success() || !rejected.is_empty(), "{text}");
     let mut failures = Vec::new();
-    for cell in &cells {
+    for (cell, result) in cells.iter().zip(checked) {
         if cell.name.starts_with("derived-") && rejected.contains(&cell.name) {
             failures.push(format!(
                 "{}: the TypeScript accept control rejects",
                 cell.name
             ));
         }
-        let record_result = cell
-            .divergence
-            .map_or(Ok(()), |record| check_record(&root, record));
-        if let Some(source) = &cell.concrete_source {
-            let errors = check_program(&[SourceFile::new("concrete.ts", source.clone())])
-                .err()
-                .unwrap_or_default();
-            if !errors.is_empty()
-                && !cell
-                    .divergence
-                    .is_some_and(|record| errors.iter().all(|error| error.code == record.code))
-            {
-                failures.push(format!(
-                    "{}: per-instance control rejected: {errors:?}",
-                    cell.name
-                ));
-            }
+        let (errors, control_failure, record_result) = result;
+        if let Some(failure) = control_failure {
+            failures.push(failure);
         }
-        let errors = check_program(&[SourceFile::new(
-            format!("{}.ts", cell.name),
-            cell.source.clone(),
-        )])
-        .err()
-        .unwrap_or_default();
         if let Some(failure) =
             disagreement(cell, !rejected.contains(&cell.name), &errors, record_result)
         {
