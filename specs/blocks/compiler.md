@@ -182,3 +182,4 @@ Every section, with its status:
 | §138 | A generic instance body sees every module global | active | [`s138-a-generic-instance-body-sees-every-module-global.md`](compiler/s138-a-generic-instance-body-sees-every-module-global.md) |
 | §139 | A `using` in a top-level block disposes at the block exit | active | [`s139-a-using-in-a-top-level-block-disposes.md`](compiler/s139-a-using-in-a-top-level-block-disposes.md) |
 | §140 | A generic instance chain that grows without bound is rejected | active | [`s140-a-generic-instance-chain-that-grows-is-rejected.md`](compiler/s140-a-generic-instance-chain-that-grows-is-rejected.md) |
+| §141 | A regex literal has no `v` flag | active | [`s141-a-regex-literal-has-no-v-flag.md`](compiler/s141-a-regex-literal-has-no-v-flag.md) |
