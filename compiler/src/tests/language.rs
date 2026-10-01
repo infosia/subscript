@@ -1306,7 +1306,7 @@ fn absence_capable_member_read_in_absent_arm_is_rejected() {
     )
     .expect_err("the absent arm must not permit a member read");
     assert_eq!(diagnostics[0].code, RuleCode::S100);
-    assert!(diagnostics[0].message.contains("presence test"));
+    assert!(diagnostics[0].message.contains("present arm"));
 }
 
 #[test]
@@ -1325,7 +1325,7 @@ fn absence_capable_member_reassignment_invalidates_narrowing() {
     )
     .expect_err("field reassignment must kill the presence fact");
     assert_eq!(diagnostics[0].code, RuleCode::S100);
-    assert!(diagnostics[0].message.contains("presence test"));
+    assert!(diagnostics[0].message.contains("present arm"));
 }
 
 #[test]

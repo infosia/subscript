@@ -25,6 +25,8 @@ pub enum Divergence {
     LoneSurrogateEscape,
     /// An inferred `void` binding, a void map callback, or a value return from a void function.
     VoidValue,
+    /// A reference-element search miss uses `null` instead of `undefined`.
+    ReferenceSearchMiss,
     /// `any` in a declaration.
     AnyType,
     /// `eval`, `new Function`, and a write through `.prototype`.
@@ -216,6 +218,7 @@ impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
         Divergence::VoidValue,
+        Divergence::ReferenceSearchMiss,
         Divergence::AnyType,
         Divergence::DynamicObjectModel,
         Divergence::NominalClassIdentity,
@@ -314,6 +317,12 @@ impl Divergence {
                 subscript: "function f(): void {} f();",
                 why: "Call a void function as a statement. Use a bare return in a void function. A map callback must return a value.",
                 collision: "C21",
+            },
+            Divergence::ReferenceSearchMiss => DivergenceEntry {
+                ts: "const missing = values.get(key); print(`${missing === undefined}`);",
+                subscript: "const missing = values.get(key); print(`${missing == null}`);",
+                why: "A reference-element Map.get, find, or findLast miss returns null. Use == null to test absence in both languages.",
+                collision: "C22",
             },
             Divergence::LoneSurrogateEscape => DivergenceEntry {
                 ts: r#"const text: string = "\ud83d";"#,
@@ -1286,6 +1295,21 @@ mod tests {
         assert_eq!(entry.ts, "function f(): void {} const a = f();");
         assert_eq!(entry.subscript, "function f(): void {} f();");
         assert!(Divergence::ALL.contains(&Divergence::VoidValue));
+    }
+
+    #[test]
+    fn reference_search_miss_names_its_record_and_null_test() {
+        let entry = Divergence::ReferenceSearchMiss.entry();
+        assert_eq!(entry.collision, "C22");
+        assert_eq!(
+            entry.ts,
+            "const missing = values.get(key); print(`${missing === undefined}`);"
+        );
+        assert_eq!(
+            entry.subscript,
+            "const missing = values.get(key); print(`${missing == null}`);"
+        );
+        assert!(Divergence::ALL.contains(&Divergence::ReferenceSearchMiss));
     }
 
     #[test]

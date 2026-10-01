@@ -185,7 +185,8 @@ closed-set exhaustiveness checked (`compiler.md` §41; accept adds
 *Revised 2026-08-02 (R16):* inside a `@Descriptor` class, `name?: A`
 with no initializer (A a Q32 alias) declares an absence-capable
 member — absent is distinct from every value, spellable only by
-omission, read only through `!== undefined` presence narrowing;
+omission, read only through `!== undefined` or `!= undefined` presence
+narrowing (and the inverse `===`/`==`, `compiler.md` §144);
 that comparison is the single legal appearance of the `undefined`
 token (C7 stands everywhere else). `compiler.md` §43; accept adds
 `a118`, reject adds `r117`–`r118`.
@@ -607,6 +608,19 @@ Measured with `tsc` 5.9.2 (`specs/tracking/s143-type-parameter-typing.md`):
 `xs.map((v: i32): void => {})` give no `tsc` error.
 
 Reject: `r297`, `r298`, `r299`.
+
+### C22. A miss is `null`, not `undefined`
+
+A miss of `Map.get`, `find`, or `findLast` on a reference element is
+`null` on both tiers (`stdlib.md` §10.5). Under `node` it is
+`undefined`. So `m.get(k) === null` is true here and false under
+`node`, and `m.get(k) == null` is true in both (`compiler.md` §144).
+Teaching material tests a miss with `== null`.
+
+Measured with `node` (2026-10-02): for a missed `get` and `find`,
+`x == null` prints `true` and `x === null` prints `false`.
+
+Accept: `a308`.
 
 ## 2. Q-register resolutions not covered above
 

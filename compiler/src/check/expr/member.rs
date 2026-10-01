@@ -51,7 +51,7 @@ impl<'p> Checker<'p> {
                 if self.is_absence_capable_member_expr(&expr) && !allow_absence_test && !narrowed {
                     self.error_diverging(
                         RuleCode::S100,
-                        "an absence-capable descriptor member may be read only after an `!== undefined` presence test",
+                        "an absence-capable descriptor member requires the present arm of `!= undefined` / `!== undefined` or the inverse arm of `== undefined` / `=== undefined`",
                         expr.pos.clone(),
                         Divergence::OptionalDescriptorMember,
                     );

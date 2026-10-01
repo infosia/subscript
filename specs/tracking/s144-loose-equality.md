@@ -55,3 +55,24 @@ Other changed sizes: a307 source 37; golden 9; corpus index 721.
 ```text
 gate full 8006cf620f6b600663ba67098697d381dd411ef4 dirty:15 debug 2182/0/3 release 2179/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```
+
+## Phase Review fix round 3
+
+`Divergence::ReferenceSearchMiss` records C22 with a table entry and a unit test.
+a308 tests reference-element `Map.get` and `find` misses with `== null`, plus both hits.
+Node v24.18.0 with TypeScript 5.9.2, dev JIT, and ship C AOT each match the 26-byte golden.
+The temporary a308 corpus probe passes on both tiers in 0.90 seconds.
+The HIR comment, descriptor-read diagnostic, and language-reference generator name all four equality operators.
+Updated diagnostic-fragment tests: `language::absence_capable_member_read_in_absent_arm_is_rejected` and `language::absence_capable_member_reassignment_invalidates_narrowing`.
+The generator refreshes the language reference and corpus index.
+`cargo test --offline --locked -p subscript-compiler` passes, including the JS corpus, measured tsc headers, and generated-docs checks.
+`cargo fmt --check` and `git diff --check` pass. `tools/gate.sh` does not run. No commit occurs.
+
+## Phase Review fix round landing gate
+
+The tree also held the teaching-material change (examples and docs write
+`==`/`!=`, `examples.md` §2).
+
+```text
+gate full 6f435252053fee5b8601c20ea2c4e32359875408 dirty:24 debug 2183/0/3 release 2180/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```

@@ -1675,7 +1675,7 @@ pub enum ExprKind {
     AbsenceTest {
         /// The absence-capable value.
         value: Box<Expr>,
-        /// True for `!== undefined`; false for `=== undefined`.
+        /// True for `!= undefined` or `!== undefined`; false for `== undefined` or `=== undefined`.
         negated: bool,
     },
     /// Assignment (plain or compound). The target is a `Local`, `Global`,
