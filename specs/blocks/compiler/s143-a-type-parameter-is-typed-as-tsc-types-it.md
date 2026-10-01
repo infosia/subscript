@@ -45,7 +45,11 @@ a check must compare every form against `tsc`.
       constraint is assignable to.
    c. The result type of an operation that involves `T` is the type
       `tsc` gives (for example `number` for `-x`, `boolean | T` for
-      `b || x`).
+      `b || x`). A `number` result is not a sized type: every site
+      that reads it (an operator, an index, an equality, an assignment)
+      reads `number`, and a diagnostic prints `number`.
+   d. A constraint that names another type parameter resolves through
+      that parameter's own constraint, whatever the declaration order.
    Where this list and `tsc` differ, `tsc` decides. The total check of
    rule 4 measures it.
 2. The opaque check reports every diagnostic that it produces. §135
@@ -60,6 +64,13 @@ a check must compare every form against `tsc`.
    accepts such a form, with the result type `tsc` gives. The
    implementation names each such restriction in one list. The total
    check of rule 4 reports a restriction that the list does not name.
+   A deferral skips only this project's restriction. At the same site
+   the typing of rule 1 applies first: the opaque check rejects the
+   form where `tsc` rejects it on the apparent type, and defers only
+   what remains. *(Added 2026-10-01 after the Phase Review: every entry
+   of the list deferred on "the type involves `T`" alone, so a deferral
+   also skipped the `tsc` typing at its site — `s += x` and `if (cb)`
+   on a function of `T` passed where `tsc` gives TS2365 and TS2774.)*
 3. §135 rules 1, 2b, and 3 stay. Rule 3 applies to every diagnostic of
    rule 2.
 4. A total check runs in the gate. It is a matrix of generic forms.
