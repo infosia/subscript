@@ -961,7 +961,9 @@ impl<'p> Checker<'p> {
     }
 
     fn value_field_ok(&self, ty: &Type) -> bool {
-        if self.plain_value_leaf(ty) {
+        if self.instance_restriction(super::opaque::InstanceRestriction::ValueField, ty)
+            || self.plain_value_leaf(ty)
+        {
             return true;
         }
         match ty {

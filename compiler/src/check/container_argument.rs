@@ -39,7 +39,9 @@ impl<'p> Checker<'p> {
         argument: Type,
         pos: Pos,
     ) -> Type {
-        if !Self::is_context_affine_type(&argument) {
+        if self.instance_restriction(opaque::InstanceRestriction::ContainerArgument, &argument)
+            || !Self::is_context_affine_type(&argument)
+        {
             return argument;
         }
         if !self.in_poisoned_context {

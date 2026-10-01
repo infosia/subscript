@@ -323,6 +323,12 @@ impl<'p> Checker<'p> {
                     }
                 };
                 let fixed = Type::fixed_array(elem, len);
+                if self.instance_restriction(
+                    super::opaque::InstanceRestriction::AggregateLayout,
+                    &fixed,
+                ) {
+                    return fixed;
+                }
                 match super::layout::class_independent_layout(&fixed) {
                     super::layout::IndependentLayout::Fits => return fixed,
                     super::layout::IndependentLayout::TooLarge => {
@@ -423,7 +429,12 @@ impl<'p> Checker<'p> {
             // A nested container's value is a general declaration even
             // when the container itself appears as an outer key.
             self.in_assoc_key = false;
-            if !matches!(key, Type::Error) && self.assoc_key_kind(&key).is_none() {
+            if !self.instance_restriction(
+                crate::check::opaque::InstanceRestriction::AssociativeKey,
+                &key,
+            ) && !matches!(key, Type::Error)
+                && self.assoc_key_kind(&key).is_none()
+            {
                 let key_pos = self.pos(args.params[0].span());
                 let key_name = self.type_name(&key);
                 self.error_diverging(
@@ -578,7 +589,10 @@ impl<'p> Checker<'p> {
                 if self.in_assoc_key {
                     return Type::nullable(inner);
                 }
-                let ok = inner.is_reference_shape(&self.type_handle_classes);
+                let ok = self.instance_restriction(
+                    super::opaque::InstanceRestriction::NullableShape,
+                    &inner,
+                ) || inner.is_reference_shape(&self.type_handle_classes);
                 if ok {
                     return Type::nullable(inner);
                 }

@@ -244,7 +244,7 @@ fn a_static_field_keeps_its_own_rule_and_reports_once() {
 }
 
 #[test]
-fn a_generic_class_is_checked_per_instance() {
+fn a_generic_class_reports_each_site_once() {
     accepted(
         "class Box<T> {\n  value: T;\n  constructor(value: T) {\n    this.value = value;\n  }\n}\nexport function main(): void {\n  const b: Box<i32> = new Box<i32>(1);\n  print(`${b.value}`);\n}\n",
     );
@@ -254,13 +254,12 @@ fn a_generic_class_is_checked_per_instance() {
     );
     let sites: Vec<(u32, u32)> = one.iter().map(|d| (d.pos.line, d.pos.col)).collect();
     assert_eq!(sites, [(2, 3)], "{one:?}");
-    // Two instances of one template report twice, at the same position.
-    // The rule runs per instance, so the count is the instance count.
+    // §143 rules 2 and 3: the opaque diagnostic replaces both instance reports.
     let two = diagnostics(
         "class Box<T> {\n  value: T;\n}\nexport function main(): void {\n  const a: Box<i32> = new Box<i32>();\n  const b: Box<string> = new Box<string>();\n  print(`${a.value} ${b.value}`);\n}\n",
     );
     let sites: Vec<(u32, u32)> = two.iter().map(|d| (d.pos.line, d.pos.col)).collect();
-    assert_eq!(sites, [(2, 3), (2, 3)], "{two:?}");
+    assert_eq!(sites, [(2, 3)], "{two:?}");
     // The advice names the declared type of the template, not the type
     // of the instance, and its placeholder names no field.
     for diagnostic in &two {

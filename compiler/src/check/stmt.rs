@@ -28,7 +28,10 @@ fn pattern_type_ann(pat: &ast::Pat) -> Option<&ast::TsTypeAnn> {
 /// non-null or known present when the condition is true / false.
 /// `Checker::narrowing_paths` splits `&&` and `||` and applies the kills
 /// of compiler.md §124 before it reaches a leaf.
-pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
+pub(crate) fn narrow_paths(
+    cond: &hir::Expr,
+    apparent_type: impl Fn(&Type) -> Type,
+) -> (Vec<String>, Vec<String>) {
     if let Some(key) = super::exception::instanceof_narrowed_path(cond) {
         return (vec![key], Vec::new());
     }
@@ -52,7 +55,7 @@ pub(crate) fn narrow_paths(cond: &hir::Expr) -> (Vec<String>, Vec<String>) {
                 } else {
                     (None, left)
                 };
-                if null_side.is_some() && matches!(other.ty, Type::Nullable(_)) {
+                if null_side.is_some() && matches!(apparent_type(&other.ty), Type::Nullable(_)) {
                     if let Some(key) = path_key(other) {
                         return match op {
                             // `p === null` → p is non-null when false.
@@ -516,7 +519,11 @@ impl<'p> Checker<'p> {
     }
 
     fn require_bool(&mut self, cond: &hir::Expr) {
-        if !matches!(cond.ty, Type::Bool | Type::Error) {
+        if !self.instance_restriction(
+            crate::check::opaque::InstanceRestriction::BooleanContext,
+            &cond.ty,
+        ) && !matches!(cond.ty, Type::Bool | Type::Error)
+        {
             let name = self.type_name(&cond.ty);
             self.error(
                 RuleCode::S100,
@@ -1160,6 +1167,7 @@ impl<'p> Checker<'p> {
             );
             return (subject, None, Type::Error, false);
         }
+        let subject = self.apparent_expr(subject);
         let selected = subject
             .ty
             .iteration_element()
@@ -1253,6 +1261,10 @@ impl<'p> Checker<'p> {
                     );
                 }
             }
+        } else if self.involves_type_parameter(disc_ty)
+            && self.generic_overlap(disc_ty, &checked.ty)
+        {
+            // §143 rule 1a: case labels compare values, rather than assign them.
         } else {
             self.require_assignable(
                 &checked.ty.clone(),
@@ -1267,7 +1279,10 @@ impl<'p> Checker<'p> {
     fn check_switch(&mut self, sw: &ast::SwitchStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(sw.span);
         let disc = self.check_expr(&sw.discriminant, None, fx);
-        if !disc.ty.is_integer()
+        if !self.instance_restriction(
+            crate::check::opaque::InstanceRestriction::SwitchKind,
+            &disc.ty,
+        ) && !self.apparent_type(&disc.ty).is_integer()
             && !matches!(
                 disc.ty,
                 Type::Enum(_) | Type::Str | Type::StringAlias(_) | Type::Error
@@ -1445,7 +1460,7 @@ mod tests {
             },
             Type::Bool,
         );
-        let (when_true, when_false) = narrow_paths(&cond);
+        let (when_true, when_false) = narrow_paths(&cond, Clone::clone);
         assert_eq!(when_true, vec!["p".to_string()]);
         assert!(when_false.is_empty());
 
@@ -1460,7 +1475,7 @@ mod tests {
             },
             Type::Bool,
         );
-        let (when_true, when_false) = narrow_paths(&cond_eq);
+        let (when_true, when_false) = narrow_paths(&cond_eq, Clone::clone);
         assert!(when_true.is_empty());
         assert_eq!(when_false, vec!["p".to_string()]);
     }
@@ -1488,7 +1503,7 @@ mod tests {
             Type::Bool,
         );
         assert_eq!(
-            narrow_paths(&not_equal),
+            narrow_paths(&not_equal, Clone::clone),
             (vec!["sampler.compare".to_string()], Vec::new())
         );
 
@@ -1500,7 +1515,7 @@ mod tests {
             Type::Bool,
         );
         assert_eq!(
-            narrow_paths(&equal),
+            narrow_paths(&equal, Clone::clone),
             (Vec::new(), vec!["sampler.compare".to_string()])
         );
     }

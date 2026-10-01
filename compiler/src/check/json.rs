@@ -375,7 +375,10 @@ impl Checker<'_> {
                 | Type::Generator(_)
                 | Type::AsyncHandle(_)
                 | Type::IterResult(_)
-                | Type::Error => false,
+                | Type::Error
+                | Type::TypeParameter(_)
+                | Type::GenericNumber
+                | Type::GenericUnion(_) => false,
             }
         }
 

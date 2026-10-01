@@ -187,6 +187,19 @@ impl HandleKind {
     }
 }
 
+/// The identity, source name, and constraint of a type parameter (§143).
+/// The boxed payload preserves the interpreter value layout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct TypeParameterType {
+    /// The identity of the parameter in the opaque check.
+    pub identity: usize,
+    /// The source name of the parameter.
+    pub name: String,
+    /// The declared constraint, when present.
+    pub constraint: Option<Box<Type>>,
+}
+
 /// A fully resolved language type.
 ///
 /// Sized numerics are all distinct; classes are nominal (two same-shaped
@@ -240,6 +253,12 @@ pub enum Type {
     Object,
     /// A nominal class, value or reference (the definition says which).
     Class(ClassId),
+    /// A type parameter with its declaration identity and constraint (§143).
+    TypeParameter(Box<TypeParameterType>),
+    /// The `number` result of an operation on a type parameter (§143 rule 1c).
+    GenericNumber,
+    /// A union result inside a generic body (§143 rule 1c).
+    GenericUnion(Box<[Type]>),
     /// A numeric enum.
     Enum(EnumId),
     /// A nominal, closed string-literal union alias (Q32).
@@ -456,7 +475,11 @@ pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
         | Type::Nullable(_)
         | Type::Null => (8, 8),
         Type::Func(_) => (16, 8),
-        Type::Void | Type::Error => (0, 1),
+        Type::Void
+        | Type::Error
+        | Type::TypeParameter(_)
+        | Type::GenericNumber
+        | Type::GenericUnion(_) => (0, 1),
         Type::Class(_) | Type::FixedArray(..) | Type::IterResult(_) => return None,
     })
 }
@@ -479,6 +502,7 @@ impl Type {
     #[must_use]
     pub fn contained_types(&self) -> Vec<&Type> {
         match self {
+            Self::GenericUnion(members) => members.iter().collect(),
             Self::FixedArray(inner, _)
             | Self::Array(inner)
             | Self::Set(inner)
@@ -515,7 +539,9 @@ impl Type {
             | Self::Class(_)
             | Self::Enum(_)
             | Self::StringAlias(_)
-            | Self::Error => Vec::new(),
+            | Self::Error
+            | Self::TypeParameter(_)
+            | Self::GenericNumber => Vec::new(),
         }
     }
 
@@ -710,6 +736,13 @@ pub fn display_type(
         Type::Null => "null".to_string(),
         Type::Object => "object".to_string(),
         Type::Class(id) => class_name(*id),
+        Type::TypeParameter(parameter) => parameter.name.clone(),
+        Type::GenericNumber => "number".to_string(),
+        Type::GenericUnion(members) => members
+            .iter()
+            .map(|member| display_type(member, class_name, enum_name, string_alias_name))
+            .collect::<Vec<_>>()
+            .join(" | "),
         Type::Enum(id) => enum_name(*id),
         Type::StringAlias(id) => string_alias_name(*id),
         Type::FixedArray(elem, n) => format!(
@@ -1171,6 +1204,49 @@ mod tests {
         for (ty, nullable, identity) in cases {
             assert_eq!(ty.is_reference_shape(&classes), nullable, "{ty:?}");
             assert_eq!(ty.uses_reference_identity(&classes), identity, "{ty:?}");
+        }
+    }
+
+    #[test]
+    fn type_layout_stays_within_the_pinned_size() {
+        // The interpreter value layout depends on this size.
+        assert_eq!(std::mem::size_of::<Type>(), 24);
+        assert_eq!(std::mem::size_of::<Box<TypeParameterType>>(), 8);
+        assert_eq!(std::mem::size_of::<Box<[Type]>>(), 16);
+    }
+
+    #[test]
+    fn generic_types_preserve_identity_results_and_constraints() {
+        let parameter = Type::TypeParameter(Box::new(TypeParameterType {
+            identity: 7,
+            name: "T".into(),
+            constraint: Some(Box::new(Type::I32)),
+        }));
+        let other = Type::TypeParameter(Box::new(TypeParameterType {
+            identity: 8,
+            name: "T".into(),
+            constraint: Some(Box::new(Type::I32)),
+        }));
+        assert_ne!(parameter, other);
+        let Type::TypeParameter(payload) = &parameter else {
+            panic!("the parameter keeps its boxed payload");
+        };
+        assert_eq!(payload.identity, 7);
+        assert_eq!(payload.name, "T");
+        assert_eq!(payload.constraint.as_deref(), Some(&Type::I32));
+        let union = Type::GenericUnion(vec![Type::Bool, parameter.clone()].into_boxed_slice());
+        assert_eq!(union.contained_types(), vec![&Type::Bool, &parameter]);
+        for (ty, name) in [
+            (parameter, "T"),
+            (Type::GenericNumber, "number"),
+            (union, "boolean | T"),
+        ] {
+            assert_eq!(
+                display_type(&ty, &|_| "".into(), &|_| "".into(), &|_| "".into()),
+                name
+            );
+            assert_eq!(scalar_size_align(&ty), Some((0, 1)));
+            assert!(!ty.is_numeric());
         }
     }
 

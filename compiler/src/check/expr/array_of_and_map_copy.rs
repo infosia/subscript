@@ -65,7 +65,12 @@ impl<'p> Checker<'p> {
                 self.in_assoc_key = saved;
                 let key_pos = self.pos(args.params[0].span());
                 let key = self.container_argument(ContainerSlot::MapKey, key, key_pos);
-                if key != Type::Error && self.assoc_key_kind(&key).is_none() {
+                if !self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::AssociativeKey,
+                    &key,
+                ) && key != Type::Error
+                    && self.assoc_key_kind(&key).is_none()
+                {
                     self.error(
                         RuleCode::S014,
                         "type is not a permitted Map/Set key kind (Q24)",
@@ -97,7 +102,6 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 if matches!(source.ty, Type::Nullable(_)) {
-                    let first = self.diags.len();
                     self.error(
                         RuleCode::S011,
                         format!(
@@ -106,10 +110,6 @@ impl<'p> Checker<'p> {
                         ),
                         source.pos.clone(),
                     );
-                    // compiler.md §135.1 rule 2: a nullable use.
-                    if !self.involves_type_parameter(&source.ty) {
-                        self.mark_independent(first);
-                    }
                     return self.err_expr(pos);
                 }
                 if matches!(source.ty, Type::Map(_, _)) {

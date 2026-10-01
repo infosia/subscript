@@ -291,7 +291,12 @@ impl<'p> Checker<'p> {
         // checker gates the element kinds that can (Q22).
         let needs_elem_kind =
             f.takes_callback() || matches!(f, A::IndexOf | A::LastIndexOf | A::Includes);
-        if needs_elem_kind && self.arr_elem_kind(&elem).is_none() {
+        if !self.instance_restriction(
+            crate::check::opaque::InstanceRestriction::ArrayElementKind,
+            &elem,
+        ) && needs_elem_kind
+            && self.arr_elem_kind(&elem).is_none()
+        {
             let elem_n = self.type_name(&elem);
             self.error(
                 RuleCode::S014,
@@ -350,7 +355,11 @@ impl<'p> Checker<'p> {
                 mk(args, ty, pos)
             }
             A::Join => {
-                if hir::ArrFmtKind::of(&elem).is_none() {
+                if !self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::TemplateInterpolation,
+                    &elem,
+                ) && hir::ArrFmtKind::of(&elem).is_none()
+                {
                     let elem_n = self.type_name(&elem);
                     self.error(
                         RuleCode::S014,
@@ -620,7 +629,11 @@ impl<'p> Checker<'p> {
                 if matches!(acc_ty, Type::Error) {
                     return self.err_expr(pos);
                 }
-                if self.arr_elem_kind(&acc_ty).is_none() {
+                if !self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::ArrayElementKind,
+                    &acc_ty,
+                ) && self.arr_elem_kind(&acc_ty).is_none()
+                {
                     let acc_n = self.type_name(&acc_ty);
                     self.error(
                         RuleCode::S014,
@@ -729,7 +742,12 @@ impl<'p> Checker<'p> {
                         }
                         let u =
                             self.container_argument(ContainerSlot::ArrayElement, u, cb.pos.clone());
-                        if u != Type::Error && self.arr_elem_kind(&u).is_none() {
+                        if !self.instance_restriction(
+                            crate::check::opaque::InstanceRestriction::ArrayElementKind,
+                            &u,
+                        ) && u != Type::Error
+                            && self.arr_elem_kind(&u).is_none()
+                        {
                             let u_n = self.type_name(&u);
                             self.error(
                                 RuleCode::S014,
@@ -753,6 +771,12 @@ impl<'p> Checker<'p> {
 
     /// Accepts values with the same nullable-pointer representation (compiler.md §123).
     fn map_get_value_ok(&self, value: &Type) -> bool {
+        if self.instance_restriction(
+            crate::check::opaque::InstanceRestriction::PartialValueLayout,
+            value,
+        ) {
+            return true;
+        }
         let reference = match value {
             Type::Nullable(inner) => inner.as_ref(),
             other => other,
@@ -832,7 +856,12 @@ impl<'p> Checker<'p> {
             }
         };
         let key = self.container_argument(ContainerSlot::MapKey, key, callback.pos.clone());
-        if key != Type::Error && self.assoc_key_kind(&key).is_none() {
+        if !self.instance_restriction(
+            crate::check::opaque::InstanceRestriction::AssociativeKey,
+            &key,
+        ) && key != Type::Error
+            && self.assoc_key_kind(&key).is_none()
+        {
             let key_name = self.type_name(&key);
             self.error_diverging(
                 RuleCode::S014,

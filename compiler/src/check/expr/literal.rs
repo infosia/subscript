@@ -232,7 +232,10 @@ impl<'p> Checker<'p> {
             }
             if let Some(e) = tpl.exprs.get(i) {
                 let checked = self.check_expr(e, None, fx);
-                let printable = checked.ty.is_numeric()
+                let printable = self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::TemplateInterpolation,
+                    &checked.ty,
+                ) || checked.ty.is_numeric()
                     || matches!(
                         checked.ty,
                         Type::Str | Type::Bool | Type::Enum(_) | Type::StringAlias(_) | Type::Error
@@ -521,10 +524,10 @@ impl<'p> Checker<'p> {
     /// Rewrites a nullable expression to its narrowed type when its
     /// path is in the current non-null set (C7).
     pub(super) fn apply_narrowing(&self, e: &mut hir::Expr, fx: &FnCtx) {
-        if let Type::Nullable(inner) = &e.ty {
+        if matches!(self.apparent_type(&e.ty), Type::Nullable(_)) {
             if let Some(key) = path_key(e) {
                 if fx.narrowed.contains(&key) {
-                    e.ty = (**inner).clone();
+                    e.ty = self.non_null_type(&e.ty);
                 }
             }
         }

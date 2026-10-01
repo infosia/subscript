@@ -89,6 +89,8 @@ impl<'p> Checker<'p> {
         index: hir::Expr,
         pos: Pos,
     ) -> hir::Expr {
+        let obj = self.apparent_expr(obj);
+        let index = self.apparent_expr(index);
         if let Type::Class(id) = &obj.ty {
             if let Some(signature) = self.classes[id.0].index_signature.clone() {
                 self.require_assignable(
@@ -173,11 +175,11 @@ impl<'p> Checker<'p> {
         prop_pos: Pos,
         for_write: bool,
     ) -> hir::Expr {
-        // compiler.md §135.1 rule 2: a member read on a type parameter with
+        // §143 rule 1a: a member read on a type parameter with
         // no constraint is an error for every type argument (`tsc` TS2339).
-        if !for_write && name != "prototype" && self.is_unconstrained_type_parameter(&obj.ty) {
+        if name != "prototype" && self.is_unconstrained_type_parameter(&obj.ty) {
             let type_name = self.type_name(&obj.ty);
-            self.error_independent(
+            self.error(
                 RuleCode::S018,
                 format!("`{type_name}` has no member `{name}`"),
                 prop_pos.clone(),
@@ -193,6 +195,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(prop_pos);
         }
+        let obj = self.apparent_expr(obj);
         match obj.ty.clone() {
             Type::Error => self.err_expr(prop_pos),
             Type::Class(id) => {

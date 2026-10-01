@@ -1,14 +1,10 @@
-//! The opaque check of generic bodies (compiler.md §135).
+//! The generic body check (§143).
 //!
-//! Every generic body is checked once with each type parameter bound to an
-//! opaque type parameter type. The opaque type is a fresh reference class
-//! with no member. The check keeps only the diagnostics that do not depend
-//! on the type argument and drops every other one (§135.1 rule 2). The
-//! per-instance check and lowering do not change: the pass removes every
-//! class, function, method, and global that it made, so no opaque instance
-//! reaches the HIR.
+//! Each parameter has its own type and constraint. The check reports every
+//! diagnostic and removes every instance before HIR construction (§135 rule 1).
 
 use super::*;
+use crate::types::TypeParameterType;
 
 /// A source site: file, 1-based line, 1-based column.
 type Site = (String, u32, u32);
@@ -48,66 +44,175 @@ struct OpaqueSnapshot {
 
 /// One opaque type parameter type of the opaque check (compiler.md §135.1).
 #[derive(Debug, Clone, Default)]
-pub(crate) struct OpaqueType {
-    /// True when the type parameter has a constraint (`T extends C`).
-    pub constrained: bool,
+pub(crate) struct OpaqueType;
+
+/// Restrictions whose verdict needs a concrete argument (§143 rule 2a).
+#[derive(Clone, Copy)]
+pub(crate) enum InstanceRestriction {
+    /// The runtime formatter accepts only the project's printable types.
+    TemplateInterpolation,
+    /// A value-class field must have a value layout.
+    ValueField,
+    /// A numeric operation or assignment needs a concrete sized type.
+    SizedNumeric,
+    /// Boolean contexts require a concrete boolean argument.
+    BooleanContext,
+    /// An associative key needs a concrete hash and equality kind.
+    AssociativeKey,
+    /// An array callback or equality search needs a concrete element kind.
+    ArrayElementKind,
+    /// A partial accessor needs a concrete nullable-pointer value layout.
+    PartialValueLayout,
+    /// A container argument needs a concrete Context-affinity kind.
+    ContainerArgument,
+    /// A nullable argument needs a concrete reference shape.
+    NullableShape,
+    /// An aggregate needs a concrete byte layout.
+    AggregateLayout,
+    /// A switch needs a concrete dispatch kind.
+    SwitchKind,
+    /// A cast needs a concrete runtime conversion.
+    CastKind,
+    /// A relational operation needs a concrete operand kind.
+    RelationalKind,
 }
 
 impl<'p> Checker<'p> {
+    /// True when a named restriction needs the instance (§143 rule 2a).
+    pub(crate) fn instance_restriction(&self, restriction: InstanceRestriction, ty: &Type) -> bool {
+        match restriction {
+            InstanceRestriction::TemplateInterpolation
+            | InstanceRestriction::ValueField
+            | InstanceRestriction::SizedNumeric
+            | InstanceRestriction::BooleanContext
+            | InstanceRestriction::AssociativeKey
+            | InstanceRestriction::ArrayElementKind
+            | InstanceRestriction::PartialValueLayout
+            | InstanceRestriction::ContainerArgument
+            | InstanceRestriction::NullableShape
+            | InstanceRestriction::AggregateLayout
+            | InstanceRestriction::SwitchKind
+            | InstanceRestriction::CastKind
+            | InstanceRestriction::RelationalKind => self.involves_type_parameter(ty),
+        }
+    }
+
     /// True when `ty` is an opaque type parameter type.
     pub(crate) fn is_type_parameter(&self, ty: &Type) -> bool {
-        matches!(ty, Type::Class(id) if self.opaque_params.contains_key(id))
+        matches!(ty, Type::TypeParameter(_))
     }
 
     /// True when `ty` is an opaque type parameter type with no constraint
-    /// (compiler.md §135.1 rule 2).
+    /// (§143 rule 1).
     pub(crate) fn is_unconstrained_type_parameter(&self, ty: &Type) -> bool {
-        matches!(ty, Type::Class(id) if self.opaque_params.get(id).is_some_and(|opaque| !opaque.constrained))
+        matches!(ty, Type::TypeParameter(parameter) if parameter.constraint.is_none())
     }
 
     /// True when `ty` is, or contains, an opaque type parameter type or an
-    /// instance of a generic class at one (compiler.md §135.1 rule 2).
+    /// instance of a generic class at one (§143 rule 2a).
     pub(crate) fn involves_type_parameter(&self, ty: &Type) -> bool {
         if self.opaque_params.is_empty() {
             return false;
         }
-        matches!(ty, Type::Class(id) if self.opaque_params.contains_key(id) || self.opaque_instances.contains(id))
+        matches!(ty, Type::TypeParameter(_) | Type::GenericNumber)
+            || matches!(ty, Type::Class(id) if self.opaque_instances.contains(id))
             || ty
                 .contained_types()
                 .into_iter()
                 .any(|inner| self.involves_type_parameter(inner))
     }
 
-    /// Emits a diagnostic that does not depend on a type argument, so the
-    /// opaque check keeps it (compiler.md §135.1 rule 2).
-    pub(crate) fn error_independent(
-        &mut self,
-        code: RuleCode,
-        message: impl Into<String>,
-        pos: Pos,
-    ) {
-        let first = self.diags.len();
-        self.error(code, message, pos);
-        self.mark_independent(first);
-    }
-
-    /// Marks every diagnostic from index `first` on as independent of the
-    /// type argument, so the opaque check keeps it (compiler.md §135.1
-    /// rule 2). Outside the opaque check, it does nothing.
-    pub(crate) fn mark_independent(&mut self, first: usize) {
-        if self.opaque_params.is_empty() {
-            return;
-        }
-        self.independent_diagnostics.extend(first..self.diags.len());
-    }
-
-    /// Records that the opaque type parameter type `ty` has a constraint.
-    pub(crate) fn constrain_opaque_param(&mut self, ty: &Type) {
-        if let Type::Class(id) = ty {
-            if let Some(opaque) = self.opaque_params.get_mut(id) {
-                opaque.constrained = true;
+    /// Stores the constraint in each binding of this parameter (§143 rule 1).
+    pub(crate) fn constrain_opaque_param(&mut self, ty: &Type, constraint: Type) {
+        if let Type::TypeParameter(parameter) = ty {
+            for binding in self.subst.values_mut() {
+                if let Type::TypeParameter(other) = binding {
+                    if parameter.identity == other.identity {
+                        other.constraint = Some(Box::new(constraint.clone()));
+                    }
+                }
             }
         }
+    }
+
+    /// Resolves a value type through its constraint (§143 rule 1a).
+    pub(crate) fn apparent_type(&self, ty: &Type) -> Type {
+        match ty {
+            Type::TypeParameter(parameter) => match &parameter.constraint {
+                Some(constraint) => self.apparent_type(constraint),
+                None => ty.clone(),
+            },
+            Type::GenericNumber => Type::F64,
+            Type::Nullable(inner) => Type::nullable(self.apparent_type(inner)),
+            _ => ty.clone(),
+        }
+    }
+
+    /// Removes null through the apparent type and preserves parameter identity (§143 rule 1a).
+    pub(crate) fn non_null_type(&self, ty: &Type) -> Type {
+        match ty {
+            Type::Nullable(inner) => (**inner).clone(),
+            Type::TypeParameter(parameter) => {
+                let mut parameter = parameter.clone();
+                parameter.constraint = parameter
+                    .constraint
+                    .as_deref()
+                    .map(|constraint| Box::new(self.non_null_type(constraint)));
+                Type::TypeParameter(parameter)
+            }
+            _ => ty.clone(),
+        }
+    }
+
+    /// Builds the result union of a generic operation (§143 rule 1c).
+    pub(crate) fn generic_union(&self, left: &Type, right: &Type) -> Type {
+        if left == right {
+            return left.clone();
+        }
+        let mut members = Vec::new();
+        for ty in [left, right] {
+            let types = match ty {
+                Type::GenericUnion(types) => types.as_ref(),
+                _ => std::slice::from_ref(ty),
+            };
+            for member in types {
+                if !members.contains(member) {
+                    members.push(member.clone());
+                }
+            }
+        }
+        Type::GenericUnion(members.into_boxed_slice())
+    }
+
+    /// Checks type overlap for generic equality and case labels (§143 rule 1a).
+    pub(crate) fn generic_overlap(&self, left: &Type, right: &Type) -> bool {
+        if left == right {
+            return true;
+        }
+        if let Type::Nullable(inner) = left {
+            return self.generic_overlap(inner, right);
+        }
+        if let Type::Nullable(inner) = right {
+            return self.generic_overlap(left, inner);
+        }
+        if matches!(left, Type::TypeParameter(_)) && matches!(right, Type::TypeParameter(_)) {
+            return self.assignable(left, right) || self.assignable(right, left);
+        }
+        if self.is_unconstrained_type_parameter(left) || self.is_unconstrained_type_parameter(right)
+        {
+            return true;
+        }
+        if matches!(left, Type::Null) || matches!(right, Type::Null) {
+            return true;
+        }
+        self.assignable(&self.apparent_type(left), &self.apparent_type(right))
+            || self.assignable(&self.apparent_type(right), &self.apparent_type(left))
+    }
+
+    /// Resolves the receiver type through the same apparent-type function (§143 rule 1a).
+    pub(crate) fn apparent_expr(&self, mut expr: hir::Expr) -> hir::Expr {
+        expr.ty = self.apparent_type(&expr.ty);
+        expr
     }
 
     /// Runs the opaque check over every generic template of the program
@@ -130,7 +235,6 @@ impl<'p> Checker<'p> {
         }
         self.opaque_params.clear();
         self.opaque_instances.clear();
-        let independent = std::mem::take(&mut self.independent_diagnostics);
         if self.narrowing_analysis.is_none() {
             self.opaque_loop_effects = self.opaque_body_loop_effects(
                 snapshot.functions,
@@ -160,7 +264,6 @@ impl<'p> Checker<'p> {
             diagnostics,
             first,
             &checks,
-            &independent,
             &suppressed,
             &std::mem::take(&mut self.instance_diagnostic_ranges),
         );
@@ -222,8 +325,12 @@ impl<'p> Checker<'p> {
             .map(|parameter| {
                 let name = format!("[[identity:opaque:{}]]{parameter}", self.classes.len());
                 let id = self.new_class(&name, false, false, None, pos.clone());
-                self.opaque_params.insert(id, OpaqueType::default());
-                Type::Class(id)
+                self.opaque_params.insert(id, OpaqueType);
+                Type::TypeParameter(Box::new(TypeParameterType {
+                    identity: id.0,
+                    name: parameter.clone(),
+                    constraint: None,
+                }))
             })
             .collect();
         InstanceArguments {
@@ -341,13 +448,11 @@ fn identity(diagnostic: &Diagnostic) -> Identity {
 /// (compiler.md §135.1 rule 3).
 ///
 /// `diagnostics[..first]` precede the opaque check; `checks` holds the
-/// range of each template check after `first`; `independent` holds the
-/// index of each opaque diagnostic that does not depend on the type
-/// argument; `instance_ranges` holds the range of each per-instance check
-/// before `first`. The result keeps one report per site and code:
+/// range of each template check after `first`; `instance_ranges` holds
+/// the range of each per-instance check
+/// before `first`. The result keeps the diagnostics of §143 rule 2:
 ///
-/// - The opaque check keeps an unknown name (S016) and each diagnostic in
-///   `independent`, and drops every other diagnostic (§135.1 rule 2).
+/// - The opaque check reports every diagnostic (§143 rule 2).
 /// - A site that an earlier template check reports is not reported again
 ///   by a later template check.
 /// - Two kept diagnostics with the same code, message, and position are
@@ -362,7 +467,6 @@ fn merge_opaque_diagnostics(
     diagnostics: Vec<Diagnostic>,
     first: usize,
     checks: &[std::ops::Range<usize>],
-    independent: &HashSet<usize>,
     suppressed: &HashSet<usize>,
     instance_ranges: &[std::ops::Range<usize>],
 ) -> Vec<Diagnostic> {
@@ -378,10 +482,6 @@ fn merge_opaque_diagnostics(
             .map(|(offset, diagnostic)| (range.start + offset, diagnostic))
         {
             if suppressed.contains(&index) {
-                continue;
-            }
-            // S016 is only ever an unknown name.
-            if diagnostic.code != RuleCode::S016 && !independent.contains(&index) {
                 continue;
             }
             let key = site(&diagnostic.pos);

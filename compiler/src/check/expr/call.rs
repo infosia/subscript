@@ -483,6 +483,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        let callee = self.apparent_expr(callee);
         match callee.ty.clone() {
             Type::Func(ft) => {
                 let params: Vec<ParamSig> = ft
@@ -504,7 +505,6 @@ impl<'p> Checker<'p> {
             Type::Error => self.err_expr(pos),
             other => {
                 let name = self.type_name(&other);
-                let first = self.diags.len();
                 self.nullable_use_error(
                     &callee,
                     fx,
@@ -512,12 +512,6 @@ impl<'p> Checker<'p> {
                     format!("type `{}` is not callable", name),
                     pos.clone(),
                 );
-                // compiler.md §135.1 rule 2: a call of a value whose type is
-                // a type parameter with no constraint is an error for every
-                // type argument (`tsc` TS2349).
-                if self.is_unconstrained_type_parameter(&other) {
-                    self.mark_independent(first);
-                }
                 self.err_expr(pos)
             }
         }
@@ -752,13 +746,14 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        let recv = self.apparent_expr(recv);
         let mut name = property.sym.to_string();
         let prop_pos = self.pos(property.span);
-        // compiler.md §135.1 rule 2: a method call on a type parameter with
+        // §143 rule 1a: a method call on a type parameter with
         // no constraint is an error for every type argument (`tsc` TS2339).
         if self.is_unconstrained_type_parameter(&recv.ty) {
             let type_name = self.type_name(&recv.ty);
-            self.error_independent(
+            self.error(
                 RuleCode::S018,
                 format!("`{type_name}` has no method `{name}`"),
                 prop_pos,
@@ -1338,7 +1333,12 @@ impl<'p> Checker<'p> {
             };
             let key_pos = self.pos(type_args.params[0].span());
             let key = self.container_argument(key_slot, key, key_pos);
-            if !matches!(key, Type::Error) && self.assoc_key_kind(&key).is_none() {
+            if !self.instance_restriction(
+                crate::check::opaque::InstanceRestriction::AssociativeKey,
+                &key,
+            ) && !matches!(key, Type::Error)
+                && self.assoc_key_kind(&key).is_none()
+            {
                 let key_pos = self.pos(type_args.params[0].span());
                 let key_name = self.type_name(&key);
                 self.error(

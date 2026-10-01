@@ -43,7 +43,7 @@ impl Checker<'_> {
                 (Vec::new(), first)
             }
         } else {
-            super::stmt::narrow_paths(cond)
+            super::stmt::narrow_paths(cond, |ty| self.apparent_type(ty))
         }
     }
 
@@ -63,16 +63,10 @@ impl Checker<'_> {
         message: String,
         pos: Pos,
     ) {
-        let first = self.diags.len();
         if path_key(expression).is_some_and(|key| fx.ended_shared_narrowing.contains(&key)) {
             self.error_diverging(code, message, pos, Divergence::SharedLocationNarrowing);
         } else {
             self.error(code, message, pos);
-        }
-        // compiler.md §135.1 rule 2: a nullable use whose type involves no
-        // type parameter does not depend on the type argument.
-        if code == RuleCode::S011 && !self.involves_type_parameter(&expression.ty) {
-            self.mark_independent(first);
         }
     }
 }

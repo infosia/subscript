@@ -238,7 +238,6 @@ fn run_with_effects(
         next_pattern_id: 0,
         opaque_params: HashMap::new(),
         opaque_instances: HashSet::new(),
-        independent_diagnostics: HashSet::new(),
         opaque_root: false,
         instance_diagnostic_ranges: Vec::new(),
         instance_arguments: HashMap::new(),

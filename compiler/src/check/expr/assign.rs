@@ -351,7 +351,11 @@ impl<'p> Checker<'p> {
             target_ty.clone()
         };
         self.require_assignable(
-            &value.ty.clone(),
+            &if op.is_some() && self.involves_type_parameter(&value.ty) {
+                result_ty.clone()
+            } else {
+                value.ty.clone()
+            },
             &target_ty,
             value.pos.clone(),
             "the assignment",
@@ -402,8 +406,8 @@ impl<'p> Checker<'p> {
                 let ident_pos = self.pos(ident.span);
                 if let Some(local) = self.lookup_local_for_write(&name, &ident_pos, fx) {
                     if !local.mutable {
-                        // compiler.md §135.1 rule 2: kept by the opaque check.
-                        self.error_independent(
+                        // §143 rule 2: the opaque check reports this diagnostic.
+                        self.error(
                             RuleCode::S100,
                             format!("cannot rebind `const` binding `{}`", name),
                             ident_pos.clone(),
@@ -423,8 +427,8 @@ impl<'p> Checker<'p> {
                     .scope_binding(&name)
                     .is_some_and(|binding| binding.imported)
                 {
-                    // compiler.md §135.1 rule 2: kept by the opaque check.
-                    self.error_independent(
+                    // §143 rule 2: the opaque check reports this diagnostic.
+                    self.error(
                         RuleCode::S100,
                         format!("cannot assign to `{name}` because it is an import"),
                         ident_pos.clone(),
@@ -435,9 +439,8 @@ impl<'p> Checker<'p> {
                     let sig = self.global_sigs.get(&g).cloned();
                     if let Some(sig) = sig {
                         if !sig.mutable {
-                            // compiler.md §135.1 rule 2: kept by the opaque
-                            // check.
-                            self.error_independent(
+                            // §143 rule 2: the opaque check reports this diagnostic.
+                            self.error(
                                 RuleCode::S100,
                                 format!("cannot rebind `const` binding `{}`", name),
                                 ident_pos.clone(),

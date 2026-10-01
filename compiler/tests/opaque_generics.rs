@@ -1,4 +1,4 @@
-//! A generic body is checked for every type argument (compiler.md §135).
+//! Type parameter typing and per-instance restrictions (compiler.md §143).
 
 use subscript_compiler::{check_program, Diagnostic, RuleCode, SourceFile};
 
@@ -30,10 +30,7 @@ fn program(declarations: &str, body: &str) -> String {
     format!("{declarations}\nexport function main(): void {{ {body} }}\n")
 }
 
-/// Each row: one kind that the opaque check keeps (§135.1 rule 2), in a
-/// body that no call instantiates, with its one diagnostic; and a control
-/// of the same shape through a type parameter, which the opaque check
-/// drops.
+/// Each row has a diagnostic and a type-parameter control (§143 rule 2).
 const KEPT: &[(&str, (RuleCode, u32, &str), &str)] = &[
     // An unknown name (`tsc` TS2304).
     (
@@ -104,7 +101,7 @@ const KEPT: &[(&str, (RuleCode, u32, &str), &str)] = &[
 
 #[test]
 fn each_kept_kind_is_reported_in_an_uninstantiated_body() {
-    for (source, (code, column, message), control) in KEPT {
+    for (index, (source, (code, column, message), control)) in KEPT.iter().enumerate() {
         let source = program(source, "");
         let line = source.lines().count() as u32 - 1;
         assert_eq!(
@@ -114,7 +111,39 @@ fn each_kept_kind_is_reported_in_an_uninstantiated_body() {
         );
 
         let control = program(control, "");
-        assert_eq!(diagnostic_list(&control), [], "{control}");
+        let expected = match index {
+            0 => Some((
+                RuleCode::S100,
+                1,
+                35,
+                "operator not defined for `T` and `i32`",
+            )),
+            3 => Some((
+                RuleCode::S100,
+                1,
+                47,
+                "type mismatch: the initializer expects `string`, got `T`",
+            )),
+            4 => Some((
+                RuleCode::S100,
+                1,
+                94,
+                "type mismatch: the assignment expects `i32`, got `T`",
+            )),
+            5 => Some((
+                RuleCode::S011,
+                2,
+                54,
+                "`T | null` may be null here; narrow with a null check first",
+            )),
+            8 => Some((RuleCode::S100, 2, 41, "type `Box` is not callable")),
+            _ => None,
+        };
+        let expected: Vec<_> = expected
+            .into_iter()
+            .map(|(code, line, col, message)| (code, line, col, message.to_string()))
+            .collect();
+        assert_eq!(diagnostic_list(&control), expected, "{control}");
     }
 }
 
@@ -141,10 +170,8 @@ fn an_assignment_to_an_import_binding_is_kept() {
     check_program(&files(main)).expect("a local is writable");
 }
 
-/// Programs that `tsc` accepts, whose generic body the opaque check does
-/// not decide (§135.1 rule 2). Each row: the declarations, and the body
-/// of `main`.
-const DROPPED: &[(&str, &str)] = &[
+/// Accepted generic forms and their instances (§143 rule 1).
+const ACCEPTED: &[(&str, &str)] = &[
     // Unary `-` and `~` on a type parameter.
     (
         "function g<T>(x: T, y: T): boolean { return -x < -y; }",
@@ -241,8 +268,8 @@ const DROPPED: &[(&str, &str)] = &[
 ];
 
 #[test]
-fn each_dropped_form_is_accepted() {
-    for (declarations, body) in DROPPED {
+fn each_tsc_valid_form_is_accepted() {
+    for (declarations, body) in ACCEPTED {
         let source = program(declarations, body);
         assert_eq!(diagnostic_list(&source), [], "{source}");
 
@@ -259,56 +286,54 @@ fn each_dropped_form_is_accepted() {
 }
 
 #[test]
-fn a_form_that_tsc_rejects_for_a_type_parameter_is_left_to_the_instance() {
-    // compiler.md §135.3: `tsc` TS2365 rejects `x > 1`; the opaque check
-    // drops it, and no instance of the body is checked.
-    let source = program("function g<T>(x: T): boolean { return x > 1; }", "");
-    assert_eq!(diagnostic_list(&source), []);
-
-    // Control: an unknown name in the same uninstantiated body is
-    // reported, so the opaque check reaches the body.
-    let source = program("function g<T>(x: T): boolean { nope(); return x > 1; }", "");
-    assert_eq!(
-        diagnostic_list(&source),
-        [(RuleCode::S016, 1, 32, "unknown function `nope`".to_string())]
-    );
-
-    // Control: an instance at a type argument without `>` reports it.
-    let source = program(
-        "function g<T>(x: T): boolean { return x > 1; }",
+fn a_tsc_invalid_operator_is_reported_without_an_instance() {
+    // §143 rules 1 and 2: TS2365 holds with or without an instance.
+    for body in [
+        "",
+        "print(`${g<i32>(3)}`);",
         "print(`${g<string>(\"a\")}`);",
-    );
+    ] {
+        let source = program("function g<T>(x: T): boolean { return x > 1; }", body);
+        assert_eq!(
+            diagnostic_list(&source),
+            [(
+                RuleCode::S100,
+                1,
+                39,
+                "operator not defined for `T` and `i32`".to_string()
+            )]
+        );
+    }
+    let source = program("function g<T>(x: T): boolean { nope(); return x > 1; }", "");
+    let diagnostics = diagnostic_list(&source);
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].0, RuleCode::S016);
+    assert_eq!(diagnostics[1].0, RuleCode::S100);
     assert_eq!(
-        diagnostic_list(&source),
-        [(
-            RuleCode::S100,
-            1,
-            39,
-            "operator not defined for `string` and `i32`".to_string()
-        )]
+        diagnostic_list(&program(
+            "function g<T extends i32>(x: T): boolean { return x > 1; }",
+            ""
+        )),
+        []
     );
 }
 
 #[test]
-fn a_language_restriction_in_an_uninstantiated_body_is_left_to_the_instance() {
-    let uninstantiated = "@ValueType\nclass P<T> { v: string = \"\"; w: T; constructor(w: T) { this.w = w; } }\nexport function main(): void {}\n";
-    assert_eq!(diagnostic_list(uninstantiated), []);
-
-    // Control: an unknown name in the same uninstantiated body is
-    // reported, so the opaque check reaches the body.
-    let reached = "@ValueType\nclass P<T> { v: string = \"\"; w: T; constructor(w: T) { this.w = w; nope(); } }\nexport function main(): void {}\n";
-    let diagnostics = diagnostic_list(reached);
-    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert_eq!(diagnostics[0].0, RuleCode::S016, "{diagnostics:?}");
-
-    // Control: an instance reports the value-class field rule.
-    let instantiated = "@ValueType\nclass P<T> { v: string = \"\"; w: T; constructor(w: T) { this.w = w; } }\nexport function main(): void { const p = new P<i32>(1); }\n";
-    let diagnostics = check(instantiated).expect_err("a string field of a value class");
-    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert!(
-        diagnostics[0].message.contains("value-class whitelist"),
-        "{diagnostics:?}"
-    );
+fn a_concrete_restriction_is_reported_without_an_instance() {
+    // §143 rule 2: a concrete string field needs no type argument decision.
+    let declarations =
+        "@ValueType\nclass P<T> { v: string = \"\"; w: T; constructor(w: T) { this.w = w; } }";
+    for body in ["", "const p = new P<i32>(1);"] {
+        let diagnostics = diagnostic_list(&program(declarations, body));
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert!(diagnostics[0].3.contains("value-class whitelist"));
+    }
+    let reached = declarations.replace("this.w = w;", "this.w = w; nope();");
+    let diagnostics = diagnostic_list(&program(&reached, ""));
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
+    assert!(diagnostics.iter().any(|d| d.0 == RuleCode::S016));
+    let control = declarations.replace("v: string = \"\"", "v: i32 = 0");
+    assert_eq!(diagnostic_list(&program(&control, "")), []);
 }
 
 #[test]
@@ -551,12 +576,19 @@ fn a_shared_location_kill_is_kept_in_an_uninstantiated_body() {
     );
     assert_eq!(diagnostic_list(&source), []);
 
-    // Control: the same nullable use through a type parameter, which the
-    // opaque check drops.
+    // §143 rule 2: the same nullable use through a type parameter also reports S011.
     let source = format!(
         "{declarations}function g<T extends Box>(x: T | null): i32 {{ touch(); return x.v; }}\nexport function main(): void {{}}\n"
     );
-    assert_eq!(diagnostic_list(&source), []);
+    assert_eq!(
+        diagnostic_list(&source),
+        [(
+            RuleCode::S011,
+            4,
+            63,
+            "`T | null` may be null here; narrow with a null check first".to_string()
+        )]
+    );
 }
 
 #[test]
@@ -679,4 +711,50 @@ fn an_opaque_check_that_makes_concrete_instances_reports_a_site_once() {
         "{caller}function g<U>(u: U): i32 {{ nope(); return nope(); }}\nexport function main(): void {{}}\n"
     );
     assert_eq!(diagnostic_list(&source).len(), 2);
+}
+
+#[test]
+fn container_kinds_and_layouts_are_checked_per_instance() {
+    let cases = [
+        (
+            "function g<T>(x: T): void { const a: Set<T> = new Set<T>(); }",
+            "g<i32>(1);", "const h: f16 = 0.0; g<f16>(h);", RuleCode::S014,
+        ),
+        (
+            "function g<T>(x: T): void { const a: Map<T, i32> = new Map<T, i32>(); }",
+            "g<i32>(1);", "const h: f16 = 0.0; g<f16>(h);", RuleCode::S014,
+        ),
+        (
+            "function g<T>(x: T): void { const a = [x].map((e: T): T => e); }",
+            "g<i32>(1);", "g<V>(new V());", RuleCode::S014,
+        ),
+        (
+            "function g<T>(x: T): void { const a = new Map<string, T>(); const b = a.get(\"a\"); }",
+            "g<Box>(new Box());", "g<i32>(1);", RuleCode::S014,
+        ),
+        (
+            "function g<T>(x: T): void { const a: T | null = null; }",
+            "g<Box>(new Box());", "g<i32>(1);", RuleCode::S011,
+        ),
+        (
+            "class G<T> { a: FixedArray<T, 2147483647>; constructor(a: FixedArray<T, 2147483647>) { this.a = a; } }",
+            "", "function use(a: G<i32>): void {}", RuleCode::S100,
+        ),
+    ];
+    for (declaration, accepted, rejected, code) in cases {
+        let declarations = format!(
+            "class Box {{ v: i32 = 1; }} @ValueType class V {{ n: i32 = 1; }} {declaration}"
+        );
+        check(&program(&declarations, "")).expect("the opaque form accepts");
+        check(&program(&declarations, accepted)).expect("the concrete control accepts");
+        let source = if rejected.starts_with("function") {
+            program(&format!("{declarations} {rejected}"), "")
+        } else {
+            program(&declarations, rejected)
+        };
+        let errors = check(&source)
+            .err()
+            .unwrap_or_else(|| panic!("the concrete restriction reports: {source}"));
+        assert!(errors.iter().all(|error| error.code == code), "{errors:?}");
+    }
 }

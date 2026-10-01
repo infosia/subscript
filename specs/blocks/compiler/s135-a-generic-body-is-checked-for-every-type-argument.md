@@ -130,7 +130,8 @@ typing across instances, not the generic contract `tsc` checks.
 
 ### 135.3 Open
 
-*(§143 closes this gap. It retires under §143 rule 6.)*
+*(Retired: §143 closes this gap; the matrix of §143 rule 4 has no
+failing cell. The text below is the record of the gap.)*
 
 The opaque check drops every diagnostic outside the kinds of rule 2.
 So a form that `tsc` rejects for a type parameter stays accepted when

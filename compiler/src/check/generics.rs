@@ -50,7 +50,7 @@ impl<'p> Checker<'p> {
             };
             let constraint = self.resolve_type(constraint);
             if root && self.is_type_parameter(argument) {
-                self.constrain_opaque_param(argument);
+                self.constrain_opaque_param(argument, constraint);
                 continue;
             }
             if self.satisfies_constraint(argument, &constraint) {

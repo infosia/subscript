@@ -588,6 +588,20 @@ Measured with `tsc` 5.9.2: `r288` is accepted; `node` prints `3`.
 
 Accept: `a304`. Reject: `r288`.
 
+### C20. Loose equality is not in the language
+
+The checker rejects `==` and `!=` with S100 on every operand type,
+and names `===` and `!==` in the diagnostic. `tsc` accepts both
+operators where the operand types overlap. The rule holds since the
+first checker; this record names it.
+
+Measured with `tsc` 5.9.2 (`specs/tracking/s143-type-parameter-typing.md`):
+`tsc` accepts `x == y` and `x != y` on a type parameter with no
+constraint, a class constraint, a numeric constraint, an array
+constraint, and on `T | null`.
+
+Reject: `r294`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different
@@ -1592,17 +1606,8 @@ Accept: `a304`. Reject: `r288`.
   until a corpus program needs them; the field-type whitelist stands.
 - Generic constraints/variance beyond monomorphized `a12` shapes: revisit
   with corpus evidence.
-- A generic body is checked per instance for every diagnostic kind that
-  `compiler.md` §135 rule 2 does not keep, so a form that `tsc` rejects
-  for a type parameter stays accepted when no instance exists or every
-  instance accepts it: an operator beside a literal (TS2365), `===` or
-  `as` between two type parameters (TS2367, TS2352), a type mismatch or
-  a nullable use that involves a type parameter (TS2322, TS18047), a
-  call of a constrained `T` (TS2349), a member write on an unconstrained
-  `T` (TS2339), a type parameter as a type argument outside a
-  constraint (TS2344). This is a gap in invariant 5, not a decided
-  divergence; `tsserver` shows each one in the editor. §135.3 states
-  the class and the measured forms.
+- *(Retired: §143 closes the generic-body gap of §135.3; the matrix of
+  §143 rule 4 has no failing cell.)*
 
 ## 4. Prelude and gate
 

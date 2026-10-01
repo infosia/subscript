@@ -1112,11 +1112,8 @@ pub(crate) struct Checker<'p> {
     /// (compiler.md §135.1 rule 1). Empty outside that check.
     pub opaque_params: HashMap<ClassId, opaque::OpaqueType>,
     /// The generic class instances that the running opaque check made at
-    /// an opaque type argument (compiler.md §135.1 rule 2).
+    /// an opaque type argument (§143 rule 2a).
     pub opaque_instances: HashSet<ClassId>,
-    /// The index of each diagnostic of the running opaque check that does
-    /// not depend on the type argument (compiler.md §135.1 rule 2).
-    pub independent_diagnostics: HashSet<usize>,
     /// True while the opaque check starts its root instance, whose body
     /// is checked (compiler.md §135.1 rule 1).
     pub opaque_root: bool,

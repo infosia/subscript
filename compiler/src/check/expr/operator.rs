@@ -35,6 +35,11 @@ impl<'p> Checker<'p> {
                     return self.check_num_lit(n, true, ctx, pos);
                 }
                 let operand = self.check_expr(&u.arg, ctx, fx);
+                let apparent = self.apparent_type(&operand.ty);
+                let parameter = self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::SizedNumeric,
+                    &operand.ty,
+                ) && !matches!(apparent, Type::Nullable(_));
                 if operand.ty == Type::F16 {
                     self.error_diverging(
                         RuleCode::S014,
@@ -44,7 +49,7 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                if !operand.ty.is_numeric() && !matches!(operand.ty, Type::Error) {
+                if !parameter && !apparent.is_numeric() && !matches!(apparent, Type::Error) {
                     let name = self.type_name(&operand.ty);
                     self.error(
                         RuleCode::S100,
@@ -53,7 +58,11 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                let ty = operand.ty.clone();
+                let ty = if parameter {
+                    Type::GenericNumber
+                } else {
+                    operand.ty.clone()
+                };
                 hir::Expr {
                     kind: ExprKind::Unary {
                         op: UnOp::Neg,
@@ -65,7 +74,11 @@ impl<'p> Checker<'p> {
             }
             ast::UnaryOp::Bang => {
                 let operand = self.check_expr(&u.arg, None, fx);
-                if !matches!(operand.ty, Type::Bool | Type::Error) {
+                if !self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::BooleanContext,
+                    &operand.ty,
+                ) && !matches!(operand.ty, Type::Bool | Type::Error)
+                {
                     let name = self.type_name(&operand.ty);
                     self.error(
                         RuleCode::S100,
@@ -84,7 +97,12 @@ impl<'p> Checker<'p> {
             }
             ast::UnaryOp::Tilde => {
                 let operand = self.check_expr(&u.arg, ctx, fx);
-                if !operand.ty.is_integer() && !matches!(operand.ty, Type::Error) {
+                let apparent = self.apparent_type(&operand.ty);
+                let parameter = self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::SizedNumeric,
+                    &operand.ty,
+                ) && !matches!(apparent, Type::Nullable(_));
+                if !parameter && !apparent.is_integer() && !matches!(apparent, Type::Error) {
                     let name = self.type_name(&operand.ty);
                     self.error(
                         RuleCode::S100,
@@ -93,7 +111,11 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                let ty = operand.ty.clone();
+                let ty = if parameter {
+                    Type::GenericNumber
+                } else {
+                    operand.ty.clone()
+                };
                 hir::Expr {
                     kind: ExprKind::Unary {
                         op: UnOp::BitNot,
@@ -201,7 +223,7 @@ impl<'p> Checker<'p> {
                 _ => {}
             }
         }
-        let target_ty = place.ty().clone();
+        let target_ty = self.apparent_type(place.ty());
         if !target_ty.is_numeric() && !matches!(target_ty, Type::Error) {
             let name = self.type_name(&target_ty);
             self.error(
@@ -411,7 +433,11 @@ impl<'p> Checker<'p> {
                 let left = self.check_expr(&b.left, None, fx);
                 let right = self.check_logical_right(&left, b, fx);
                 for side in [&left, &right] {
-                    if !matches!(side.ty, Type::Bool | Type::Error) {
+                    if !self.instance_restriction(
+                        crate::check::opaque::InstanceRestriction::BooleanContext,
+                        &side.ty,
+                    ) && !matches!(side.ty, Type::Bool | Type::Error)
+                    {
                         let name = self.type_name(&side.ty);
                         self.error(
                             RuleCode::S100,
@@ -420,6 +446,20 @@ impl<'p> Checker<'p> {
                         );
                     }
                 }
+                let ty = if self.involves_type_parameter(&left.ty)
+                    || self.involves_type_parameter(&right.ty)
+                {
+                    if b.op == B::LogicalAnd
+                        && right.ty == Type::Bool
+                        && !matches!(self.apparent_type(&left.ty), Type::Nullable(_))
+                    {
+                        Type::Bool
+                    } else {
+                        self.generic_union(&left.ty, &right.ty)
+                    }
+                } else {
+                    Type::Bool
+                };
                 let op = if b.op == B::LogicalAnd {
                     BinOp::And
                 } else {
@@ -431,15 +471,16 @@ impl<'p> Checker<'p> {
                         left: Box::new(left),
                         right: Box::new(right),
                     },
-                    ty: Type::Bool,
+                    ty,
                     pos,
                 }
             }
             B::EqEq | B::NotEq => {
-                self.error(
+                self.error_diverging(
                     RuleCode::S100,
                     "loose equality is not in the language; use `===` / `!==`",
                     pos.clone(),
+                    Divergence::LooseEquality,
                 );
                 self.err_expr(pos)
             }
@@ -709,6 +750,26 @@ impl<'p> Checker<'p> {
         if left.ty == Type::Error {
             return self.err_expr(pos);
         }
+        if self.involves_type_parameter(&left.ty) {
+            let right = self.check_expr(&binary.right, None, fx);
+            let inner = self.non_null_type(&left.ty);
+            let ty = if matches!(self.apparent_type(&left.ty), Type::Nullable(_))
+                || self.is_unconstrained_type_parameter(&left.ty)
+            {
+                self.generic_union(&inner, &right.ty)
+            } else {
+                left.ty.clone()
+            };
+            return hir::Expr {
+                kind: ExprKind::Binary {
+                    op: BinOp::Or,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                ty,
+                pos,
+            };
+        }
         let Some(inner) = self.require_nullable_operand(
             &left,
             "the left operand of `??`",
@@ -947,8 +1008,19 @@ impl<'p> Checker<'p> {
         use_kind: BinUse,
     ) -> BinResult {
         use ast::BinaryOp as B;
-        let lt = left.ty.clone();
-        let rt = right.ty.clone();
+        let mut lt = self.apparent_type(&left.ty);
+        let mut rt = self.apparent_type(&right.ty);
+        let parameter =
+            self.involves_type_parameter(&left.ty) || self.involves_type_parameter(&right.ty);
+        if matches!(left.ty, Type::GenericNumber) && rt.is_numeric() {
+            lt = rt.clone();
+        }
+        if matches!(right.ty, Type::GenericNumber) && lt.is_numeric() {
+            rt = lt.clone();
+        }
+        // §143 rule 1a: a parameter compared with itself has overlapping values.
+        let same_parameter = left.ty == right.ty && parameter;
+        let related_parameter = self.generic_overlap(&left.ty, &right.ty);
         let operand_error = matches!(lt, Type::Error) || matches!(rt, Type::Error);
         let suppress_error = match use_kind {
             BinUse::Expression => operand_error,
@@ -984,7 +1056,17 @@ impl<'p> Checker<'p> {
         };
         let (hop, ty, ok) = match op {
             B::Add => {
-                if use_kind == BinUse::CompoundAssignment && (lt.is_numeric() || lt == Type::Str) {
+                if parameter
+                    && (lt == Type::Str || rt == Type::Str)
+                    && self.instance_restriction(
+                        crate::check::opaque::InstanceRestriction::TemplateInterpolation,
+                        if lt == Type::Str { &right.ty } else { &left.ty },
+                    )
+                {
+                    (BinOp::Add, Type::Str, true)
+                } else if use_kind == BinUse::CompoundAssignment
+                    && (lt.is_numeric() || lt == Type::Str)
+                {
                     (BinOp::Add, lt.clone(), true)
                 } else if lt == Type::Str && rt == Type::Str {
                     (BinOp::Add, Type::Str, true)
@@ -1016,7 +1098,31 @@ impl<'p> Checker<'p> {
                 };
                 let comparable =
                     (lt.is_numeric() && lt == rt) || (matches!(lt, Type::Enum(_)) && lt == rt);
-                (hop, Type::Bool, comparable)
+                (
+                    hop,
+                    Type::Bool,
+                    comparable
+                        || (parameter
+                            && !lt.is_numeric()
+                            && !rt.is_numeric()
+                            && !matches!(lt, Type::Nullable(_))
+                            && !matches!(rt, Type::Nullable(_))
+                            && self.generic_overlap(&left.ty, &right.ty)
+                            && self.instance_restriction(
+                                crate::check::opaque::InstanceRestriction::RelationalKind,
+                                if self.involves_type_parameter(&left.ty) {
+                                    &left.ty
+                                } else {
+                                    &right.ty
+                                },
+                            ))
+                        || (same_parameter && !matches!(left.ty, Type::Nullable(_)))
+                        || (parameter
+                            && ((self.is_unconstrained_type_parameter(&left.ty)
+                                && matches!(rt, Type::Str | Type::Bool))
+                                || (self.is_unconstrained_type_parameter(&right.ty)
+                                    && matches!(lt, Type::Str | Type::Bool)))),
+                )
             }
             B::EqEqEq | B::NotEqEq => {
                 let hop = if op == B::EqEqEq {
@@ -1035,7 +1141,15 @@ impl<'p> Checker<'p> {
                         || matches!(lt, Type::Bool | Type::Str | Type::Enum(_))
                         || matches!(lt, Type::StringAlias(_))
                         || self.is_reference_class(&lt));
-                (hop, Type::Bool, null_cmp || same_scalar)
+                (
+                    hop,
+                    Type::Bool,
+                    if parameter {
+                        related_parameter
+                    } else {
+                        null_cmp || same_scalar
+                    },
+                )
             }
             B::BitAnd | B::BitOr | B::BitXor | B::LShift | B::RShift | B::ZeroFillRShift => {
                 let hop = match op {
@@ -1056,7 +1170,16 @@ impl<'p> Checker<'p> {
         };
         if ok || suppress_error {
             return BinResult {
-                expr: mk(hop, if operand_error { Type::Error } else { ty }),
+                expr: mk(
+                    hop,
+                    if operand_error {
+                        Type::Error
+                    } else if parameter && ty.is_numeric() {
+                        Type::GenericNumber
+                    } else {
+                        ty
+                    },
+                ),
                 terminal: false,
             };
         }
@@ -1160,7 +1283,11 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let cond = self.check_expr(&c.test, None, fx);
-        if !matches!(cond.ty, Type::Bool | Type::Error) {
+        if !self.instance_restriction(
+            crate::check::opaque::InstanceRestriction::BooleanContext,
+            &cond.ty,
+        ) && !matches!(cond.ty, Type::Bool | Type::Error)
+        {
             let name = self.type_name(&cond.ty);
             self.error(
                 RuleCode::S100,
@@ -1276,7 +1403,15 @@ impl<'p> Checker<'p> {
         let target = self.resolve_type(&a.type_ann);
         let inner = self.check_expr(&a.expr, None, fx);
         let src = inner.ty.clone();
-        let ok = matches!(src, Type::Error)
+        let generic_cast = (self
+            .instance_restriction(crate::check::opaque::InstanceRestriction::CastKind, &src)
+            || self.instance_restriction(
+                crate::check::opaque::InstanceRestriction::CastKind,
+                &target,
+            ))
+            && self.generic_overlap(&src, &target);
+        let ok = generic_cast
+            || matches!(src, Type::Error)
             || matches!(target, Type::Error)
             || (src.is_numeric()
                 && target.is_numeric()

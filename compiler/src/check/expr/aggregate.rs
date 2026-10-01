@@ -300,7 +300,8 @@ impl<'p> Checker<'p> {
             );
             let (spread, element_ty) = if is_spread {
                 let spread_pos = self.pos(slot.spread.unwrap_or(a.span));
-                let selected = match &expr.ty {
+                let apparent = self.apparent_type(&expr.ty);
+                let selected = match &apparent {
                     // compiler.md §104.1 rules 1 and 4: the operand is
                     // rejected on its resolved type. §79 rule 6: the site
                     // serves both `tsc` classes, and its variant explains

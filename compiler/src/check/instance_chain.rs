@@ -239,7 +239,6 @@ impl<'p> Checker<'p> {
                 pos.clone(),
                 Divergence::GrowingInstanceChain,
             );
-            self.mark_independent(first);
             if let (Some(start), Some(end)) = (
                 arguments.positions.get(position),
                 arguments.ends.get(position),

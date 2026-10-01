@@ -84,13 +84,40 @@ impl<'p> Checker<'p> {
         if matches!(from, Type::Error) || matches!(to, Type::Error) {
             return true;
         }
+        if matches!((from, to), (Type::TypeParameter(a), Type::TypeParameter(b)) if a.identity == b.identity)
+        {
+            return true;
+        }
         if from == to {
             return true;
+        }
+        if let Type::GenericUnion(members) = from {
+            return members.iter().all(|member| self.assignable(member, to));
+        }
+        if let Type::GenericUnion(members) = to {
+            return members.iter().any(|member| self.assignable(from, member));
+        }
+        if matches!(from, Type::GenericNumber)
+            && to.is_numeric()
+            && self.instance_restriction(opaque::InstanceRestriction::SizedNumeric, from)
+        {
+            return true;
+        }
+        if from.is_numeric() && matches!(to, Type::GenericNumber) {
+            return true;
+        }
+        if let Type::TypeParameter(parameter) = from {
+            if let Some(constraint) = &parameter.constraint {
+                return self.assignable(constraint, to);
+            }
+        }
+        if let Type::TypeParameter(_) = to {
+            return false;
         }
         match (from, to) {
             (Type::Null, Type::Nullable(_)) => true,
             (f, Type::Nullable(inner)) => {
-                f == &**inner || (self.is_reference_class(f) && **inner == Type::Object)
+                self.assignable(f, inner) || (self.is_reference_class(f) && **inner == Type::Object)
             }
             (f, Type::Object) => self.is_reference_class(f),
             _ => false,
@@ -143,13 +170,7 @@ impl<'p> Checker<'p> {
         if self.assignable(from, to) {
             return;
         }
-        let first = self.diags.len();
         self.report_not_assignable(from, to, pos, what, divergence);
-        // compiler.md §135.1 rule 2: a type mismatch where neither type
-        // involves a type parameter does not depend on the type argument.
-        if !self.involves_type_parameter(from) && !self.involves_type_parameter(to) {
-            self.mark_independent(first);
-        }
     }
 
     fn report_not_assignable(

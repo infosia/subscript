@@ -422,6 +422,15 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ),
     ("r288-growing-instance-chain.ts", RuleCode::S100, 11),
     ("r289-regex-literal-v-flag.ts", RuleCode::S100, 8),
+    ("r290-generic-relational-operand.ts", RuleCode::S100, 10),
+    (
+        "r291-generic-constraint-to-parameter.ts",
+        RuleCode::S100,
+        10,
+    ),
+    ("r292-generic-uninitialized-field.ts", RuleCode::S100, 10),
+    ("r293-generic-member-write.ts", RuleCode::S018, 9),
+    ("r294-loose-equality.ts", RuleCode::S100, 11),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

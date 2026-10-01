@@ -23,6 +23,8 @@
 pub enum Divergence {
     /// A surrogate escape without an adjacent paired escape.
     LoneSurrogateEscape,
+    /// Loose equality or inequality that permits coercion.
+    LooseEquality,
     /// `any` in a declaration.
     AnyType,
     /// `eval`, `new Function`, and a write through `.prototype`.
@@ -213,6 +215,7 @@ pub struct DivergenceEntry {
 impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
+        Divergence::LooseEquality,
         Divergence::AnyType,
         Divergence::DynamicObjectModel,
         Divergence::NominalClassIdentity,
@@ -306,6 +309,12 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::LooseEquality => DivergenceEntry {
+                ts: "const equal = x == y;",
+                subscript: "const equal = x === y;",
+                why: "Loose equality permits coercion. This language requires explicit conversions and strict equality.",
+                collision: "C20",
+            },
             Divergence::LoneSurrogateEscape => DivergenceEntry {
                 ts: r#"const text: string = "\ud83d";"#,
                 subscript: r#"const text: string = "\ud83d\udc4d";"#,
@@ -1268,6 +1277,15 @@ mod tests {
             long.is_empty(),
             "a reason is longer than 25 words: {long:?}"
         );
+    }
+
+    #[test]
+    fn loose_equality_names_its_record_and_strict_form() {
+        let entry = Divergence::LooseEquality.entry();
+        assert_eq!(entry.collision, "C20");
+        assert_eq!(entry.ts, "const equal = x == y;");
+        assert_eq!(entry.subscript, "const equal = x === y;");
+        assert!(Divergence::ALL.contains(&Divergence::LooseEquality));
     }
 
     #[test]

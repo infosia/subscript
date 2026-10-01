@@ -176,7 +176,7 @@ Every section, with its status:
 | §132 | An affine type is no container argument in any form | active | [`s132-an-affine-type-is-no-container-argument-in-any-form.md`](compiler/s132-an-affine-type-is-no-container-argument-in-any-form.md) |
 | §133 | A logical operand sees the narrowing of the operand before it | active | [`s133-a-logical-operand-sees-the-narrowing-of-the-operand-before-it.md`](compiler/s133-a-logical-operand-sees-the-narrowing-of-the-operand-before-it.md) |
 | §134 | A type-only import binds a type only | active | [`s134-a-type-only-import-binds-a-type-only.md`](compiler/s134-a-type-only-import-binds-a-type-only.md) |
-| §135 | A generic body is checked for every type argument | active; rule 2 replaced by §143 | [`s135-a-generic-body-is-checked-for-every-type-argument.md`](compiler/s135-a-generic-body-is-checked-for-every-type-argument.md) |
+| §135 | A generic body is checked for every type argument | active; rule 2 replaced and 135.3 retired by §143 | [`s135-a-generic-body-is-checked-for-every-type-argument.md`](compiler/s135-a-generic-body-is-checked-for-every-type-argument.md) |
 | §136 | A mirror constant carries its value | active | [`s136-a-mirror-constant-carries-its-value.md`](compiler/s136-a-mirror-constant-carries-its-value.md) |
 | §137 | Modules initialize in dependency post-order | active | [`s137-modules-initialize-in-dependency-post-order.md`](compiler/s137-modules-initialize-in-dependency-post-order.md) |
 | §138 | A generic instance body sees every module global | active | [`s138-a-generic-instance-body-sees-every-module-global.md`](compiler/s138-a-generic-instance-body-sees-every-module-global.md) |
