@@ -51,6 +51,14 @@ impl<'p> Checker<'p> {
             ast::Lit::Regex(regex) => {
                 let pattern = regex.exp.to_string();
                 let flags = regex.flags.to_string();
+                if flags.contains('v') {
+                    self.error(
+                        RuleCode::S100,
+                        "the `v` flag requires ES2024 in a regex literal; use `new RegExp(pattern, \"v\")`",
+                        pos.clone(),
+                    );
+                    return self.err_expr(pos);
+                }
                 if flags.contains('y') {
                     self.error_diverging(
                         RuleCode::S014,

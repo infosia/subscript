@@ -12,8 +12,14 @@ fn checker_accepts_sticky_boolean_for_every_accepted_flag_set() {
         if flags.contains('u') && flags.contains('v') {
             continue;
         }
-        let source =
-            format!("export function main(): void {{ const value: boolean = /a/{flags}.sticky; }}");
+        let expression = if flags.contains('v') {
+            format!("new RegExp(\"a\", \"{flags}\")")
+        } else {
+            format!("/a/{flags}")
+        };
+        let source = format!(
+            "export function main(): void {{ const value: boolean = {expression}.sticky; }}"
+        );
         let module =
             check_program(&[SourceFile::new("test.ts", source)]).expect("accepted flag set");
         let main = module.functions.iter().find(|f| f.name == "main").unwrap();

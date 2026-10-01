@@ -421,6 +421,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         12,
     ),
     ("r288-growing-instance-chain.ts", RuleCode::S100, 11),
+    ("r289-regex-literal-v-flag.ts", RuleCode::S100, 8),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
