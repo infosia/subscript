@@ -621,8 +621,8 @@ impl Divergence {
                 subscript: "const h: Box = new Box();\n\
                             function f(): Box { return h; }\n\
                             const g: Box = f();",
-                why: "A module initializer runs in declaration order, so it must not read a \
-                      binding that a later statement writes.",
+                why: "Modules initialize in dependency order and each module in declaration \
+                      order, so an initializer must not read a binding that is initialized later.",
                 collision: "C14",
             },
             Divergence::StaticMemberSurface => DivergenceEntry {
