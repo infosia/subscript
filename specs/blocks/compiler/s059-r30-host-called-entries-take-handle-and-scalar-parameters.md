@@ -50,10 +50,9 @@ Measurements at the pin, on this host:
    and rejects nothing new, so this cycle has no reject-corpus
    entry. The convention comments in the emitted C name the
    host-callable subset.
-5. At the C level, a parameter is a borrow for the duration of
-   the call. Handle values are copyable; the script can wrap and
-   store them, and the borrow discipline above the language is
-   the host's.
+5. At the C level, a parameter is passed by value for the duration
+   of the call. A handle parameter follows §142. *(Changed
+   2026-10-01 by §142: the borrow wording retires.)*
 6. Parameter marshaling equals the foreign-call marshaling for
    the same types.
 

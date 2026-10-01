@@ -567,9 +567,11 @@ frame=2 paused
 frame=3 dt=0.25 total=4
 ```
 
-**A parameter is a borrow for the duration of the call.** A handle
-value is copyable, so the script can wrap it and store it. The
-discipline above the language is yours.
+**A handle that you pass to a script transfers no ownership.** The
+script can copy it, keep it, and use it in a later call. You keep the
+object valid while any script code of that Context can use the handle;
+a script object that holds the handle keeps nothing alive on your side
+(`compiler.md` §142).
 
 **An export that misses the rule is still a legal script function.** It
 gets no C symbol, and in-script callers reach it as before. Two

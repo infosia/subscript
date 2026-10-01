@@ -255,6 +255,27 @@ next scene needs must have been kept by the host.
 
 Gate, build script, and the integer/float split follow §5 exactly.
 
+## 5b. Host objects that a script keeps
+
+`compiler.md` §142 states the rule: a handle names a host object, the
+script can keep it as long as it likes, and the host keeps the object
+valid for as long as any script code of the Context can use it. The
+simplest policy is the Context-scoped lifetime that §5a shows: the host
+destroys such objects only after it releases the Context. A host that
+must destroy an object earlier picks one of these patterns and owns its
+protocol:
+
+| Pattern | Host obligation | Fits |
+|---|---|---|
+| Context-scoped lifetime | Keep the object until the Context and all its script activity (pending async work included) have ended. | Engine services, devices, worlds |
+| Explicit detach | Tell the script to drop every copy (globals, objects, closures, pending async work), and destroy the object only after that point. | Resources replaced at a known lifecycle point |
+| Reference counting | Give the script explicit retain and release calls; copying a handle does not retain it. | Shared resources with their own lifetime |
+| ID with a generation | Pass an ID; the host resolves and validates it at each call and rejects a stale generation. | Entities created and destroyed often |
+
+Clearing one global is not a detach: a copy can remain in another
+object, a closure, or pending async work. The runtime's freed-handle
+diagnostics see runtime allocations only, not a destroyed host object.
+
 ## 6. The example set
 
 Each entry names what it must demonstrate. Output shape is the

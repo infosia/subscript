@@ -205,10 +205,12 @@ internal lowering error: `setSpeed` expects 3 argument(s), got 1
 internal lowering error: `setSpeed` argument 0 expects i32, got i64
 ```
 
-A handle crosses as `EntryArg::Handle(*mut c_void)`. At the C level
-the parameter is a borrow for the duration of the call. Handle
-values are copyable, and the script can wrap and store one; the
-borrow discipline above the language stays yours.
+A handle crosses as `EntryArg::Handle(*mut c_void)`. A handle that
+you pass to a script transfers no ownership. The script can copy it,
+keep it, and use it in a later call. You keep the object valid while
+any script code of that Context can use the handle; a script object
+that holds the handle keeps nothing alive on your side
+(`compiler.md` §142).
 
 An export that is not host-callable remains a legal script export.
 It gets no host symbol, and the checker rejects nothing new.
