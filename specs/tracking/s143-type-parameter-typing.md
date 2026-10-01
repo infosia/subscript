@@ -22,7 +22,7 @@ The ship copy of a12 printed `42:2.5`, equal to its golden.
 
 Red entries r290–r293 accept at `1b31a9a9` and reject after §143.
 Their measured TypeScript codes are TS2365, TS2322, TS2564, and TS2339.
-Concrete r294 records S100/C20; TypeScript accepts it.
+Concrete r294 pins the pre-existing S100/C20 rule; TypeScript accepts it.
 r295 is Red at `36684546`; r296 is Red at `cf7cce94`.
 a305 is Red at `2e5a8dfe`, with three S014 errors.
 
@@ -47,6 +47,7 @@ Call arguments, callback signatures, assignment destinations, and cast overlap k
 |---|---|---|
 | `TemplateInterpolation` | A resolved value type | Runtime formatter and concatenation kind |
 | `ValueField` | A resolved field type | Value-class field layout |
+| `CompositeAssignability` | Matching composite constructors; recursive component typing and function variance | Exact concrete component types at an instance |
 | `SizedNumeric` | A numeric type, numeric enum, or the distinct `number` result | Numeric width and sized result assignment |
 | `UnaryNumeric` | A value other than null, nullable, or void | Unary coercion and integer representation |
 | `BooleanContext` | A type other than a required function | Concrete boolean operand or condition |
@@ -141,14 +142,17 @@ This cut bounds debug cost below 25 seconds. Existing kinds retain all 20 roles.
 | Ambient callables / positions | 42 / 96 |
 | API candidates / omitted instances | 20,736 / 8,775 |
 | API retained cells | 11,961 |
-| Additional form cells | 1,270 |
-| Total cells | 33,401 |
-| No-instance / instance columns | 25,054 / 8,347 |
+| Additional form cells | 1,278 |
+| Destination candidates / omitted instances | 3,360 / 712 |
+| Destination retained cells | 2,648 |
+| Total cells | 36,057 |
+| No-instance / instance columns | 26,738 / 9,319 |
 | Final failures | 0 |
-| Debug matrix cost | 20.288 seconds |
-| Debug cost with cleanup | 22.84 seconds |
-| Separate compound test | 396 cells, zero failures, 0.376 seconds |
-| Shape scan | 513 sites, 19 groups, 49 justified raw-test functions, 0.25 seconds |
+| Debug matrix cost | 22.113 seconds |
+| Debug cost with cleanup | 24.86 seconds |
+| Final matrix test target, with cleanup | 26.17 seconds |
+| Separate compound test | 396 cells, zero failures, 0.381 seconds |
+| Shape scan | 520 sites, 19 groups, 49 justified raw-test functions, 0.25 seconds |
 
 Regenerate inventories through the matrix's optional exports:
 
@@ -220,7 +224,7 @@ No existing corpus or example becomes rejected. No public library API is added.
 C21 states the void-value restriction. Five product cells cite its binding token; the FixedArray.map cell cites its callback token.
 `r297-void-binding` and `r298-void-map-callback` name C21 and carry measured `tsc: accepts` headers.
 TypeScript 5.9.2 accepts both with the corpus options.
-Both entries are Red by construction: the checker rule predates the record.
+Both entries pin pre-existing rules, not Red regressions. The checker rejects r294, r297, and r298 identically at `51bf01a5`.
 The CLI built from HEAD `c5bad823` reports these exact results:
 
 ```text
@@ -241,6 +245,51 @@ This run remains at that test more than ten minutes after gate start.
 The coding agent interrupts the stalled gate; it exits 1 without a verdict line.
 The gate interrupt handler removes its incomplete record. No verdict line is fabricated.
 This is the gate stop. No gate retry or out-of-scope fix occurs.
+
+## Final review round 5 fix round
+
+Constraint assignability recurses through nullable, array, fixed-array, Map, Set, generic-class, function, worker, endpoint, and coroutine components.
+Function parameters use contravariance; returns use covariance. Concrete assignments keep their exact component rules.
+`CompositeAssignability` names that rule 2a restriction. Component typing applies before the restriction defers.
+`composite_constraints` covers linked identities, unrelated parameters, variance, constructor identity, lengths, and concrete-instance rejection.
+Four derived matrix forms cover nullable links, nullable type arguments, function variance, and nested containers.
+Equality diagnostics print declared operand types; the direct test requires `T` and `U`.
+
+The destination axis reads composite variants from `Type`, with reasons for three internal forms.
+It adds 16 destinations, including identity, at initializer, return, and argument sites for all 35 constrained kinds.
+It retains 2,648 cells: 1,680 without instances and 968 with instances. An assertion pins 712 omitted concrete controls.
+Existing records cover nullable representation, key kinds, message classes, and affine storage.
+The API test pins all eight omitted declaration names. A new unlisted omission fails its direct test.
+C21 tokens now match the narrowed inferred-binding and callback text. No collision record is edited by the coding agent.
+The shape scan checks 520 sites in 0.250 seconds; its assignability fingerprint includes the new structural branches.
+
+Rule 5 uses current corpus loaders, including the copied trap loaders and all ambient mirrors.
+It checks 389 programs and 513 sources: zero rejected programs, 1.578234875 seconds in debug.
+The temporary measurement harness is removed. No existing golden changes. No public library API is added.
+The source tree of the measured pin CLI matches `51bf01a5` for every compiler source file.
+That CLI gives S100 at r294 line 11, r297 line 11, and r298 line 10, with the same messages as HEAD.
+TypeScript 5.9.2 accepts all three. These entries pin pre-existing restrictions, not Red regressions.
+
+The expanded matrix retains 36,057 cells: 26,738 without instances and 9,319 with instances.
+One decision remains: `function g<T extends void>(x: T): void { return x; }`.
+TypeScript accepts it. The checker reports S100, "a `void` function cannot return a value".
+Its concrete control, `function g(x: void): void { return x; }`, gives the same S100 at `51bf01a5` and HEAD.
+No existing record states this return-expression restriction. C21 states inferred bindings and map callbacks only.
+The cell remains failing under rule 4b. This is the missing-record stop; no new record or compiler verdict is invented.
+The final matrix takes 22.113 seconds, or 24.86 seconds with cleanup. No cell cut is needed.
+`cargo test --offline --locked -p subscript-compiler --no-fail-fast` runs all 52 targets.
+It reports 866 passed, one failed, and one ignored test. Only the missing-record matrix cell fails.
+`cargo fmt --check` and `git diff --check` pass. No `tools/gate.sh` run occurs, so no gate verdict line exists.
+All authorized changes remain uncommitted. No file-scope or corpus-rejection stop occurs.
+
+The void-return cell now names S100 and C21, with the token "`void` function cannot return a value".
+`r299-void-return-value` and its reject-table row pin this pre-existing rule, not a Red regression.
+The CLI from `51bf01a5` reports ``error[S100]: a `void` function cannot return a value`` at 9:3.
+TypeScript 5.9.2 exits 0 with the corpus options. The current diagnostic names `Divergence::VoidValue`; its direct test passes.
+The generator adds r299 to the corpus index. The 36,057-cell matrix passes; its complete test target takes 26.17 seconds.
+`cargo test --offline --locked -p subscript-compiler` passes all 52 targets: 867 passed, zero failed, one ignored.
+`cargo fmt --check` and `git diff --check` pass. No collision record or existing golden changes in this repair.
+No gate runs, no gate verdict line exists, and no commit occurs. No stop condition remains.
 
 ## Final Rust file sizes
 
@@ -269,11 +318,11 @@ This is the gate stop. No gate retry or out-of-scope fix occurs.
 | `compiler/src/check/lookup.rs` | 212 |
 | `compiler/src/check/mod.rs` | 1389 |
 | `compiler/src/check/narrowing.rs` | 333 |
-| `compiler/src/check/opaque.rs` | 660 |
+| `compiler/src/check/opaque.rs` | 678 |
 | `compiler/src/check/pipeline.rs` | 410 |
 | `compiler/src/check/signatures.rs` | 552 |
-| `compiler/src/check/stmt.rs` | 1543 |
-| `compiler/src/check/type_rules.rs` | 279 |
+| `compiler/src/check/stmt.rs` | 1544 |
+| `compiler/src/check/type_rules.rs` | 333 |
 | `compiler/src/check/tyres.rs` | 680 |
 | `compiler/src/divergence.rs` | 1325 |
 | `compiler/src/hir/shared.rs` | 259 |
@@ -281,16 +330,17 @@ This is the gate stop. No gate retry or out-of-scope fix occurs.
 | `compiler/src/types.rs` | 1307 |
 | `compiler/tests/apparent_type_shapes.rs` | 791 |
 | `compiler/tests/apparent_type_shapes/comparisons.rs` | 200 |
-| `compiler/tests/corpus_reject.rs` | 1360 |
+| `compiler/tests/composite_constraints.rs` | 89 |
+| `compiler/tests/corpus_reject.rs` | 1366 |
 | `compiler/tests/corpus_warn.rs` | 216 |
 | `compiler/tests/field_values.rs` | 646 |
-| `compiler/tests/generic_tsc_matrix.rs` | 1769 |
-| `compiler/tests/generic_tsc_matrix/api.rs` | 490 |
-| `compiler/tests/generic_tsc_matrix/findings.rs` | 104 |
-| `compiler/tests/generic_tsc_matrix/kinds.rs` | 337 |
+| `compiler/tests/generic_tsc_matrix.rs` | 1774 |
+| `compiler/tests/generic_tsc_matrix/api.rs` | 536 |
+| `compiler/tests/generic_tsc_matrix/destinations.rs` | 253 |
+| `compiler/tests/generic_tsc_matrix/findings.rs` | 108 |
+| `compiler/tests/generic_tsc_matrix/kinds.rs` | 339 |
 | `compiler/tests/generic_tsc_matrix/product.rs` | 560 |
 | `compiler/tests/opaque_generics.rs` | 1091 |
-| `compiler/tests/s143_measure.rs` | 181 |
 
 Every listed Rust file has fewer than 2,000 lines.
 
@@ -326,4 +376,13 @@ for `r297` and `r298`); round 17 added both.
 
 ```text
 gate full c5bad823a1826a58bf7945b6dc872a6d4bf57417 dirty:22 debug 2171/0/3 release 2168/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```
+
+## Final review round 5 landing gate
+
+The orchestrator narrowed C21 to inferred bindings and added the `void`
+return form to it, measured at `5f707367`.
+
+```text
+gate full 5f707367d052e9e7e3a6f9e8c53920d958d1b9c6 dirty:17 debug 2177/0/3 release 2174/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```

@@ -25,7 +25,7 @@ pub enum Divergence {
     LoneSurrogateEscape,
     /// Loose equality or inequality that permits coercion.
     LooseEquality,
-    /// A binding of a `void` value or a `map` callback that returns `void`.
+    /// An inferred `void` binding, a void map callback, or a value return from a void function.
     VoidValue,
     /// `any` in a declaration.
     AnyType,
@@ -315,7 +315,7 @@ impl Divergence {
             Divergence::VoidValue => DivergenceEntry {
                 ts: "function f(): void {} const a = f();",
                 subscript: "function f(): void {} f();",
-                why: "The void type has no value to store. Call a void function as a statement; return a value from a map callback.",
+                why: "Call a void function as a statement. Use a bare return in a void function. A map callback must return a value.",
                 collision: "C21",
             },
             Divergence::LooseEquality => DivergenceEntry {

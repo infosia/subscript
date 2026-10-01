@@ -21,7 +21,8 @@ fn parameters(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-fn substitute(text: &str, replacements: &[(String, String)]) -> String {
+/// Replaces type-parameter words without changes to constructor names.
+pub(super) fn substitute(text: &str, replacements: &[(String, String)]) -> String {
     let mut output = String::new();
     let mut word = String::new();
     for c in text.chars().chain(std::iter::once(' ')) {
@@ -51,6 +52,32 @@ fn default_type(name: &str, constraint: &str) -> String {
     }
 }
 
+// §143 rule 4: every unexpressed prelude declaration needs an explicit reason.
+const OMITTED: &[&str] = &[
+    "Descriptor",
+    "FixedArray.index",
+    "FixedArray.length",
+    "FixedArray.[Symbol.iterator]",
+    "Inbox.constructor",
+    "Outbox.constructor",
+    "Worker.constructor",
+    "ValueType",
+];
+
+fn omitted_names(text: &str) -> Vec<&str> {
+    text.lines()
+        .filter_map(|line| line.strip_prefix("omit\t"))
+        .map(|line| line.split_once('\t').unwrap().0)
+        .collect()
+}
+
+fn unlisted_omissions(text: &str) -> Vec<&str> {
+    omitted_names(text)
+        .into_iter()
+        .filter(|name| !OMITTED.contains(name))
+        .collect()
+}
+
 /// Derives each ambient callable position from the prelude (§143 rule 4).
 pub(super) fn cells() -> Vec<Cell> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
@@ -66,6 +93,12 @@ pub(super) fn cells() -> Vec<Cell> {
         String::from_utf8_lossy(&output.stderr)
     );
     let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        unlisted_omissions(&text).is_empty(),
+        "unlisted ambient declarations: {:?}",
+        unlisted_omissions(&text)
+    );
+    assert_eq!(omitted_names(&text), OMITTED);
     let mut apis = Vec::new();
     for line in text.lines() {
         let fields: Vec<_> = line.split('\t').collect();
@@ -258,7 +291,7 @@ pub(super) fn cells() -> Vec<Cell> {
                         Some(Divergence {
                             code: RuleCode::S100,
                             record: "C21",
-                            token: "a `map` callback that returns `void`",
+                            token: "`map` callback that returns `void`",
                         })
                     } else if api.name == "Worker.spawn" {
                         Some(Divergence {
@@ -487,4 +520,17 @@ fn new_callables_and_unexpressed_signatures_are_reported() {
             .count(),
         1
     );
+}
+
+#[test]
+fn a_new_unexpressed_declaration_requires_a_list_entry() {
+    for name in [
+        "New.overload",
+        "New.variable",
+        "New.property",
+        "New.conditional",
+    ] {
+        let output = format!("omit\t{name}\tA signature-specific form is required.\n");
+        assert_eq!(unlisted_omissions(&output), [name]);
+    }
 }

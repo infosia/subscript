@@ -488,10 +488,11 @@ impl<'p> Checker<'p> {
                     );
                     None
                 } else if ret == Type::Void {
-                    self.error(
+                    self.error_diverging(
                         RuleCode::S100,
                         "a `void` function cannot return a value",
                         pos.clone(),
+                        Divergence::VoidValue,
                     );
                     Some(self.check_expr(arg, None, fx))
                 } else {

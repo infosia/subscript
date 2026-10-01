@@ -1,5 +1,5 @@
 //! The generic body matrix of §143 rule 4.
-//! Measured cost: 33,401 cells in 20.288 seconds; 22.84 seconds with cleanup.
+//! Measured cost: 36,057 cells in 22.113 seconds; 24.86 seconds with cleanup.
 //! One TypeScript process checks all cells.
 //! The API axis reads prelude/lang.d.ts: 96 positions across 42 callables; eight declarations need other forms.
 //! ES-lib methods admitted by method.rs have role/site cells only where a site names them.
@@ -9,6 +9,7 @@
 //! Nine current kinds retain every role/site pair. The 27 added kinds have every site with x: T and T | null.
 //! Numeric added kinds also have x + 1. This cut bounds debug cost below 25 seconds as the kind axis grows.
 //! types.rs supplies the variants; kinds.rs supplies each named constraint or a reason that source cannot name it.
+//! The destination axis adds 16 constructors at initializer, return, and argument sites for each constrained kind.
 //! Concrete controls check instance admission apart from the opaque diagnostics (§143 rule 4).
 
 use std::{
@@ -26,6 +27,9 @@ mod product;
 
 #[path = "generic_tsc_matrix/findings.rs"]
 mod findings;
+
+#[path = "generic_tsc_matrix/destinations.rs"]
+mod destinations;
 
 #[path = "generic_tsc_matrix/api.rs"]
 mod api;
@@ -1242,6 +1246,7 @@ fn cells() -> Vec<Cell> {
     }
     cells.extend(product::cells());
     cells.extend(findings::cells());
+    cells.extend(destinations::cells());
     cells.extend(api::cells());
     cells
 }

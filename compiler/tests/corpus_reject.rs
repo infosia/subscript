@@ -447,6 +447,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ),
     ("r297-void-binding.ts", RuleCode::S100, 11),
     ("r298-void-map-callback.ts", RuleCode::S100, 10),
+    ("r299-void-return-value.ts", RuleCode::S100, 9),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -551,6 +552,11 @@ fn void_value_diagnostics_name_c21() {
             "r298-void-map-callback.ts",
             10,
             "the `map` callback must return a value",
+        ),
+        (
+            "r299-void-return-value.ts",
+            9,
+            "a `void` function cannot return a value",
         ),
     ] {
         let diagnostics = check_program(&reject_sources(&dir, file))

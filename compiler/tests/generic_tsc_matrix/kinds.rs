@@ -132,7 +132,8 @@ const UNNAMED: &[(&str, &str)] = &[
     ),
 ];
 
-fn variants(source: &str) -> Vec<&str> {
+/// Reads each Type variant from its declaration.
+pub(super) fn variants(source: &str) -> Vec<&str> {
     let body = source
         .split_once("pub enum Type {")
         .unwrap()
@@ -264,7 +265,7 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
         records.push(Divergence {
             code: RuleCode::S100,
             record: "C21",
-            token: "binding of a `void` value",
+            token: "binding whose type is inferred from a `void`",
         });
     }
     if name.contains("async-handle-") {
@@ -333,5 +334,6 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
             token: "label must be a string literal naming a member",
         });
     }
+    records.extend(super::destinations::records(cell));
     records
 }

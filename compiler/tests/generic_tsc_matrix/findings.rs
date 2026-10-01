@@ -4,6 +4,10 @@ use super::*;
 
 pub(super) fn cells() -> Vec<Cell> {
     let forms = [
+        ("linked-nullable", "function g<T extends Box, U extends T>(x: U | null): T | null { return x; }", "g<Box, Box>(new Box());"),
+        ("nullable-type-argument", "function c<V extends Box | null>(x: V): V { return x; } function g<U extends Box>(x: U | null): Box | null { return c<U | null>(x); }", "g<Box>(new Box());"),
+        ("linked-function", "function g<T extends Box, U extends T>(cb: (x: T) => i32): (x: U) => i32 { return cb; }", "g<Box, Box>((x: Box): i32 => x.v);"),
+        ("nested-composite", "function g<T extends Box>(x: Map<string, T[]>): Map<string, Box[]> { return x; }", "g<Box>(new Map<string, Box[]>());"),
         ("function-field-return", "class G<T extends () => i32> { f: T; constructor(f: T) { this.f = f; } run(): i32 { return this.f(); } } function one(): i32 { return 1; }", "const g = new G<() => i32>(one); g.run();"),
         ("function-field-parameter", "class G<T extends (x: i32) => void> { f: T; constructor(f: T) { this.f = f; } run(): void { this.f(1); } } function consume(x: i32): void {}", "const g = new G<(x: i32) => void>(consume); g.run();"),
         ("object-pattern", "function g<T extends Box>(x: T): i32 { const { v } = x; return v; }", "g<Box>(new Box());"),

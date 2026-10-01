@@ -57,6 +57,8 @@ pub(crate) enum InstanceRestriction {
     ValueField,
     /// A numeric operation, assignment, or storage element needs a concrete sized type.
     SizedNumeric,
+    /// Composite assignments need exact concrete component types after constraint typing.
+    CompositeAssignability,
     /// Unary numeric coercion accepts every non-null value that TypeScript accepts.
     UnaryNumeric,
     /// Boolean contexts require a concrete boolean argument.
@@ -113,6 +115,22 @@ impl<'p> Checker<'p> {
                     }
                 }
             }
+            InstanceRestriction::CompositeAssignability => matches!(
+                apparent,
+                Type::Nullable(_)
+                    | Type::Array(_)
+                    | Type::FixedArray(_, _)
+                    | Type::Map(_, _)
+                    | Type::Set(_)
+                    | Type::Class(_)
+                    | Type::Func(_)
+                    | Type::Worker(_, _)
+                    | Type::Inbox(_)
+                    | Type::Outbox(_)
+                    | Type::Generator(_)
+                    | Type::AsyncHandle(_)
+                    | Type::IterResult(_)
+            ),
             InstanceRestriction::UnaryNumeric => {
                 !matches!(apparent, Type::Nullable(_) | Type::Null | Type::Void)
             }

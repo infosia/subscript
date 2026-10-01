@@ -1266,8 +1266,8 @@ impl<'p> Checker<'p> {
                 terminal: false,
             };
         }
-        let ln = self.type_name(&lt);
-        let rn = self.type_name(&rt);
+        let ln = self.type_name(&left.ty);
+        let rn = self.type_name(&right.ty);
         if mixed_numeric {
             let family = if matches!(
                 op,

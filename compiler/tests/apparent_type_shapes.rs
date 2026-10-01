@@ -1,7 +1,7 @@
 //! §143 rule 1a: every value-shape test reads the apparent type.
 //! The source scan uses Rust token groups, so comments and strings do not count.
 //! It checks match arms, patterns, variant equality, typed comparisons, collection searches, and derived Type helpers.
-//! Measured cost: 513 sites in 0.25 seconds; 19 named groups pin 49 justified raw-test functions.
+//! Measured cost: 520 sites in 0.25 seconds; 19 named groups pin 49 justified raw-test functions.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -613,7 +613,7 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("stmt.rs", "stmt_returns", 0x877d2a688f764b51),
     ] },
     AllowGroup { name: "assignability", reason: "Assignability and its diagnostics must inspect T itself (§143 rule 1b).", sites: &[
-        ("type_rules.rs", "assignable_through_constraints", 0x58570e7592e8bfda),
+        ("type_rules.rs", "assignable_through_constraints", 0xbb1305f0120713de),
         ("type_rules.rs", "report_not_assignable", 0xa944daeb4d9d32da),
     ] },
     AllowGroup { name: "wire-declarations", reason: "Wire boundary declarations come from concrete mirror types, which cannot declare type parameters.", sites: &[

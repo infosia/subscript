@@ -152,6 +152,60 @@ impl<'p> Checker<'p> {
         if let Type::TypeParameter(_) = to {
             return false;
         }
+        // §143 rules 1b and 2a: check component typing before concrete invariance.
+        if self.instance_restriction(opaque::InstanceRestriction::CompositeAssignability, from)
+            || self.instance_restriction(opaque::InstanceRestriction::CompositeAssignability, to)
+        {
+            let fits = match (from, to) {
+                (Type::Nullable(a), Type::Nullable(_)) => {
+                    self.assignable_through_constraints(a, to, seen)
+                }
+                (Type::Array(a), Type::Array(b))
+                | (Type::Set(a), Type::Set(b))
+                | (Type::Inbox(a), Type::Inbox(b))
+                | (Type::Outbox(a), Type::Outbox(b))
+                | (Type::Generator(a), Type::Generator(b))
+                | (Type::AsyncHandle(a), Type::AsyncHandle(b))
+                | (Type::IterResult(a), Type::IterResult(b)) => {
+                    self.assignable_through_constraints(a, b, seen)
+                }
+                (Type::FixedArray(a, n), Type::FixedArray(b, m)) => {
+                    n == m && self.assignable_through_constraints(a, b, seen)
+                }
+                (Type::Map(a, b), Type::Map(c, d)) | (Type::Worker(a, b), Type::Worker(c, d)) => {
+                    self.assignable_through_constraints(a, c, seen)
+                        && self.assignable_through_constraints(b, d, seen)
+                }
+                (Type::Func(a), Type::Func(b)) => {
+                    a.params.len() == b.params.len()
+                        && a.params
+                            .iter()
+                            .zip(&b.params)
+                            .all(|(a, b)| self.assignable_through_constraints(b, a, seen))
+                        && self.assignable_through_constraints(&a.ret, &b.ret, seen)
+                }
+                (Type::Class(a), Type::Class(b)) => {
+                    match (
+                        self.instance_arguments.get(a),
+                        self.instance_arguments.get(b),
+                    ) {
+                        (Some((a_key, a_args)), Some((b_key, b_args))) => {
+                            a_key == b_key
+                                && a_args.len() == b_args.len()
+                                && a_args
+                                    .iter()
+                                    .zip(b_args)
+                                    .all(|(a, b)| self.assignable_through_constraints(a, b, seen))
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            };
+            if fits {
+                return true;
+            }
+        }
         match (from, to) {
             (Type::Null, Type::Nullable(_)) => true,
             (f, Type::Nullable(inner)) => {
