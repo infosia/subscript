@@ -285,6 +285,13 @@ a fresh no-context subagent reviews the phase's cumulative diff and emits
 `CRITICAL`/`MAJOR`/`MINOR` findings; findings are fixed in severity order; a
 phase cannot be COMPLETE with any open CRITICAL/MAJOR.
 
+**Severity follows invariant 6.** A finding is `CRITICAL` or `MAJOR` only if
+a program written in good faith can reach it. A finding that only a
+deliberately hostile or contrived program reaches is `MINOR` at most. Record
+it in the section's open list. It does not block the phase, and it does not
+start a fix round. The review labels each finding "realistic" or
+"contrived".
+
 ## Privacy / repo hygiene
 
 - No credentials, signing material, or device-specific secrets committed.
