@@ -351,7 +351,7 @@ impl<'p> Checker<'p> {
             target_ty.clone()
         };
         self.require_assignable(
-            &if op.is_some() && self.involves_type_parameter(&value.ty) {
+            &if op.is_some() {
                 result_ty.clone()
             } else {
                 value.ty.clone()

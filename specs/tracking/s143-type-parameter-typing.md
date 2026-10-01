@@ -627,13 +627,13 @@ No table kind supplies an accepted large-array instance.
 |---|---|
 | `plain-relational-string-instance` | operator not defined for `i32` and `string` |
 | `plain-relational-boolean-instance` | operator not defined for `i32` and `boolean` |
-| `plain-fixed-array-large-layout-instance` | The aggregate exceeds the byte-size or accumulated stack-frame limit. |
-| `plain-map-nullable-key-instance` |  null` is not a permitted Map/Set key kind (Q24)", pos: Pos { file: "probe.ts", line: 3, col: 148 }, divergence: None, resolution: false }] |
-| `plain-set-nullable-key-instance` |  null` is not a permitted Map/Set key kind (Q24)", pos: Pos { file: "probe.ts", line: 3, col: 143 }, divergence: None, resolution: false }] |
+| `plain-fixed-array-large-layout-instance` | `FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes |
+| `plain-map-nullable-key-instance` | `i32 \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
+| `plain-set-nullable-key-instance` | `i32 \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
 | `plain-relational-class-instance` | operator not defined for `i32` and `Box` |
 | `plain-logical-relational-instance` | logical operators require booleans, got `i32` |
 | `plain-nullish-relational-instance` | the left operand of `??` has type `i32`, which is not nullable |
-| `plain-assert-to-parameter-instance` |  null` to a class; cannot convert `Box` to `i32`", pos: Pos { file: "probe.ts", line: 3, col: 118 }, divergence: None, resolution: false }] |
+| `plain-assert-to-parameter-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box` to `i32` |
 | `class-call-instance` | type `Box` is not callable |
 | `class-add-literal-instance` | operator not defined for `Box` and `i32` |
 | `class-add-same-instance` | operator not defined for `Box` and `Box` |
@@ -650,8 +650,8 @@ No table kind supplies an accepted large-array instance.
 | `class-relational-string-instance` | operator not defined for `Box` and `string` |
 | `class-relational-boolean-instance` | operator not defined for `Box` and `boolean` |
 | `class-equality-number-instance` | operator not defined for `Box` and `i32` |
-| `class-assert-number-instance` |  null` to a class; cannot convert `Box` to `i32`", pos: Pos { file: "probe.ts", line: 3, col: 118 }, divergence: None, resolution: false }] |
-| `class-assert-distinct-instance` |  null` to a class; cannot convert `Box` to `Box`", pos: Pos { file: "probe.ts", line: 3, col: 118 }, divergence: None, resolution: false }] |
+| `class-assert-number-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box` to `i32` |
+| `class-assert-distinct-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box` to `Box` |
 | `class-logical-or-instance` | logical operators require booleans, got `Box` |
 | `class-logical-and-instance` | logical operators require booleans, got `Box` |
 | `class-logical-or-mismatch-instance` | logical operators require booleans, got `Box` |
@@ -669,9 +669,9 @@ No table kind supplies an accepted large-array instance.
 | `class-fresh-number-array-instance` | unary `-` requires a numeric operand, got `Box` |
 | `class-template-instance` | type `Box` cannot be interpolated into a template |
 | `class-array-join-instance` | `join` formats elements by the Q14 interpolation rules; `Box` elements are not interpolatable (Q22) |
-| `class-fixed-array-large-layout-instance` | The aggregate exceeds the byte-size or accumulated stack-frame limit. |
-| `class-map-nullable-key-instance` |  null` is not a permitted Map/Set key kind (Q24)", pos: Pos { file: "probe.ts", line: 3, col: 148 }, divergence: None, resolution: false }] |
-| `class-set-nullable-key-instance` |  null` is not a permitted Map/Set key kind (Q24)", pos: Pos { file: "probe.ts", line: 3, col: 143 }, divergence: None, resolution: false }] |
+| `class-fixed-array-large-layout-instance` | `FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes |
+| `class-map-nullable-key-instance` | `Box \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
+| `class-set-nullable-key-instance` | `Box \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
 | `class-string-mismatch-instance` | type mismatch: the initializer expects `string`, got `Box` |
 | `class-nullish-same-instance` | the left operand of `??` has type `Box`, which is not nullable |
 | `class-nullish-box-instance` | the left operand of `??` has type `Box`, which is not nullable |
@@ -686,7 +686,7 @@ No table kind supplies an accepted large-array instance.
 | `class-switch-string-instance` | switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box` |
 | `class-conditional-instance` | condition must be boolean, got `Box` |
 | `class-if-condition-instance` | condition must be boolean, got `Box` |
-| `class-string-compound-instance` | type mismatch: the assignment expects `string`, got `Box` |
+| `class-string-compound-instance` | compound assignment is not defined for `string` |
 | `class-logical-and-right-instance` | logical operators require booleans, got `Box` |
 | `class-relational-class-instance` | operator not defined for `Box` and `Box` |
 | `class-relational-fresh-instance` | unary `-` requires a numeric operand, got `Box` |
@@ -694,7 +694,7 @@ No table kind supplies an accepted large-array instance.
 | `class-nullish-relational-instance` | the left operand of `??` has type `Box`, which is not nullable |
 | `class-while-condition-instance` | condition must be boolean, got `Box` |
 | `class-for-condition-instance` | condition must be boolean, got `Box` |
-| `class-assert-to-parameter-instance` |  null` to a class; cannot convert `Box` to `Box`", pos: Pos { file: "probe.ts", line: 3, col: 118 }, divergence: None, resolution: false }] |
+| `class-assert-to-parameter-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box` to `Box` |
 | `numeric-member-read-instance` | `i32` has no member `v` |
 | `numeric-member-write-instance` | `i32` has no member `v` |
 | `numeric-method-instance` | `i32` has no method `get` |
@@ -709,17 +709,17 @@ No table kind supplies an accepted large-array instance.
 | `numeric-logical-right-mismatch-instance` | logical operators require booleans, got `i32` |
 | `numeric-logical-identity-instance` | logical operators require booleans, got `i32` |
 | `numeric-unary-bang-instance` | `!` requires a boolean operand, got `i32` |
-| `numeric-fixed-array-large-layout-instance` | The aggregate exceeds the byte-size or accumulated stack-frame limit. |
-| `numeric-array-nullable-element-instance` |  null` is not a reference type union", pos: Pos { file: "probe.ts", line: 3, col: 118 }, divergence: None, resolution: false }] |
-| `numeric-map-nullable-value-instance` |  null` is not a reference type union", pos: Pos { file: "probe.ts", line: 3, col: 159 }, divergence: None, resolution: false }] |
-| `numeric-map-nullable-key-instance` |  null` is not a permitted Map/Set key kind (Q24)", pos: Pos { file: "probe.ts", line: 3, col: 148 }, divergence: None, resolution: false }] |
-| `numeric-set-nullable-key-instance` |  null` is not a permitted Map/Set key kind (Q24)", pos: Pos { file: "probe.ts", line: 3, col: 143 }, divergence: None, resolution: false }] |
+| `numeric-fixed-array-large-layout-instance` | `FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes |
+| `numeric-array-nullable-element-instance` | unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `numeric-map-nullable-value-instance` | unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `numeric-map-nullable-key-instance` | `i32 \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
+| `numeric-set-nullable-key-instance` | `i32 \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
 | `numeric-array-find-instance` | `find` is rejected: A scalar element type has no miss value; use `findIndex` (Q22) |
 | `numeric-map-get-instance` | `get(key)` is rejected: A scalar value type has no null miss value; use `getOr` (Q24) |
 | `numeric-string-mismatch-instance` | type mismatch: the initializer expects `string`, got `i32` |
 | `numeric-constraint-to-parameter-instance` | type mismatch: the initializer expects `i32`, got `Box` |
 | `numeric-parameter-to-constraint-instance` | type mismatch: the initializer expects `Box`, got `i32` |
-| `numeric-nullable-declaration-instance` |  null` is not a reference type union", pos: Pos { file: "probe.ts", line: 3, col: 117 }, divergence: None, resolution: false }] |
+| `numeric-nullable-declaration-instance` | unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
 | `numeric-nullish-same-instance` | the left operand of `??` has type `i32`, which is not nullable |
 | `numeric-nullish-box-instance` | the left operand of `??` has type `i32`, which is not nullable |
 | `numeric-nullish-mismatch-instance` | the left operand of `??` has type `i32`, which is not nullable |
@@ -729,14 +729,14 @@ No table kind supplies an accepted large-array instance.
 | `numeric-switch-string-instance` | type mismatch: the case label expects `i32`, got `string` |
 | `numeric-conditional-instance` | condition must be boolean, got `i32` |
 | `numeric-if-condition-instance` | condition must be boolean, got `i32` |
-| `numeric-string-compound-instance` | type mismatch: the assignment expects `string`, got `i32` |
+| `numeric-string-compound-instance` | compound assignment is not defined for `string` |
 | `numeric-logical-and-right-instance` | logical operators require booleans, got `i32` |
 | `numeric-relational-class-instance` | operator not defined for `i32` and `Box` |
 | `numeric-logical-relational-instance` | logical operators require booleans, got `i32` |
 | `numeric-nullish-relational-instance` | the left operand of `??` has type `i32`, which is not nullable |
 | `numeric-while-condition-instance` | condition must be boolean, got `i32` |
 | `numeric-for-condition-instance` | condition must be boolean, got `i32` |
-| `numeric-assert-to-parameter-instance` |  null` to a class; cannot convert `Box` to `i32`", pos: Pos { file: "probe.ts", line: 3, col: 118 }, divergence: None, resolution: false }] |
+| `numeric-assert-to-parameter-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box` to `i32` |
 | `numeric-nested-constraint-instance` | type argument `i32` does not satisfy the constraint `Box` of `A` |
 | `array-member-read-instance` | `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
 | `array-member-write-instance` | `v` is outside the array surface (length, indexing, push, pop, and the Q22 Array methods) |
@@ -759,8 +759,8 @@ No table kind supplies an accepted large-array instance.
 | `array-equality-same-instance` | operator not defined for `i32[]` and `i32[]` |
 | `array-equality-distinct-instance` | operator not defined for `i32[]` and `i32[]` |
 | `array-equality-number-instance` | operator not defined for `i32[]` and `i32` |
-| `array-assert-number-instance` |  null` to a class; cannot convert `i32[]` to `i32`", pos: Pos { file: "probe.ts", line: 3, col: 126 }, divergence: None, resolution: false }] |
-| `array-assert-distinct-instance` |  null` to a class; cannot convert `i32[]` to `i32[]`", pos: Pos { file: "probe.ts", line: 3, col: 126 }, divergence: None, resolution: false }] |
+| `array-assert-number-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `i32[]` to `i32` |
+| `array-assert-distinct-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `i32[]` to `i32[]` |
 | `array-logical-or-instance` | logical operators require booleans, got `i32[]` |
 | `array-logical-and-instance` | logical operators require booleans, got `i32[]` |
 | `array-logical-or-mismatch-instance` | logical operators require booleans, got `i32[]` |
@@ -780,21 +780,21 @@ No table kind supplies an accepted large-array instance.
 | `array-array-join-instance` | `join` formats elements by the Q14 interpolation rules; `i32[]` elements are not interpolatable (Q22) |
 | `array-set-annotation-instance` | `i32[]` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
 | `array-map-key-annotation-instance` | `i32[]` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
-| `array-fixed-array-large-layout-instance` | The aggregate exceeds the byte-size or accumulated stack-frame limit. |
+| `array-fixed-array-large-layout-instance` | `FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes |
 | `array-map-copy-instance` | `i32[]` is not a permitted Map/Set key kind (Q24) |
 | `array-map-group-key-instance` | `Map.groupBy` callback returns `i32[]`, which is not a §10.2 Map/Set key kind (Q24) |
 | `array-map-set-instance` | `i32[]` is not a permitted Map/Set key kind (Q24) |
 | `array-set-add-instance` | `i32[]` is not a permitted Map/Set key kind (Q24) |
-| `array-array-nullable-element-instance` |  null` is not a reference type union", pos: Pos { file: "probe.ts", line: 3, col: 126 }, divergence: None, resolution: false }] |
-| `array-map-nullable-value-instance` |  null` is not a reference type union", pos: Pos { file: "probe.ts", line: 3, col: 169 }, divergence: None, resolution: false }] |
-| `array-map-nullable-key-instance` |  null` is not a permitted Map/Set key kind (Q24)", pos: Pos { file: "probe.ts", line: 3, col: 158 }, divergence: None, resolution: false }] |
-| `array-set-nullable-key-instance` |  null` is not a permitted Map/Set key kind (Q24)", pos: Pos { file: "probe.ts", line: 3, col: 153 }, divergence: None, resolution: false }] |
+| `array-array-nullable-element-instance` | unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `array-map-nullable-value-instance` | unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
+| `array-map-nullable-key-instance` | `i32[] \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
+| `array-set-nullable-key-instance` | `i32[] \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
 | `array-map-key-instance` | `i32[]` is not a permitted Map/Set key kind (Q24) |
 | `array-set-key-instance` | `i32[]` is not a permitted Map/Set key kind (Q24) |
 | `array-string-mismatch-instance` | type mismatch: the initializer expects `string`, got `i32[]` |
 | `array-constraint-to-parameter-instance` | type mismatch: the initializer expects `i32[]`, got `Box` |
 | `array-parameter-to-constraint-instance` | type mismatch: the initializer expects `Box`, got `i32[]` |
-| `array-nullable-declaration-instance` |  null` is not a reference type union", pos: Pos { file: "probe.ts", line: 3, col: 125 }, divergence: None, resolution: false }] |
+| `array-nullable-declaration-instance` | unions are limited to `Ref \| null`; `i32[] \| null` is not a reference type union |
 | `array-nullish-same-instance` | the left operand of `??` has type `i32[]`, which is not nullable |
 | `array-nullish-box-instance` | the left operand of `??` has type `i32[]`, which is not nullable |
 | `array-nullish-mismatch-instance` | the left operand of `??` has type `i32[]`, which is not nullable |
@@ -806,7 +806,7 @@ No table kind supplies an accepted large-array instance.
 | `array-switch-string-instance` | switch discriminants are integers, enums, strings, or string-literal union aliases; got `i32[]` |
 | `array-conditional-instance` | condition must be boolean, got `i32[]` |
 | `array-if-condition-instance` | condition must be boolean, got `i32[]` |
-| `array-string-compound-instance` | type mismatch: the assignment expects `string`, got `i32[]` |
+| `array-string-compound-instance` | compound assignment is not defined for `string` |
 | `array-logical-and-right-instance` | logical operators require booleans, got `i32[]` |
 | `array-relational-class-instance` | operator not defined for `i32[]` and `Box` |
 | `array-relational-fresh-instance` | unary `-` requires a numeric operand, got `i32[]` |
@@ -814,82 +814,82 @@ No table kind supplies an accepted large-array instance.
 | `array-nullish-relational-instance` | the left operand of `??` has type `i32[]`, which is not nullable |
 | `array-while-condition-instance` | condition must be boolean, got `i32[]` |
 | `array-for-condition-instance` | condition must be boolean, got `i32[]` |
-| `array-assert-to-parameter-instance` |  null` to a class; cannot convert `Box` to `i32[]`", pos: Pos { file: "probe.ts", line: 3, col: 126 }, divergence: None, resolution: false }] |
+| `array-assert-to-parameter-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box` to `i32[]` |
 | `array-nested-constraint-instance` | type argument `i32[]` does not satisfy the constraint `Box` of `A` |
-| `nullable-identity-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 137 }, divergence: None, resolution: false }] |
-| `nullable-member-read-instance` |  null` may be null here; narrow with a null check first", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-member-write-instance` |  null` may be null here; narrow with a null check first", pos: Pos { file: "probe.ts", line: 3, col: 122 }, divergence: None, resolution: false }] |
-| `nullable-method-instance` |  null` may be null here; narrow with a null check first", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-call-instance` |  null` is not callable", pos: Pos { file: "probe.ts", line: 3, col: 122 }, divergence: None, resolution: false }] |
-| `nullable-add-literal-instance` |  null` and `i32`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-add-same-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-add-string-instance` |  null` and `string`", pos: Pos { file: "probe.ts", line: 3, col: 140 }, divergence: None, resolution: false }] |
-| `nullable-subtract-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-multiply-instance` |  null` and `i32`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-divide-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-remainder-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-bitwise-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-shift-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-relational-literal-instance` |  null` and `i32`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-relational-same-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-relational-distinct-instance` |  null` and `Box`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-relational-string-instance` |  null` and `string`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-relational-boolean-instance` |  null` and `boolean`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-equality-same-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-equality-distinct-instance` |  null` and `Box`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-equality-number-instance` |  null` and `i32`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-assert-number-instance` |  null` to `i32`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-assert-distinct-instance` |  null` to `Box`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-logical-or-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 137 }, divergence: None, resolution: false }] |
-| `nullable-logical-and-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 137 }, divergence: None, resolution: false }] |
-| `nullable-logical-or-mismatch-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 146 }, divergence: None, resolution: false }] |
-| `nullable-logical-and-mismatch-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 146 }, divergence: None, resolution: false }] |
-| `nullable-logical-right-mismatch-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 141 }, divergence: None, resolution: false }] |
-| `nullable-logical-identity-instance` | type mismatch: the initializer expects `Box`, got `boolean` |
-| `nullable-unary-minus-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 137 }, divergence: None, resolution: false }] |
-| `nullable-unary-tilde-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 137 }, divergence: None, resolution: false }] |
-| `nullable-unary-bang-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 141 }, divergence: None, resolution: false }] |
-| `nullable-unary-mismatch-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 137 }, divergence: None, resolution: false }] |
-| `nullable-fresh-number-tilde-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 139 }, divergence: None, resolution: false }] |
-| `nullable-fresh-number-pair-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 146 }, divergence: None, resolution: false }] |
-| `nullable-fresh-number-literal-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-fresh-number-compare-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 137 }, divergence: None, resolution: false }] |
-| `nullable-fresh-number-array-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 133 }, divergence: None, resolution: false }] |
-| `nullable-template-instance` |  null` cannot be interpolated into a template", pos: Pos { file: "probe.ts", line: 3, col: 143 }, divergence: None, resolution: false }] |
+| `nullable-identity-instance` | nominal types are not interchangeable: the initializer expects `Box`, got `Box \| null` |
+| `nullable-member-read-instance` | `Box \| null` may be null here; narrow with a null check first |
+| `nullable-member-write-instance` | `Box \| null` may be null here; narrow with a null check first |
+| `nullable-method-instance` | `Box \| null` may be null here; narrow with a null check first |
+| `nullable-call-instance` | type `Box \| null` is not callable |
+| `nullable-add-literal-instance` | operator not defined for `Box \| null` and `i32` |
+| `nullable-add-same-instance` | operator not defined for `Box \| null` and `Box \| null` |
+| `nullable-add-string-instance` | operator not defined for `Box \| null` and `string` |
+| `nullable-subtract-instance` | operator not defined for `Box \| null` and `Box \| null` |
+| `nullable-multiply-instance` | operator not defined for `Box \| null` and `i32` |
+| `nullable-divide-instance` | operator not defined for `Box \| null` and `Box \| null` |
+| `nullable-remainder-instance` | operator not defined for `Box \| null` and `Box \| null` |
+| `nullable-bitwise-instance` | operator not defined for `Box \| null` and `Box \| null` |
+| `nullable-shift-instance` | operator not defined for `Box \| null` and `Box \| null` |
+| `nullable-relational-literal-instance` | operator not defined for `Box \| null` and `i32` |
+| `nullable-relational-same-instance` | operator not defined for `Box \| null` and `Box \| null` |
+| `nullable-relational-distinct-instance` | operator not defined for `Box \| null` and `Box` |
+| `nullable-relational-string-instance` | operator not defined for `Box \| null` and `string` |
+| `nullable-relational-boolean-instance` | operator not defined for `Box \| null` and `boolean` |
+| `nullable-equality-same-instance` | operator not defined for `Box \| null` and `Box \| null` |
+| `nullable-equality-distinct-instance` | operator not defined for `Box \| null` and `Box` |
+| `nullable-equality-number-instance` | operator not defined for `Box \| null` and `i32` |
+| `nullable-assert-number-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box \| null` to `i32` |
+| `nullable-assert-distinct-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box \| null` to `Box` |
+| `nullable-logical-or-instance` | logical operators require booleans, got `Box \| null` |
+| `nullable-logical-and-instance` | logical operators require booleans, got `Box \| null` |
+| `nullable-logical-or-mismatch-instance` | logical operators require booleans, got `Box \| null` |
+| `nullable-logical-and-mismatch-instance` | logical operators require booleans, got `Box \| null` |
+| `nullable-logical-right-mismatch-instance` | logical operators require booleans, got `Box \| null` |
+| `nullable-logical-identity-instance` | logical operators require booleans, got `Box \| null` |
+| `nullable-unary-minus-instance` | unary `-` requires a numeric operand, got `Box \| null` |
+| `nullable-unary-tilde-instance` | `~` requires an integer operand, got `Box \| null` |
+| `nullable-unary-bang-instance` | `!` requires a boolean operand, got `Box \| null` |
+| `nullable-unary-mismatch-instance` | unary `-` requires a numeric operand, got `Box \| null` |
+| `nullable-fresh-number-tilde-instance` | unary `-` requires a numeric operand, got `Box \| null` |
+| `nullable-fresh-number-pair-instance` | unary `-` requires a numeric operand, got `Box \| null` |
+| `nullable-fresh-number-literal-instance` | unary `-` requires a numeric operand, got `Box \| null` |
+| `nullable-fresh-number-compare-instance` | unary `-` requires a numeric operand, got `Box \| null` |
+| `nullable-fresh-number-array-instance` | unary `-` requires a numeric operand, got `Box \| null` |
+| `nullable-template-instance` | type `Box \| null` cannot be interpolated into a template |
 | `nullable-array-join-instance` | `join` formats elements by the Q14 interpolation rules; `Box` elements are not interpolatable (Q22) |
-| `nullable-array-push-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 134 }, divergence: None, resolution: false }] |
-| `nullable-fixed-array-annotation-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 156 }, divergence: None, resolution: false }] |
-| `nullable-fixed-array-large-layout-instance` | The aggregate exceeds the byte-size or accumulated stack-frame limit. |
-| `nullable-map-set-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 187 }, divergence: None, resolution: false }] |
-| `nullable-set-add-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 154 }, divergence: None, resolution: false }] |
-| `nullable-array-of-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 146 }, divergence: None, resolution: false }] |
-| `nullable-map-nullable-key-instance` |  null` is not a permitted Map/Set key kind (Q24)", pos: Pos { file: "probe.ts", line: 3, col: 162 }, divergence: None, resolution: false }] |
-| `nullable-set-nullable-key-instance` |  null` is not a permitted Map/Set key kind (Q24)", pos: Pos { file: "probe.ts", line: 3, col: 157 }, divergence: None, resolution: false }] |
-| `nullable-array-map-output-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 174 }, divergence: None, resolution: false }] |
-| `nullable-array-reduce-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 175 }, divergence: None, resolution: false }] |
-| `nullable-array-reduce-right-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 180 }, divergence: None, resolution: false }] |
-| `nullable-array-includes-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 148 }, divergence: None, resolution: false }] |
-| `nullable-string-mismatch-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 140 }, divergence: None, resolution: false }] |
-| `nullable-parameter-to-constraint-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 137 }, divergence: None, resolution: false }] |
-| `nullable-iteration-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 138 }, divergence: None, resolution: false }] |
-| `nullable-spread-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 133 }, divergence: None, resolution: false }] |
-| `nullable-index-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 140 }, divergence: None, resolution: false }] |
-| `nullable-update-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 133 }, divergence: None, resolution: false }] |
-| `nullable-switch-same-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 130 }, divergence: None, resolution: false }] |
-| `nullable-switch-number-instance` |  null`, got `i32`", pos: Pos { file: "probe.ts", line: 3, col: 140 }, divergence: None, resolution: false }] |
-| `nullable-switch-string-instance` |  null`, got `string`", pos: Pos { file: "probe.ts", line: 3, col: 140 }, divergence: None, resolution: false }] |
-| `nullable-conditional-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-if-condition-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 126 }, divergence: None, resolution: false }] |
-| `nullable-string-compound-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 147 }, divergence: None, resolution: false }] |
-| `nullable-logical-and-right-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 141 }, divergence: None, resolution: false }] |
-| `nullable-relational-class-instance` |  null` and `Box`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-relational-fresh-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 136 }, divergence: None, resolution: false }] |
-| `nullable-logical-relational-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-nullish-relational-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-while-condition-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 129 }, divergence: None, resolution: false }] |
-| `nullable-for-condition-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 129 }, divergence: None, resolution: false }] |
-| `nullable-assert-to-parameter-instance` |  null` to a class; cannot convert `Box` to `Box`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
-| `nullable-nested-constraint-instance` |  null`", pos: Pos { file: "probe.ts", line: 3, col: 132 }, divergence: None, resolution: false }] |
+| `nullable-array-push-instance` | nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `nullable-fixed-array-annotation-instance` | nominal types are not interchangeable: the array element expects `Box`, got `Box \| null` |
+| `nullable-fixed-array-large-layout-instance` | `FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes |
+| `nullable-map-set-instance` | nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `nullable-set-add-instance` | nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `nullable-array-of-instance` | nominal types are not interchangeable: the array element expects `Box`, got `Box \| null` |
+| `nullable-map-nullable-key-instance` | `Box \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
+| `nullable-set-nullable-key-instance` | `Box \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
+| `nullable-array-map-output-instance` | nominal types are not interchangeable: the lambda body expects `Box`, got `Box \| null` |
+| `nullable-array-reduce-instance` | nominal types are not interchangeable: the `reduce` init expects `Box`, got `Box \| null` |
+| `nullable-array-reduce-right-instance` | nominal types are not interchangeable: the `reduceRight` init expects `Box`, got `Box \| null` |
+| `nullable-array-includes-instance` | nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
+| `nullable-string-mismatch-instance` | type mismatch: the initializer expects `string`, got `Box \| null` |
+| `nullable-parameter-to-constraint-instance` | nominal types are not interchangeable: the initializer expects `Box`, got `Box \| null` |
+| `nullable-iteration-instance` | `for…of` accepts only T[], FixedArray<T, N>, Set, string, or Generator<T>; got `Box \| null` |
+| `nullable-spread-instance` | array-literal spread accepts T[], FixedArray<T, N>, Set, or string; got `Box \| null` |
+| `nullable-index-instance` | array indices are `i32`, got `Box \| null` |
+| `nullable-update-instance` | `++`/`--` require a numeric target, got `Box \| null` |
+| `nullable-switch-same-instance` | switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box \| null` |
+| `nullable-switch-number-instance` | switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box \| null` |
+| `nullable-switch-string-instance` | switch discriminants are integers, enums, strings, or string-literal union aliases; got `Box \| null` |
+| `nullable-conditional-instance` | condition must be boolean, got `Box \| null` |
+| `nullable-if-condition-instance` | condition must be boolean, got `Box \| null` |
+| `nullable-string-compound-instance` | compound assignment is not defined for `string` |
+| `nullable-logical-and-right-instance` | logical operators require booleans, got `Box \| null` |
+| `nullable-relational-class-instance` | operator not defined for `Box \| null` and `Box` |
+| `nullable-relational-fresh-instance` | unary `-` requires a numeric operand, got `Box \| null` |
+| `nullable-logical-relational-instance` | logical operators require booleans, got `Box \| null` |
+| `nullable-nullish-relational-instance` | operator not defined for `Box \| null` and `Box \| null` |
+| `nullable-while-condition-instance` | condition must be boolean, got `Box \| null` |
+| `nullable-for-condition-instance` | condition must be boolean, got `Box \| null` |
+| `nullable-assert-to-parameter-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box` to `Box` |
+| `nullable-nested-constraint-instance` | nominal types are not interchangeable: the argument expects `Box`, got `Box \| null` |
 | `nullable-constraint-minus-instance` | A Box or nullable Box is not a numeric unary operand. |
 | `nullable-constraint-tilde-instance` | A Box or nullable Box is not an integer unary operand. |
 | `uninitialized-field-instance` | No type argument initializes the concrete `v: i32` field. |
@@ -972,3 +972,257 @@ gate full a9230193d22bebd979f635aaba67afc223bb9fa0 dirty:37 debug 2140/0/3 relea
 After the gate, rule 6 retired §135.3 and the generic-body item of
 `collisions.md` §3. `generic_tsc_matrix`, `js_corpus`, and
 `growing_instance_chain` passed again on that text.
+
+
+## Phase Review fix round
+
+| Finding | Fix | Test |
+|---|---|---|
+| MAJOR 1, MINOR 4: a deferral skips TypeScript operand typing | Each restriction tests the apparent type. Compound assignments check both operands through `bin_result`, then check the result against the destination. Accessors use that same result. | `compound_operands_and_callback_conditions_keep_typescript_typing`; matrix compound and callback cells |
+| Concrete accessor compound assignment accepts a string result | A numeric getter plus a string produces `string`. The numeric setter rejects that result. | `an_accessor_compound_result_must_fit_the_setter`; reject entry `r295-accessor-compound-type` |
+| MAJOR 2: a fresh `number` becomes `f64` | `apparent_type` preserves `GenericNumber`. Numeric operators admit it as a distinct operand kind. The operand-width rewrite is removed. Indices use the common assignment test. Updates accept `number`. | `fresh_number_has_no_sized_operand_kind`; matrix remainder, equality, index, and bitwise cells |
+| MAJOR 3: a forward constraint keeps an incomplete copy | Apparent-type resolution looks up an unbound constraint by parameter identity. A cycle guard prevents repeated resolution. | `constraints_resolve_by_identity_in_both_declaration_orders`; both forward-constraint matrix columns |
+| MINOR 5: missing matrix forms and numeric kinds | The table adds the requested forms, array iteration with compound assignment, and `extends f64` and `extends u8`. | 1,193 cells; 795 no-instance cells and 398 instance cells; zero failures |
+| MINOR 6: a diagnostic prints `f64` | The number operand keeps its source-independent `number` type and diagnostic name. | The unary-result/string equality test asserts both `number` and `string`. |
+| MINOR 7: concrete equality carries generic tags | The `r294` header uses `equality, numeric-operands`. The generator updates its index row. | Reject-header and corpus-index checks |
+| MINOR 8: diagnostic Debug text breaks table cells | The omitted-instance table contains diagnostic messages only. Each pipe is escaped. | The concrete omission probe regenerates all table-form reasons. No Debug fields remain. |
+
+### Restriction admission tests
+
+Every test below requires a type that involves a parameter or a generic number result.
+The apparent-type test applies before the project restriction defers.
+Call arguments, callback signatures, assignment destinations, and cast overlap keep their separate type checks.
+
+| Restriction | Apparent-type admission test | Project restriction |
+|---|---|---|
+| `TemplateInterpolation` | A resolved value type | Runtime formatter and concatenation kind |
+| `ValueField` | A resolved field type | Value-class field layout |
+| `SizedNumeric` | A numeric type or the distinct `number` result | Numeric width and sized result assignment |
+| `UnaryNumeric` | A value other than null, nullable, or void | Unary coercion and integer representation |
+| `BooleanContext` | A type other than a required function | Concrete boolean operand or condition |
+| `AssociativeKey` | A resolved type argument | Concrete hash and equality kind |
+| `ArrayElementKind` | A resolved element or callback result type | Runtime callback and equality-search representation |
+| `PartialValueLayout` | A resolved result type | Nullable-pointer result representation |
+| `ContainerArgument` | A resolved type argument | Context affinity |
+| `NullableShape` | A resolved nullable base type | Nullable reference representation |
+| `AggregateLayout` | A fixed-array type | Concrete aggregate byte layout |
+| `SwitchKind` | A resolved discriminant type | Concrete dispatch kind |
+| `CastKind` | A resolved type, with overlap checked at the cast | Runtime conversion kind |
+| `RelationalKind` | A non-nullable value other than void or a function; operand overlap is required | Concrete relational operand kind |
+
+The numeric kinds use an `i32` instance that satisfies all three numeric constraints under §135 rule 2b.
+This keeps the instance admissible when a form needs an `i32` index, destination, or bitwise operand.
+Each new form has a no-instance column for every kind.
+Its instance column uses a concrete argument that the checker accepts.
+The table lists omitted instance cells and their concrete diagnostics.
+The callback condition and unary-number/string comparison have no accepted concrete instance.
+The class, array, and nullable numeric forms have no accepted concrete operand.
+Their no-instance cells remain in the matrix.
+
+### Red and measurements
+
+A CLI built from `36684546` accepts `r295-accessor-compound-type.ts` with no errors.
+Stock TypeScript 5.9.2 rejects it with TS2322 at line 14.
+The TypeScript options match `tsc_corpus.rs` and use the ambient prelude.
+The current reject-table test requires S100 at that line and passes.
+
+The rule 5 harness uses `entry_ids` and `entry_sources` from the codegen corpus loader.
+It copies `trap_ids` and `trap_sources` from the trap loader, including the t72 mirrors.
+It discovers every example recursively. The temporary harness is removed after the measurement.
+
+| Measurement | Result |
+|---|---|
+| Accept / warn / trap / examples | 294 / 5 / 71 / 17 |
+| Programs / source files | 387 / 511 |
+| Rejected at `36684546` / current | 0 / 0 |
+| Pin checker time, one debug pass | 1.470384000 s |
+| Current checker time, one debug pass | 1.491782959 s |
+| Checker time change | +1.46% |
+| Expanded matrix cost, one TypeScript process | 1.623520166 s |
+| Expanded matrix failures | 0 / 1,193 |
+
+The new unit tests, the reject corpus, and all compiler integration tests pass.
+No public API is added. No golden changes. No commit is made.
+
+### Changed Rust file sizes
+
+| Rust file | Lines |
+|---|---:|
+| `compiler/src/check/expr/assign.rs` | 624 |
+| `compiler/src/check/expr/member.rs` | 575 |
+| `compiler/src/check/expr/operator.rs` | 1469 |
+| `compiler/src/check/opaque.rs` | 578 |
+| `compiler/src/check/type_rules.rs` | 248 |
+| `compiler/tests/corpus_reject.rs` | 1319 |
+| `compiler/tests/generic_tsc_matrix.rs` | 1476 |
+| `compiler/tests/opaque_generics.rs` | 854 |
+
+Every changed Rust file stays below 2,000 lines.
+
+The admission audit also measures void and null constraints with TypeScript 5.9.2.
+TypeScript accepts interpolation, array join, and switch on a void-constrained parameter.
+It also accepts a nullable declaration on a null-constrained parameter.
+These slots admit every resolved surface type before the project representation check.
+`unrestricted_typescript_slots_keep_void_and_null_constraints` checks these forms and a void-constrained value-class field.
+
+The release CLI build passes in 20.10 seconds.
+The hygiene check and `git diff --check` pass.
+The first quick gate passes with 2,144 tests, zero failures, and three ignored tests.
+It used the checker before the final void/null admission adjustment.
+The final tree receives another quick gate after that adjustment.
+
+### Added omitted instance cells
+
+The no-instance column keeps each cell below. Its concrete instance fails with the stated diagnostic.
+
+| Omitted cell | Concrete reason |
+|---|---|
+| `plain-callback-condition-instance` | condition must be boolean, got `(i32) => void` |
+| `plain-minus-string-equality-instance` | operator not defined for `i32` and `string` |
+| `class-iteration-compound-instance` | compound assignment is not defined for `i32` |
+| `class-s-add-x-instance` | compound assignment is not defined for `i32` |
+| `class-s-subtract-x-instance` | compound assignment is not defined for `i32` |
+| `class-s-bitand-x-instance` | compound assignment is not defined for `i32` |
+| `class-field-add-x-instance` | compound assignment is not defined for `i32` |
+| `class-callback-condition-instance` | condition must be boolean, got `(Box) => void` |
+| `class-remainder-equality-instance` | operator not defined for `Box` and `i32` |
+| `class-fresh-equality-instance` | operator not defined for `Box` and `i32` |
+| `class-fresh-index-instance` | operator not defined for `Box` and `i32` |
+| `class-fresh-bitand-instance` | operator not defined for `Box` and `i32` |
+| `class-minus-string-equality-instance` | unary `-` requires a numeric operand, got `Box` |
+| `numeric-callback-condition-instance` | condition must be boolean, got `(i32) => void` |
+| `numeric-minus-string-equality-instance` | operator not defined for `i32` and `string` |
+| `f64-callback-condition-instance` | condition must be boolean, got `(i32) => void` |
+| `f64-minus-string-equality-instance` | operator not defined for `i32` and `string` |
+| `f64-member-read-instance` | `i32` has no member `v` |
+| `f64-member-write-instance` | `i32` has no member `v` |
+| `f64-method-instance` | `i32` has no method `get` |
+| `f64-call-instance` | type `i32` is not callable |
+| `f64-add-string-instance` | operator not defined for `i32` and `string` |
+| `f64-relational-string-instance` | operator not defined for `i32` and `string` |
+| `f64-relational-boolean-instance` | operator not defined for `i32` and `boolean` |
+| `f64-logical-or-instance` | logical operators require booleans, got `i32` |
+| `f64-logical-and-instance` | logical operators require booleans, got `i32` |
+| `f64-logical-or-mismatch-instance` | logical operators require booleans, got `i32` |
+| `f64-logical-and-mismatch-instance` | logical operators require booleans, got `i32` |
+| `f64-logical-right-mismatch-instance` | logical operators require booleans, got `i32` |
+| `f64-logical-identity-instance` | logical operators require booleans, got `i32` |
+| `f64-unary-bang-instance` | `!` requires a boolean operand, got `i32` |
+| `f64-fixed-array-large-layout-instance` | `FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes |
+| `f64-array-nullable-element-instance` | unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `f64-map-nullable-value-instance` | unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `f64-map-nullable-key-instance` | `i32 \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
+| `f64-set-nullable-key-instance` | `i32 \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
+| `f64-array-find-instance` | `find` is rejected: A scalar element type has no miss value; use `findIndex` (Q22) |
+| `f64-map-get-instance` | `get(key)` is rejected: A scalar value type has no null miss value; use `getOr` (Q24) |
+| `f64-string-mismatch-instance` | type mismatch: the initializer expects `string`, got `i32` |
+| `f64-constraint-to-parameter-instance` | type mismatch: the initializer expects `i32`, got `Box` |
+| `f64-parameter-to-constraint-instance` | type mismatch: the initializer expects `Box`, got `i32` |
+| `f64-nullable-declaration-instance` | unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `f64-nullish-same-instance` | the left operand of `??` has type `i32`, which is not nullable |
+| `f64-nullish-box-instance` | the left operand of `??` has type `i32`, which is not nullable |
+| `f64-nullish-mismatch-instance` | the left operand of `??` has type `i32`, which is not nullable |
+| `f64-narrowing-instance` | operator not defined for `i32` and `null` |
+| `f64-iteration-instance` | `for…of` accepts only T[], FixedArray<T, N>, Set, string, or Generator<T>; got `i32` |
+| `f64-spread-instance` | array-literal spread accepts T[], FixedArray<T, N>, Set, or string; got `i32` |
+| `f64-switch-string-instance` | type mismatch: the case label expects `i32`, got `string` |
+| `f64-conditional-instance` | condition must be boolean, got `i32` |
+| `f64-if-condition-instance` | condition must be boolean, got `i32` |
+| `f64-string-compound-instance` | compound assignment is not defined for `string` |
+| `f64-logical-and-right-instance` | logical operators require booleans, got `i32` |
+| `f64-relational-class-instance` | operator not defined for `i32` and `Box` |
+| `f64-logical-relational-instance` | logical operators require booleans, got `i32` |
+| `f64-nullish-relational-instance` | the left operand of `??` has type `i32`, which is not nullable |
+| `f64-while-condition-instance` | condition must be boolean, got `i32` |
+| `f64-for-condition-instance` | condition must be boolean, got `i32` |
+| `f64-assert-to-parameter-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box` to `i32` |
+| `f64-nested-constraint-instance` | type argument `i32` does not satisfy the constraint `Box` of `A` |
+| `u8-callback-condition-instance` | condition must be boolean, got `(i32) => void` |
+| `u8-minus-string-equality-instance` | operator not defined for `i32` and `string` |
+| `u8-member-read-instance` | `i32` has no member `v` |
+| `u8-member-write-instance` | `i32` has no member `v` |
+| `u8-method-instance` | `i32` has no method `get` |
+| `u8-call-instance` | type `i32` is not callable |
+| `u8-add-string-instance` | operator not defined for `i32` and `string` |
+| `u8-relational-string-instance` | operator not defined for `i32` and `string` |
+| `u8-relational-boolean-instance` | operator not defined for `i32` and `boolean` |
+| `u8-logical-or-instance` | logical operators require booleans, got `i32` |
+| `u8-logical-and-instance` | logical operators require booleans, got `i32` |
+| `u8-logical-or-mismatch-instance` | logical operators require booleans, got `i32` |
+| `u8-logical-and-mismatch-instance` | logical operators require booleans, got `i32` |
+| `u8-logical-right-mismatch-instance` | logical operators require booleans, got `i32` |
+| `u8-logical-identity-instance` | logical operators require booleans, got `i32` |
+| `u8-unary-bang-instance` | `!` requires a boolean operand, got `i32` |
+| `u8-fixed-array-large-layout-instance` | `FixedArray` byte size exceeds the supported aggregate limit of 2147483647 bytes |
+| `u8-array-nullable-element-instance` | unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `u8-map-nullable-value-instance` | unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `u8-map-nullable-key-instance` | `i32 \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
+| `u8-set-nullable-key-instance` | `i32 \| null` is not a Map/Set key kind; Q24 permits sized integers, boolean, enum, f32/f64, string, Date, and reference classes |
+| `u8-array-find-instance` | `find` is rejected: A scalar element type has no miss value; use `findIndex` (Q22) |
+| `u8-map-get-instance` | `get(key)` is rejected: A scalar value type has no null miss value; use `getOr` (Q24) |
+| `u8-string-mismatch-instance` | type mismatch: the initializer expects `string`, got `i32` |
+| `u8-constraint-to-parameter-instance` | type mismatch: the initializer expects `i32`, got `Box` |
+| `u8-parameter-to-constraint-instance` | type mismatch: the initializer expects `Box`, got `i32` |
+| `u8-nullable-declaration-instance` | unions are limited to `Ref \| null`; `i32 \| null` is not a reference type union |
+| `u8-nullish-same-instance` | the left operand of `??` has type `i32`, which is not nullable |
+| `u8-nullish-box-instance` | the left operand of `??` has type `i32`, which is not nullable |
+| `u8-nullish-mismatch-instance` | the left operand of `??` has type `i32`, which is not nullable |
+| `u8-narrowing-instance` | operator not defined for `i32` and `null` |
+| `u8-iteration-instance` | `for…of` accepts only T[], FixedArray<T, N>, Set, string, or Generator<T>; got `i32` |
+| `u8-spread-instance` | array-literal spread accepts T[], FixedArray<T, N>, Set, or string; got `i32` |
+| `u8-switch-string-instance` | type mismatch: the case label expects `i32`, got `string` |
+| `u8-conditional-instance` | condition must be boolean, got `i32` |
+| `u8-if-condition-instance` | condition must be boolean, got `i32` |
+| `u8-string-compound-instance` | compound assignment is not defined for `string` |
+| `u8-logical-and-right-instance` | logical operators require booleans, got `i32` |
+| `u8-relational-class-instance` | operator not defined for `i32` and `Box` |
+| `u8-logical-relational-instance` | logical operators require booleans, got `i32` |
+| `u8-nullish-relational-instance` | the left operand of `??` has type `i32`, which is not nullable |
+| `u8-while-condition-instance` | condition must be boolean, got `i32` |
+| `u8-for-condition-instance` | condition must be boolean, got `i32` |
+| `u8-assert-to-parameter-instance` | `as` converts between sized numerics, enum to integer, or narrows `object \| null` to a class; cannot convert `Box` to `i32` |
+| `u8-nested-constraint-instance` | type argument `i32` does not satisfy the constraint `Box` of `A` |
+| `array-iteration-compound-instance` | compound assignment is not defined for `i32` |
+| `array-s-add-x-instance` | compound assignment is not defined for `i32` |
+| `array-s-subtract-x-instance` | compound assignment is not defined for `i32` |
+| `array-s-bitand-x-instance` | compound assignment is not defined for `i32` |
+| `array-field-add-x-instance` | compound assignment is not defined for `i32` |
+| `array-callback-condition-instance` | condition must be boolean, got `(i32[]) => void` |
+| `array-remainder-equality-instance` | operator not defined for `i32[]` and `i32` |
+| `array-fresh-equality-instance` | operator not defined for `i32[]` and `i32` |
+| `array-fresh-index-instance` | operator not defined for `i32[]` and `i32` |
+| `array-fresh-bitand-instance` | operator not defined for `i32[]` and `i32` |
+| `array-minus-string-equality-instance` | unary `-` requires a numeric operand, got `i32[]` |
+| `nullable-iteration-compound-instance` | compound assignment is not defined for `i32` |
+| `nullable-s-add-x-instance` | compound assignment is not defined for `i32` |
+| `nullable-s-subtract-x-instance` | compound assignment is not defined for `i32` |
+| `nullable-s-bitand-x-instance` | compound assignment is not defined for `i32` |
+| `nullable-field-add-x-instance` | compound assignment is not defined for `i32` |
+| `nullable-callback-condition-instance` | condition must be boolean, got `(Box) => void` |
+| `nullable-remainder-equality-instance` | operator not defined for `Box \| null` and `i32` |
+| `nullable-fresh-equality-instance` | operator not defined for `Box \| null` and `i32` |
+| `nullable-fresh-index-instance` | operator not defined for `Box \| null` and `i32` |
+| `nullable-fresh-bitand-instance` | operator not defined for `Box \| null` and `i32` |
+| `nullable-minus-string-equality-instance` | unary `-` requires a numeric operand, got `Box \| null` |
+
+### Final validation
+
+`cargo fmt --check` passes. The final quick gate passes on the complete checker form.
+It reports 2,145 passed tests, zero failed tests, three ignored tests, and two skips.
+The 1,193-cell matrix and all 24 opaque-generic tests pass inside the gate.
+Gate record: `target/gate/20261001T151529Z-quick.md`.
+
+```text
+gate quick 616eccd34085f4b5739814a16a9a79ecbdc26251 dirty:12 debug 2145/0/3 skips 2 goldens-moved 0 exit 0
+```
+
+No file-scope, corpus rejection, undecided-cell, or gate-failure stop occurs.
+No `.expected` golden changes. All work stays uncommitted.
+
+## Fix round landing gate
+
+The orchestrator ran the full gate on the round 8 tree.
+
+```text
+gate full 616eccd34085f4b5739814a16a9a79ecbdc26251 dirty:12 debug 2145/0/3 release 2142/0/3 skips 2/0 clippy 4/18/13 goldens-moved 0 exit 0
+```

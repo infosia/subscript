@@ -758,3 +758,97 @@ fn container_kinds_and_layouts_are_checked_per_instance() {
         assert!(errors.iter().all(|error| error.code == code), "{errors:?}");
     }
 }
+
+#[test]
+fn compound_operands_and_callback_conditions_keep_typescript_typing() {
+    let bodies = [
+        "let s: i32 = 0; s += x;",
+        "let s: i32 = 0; s -= x;",
+        "let s: i32 = 0; s &= x;",
+        "b.v += x;",
+        "for (const e of xs) { let s: i32 = 0; s += e; }",
+        "if (cb) {}",
+    ];
+    for body in bodies {
+        let declaration = format!(
+            "class Box {{ v: i32 = 1; }} function g<T>(x: T, b: Box, xs: T[], cb: (a: T) => void): void {{ {body} }}"
+        );
+        for main in ["", "g<i32>(3, new Box(), [3], (a: i32): void => {});"] {
+            let errors = check(&program(&declaration, main)).unwrap_err();
+            assert!(
+                errors.iter().any(|error| error.code == RuleCode::S100),
+                "{errors:?}"
+            );
+        }
+    }
+    check(&program(
+        "function g<T extends i32>(x: T): void { let s: i32 = 0; s += x; s -= x; s &= x; }",
+        "g<i32>(3);",
+    ))
+    .expect("the numeric apparent type admits both operands");
+}
+
+#[test]
+fn an_accessor_compound_result_must_fit_the_setter() {
+    let source = program(
+        "class Box { get p(): i32 { return 1; } set p(v: i32) {} }",
+        "const o = new Box(); o.p += \"a\";",
+    );
+    let errors = check(&source).unwrap_err();
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.code == RuleCode::S100 && error.message.contains("string")),
+        "{errors:?}"
+    );
+    check(&source.replace("\"a\"", "1")).expect("the numeric result fits the setter");
+}
+
+#[test]
+fn fresh_number_has_no_sized_operand_kind() {
+    let body = "const a = x % 2 === 0; const b = x + 1 === y; const c = xs[x + 1]; const d = (x + 1) & (y + 1);";
+    for constraint in ["i32", "f64", "u8"] {
+        let declaration =
+            format!("function g<T extends {constraint}>(x: T, y: T, xs: i32[]): void {{ {body} }}");
+        check(&program(&declaration, "")).expect("the fresh result is number");
+        check(&program(&declaration, "g<i32>(4, 4, [1, 2, 3, 4, 5, 6]);"))
+            .expect("the concrete instance admits the operations");
+    }
+    let errors = check(&program(
+        "function g<T>(x: T): void { const a = -x === \"a\"; }",
+        "",
+    ))
+    .unwrap_err();
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message.contains("`number`") && error.message.contains("`string`")),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn constraints_resolve_by_identity_in_both_declaration_orders() {
+    for parameters in ["T extends U, U extends Box", "U extends Box, T extends U"] {
+        let declaration = format!(
+            "class Box {{ v: i32 = 1; }} function g<{parameters}>(x: T): i32 {{ return x.v; }}"
+        );
+        check(&program(&declaration, "")).expect("the opaque constraint resolves");
+        check(&program(&declaration, "g<Box, Box>(new Box());"))
+            .expect("the concrete constraint resolves");
+    }
+}
+
+#[test]
+fn unrestricted_typescript_slots_keep_void_and_null_constraints() {
+    let declarations = [
+        "function g<T extends void>(x: T): string { return `${x}`; }",
+        "function g<T extends void>(xs: T[]): string { return xs.join(); }",
+        "function g<T extends void>(x: T): void { switch (x) {} }",
+        "function g<T extends null>(x: T): void { const a: T | null = x; }",
+        "@ValueType class G<T extends void> { value: T; constructor(value: T) { this.value = value; } }",
+    ];
+    for declaration in declarations {
+        check(&program(declaration, "")).expect("TypeScript admits the opaque slot");
+    }
+}

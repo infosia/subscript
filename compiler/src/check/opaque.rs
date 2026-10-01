@@ -55,6 +55,8 @@ pub(crate) enum InstanceRestriction {
     ValueField,
     /// A numeric operation or assignment needs a concrete sized type.
     SizedNumeric,
+    /// Unary numeric coercion accepts every non-null value that TypeScript accepts.
+    UnaryNumeric,
     /// Boolean contexts require a concrete boolean argument.
     BooleanContext,
     /// An associative key needs a concrete hash and equality kind.
@@ -80,20 +82,31 @@ pub(crate) enum InstanceRestriction {
 impl<'p> Checker<'p> {
     /// True when a named restriction needs the instance (§143 rule 2a).
     pub(crate) fn instance_restriction(&self, restriction: InstanceRestriction, ty: &Type) -> bool {
+        if !self.involves_type_parameter(ty) {
+            return false;
+        }
+        let apparent = self.apparent_type(ty);
         match restriction {
-            InstanceRestriction::TemplateInterpolation
-            | InstanceRestriction::ValueField
-            | InstanceRestriction::SizedNumeric
-            | InstanceRestriction::BooleanContext
-            | InstanceRestriction::AssociativeKey
-            | InstanceRestriction::ArrayElementKind
-            | InstanceRestriction::PartialValueLayout
-            | InstanceRestriction::ContainerArgument
-            | InstanceRestriction::NullableShape
-            | InstanceRestriction::AggregateLayout
-            | InstanceRestriction::SwitchKind
-            | InstanceRestriction::CastKind
-            | InstanceRestriction::RelationalKind => self.involves_type_parameter(ty),
+            InstanceRestriction::SizedNumeric => {
+                apparent.is_numeric() || matches!(apparent, Type::GenericNumber)
+            }
+            InstanceRestriction::UnaryNumeric => {
+                !matches!(apparent, Type::Nullable(_) | Type::Null | Type::Void)
+            }
+            InstanceRestriction::BooleanContext => !matches!(apparent, Type::Func(_)),
+            InstanceRestriction::TemplateInterpolation => !matches!(apparent, Type::Error),
+            InstanceRestriction::ValueField => !matches!(apparent, Type::Error),
+            InstanceRestriction::AssociativeKey => !matches!(apparent, Type::Error),
+            InstanceRestriction::ArrayElementKind => !matches!(apparent, Type::Error),
+            InstanceRestriction::PartialValueLayout => !matches!(apparent, Type::Error),
+            InstanceRestriction::ContainerArgument => !matches!(apparent, Type::Error),
+            InstanceRestriction::NullableShape => !matches!(apparent, Type::Error),
+            InstanceRestriction::AggregateLayout => matches!(ty, Type::FixedArray(_, _)),
+            InstanceRestriction::SwitchKind => !matches!(apparent, Type::Error),
+            InstanceRestriction::CastKind => !matches!(apparent, Type::Error),
+            InstanceRestriction::RelationalKind => {
+                !matches!(apparent, Type::Nullable(_) | Type::Void | Type::Func(_))
+            }
         }
     }
 
@@ -137,13 +150,32 @@ impl<'p> Checker<'p> {
 
     /// Resolves a value type through its constraint (§143 rule 1a).
     pub(crate) fn apparent_type(&self, ty: &Type) -> Type {
+        self.resolve_apparent_type(ty, &mut Vec::new())
+    }
+
+    fn resolve_apparent_type(&self, ty: &Type, seen: &mut Vec<usize>) -> Type {
         match ty {
-            Type::TypeParameter(parameter) => match &parameter.constraint {
-                Some(constraint) => self.apparent_type(constraint),
-                None => ty.clone(),
-            },
-            Type::GenericNumber => Type::F64,
-            Type::Nullable(inner) => Type::nullable(self.apparent_type(inner)),
+            Type::TypeParameter(parameter) => {
+                if seen.contains(&parameter.identity) {
+                    return ty.clone();
+                }
+                seen.push(parameter.identity);
+                let constraint = parameter.constraint.as_deref().or_else(|| {
+                    self.subst.values().find_map(|binding| match binding {
+                        Type::TypeParameter(other) if other.identity == parameter.identity => {
+                            other.constraint.as_deref()
+                        }
+                        _ => None,
+                    })
+                });
+                let result = constraint.map_or_else(
+                    || ty.clone(),
+                    |constraint| self.resolve_apparent_type(constraint, seen),
+                );
+                seen.pop();
+                result
+            }
+            Type::Nullable(inner) => Type::nullable(self.resolve_apparent_type(inner, seen)),
             _ => ty.clone(),
         }
     }
@@ -203,6 +235,12 @@ impl<'p> Checker<'p> {
             return true;
         }
         if matches!(left, Type::Null) || matches!(right, Type::Null) {
+            return true;
+        }
+        let apparent_left = self.apparent_type(left);
+        let apparent_right = self.apparent_type(right);
+        let numeric = |ty: &Type| ty.is_numeric() || matches!(ty, Type::GenericNumber);
+        if numeric(&apparent_left) && numeric(&apparent_right) {
             return true;
         }
         self.assignable(&self.apparent_type(left), &self.apparent_type(right))

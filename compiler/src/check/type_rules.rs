@@ -97,6 +97,13 @@ impl<'p> Checker<'p> {
         if let Type::GenericUnion(members) = to {
             return members.iter().any(|member| self.assignable(from, member));
         }
+        if matches!(from, Type::TypeParameter(_))
+            && to.is_numeric()
+            && self.apparent_type(from).is_numeric()
+            && self.instance_restriction(opaque::InstanceRestriction::SizedNumeric, from)
+        {
+            return true;
+        }
         if matches!(from, Type::GenericNumber)
             && to.is_numeric()
             && self.instance_restriction(opaque::InstanceRestriction::SizedNumeric, from)
@@ -106,9 +113,10 @@ impl<'p> Checker<'p> {
         if from.is_numeric() && matches!(to, Type::GenericNumber) {
             return true;
         }
-        if let Type::TypeParameter(parameter) = from {
-            if let Some(constraint) = &parameter.constraint {
-                return self.assignable(constraint, to);
+        if matches!(from, Type::TypeParameter(_)) {
+            let apparent = self.apparent_type(from);
+            if apparent != *from {
+                return self.assignable(&apparent, to);
             }
         }
         if let Type::TypeParameter(_) = to {

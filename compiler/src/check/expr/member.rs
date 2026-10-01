@@ -90,7 +90,6 @@ impl<'p> Checker<'p> {
         pos: Pos,
     ) -> hir::Expr {
         let obj = self.apparent_expr(obj);
-        let index = self.apparent_expr(index);
         if let Type::Class(id) = &obj.ty {
             if let Some(signature) = self.classes[id.0].index_signature.clone() {
                 self.require_assignable(
@@ -114,7 +113,7 @@ impl<'p> Checker<'p> {
         }
         let elem = match &obj.ty {
             Type::Array(t) => {
-                if !matches!(index.ty, Type::I32 | Type::Error) {
+                if !self.assignable(&index.ty, &Type::I32) {
                     let name = self.type_name(&index.ty);
                     self.error(
                         RuleCode::S100,
@@ -125,7 +124,7 @@ impl<'p> Checker<'p> {
                 (**t).clone()
             }
             Type::FixedArray(t, n) => {
-                if !matches!(index.ty, Type::I32 | Type::Error) {
+                if !self.assignable(&index.ty, &Type::I32) {
                     let name = self.type_name(&index.ty);
                     self.error(
                         RuleCode::S100,

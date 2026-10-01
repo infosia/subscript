@@ -1,5 +1,5 @@
 //! The generic body matrix of §143 rule 4.
-//! Measured cost: 764 cells in 1.132 seconds, with one TypeScript process.
+//! Measured cost: 1,193 cells in 1.624 seconds, with one TypeScript process.
 //! Concrete controls check instance admission apart from the opaque diagnostics (§143 rule 4).
 
 use std::{
@@ -43,6 +43,20 @@ const KINDS: &[Kind] = &[
         argument: "3",
     },
     Kind {
+        name: "f64",
+        constraint: " extends f64",
+        value_type: "T",
+        argument_type: "i32",
+        argument: "3",
+    },
+    Kind {
+        name: "u8",
+        constraint: " extends u8",
+        value_type: "T",
+        argument_type: "i32",
+        argument: "3",
+    },
+    Kind {
         name: "array",
         constraint: " extends i32[]",
         value_type: "T",
@@ -64,6 +78,50 @@ struct Form {
 }
 
 const FORMS: &[Form] = &[
+    Form {
+        name: "iteration-compound",
+        body: "let total: i32 = 0; for (const e of values) total += e;",
+    },
+    Form {
+        name: "s-add-x",
+        body: "let total: i32 = 0; total += x;",
+    },
+    Form {
+        name: "s-subtract-x",
+        body: "let total: i32 = 0; total -= x;",
+    },
+    Form {
+        name: "s-bitand-x",
+        body: "let total: i32 = 0; total &= x;",
+    },
+    Form {
+        name: "field-add-x",
+        body: "box.v += x;",
+    },
+    Form {
+        name: "callback-condition",
+        body: "const cb = (a: T): void => {}; if (cb) {}",
+    },
+    Form {
+        name: "remainder-equality",
+        body: "const a = x % 2 === 0;",
+    },
+    Form {
+        name: "fresh-equality",
+        body: "const a = x + 1 === y;",
+    },
+    Form {
+        name: "fresh-index",
+        body: "const a = numbers[x + 1];",
+    },
+    Form {
+        name: "fresh-bitand",
+        body: "const a = (x + 1) & (y + 1);",
+    },
+    Form {
+        name: "minus-string-equality",
+        body: "const a = -x === \"a\";",
+    },
     Form {
         name: "loose-equality",
         body: "const a = x == y;",
@@ -573,6 +631,25 @@ fn replace_parameter_names(source: &str, ty: &str) -> String {
 
 // §143 rule 4 requires an accepted concrete instance. The tracking note lists each omission.
 fn instance_argument(kind: &Kind, form: &Form) -> Option<(&'static str, &'static str)> {
+    let new_numeric_form = matches!(
+        form.name,
+        "s-add-x"
+            | "s-subtract-x"
+            | "s-bitand-x"
+            | "field-add-x"
+            | "iteration-compound"
+            | "remainder-equality"
+            | "fresh-equality"
+            | "fresh-index"
+            | "fresh-bitand"
+            | "minus-string-equality"
+    );
+    if form.name == "callback-condition"
+        || form.name == "minus-string-equality"
+        || (new_numeric_form && matches!(kind.name, "class" | "array" | "nullable"))
+    {
+        return None;
+    }
     let omitted: &[&str] = match kind.name {
         "plain" => &[
             "relational-string",
@@ -648,7 +725,7 @@ fn instance_argument(kind: &Kind, form: &Form) -> Option<(&'static str, &'static
             "for-condition",
             "assert-to-parameter",
         ],
-        "numeric" => &[
+        "numeric" | "f64" | "u8" => &[
             "member-read",
             "member-write",
             "method",
@@ -974,6 +1051,15 @@ fn cells() -> Vec<Cell> {
             None,
         ),
         (
+            "forward-constraint",
+            concat!(
+                "class Box { v: i32 = 1; } function g<T extends U, U extends Box>",
+                "(x: T): i32 { return x.v; }",
+            ),
+            Some("g<Box, Box>(new Box());"),
+            None,
+        ),
+        (
             "linked-parameter-copy",
             concat!("function g<U, T extends U>(x: T): U { return x; }",),
             Some("g<i32, i32>(3);"),
@@ -1102,7 +1188,9 @@ fn cells() -> Vec<Cell> {
 }
 
 fn extra_concrete_source(name: &str, declaration: &str, main_body: &str) -> String {
-    let (parameters, ty) = if name.starts_with("linked-parameter-") {
+    let (parameters, ty) = if name == "forward-constraint" {
+        ("<T extends U, U extends Box>", "Box")
+    } else if name.starts_with("linked-parameter-") {
         ("<U, T extends U>", "i32")
     } else if name.starts_with("nullable-constraint-") {
         ("<T extends Box | null>", "Box | null")
@@ -1308,6 +1396,17 @@ fn generic_forms_follow_tsc() {
             failures.push(failure);
         }
     }
+    eprintln!(
+        "matrix columns: no-instance={}, instance={}",
+        cells
+            .iter()
+            .filter(|cell| cell.name.ends_with("-no-instance"))
+            .count(),
+        cells
+            .iter()
+            .filter(|cell| cell.name.ends_with("-instance") && !cell.name.ends_with("-no-instance"))
+            .count()
+    );
     eprintln!(
         "generic matrix: {} cells, {} failures, {:?}",
         cells.len(),

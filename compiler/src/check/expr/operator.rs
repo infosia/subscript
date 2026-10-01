@@ -37,7 +37,7 @@ impl<'p> Checker<'p> {
                 let operand = self.check_expr(&u.arg, ctx, fx);
                 let apparent = self.apparent_type(&operand.ty);
                 let parameter = self.instance_restriction(
-                    crate::check::opaque::InstanceRestriction::SizedNumeric,
+                    crate::check::opaque::InstanceRestriction::UnaryNumeric,
                     &operand.ty,
                 ) && !matches!(apparent, Type::Nullable(_));
                 if operand.ty == Type::F16 {
@@ -99,7 +99,7 @@ impl<'p> Checker<'p> {
                 let operand = self.check_expr(&u.arg, ctx, fx);
                 let apparent = self.apparent_type(&operand.ty);
                 let parameter = self.instance_restriction(
-                    crate::check::opaque::InstanceRestriction::SizedNumeric,
+                    crate::check::opaque::InstanceRestriction::UnaryNumeric,
                     &operand.ty,
                 ) && !matches!(apparent, Type::Nullable(_));
                 if !parameter && !apparent.is_integer() && !matches!(apparent, Type::Error) {
@@ -224,7 +224,7 @@ impl<'p> Checker<'p> {
             }
         }
         let target_ty = self.apparent_type(place.ty());
-        if !target_ty.is_numeric() && !matches!(target_ty, Type::Error) {
+        if !target_ty.is_numeric() && !matches!(target_ty, Type::GenericNumber | Type::Error) {
             let name = self.type_name(&target_ty);
             self.error(
                 RuleCode::S100,
@@ -1008,16 +1008,33 @@ impl<'p> Checker<'p> {
         use_kind: BinUse,
     ) -> BinResult {
         use ast::BinaryOp as B;
-        let mut lt = self.apparent_type(&left.ty);
-        let mut rt = self.apparent_type(&right.ty);
+        let lt = self.apparent_type(&left.ty);
+        let rt = self.apparent_type(&right.ty);
         let parameter =
             self.involves_type_parameter(&left.ty) || self.involves_type_parameter(&right.ty);
-        if matches!(left.ty, Type::GenericNumber) && rt.is_numeric() {
-            lt = rt.clone();
-        }
-        if matches!(right.ty, Type::GenericNumber) && lt.is_numeric() {
-            rt = lt.clone();
-        }
+        let numeric = |ty: &Type| ty.is_numeric() || matches!(ty, Type::GenericNumber);
+        let numeric_pair = numeric(&lt)
+            && numeric(&rt)
+            && (lt == rt
+                || self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::SizedNumeric,
+                    &left.ty,
+                )
+                || self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::SizedNumeric,
+                    &right.ty,
+                )
+                || matches!(lt, Type::GenericNumber)
+                || matches!(rt, Type::GenericNumber));
+        let integer_pair = numeric_pair
+            && (self.instance_restriction(
+                crate::check::opaque::InstanceRestriction::SizedNumeric,
+                &left.ty,
+            ) || self.instance_restriction(
+                crate::check::opaque::InstanceRestriction::SizedNumeric,
+                &right.ty,
+            ) || ((lt.is_integer() || matches!(lt, Type::GenericNumber))
+                && (rt.is_integer() || matches!(rt, Type::GenericNumber))));
         // §143 rule 1a: a parameter compared with itself has overlapping values.
         let same_parameter = left.ty == right.ty && parameter;
         let related_parameter = self.generic_overlap(&left.ty, &right.ty);
@@ -1026,7 +1043,7 @@ impl<'p> Checker<'p> {
             BinUse::Expression => operand_error,
             BinUse::CompoundAssignment => matches!(lt, Type::Error),
         };
-        let mixed_numeric = lt.is_numeric() && rt.is_numeric() && lt != rt;
+        let mixed_numeric = numeric(&lt) && numeric(&rt) && lt != rt;
         let arithmetic = matches!(op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
         let f16_arithmetic = arithmetic
             && match use_kind {
@@ -1064,13 +1081,12 @@ impl<'p> Checker<'p> {
                     )
                 {
                     (BinOp::Add, Type::Str, true)
-                } else if use_kind == BinUse::CompoundAssignment
-                    && (lt.is_numeric() || lt == Type::Str)
+                } else if use_kind == BinUse::CompoundAssignment && numeric(&lt) && rt == Type::Str
                 {
-                    (BinOp::Add, lt.clone(), true)
+                    (BinOp::Add, Type::Str, true)
                 } else if lt == Type::Str && rt == Type::Str {
                     (BinOp::Add, Type::Str, true)
-                } else if lt.is_numeric() && lt == rt {
+                } else if numeric_pair {
                     (BinOp::Add, lt.clone(), true)
                 } else {
                     (BinOp::Add, Type::Error, suppress_error)
@@ -1083,7 +1099,7 @@ impl<'p> Checker<'p> {
                     B::Div => BinOp::Div,
                     _ => BinOp::Rem,
                 };
-                if lt.is_numeric() && (use_kind == BinUse::CompoundAssignment || lt == rt) {
+                if numeric_pair {
                     (hop, lt.clone(), true)
                 } else {
                     (hop, Type::Error, suppress_error)
@@ -1096,15 +1112,14 @@ impl<'p> Checker<'p> {
                     B::Gt => BinOp::Gt,
                     _ => BinOp::Ge,
                 };
-                let comparable =
-                    (lt.is_numeric() && lt == rt) || (matches!(lt, Type::Enum(_)) && lt == rt);
+                let comparable = numeric_pair || (matches!(lt, Type::Enum(_)) && lt == rt);
                 (
                     hop,
                     Type::Bool,
                     comparable
                         || (parameter
-                            && !lt.is_numeric()
-                            && !rt.is_numeric()
+                            && !numeric(&lt)
+                            && !numeric(&rt)
                             && !matches!(lt, Type::Nullable(_))
                             && !matches!(rt, Type::Nullable(_))
                             && self.generic_overlap(&left.ty, &right.ty)
@@ -1160,7 +1175,7 @@ impl<'p> Checker<'p> {
                     B::RShift => BinOp::Shr,
                     _ => BinOp::UShr,
                 };
-                if lt.is_integer() && (lt == rt || use_kind == BinUse::CompoundAssignment) {
+                if integer_pair {
                     (hop, lt.clone(), true)
                 } else {
                     (hop, Type::Error, suppress_error)
@@ -1183,7 +1198,7 @@ impl<'p> Checker<'p> {
                 terminal: false,
             };
         }
-        if use_kind == BinUse::CompoundAssignment {
+        if use_kind == BinUse::CompoundAssignment && !mixed_numeric {
             let name = self.type_name(&lt);
             self.error(
                 RuleCode::S100,

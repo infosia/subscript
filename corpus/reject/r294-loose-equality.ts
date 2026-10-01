@@ -1,6 +1,6 @@
 // corpus: reject/r294-loose-equality
 // purpose: Rejects loose equality on concrete numeric operands.
-// exercises: generic-body, type-parameter
+// exercises: equality, numeric-operands
 // questions: collisions.md C20
 // tsc: accepts
 // expected-error: S100 at line 11, Rejects loose equality on concrete numeric operands.
