@@ -269,16 +269,19 @@ it beside the numbers. A round told to measure does not stop at the
 rule it was sent to test. Contract first still governs step 3: nothing
 lands before the rule changes.
 
-**Two review rounds are the limit for a defect class.** A review raises
-a class. A round fixes it. If the next review raises that class again,
-the class is a defect of the form.
+**Solve the problem a defect class shows. Do not count rounds.** If a
+review finds a defect, first ask whether the current form can close
+its class. If the defect is isolated, fix it in any round.
 
-Do not fix a third instance. Report what the form must carry, or
-must forbid. Change the contract first, then the code.
-
-A fix that closes named sites does not converge. Make the class
+If the form cannot close the class, change the form. State what the
+form must carry, or must forbid. Change the contract first, then the
+code. A fix that closes named sites does not converge. Make the class
 unreachable, or make a total check at the build report every
 remaining site at once.
+
+A round count only stops a review loop that does not end. It is never
+a reason to stop work on the problem, or to record the problem as a
+gap.
 
 **Every phase ends with a mandatory Phase Review ("Clean Review Then Fix"):**
 a fresh no-context subagent reviews the phase's cumulative diff and emits
