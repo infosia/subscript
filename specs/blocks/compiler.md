@@ -185,3 +185,4 @@ Every section, with its status:
 | §141 | A regex literal has no `v` flag | active | [`s141-a-regex-literal-has-no-v-flag.md`](compiler/s141-a-regex-literal-has-no-v-flag.md) |
 | §142 | A handle the script keeps is the host's to keep alive | active | [`s142-a-handle-the-script-keeps-is-the-hosts-to-keep-alive.md`](compiler/s142-a-handle-the-script-keeps-is-the-hosts-to-keep-alive.md) |
 | §143 | A type parameter is typed as `tsc` types it | active; replaces §135 rule 2 | [`s143-a-type-parameter-is-typed-as-tsc-types-it.md`](compiler/s143-a-type-parameter-is-typed-as-tsc-types-it.md) |
+| §144 | Loose equality is strict equality | active; deletes collision C20 | [`s144-loose-equality-is-strict-equality.md`](compiler/s144-loose-equality-is-strict-equality.md) |
