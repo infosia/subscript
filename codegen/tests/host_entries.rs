@@ -29,6 +29,36 @@ fn uncalled_aliases_share_state_header_and_dev_names_without_main() {
             .source
             .contains(&format!("void subscript_export_{name}(")));
     }
+    assert_eq!(
+        program
+            .host_header
+            .matches("compiler.md §142 rules 1 and 2:")
+            .count(),
+        1
+    );
+    assert!(program.host_header.contains(
+        r#"/**
+ * C calling convention shared by the module initializer (`subscript_init`) and every
+ * supported host export.
+ *
+ * A host that may clear traps brackets each call with
+ * `subscript_rt_ctx_enter_script` and `subscript_rt_ctx_exit_script`.
+ *
+ * An ordinary run entry uses `subscript_export_main`; a host-owned entry may instead
+ * drive other zero-argument `void` exports using the symbol
+ * `subscript_export_<name>` and this same C signature.
+ *
+ * compiler.md §142 rules 1 and 2:
+ * A handle that the host passes to a script transfers no ownership.
+ * The script can copy the handle, keep it, and use it in a later call.
+ * The host keeps the object valid while any script code of that Context
+ * can use the handle.
+ * A script object that holds the handle keeps nothing alive on the host side.
+ * The language and runtime do not detect use after the host destroys the object.
+ */
+typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
+"#
+    ));
     assert!(!program.host_header.contains("subscript_export_update"));
     assert!(!program.host_header.contains("SUBSCRIPT_HOST_ENTRY_update"));
     assert!(!program.source.contains("subscript_export_other"));

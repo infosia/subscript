@@ -97,6 +97,14 @@ typedef void (*subscript_rt_alloc_visitor)(void* userdata, uint32_t class_id, ui
  * An ordinary run entry uses `subscript_export_main`; a host-owned entry may instead
  * drive other zero-argument `void` exports using the symbol
  * `subscript_export_<name>` and this same C signature.
+ *
+ * compiler.md §142 rules 1 and 2:
+ * A handle that the host passes to a script transfers no ownership.
+ * The script can copy the handle, keep it, and use it in a later call.
+ * The host keeps the object valid while any script code of that Context
+ * can use the handle.
+ * A script object that holds the handle keeps nothing alive on the host side.
+ * The language and runtime do not detect use after the host destroys the object.
  */
 typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
 

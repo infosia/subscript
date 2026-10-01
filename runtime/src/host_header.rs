@@ -151,7 +151,20 @@ pub fn render() -> Result<String, String> {
         &allocation_visitor,
     )?);
     out.push_str(";\n\n");
-    push_comment(&mut out, &entry_docs);
+    push_comment_with_c_docs(
+        &mut out,
+        &entry_docs,
+        &[
+            "",
+            "compiler.md §142 rules 1 and 2:",
+            "A handle that the host passes to a script transfers no ownership.",
+            "The script can copy the handle, keep it, and use it in a later call.",
+            "The host keeps the object valid while any script code of that Context",
+            "can use the handle.",
+            "A script object that holds the handle keeps nothing alive on the host side.",
+            "The language and runtime do not detect use after the host destroys the object.",
+        ],
+    );
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("subscript_main_entry", &entry)?);
     out.push_str(";\n\n");
@@ -245,12 +258,20 @@ fn docs_for(source: &str, declaration: &str) -> Result<Vec<String>, String> {
 }
 
 fn push_comment(out: &mut String, docs: &[String]) {
+    push_comment_with_c_docs(out, docs, &[]);
+}
+
+fn push_comment_with_c_docs(out: &mut String, docs: &[String], c_docs: &[&str]) {
     out.push_str("/**\n");
-    for line in docs {
+    for line in docs
+        .iter()
+        .map(|line| rewrite_context_c_type(line))
+        .chain(c_docs.iter().map(|line| (*line).to_owned()))
+    {
         out.push_str(" *");
         if !line.is_empty() {
             out.push(' ');
-            out.push_str(&rewrite_context_c_type(line));
+            out.push_str(&line);
         }
         out.push('\n');
     }
@@ -467,6 +488,35 @@ mod tests {
             "the committed host header drifted; regenerate with \
              `cargo run --offline -p subscript-runtime --bin generate-host-header`"
         );
+    }
+
+    #[test]
+    fn generated_host_header_documents_host_handle_lifetime() {
+        let header = render().expect("render host header");
+        assert_eq!(header.matches("compiler.md §142 rules 1 and 2:").count(), 1);
+        assert!(header.contains(
+            r#"/**
+ * C calling convention shared by the module initializer (`subscript_init`) and every
+ * supported host export.
+ *
+ * A host that may clear traps brackets each call with
+ * `subscript_rt_ctx_enter_script` and `subscript_rt_ctx_exit_script`.
+ *
+ * An ordinary run entry uses `subscript_export_main`; a host-owned entry may instead
+ * drive other zero-argument `void` exports using the symbol
+ * `subscript_export_<name>` and this same C signature.
+ *
+ * compiler.md §142 rules 1 and 2:
+ * A handle that the host passes to a script transfers no ownership.
+ * The script can copy the handle, keep it, and use it in a later call.
+ * The host keeps the object valid while any script code of that Context
+ * can use the handle.
+ * A script object that holds the handle keeps nothing alive on the host side.
+ * The language and runtime do not detect use after the host destroys the object.
+ */
+typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
+"#
+        ));
     }
 
     #[test]
