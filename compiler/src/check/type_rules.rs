@@ -111,18 +111,26 @@ impl<'p> Checker<'p> {
                 .iter()
                 .any(|member| self.assignable_through_constraints(from, member, seen));
         }
-        if matches!(from, Type::TypeParameter(_))
-            && to.is_numeric()
-            && self.apparent_type(from).is_numeric()
-            && self.instance_restriction(opaque::InstanceRestriction::SizedNumeric, from)
-        {
-            return true;
-        }
-        if matches!(from, Type::GenericNumber)
-            && to.is_numeric()
-            && self.instance_restriction(opaque::InstanceRestriction::SizedNumeric, from)
-        {
-            return true;
+        if self.instance_restriction(opaque::InstanceRestriction::SizedNumeric, from) {
+            let mut source = self.apparent_type(from);
+            let mut target = to;
+            loop {
+                match (&source, target) {
+                    (Type::Array(a), Type::Array(b)) => {
+                        source = self.apparent_type(a);
+                        target = b;
+                    }
+                    (Type::FixedArray(a, n), Type::FixedArray(b, m)) if n == m => {
+                        source = self.apparent_type(a);
+                        target = b;
+                    }
+                    _ => break,
+                }
+            }
+            if (source.is_numeric() || matches!(source, Type::GenericNumber)) && target.is_numeric()
+            {
+                return true;
+            }
         }
         if from.is_numeric() && matches!(to, Type::GenericNumber) {
             return true;

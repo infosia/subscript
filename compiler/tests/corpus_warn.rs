@@ -28,7 +28,15 @@ fn checked_warnings(files: Vec<SourceFile>, label: &str) -> Vec<Warning> {
     let module = check_program(&files).unwrap_or_else(|diagnostics| {
         panic!("{label} was rejected: {diagnostics:?}");
     });
-    check_warnings(&module)
+    let warnings = check_warnings(&module);
+    for warning in &warnings {
+        assert!(
+            !warning.message.contains("TypeParameter(") && !warning.message.contains("ClassId("),
+            "{}",
+            warning.message
+        );
+    }
+    warnings
 }
 
 fn read_source(path: &Path, name: impl Into<String>) -> SourceFile {

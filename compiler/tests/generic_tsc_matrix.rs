@@ -1,5 +1,7 @@
 //! The generic body matrix of §143 rule 4.
-//! Measured cost: 16,000 cells in 9.448 seconds (10.40 seconds with cleanup), with one TypeScript process.
+//! Measured cost: 19,117 cells in 12.853 seconds; 14.19 seconds with cleanup.
+//! One TypeScript process checks all cells.
+//! The prelude syntax tree adds 96 API positions across 42 callables; three signatures need separate call forms.
 //! The product keeps +=, -=, and &=, one per checker arm; a separate 99-cell test covers all operators.
 //! The other compound operators had identical verdicts in all 633 measured groups (§143 rule 4).
 //! TypeScript runs beside at most eight scoped checker workers; each value-role/site pair remains.
@@ -20,6 +22,9 @@ mod product;
 
 #[path = "generic_tsc_matrix/findings.rs"]
 mod findings;
+
+#[path = "generic_tsc_matrix/api.rs"]
+mod api;
 
 struct Kind {
     name: &'static str,
@@ -87,6 +92,10 @@ struct Form {
 }
 
 const FORMS: &[Form] = &[
+    Form {
+        name: "json-stringify",
+        body: "const a: string = JSON.stringify(x);",
+    },
     Form {
         name: "iteration-compound",
         body: "let total: i32 = 0; for (const e of values) total += e;",
@@ -1225,6 +1234,7 @@ fn cells() -> Vec<Cell> {
     }
     cells.extend(product::cells());
     cells.extend(findings::cells());
+    cells.extend(api::cells());
     cells
 }
 
@@ -1312,6 +1322,39 @@ fn check_record_text(text: &str, heading: &str, token: &str) -> Result<(), Strin
     Ok(())
 }
 
+fn question_record<'a>(text: &'a str, question: &str) -> Result<&'a str, String> {
+    let mut offset = 0;
+    for line in text.split_inclusive('\n') {
+        if let Some(rest) = line.strip_prefix("- **") {
+            let ids = rest.split_once("**").map_or(rest, |(ids, _)| ids);
+            let ids = ids.split_once(" (").map_or(ids, |(ids, _)| ids);
+            if ids.split('/').any(|id| id == question) {
+                let rest = &text[offset..];
+                let mut end = rest.find('\n').map_or(rest.len(), |end| end + 1);
+                for line in rest[end..].split_inclusive('\n') {
+                    if line.starts_with("- **Q") || line.starts_with('#') {
+                        break;
+                    }
+                    end += line.len();
+                }
+                return Ok(&rest[..end]);
+            }
+        }
+        offset += line.len();
+    }
+    Err(format!("missing question record {question}"))
+}
+
+fn check_question_text(text: &str, question: &str, token: &str) -> Result<(), String> {
+    let entry = question_record(text, question)?;
+    if !entry.contains(token) {
+        return Err(format!(
+            "record {question} does not state restriction {token:?}"
+        ));
+    }
+    Ok(())
+}
+
 fn check_record(root: &Path, record: Divergence) -> Result<(), String> {
     let blocks = root.join("specs/blocks");
     let (path, heading) = if let Some(number) = record.record.strip_prefix("compiler.md §") {
@@ -1327,6 +1370,39 @@ fn check_record(root: &Path, record: Divergence) -> Result<(), String> {
             .map(|(link, _)| link)
             .ok_or_else(|| format!("missing index link {}", record.record))?;
         (blocks.join(link), format!("## {number}."))
+    } else if let Some(number) = record.record.strip_prefix("stdlib.md §") {
+        let level = if number.contains('.') { "###" } else { "##" };
+        (
+            blocks.join("stdlib.md"),
+            if number.contains('.') {
+                format!("{level} {number} ")
+            } else {
+                format!("{level} {number}.")
+            },
+        )
+    } else if let Some(question) = record.record.strip_prefix("corpus.md §5 ") {
+        let text = fs::read_to_string(blocks.join("corpus.md")).map_err(|e| e.to_string())?;
+        let section = record_section(&text, "## 5.")?;
+        let entry = question_record(section, question)?;
+        if entry.contains(record.token) {
+            return Ok(());
+        }
+        // The corpus question register resolves each decided Q-id through collisions.md.
+        let collisions =
+            fs::read_to_string(blocks.join("collisions.md")).map_err(|e| e.to_string())?;
+        let resolutions = record_section(&collisions, "## 2.")?;
+        let entry = question_record(resolutions, question)?;
+        if !entry.contains(record.token) {
+            return Err(format!(
+                "record {} does not state restriction {:?}",
+                record.record, record.token
+            ));
+        }
+        return Ok(());
+    } else if record.record.starts_with('Q') {
+        let text = fs::read_to_string(blocks.join("collisions.md")).map_err(|e| e.to_string())?;
+        let section = record_section(&text, "## 2.")?;
+        return check_question_text(section, record.record, record.token);
     } else {
         (
             blocks.join("collisions.md"),
@@ -1372,6 +1448,14 @@ fn check_cell(cell: &Cell, root: &Path) -> (Vec<Diagnostic>, Option<String>, Res
     )])
     .err()
     .unwrap_or_default();
+    for error in &errors {
+        assert!(
+            !error.message.contains("TypeParameter(") && !error.message.contains("ClassId("),
+            "{}: {}",
+            cell.name,
+            error.message
+        );
+    }
     (errors, control_failure, record_result)
 }
 
@@ -1511,6 +1595,9 @@ fn run_matrix(cells: Vec<Cell>, start: Instant) {
         failures.len(),
         start.elapsed()
     );
+    if let Some(path) = std::env::var_os("SUBSCRIPT_MATRIX_FAILURES") {
+        fs::write(path, failures.join("\n")).unwrap();
+    }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
@@ -1588,4 +1675,84 @@ fn lambda_defaults_use_the_declared_parameter_type() {
     ] {
         assert_eq!(check_program(&[SourceFile::new("default.ts", source)]).is_ok(), accepts);
     }
+}
+
+#[test]
+fn restriction_records_resolve_each_supported_source() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    for (record, token) in [
+        ("C20", "=="),
+        ("Q3", "non-negative integer literal"),
+        ("compiler.md §124", "do…while"),
+        (
+            "stdlib.md §18.1",
+            "The argument `value` has type `T` (nominal equality)",
+        ),
+        ("corpus.md §5 Q3", "fixed-size arrays"),
+        ("corpus.md §5 Q6", "reference-class instance immediately"),
+        ("stdlib.md §9", "two arities accepted since Q27"),
+        ("stdlib.md §10.4", "as Q22 fixes callback arities"),
+    ] {
+        let divergence = Divergence {
+            code: RuleCode::S100,
+            record,
+            token,
+        };
+        assert!(check_record(root, divergence).is_ok(), "{record}");
+        assert!(check_record(
+            root,
+            Divergence {
+                token: "a restriction absent from every record",
+                ..divergence
+            }
+        )
+        .is_err());
+    }
+    assert!(check_record(
+        root,
+        Divergence {
+            code: RuleCode::S100,
+            record: "corpus.md §5 Q3",
+            token: "slice lowering"
+        }
+    )
+    .is_err());
+    assert!(check_record(
+        root,
+        Divergence {
+            code: RuleCode::S100,
+            record: "stdlib.md §18.1",
+            token: "### 18.2 Changes by site"
+        }
+    )
+    .is_err());
+}
+
+#[test]
+fn a_question_bullet_without_the_restriction_fails_the_cell() {
+    let text = concat!(
+        "- **Q3 (`FixedArray`)**: The checker enforces length.\n",
+        "- **Q4**: N must be a non-negative integer literal.\n",
+        "## 3. Other records\nA token beyond the heading.\n",
+    );
+    let source = "function g<T>(): void { let a: FixedArray<i32, T>; }";
+    let errors = check_program(&[SourceFile::new("length.ts", source)]).unwrap_err();
+    let record = Divergence {
+        code: RuleCode::S100,
+        record: "Q3",
+        token: "non-negative integer literal",
+    };
+    let cell = build_cell(CellInput {
+        name: "wrong-question-record",
+        declaration: source,
+        main_body: "",
+        instance: false,
+        concrete_source: None,
+        divergence: Some(record),
+    });
+    let result = check_question_text(text, record.record, record.token);
+    let failure = disagreement(&cell, true, &errors, result).unwrap();
+    assert!(failure.contains("§143 rule 4b"), "{failure}");
+    assert!(failure.contains("does not state restriction"), "{failure}");
+    assert!(check_question_text(text, "Q4", "token beyond the heading").is_err());
 }

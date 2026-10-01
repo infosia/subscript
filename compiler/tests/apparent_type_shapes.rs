@@ -1,7 +1,7 @@
 //! §143 rule 1a: every value-shape test reads the apparent type.
 //! The source scan uses Rust token groups, so comments and strings do not count.
-//! It checks match arms, let patterns, matches!, variant equality, and helpers derived from Type source.
-//! Measured cost: 495 sites in 0.205 seconds; 16 named groups pin 45 justified raw-test functions.
+//! It checks match arms, patterns, variant equality, typed comparisons, collection searches, and derived Type helpers.
+//! Measured cost: 508 sites in 0.25 seconds; 18 named groups pin 48 justified raw-test functions.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -9,6 +9,9 @@ use std::{
     path::Path,
     time::Instant,
 };
+
+#[path = "apparent_type_shapes/comparisons.rs"]
+mod comparisons;
 
 #[derive(Clone)]
 struct Token {
@@ -518,6 +521,7 @@ fn scan_with_helpers(source: &str, helpers: &ShapeHelpers) -> Vec<Site> {
         &mut result,
         helpers,
     );
+    result.extend(comparisons::scan(source));
     result
 }
 
@@ -530,6 +534,24 @@ struct AllowGroup {
 }
 
 const ALLOWLIST: &[AllowGroup] = &[
+    AllowGroup {
+        name: "numeric-storage-constraint-identity",
+        reason: "The numeric storage walk reads parameter identity to stop recursive constraints; each shape test uses the apparent type (§143 rule 1d).",
+        sites: &[("opaque.rs", "instance_restriction", 0xf12696b35ade54b9)],
+    },
+    AllowGroup {
+        name: "concrete-callback-identity",
+        reason: "The parameter branch uses assignability; the equality branch excludes all type parameters (§143 rule 1b).",
+        sites: &[("expr/method.rs", "callback_type_fits", 0xd5a79fdca669ba16)],
+    },
+    AllowGroup {
+        name: "json-graph-identity",
+        reason: "JSON helper graphs exclude opaque types under §143 rule 2a; each key preserves its declared concrete type.",
+        sites: &[
+            ("json.rs", "collect_json_types", 0xa7eca4848d06428a),
+            ("json.rs", "json_type_index", 0xaf5f77be458924fe),
+        ],
+    },
     AllowGroup { name: "numeric-literal-range", reason: "The numeric literal caller supplies a concrete apparent numeric target (§143 rule 1a).", sites: &[
         ("expr.rs", "synthesized_int_range", 0x862a788d604204fc),
     ] },
@@ -548,7 +570,7 @@ const ALLOWLIST: &[AllowGroup] = &[
     ] },
     AllowGroup { name: "instance-identity", reason: "Instance keys compare declared type arguments and preserve T identity (§143 rule 1b).", sites: &[
         ("generics.rs", "numeric_normal_form", 0x58518f62e52b0a50),
-        ("generics.rs", "same_normal_form", 0x40ae5472edfe0ac7),
+        ("generics.rs", "same_normal_form", 0x13ce99814da5bbaa),
         ("generics.rs", "satisfies_constraint_through_parameters", 0x967a092b7f73d8c0),
         ("instance_chain.rs", "argument_has_error", 0xa9def2fd9d81a55),
     ] },
@@ -576,8 +598,8 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "parameter-form", reason: "These tests resolve or preserve T identity; they do not select a value operation (§143 rules 1a–1d).", sites: &[
         ("opaque.rs", "constrain_opaque_param", 0xae68ef4a8c9974a),
         ("opaque.rs", "constraint_cycle", 0x7903218a6714cb24),
-        ("opaque.rs", "generic_overlap", 0x26896e6b772a01e2),
-        ("opaque.rs", "generic_union", 0x4d201cd57ca0060d),
+        ("opaque.rs", "generic_overlap", 0x247089b02a2b098b),
+        ("opaque.rs", "generic_union", 0x00bd1f8d43511104),
         ("opaque.rs", "involves_type_parameter", 0x73713f5554ee1dc7),
         ("opaque.rs", "is_type_parameter", 0x291d692ffcac9b32),
         ("opaque.rs", "is_unconstrained_type_parameter", 0xc11d80573c40a67b),
@@ -591,7 +613,7 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("stmt.rs", "stmt_returns", 0x877d2a688f764b51),
     ] },
     AllowGroup { name: "assignability", reason: "Assignability and its diagnostics must inspect T itself (§143 rule 1b).", sites: &[
-        ("type_rules.rs", "assignable_through_constraints", 0xa05ea280743aeccc),
+        ("type_rules.rs", "assignable_through_constraints", 0x7381635e5439331d),
         ("type_rules.rs", "report_not_assignable", 0xa944daeb4d9d32da),
     ] },
     AllowGroup { name: "wire-declarations", reason: "Wire boundary declarations come from concrete mirror types, which cannot declare type parameters.", sites: &[

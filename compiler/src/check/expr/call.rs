@@ -370,14 +370,18 @@ impl<'p> Checker<'p> {
         if self.apparent_type(&(target)) == Type::Error {
             return self.err_expr(pos);
         }
-        let top_level_ok = match &self.apparent_type(&target) {
-            Type::FixedArray(..) => true,
-            Type::Class(id) => self.classes.get(id.0).is_some_and(|class| class.is_value),
-            _ => false,
-        };
-        if !top_level_ok {
-            let target_name = self.type_name(&target);
-            self.error_diverging(
+        if !self.instance_restriction(
+            crate::check::opaque::InstanceRestriction::ByteAccessTarget,
+            &target,
+        ) {
+            let top_level_ok = match &self.apparent_type(&target) {
+                Type::FixedArray(..) => true,
+                Type::Class(id) => self.classes.get(id.0).is_some_and(|class| class.is_value),
+                _ => false,
+            };
+            if !top_level_ok {
+                let target_name = self.type_name(&target);
+                self.error_diverging(
                 RuleCode::S100,
                 format!(
                     "`Context.{name}<T>` cannot use `{target_name}`; it is not a @ValueType value class or FixedArray"
@@ -385,36 +389,37 @@ impl<'p> Checker<'p> {
                 member_pos,
                 Divergence::ByteAccessTarget,
             );
-            return self.err_expr(pos);
-        }
-        let rejection = self.context_bytes_storage_rejection(
-            &target,
-            None,
-            &mut std::collections::HashSet::new(),
-        );
-        if let Some((field, leaf, reason)) = rejection {
-            let target_name = self.type_name(&target);
-            let detail = field.map_or_else(
-                || {
-                    format!(
-                        "{reason}; unsupported storage type is `{}`",
-                        self.type_name(&leaf)
-                    )
-                },
-                |field| {
-                    format!(
-                        "field `{field}` has unsupported type `{}` ({reason})",
-                        self.type_name(&leaf)
-                    )
-                },
+                return self.err_expr(pos);
+            }
+            let rejection = self.context_bytes_storage_rejection(
+                &target,
+                None,
+                &mut std::collections::HashSet::new(),
             );
-            self.error_diverging(
-                RuleCode::S100,
-                format!("`Context.{name}<T>` cannot use `{target_name}`; {detail}"),
-                member_pos,
-                Divergence::ByteAccessTarget,
-            );
-            return self.err_expr(pos);
+            if let Some((field, leaf, reason)) = rejection {
+                let target_name = self.type_name(&target);
+                let detail = field.map_or_else(
+                    || {
+                        format!(
+                            "{reason}; unsupported storage type is `{}`",
+                            self.type_name(&leaf)
+                        )
+                    },
+                    |field| {
+                        format!(
+                            "field `{field}` has unsupported type `{}` ({reason})",
+                            self.type_name(&leaf)
+                        )
+                    },
+                );
+                self.error_diverging(
+                    RuleCode::S100,
+                    format!("`Context.{name}<T>` cannot use `{target_name}`; {detail}"),
+                    member_pos,
+                    Divergence::ByteAccessTarget,
+                );
+                return self.err_expr(pos);
+            }
         }
 
         let params = match function {
@@ -450,7 +455,14 @@ impl<'p> Checker<'p> {
                 return self.err_expr(spread_pos);
             }
             let checked = self.check_expr(&argument.expr, Some(expected), fx);
-            if checked.ty != *expected && self.apparent_type(&(checked.ty)) != Type::Error {
+            if self.involves_type_parameter(expected) || self.involves_type_parameter(&checked.ty) {
+                self.require_assignable(
+                    &checked.ty,
+                    expected,
+                    checked.pos.clone(),
+                    &format!("`Context.{name}` argument"),
+                );
+            } else if checked.ty != *expected && self.apparent_type(&(checked.ty)) != Type::Error {
                 self.error(
                     RuleCode::S100,
                     format!(

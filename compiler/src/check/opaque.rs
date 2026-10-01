@@ -55,7 +55,7 @@ pub(crate) enum InstanceRestriction {
     TemplateInterpolation,
     /// A value-class field must have a value layout.
     ValueField,
-    /// A numeric operation or assignment needs a concrete sized type.
+    /// A numeric operation, assignment, or storage element needs a concrete sized type.
     SizedNumeric,
     /// Unary numeric coercion accepts every non-null value that TypeScript accepts.
     UnaryNumeric,
@@ -77,6 +77,10 @@ pub(crate) enum InstanceRestriction {
     SwitchKind,
     /// A cast needs a concrete runtime conversion.
     CastKind,
+    /// JSON needs a concrete serializable graph.
+    JsonSerializability,
+    /// Byte access needs a concrete value layout.
+    ByteAccessTarget,
     /// A relational operation needs a concrete operand kind.
     RelationalKind,
 }
@@ -90,13 +94,30 @@ impl<'p> Checker<'p> {
         let apparent = self.apparent_type(ty);
         match restriction {
             InstanceRestriction::SizedNumeric => {
-                apparent.is_numeric() || matches!(apparent, Type::GenericNumber)
+                let mut element = apparent;
+                let mut seen = std::collections::HashSet::new();
+                loop {
+                    // §143 rule 1d preserves identity across recursive storage constraints.
+                    if let Type::TypeParameter(parameter) = &element {
+                        if !seen.insert(parameter.identity) {
+                            return false;
+                        }
+                    }
+                    let shape = self.apparent_type(&element);
+                    match shape {
+                        Type::Array(inner) | Type::FixedArray(inner, _) => element = *inner,
+                        _ => return shape.is_numeric() || matches!(shape, Type::GenericNumber),
+                    }
+                }
             }
             InstanceRestriction::UnaryNumeric => {
                 !matches!(apparent, Type::Nullable(_) | Type::Null | Type::Void)
             }
             InstanceRestriction::BooleanContext => !matches!(apparent, Type::Func(_)),
             InstanceRestriction::TemplateInterpolation => !matches!(apparent, Type::Error),
+            InstanceRestriction::JsonSerializability | InstanceRestriction::ByteAccessTarget => {
+                !matches!(apparent, Type::Error)
+            }
             InstanceRestriction::ValueField => !matches!(apparent, Type::Error),
             InstanceRestriction::AssociativeKey => !matches!(apparent, Type::Error),
             InstanceRestriction::ArrayElementKind => !matches!(apparent, Type::Error),

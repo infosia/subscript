@@ -690,7 +690,9 @@ Reject: `r294`.
   readonly length: i32; }`. `N` is not used structurally (a plain array
   literal must remain assignable for construction); this compiler reads
   `N` from the annotation and enforces length and element type. Lowers to
-  a C array `T[N]` in-place.
+  a C array `T[N]` in-place. `N` must be a non-negative integer literal:
+  a type parameter or any other type in `N` is rejected with S100,
+  where `tsc` accepts every `number` type there.
 - **Q4/Q15 (arrays and slices)** — `T[]` is the language's dynamic array:
   Context-allocated storage, explicit growth via `push`. The permitted
   surface is `length`, indexing, `push`, `pop`; other `Array.prototype`

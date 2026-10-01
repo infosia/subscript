@@ -85,6 +85,16 @@ impl Checker<'_> {
         if self.apparent_type(&(value.ty)) == Type::Error {
             return self.err_expr(pos);
         }
+        if self.instance_restriction(
+            super::opaque::InstanceRestriction::JsonSerializability,
+            &value.ty,
+        ) {
+            return hir::Expr {
+                kind: ExprKind::Null,
+                ty: Type::Str,
+                pos,
+            };
+        }
         if self.type_holds_error(&value.ty) {
             self.reject_json_error_type("JSON.stringify", &value.ty, member_pos);
             return self.err_expr(pos);
@@ -195,6 +205,27 @@ impl Checker<'_> {
         if self.apparent_type(&(target)) == Type::Error {
             return self.err_expr(pos);
         }
+        let text = self.check_expr(&call.args[0].expr, Some(&Type::Str), fx);
+        self.require_assignable(
+            &text.ty.clone(),
+            &Type::Str,
+            text.pos.clone(),
+            "`JSON.parse` text",
+        );
+        if self.apparent_type(&(text.ty)) == Type::Error {
+            return self.err_expr(pos);
+        }
+
+        if self.instance_restriction(
+            super::opaque::InstanceRestriction::JsonSerializability,
+            &target,
+        ) {
+            return hir::Expr {
+                kind: ExprKind::Null,
+                ty: target,
+                pos,
+            };
+        }
         if self.type_holds_error(&target) {
             self.reject_json_error_type("JSON.parse", &target, member_pos);
             return self.err_expr(pos);
@@ -225,17 +256,6 @@ impl Checker<'_> {
                 ),
                 member_pos,
             );
-            return self.err_expr(pos);
-        }
-
-        let text = self.check_expr(&call.args[0].expr, Some(&Type::Str), fx);
-        self.require_assignable(
-            &text.ty.clone(),
-            &Type::Str,
-            text.pos.clone(),
-            "`JSON.parse` text",
-        );
-        if self.apparent_type(&(text.ty)) == Type::Error {
             return self.err_expr(pos);
         }
 
@@ -506,13 +526,13 @@ impl Checker<'_> {
     }
 
     fn collect_json_types(&self, ty: &Type, out: &mut Vec<Type>) {
-        let shape = self.apparent_type(ty);
-        let ty = &shape;
-
+        // §143 rule 2a excludes opaque graphs; keys retain the declared type at every lookup.
         if out.contains(ty) {
             return;
         }
         out.push(ty.clone());
+        let shape = self.apparent_type(ty);
+        let ty = &shape;
         match ty {
             Type::Array(element) | Type::FixedArray(element, _) | Type::Nullable(element) => {
                 self.collect_json_types(element, out)
@@ -626,7 +646,10 @@ impl Checker<'_> {
                     Ok(object)
                 }
             }
-            other => Err(format!("rejected JSON serializer type {other:?}")),
+            other => Err(format!(
+                "rejected JSON serializer type `{}`",
+                self.type_name(other)
+            )),
         }
     }
 
@@ -1014,7 +1037,10 @@ impl Checker<'_> {
                 body.push(return_value(json_bool(true, pos)));
                 Ok(body)
             }
-            other => Err(format!("rejected JSON validator type {other:?}")),
+            other => Err(format!(
+                "rejected JSON validator type `{}`",
+                self.type_name(other)
+            )),
         }
     }
 
@@ -1250,7 +1276,10 @@ impl Checker<'_> {
                 body.push(return_value(locals.value(Type::Class(*id))));
                 Ok(body)
             }
-            other => Err(format!("rejected JSON constructor type {other:?}")),
+            other => Err(format!(
+                "rejected JSON constructor type `{}`",
+                self.type_name(other)
+            )),
         }
     }
 
@@ -1286,7 +1315,8 @@ impl Checker<'_> {
             ),
             other => {
                 return Err(format!(
-                    "JSON array constructor received non-array type {other:?}"
+                    "JSON array constructor received non-array type `{}`",
+                    self.type_name(other)
                 ));
             }
         };
@@ -1356,7 +1386,8 @@ impl Checker<'_> {
             ),
             other => {
                 return Err(format!(
-                    "JSON array store received non-array type {other:?}"
+                    "JSON array store received non-array type `{}`",
+                    self.type_name(other)
                 ));
             }
         };
@@ -1380,7 +1411,7 @@ fn json_type_index(types: &[Type], ty: &Type) -> Result<usize, String> {
     types
         .iter()
         .position(|candidate| candidate == ty)
-        .ok_or_else(|| format!("JSON type graph is missing {ty:?}"))
+        .ok_or_else(|| "JSON type graph is missing a declared type".to_string())
 }
 
 fn json_param(name: &str, ty: Type, pos: &Pos) -> hir::Param {

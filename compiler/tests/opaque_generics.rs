@@ -961,3 +961,88 @@ fn compound_diagnostics_name_the_operator_and_both_operands() {
     check(&program("", "let s: string = \"s\"; s += \"a\";"))
         .expect("string addition accepts two strings");
 }
+
+#[test]
+fn json_and_bytes_restrictions_wait_for_admitted_instances() {
+    let cases = [
+        ("function g<T>(text: string): T { return JSON.parse<T>(text); }", "const p = g<Pt>(\"{\\\"x\\\":1,\\\"y\\\":2}\");"),
+        ("function g<T>(value: T): string { return JSON.stringify(value); }", "g<Pt>(new Pt()); g<i32>(3);"),
+        ("function g<T>(text: string): T[] { return JSON.parse<T[]>(text); }", "g<Pt>(\"[]\");"),
+        ("function g<T extends Pt>(text: string): i32 { const p: T = JSON.parse<T>(text); return p.x + p.y; }", "g<Pt>(\"{\\\"x\\\":1,\\\"y\\\":2}\");"),
+        ("class Repo<T> { load(text: string): T { return JSON.parse<T>(text); } }", "const r = new Repo<Pt>(); r.load(\"{\\\"x\\\":1,\\\"y\\\":2}\");"),
+        ("function g<T>(value: T): u8[] { return Context.bytesOf<T>(value); }", "g<Value>(new Value());"),
+        ("function g<T>(bytes: u8[]): T { return Context.fromBytes<T>(bytes, 0); }", "g<Value>([0, 0, 0, 0]);"),
+        ("function g<T>(value: T, bytes: u8[]): void { Context.bytesInto<T>(value, bytes, 0); }", "g<Value>(new Value(), [0, 0, 0, 0]);"),
+    ];
+    for (declaration, instance) in cases {
+        for main in ["", instance] {
+            let source = program(
+                &format!("class Pt {{ x: i32 = 0; y: i32 = 0; }} @ValueType class Value {{ x: i32 = 0; }} {declaration}"),
+                main,
+            );
+            assert!(
+                check(&source).is_ok(),
+                "{source}: {:?}",
+                check(&source).err()
+            );
+        }
+    }
+    for declaration in [
+        "function g<T>(x: T): T { return JSON.parse<T>(x); }",
+        "function g<T>(x: T): T { return Context.fromBytes<T>(x, 0); }",
+        "function g<T>(x: T): void { Context.bytesInto<T>(x, x, 0); }",
+    ] {
+        let errors = diagnostic_list(&program(declaration, ""));
+        assert!(!errors.is_empty(), "{declaration}");
+    }
+    for main in [
+        "JSON.stringify(1 as f16);",
+        "JSON.parse<f16>(\"1\");",
+        "Context.bytesOf<i32>(1);",
+        "Context.fromBytes<i32>([0, 0, 0, 0], 0);",
+    ] {
+        assert!(!diagnostic_list(&program("", main)).is_empty(), "{main}");
+    }
+}
+
+#[test]
+fn a_callback_accepts_a_value_through_its_parameter_constraint() {
+    let declaration = "function g<T extends i32>(xs: T[]): void { const take = (value: i32): i32 => value; const groups = Map.groupBy(xs, take); }";
+    for main in ["", "g<i32>([1]);"] {
+        let source = program(declaration, main);
+        assert!(
+            check(&source).is_ok(),
+            "{source}: {:?}",
+            check(&source).err()
+        );
+    }
+    let control = program("function g<T extends i32>(xs: T[]): void { const take = (value: string): i32 => 1; const groups = Map.groupBy(xs, take); }", "");
+    assert!(!diagnostic_list(&control).is_empty());
+}
+
+#[test]
+fn byte_arguments_read_constraints_and_defer_numeric_element_widths() {
+    for (declaration, instance) in [
+        ("function g<T extends FixedArray<u8, 2>>(x: T): void { Context.bytesOf<FixedArray<u8, 2>>(x); }", "g<FixedArray<u8, 2>>([1, 2]);"),
+        ("function g<T extends FixedArray<u8, 2>>(x: T, bytes: u8[]): void { Context.bytesInto<FixedArray<u8, 2>>(x, bytes, 0); }", "g<FixedArray<u8, 2>>([1, 2], [0, 0]);"),
+        ("function g<T extends i32[]>(x: T): void { Context.fromBytes<FixedArray<u8, 2>>(x, 0); }", "g<u8[]>([1, 2]);"),
+        ("function g<T extends i32>(xs: T[]): void { Context.fromBytes<FixedArray<u8, 2>>(xs, 0); }", "g<u8>([1, 2]);"),
+        ("function g<T extends i32>(xs: T[], value: FixedArray<u8, 2>): void { Context.bytesInto<FixedArray<u8, 2>>(value, xs, 0); }", "g<u8>([0, 0], [1, 2]);"),
+    ] {
+        for main in ["", instance] {
+            let source = program(declaration, main);
+            assert!(check(&source).is_ok(), "{source}: {:?}", check(&source).err());
+        }
+    }
+    for (declaration, main) in [
+        ("function g<T extends i32>(xs: T[]): void { Context.fromBytes<FixedArray<u8, 2>>(xs, 0); }", "g<i32>([1, 2]);"),
+        ("function g<T extends string>(xs: T[]): void { Context.fromBytes<FixedArray<u8, 2>>(xs, 0); }", ""),
+        ("function g<T extends T[]>(xs: T): void { Context.fromBytes<FixedArray<u8, 2>>(xs, 0); }", ""),
+        ("function g<T>(xs: T[]): void { Context.fromBytes<FixedArray<u8, 2>>(xs, 0); }", ""),
+        ("function g<T extends i32>(x: u8[]): T[] { return x; }", ""),
+        ("function g<T extends i32>(xs: FixedArray<T, 3>): void { const target: FixedArray<u8, 2> = xs; }", ""),
+    ] {
+        let source = program(declaration, main);
+        assert!(!diagnostic_list(&source).is_empty(), "{source}");
+    }
+}

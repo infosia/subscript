@@ -783,7 +783,7 @@ impl<'p> Checker<'p> {
             other => other,
         };
         matches!(
-            self.apparent_type(&reference)
+            self.apparent_type(reference)
                 .handle_kind(&self.type_handle_classes),
             Some(
                 HandleKind::ReferenceClass
@@ -1428,6 +1428,15 @@ impl<'p> Checker<'p> {
         self.expect_callback_shape(checked, &params, ret.as_ref(), spec)
     }
 
+    /// Uses §143 rule 1b for parameter types and exact project kinds for concrete callback types.
+    fn callback_type_fits(&self, from: &Type, to: &Type) -> bool {
+        if self.involves_type_parameter(from) || self.involves_type_parameter(to) {
+            self.assignable(from, to)
+        } else {
+            from == to
+        }
+    }
+
     /// Selects the contextual parameter list for a callback's source
     /// arity and emits the subset diagnostic when no accepted list has
     /// that length.
@@ -1503,9 +1512,19 @@ impl<'p> Checker<'p> {
             Type::Func(ft) => {
                 let indexed = allow_index
                     && ft.params.len() == params.len() + 1
-                    && ft.params[..params.len()] == *params
+                    && ft.params[..params.len()]
+                        .iter()
+                        .zip(params)
+                        .all(|(actual, expected)| self.callback_type_fits(expected, actual))
                     && ft.params.last() == Some(&Type::I32);
-                (ft.params == params || indexed) && ret.is_none_or(|r| ft.ret == *r)
+                ((ft.params.len() == params.len()
+                    && ft
+                        .params
+                        .iter()
+                        .zip(params)
+                        .all(|(actual, expected)| self.callback_type_fits(expected, actual)))
+                    || indexed)
+                    && ret.is_none_or(|r| self.callback_type_fits(&ft.ret, r))
             }
             _ => false,
         };

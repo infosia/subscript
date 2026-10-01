@@ -1450,3 +1450,251 @@ gate full d901355d8e34bf47aec1f238a097b0dd1fd39f09 dirty:15 debug 2159/0/3 relea
 
 The orchestrator removed the omitted-cell tables from this note
 (8,226 rows); each section states where its rows are.
+
+
+## Final review round 3 fix round
+
+Pin: `2e5a8dfe`. All changes stay uncommitted.
+
+### Fixes and tests
+
+`JsonSerializability` and `ByteAccessTarget` join the named rule 2a list.
+Each admits an opaque type only when its apparent type has no error.
+JSON checks its arguments before deferral and creates no opaque helper.
+Context defers target kind and storage checks; it still checks argument types.
+JSON graph insertion and lookup use the declared type as the key.
+JSON helper errors use type names instead of Rust Debug text.
+
+`opaque_generics` covers JSON load, dump, arrays, constrained targets, a Repo method, and all three byte helpers.
+Each accept has both columns; invalid arguments and concrete targets remain rejected controls.
+The API product exposed six callback-parameter failures with `T extends i32`.
+Callback variance now uses constraint assignability for parameter types; concrete types retain exact project kinds.
+A direct accept test and a rejected callback control cover this relation.
+
+`a305-generic-json-load-dump` is Red at the pin: three S014 errors.
+The final CLI prints its new golden exactly: `{"x":1,"y":2}`, `3`, `9`, `13`.
+The header declares JavaScript comparison. No existing golden changes.
+The corpus index is regenerated through `render_corpus_index`.
+
+The shape scan adds typed `==`, `!=`, `.contains`, and `.position` tests, including inferred iterator closure parameters.
+Its 508 sites use 18 named groups that pin 48 justified raw-test functions.
+The two JSON graph functions preserve concrete key identity; the callback equality branch excludes parameter types.
+Eight scan tests pass; the scan costs 0.25 seconds.
+Reject-corpus, warning-corpus, and matrix checks reject diagnostic messages with `TypeParameter(` or `ClassId(`.
+The compiler library has two clippy warnings after the needless borrow removal.
+
+### Matrix and unresolved cells
+
+The TypeScript syntax tree of `prelude/lang.d.ts` supplies 42 callables and 96 API sites.
+Sites include value parameters, method and receiver type arguments, and calls with no parameters.
+Each site has three roles, nine parameter kinds, and both instance columns: 5,184 candidate cells.
+Concrete controls try admitted scalar, class, array, fixed-array, and callback arguments.
+The API matrix retains 3,103 cells and pins 2,081 omitted instance cells.
+`ValueType` overloads, the `Descriptor` constructor constraint, and `FixedArray.[Symbol.iterator]` each print a named omission reason.
+A parser test adds a callable, an overload set, and a conditional signature.
+Worker cells cite the entry and message-class restrictions in compiler.md §40.
+A separate stock-JSON stringify form covers the ambient method that ES2022 supplies.
+
+The complete matrix has 19,117 cells: 13,147 no-instance and 5,970 instance cells.
+It costs 12.715 seconds, or 14.07 seconds with cleanup, below the 15-second limit.
+The separate full-operator test retains 99 cells. No further cell cut occurs.
+
+The matrix reports 65 rule 4b failures; no rule 4a failure occurs.
+They comprise 24 byte-argument type failures, 12 Context.free failures, 24 nonliteral FixedArray length failures, and five callback-arity failures.
+The byte failures include constrained numeric arrays and array-to-FixedArray structural typing.
+Context.free rejects arrays and function values that the ambient object parameter accepts.
+The callback failures reject a zero-parameter function that TypeScript admits.
+No collision or compiler section located in this fix round states these exact restrictions.
+These cells require a form correction or a restriction record. No diagnostic is allowlisted to hide them.
+
+Regenerate the complete site, omission, and failure lists with:
+
+```sh
+SUBSCRIPT_API_SITES=target/s143-api-sites.txt \
+SUBSCRIPT_API_OMISSIONS=target/s143-api-omissions.txt \
+SUBSCRIPT_MATRIX_FAILURES=target/s143-matrix-failures.txt \
+cargo test --offline --locked -p subscript-compiler --test generic_tsc_matrix generic_forms_follow_tsc -- --nocapture
+```
+
+### Rule 5 measurement
+
+The temporary harness uses the corpus loaders and the trap loader's own functions, including ambient mirrors.
+It discovers all examples and adds the engine mirror. The harness is removed after measurement.
+At the pin, 387 programs and 511 sources reject zero programs; the debug checker costs 1.673160 seconds.
+The final checker costs 1.611280 seconds on the same source set, 3.70 percent less.
+With a305, it checks 388 programs and 512 sources in 1.617792 seconds; zero programs reject.
+The final diagnostic checks find no Rust Type debug text.
+
+### Changed Rust file sizes
+
+| File | Lines |
+|---|---:|
+| `compiler/src/check/expr/call.rs` | 1565 |
+| `compiler/src/check/expr/method.rs` | 1590 |
+| `compiler/src/check/json.rs` | 1628 |
+| `compiler/src/check/opaque.rs` | 634 |
+| `compiler/tests/apparent_type_shapes.rs` | 786 |
+| `compiler/tests/apparent_type_shapes/comparisons.rs` | 200 |
+| `compiler/tests/corpus_reject.rs` | 1332 |
+| `compiler/tests/corpus_warn.rs` | 216 |
+| `compiler/tests/generic_tsc_matrix.rs` | 1612 |
+| `compiler/tests/generic_tsc_matrix/api.rs` | 391 |
+| `compiler/tests/generic_tsc_matrix/product.rs` | 542 |
+| `compiler/tests/opaque_generics.rs` | 1021 |
+
+No changed Rust file exceeds 2,000 lines. No public library API is added.
+
+### Final validation
+
+`cargo fmt --check`, `git diff --check`, and `tools/hygiene.sh` pass.
+The quick gate runs once. Its debug step costs 305 seconds.
+It reports 2,162 passed tests, one failed test, three ignored tests, two skips, and zero moved goldens.
+Only `generic_tsc_matrix` fails, on the 65 rule 4b cells above.
+The gate measures the matrix at 12.913 seconds, or 14.28 seconds with cleanup.
+The gate record is `target/gate/20261001T185305Z-quick.md`.
+
+```text
+gate quick 2e5a8dfef8dbf831b3dde682ebbb7e120560473c dirty:17 debug 2162/1/3 skips 2 goldens-moved 0 exit 1
+```
+
+The missing-record review and the gate failure stop this fix round.
+No file-scope or corpus-rejection stop occurs. The gate is not rerun.
+All production and test changes remain in the working tree.
+
+
+### API control classification
+
+All 65 failures form 18 API-position groups. The derived positions use zero-based indices.
+A position follows value parameters, method type arguments, and receiver type arguments, in that order.
+The concrete controls replace `T` with each candidate type of the matrix kind.
+The 57 role/kind groups produce 110 concrete controls. One TypeScript project accepts all 110 controls.
+For numeric array inputs, `i32[]` rejects and `u8[]` accepts. The numeric constraint admits both through §135 rule 2b.
+
+| API | Position | Cells | Concrete control verdict | Classification and record |
+|---|---:|---:|---|---|
+| `Context.bytesOf` | 0, value | 4 | `i32[]` and `u8[]`: S100; `tsc` accepts | Nominal value equality: `stdlib.md` §18.1 rule 3 |
+| `Context.bytesInto` | 0, value | 4 | `i32[]` and `u8[]`: S100; `tsc` accepts | Nominal value equality: `stdlib.md` §18.1 rule 3 |
+| `Context.bytesInto` | 1, byte target | 8 | `u8[]`: accept; `i32[]`: S100; `tsc` accepts both | §143 defect; defer numeric element width through `SizedNumeric` |
+| `Context.fromBytes` | 0, bytes | 8 | `u8[]`: accept; `i32[]`: S100; `tsc` accepts both | §143 defect; defer numeric element width through `SizedNumeric` |
+| `Context.free` | 0, value | 12 | All 25 array/function controls: S100; `tsc` accepts | Reference-class operand: `corpus.md` §5 Q6 resolves through `collisions.md` §2 |
+| `FixedArray.forEach` | 0, callback | 1 | `() => i32`: S014; `tsc` accepts | Fixed callback arities: `stdlib.md` §9, Q27 |
+| `FixedArray.map` | 0, callback | 1 | `() => i32`: S014; `tsc` accepts | Fixed callback arities: `stdlib.md` §9, Q27 |
+| `FixedArray.reduce` | 0, callback | 1 | `() => i32`: S014; `tsc` accepts | Fixed callback arities: `stdlib.md` §9, Q27 |
+| `FixedArray.reduceRight` | 0, callback | 1 | `() => i32`: S014; `tsc` accepts | Fixed callback arities: `stdlib.md` §9, Q27 |
+| `Map.groupBy` | 1, callback | 1 | `() => i32`: S014; `tsc` accepts | Fixed callback arities: `stdlib.md` §10.4, Q22/Q27 |
+| `FixedArray.forEach` | 2, receiver N | 3 | `N = i32` and `N = u8`: S100; `tsc` accepts | Project restriction; no record states the literal requirement |
+| `FixedArray.map` | 3, receiver N | 3 | `N = i32` and `N = u8`: S100; `tsc` accepts | Project restriction; no record states the literal requirement |
+| `FixedArray.filter` | 2, receiver N | 3 | `N = i32` and `N = u8`: S100; `tsc` accepts | Project restriction; no record states the literal requirement |
+| `FixedArray.some` | 2, receiver N | 3 | `N = i32` and `N = u8`: S100; `tsc` accepts | Project restriction; no record states the literal requirement |
+| `FixedArray.every` | 2, receiver N | 3 | `N = i32` and `N = u8`: S100; `tsc` accepts | Project restriction; no record states the literal requirement |
+| `FixedArray.findIndex` | 2, receiver N | 3 | `N = i32` and `N = u8`: S100; `tsc` accepts | Project restriction; no record states the literal requirement |
+| `FixedArray.reduce` | 4, receiver N | 3 | `N = i32` and `N = u8`: S100; `tsc` accepts | Project restriction; no record states the literal requirement |
+| `FixedArray.reduceRight` | 4, receiver N | 3 | `N = i32` and `N = u8`: S100; `tsc` accepts | Project restriction; no record states the literal requirement |
+
+`SizedNumeric` now reads the apparent type of each numeric storage element.
+Assignability keeps target parameter identity, container shape, and fixed-array length before it defers numeric width.
+The per-instance check still rejects `i32[]` for a `u8[]` parameter.
+An identity guard stops recursive storage constraints, such as `T extends T[]`.
+The shape scan has 510 sites, 19 named groups, and 49 justified raw-test functions.
+Its added identity entry covers only that recursive-constraint guard. The assignability fingerprint reflects the numeric storage walk.
+
+The byte regression test checks a FixedArray-constrained `T`, numeric array inputs, admitted instances, and rejected controls.
+Its TypeScript measurement accepts seven of eleven controls; three fail with TS2345 and one fails with TS2322.
+The concrete width and fixed-length controls remain project restrictions that TypeScript accepts.
+No existing test expectation changes.
+
+The record resolver accepts collision ids, compiler sections through the §0 index, stdlib sections, and corpus §5 Q-ids.
+A Q-id resolves its decision through the existing collision question register when its corpus entry lacks the restriction token.
+Each lookup stops at its record boundary and checks the restriction token.
+The record tests include absent tokens and a token from an adjacent question or section.
+No block specification changes.
+
+Regenerate concrete controls beside the existing site and failure exports with `SUBSCRIPT_API_CONTROLS=target/s143-api-controls`.
+Each exported `.ts` control has a `.verdict` file with its checker diagnostic or `accept`.
+The export adds no checker work when the variable is absent.
+
+### Classification validation and stop
+
+The final matrix retains 19,117 cells and costs 12.812 seconds, or 14.08 seconds with cleanup.
+It reports 24 rule 4b failures, all in the eight nonliteral-length groups below. No rule 4a failure occurs.
+The other eight matrix tests pass, including the 99-cell full-operator matrix.
+The opaque tests pass all 31 tests. The shape scan passes all eight tests.
+The accept, reject, and warning corpus suites pass 13, 39, and three tests, respectively.
+The rule 5 harness uses the corpus loaders and the trap loader's own functions; the temporary harness is removed.
+It checks 388 programs and 512 sources in 1.420785 seconds; zero programs reject.
+The prior pin measurement remains 387 programs, 511 sources, zero rejections, and 1.673160 seconds.
+
+The following groups have no record for S100: `` `FixedArray` length must be a non-negative integer literal ``.
+Each concrete control uses `receiver: FixedArray<i32, i32>` and the same call as its generic cell.
+The corresponding `N = u8` control has the same verdict. Each concrete control rejects with S100; `tsc` accepts.
+Q3 states that the checker reads `N` and enforces length; it does not require an integer literal.
+
+| API | Position | Concrete control call | Checker | `tsc` |
+|---|---:|---|---|---|
+| `FixedArray.forEach` | 2, N | `receiver.forEach(p0)` | S100 | accepts |
+| `FixedArray.map` | 3, N | `receiver.map<i32>(p0)` | S100 | accepts |
+| `FixedArray.filter` | 2, N | `receiver.filter(p0)` | S100 | accepts |
+| `FixedArray.some` | 2, N | `receiver.some(p0)` | S100 | accepts |
+| `FixedArray.every` | 2, N | `receiver.every(p0)` | S100 | accepts |
+| `FixedArray.findIndex` | 2, N | `receiver.findIndex(p0)` | S100 | accepts |
+| `FixedArray.reduce` | 4, N | `receiver.reduce<i32>(p0, p1)` | S100 | accepts |
+| `FixedArray.reduceRight` | 4, N | `receiver.reduceRight<i32>(p0, p1)` | S100 | accepts |
+
+`p0` is the ambient callback type with its admitted index parameter. For the reducers, `p1: i32` is the initial value.
+These 24 cells stay failing. Step 3 stops this work after every other group has a fix or a restriction record.
+`cargo fmt --check`, `git diff --check`, and `tools/hygiene.sh` pass.
+The quick gate is not run. No file-scope or corpus-rejection stop occurs. No existing golden changes. No commit occurs.
+
+### Classification Rust file sizes
+
+| File | Lines |
+|---|---:|
+| `compiler/src/check/expr/call.rs` | 1565 |
+| `compiler/src/check/expr/method.rs` | 1590 |
+| `compiler/src/check/json.rs` | 1628 |
+| `compiler/src/check/opaque.rs` | 648 |
+| `compiler/src/check/type_rules.rs` | 278 |
+| `compiler/tests/apparent_type_shapes.rs` | 791 |
+| `compiler/tests/apparent_type_shapes/comparisons.rs` | 200 |
+| `compiler/tests/corpus_reject.rs` | 1332 |
+| `compiler/tests/corpus_warn.rs` | 216 |
+| `compiler/tests/generic_tsc_matrix.rs` | 1708 |
+| `compiler/tests/generic_tsc_matrix/api.rs` | 454 |
+| `compiler/tests/generic_tsc_matrix/product.rs` | 542 |
+| `compiler/tests/opaque_generics.rs` | 1048 |
+
+No changed Rust file exceeds 2,000 lines. No public library API is added.
+
+### FixedArray length record validation
+
+The owner's Q3 bullet now states the non-negative integer literal restriction.
+The 24 length cells name S100 and Q3. The resolver reads the Q-id bullet in `collisions.md` §2.
+It stops at the next Q-id bullet or heading and checks the restriction token.
+A unit test builds a rejected length cell whose Q3 bullet lacks that token; rule 4b reports it.
+The test also excludes tokens from the next bullet and heading.
+The needless borrow in `map_get_value_ok` is already removed.
+
+All ten matrix tests pass. The 19,117 cells have zero failures and cost 12.853 seconds, or 14.19 seconds with cleanup.
+The rule 5 harness uses the current corpus and trap loaders and discovers every example; the temporary harness is removed.
+It checks 388 programs and 512 sources: zero rejections, 1.574320 seconds.
+The prior pin measurement remains 387 programs, 511 sources, zero rejections, and 1.673160 seconds.
+The changed Rust files in this continuation have 1,758 lines (`generic_tsc_matrix.rs`) and 465 lines (`generic_tsc_matrix/api.rs`).
+No block specification or existing golden changes in this continuation. No commit occurs.
+
+`cargo fmt --check`, `git diff --check`, and `tools/hygiene.sh` pass.
+The quick gate passes once; its record is `target/gate/20261001T192325Z-quick.md`.
+No new stop condition occurs. The earlier gate and missing-record stops remain recorded above.
+
+```text
+gate quick 2e5a8dfef8dbf831b3dde682ebbb7e120560473c dirty:19 debug 2166/0/3 skips 2 goldens-moved 0 exit 0
+```
+
+## Final review round 3 landing gate
+
+The orchestrator ran the full gate on the round 14 tree. The
+orchestrator added the `N` literal rule to the Q3 bullet of
+`collisions.md` §2: the checker held the rule, and no record stated it.
+
+```text
+gate full 2e5a8dfef8dbf831b3dde682ebbb7e120560473c dirty:19 debug 2166/0/3 release 2163/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```

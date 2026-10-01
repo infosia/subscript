@@ -17,7 +17,15 @@ fn corpus_dir() -> PathBuf {
 
 /// Checks one reject entry.
 fn check_entry(files: &[SourceFile]) -> Vec<subscript_compiler::Diagnostic> {
-    check_program(files).err().unwrap_or_default()
+    let errors = check_program(files).err().unwrap_or_default();
+    for error in &errors {
+        assert!(
+            !error.message.contains("TypeParameter(") && !error.message.contains("ClassId("),
+            "{}",
+            error.message
+        );
+    }
+    errors
 }
 
 /// compiler.md §130 rule 2: the former value-class decorator has no rule

@@ -3,7 +3,8 @@
 use super::*;
 use std::collections::HashMap;
 
-const FUNCTION_KINDS: &[Kind] = &[
+/// Function constraints for the role/site product (§143 rule 4).
+pub(super) const FUNCTION_KINDS: &[Kind] = &[
     Kind {
         name: "function-return",
         constraint: " extends () => i32",
