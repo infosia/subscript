@@ -68,6 +68,21 @@ impl<'p> Checker<'p> {
                 positions.get(index).cloned().unwrap_or_else(|| pos.clone()),
             );
         }
+        if root {
+            for (parameter, argument) in declaration.params.iter().zip(args) {
+                if self.constraint_cycle(argument) {
+                    satisfied = false;
+                    self.error(
+                        RuleCode::S100,
+                        format!(
+                            "type parameter `{}` has a circular constraint",
+                            parameter.name.sym
+                        ),
+                        self.pos(parameter.span),
+                    );
+                }
+            }
+        }
         satisfied
     }
 

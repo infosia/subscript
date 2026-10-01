@@ -1073,18 +1073,15 @@ impl<'p> Checker<'p> {
         };
         let (hop, ty, ok) = match op {
             B::Add => {
-                if parameter
+                if (parameter
                     && (lt == Type::Str || rt == Type::Str)
                     && self.instance_restriction(
                         crate::check::opaque::InstanceRestriction::TemplateInterpolation,
                         if lt == Type::Str { &right.ty } else { &left.ty },
-                    )
+                    ))
+                    || (use_kind == BinUse::CompoundAssignment && numeric(&lt) && rt == Type::Str)
+                    || (lt == Type::Str && rt == Type::Str)
                 {
-                    (BinOp::Add, Type::Str, true)
-                } else if use_kind == BinUse::CompoundAssignment && numeric(&lt) && rt == Type::Str
-                {
-                    (BinOp::Add, Type::Str, true)
-                } else if lt == Type::Str && rt == Type::Str {
                     (BinOp::Add, Type::Str, true)
                 } else if numeric_pair {
                     (BinOp::Add, lt.clone(), true)
@@ -1199,10 +1196,27 @@ impl<'p> Checker<'p> {
             };
         }
         if use_kind == BinUse::CompoundAssignment && !mixed_numeric {
-            let name = self.type_name(&lt);
+            let operator = match op {
+                B::Add => "+=",
+                B::Sub => "-=",
+                B::Mul => "*=",
+                B::Div => "/=",
+                B::Mod => "%=",
+                B::BitAnd => "&=",
+                B::BitOr => "|=",
+                B::BitXor => "^=",
+                B::LShift => "<<=",
+                B::RShift => ">>=",
+                B::ZeroFillRShift => ">>>=",
+                _ => "compound assignment",
+            };
             self.error(
                 RuleCode::S100,
-                format!("compound assignment is not defined for `{}`", name),
+                format!(
+                    "operator `{operator}` is not defined for `{}` and `{}`",
+                    self.type_name(&lt),
+                    self.type_name(&rt)
+                ),
                 pos.clone(),
             );
             return BinResult {

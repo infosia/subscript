@@ -1261,7 +1261,8 @@ impl<'p> Checker<'p> {
                     );
                 }
             }
-        } else if self.involves_type_parameter(disc_ty)
+        } else if (self.involves_type_parameter(disc_ty)
+            || self.involves_type_parameter(&checked.ty))
             && self.generic_overlap(disc_ty, &checked.ty)
         {
             // §143 rule 1a: case labels compare values, rather than assign them.

@@ -81,6 +81,15 @@ impl<'p> Checker<'p> {
     /// equality plus the decided widenings (`null`/`T` into `T | null`,
     /// reference classes into the boundary-opaque `object`).
     pub(crate) fn assignable(&self, from: &Type, to: &Type) -> bool {
+        self.assignable_through_constraints(from, to, &mut Vec::new())
+    }
+
+    fn assignable_through_constraints(
+        &self,
+        from: &Type,
+        to: &Type,
+        seen: &mut Vec<usize>,
+    ) -> bool {
         if matches!(from, Type::Error) || matches!(to, Type::Error) {
             return true;
         }
@@ -92,10 +101,14 @@ impl<'p> Checker<'p> {
             return true;
         }
         if let Type::GenericUnion(members) = from {
-            return members.iter().all(|member| self.assignable(member, to));
+            return members
+                .iter()
+                .all(|member| self.assignable_through_constraints(member, to, seen));
         }
         if let Type::GenericUnion(members) = to {
-            return members.iter().any(|member| self.assignable(from, member));
+            return members
+                .iter()
+                .any(|member| self.assignable_through_constraints(from, member, seen));
         }
         if matches!(from, Type::TypeParameter(_))
             && to.is_numeric()
@@ -113,10 +126,17 @@ impl<'p> Checker<'p> {
         if from.is_numeric() && matches!(to, Type::GenericNumber) {
             return true;
         }
-        if matches!(from, Type::TypeParameter(_)) {
-            let apparent = self.apparent_type(from);
-            if apparent != *from {
-                return self.assignable(&apparent, to);
+        if let Type::TypeParameter(parameter) = from {
+            if seen.contains(&parameter.identity) {
+                return false;
+            }
+            seen.push(parameter.identity);
+            let result = self.direct_constraint(parameter).is_some_and(|constraint| {
+                self.assignable_through_constraints(constraint, to, seen)
+            });
+            seen.pop();
+            if result {
+                return true;
             }
         }
         if let Type::TypeParameter(_) = to {
@@ -125,7 +145,8 @@ impl<'p> Checker<'p> {
         match (from, to) {
             (Type::Null, Type::Nullable(_)) => true,
             (f, Type::Nullable(inner)) => {
-                self.assignable(f, inner) || (self.is_reference_class(f) && **inner == Type::Object)
+                self.assignable_through_constraints(f, inner, seen)
+                    || (self.is_reference_class(f) && **inner == Type::Object)
             }
             (f, Type::Object) => self.is_reference_class(f),
             _ => false,

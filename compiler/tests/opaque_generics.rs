@@ -852,3 +852,112 @@ fn unrestricted_typescript_slots_keep_void_and_null_constraints() {
         check(&program(declaration, "")).expect("TypeScript admits the opaque slot");
     }
 }
+
+#[test]
+fn a_parameter_is_assignable_through_each_intermediate_constraint() {
+    for (constraint, ty, value) in [("Box", "Box", "new Box()"), ("i32", "i32", "3")] {
+        for parameters in [
+            format!("U extends {constraint}, T extends U"),
+            format!("T extends U, U extends {constraint}"),
+            format!("V extends {constraint}, U extends V, T extends U"),
+            format!("T extends U, U extends V, V extends {constraint}"),
+        ] {
+            let declaration = format!(
+                "class Box {{ v: i32 = 1; }} function take<A>(a: A): void {{}} \
+                 function g<{parameters}>(x: T): U {{ const u: U = x; \
+                 let assigned: U = u; assigned = x; take<U>(x); \
+                 const out: U[] = []; out.push(x); return x; }}"
+            );
+            let arguments = if parameters.contains("V extends") {
+                format!("{ty}, {ty}, {ty}")
+            } else {
+                format!("{ty}, {ty}")
+            };
+            for main in [String::new(), format!("g<{arguments}>({value});")] {
+                check(&program(&declaration, &main))
+                    .expect("each intermediate constraint is assignable");
+                let errors = check(&program(
+                    &declaration.replace("return x", "return nope()"),
+                    &main,
+                ))
+                .unwrap_err();
+                assert!(errors.iter().any(|error| error.code == RuleCode::S016));
+            }
+        }
+    }
+    let errors = check(&program(
+        "class Box { v: i32 = 1; } function g<U extends Box, T extends U>(u: U): T { return u; }",
+        "",
+    ))
+    .unwrap_err();
+    assert!(errors.iter().any(|error| error.code == RuleCode::S100));
+}
+
+#[test]
+fn a_parameter_case_label_compares_with_a_concrete_discriminant() {
+    for (ty, value) in [("i32", "1"), ("string", "\"s\"")] {
+        let declaration = format!(
+            "function g<T>(x: T, n: {ty}): i32 {{ \
+             switch (n) {{ case x: return 1; default: return 0; }} }}"
+        );
+        for main in [String::new(), format!("g<{ty}>({value}, {value});")] {
+            check(&program(&declaration, &main)).expect("the unconstrained label overlaps");
+        }
+        let rejected = format!(
+            "class Box {{ v: i32 = 1; }} {}",
+            declaration.replace("<T>", "<T extends Box>")
+        );
+        let errors = check(&program(&rejected, "")).unwrap_err();
+        assert!(
+            errors.iter().any(|error| error.code == RuleCode::S100),
+            "{errors:?}"
+        );
+    }
+}
+
+#[test]
+fn direct_constraint_cycles_report_the_declaration() {
+    for parameters in [
+        "T extends T",
+        "T extends U, U extends T",
+        "T extends U, U extends V, V extends T",
+    ] {
+        let source = format!("function g<{parameters}>(x: T): i32 {{ return 0; }}\nexport function main(): void {{}}");
+        let errors = check(&source).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .all(|error| error.code == RuleCode::S100 && error.pos.line == 1),
+            "{errors:?}"
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.message.contains("circular constraint")),
+            "{errors:?}"
+        );
+    }
+    check(&program(
+        "function g<T extends i32>(x: T): i32 { return 0; }",
+        "",
+    ))
+    .expect("a non-cyclic constraint accepts");
+}
+
+#[test]
+fn compound_diagnostics_name_the_operator_and_both_operands() {
+    for (operator, right) in [("+=", "1"), ("-=", "1"), ("&=", "1")] {
+        let errors = check(&program(
+            "",
+            &format!("let s: string = \"s\"; s {operator} {right};"),
+        ))
+        .unwrap_err();
+        assert!(
+            errors.iter().any(|error| error.message
+                == format!("operator `{operator}` is not defined for `string` and `i32`")),
+            "{errors:?}"
+        );
+    }
+    check(&program("", "let s: string = \"s\"; s += \"a\";"))
+        .expect("string addition accepts two strings");
+}

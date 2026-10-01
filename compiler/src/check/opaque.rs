@@ -153,6 +153,38 @@ impl<'p> Checker<'p> {
         self.resolve_apparent_type(ty, &mut Vec::new())
     }
 
+    /// Resolves one constraint by parameter identity (§143 rule 1d).
+    pub(crate) fn direct_constraint<'a>(
+        &'a self,
+        parameter: &'a TypeParameterType,
+    ) -> Option<&'a Type> {
+        parameter.constraint.as_deref().or_else(|| {
+            self.subst.values().find_map(|binding| match binding {
+                Type::TypeParameter(other) if other.identity == parameter.identity => {
+                    other.constraint.as_deref()
+                }
+                _ => None,
+            })
+        })
+    }
+
+    /// True when direct parameter constraints form a cycle (§143 rule 1d).
+    pub(crate) fn constraint_cycle(&self, ty: &Type) -> bool {
+        let mut seen = Vec::new();
+        let mut current = ty;
+        while let Type::TypeParameter(parameter) = current {
+            if seen.contains(&parameter.identity) {
+                return true;
+            }
+            seen.push(parameter.identity);
+            let Some(constraint) = self.direct_constraint(parameter) else {
+                return false;
+            };
+            current = constraint;
+        }
+        false
+    }
+
     fn resolve_apparent_type(&self, ty: &Type, seen: &mut Vec<usize>) -> Type {
         match ty {
             Type::TypeParameter(parameter) => {
@@ -160,14 +192,7 @@ impl<'p> Checker<'p> {
                     return ty.clone();
                 }
                 seen.push(parameter.identity);
-                let constraint = parameter.constraint.as_deref().or_else(|| {
-                    self.subst.values().find_map(|binding| match binding {
-                        Type::TypeParameter(other) if other.identity == parameter.identity => {
-                            other.constraint.as_deref()
-                        }
-                        _ => None,
-                    })
-                });
+                let constraint = self.direct_constraint(parameter);
                 let result = constraint.map_or_else(
                     || ty.clone(),
                     |constraint| self.resolve_apparent_type(constraint, seen),

@@ -501,7 +501,7 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(
             diagnostics[0].message,
-            "compound assignment is not defined for `boolean`"
+            "operator `+=` is not defined for `boolean` and `boolean`"
         );
     }
 

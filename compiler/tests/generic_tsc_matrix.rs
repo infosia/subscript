@@ -1,5 +1,6 @@
 //! The generic body matrix of §143 rule 4.
-//! Measured cost: 1,193 cells in 1.624 seconds, with one TypeScript process.
+//! Measured cost: 5,896 cells in 5.903 seconds, with one TypeScript process.
+//! The product covers every value-role/site pair; it adds 4.28 seconds to the gate.
 //! Concrete controls check instance admission apart from the opaque diagnostics (§143 rule 4).
 
 use std::{
@@ -11,6 +12,9 @@ use std::{
 };
 
 use subscript_compiler::{check_program, Diagnostic, RuleCode, SourceFile};
+
+#[path = "generic_tsc_matrix/product.rs"]
+mod product;
 
 struct Kind {
     name: &'static str,
@@ -617,7 +621,7 @@ fn replace_parameter_names(source: &str, ty: &str) -> String {
         if c.is_ascii_alphanumeric() || c == '_' {
             word.push(c);
         } else {
-            result.push_str(if word == "T" || word == "U" {
+            result.push_str(if word == "T" || word == "U" || word == "V" {
                 ty
             } else {
                 &word
@@ -1081,6 +1085,36 @@ fn cells() -> Vec<Cell> {
             None,
         ),
         (
+            "deep-constraint-backward",
+            concat!(
+                "class Box { v: i32 = 1; } function g<V extends Box, U extends V, ",
+                "T extends U>(x: T): U { return x; }"
+            ),
+            Some("g<Box, Box, Box>(new Box());"),
+            None,
+        ),
+        (
+            "deep-constraint-forward",
+            concat!(
+                "class Box { v: i32 = 1; } function g<T extends U, U extends V, ",
+                "V extends Box>(x: T): U { return x; }"
+            ),
+            Some("g<Box, Box, Box>(new Box());"),
+            None,
+        ),
+        (
+            "cyclic-self-constraint",
+            "function g<T extends T>(x: T): i32 { return 0; }",
+            None,
+            None,
+        ),
+        (
+            "cyclic-pair-constraint",
+            "function g<T extends U, U extends T>(x: T): i32 { return 0; }",
+            None,
+            None,
+        ),
+        (
             "uninitialized-field",
             concat!("class G<T> { v: i32; w: T | null = null; }",),
             None,
@@ -1184,12 +1218,17 @@ fn cells() -> Vec<Cell> {
             }));
         }
     }
+    cells.extend(product::cells());
     cells
 }
 
 fn extra_concrete_source(name: &str, declaration: &str, main_body: &str) -> String {
     let (parameters, ty) = if name == "forward-constraint" {
         ("<T extends U, U extends Box>", "Box")
+    } else if name == "deep-constraint-backward" {
+        ("<V extends Box, U extends V, T extends U>", "Box")
+    } else if name == "deep-constraint-forward" {
+        ("<T extends U, U extends V, V extends Box>", "Box")
     } else if name.starts_with("linked-parameter-") {
         ("<U, T extends U>", "i32")
     } else if name.starts_with("nullable-constraint-") {
@@ -1207,7 +1246,8 @@ fn extra_concrete_source(name: &str, declaration: &str, main_body: &str) -> Stri
     };
     let main = main_body
         .replace(&format!("<{ty}>"), "")
-        .replace(&format!("<{ty}, {ty}>"), "");
+        .replace(&format!("<{ty}, {ty}>"), "")
+        .replace(&format!("<{ty}, {ty}, {ty}>"), "");
     format!(
         "{}\nexport function main(): void {{ {main} }}",
         replace_parameter_names(&concrete, &replacement),
@@ -1347,6 +1387,7 @@ fn generic_forms_follow_tsc() {
     .output()
     .unwrap();
     let text = String::from_utf8_lossy(&output.stdout);
+    let cell_names: HashSet<_> = cells.iter().map(|cell| cell.name.as_str()).collect();
     let mut rejected = HashSet::new();
     for line in text.lines().filter(|l| l.contains("error TS")) {
         let (file, _) = line
@@ -1358,7 +1399,7 @@ fn generic_forms_follow_tsc() {
             .to_string_lossy()
             .into_owned();
         assert!(
-            cells.iter().any(|c| c.name == name),
+            cell_names.contains(name.as_str()),
             "unowned diagnostic: {line}"
         );
         rejected.insert(name);

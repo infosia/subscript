@@ -432,6 +432,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r293-generic-member-write.ts", RuleCode::S018, 9),
     ("r294-loose-equality.ts", RuleCode::S100, 11),
     ("r295-accessor-compound-type.ts", RuleCode::S100, 14),
+    (
+        "r296-circular-type-parameter-constraint.ts",
+        RuleCode::S100,
+        8,
+    ),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
