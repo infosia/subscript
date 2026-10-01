@@ -57,7 +57,8 @@ typing across instances, not the generic contract `tsc` checks.
    Every other decision about a body — an operator, a result type, a
    deferral, a constraint's members, a language restriction — is made
    by the per-instance check, as before §135. The list is total: a new
-   diagnostic kind is dropped until this rule names it. *(Rewritten
+   diagnostic kind is dropped until this rule names it. *(Replaced by
+   §143 rules 1, 2, and 2a.)* *(Rewritten
    2026-09-30, owner decision, after two Phase Reviews: a form that
    modelled `tsc`'s typing of a type parameter with an empty reference
    class and patched each consuming site rejected `tsc`-valid programs
@@ -128,6 +129,8 @@ typing across instances, not the generic contract `tsc` checks.
    a `nope();` control through the opaque check.
 
 ### 135.3 Open
+
+*(§143 closes this gap. It retires under §143 rule 6.)*
 
 The opaque check drops every diagnostic outside the kinds of rule 2.
 So a form that `tsc` rejects for a type parameter stays accepted when

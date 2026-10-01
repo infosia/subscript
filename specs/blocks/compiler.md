@@ -176,7 +176,7 @@ Every section, with its status:
 | §132 | An affine type is no container argument in any form | active | [`s132-an-affine-type-is-no-container-argument-in-any-form.md`](compiler/s132-an-affine-type-is-no-container-argument-in-any-form.md) |
 | §133 | A logical operand sees the narrowing of the operand before it | active | [`s133-a-logical-operand-sees-the-narrowing-of-the-operand-before-it.md`](compiler/s133-a-logical-operand-sees-the-narrowing-of-the-operand-before-it.md) |
 | §134 | A type-only import binds a type only | active | [`s134-a-type-only-import-binds-a-type-only.md`](compiler/s134-a-type-only-import-binds-a-type-only.md) |
-| §135 | A generic body is checked for every type argument | active | [`s135-a-generic-body-is-checked-for-every-type-argument.md`](compiler/s135-a-generic-body-is-checked-for-every-type-argument.md) |
+| §135 | A generic body is checked for every type argument | active; rule 2 replaced by §143 | [`s135-a-generic-body-is-checked-for-every-type-argument.md`](compiler/s135-a-generic-body-is-checked-for-every-type-argument.md) |
 | §136 | A mirror constant carries its value | active | [`s136-a-mirror-constant-carries-its-value.md`](compiler/s136-a-mirror-constant-carries-its-value.md) |
 | §137 | Modules initialize in dependency post-order | active | [`s137-modules-initialize-in-dependency-post-order.md`](compiler/s137-modules-initialize-in-dependency-post-order.md) |
 | §138 | A generic instance body sees every module global | active | [`s138-a-generic-instance-body-sees-every-module-global.md`](compiler/s138-a-generic-instance-body-sees-every-module-global.md) |
@@ -184,3 +184,4 @@ Every section, with its status:
 | §140 | A generic instance chain that grows without bound is rejected | active | [`s140-a-generic-instance-chain-that-grows-is-rejected.md`](compiler/s140-a-generic-instance-chain-that-grows-is-rejected.md) |
 | §141 | A regex literal has no `v` flag | active | [`s141-a-regex-literal-has-no-v-flag.md`](compiler/s141-a-regex-literal-has-no-v-flag.md) |
 | §142 | A handle the script keeps is the host's to keep alive | active | [`s142-a-handle-the-script-keeps-is-the-hosts-to-keep-alive.md`](compiler/s142-a-handle-the-script-keeps-is-the-hosts-to-keep-alive.md) |
+| §143 | A type parameter is typed as `tsc` types it | active; replaces §135 rule 2 | [`s143-a-type-parameter-is-typed-as-tsc-types-it.md`](compiler/s143-a-type-parameter-is-typed-as-tsc-types-it.md) |
