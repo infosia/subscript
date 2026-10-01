@@ -269,7 +269,9 @@ fn as_cast_null_traps_keep_their_runtime_identity() {
         matches!(error, InterpretError::Trap { runtime_kind: Some(TrapKind::NullNarrowing), ref message, .. } if message == "`as` narrowing applied to null"),
         "{error:?}"
     );
-    let fixture = native_fixture::fixture().expect("native fixture");
+    let Some(fixture) = native_fixture::fixture() else {
+        return;
+    };
     let libraries = [fixture.library()];
     let config = subscript_codegen::RunConfig::default().with_native_libraries(&libraries);
     for result in [

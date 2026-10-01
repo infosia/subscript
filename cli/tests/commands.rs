@@ -317,6 +317,10 @@ fn directory_programs_check_and_run_with_the_committed_goldens() -> Result<(), S
             checked.stderr,
             format!("check: {}: no errors\n", entry.display()).as_bytes()
         );
+        // MSVC cannot compile the interop fixture's `_Float16` boundary.
+        if cfg!(all(windows, target_env = "msvc")) && !mirrors.is_empty() {
+            continue;
+        }
         let directory = TestDir::new()?;
         let mut command = subscript();
         command.current_dir(&root);

@@ -47,7 +47,7 @@ pub(super) fn check(host: &str) {
             result.status.success(),
             succeeds,
             "{}",
-            String::from_utf8_lossy(&result.stderr)
+            subscript_codegen::tool_output_report(&result)
         );
     }
     std::fs::remove_dir_all(directory).unwrap();

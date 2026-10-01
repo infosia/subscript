@@ -622,6 +622,9 @@ fn helper_accepts_parameterized_main_and_program_checks_its_header() {
         for name in ["host.c", "program.c"] {
             let mut command = compiler.command();
             add_c11_optimized_flags(&mut command, compiler.style());
+            if compiler.style().is_msvc() {
+                command.arg("/we4029");
+            }
             command
                 .arg(if compiler.style().is_msvc() {
                     "/Zs"

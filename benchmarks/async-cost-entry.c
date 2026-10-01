@@ -21,12 +21,27 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
+#if defined(_WIN32)
+static uint64_t monotonic_ns(void) {
+    LARGE_INTEGER freq;
+    LARGE_INTEGER counter;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&counter);
+    const uint64_t f = (uint64_t)freq.QuadPart;
+    const uint64_t c = (uint64_t)counter.QuadPart;
+    return (c / f) * 1000000000ull + (c % f) * 1000000000ull / f;
+}
+#else
 static uint64_t monotonic_ns(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
+#endif
 
 extern void subscript_kick_async_exports(subscript_rt_context *ctx);
 
