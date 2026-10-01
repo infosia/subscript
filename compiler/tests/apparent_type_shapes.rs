@@ -1,7 +1,7 @@
 //! §143 rule 1a: every value-shape test reads the apparent type.
 //! The source scan uses Rust token groups, so comments and strings do not count.
 //! It checks match arms, patterns, variant equality, typed comparisons, collection searches, and derived Type helpers.
-//! Measured cost: 508 sites in 0.25 seconds; 18 named groups pin 48 justified raw-test functions.
+//! Measured cost: 513 sites in 0.25 seconds; 19 named groups pin 49 justified raw-test functions.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -598,7 +598,7 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "parameter-form", reason: "These tests resolve or preserve T identity; they do not select a value operation (§143 rules 1a–1d).", sites: &[
         ("opaque.rs", "constrain_opaque_param", 0xae68ef4a8c9974a),
         ("opaque.rs", "constraint_cycle", 0x7903218a6714cb24),
-        ("opaque.rs", "generic_overlap", 0x247089b02a2b098b),
+        ("opaque.rs", "generic_overlap", 0xf7d270efc3e83c05),
         ("opaque.rs", "generic_union", 0x00bd1f8d43511104),
         ("opaque.rs", "involves_type_parameter", 0x73713f5554ee1dc7),
         ("opaque.rs", "is_type_parameter", 0x291d692ffcac9b32),
@@ -613,7 +613,7 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("stmt.rs", "stmt_returns", 0x877d2a688f764b51),
     ] },
     AllowGroup { name: "assignability", reason: "Assignability and its diagnostics must inspect T itself (§143 rule 1b).", sites: &[
-        ("type_rules.rs", "assignable_through_constraints", 0x7381635e5439331d),
+        ("type_rules.rs", "assignable_through_constraints", 0x58570e7592e8bfda),
         ("type_rules.rs", "report_not_assignable", 0xa944daeb4d9d32da),
     ] },
     AllowGroup { name: "wire-declarations", reason: "Wire boundary declarations come from concrete mirror types, which cannot declare type parameters.", sites: &[

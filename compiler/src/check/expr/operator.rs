@@ -1022,6 +1022,7 @@ impl<'p> Checker<'p> {
         let numeric = |ty: &Type| {
             self.apparent_type(ty).is_numeric()
                 || matches!(&self.apparent_type(ty), Type::GenericNumber)
+                || (parameter && matches!(self.apparent_type(ty), Type::Enum(_)))
         };
         let numeric_pair = numeric(&lt)
             && numeric(&rt)
@@ -1055,10 +1056,20 @@ impl<'p> Checker<'p> {
         };
         let mixed_numeric = numeric(&lt) && numeric(&rt) && lt != rt;
         let arithmetic = matches!(op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
+        let left_storage_only = lt == Type::F16
+            && !self.instance_restriction(
+                crate::check::opaque::InstanceRestriction::SizedNumeric,
+                &left.ty,
+            );
+        let right_storage_only = rt == Type::F16
+            && !self.instance_restriction(
+                crate::check::opaque::InstanceRestriction::SizedNumeric,
+                &right.ty,
+            );
         let f16_arithmetic = arithmetic
             && match use_kind {
-                BinUse::Expression => lt == Type::F16 || rt == Type::F16,
-                BinUse::CompoundAssignment => lt == Type::F16,
+                BinUse::Expression => left_storage_only || right_storage_only,
+                BinUse::CompoundAssignment => left_storage_only,
             };
         if f16_arithmetic {
             self.error_diverging(
@@ -1197,7 +1208,7 @@ impl<'p> Checker<'p> {
                     hop,
                     if operand_error {
                         Type::Error
-                    } else if parameter && self.apparent_type(&ty).is_numeric() {
+                    } else if parameter && numeric(&ty) {
                         Type::GenericNumber
                     } else {
                         ty

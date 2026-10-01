@@ -1046,3 +1046,46 @@ fn byte_arguments_read_constraints_and_defer_numeric_element_widths() {
         assert!(!diagnostic_list(&source).is_empty(), "{source}");
     }
 }
+
+#[test]
+fn enum_and_string_alias_constraints_overlap_their_primitive_types() {
+    for instance in [false, true] {
+        let source = program(
+            "enum E { A = 0, B = 1 } type Label = \"a\" | \"b\"; \
+             function ix<T extends E>(names: string[], x: T): string { return names[x as i32]; } \
+             function small<T extends E>(x: T): u8 { return x as u8; } \
+             function label<T extends Label>(x: T): string { return x as string; } \
+             class Tagged<K extends E> { k: K; constructor(k: K) { this.k = k; } \
+             read(names: string[]): string { return names[this.k as i32]; } }",
+            if instance {
+                "ix<E>([\"a\", \"b\"], E.B); small<E>(E.B); new Tagged<E>(E.B).read([\"a\", \"b\"]);"
+            } else {
+                ""
+            },
+        );
+        assert!(check(&source).is_ok(), "{:?}", diagnostic_list(&source));
+    }
+    let bad = program(
+        "class Box { v: i32 = 1; } function bad<T extends Box>(x: T): i32 { return x as i32; }",
+        "",
+    );
+    assert_eq!(diagnostic_list(&bad)[0].0, RuleCode::S100);
+}
+
+#[test]
+fn enum_and_half_float_constraints_use_the_generic_numeric_rules() {
+    let source = program(
+        "enum E { A = 0, B = 1 } \
+         function fresh<T extends E>(x: T): i32 { return x + 1; } \
+         function half<T extends f16>(x: T): i32 { return x + 1; }",
+        "half<i32>(1);",
+    );
+    assert!(check(&source).is_ok(), "{:?}", diagnostic_list(&source));
+    let control = program("function bad(x: f16): f16 { return x + x; }", "");
+    assert_eq!(diagnostic_list(&control)[0].0, RuleCode::S014);
+    let concrete_operand = program(
+        "function bad<T extends i32>(half: f16, x: T): i32 { return half + x; }",
+        "",
+    );
+    assert_eq!(diagnostic_list(&concrete_operand)[0].0, RuleCode::S014);
+}

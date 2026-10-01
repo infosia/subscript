@@ -602,6 +602,19 @@ constraint, and on `T | null`.
 
 Reject: `r294`.
 
+### C21. `void` is a return type, not a value
+
+The checker rejects a binding of a `void` value with S100 ("cannot
+bind a `void` value"), and a `map` callback that returns `void` with
+S100 ("the `map` callback must return a value"). `tsc` accepts both.
+The rule holds since the first checker; this record names it.
+
+Measured with `tsc` 5.9.2 (`specs/tracking/s143-type-parameter-typing.md`):
+`function f(): void {} const a = f();` and
+`xs.map((v: i32): void => {})` give no `tsc` error.
+
+Reject: `r297`, `r298`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different

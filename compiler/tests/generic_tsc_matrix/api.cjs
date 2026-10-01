@@ -32,6 +32,31 @@ function visit(node, owner = '', ownerParameters = []) {
     sites.push({name, owner, generic, outer, args, staticMember});
     return;
   }
+  const memberName = node.name ? text(node.name) : ts.SyntaxKind[node.kind];
+  const qualified = owner ? `${owner}.${memberName}` : memberName;
+  const unsupported = [
+    [ts.isConstructorDeclaration, 'constructor', 'The constructor needs a new-expression call form.'],
+    [ts.isConstructSignatureDeclaration, 'construct', 'The construct signature needs a new-expression call form.'],
+    [ts.isCallSignatureDeclaration, 'call', 'The call signature needs an object invocation.'],
+    [ts.isPropertySignature, memberName, 'The property needs a member-value form.'],
+    [ts.isPropertyDeclaration, memberName, 'The property needs a member-value form.'],
+    [ts.isGetAccessorDeclaration, memberName, 'The getter needs a member-read form.'],
+    [ts.isSetAccessorDeclaration, memberName, 'The setter needs a member-write form.'],
+    [ts.isIndexSignatureDeclaration, 'index', 'The index signature needs an indexed-access form.'],
+  ];
+  for (const [test, label, reason] of unsupported) {
+    if (test(node)) { omitted.push([owner ? `${owner}.${label}` : label, reason]); return; }
+  }
+  if (ts.isVariableStatement(node)) {
+    for (const declaration of node.declarationList.declarations) {
+      omitted.push([owner ? `${owner}.${text(declaration.name)}` : text(declaration.name),
+        'The variable needs a value or function-value invocation.']);
+    }
+    return;
+  }
+  if (owner && !ts.isModuleBlock(node)) {
+    throw new Error(`Unknown ambient member ${qualified}: ${ts.SyntaxKind[node.kind]}`);
+  }
   ts.forEachChild(node, child => visit(child, owner, ownerParameters));
 }
 visit(source);

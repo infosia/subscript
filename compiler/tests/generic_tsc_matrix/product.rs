@@ -203,6 +203,9 @@ fn sites() -> Vec<Site> {
         }
     }
     for (name, body) in [
+        ("assert-i32", "const a = $ as i32;"),
+        ("assert-u8", "const a = $ as u8;"),
+        ("assert-string", "const a = $ as string;"),
         ("call-value", "const a = ($)();"),
         ("call-value-argument", "($)(n);"),
         ("forward-argument", "const a = forward<T>($);"),
@@ -293,8 +296,18 @@ pub(super) fn cells() -> Vec<Cell> {
     let sites = sites();
     let mut omitted = Vec::new();
     let mut controls = HashMap::new();
-    for kind in KINDS.iter().chain(FUNCTION_KINDS) {
+    for kind in &kinds::all() {
         for role in ROLES {
+            let current = KINDS
+                .iter()
+                .chain(FUNCTION_KINDS)
+                .any(|old| old.name == kind.name);
+            if !current
+                && !(matches!(role.name, "parameter" | "nullable")
+                    || (role.name == "fresh-add" && kinds::numeric(kind)))
+            {
+                continue;
+            }
             // Linked roles always have a constrained intermediate parameter (§143 rule 1d).
             let constraint = if role.order.is_some() && kind.constraint.is_empty() {
                 " extends Box"
@@ -348,6 +361,7 @@ pub(super) fn cells() -> Vec<Cell> {
                      {asynchronous_word}function g<{parameters}>(x: {x_type}, y: T, u: U, n: i32, \
                      s: string, numbers: i32[]): {result} {{ {setup} {body} }}",
                 );
+                declaration.push_str(kinds::prelude(kind));
                 if site.name == "field-initializer" {
                     let value = match role.name {
                         "destructuring-source" => "new G<T>(y).value".to_string(),
@@ -492,14 +506,18 @@ pub(super) fn cells() -> Vec<Cell> {
             }
         }
     }
-    assert_eq!(omitted.len(), 4696, "the admitted instance set changed");
+    assert_eq!(omitted.len(), 7532, "the admitted instance set changed");
+    let additional_pairs: usize = kinds::additional()
+        .iter()
+        .map(|kind| 2 + usize::from(kinds::numeric(kind)))
+        .sum();
+    let current_kinds = KINDS.len() + FUNCTION_KINDS.len();
     eprintln!(
-        "product candidates: {} roles × {} sites × {} kinds × 2 = {}; omitted instances={}",
-        ROLES.len(),
-        sites.len(),
-        KINDS.len() + FUNCTION_KINDS.len(),
-        ROLES.len() * sites.len() * (KINDS.len() + FUNCTION_KINDS.len()) * 2,
-        omitted.len()
+        "product: {} current kinds × {} roles; {} additional kinds × 2 base roles plus {} numeric roles; {} sites; {} candidates; {} cells; {} omitted instances",
+        current_kinds, ROLES.len(), kinds::additional().len(),
+        additional_pairs - kinds::additional().len() * 2, sites.len(),
+        (ROLES.len() * current_kinds + additional_pairs) * sites.len() * 2,
+        cells.len(), omitted.len()
     );
     // The measurement destination is optional and does not change the gate's cell set.
     if let Some(path) = std::env::var_os("SUBSCRIPT_MATRIX_OMISSIONS") {
@@ -509,10 +527,10 @@ pub(super) fn cells() -> Vec<Cell> {
 }
 
 // §143 rule 4 covers every surface compound operator on one parameter pair per kind.
-// Measured cost: 99 cells in 0.236 seconds, with one TypeScript process.
+// Measured cost: 396 cells in 0.376 seconds, with one TypeScript process.
 pub(super) fn compound_cells() -> Vec<Cell> {
     let mut result = Vec::new();
-    for kind in KINDS.iter().chain(FUNCTION_KINDS) {
+    for kind in &kinds::all() {
         for (name, operator) in [
             ("add", "+="),
             ("sub", "-="),
@@ -527,7 +545,7 @@ pub(super) fn compound_cells() -> Vec<Cell> {
             ("ushr", ">>>="),
         ] {
             let constraint = kind.constraint;
-            let declaration = format!("class Box {{ v: i32 = 1; }} function g<T{constraint}>(x: T, y: T): void {{ y {operator} x; }}");
+            let declaration = format!("{} class Box {{ v: i32 = 1; }} function g<T{constraint}>(x: T, y: T): void {{ y {operator} x; }}", kinds::prelude(kind));
             result.push(build_cell(CellInput {
                 name: &format!("compound-{}-{name}", kind.name),
                 declaration: &declaration,

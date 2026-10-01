@@ -1,10 +1,14 @@
 //! The generic body matrix of §143 rule 4.
-//! Measured cost: 19,117 cells in 12.853 seconds; 14.19 seconds with cleanup.
+//! Measured cost: 33,401 cells in 20.288 seconds; 22.84 seconds with cleanup.
 //! One TypeScript process checks all cells.
-//! The prelude syntax tree adds 96 API positions across 42 callables; three signatures need separate call forms.
-//! The product keeps +=, -=, and &=, one per checker arm; a separate 99-cell test covers all operators.
+//! The API axis reads prelude/lang.d.ts: 96 positions across 42 callables; eight declarations need other forms.
+//! ES-lib methods admitted by method.rs have role/site cells only where a site names them.
+//! The product keeps +=, -=, and &=, one per checker arm; a separate 396-cell test covers all operators.
 //! The other compound operators had identical verdicts in all 633 measured groups (§143 rule 4).
-//! TypeScript runs beside at most eight scoped checker workers; each value-role/site pair remains.
+//! TypeScript runs beside at most eight scoped checker workers.
+//! Nine current kinds retain every role/site pair. The 27 added kinds have every site with x: T and T | null.
+//! Numeric added kinds also have x + 1. This cut bounds debug cost below 25 seconds as the kind axis grows.
+//! types.rs supplies the variants; kinds.rs supplies each named constraint or a reason that source cannot name it.
 //! Concrete controls check instance admission apart from the opaque diagnostics (§143 rule 4).
 
 use std::{
@@ -26,6 +30,7 @@ mod findings;
 #[path = "generic_tsc_matrix/api.rs"]
 mod api;
 
+#[derive(Clone, Copy)]
 struct Kind {
     name: &'static str,
     constraint: &'static str,
@@ -85,6 +90,9 @@ const KINDS: &[Kind] = &[
         argument: "new Box()",
     },
 ];
+
+#[path = "generic_tsc_matrix/kinds.rs"]
+mod kinds;
 
 struct Form {
     name: &'static str,
@@ -1280,10 +1288,11 @@ fn disagreement(
         return Some(format!("{}: §143 rule 4a", cell.name));
     }
     if tsc_accepts && !diagnostics.is_empty() {
-        if !cell
-            .divergence
-            .is_some_and(|record| diagnostics.iter().all(|d| d.code == record.code))
-        {
+        if !diagnostics.iter().all(|d| {
+            kinds::records(cell)
+                .iter()
+                .any(|record| d.code == record.code)
+        }) {
             return Some(format!("{}: §143 rule 4b {diagnostics:?}", cell.name));
         }
     }
@@ -1422,17 +1431,19 @@ impl Drop for Project {
 }
 
 fn check_cell(cell: &Cell, root: &Path) -> (Vec<Diagnostic>, Option<String>, Result<(), String>) {
-    let record_result = cell
-        .divergence
-        .map_or(Ok(()), |record| check_record(root, record));
+    let record_result = kinds::records(cell)
+        .into_iter()
+        .try_for_each(|record| check_record(root, record));
     let control_failure = cell.concrete_source.as_ref().and_then(|source| {
         let errors = check_program(&[SourceFile::new("concrete.ts", source.clone())])
             .err()
             .unwrap_or_default();
         if !errors.is_empty()
-            && !cell
-                .divergence
-                .is_some_and(|record| errors.iter().all(|error| error.code == record.code))
+            && !errors.iter().all(|error| {
+                kinds::records(cell)
+                    .iter()
+                    .any(|record| error.code == record.code)
+            })
         {
             Some(format!(
                 "{}: per-instance control rejected: {errors:?}",
@@ -1469,7 +1480,7 @@ fn generic_forms_follow_tsc() {
 fn every_compound_operator_follows_tsc() {
     let start = Instant::now();
     let cells = product::compound_cells();
-    assert_eq!(cells.len(), 99);
+    assert_eq!(cells.len(), kinds::all().len() * 11);
     run_matrix(cells, start);
 }
 

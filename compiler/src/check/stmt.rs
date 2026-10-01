@@ -396,7 +396,12 @@ impl<'p> Checker<'p> {
                         Type::Error
                     }
                     Type::Void => {
-                        self.error(RuleCode::S100, "cannot bind a `void` value", pos.clone());
+                        self.error_diverging(
+                            RuleCode::S100,
+                            "cannot bind a `void` value",
+                            pos.clone(),
+                            Divergence::VoidValue,
+                        );
                         Type::Error
                     }
                     _ => init.ty.clone(),

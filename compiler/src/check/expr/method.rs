@@ -733,10 +733,11 @@ impl<'p> Checker<'p> {
                             return self.err_expr(pos);
                         }
                         if matches!(&self.apparent_type(&u), Type::Void) {
-                            self.error(
+                            self.error_diverging(
                                 RuleCode::S100,
                                 "the `map` callback must return a value",
                                 cb.pos.clone(),
+                                Divergence::VoidValue,
                             );
                             return self.err_expr(pos);
                         }

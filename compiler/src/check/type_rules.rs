@@ -127,7 +127,8 @@ impl<'p> Checker<'p> {
                     _ => break,
                 }
             }
-            if (source.is_numeric() || matches!(source, Type::GenericNumber)) && target.is_numeric()
+            if (source.is_numeric() || matches!(source, Type::GenericNumber | Type::Enum(_)))
+                && target.is_numeric()
             {
                 return true;
             }

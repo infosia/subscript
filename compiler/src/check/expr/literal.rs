@@ -154,6 +154,14 @@ impl<'p> Checker<'p> {
         let fractional = raw.contains('.') || (!hex && (raw.contains('e') || raw.contains('E')));
         let value = if negate { -n.value } else { n.value };
         let target = match ctx {
+            Some(t)
+                if self.instance_restriction(
+                    crate::check::opaque::InstanceRestriction::SizedNumeric,
+                    t,
+                ) =>
+            {
+                Type::GenericNumber
+            }
             Some(t) if self.apparent_type(t).is_numeric() => self.apparent_type(t),
             _ => {
                 if fractional {
@@ -163,6 +171,14 @@ impl<'p> Checker<'p> {
                 }
             }
         };
+        // §143: a numeric parameter context gives a literal no concrete storage width.
+        if matches!(self.apparent_type(&target), Type::GenericNumber) {
+            return hir::Expr {
+                kind: ExprKind::Float(value),
+                ty: target,
+                pos,
+            };
+        }
         if self.apparent_type(&target).is_float() {
             // Round-to-nearest-even first overflows binary16 at the
             // midpoint 65520: values below it still round to 65504.

@@ -96,6 +96,7 @@ pub(super) fn cells() -> Vec<Cell> {
         .sum();
     let mut cells = Vec::new();
     let mut omissions = Vec::new();
+    let mut controls = std::collections::HashMap::new();
     for api in &apis {
         let defaults: Vec<_> = api
             .outer
@@ -108,7 +109,7 @@ pub(super) fn cells() -> Vec<Cell> {
                 ("array", "xs", "T[]"),
                 ("nullable", "nullable", "T | null"),
             ] {
-                for kind in KINDS.iter().chain(product::FUNCTION_KINDS) {
+                for kind in &kinds::all() {
                     let mut replacements: Vec<_> = api
                         .generic
                         .iter()
@@ -211,6 +212,14 @@ pub(super) fn cells() -> Vec<Cell> {
                         "void"
                     };
                     let declaration = format!("class Box {{ v: i32 = 1; }} @ValueType class Value {{ v: i32 = 1; }} {async_word}function g<T{}>({expression}: {role_type}{receiver}{extra}): {result_type} {{ {body} }}", kind.constraint);
+                    let declaration = format!(
+                        "{} {declaration}",
+                        if kind.name == "value-class" {
+                            ""
+                        } else {
+                            kinds::prelude(kind)
+                        }
+                    );
                     let supplied: String = baseline
                         .iter()
                         .enumerate()
@@ -234,12 +243,22 @@ pub(super) fn cells() -> Vec<Cell> {
                         && position >= api.arguments.len() + api.generic.len()
                         && api.outer[position - api.arguments.len() - api.generic.len()].0 == "N"
                         && role == "value"
-                        && matches!(kind.name, "numeric" | "f64" | "u8")
+                        && kinds::numeric(kind)
                     {
                         Some(Divergence {
                             code: RuleCode::S100,
                             record: "Q3",
                             token: "non-negative integer literal",
+                        })
+                    } else if api.name == "FixedArray.map"
+                        && position == 1
+                        && role == "value"
+                        && kind.name == "void"
+                    {
+                        Some(Divergence {
+                            code: RuleCode::S100,
+                            record: "C21",
+                            token: "a `map` callback that returns `void`",
                         })
                     } else if api.name == "Worker.spawn" {
                         Some(Divergence {
@@ -262,11 +281,7 @@ pub(super) fn cells() -> Vec<Cell> {
                             record: "stdlib.md §18.1",
                             token: "The argument `value` has type `T` (nominal equality)",
                         })
-                    } else if api.name == "Context.free"
-                        && (role == "array"
-                            || (role == "value"
-                                && (kind.name == "array" || kind.name.starts_with("function-"))))
-                    {
+                    } else if api.name == "Context.free" && (role == "array" || role == "value") {
                         Some(Divergence {
                             code: RuleCode::S100,
                             record: "corpus.md §5 Q6",
@@ -325,10 +340,11 @@ pub(super) fn cells() -> Vec<Cell> {
                                 .replace(&format!("g<{argument_type}>"), "g"),
                             &replacement,
                         );
-                        let errors =
+                        let errors = controls.entry(concrete.clone()).or_insert_with(|| {
                             check_program(&[SourceFile::new("control.ts", concrete.clone())])
                                 .err()
-                                .unwrap_or_default();
+                                .unwrap_or_default()
+                        });
                         if let Some(directory) = std::env::var_os("SUBSCRIPT_API_CONTROLS") {
                             let directory = PathBuf::from(directory);
                             fs::create_dir_all(&directory).unwrap();
@@ -353,7 +369,7 @@ pub(super) fn cells() -> Vec<Cell> {
                             )
                             .unwrap();
                         }
-                        for error in &errors {
+                        for error in errors.iter() {
                             assert!(
                                 !error.message.contains("TypeParameter(")
                                     && !error.message.contains("ClassId("),
@@ -366,7 +382,8 @@ pub(super) fn cells() -> Vec<Cell> {
                                 name: format!("{name}-instance"),
                                 source,
                                 divergence,
-                                concrete_source: Some(concrete),
+                                // The admission check above checks this concrete source once.
+                                concrete_source: None,
                             });
                             break;
                         }
@@ -393,7 +410,7 @@ pub(super) fn cells() -> Vec<Cell> {
     }
     assert_eq!(
         omissions.len(),
-        2081,
+        8775,
         "ambient instance admission changed; inspect SUBSCRIPT_API_OMISSIONS"
     );
     eprintln!(
@@ -435,7 +452,7 @@ fn new_callables_and_unexpressed_signatures_are_reported() {
         Project(std::env::temp_dir().join(format!("subscript-api-parser-{}", std::process::id())));
     fs::create_dir_all(&project.0).unwrap();
     let source = project.0.join("ambient.d.ts");
-    fs::write(&source, "declare namespace Added { function call<T>(x: T, n: i32): void; function branch<T>(x: T extends string ? string : i32): void; function overloaded(x: i32): void; function overloaded(x: string): void; }").unwrap();
+    fs::write(&source, "declare namespace Added { function call<T>(x: T, n: i32): void; function branch<T>(x: T extends string ? string : i32): void; function overloaded(x: i32): void; function overloaded(x: string): void; } declare class AddedClass { constructor(x: i32); callback: (x: i32) => void; }").unwrap();
     let result = Command::new("node")
         .arg(root.join("compiler/tests/generic_tsc_matrix/api.cjs"))
         .arg(source)
@@ -454,6 +471,14 @@ fn new_callables_and_unexpressed_signatures_are_reported() {
     );
     assert!(
         text.contains("omit\tAdded.overloaded\tThe overload set"),
+        "{text}"
+    );
+    assert!(
+        text.contains("omit\tAddedClass.constructor\tThe constructor"),
+        "{text}"
+    );
+    assert!(
+        text.contains("omit\tAddedClass.callback\tThe property"),
         "{text}"
     );
     assert_eq!(

@@ -445,6 +445,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         8,
     ),
+    ("r297-void-binding.ts", RuleCode::S100, 11),
+    ("r298-void-map-callback.ts", RuleCode::S100, 10),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -538,6 +540,32 @@ fn divergence_blocks_match_every_reject_entry_tsc_header() {
         }
     }
     assert!(violations.is_empty(), "{}", violations.join("\n"));
+}
+
+#[test]
+fn void_value_diagnostics_name_c21() {
+    let dir = corpus_dir().join("reject");
+    for (file, line, message) in [
+        ("r297-void-binding.ts", 11, "cannot bind a `void` value"),
+        (
+            "r298-void-map-callback.ts",
+            10,
+            "the `map` callback must return a value",
+        ),
+    ] {
+        let diagnostics = check_program(&reject_sources(&dir, file))
+            .expect_err("a void-value reject entry must fail");
+        assert_eq!(diagnostics.len(), 1, "{file}");
+        let diagnostic = &diagnostics[0];
+        assert_eq!(diagnostic.code, RuleCode::S100, "{file}");
+        assert_eq!(diagnostic.pos.line, line, "{file}");
+        assert_eq!(diagnostic.message, message, "{file}");
+        assert_eq!(
+            diagnostic.divergence,
+            Some(subscript_compiler::divergence::Divergence::VoidValue),
+            "{file}"
+        );
+    }
 }
 
 #[test]

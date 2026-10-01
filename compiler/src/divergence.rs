@@ -25,6 +25,8 @@ pub enum Divergence {
     LoneSurrogateEscape,
     /// Loose equality or inequality that permits coercion.
     LooseEquality,
+    /// A binding of a `void` value or a `map` callback that returns `void`.
+    VoidValue,
     /// `any` in a declaration.
     AnyType,
     /// `eval`, `new Function`, and a write through `.prototype`.
@@ -216,6 +218,7 @@ impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
         Divergence::LooseEquality,
+        Divergence::VoidValue,
         Divergence::AnyType,
         Divergence::DynamicObjectModel,
         Divergence::NominalClassIdentity,
@@ -309,6 +312,12 @@ impl Divergence {
     #[must_use]
     pub fn entry(self) -> DivergenceEntry {
         match self {
+            Divergence::VoidValue => DivergenceEntry {
+                ts: "function f(): void {} const a = f();",
+                subscript: "function f(): void {} f();",
+                why: "The void type has no value to store. Call a void function as a statement; return a value from a map callback.",
+                collision: "C21",
+            },
             Divergence::LooseEquality => DivergenceEntry {
                 ts: "const equal = x == y;",
                 subscript: "const equal = x === y;",
@@ -1286,6 +1295,15 @@ mod tests {
         assert_eq!(entry.ts, "const equal = x == y;");
         assert_eq!(entry.subscript, "const equal = x === y;");
         assert!(Divergence::ALL.contains(&Divergence::LooseEquality));
+    }
+
+    #[test]
+    fn void_value_names_its_record_and_statement_form() {
+        let entry = Divergence::VoidValue.entry();
+        assert_eq!(entry.collision, "C21");
+        assert_eq!(entry.ts, "function f(): void {} const a = f();");
+        assert_eq!(entry.subscript, "function f(): void {} f();");
+        assert!(Divergence::ALL.contains(&Divergence::VoidValue));
     }
 
     #[test]

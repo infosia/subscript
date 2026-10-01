@@ -106,7 +106,10 @@ impl<'p> Checker<'p> {
                     let shape = self.apparent_type(&element);
                     match shape {
                         Type::Array(inner) | Type::FixedArray(inner, _) => element = *inner,
-                        _ => return shape.is_numeric() || matches!(shape, Type::GenericNumber),
+                        _ => {
+                            return shape.is_numeric()
+                                || matches!(shape, Type::GenericNumber | Type::Enum(_))
+                        }
                     }
                 }
             }
@@ -308,12 +311,21 @@ impl<'p> Checker<'p> {
         }
         let apparent_left = self.apparent_type(left);
         let apparent_right = self.apparent_type(right);
-        let numeric = |ty: &Type| ty.is_numeric() || matches!(ty, Type::GenericNumber);
-        if numeric(&apparent_left) && numeric(&apparent_right) {
+        let left_numeric = apparent_left.is_numeric()
+            || matches!(apparent_left, Type::GenericNumber | Type::Enum(_));
+        let right_numeric = apparent_right.is_numeric()
+            || matches!(apparent_right, Type::GenericNumber | Type::Enum(_));
+        if left_numeric && right_numeric {
             return true;
         }
-        self.assignable(&self.apparent_type(left), &self.apparent_type(right))
-            || self.assignable(&self.apparent_type(right), &self.apparent_type(left))
+        if matches!(
+            (&apparent_left, &apparent_right),
+            (Type::StringAlias(_), Type::Str) | (Type::Str, Type::StringAlias(_))
+        ) {
+            return true;
+        }
+        self.assignable(&apparent_left, &apparent_right)
+            || self.assignable(&apparent_right, &apparent_left)
     }
 
     /// Resolves the receiver type through the same apparent-type function (§143 rule 1a).
