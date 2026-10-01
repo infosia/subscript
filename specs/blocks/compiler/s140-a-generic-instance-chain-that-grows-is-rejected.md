@@ -67,9 +67,21 @@ types), and `node` prints `3`. A compiler crash is never a diagnostic
    carries the divergence block.
 4. The edges are recorded wherever the checker resolves a type
    expression that requests an instance, in a function, a method, and
-   a class template, the §135 opaque check and the signature pass
-   included. No form of instantiation reaches the stack overflow. The
-   recorder matches every type form with no catch-all arm.
+   a class template, and in the signature pass. No form of
+   instantiation reaches the stack overflow. The recorder matches
+   every type form with no catch-all arm.
+4a. The §135 opaque check of a template does not check the bodies of
+   the instances that its opaque arguments reach (its cost stays
+   linear in the templates). It reports a growing request whose chain
+   closes inside the template's own body and signatures. A chain that
+   grows only through the body of another template is reported where
+   a program instance makes it; a template that no program instance
+   reaches and that grows only through another template's body is not
+   reported, and it makes no instance, so it cannot overflow.
+   *(Added 2026-10-01 after the verification review: checking those
+   bodies made `subscript check` cost grow about 6x for each doubling
+   of the generic helpers, 0.09 s to 2.71 s for 120 helpers in a debug
+   build.)*
 
 ### 140.2 Acceptance
 
@@ -94,3 +106,7 @@ types), and `node` prints `3`. A compiler crash is never a diagnostic
    `N<A, W<i32>> | null` in `N<A, B>`. A growing argument with an
    S011 error in it gives the S011 only.
 3. No existing `.expected` golden moves.
+4. A cost test: a program with many generic helpers that call each
+   other with their own parameter checks with a number of body checks
+   linear in the templates (count the checks, not the time), with a
+   firing control.
