@@ -43,8 +43,9 @@ differential gate cannot see it (core principle 12). Measured at
 ### 150.2 Acceptance
 
 1. Red first: an accept entry, `js-comparable: yes`, with each row of
-   the Problem table and a postfix update on a module global, a captured
-   local in a lambda, a `u8` at its maximum (wrap), and an `i64`. Its
+   the Problem table and a postfix update on a module global, a field of
+   a captured `const` local in a lambda (C5 rejects an update of a
+   captured `let`, S009), a `u8` at its maximum (wrap), and an `i64`. Its
    golden is the `node` output; at the contract pin, the dev tier
    output differs from it (record both).
 2. A side-effect witness shows that an index target with a side-effecting
