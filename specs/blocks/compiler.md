@@ -186,3 +186,4 @@ Every section, with its status:
 | §142 | A handle the script keeps is the host's to keep alive | active | [`s142-a-handle-the-script-keeps-is-the-hosts-to-keep-alive.md`](compiler/s142-a-handle-the-script-keeps-is-the-hosts-to-keep-alive.md) |
 | §143 | A type parameter is typed as `tsc` types it | active; replaces §135 rule 2 | [`s143-a-type-parameter-is-typed-as-tsc-types-it.md`](compiler/s143-a-type-parameter-is-typed-as-tsc-types-it.md) |
 | §144 | Loose equality is strict equality | active; deletes collision C20 | [`s144-loose-equality-is-strict-equality.md`](compiler/s144-loose-equality-is-strict-equality.md) |
+| §145 | A finished generator has no reference value | active | [`s145-a-finished-generator-has-no-reference-value.md`](compiler/s145-a-finished-generator-has-no-reference-value.md) |
