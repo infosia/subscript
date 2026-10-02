@@ -37,8 +37,20 @@ Measured at `14410e3d` through `subscript check` and `tsc` 5.9.2:
    `this` inside a lambda. Each one can observe a field that holds no
    value yet, or exposes the partial instance. The diagnostic names the
    rule that rejects the form.
+1a. A call `this.f(...)` where `f` is an earlier initialized field of a
+   function type is a read of `f` followed by a call; it is accepted. A
+   lambda cannot capture `this`, so the call cannot reach the partial
+   instance. *(Added 2026-10-02 after the Phase Review.)*
 3. Rule 1 applies to reference classes, `@ValueType` classes, and
    generic classes, with or without a declared constructor.
+3a. A `@Descriptor` member default does not read `this`: every `this`
+   there is rejected with S100. A descriptor is built from a literal, so
+   a default runs beside the literal's supplied members, and `tsc` types
+   an optional member as possibly `undefined` (TS2532 for
+   `this.w * 3`). *(Added 2026-10-02 after the Phase Review: the checker
+   accepted every `this` in a default, so `a?: i32 = this.b` before
+   `b?: i32 = 7` read 0, and `self?: D | null = this` exposed the
+   partial instance.)*
 4. The evaluation order of §57 does not change: constructor arguments,
    then field initializers in declaration order, then the constructor
    body.
