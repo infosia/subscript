@@ -29,8 +29,16 @@ accepted (§45.2).
    two branch types, the same in either branch order:
    a. two equal types join to that type;
    b. `T` and `null`, and `T` and `T | null`, join to `T | null` when
-      `T | null` is a legal type (C7: a reference, a function type, a
-      handle, or another nullable-capable type);
+      `T | null` is a legal type. "Legal" is the predicate that decides
+      a written `T | null` annotation (C7: a reference, a function type,
+      a handle, a boundary struct); the join calls that predicate and
+      does not restate it. *(Corrected 2026-10-02 after the Phase Review:
+      the implementation restated it and excluded boundary structs.)*;
+   b2. a numeric or string literal branch is checked with the other
+      branch's type as its context first (C4), as a binary operator
+      does, so `flag ? n : 0` with `n: i64` joins to `i64`. *(Added
+      2026-10-02 after the Phase Review: the literal took `i32` and the
+      pair had no join, where `n + 1` checks clean.)*
    c. every other pair has no join and is rejected, as before §146:
       two different classes (C7 has no general union), a scalar and
       `null` (C7), and two numeric widths (no implicit conversion, C3).
