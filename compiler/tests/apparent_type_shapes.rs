@@ -535,6 +535,15 @@ struct AllowGroup {
 
 const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup {
+        name: "inferred-argument-identity",
+        reason: "Inference compares declared candidate identities (§149 rules 2–4). Instance edges preserve symbolic parameter identity before constraint projection (§140 rule 1).",
+        sites: &[
+            ("inference.rs", "infer_call_arguments", 0xf4775de56b99672f),
+            ("inference.rs", "match_inference_type", 0xdd89439ba5b76b72),
+            ("inference.rs", "inferred_parameter_edges", 0x4f00984e9ee75837),
+        ],
+    },
+    AllowGroup {
         name: "conditional-type-identity",
         reason: "The conditional join compares declared concrete types; check_cond routes all type parameters to generic_union (§143).",
         sites: &[("expr/operator.rs", "conditional_join", 0xfb5ba5c0c4d9388b)],

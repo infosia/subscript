@@ -28,6 +28,7 @@ mod expr;
 pub(crate) mod fallthrough;
 mod field_initializer;
 mod generics;
+mod inference;
 mod instance_chain;
 use instance_chain::InstanceArguments;
 mod json;
@@ -1144,6 +1145,8 @@ pub(crate) struct Checker<'p> {
     pub pending_instance_bodies: Vec<(ClassId, Vec<instance_chain::InstanceRequest>)>,
     /// The active requests for generic instances (compiler.md §140 rule 1).
     pub instance_chain: Vec<instance_chain::InstanceRequest>,
+    /// Symbolic edges from the opaque check, retained for inferred instance requests (§149).
+    pub inferred_edges: HashMap<(String, u32, u32), Vec<Vec<instance_chain::ParameterEdge>>>,
     /// One request site per cycle, including rotations of its templates (§140 acceptance 2).
     pub growing_cycles: Vec<(Vec<Pos>, Pos)>,
     /// Diagnostic indices and argument ranges for S011 priority (§140 acceptance 2).

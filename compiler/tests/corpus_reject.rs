@@ -474,6 +474,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r326-namespace-typeof/main.ts", RuleCode::S100, 9),
     ("r327-namespace-increment/main.ts", RuleCode::S100, 9),
     ("r328-namespace-local-export/main.ts", RuleCode::S100, 9),
+    ("r330-generic-inference-conflict.ts", RuleCode::S100, 11),
+    ("r331-generic-inference-return-only.ts", RuleCode::S100, 9),
+    ("r332-generic-inference-only-null.ts", RuleCode::S100, 9),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

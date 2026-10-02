@@ -25,7 +25,7 @@ export function main(): void {
 }
 
 #[test]
-fn awaited_generic_async_call_requires_type_arguments() {
+fn awaited_generic_async_call_infers_type_arguments() {
     let source = r#"
 async function first<T>(items: T[]): Promise<T> {
   await Context.suspend();
@@ -37,14 +37,24 @@ export async function main(): Promise<void> {
   await first(items);
 }
 "#;
-    let diagnostics = check_program(&[SourceFile::new("test.ts", source)])
-        .expect_err("the call without type arguments must fail");
+    let module =
+        check_program(&[SourceFile::new("test.ts", source)]).expect("the awaited call infers u32");
+    assert!(module
+        .functions
+        .iter()
+        .any(|function| function.name == "first<u32>"));
 
-    assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
+    let source = r#"
+async function empty<T>(): Promise<T | null> { return null; }
+export async function main(): Promise<void> { await empty(); }
+"#;
+    let diagnostics = check_program(&[SourceFile::new("test.ts", source)])
+        .expect_err("a return-only parameter has no candidate");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
     assert_eq!(diagnostics[0].code, RuleCode::S100);
     assert_eq!(
         diagnostics[0].message,
-        "generic function `first` requires explicit type arguments"
+        "cannot infer type parameter `T` of `empty`: no candidate; use explicit type arguments"
     );
 }
 

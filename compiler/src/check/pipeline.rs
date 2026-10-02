@@ -250,6 +250,7 @@ fn run_with_effects(
         signatures_resolved: false,
         pending_instance_bodies: Vec::new(),
         instance_chain: Vec::new(),
+        inferred_edges: HashMap::new(),
         growing_cycles: Vec::new(),
         growth_reports: Vec::new(),
         opaque_loop_effects: narrowing::Analysis::default(),
@@ -297,6 +298,8 @@ fn run_with_effects(
         }
     }
     ck.signatures_resolved = true;
+    // §149: symbolic inference records §140 edges before concrete bodies request instances.
+    let opaque_diagnostics = ck.check_generic_bodies_opaque();
     ck.check_pending_instance_bodies();
     // Descriptor defaults need every class and function signature, but
     // constructing literals in ordinary bodies need the checked defaults.
@@ -323,9 +326,7 @@ fn run_with_effects(
             });
         }
     }
-    // compiler.md §135.1 rule 1: the opaque check of every generic body,
-    // in both runs.
-    ck.check_generic_bodies_opaque();
+    ck.merge_generic_body_diagnostics(opaque_diagnostics);
     let opaque_loops = std::mem::take(&mut ck.opaque_loop_effects);
     let regex_symbols: HashSet<_> = ck.regex_literals.values().map(String::as_str).collect();
     let regex_literal_globals: Vec<_> = ck

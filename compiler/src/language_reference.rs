@@ -24,7 +24,9 @@ const NULLISH_OPERATORS: &str = "`a ?? b` requires `a` to have type `Ref | null`
 
 const USING_DECLARATIONS: &str = "`using x = e` declares an immutable reference-class binding whose class declares `[Symbol.dispose](): void`. The binding can have type `R | null`. Each initializer evaluates once. Scope exits call the hooks in reverse declaration order and skip null bindings. Inner scopes dispose first; a return expression evaluates before disposal. Suspension preserves resources until completion. Member reads through nullable bindings require ordinary null narrowing. A bare `using x = null` needs a type annotation. Traps do not run disposal. `await using`, value-class hooks, and descriptor-class hooks stay rejected.";
 
-const GENERIC_METHODS: &str = "R39.6 admits type parameters on a method of a non-generic class, instance or static. A call must supply explicit type arguments, as a generic function call must. Each distinct type-argument list yields one method instance named `m<A>` in the class's instance or static namespace. The declared name owns the member namespace, and an instance name collides with no declared member. An async instance method on a non-generic reference class can declare type parameters (§93). A generic method on a generic class stays outside the surface.";
+const GENERIC_FUNCTIONS: &str = "A directly named generic function infers omitted type arguments from its arguments (§149). Imported and namespace-qualified functions use the same rule. Structural candidates pass through arrays, FixedArray, nullable types, Map, Set, generic classes, and declared function signatures. Non-literal arguments decide each candidate first. Numeric, string, and array literals use that candidate as their context. With only literals, integer literals default to i32, fractional literals to f64, and string literals to string. Equal candidates agree; C and C | null join to C | null. Conflicting candidates and missing candidates require explicit type arguments. Explicit type arguments override inference. Constraints, opaque body checks, and instance-chain checks still apply. Each argument evaluates once, in order. Generic methods and constructors require explicit type arguments. Callback parameter types and return contexts do not supply inference candidates.";
+
+const GENERIC_METHODS: &str = "R39.6 admits type parameters on a method of a non-generic class, instance or static. A method call must supply explicit type arguments. Each distinct type-argument list yields one method instance named `m<A>` in the class's instance or static namespace. The declared name owns the member namespace, and an instance name collides with no declared member. An async instance method on a non-generic reference class can declare type parameters (§93). A generic method on a generic class stays outside the surface.";
 
 const Q33_DESCRIPTORS: &str = "`@Descriptor class` declares a closed, data-only reference class for literal construction. A required member is written `name!: T`; a defaulted member is written `name?: T = default`. When `A` is a Q32 string-literal union alias, `name?: A` without an initializer is absence-capable: omission is a distinct state, explicit `undefined` is rejected, and reads are legal only in the present arm established by `member != undefined` / `member !== undefined` or the inverse arm of `member == undefined` / `member === undefined`. No other member type admits that spelling. Literals may be nested, may omit defaulted and absence-capable members, and remain constructible through a `Descriptor | null` contextual type. Construction uses an object literal in a descriptor context; `new Descriptor(...)`, literals against plain nominal classes (including through `| null`), methods, missing required members, and excess members are rejected.";
 
@@ -124,6 +126,16 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a177-nullish.ts",
             "corpus/reject/r177-nullish-non-nullable-left.ts",
             "corpus/reject/r178-optional-chain-unbound.ts",
+        ],
+    },
+    Feature {
+        title: "Generic function inference",
+        prose: GENERIC_FUNCTIONS,
+        corpus: &[
+            "corpus/accept/a324-generic-inference/main.ts",
+            "corpus/reject/r330-generic-inference-conflict.ts",
+            "corpus/reject/r331-generic-inference-return-only.ts",
+            "corpus/reject/r332-generic-inference-only-null.ts",
         ],
     },
     Feature {

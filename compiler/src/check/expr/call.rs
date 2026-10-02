@@ -78,20 +78,18 @@ impl<'p> Checker<'p> {
             Some(ScopeItem::Func(f)) => self.check_direct_call(&f, c, fx, pos),
             Some(ScopeItem::Foreign(f)) => self.check_foreign_call(&f, c, fx, pos),
             Some(ScopeItem::GenericFunc(key)) => {
-                let Some(type_args) = &c.type_args else {
-                    self.error(
-                        RuleCode::S100,
-                        format!(
-                            "generic function `{}` requires explicit type arguments",
-                            name
-                        ),
-                        ident_pos.clone(),
-                    );
-                    return self.err_expr(pos);
+                let (arguments, checked) = if let Some(type_args) = &c.type_args {
+                    (self.resolve_instance_arguments(type_args), None)
+                } else {
+                    let Some((arguments, checked)) =
+                        self.infer_call_arguments(&key, c, fx, &ident_pos)
+                    else {
+                        return self.err_expr(pos);
+                    };
+                    (arguments, Some(checked))
                 };
-                let arguments = self.resolve_instance_arguments(type_args);
                 match self.instantiate_fn(&key, &arguments, ident_pos) {
-                    Some(mono) => self.check_direct_call(&mono, c, fx, pos),
+                    Some(mono) => self.check_direct_call_with_arguments(&mono, c, fx, pos, checked),
                     None => self.err_expr(pos),
                 }
             }
@@ -190,11 +188,23 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: Pos,
     ) -> hir::Expr {
+        self.check_direct_call_with_arguments(fn_name, c, fx, pos, None)
+    }
+
+    fn check_direct_call_with_arguments(
+        &mut self,
+        fn_name: &str,
+        c: &ast::CallExpr,
+        fx: &mut FnCtx,
+        pos: Pos,
+        checked: Option<Vec<Option<hir::Expr>>>,
+    ) -> hir::Expr {
         let Some(sig) = self.fn_sigs.get(fn_name).cloned() else {
             return self.err_expr(pos);
         };
         if sig.is_async {
-            let args = self.check_args(&sig.params, &c.args, fx, &pos, fn_name);
+            let args =
+                self.check_args_with_arguments(&sig.params, &c.args, fx, &pos, fn_name, checked);
             let origin = fx.register_async_origin(pos.clone());
             return hir::Expr {
                 kind: ExprKind::AsyncHandleCreate {
@@ -218,7 +228,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let args = self.check_args(&sig.params, &c.args, fx, &pos, fn_name);
+        let args = self.check_args_with_arguments(&sig.params, &c.args, fx, &pos, fn_name, checked);
         let value = hir::Expr {
             kind: ExprKind::Call {
                 callee: Callee::Func(hir::Symbol::from_full_text(fn_name)),
@@ -1167,10 +1177,24 @@ impl<'p> Checker<'p> {
         pos: &Pos,
         what: &str,
     ) -> Vec<hir::Expr> {
+        self.check_args_with_arguments(params, args, fx, pos, what, None)
+    }
+
+    pub(super) fn check_args_with_arguments(
+        &mut self,
+        params: &[ParamSig],
+        args: &[ast::ExprOrSpread],
+        fx: &mut FnCtx,
+        pos: &Pos,
+        what: &str,
+        checked: Option<Vec<Option<hir::Expr>>>,
+    ) -> Vec<hir::Expr> {
+        let mut checked = checked.unwrap_or_default().into_iter();
         let required = params.iter().filter(|p| !p.has_default).count();
         self.check_argument_count((params.len(), required), args, pos, what);
         let mut out = Vec::new();
         for (i, arg) in args.iter().enumerate() {
+            let prechecked = checked.next().flatten();
             if arg.spread.is_some() {
                 let p = self.pos(arg.spread.unwrap_or_default());
                 self.error(
@@ -1181,7 +1205,8 @@ impl<'p> Checker<'p> {
                 continue;
             }
             let param_ty = params.get(i).map(|p| p.ty.clone());
-            let checked = self.check_expr(&arg.expr, param_ty.as_ref(), fx);
+            let checked =
+                prechecked.unwrap_or_else(|| self.check_expr(&arg.expr, param_ty.as_ref(), fx));
             if let Some(param_ty) = param_ty {
                 self.require_assignable(
                     &checked.ty.clone(),

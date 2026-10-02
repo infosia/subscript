@@ -578,22 +578,23 @@ impl<'p> Checker<'p> {
                     self.check_poisoned_arguments(&call.args, fx);
                     return self.err_expr(pos);
                 }
+                let mut checked = None;
                 let (function, checked_name, rejects_type_args) = match item {
                     Some(ScopeItem::Func(function)) => {
                         (function, name.clone(), call.type_args.is_some())
                     }
                     Some(ScopeItem::GenericFunc(key)) => {
-                        let Some(type_args) = &call.type_args else {
-                            self.error(
-                                RuleCode::S100,
-                                format!(
-                                    "generic function `{name}` requires explicit type arguments"
-                                ),
-                                self.pos(ident.span),
-                            );
-                            return self.err_expr(pos);
+                        let arguments = if let Some(type_args) = &call.type_args {
+                            self.resolve_instance_arguments(type_args)
+                        } else {
+                            let Some((arguments, values)) =
+                                self.infer_call_arguments(&key, call, fx, &callee_pos)
+                            else {
+                                return self.err_expr(pos);
+                            };
+                            checked = Some(values);
+                            arguments
                         };
-                        let arguments = self.resolve_instance_arguments(type_args);
                         let Some(instance) =
                             self.instantiate_fn(&key, &arguments, self.pos(ident.span))
                         else {
@@ -628,7 +629,14 @@ impl<'p> Checker<'p> {
                         self.pos(ident.span),
                     );
                 }
-                let args = self.check_args(&sig.params, &call.args, fx, &pos, &checked_name);
+                let args = self.check_args_with_arguments(
+                    &sig.params,
+                    &call.args,
+                    fx,
+                    &pos,
+                    &checked_name,
+                    checked,
+                );
                 hir::Expr {
                     kind: ExprKind::AsyncCall {
                         callee: AsyncCallee::Function(hir::Symbol::from_full_text(function)),

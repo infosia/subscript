@@ -87,6 +87,13 @@ pub(crate) enum InstanceRestriction {
     RelationalKind,
 }
 
+/// Opaque diagnostics wait until concrete checks finish (§135 rule 3).
+pub(super) struct OpaqueDiagnostics {
+    diagnostics: Vec<Diagnostic>,
+    checks: Vec<std::ops::Range<usize>>,
+    growth_reports: Vec<(usize, Pos, Pos)>,
+}
+
 impl<'p> Checker<'p> {
     /// True when a named restriction needs the instance (§143 rule 2a).
     pub(crate) fn instance_restriction(&self, restriction: InstanceRestriction, ty: &Type) -> bool {
@@ -352,14 +359,19 @@ impl<'p> Checker<'p> {
         expr
     }
 
-    /// Runs the opaque check over every generic template of the program
-    /// (compiler.md §135.1 rule 1) and merges its diagnostics with the
-    /// per-instance diagnostics (§135.1 rule 3).
-    pub(crate) fn check_generic_bodies_opaque(&mut self) {
+    /// Checks every generic template before concrete bodies (§135 rule 1, §149).
+    /// Its diagnostics wait for the concrete checks (§135 rule 3).
+    pub(super) fn check_generic_bodies_opaque(&mut self) -> OpaqueDiagnostics {
         let templates = self.opaque_templates();
         if templates.is_empty() {
-            return;
+            return OpaqueDiagnostics {
+                diagnostics: Vec::new(),
+                checks: Vec::new(),
+                growth_reports: Vec::new(),
+            };
         }
+        let instance_ranges = self.instance_diagnostic_ranges.len();
+        let growth_start = self.growth_reports.len();
         let snapshot = self.opaque_snapshot();
         let first = self.diags.len();
         let mut checks = Vec::with_capacity(templates.len());
@@ -380,7 +392,40 @@ impl<'p> Checker<'p> {
             );
         }
         self.restore_opaque_snapshot(snapshot);
-        let diagnostics = self.diags.take();
+        self.instance_diagnostic_ranges.truncate(instance_ranges);
+        let mut diagnostics = self.diags.take();
+        let opaque = diagnostics.split_off(first);
+        self.diags.extend(diagnostics);
+        OpaqueDiagnostics {
+            diagnostics: opaque,
+            checks: checks
+                .into_iter()
+                .map(|range| range.start - first..range.end - first)
+                .collect(),
+            growth_reports: self
+                .growth_reports
+                .drain(growth_start..)
+                .map(|(index, start, end)| (index - first, start, end))
+                .collect(),
+        }
+    }
+
+    /// Merges opaque and concrete diagnostics after both checks (§135 rule 3).
+    pub(super) fn merge_generic_body_diagnostics(&mut self, opaque: OpaqueDiagnostics) {
+        let first = self.diags.len();
+        let checks: Vec<_> = opaque
+            .checks
+            .into_iter()
+            .map(|range| range.start + first..range.end + first)
+            .collect();
+        self.growth_reports.extend(
+            opaque
+                .growth_reports
+                .into_iter()
+                .map(|(index, start, end)| (index + first, start, end)),
+        );
+        let mut diagnostics = self.diags.take();
+        diagnostics.extend(opaque.diagnostics);
         // An S011 inside a growing argument takes precedence (§140 acceptance 2).
         let suppressed: HashSet<_> = self
             .growth_reports

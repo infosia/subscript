@@ -5,15 +5,15 @@ use super::*;
 /// An edge from a requesting parameter to one requested argument (§140 rule 1).
 #[derive(Clone)]
 pub(crate) struct ParameterEdge {
-    source: usize,
-    expanding: bool,
+    pub(super) source: usize,
+    pub(super) expanding: bool,
 }
 
 /// One active request with its incoming edges and ordered parameter names.
 #[derive(Clone)]
 pub(crate) struct InstanceRequest {
     key: String,
-    args: Vec<Type>,
+    pub(super) args: Vec<Type>,
     parameters: Vec<String>,
     site: Pos,
     edges: Vec<Vec<ParameterEdge>>,

@@ -153,6 +153,8 @@ pub enum Divergence {
     EntryParameterType,
     /// A chain header copied out of its enclosing extension.
     EmbeddedHeaderCopy,
+    /// A generic function call with conflicting or missing inference candidates.
+    GenericInferenceCandidates,
     /// A generic method call that supplies no type arguments.
     GenericMethodTypeArguments,
     /// A bodiless generic method in a `declare class` from a `.ts` source.
@@ -282,6 +284,7 @@ impl Divergence {
         Divergence::ByteAccessTarget,
         Divergence::EntryParameterType,
         Divergence::EmbeddedHeaderCopy,
+        Divergence::GenericInferenceCandidates,
         Divergence::GenericMethodTypeArguments,
         Divergence::BodilessDeclareGenericMethod,
         Divergence::GenericMethodOnGenericClass,
@@ -861,6 +864,12 @@ impl Divergence {
                       the host reads past the header.",
                 collision: "compiler.md §33.5",
             },
+            Divergence::GenericInferenceCandidates => DivergenceEntry {
+                ts: "function pair<T>(a: T, b: T): T { return a; }\nconst n: i32 = 1; const f: f64 = 2.5; pair(n, f);",
+                subscript: "function pair<T>(a: T, b: T): T { return a; }\nconst n: i32 = 1; const f: f64 = 2.5; pair<f64>(n as f64, f);",
+                why: "Inference needs one candidate type for each parameter. Supply explicit type arguments when candidates conflict or give no type.",
+                collision: "compiler.md §149",
+            },
             Divergence::GenericMethodTypeArguments => DivergenceEntry {
                 ts: "class Box { identity<T>(value: T): T { return value; } }\n\
                      const box: Box = new Box();\n\
@@ -868,8 +877,7 @@ impl Divergence {
                 subscript: "class Box { identity<T>(value: T): T { return value; } }\n\
                             const box: Box = new Box();\n\
                             print(`${box.identity<i32>(1)}`);",
-                why: "Each type-argument list names one instance ahead of time, so the \
-                      compiler infers no type argument from an argument.",
+                why: "Each explicit type-argument list names one method instance. Generic method calls do not infer type arguments.",
                 collision: "compiler.md §64",
             },
             Divergence::BodilessDeclareGenericMethod => DivergenceEntry {
@@ -1293,6 +1301,16 @@ mod tests {
             long.is_empty(),
             "a reason is longer than 25 words: {long:?}"
         );
+    }
+
+    #[test]
+    fn generic_inference_names_its_rule_and_explicit_fix() {
+        let divergence = Divergence::GenericInferenceCandidates;
+        let entry = divergence.entry();
+        assert_eq!(entry.collision, "compiler.md §149");
+        assert!(entry.ts.contains("pair(n, f)"));
+        assert!(entry.subscript.contains("pair<f64>(n as f64, f)"));
+        assert!(Divergence::ALL.contains(&divergence));
     }
 
     #[test]
