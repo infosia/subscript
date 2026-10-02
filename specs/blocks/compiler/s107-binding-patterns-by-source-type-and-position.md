@@ -84,7 +84,7 @@ earlier bindings' effects, which changes what a program observes.
 | a nested pattern | recursive type checks and ordered effects |
 | an assignment pattern, `[a, b] = xs` | target evaluation and write order, which a declaration-only contract does not cover |
 | a **module-level** declaration, and a **mirror `declare const`** | *(Added 2026-09-11, measured, and a cost rather than a scope statement.)* A module-level name's type resolves from its annotation alone, one pass before the checker reads an index or a member, so a pattern there needs a **second derivation** of each bound name's type beside the one `check_index` and `member_on` already give. Core principle 8 forbids that. `hir::Global` also holds one initializer and no prologue, so the source temporary would become a permanent root, which §107.2's evaluate-once rule forbids |
-| a **non-array, non-class** source, and a **computed field name** | The complement of §107.1. Neither is a shape §107.1 admits, and each needs its own diagnostic rather than the general one |
+| a **non-array, non-class** source other than the `IterResult<T>` of `.next()` (§145 rule 1a), and a **computed field name** | The complement of §107.1. Neither is a shape §107.1 admits, and each needs its own diagnostic rather than the general one |
 
 **Each row names work, not scope.** "Not in v1" is not a reason here,
 and a round that implements any row states the cost it measured.

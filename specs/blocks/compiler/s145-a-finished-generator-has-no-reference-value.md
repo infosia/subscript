@@ -23,12 +23,25 @@ crash comes later, at a use, or never.
 
 1. A read of the `value` of an `IterResult<T>` whose `done` is `true`
    traps with the new trap kind `generator-done-value` when the zero of
-   `T` is a null reference and `T` is not nullable. Every form that
-   reads the field is a read: a member read `r.value`, and a
-   destructuring that binds `value`.
+   `T` is not a value of `T`. One total function over the `Type`
+   variants decides it, with no default arm, recursively through every
+   component that the zero holds inline (a `FixedArray` element, a
+   `@ValueType` field). The zero is not a value when it holds a null
+   reference of a type that is not nullable, or a null `string` handle.
+   Every form that reads the field is a read: a member read `r.value`,
+   and a destructuring that binds `value`.
+1a. A field binding pattern (§107.1) accepts the `IterResult<T>` of
+   `.next()` as its source, with the fields `done` and `value`. Another
+   field name in that pattern is rejected. *(Added 2026-10-02 after the
+   Phase Review: the implementation accepted the source, and no rule
+   stated it.)*
 2. For every other `T` the read is unchanged: a nullable `T` reads
-   `null` (C22), and a scalar, string, `Date`, enum, or `@ValueType` `T`
-   reads its zero (C8).
+   `null` (C22), and a scalar, `Date`, enum, or `@ValueType` `T` whose
+   fields are all such types reads its zero (C8). *(Corrected 2026-10-02
+   after the Phase Review: the first text listed `string` here; its zero
+   is a null handle, and the owner decided that it traps. It listed
+   neither `FixedArray` of a reference nor a value class that holds
+   one.)*
 3. The trap reports the source position of the read, identically on the
    dev tier, the ship tier, and the reference interpreter (§19 trap
    parity).
