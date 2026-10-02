@@ -27,7 +27,9 @@ crash comes later, at a use, or never.
    variants decides it, with no default arm, recursively through every
    component that the zero holds inline (a `FixedArray` element, a
    `@ValueType` field). The zero is not a value when it holds a null
-   reference of a type that is not nullable, or a null `string` handle.
+   reference of a type that is not nullable, a null `string` handle, or
+   the wire value 0 of a wire-mapped alias whose members exclude 0
+   (§52.1). The function reads the alias table to decide the last case.
    Every form that reads the field is a read: a member read `r.value`,
    and a destructuring that binds `value`.
 1a. A field binding pattern (§107.1) accepts the `IterResult<T>` of
@@ -36,8 +38,10 @@ crash comes later, at a use, or never.
    Phase Review: the implementation accepted the source, and no rule
    stated it.)*
 2. For every other `T` the read is unchanged: a nullable `T` reads
-   `null` (C22), and a scalar, `Date`, enum, or `@ValueType` `T` whose
-   fields are all such types reads its zero (C8). *(Corrected 2026-10-02
+   `null` (C22), and a scalar, `Date`, enum, plain string-literal alias
+   (index 0 is a member), wire-mapped alias with a member of wire value
+   0, or `@ValueType` `T` whose fields are all such types reads its zero
+   (C8). *(Corrected 2026-10-02
    after the Phase Review: the first text listed `string` here; its zero
    is a null handle, and the owner decided that it traps. It listed
    neither `FixedArray` of a reference nor a value class that holds
