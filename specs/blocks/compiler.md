@@ -86,7 +86,7 @@ Every section, with its status:
 | §42 | R15 — divergence flow: exhaustive switches and `unreachable()` | active | [`s042-r15-divergence-flow-exhaustive-switches-and-unreachable.md`](compiler/s042-r15-divergence-flow-exhaustive-switches-and-unreachable.md) |
 | §43 | R16 — absence-capable Q32-alias descriptor members | active | [`s043-r16-absence-capable-q32-alias-descriptor-members.md`](compiler/s043-r16-absence-capable-q32-alias-descriptor-members.md) |
 | §44 | OBS-3 — scalar handle fields beside arrays in scratch-lowered structs | active | [`s044-obs-3-scalar-handle-fields-beside-arrays-in-scratch-lowered.md`](compiler/s044-obs-3-scalar-handle-fields-beside-arrays-in-scratch-lowered.md) |
-| §45 | R18 — contextual typing for conditional expressions | active | [`s045-r18-contextual-typing-for-conditional-expressions.md`](compiler/s045-r18-contextual-typing-for-conditional-expressions.md) |
+| §45 | R18 — contextual typing for conditional expressions | active; 45.2 no-context rule replaced by §146 | [`s045-r18-contextual-typing-for-conditional-expressions.md`](compiler/s045-r18-contextual-typing-for-conditional-expressions.md) |
 | §46 | R19 — narrowing flows into conditional arms | active | [`s046-r19-narrowing-flows-into-conditional-arms.md`](compiler/s046-r19-narrowing-flows-into-conditional-arms.md) |
 | §47 | OBS-4 — AAPCS64 packs eightbytes, not fields (CRITICAL) | active | [`s047-obs-4-aapcs64-packs-eightbytes-not-fields-critical.md`](compiler/s047-obs-4-aapcs64-packs-eightbytes-not-fields-critical.md) |
 | §48 | R20 — external types in a generated mirror | active | [`s048-r20-external-types-in-a-generated-mirror.md`](compiler/s048-r20-external-types-in-a-generated-mirror.md) |
@@ -187,3 +187,4 @@ Every section, with its status:
 | §143 | A type parameter is typed as `tsc` types it | active; replaces §135 rule 2 | [`s143-a-type-parameter-is-typed-as-tsc-types-it.md`](compiler/s143-a-type-parameter-is-typed-as-tsc-types-it.md) |
 | §144 | Loose equality is strict equality | active; deletes collision C20 | [`s144-loose-equality-is-strict-equality.md`](compiler/s144-loose-equality-is-strict-equality.md) |
 | §145 | A finished generator has no reference value | active | [`s145-a-finished-generator-has-no-reference-value.md`](compiler/s145-a-finished-generator-has-no-reference-value.md) |
+| §146 | A conditional joins its branch types | active; replaces the §45.2 no-context rule | [`s146-a-conditional-joins-its-branch-types.md`](compiler/s146-a-conditional-joins-its-branch-types.md) |
