@@ -299,8 +299,16 @@ fn map_set_key_whitelist_rejections_name_q24() {
              }}\n"
         );
         let err = check_one(&src).unwrap_err();
-        assert_eq!(err[0].code, RuleCode::S014, "{key}: {err:?}");
-        assert!(err[0].message.contains("Q24"), "{key}: {}", err[0].message);
+        if key == "void" {
+            assert_eq!(err[0].code, RuleCode::S100, "{err:?}");
+            assert_eq!(
+                err[0].divergence,
+                Some(crate::divergence::Divergence::VoidValue)
+            );
+        } else {
+            assert_eq!(err[0].code, RuleCode::S014, "{key}: {err:?}");
+            assert!(err[0].message.contains("Q24"), "{key}: {}", err[0].message);
+        }
     }
     let err = check_one(
         "@ValueType\nclass V { x: i32; constructor() { this.x = 1; } }\n\

@@ -251,24 +251,21 @@ fn every_type_variant_has_a_constraint_or_a_reason() {
 pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
     let name = &cell.name;
     let mut records: Vec<_> = cell.divergence.into_iter().collect();
-    if name.starts_with("product-void-")
-        && [
-            "-parameter-forward-argument-",
-            "-parameter-ternary-arm-",
-            "-parameter-nullish-right-",
-            "-parameter-default-parameter-",
-            "-nullable-nullish-right-",
-        ]
-        .iter()
-        .any(|site| name.contains(site))
-    {
-        records.push(Divergence {
+    records.extend([
+        Divergence {
             code: RuleCode::S100,
             record: "C21",
-            message: "cannot bind a `void` value",
-            token: "binding whose type is inferred from a `void`",
-        });
-    }
+            message:
+                "`void` is only allowed as a return, generator element, or Promise result type",
+            token: "`void` as a type only as a return type",
+        },
+        Divergence {
+            code: RuleCode::S100,
+            record: "C21",
+            message: "a `void` expression is only allowed as an expression statement",
+            token: "expression of type `void` is accepted only as an expression statement",
+        },
+    ]);
     if name.contains("async-handle-") {
         records.push(Divergence {
             code: RuleCode::S013,
@@ -346,14 +343,6 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
         });
     }
     if name.starts_with("product-") && name.contains("-field-initializer-") {
-        if name.starts_with("product-void-") {
-            records.push(Divergence {
-                code: RuleCode::S100,
-                record: "C21",
-                token: "binding whose type is inferred from a `void`",
-                message: "cannot bind a `void` value",
-            });
-        }
         if name.contains("-nullish-result-") {
             records.push(Divergence {
                 code: RuleCode::S100,

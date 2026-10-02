@@ -840,17 +840,26 @@ fn constraints_resolve_by_identity_in_both_declaration_orders() {
 }
 
 #[test]
-fn unrestricted_typescript_slots_keep_void_and_null_constraints() {
+fn void_constraints_are_rejected_and_null_constraints_remain_valid() {
     let declarations = [
         "function g<T extends void>(x: T): string { return `${x}`; }",
         "function g<T extends void>(xs: T[]): string { return xs.join(); }",
         "function g<T extends void>(x: T): void { switch (x) {} }",
-        "function g<T extends null>(x: T): void { const a: T | null = x; }",
         "@ValueType class G<T extends void> { value: T; constructor(value: T) { this.value = value; } }",
     ];
     for declaration in declarations {
-        check(&program(declaration, "")).expect("TypeScript admits the opaque slot");
+        let errors = check(&program(declaration, "")).expect_err("void is not a constraint type");
+        assert!(
+            errors.iter().any(|error| error.divergence
+                == Some(subscript_compiler::divergence::Divergence::VoidValue)),
+            "{errors:?}"
+        );
     }
+    check(&program(
+        "function g<T extends null>(x: T): void { const a: T | null = x; }",
+        "",
+    ))
+    .expect("null remains a constraint type");
 }
 
 #[test]

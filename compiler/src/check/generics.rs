@@ -49,6 +49,9 @@ impl<'p> Checker<'p> {
                 continue;
             };
             let constraint = self.resolve_type(constraint);
+            if self.apparent_type(&constraint) == Type::Error {
+                satisfied = false;
+            }
             if root && self.is_type_parameter(argument) {
                 self.constrain_opaque_param(argument, constraint);
                 continue;

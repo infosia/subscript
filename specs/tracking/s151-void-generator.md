@@ -96,3 +96,89 @@ No gate script ran. No commit was made.
 ```text
 gate full 5f31dc196d43ed5066587f456de60eefd9d5fa7b dirty:16 debug 2229/0/3 release 2226/0/3 skips 2/0 clippy 2/18/13 goldens-moved 1 exit 0
 ```
+
+## Round 2 — void positions
+
+The source search covered the corpus, examples, documentation code blocks, and compiler/codegen tests.
+No accept entry or example used a rule 5 form.
+The existing source sites were:
+
+- `r297`: an inferred binding from a void call.
+- `r298`: an array-map callback with a void result.
+- `r299`: a void parameter and its return as a value.
+- `compiler/tests/opaque_generics.rs`: four declarations with `T extends void`, including an array parameter and a value-class field.
+- `compiler/src/tests/collections.rs`: `Map<void, i32>` annotations and constructor type arguments in the key-kind rejection test.
+- `compiler/tests/generic_tsc_matrix/kinds.rs`: the void constraint seed generates void parameters, bindings, container elements, and call operands.
+- The function-parameter seed generates void call results that the matrix uses as operands.
+
+The new entries have measured `tsc: accepts` headers. The measurement used TypeScript 5.9.2 and the repository compiler options.
+A compiler built from `b8d10e21` measured the new sources:
+
+| Entry | Form | Result at the pin |
+|---|---|---|
+| `r335` | Annotated void binding | Accepted |
+| `r336` | Void parameter | Accepted |
+| `r337` | Void array element | Accepted |
+| `r338` | Void call as a return operand | Existing S100/C21 rejection: `a void function cannot return a value` |
+| `r339` | Void call as a yield operand | Accepted |
+| `r340` | Void call as an argument | Accepted |
+| `r341` | Void loop binding as an argument | Accepted |
+| `r342` | Void generator value as an argument | Accepted |
+| `r343` | Void in another Generator type-argument slot | Accepted |
+
+Type resolution now rejects void outside a return, generator element, or Promise result slot.
+Expression resolution now rejects a void operand. Both checks emit S100 with C21 and return an error type.
+The inferred-binding check no longer needs its separate void branch.
+A return check suppresses its second diagnostic when the operand already has an error.
+A bare yield with an erroneous element type emits no second diagnostic.
+A rejected generic constraint suppresses its body check. This prevents element-kind diagnostic cascades after the C21 rejection.
+
+`r299` now reports its void parameter at line 8. Its header and checker row use that line.
+The old void-constraint acceptance tests and Map key diagnostic test now use S100/C21.
+The generic matrix uses the two common C21 diagnostic records.
+A concrete control with a C21 rejection admits no instance.
+
+The C emitter's empty IterValue return remains reachable from legal expression statements.
+Two temporary programs measured `tick().next().value;` and `x;` inside a void-generator loop.
+Each program contained one IterValue load and printed `ok` on dev, ship, and the interpreter.
+The temporary test was removed. The emitter branch remains because those statements still reach it.
+
+The two permanent void-generator shape tests took 0.02 seconds in a debug run.
+Their module comment records that measurement.
+No runtime file or C runtime header changed.
+
+The matrix measurement keeps every previous omitted product instance and adds 16 void-parameter instances.
+The product omission count moves from 7,719 to 7,735.
+The destination omission count moves from 1,448 to 1,488.
+The API omission count moves from 8,775 to 8,798.
+The revised matrix checks 38,831 cells with zero failures.
+
+Round 2 verification:
+
+- `cargo test --offline --locked -p subscript-compiler -p subscript-codegen` passes all unit, integration, and documentation tests.
+- The dev/ship golden corpus sweep and the interpreter corpus sweep pass.
+- The reject corpus checks the new entries with S100/C21 at their expected lines.
+- The JavaScript corpus tests and the TypeScript corpus header measurements pass.
+- `cargo fmt --check` and `git diff --check` pass.
+- `generate-api-reference` regenerates the corpus index with `r335`–`r343` and the revised `r299` description.
+- No accept golden or LIR snapshot changes. No gate script ran. No commit was made.
+
+C21 index additions for the orchestrator: `r335`, `r336`, `r337`, `r338`, `r339`, `r340`, `r341`, `r342`, `r343`.
+
+## Phase Review fix round landing gate
+
+A `void` value is never an operand (§151 rule 5, owner decision; C21
+rewritten as a total rule). `r299` now first reports its `void`
+parameter: under rule 5 a `void` function cannot reach a `void` value to
+return, and `r338` pins `return f()`.
+
+```text
+gate full 1d628be1f03dd8742d12eb2ffbd538093ada29f1 dirty:29 debug 2230/0/3 release 2227/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```
+
+## Phase Review result
+
+One review pass found MAJOR 1 (`yield f()` with a `void` call failed
+lowering on every tier) and MINOR 5. MAJOR 1 and MINOR 2–4 were one
+class, a `void` value used as an operand; rule 5 closes it. The cascade
+diagnostic and the missing cost line are fixed. §151 is COMPLETE.

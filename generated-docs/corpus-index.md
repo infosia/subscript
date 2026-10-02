@@ -589,7 +589,7 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r296-circular-type-parameter-constraint`](../corpus/reject/r296-circular-type-parameter-constraint.ts) | Rejects a cycle of direct type-parameter constraints. | generic-body, type-parameter, constraint-cycle | compiler.md §143 |
 | [`reject/r297-void-binding`](../corpus/reject/r297-void-binding.ts) | Rejects a binding of a void return value. | void, binding | collisions.md C21 |
 | [`reject/r298-void-map-callback`](../corpus/reject/r298-void-map-callback.ts) | Rejects a map callback with no return value. | void, array-map | collisions.md C21 |
-| [`reject/r299-void-return-value`](../corpus/reject/r299-void-return-value.ts) | Rejects a value return from a void function. | void, return | collisions.md C21 |
+| [`reject/r299-void-return-value`](../corpus/reject/r299-void-return-value.ts) | Rejects a void parameter and its use as a return operand. | void, return | collisions.md C21 |
 | [`reject/r30-array-find`](../corpus/reject/r30-array-find.ts) | Rejects `find`: a scalar `T[]` has no miss value (`T \| null` does not cover scalars); `findIndex` is the accepted spelling (Q22). | rejected-array-subset, array-methods | Q22 |
 | [`reject/r300-generator-result-pattern-field`](../corpus/reject/r300-generator-result-pattern-field.ts) | An iterator result cannot supply a binding pattern. | generator, iterator-result, binding-pattern | compiler.md §145 rule 1a, compiler.md §107.1 |
 | [`reject/r301-generator-done-destructuring`](../corpus/reject/r301-generator-done-destructuring.ts) | An iterator result cannot supply a binding pattern. | generator, iterator-result, binding-pattern | compiler.md §145, compiler.md §107 |
@@ -641,7 +641,16 @@ This index is derived from the structured header comments on every TypeScript co
 | [`reject/r332-generic-inference-only-null`](../corpus/reject/r332-generic-inference-only-null.ts) | Rejects a generic call without a unique candidate. | generic-function, generic-inference | compiler.md §149 |
 | [`reject/r333-generic-inference-literal-conflict`](../corpus/reject/r333-generic-inference-literal-conflict.ts) | Rejects conflicting literal defaults in generic inference. | generic-function, generic-inference | compiler.md §149 |
 | [`reject/r334-bare-yield-nonvoid`](../corpus/reject/r334-bare-yield-nonvoid.ts) | Rejects a value-less suspension in a generator of i32. | generator, bare-yield, declared-element-type | C8, compiler section 151 |
+| [`reject/r335-annotated-void-binding`](../corpus/reject/r335-annotated-void-binding.ts) | Rejects an annotated void binding. | void | collisions.md C21, compiler.md §151 |
+| [`reject/r336-void-parameter`](../corpus/reject/r336-void-parameter.ts) | Rejects a void parameter. | void | collisions.md C21, compiler.md §151 |
+| [`reject/r337-void-array`](../corpus/reject/r337-void-array.ts) | Rejects a void array element. | void | collisions.md C21, compiler.md §151 |
+| [`reject/r338-void-call-return`](../corpus/reject/r338-void-call-return.ts) | Rejects a void call as a return operand. | void | collisions.md C21, compiler.md §151 |
+| [`reject/r339-void-call-yield`](../corpus/reject/r339-void-call-yield.ts) | Rejects a void call as a yield operand. | void | collisions.md C21, compiler.md §151 |
 | [`reject/r34-narrow-mixed-arithmetic`](../corpus/reject/r34-narrow-mixed-arithmetic.ts) | Rejects narrow mixed-width arithmetic without an explicit conversion. | narrow-numerics, mixed-width-arithmetic | Q23, C3 |
+| [`reject/r340-void-call-argument`](../corpus/reject/r340-void-call-argument.ts) | Rejects a void call as an argument. | void | collisions.md C21, compiler.md §151 |
+| [`reject/r341-void-loop-binding-read`](../corpus/reject/r341-void-loop-binding-read.ts) | Rejects a void loop binding as an operand. | void | collisions.md C21, compiler.md §151 |
+| [`reject/r342-void-generator-value-read`](../corpus/reject/r342-void-generator-value-read.ts) | Rejects a void generator value as an operand. | void | collisions.md C21, compiler.md §151 |
+| [`reject/r343-generator-other-void-argument`](../corpus/reject/r343-generator-other-void-argument.ts) | Rejects void outside the generator element slot. | void, generator | collisions.md C21, compiler.md §151 |
 | [`reject/r35-narrow-mixed-bitwise`](../corpus/reject/r35-narrow-mixed-bitwise.ts) | Rejects narrow mixed-width bitwise operands without an explicit conversion. | narrow-numerics, mixed-width-bitwise | Q18, Q23, C3 |
 | [`reject/r36-f16-arithmetic`](../corpus/reject/r36-f16-arithmetic.ts) | Rejects arithmetic in the storage-only binary16 type. | f16-storage-only, rejected-arithmetic | Q23 |
 | [`reject/r38-map-f16-key`](../corpus/reject/r38-map-f16-key.ts) | Rejects storage-only f16 as a Map key. | map-key-whitelist, f16 | Q24, Q23 |

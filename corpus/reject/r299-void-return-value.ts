@@ -1,9 +1,9 @@
 // corpus: reject/r299-void-return-value
-// purpose: Rejects a value return from a void function.
+// purpose: Rejects a void parameter and its use as a return operand.
 // exercises: void, return
 // questions: collisions.md C21
 // tsc: accepts
-// expected-error: S100 at line 9, Rejects a value return from a void function.
+// expected-error: S100 at line 8, Rejects a void parameter and its use as a return operand.
 
 function g(x: void): void {
   return x;

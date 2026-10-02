@@ -395,15 +395,6 @@ impl<'p> Checker<'p> {
                         );
                         Type::Error
                     }
-                    Type::Void => {
-                        self.error_diverging(
-                            RuleCode::S100,
-                            "cannot bind a `void` value",
-                            pos.clone(),
-                            Divergence::VoidValue,
-                        );
-                        Type::Error
-                    }
                     _ => init.ty.clone(),
                 },
             };
@@ -488,13 +479,16 @@ impl<'p> Checker<'p> {
                     );
                     None
                 } else if ret == Type::Void {
-                    self.error_diverging(
-                        RuleCode::S100,
-                        "a `void` function cannot return a value",
-                        pos.clone(),
-                        Divergence::VoidValue,
-                    );
-                    Some(self.check_expr(arg, None, fx))
+                    let checked = self.check_expr(arg, None, fx);
+                    if self.apparent_type(&checked.ty) != Type::Error {
+                        self.error_diverging(
+                            RuleCode::S100,
+                            "a `void` function cannot return a value",
+                            pos.clone(),
+                            Divergence::VoidValue,
+                        );
+                    }
+                    Some(checked)
                 } else {
                     let checked = self.check_expr(arg, Some(&ret), fx);
                     self.require_assignable(

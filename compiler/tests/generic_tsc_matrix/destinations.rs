@@ -136,7 +136,8 @@ pub(super) fn cells() -> Vec<Cell> {
             }
         }
     }
-    assert_eq!(omitted, 1448, "destination instance admission changed");
+    // C21 excludes concrete destinations that use void outside a result type.
+    assert_eq!(omitted, 1488, "destination instance admission changed");
     eprintln!("destination axis: 35 constrained kinds, 17 constructors, 2 directions, 3 sites, {} cells, {omitted} omitted instances", cells.len());
     cells
 }
@@ -175,7 +176,6 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
         record,
         token,
         message: match record {
-            "C21" => "a `void` function cannot return a value",
             "C7" => "unions are limited to `Ref | null`",
             "stdlib.md §10" => "key",
             "stdlib.md §16.2" => "worker message type",
@@ -183,13 +183,6 @@ pub(super) fn records(cell: &Cell) -> Vec<Divergence> {
             _ => "unused",
         },
     };
-    if kind.name == "void" && site.starts_with("identity-return-") {
-        records.push(record(
-            RuleCode::S100,
-            "C21",
-            "`void` function cannot return a value",
-        ));
-    }
     if site.starts_with("nullable-")
         && !matches!(
             kind.name,

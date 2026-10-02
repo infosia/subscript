@@ -1513,7 +1513,7 @@ impl<'p> Checker<'p> {
             }
             None => {
                 if let Some(ty) = &known_yield {
-                    if self.apparent_type(ty) != Type::Void {
+                    if !matches!(self.apparent_type(ty), Type::Void | Type::Error) {
                         let name = self.type_name(ty);
                         self.error(
                             RuleCode::S100,

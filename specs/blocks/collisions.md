@@ -610,20 +610,21 @@ C20 is deleted by `compiler.md` §144: `==` and `!=` are `===` and
 
 ### C21. `void` is a return type, not a value
 
-The checker rejects a binding whose type is inferred from a `void`
-value (`const a = f()`) with S100 ("cannot bind a `void` value"), and a
-`map` callback that returns `void` with S100 ("the `map` callback must
-return a value"). A `void` function that returns a value
-(`function g(x: void): void { return x; }`) is rejected with S100 ("a
-`void` function cannot return a value"). `tsc` accepts all three. A
-binding annotated `void` (`let b: void = f()`) is accepted.
-The rule holds since the first checker; this record names it.
+A `void` value is never an operand (`compiler.md` §151 rule 5). An
+expression of type `void` is accepted only as an expression statement,
+and `void` as a type only as a return type, as the element type of
+`Generator<void>`, and as the result of `Promise<void>`. Every other use
+is rejected with S100: a binding of type `void` (annotated or inferred),
+a `void` parameter, `void[]`, `return f()` and `yield f()` with a `void`
+operand, a `void` argument, a `map` callback that returns `void`, and a
+read of a `void` loop binding or of a `void` `value`. `tsc` accepts
+these forms.
 
 Measured with `tsc` 5.9.2 (`specs/tracking/s143-type-parameter-typing.md`):
 `function f(): void {} const a = f();` and
 `xs.map((v: i32): void => {})` give no `tsc` error.
 
-Reject: `r297`, `r298`, `r299`.
+Reject: `r297`, `r298`, `r299`, `r335`–`r343`.
 
 ### C22. A JavaScript `undefined` is `null` here
 

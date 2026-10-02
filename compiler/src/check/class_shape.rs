@@ -229,7 +229,7 @@ impl<'p> Checker<'p> {
             };
             let sig = FnSig {
                 params: Vec::new(),
-                ret: self.resolve_type(&return_type.type_ann),
+                ret: self.resolve_result_type(&return_type.type_ann),
                 is_generator: false,
                 is_async: false,
                 yield_known: true,

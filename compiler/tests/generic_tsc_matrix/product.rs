@@ -469,7 +469,10 @@ pub(super) fn cells() -> Vec<Cell> {
                     });
                     // A callable constraint cannot admit a boolean condition (§143 rule 4).
                     if errors.is_empty()
-                        || (!(kind.name.starts_with("function-") && site.name == "condition")
+                        || (!errors.iter().any(|error| {
+                            error.divergence
+                                == Some(subscript_compiler::divergence::Divergence::VoidValue)
+                        }) && !(kind.name.starts_with("function-") && site.name == "condition")
                             && errors.iter().all(|error| {
                                 records
                                     .iter()
@@ -518,7 +521,8 @@ pub(super) fn cells() -> Vec<Cell> {
             }
         }
     }
-    assert_eq!(omitted.len(), 7719, "the admitted instance set changed");
+    // C21 rejects void controls before their consumers, so these controls admit no instance.
+    assert_eq!(omitted.len(), 7735, "the omitted instance set changed");
     let additional_pairs: usize = kinds::additional()
         .iter()
         .map(|kind| 2 + usize::from(kinds::numeric(kind)))

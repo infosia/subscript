@@ -220,7 +220,17 @@ impl<'p> Checker<'p> {
         }
         let checked = self.check_expr_inner(e, ctx, fx, allow_embedded_header_receiver);
         fx.descriptor_numeric_operand = previous_numeric;
-        checked
+        if self.apparent_type(&checked.ty) == Type::Void {
+            self.error_diverging(
+                RuleCode::S100,
+                "a `void` expression is only allowed as an expression statement",
+                checked.pos.clone(),
+                Divergence::VoidValue,
+            );
+            self.err_expr(checked.pos)
+        } else {
+            checked
+        }
     }
 
     fn check_expr_inner(
@@ -477,7 +487,7 @@ impl<'p> Checker<'p> {
             out.push(hir::Stmt::Expr(checked));
             return out;
         }
-        let checked = self.check_expr(e, None, fx);
+        let checked = self.check_expr_inner(root, None, fx, false);
         let mut statements = prefix.into_statements();
         statements.push(hir::Stmt::Expr(checked));
         statements

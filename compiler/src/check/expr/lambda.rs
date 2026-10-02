@@ -97,7 +97,7 @@ impl<'p> Checker<'p> {
         let mut ret = a
             .return_type
             .as_ref()
-            .map(|ann| self.resolve_type(&ann.type_ann))
+            .map(|ann| self.resolve_result_type(&ann.type_ann))
             .or_else(|| ret_ctx.cloned());
 
         fx.frames.push(Frame {

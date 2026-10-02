@@ -444,7 +444,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ),
     ("r297-void-binding.ts", RuleCode::S100, 11),
     ("r298-void-map-callback.ts", RuleCode::S100, 10),
-    ("r299-void-return-value.ts", RuleCode::S100, 9),
+    ("r299-void-return-value.ts", RuleCode::S100, 8),
     ("r300-generator-result-pattern-field.ts", RuleCode::S100, 11),
     ("r301-generator-done-destructuring.ts", RuleCode::S100, 11),
     ("r302-conditional-distinct-classes.ts", RuleCode::S100, 9),
@@ -483,6 +483,15 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         9,
     ),
     ("r334-bare-yield-nonvoid.ts", RuleCode::S100, 7),
+    ("r335-annotated-void-binding.ts", RuleCode::S100, 9),
+    ("r336-void-parameter.ts", RuleCode::S100, 8),
+    ("r337-void-array.ts", RuleCode::S100, 8),
+    ("r338-void-call-return.ts", RuleCode::S100, 9),
+    ("r339-void-call-yield.ts", RuleCode::S100, 9),
+    ("r340-void-call-argument.ts", RuleCode::S100, 10),
+    ("r341-void-loop-binding-read.ts", RuleCode::S100, 10),
+    ("r342-void-generator-value-read.ts", RuleCode::S100, 10),
+    ("r343-generator-other-void-argument.ts", RuleCode::S100, 8),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -582,7 +591,11 @@ fn divergence_blocks_match_every_reject_entry_tsc_header() {
 fn void_value_diagnostics_name_c21() {
     let dir = corpus_dir().join("reject");
     for (file, line, message) in [
-        ("r297-void-binding.ts", 11, "cannot bind a `void` value"),
+        (
+            "r297-void-binding.ts",
+            11,
+            "a `void` expression is only allowed as an expression statement",
+        ),
         (
             "r298-void-map-callback.ts",
             10,
@@ -590,8 +603,8 @@ fn void_value_diagnostics_name_c21() {
         ),
         (
             "r299-void-return-value.ts",
-            9,
-            "a `void` function cannot return a value",
+            8,
+            "`void` is only allowed as a return, generator element, or Promise result type",
         ),
     ] {
         let diagnostics = check_program(&reject_sources(&dir, file))
@@ -601,6 +614,25 @@ fn void_value_diagnostics_name_c21() {
         assert_eq!(diagnostic.code, RuleCode::S100, "{file}");
         assert_eq!(diagnostic.pos.line, line, "{file}");
         assert_eq!(diagnostic.message, message, "{file}");
+        assert_eq!(
+            diagnostic.divergence,
+            Some(subscript_compiler::divergence::Divergence::VoidValue),
+            "{file}"
+        );
+    }
+    for file in [
+        "r335-annotated-void-binding.ts",
+        "r336-void-parameter.ts",
+        "r337-void-array.ts",
+        "r338-void-call-return.ts",
+        "r339-void-call-yield.ts",
+        "r340-void-call-argument.ts",
+        "r341-void-loop-binding-read.ts",
+        "r342-void-generator-value-read.ts",
+        "r343-generator-other-void-argument.ts",
+    ] {
+        let diagnostic = first_diagnostic(file);
+        assert_eq!(diagnostic.code, RuleCode::S100, "{file}");
         assert_eq!(
             diagnostic.divergence,
             Some(subscript_compiler::divergence::Divergence::VoidValue),
@@ -1478,4 +1510,15 @@ fn bare_yield_diagnostic_names_the_declared_element_type() {
     assert!(errors
         .iter()
         .any(|error| error.message.contains("element type is `Cell`")));
+}
+
+#[test]
+fn bare_yield_does_not_repeat_an_element_type_error() {
+    let diagnostics = check_program(&[SourceFile::new(
+        "invalid-element.ts",
+        "function* values(): Generator<Missing> { yield; } export function main(): void {}",
+    )])
+    .expect_err("the declared element type is unknown");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert!(!diagnostics[0].message.contains("bare `yield;`"));
 }

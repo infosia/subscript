@@ -62,14 +62,23 @@ impl<'p> Checker<'p> {
             );
             return Type::Error;
         }
-        self.resolve_type(&args.params[0])
+        self.resolve_result_type(&args.params[0])
     }
 
     /// Resolves an annotation to a language type, emitting rule
     /// diagnostics for banned spellings. Errors resolve to
     /// [`Type::Error`] so one bad annotation does not cascade.
     pub(crate) fn resolve_type(&mut self, ty: &ast::TsType) -> Type {
-        match ty {
+        self.resolve_type_position(ty, false)
+    }
+
+    /// Resolves a return, generator element, or Promise result type.
+    pub(crate) fn resolve_result_type(&mut self, ty: &ast::TsType) -> Type {
+        self.resolve_type_position(ty, true)
+    }
+
+    fn resolve_type_position(&mut self, ty: &ast::TsType, allow_void: bool) -> Type {
+        let resolved = match ty {
             ast::TsType::TsKeywordType(kw) => self.resolve_keyword(kw),
             ast::TsType::TsTypeRef(r) => self.resolve_type_ref(r),
             ast::TsType::TsArrayType(arr) => {
@@ -80,7 +89,9 @@ impl<'p> Checker<'p> {
             }
             ast::TsType::TsUnionOrIntersectionType(u) => self.resolve_union(u),
             ast::TsType::TsFnOrConstructorType(f) => self.resolve_fn_type(f),
-            ast::TsType::TsParenthesizedType(p) => self.resolve_type(&p.type_ann),
+            ast::TsType::TsParenthesizedType(p) => {
+                self.resolve_type_position(&p.type_ann, allow_void)
+            }
             other => {
                 let pos = self.pos(other.span());
                 self.error(
@@ -90,6 +101,17 @@ impl<'p> Checker<'p> {
                 );
                 Type::Error
             }
+        };
+        if !allow_void && self.apparent_type(&resolved) == Type::Void {
+            self.error_diverging(
+                RuleCode::S100,
+                "`void` is only allowed as a return, generator element, or Promise result type",
+                self.pos(ty.span()),
+                Divergence::VoidValue,
+            );
+            Type::Error
+        } else {
+            resolved
         }
     }
 
@@ -269,7 +291,7 @@ impl<'p> Checker<'p> {
                     );
                     return Type::Error;
                 }
-                let value = self.resolve_type(&args.params[0]);
+                let value = self.resolve_result_type(&args.params[0]);
                 return Type::async_handle(value);
             }
             "FixedArray" => {
@@ -367,7 +389,10 @@ impl<'p> Checker<'p> {
             "Generator" => {
                 if let Some(args) = &r.type_params {
                     if let Some(first) = args.params.first() {
-                        let y = self.resolve_type(first);
+                        let y = self.resolve_result_type(first);
+                        for argument in args.params.iter().skip(1) {
+                            self.resolve_type(argument);
+                        }
                         return Type::generator(y);
                     }
                 }
@@ -676,7 +701,7 @@ impl<'p> Checker<'p> {
                 }
             }
         }
-        let ret = self.resolve_type(&fn_ty.type_ann.type_ann);
+        let ret = self.resolve_result_type(&fn_ty.type_ann.type_ann);
         Type::func(params, ret)
     }
 }

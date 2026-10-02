@@ -448,8 +448,12 @@ impl<'p> Checker<'p> {
                     if let ast::TsEntityName::Ident(id) = &r.type_name {
                         if id.sym.as_ref() == "Generator" {
                             if let Some(args) = &r.type_params {
-                                if let Some(first) = args.params.first() {
-                                    yield_ty = Some(self.resolve_type(first));
+                                if !args.params.is_empty() {
+                                    let resolved = self.resolve_type(&ann.type_ann);
+                                    yield_ty = Some(match self.apparent_type(&resolved) {
+                                        Type::Generator(element) => *element,
+                                        _ => Type::Error,
+                                    });
                                 }
                             }
                         }
@@ -469,7 +473,7 @@ impl<'p> Checker<'p> {
             };
         }
         let ret = match &f.return_type {
-            Some(ann) => self.resolve_type(&ann.type_ann),
+            Some(ann) => self.resolve_result_type(&ann.type_ann),
             None => {
                 self.error(
                     RuleCode::S100,
