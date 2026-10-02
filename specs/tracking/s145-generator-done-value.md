@@ -217,3 +217,14 @@ An `IterResult` is not a pattern source (§145 rule 1a, owner decision);
 ```text
 gate full 20e86b2a778bb950be8e4d01a69ff544c546e520 dirty:20 debug 2189/0/3 release 2186/0/3 skips 2/0 clippy 2/18/13 goldens-moved 2 exit 0
 ```
+
+## Phase Review result
+
+Four review passes ran. They found, in order: a hand-listed predicate
+(strings and `FixedArray` of references), wire-mapped aliases without a
+zero member, and the pattern-source widening. Each fix changed the form
+(one total `zero_is_value` over the `Type` variants with the alias table)
+or the contract (rule 1a). The last pass found no other defect in
+scope. Outside §145, pre-existing: `Generator<void>` with a bare
+`yield;` fails on the ship tier ("type tag for Void") and in the
+interpreter. `tools/hygiene.sh` exits 0. §145 is COMPLETE.
