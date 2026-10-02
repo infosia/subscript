@@ -101,3 +101,75 @@ gate full b0a8e55bd7b984ad4216b0bb628d3300fb2e3aac dirty:33 debug 2205/0/3 relea
 ```text
 gate full b635e203414bdcac506b84713f7146bcc52bca82 dirty:25 debug 2206/0/3 release 2203/0/3 skips 2/0 clippy 2/18/13 goldens-moved 1 exit 0
 ```
+
+## Round 4 evidence
+
+The namespace pass keeps separate value and type shadow scopes. Only type parameters enter the type shadow scopes.
+Parameters, for-of bindings, and local values leave namespace annotations resolved to the exported type.
+Functions, classes, arrows, type aliases, and generic type signatures keep type parameters within their own scopes.
+A qualified member of a type parameter gives S100 with C18.
+
+C18 entry IDs: `a322-namespace-type-shadow` and `r329-namespace-type-parameter`.
+The accept entry compares namespace annotations with a named class import under a parameter of the same name.
+Its golden is `3 3 / 4 / 5 / 7 / 9`, with one line per slash.
+
+Before the fix, the current CLI rejects `a322` with five S100 diagnostics at 8:30, 9:12, 17:13, 18:12, and 25:14.
+Each message is "qualified type names are not decided".
+The CLI built from `4886fea2` rejects `a322` with eight diagnostics: seven S100 and one S016.
+The same pinned CLI rejects `r329` with two S100 diagnostics: the namespace import and the qualified annotation.
+The current CLI accepts `r329` before the fix.
+
+TypeScript 5.9.2 accepts both entries under strict ES2022 checks with the repository prelude.
+The measured `r329` result differs from the rule 5 description of TypeScript. Its header records acceptance and C18.
+The orchestrator must add both IDs to C18 and reconcile that description with the measurement.
+
+The namespace compiler integration suite costs 7.302 ms in debug for nine tests, excluding compilation.
+The test header records that measurement. The generator adds both entries to the corpus index.
+No existing `.expected` golden changes. No Phase Review result is recorded for this round.
+
+`cargo test --offline --locked -p subscript-compiler` and `-p subscript-codegen` pass.
+The compiler run includes the §143 matrix, the TypeScript corpus check, and the JS corpus comparison.
+The native golden sweep and the interpreter corpus sweep include `a322` and match its golden.
+The documentation tests and the LIR text snapshot pass without snapshot changes.
+`cargo fmt --check` and `git diff --check` pass.
+
+## Round 5 evidence
+
+Qualified type names always resolve through the namespace, including under a type parameter with the qualifier's name.
+The namespace pass removes the type shadow scopes and the qualified-type rejection for type parameters.
+Value positions keep their lexical shadow checks. Bare type parameters keep their existing type meaning.
+Unit tests accept qualified types in generic functions, classes, arrows, and constraints.
+
+Final C18 ID for rounds 4 and 5: `a322-namespace-type-shadow`.
+The entry includes the former `r329` generic parameter form and calls generic functions with namespace class annotations.
+Its golden retains the five original lines and appends `11`.
+The round removes `r329-namespace-type-parameter` and its rejection-table row without staging the removal.
+The document generator adds only the two `a322` source rows to the corpus index.
+
+The nine compiler namespace tests cost 13.098 ms in debug: median process duration over five runs, excluding compilation.
+No Phase Review result is recorded for this round.
+
+`cargo test --offline --locked -p subscript-compiler` and `-p subscript-codegen` pass.
+The compiler run includes the TypeScript corpus, JS corpus, and §143 matrix.
+The interpreter corpus sweep and the JIT/C AOT golden sweep include the extended `a322` and match its golden.
+Documentation tests and the LIR text snapshot pass without snapshot changes.
+`cargo fmt --check` and `git diff --check` pass. The round does not run `tools/gate.sh`.
+
+## Verification review fix round landing gate
+
+A qualified type name `ns.C` resolves through the namespace whatever
+value or type parameter named `ns` is in scope (§148 rule 5, measured
+against `tsc`). `a322` pins it.
+
+```text
+gate full eb2649a0676cb2c3666e4b0771ec986ae8d757ec dirty:7 debug 2208/0/3 release 2205/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```
+
+## Phase Review result
+
+Two review passes ran. The first found MAJOR 3 (resolution at a few
+sites, so `await ns.f()` and `Worker.spawn(ns.e)` failed; an
+undocumented poisoned-namespace encoding; and a false S016) and MINOR 5.
+The fix made resolution a pre-pass before the body check (rule 1a). The
+second found MAJOR 1 (a value shadow blocked `ns.C` in a type position)
+and MINOR 2. All are fixed. §148 is COMPLETE.

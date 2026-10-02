@@ -582,7 +582,7 @@ runs here and in native ESM, but not under the corpus runner. A
 `js-comparable` entry does not print from the initializer of a module
 that `node` or the corpus runner does not run.
 
-Accept: `a288`, `a289`, `a290`, `a291`, `a292`, `a299`, `a300`, `a301`, `a318`–`a321`. Reject: `r273`,
+Accept: `a288`, `a289`, `a290`, `a291`, `a292`, `a299`, `a300`, `a301`, `a318`–`a322`. Reject: `r273`,
 `r274`, `r275`, `r277`, `r278`, `r279`, `r316`–`r328`.
 
 ### C19. A generic instance chain that grows without bound is rejected

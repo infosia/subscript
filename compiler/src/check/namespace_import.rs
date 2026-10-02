@@ -655,10 +655,8 @@ impl Resolver<'_, '_> {
             ast::TsType::TsTypeRef(r) => {
                 if let ast::TsEntityName::TsQualifiedName(q) = &r.type_name {
                     if let ast::TsEntityName::Ident(ns) = &q.left {
-                        if !self.shadowed(ns.sym.as_ref()) {
-                            if let Some(i) = self.checker.namespace_member_ident(ns, &q.right) {
-                                r.type_name = ast::TsEntityName::Ident(i);
-                            }
+                        if let Some(i) = self.checker.namespace_member_ident(ns, &q.right) {
+                            r.type_name = ast::TsEntityName::Ident(i);
                         }
                     }
                 }

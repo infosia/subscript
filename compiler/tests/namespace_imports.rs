@@ -1,4 +1,5 @@
-//! Static namespace qualifier rules (§148).
+//! Static namespace qualifier rules (§148): nine debug tests cost 13.098 ms.
+//! Cost is the median process duration over five runs, excluding compilation.
 use subscript_compiler::{check_program, RuleCode, SourceFile};
 
 fn files(main: &str) -> Vec<SourceFile> {
@@ -152,4 +153,42 @@ fn named_discovery_poison_has_no_namespace_local() {
         module.poisoned_imports[0].names,
         [("value".to_string(), "local".to_string())]
     );
+}
+
+#[test]
+fn value_shadows_keep_namespace_types_in_signatures_and_bodies() {
+    let sources = [
+        SourceFile::entry(
+            "main.ts",
+            include_str!("../../corpus/accept/a322-namespace-type-shadow/main.ts"),
+        ),
+        SourceFile::new(
+            "lib.ts",
+            include_str!("../../corpus/accept/a322-namespace-type-shadow/lib.ts"),
+        ),
+    ];
+    check_program(&sources).unwrap();
+}
+
+#[test]
+fn qualified_namespace_types_ignore_type_parameters() {
+    for declaration in [
+        "function qualified<ns>(value: ns.x): void {}",
+        "class Qualified<ns> { value: ns.x; constructor(value: ns.x) { this.value = value; } }",
+        "function outer(): void { const qualified = <ns>(value: ns.x): void => {}; }",
+        "function qualified<ns extends ns.x>(): void {}",
+    ] {
+        let sources = [
+            SourceFile::entry(
+                "main.ts",
+                format!("import * as ns from './lib'; {declaration}"),
+            ),
+            SourceFile::new("lib.ts", "export class x { value: i32 = 1; }"),
+        ];
+        check_program(&sources).unwrap_or_else(|errors| panic!("{declaration}: {errors:?}"));
+    }
+    check_program(&[
+        SourceFile::entry("main.ts", "import * as ns from './lib'; function generic<ns>(value: ns): ns { return value; } class Generic<ns> { value: ns; constructor(value: ns) { this.value = value; } } function after(): ns.x { return new ns.x(); } export function main(): void { print(`${generic<i32>(2)} ${new Generic<i32>(3).value} ${after().value}`); }"),
+        SourceFile::new("lib.ts", "export class x { value: i32 = 1; }"),
+    ]).unwrap();
 }
