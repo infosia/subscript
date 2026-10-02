@@ -181,6 +181,7 @@ impl<'m> Emitter<'m> {
             return Ok("fn".into());
         }
         Ok(match ty {
+            Type::Void => "void".into(),
             Type::I8 => "i8".into(),
             Type::U8 => "u8".into(),
             Type::I16 => "i16".into(),
@@ -406,6 +407,10 @@ impl<'m> Emitter<'m> {
                     let name = self.iter_result_name(&value)?;
                     // Reference and nullable-reference results share the C type (compiler.md §145).
                     if !iterator_results.insert(name.clone()) {
+                        continue;
+                    }
+                    if *value == Type::Void {
+                        let _ = writeln!(out, "typedef struct {{ int32_t done; }} {name};");
                         continue;
                     }
                     let _ = writeln!(

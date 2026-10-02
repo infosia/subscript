@@ -221,8 +221,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let (size, align) = self.ml.layouts.size_align(&result_ty)?;
                 let result = self.stack_slot(size, align);
                 self.zero_bytes(result, size, align);
-                let value_offset = self.ml.layouts.iter_result_value_offset(value)?;
-                let output = self.address_offset(result, i64::from(value_offset));
+                let output = if **value == Type::Void {
+                    self.builder.ins().iconst(types::I64, 0)
+                } else {
+                    let value_offset = self.ml.layouts.iter_result_value_offset(value)?;
+                    self.address_offset(result, i64::from(value_offset))
+                };
                 let resume =
                     self.builder
                         .ins()

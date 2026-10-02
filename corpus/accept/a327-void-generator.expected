@@ -1,0 +1,21 @@
+tick 0
+false
+tick 1
+false
+true
+tick 0
+step
+stopped true
+early
+early false
+early true
+early true
+method 0
+method step
+method 1
+method step
+tick 0
+while step
+tick 1
+while step
+while true

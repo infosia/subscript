@@ -482,6 +482,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         RuleCode::S100,
         9,
     ),
+    ("r334-bare-yield-nonvoid.ts", RuleCode::S100, 7),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -1459,4 +1460,22 @@ fn capture_diagnostics_pin_the_boundary_operand() {
         );
         assert!(diagnostic.message.contains(boundary), "{diagnostic:?}");
     }
+}
+
+#[test]
+fn bare_yield_diagnostic_names_the_declared_element_type() {
+    let diagnostic = first_diagnostic("r334-bare-yield-nonvoid.ts");
+    assert!(
+        diagnostic.message.contains("element type is `i32`"),
+        "{}",
+        diagnostic.message
+    );
+    let errors = check_program(&[SourceFile::new(
+        "named-yield.ts",
+        "class Cell { value: i32 = 0; } function* cells(): Generator<Cell> { yield; } export function main(): void {}",
+    )])
+    .expect_err("a bare yield requires a void element");
+    assert!(errors
+        .iter()
+        .any(|error| error.message.contains("element type is `Cell`")));
 }

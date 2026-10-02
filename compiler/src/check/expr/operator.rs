@@ -1512,10 +1512,17 @@ impl<'p> Checker<'p> {
                 Some(Box::new(e))
             }
             None => {
-                if known_yield.is_none() {
-                    if let Some(frame) = fx.frames.last_mut() {
-                        frame.yield_ty = Some(Type::Void);
+                if let Some(ty) = &known_yield {
+                    if self.apparent_type(ty) != Type::Void {
+                        let name = self.type_name(ty);
+                        self.error(
+                            RuleCode::S100,
+                            format!("a bare `yield;` requires `void`, but the generator element type is `{name}`"),
+                            pos.clone(),
+                        );
                     }
+                } else if let Some(frame) = fx.frames.last_mut() {
+                    frame.yield_ty = Some(Type::Void);
                 }
                 None
             }

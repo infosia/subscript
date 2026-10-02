@@ -213,6 +213,18 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             return self.assign(out, result, &expression);
         }
         self.emit_generator_done_guard(out, instruction, operands, operand_types)?;
+        if field == l::FieldRef::IterValue
+            && matches!(
+                instruction
+                    .result
+                    .map(|value| self.value_type(value))
+                    .transpose()?,
+                Some(l::ValueType::Data(Type::Void))
+            )
+        {
+            // A void loop binding has no value storage.
+            return Ok(());
+        }
         let expression = match field {
             l::FieldRef::IterDone => match &operand_types[0] {
                 l::ValueType::Address(_) => format!("({})->done", operands[0]),

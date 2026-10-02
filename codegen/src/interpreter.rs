@@ -999,12 +999,17 @@ impl<'m> Interpreter<'m> {
                 yielded: Some(value),
                 request: None,
             } => Ok(self.iter_result(false, value, value_ty)?),
+            Flow::Suspended {
+                yielded: None,
+                request: None,
+            } if *value_ty == Type::Void => self.iter_result(false, Value::Void, value_ty),
             // A generator body holds no `await`: async generators are outside
             // the decided surface, so an async suspension here is invalid LIR
             // rather than work for the §94 scheduler.
-            Flow::Suspended { .. } => {
-                Err(self.invalid(None, "a generator suspension is not a yield with a value"))
-            }
+            Flow::Suspended { .. } => Err(self.invalid(
+                None,
+                "a generator suspension does not match its element type",
+            )),
         }
     }
 

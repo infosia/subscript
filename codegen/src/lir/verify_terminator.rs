@@ -131,6 +131,18 @@ pub(super) fn verify_terminator_types(
             }
             match kind {
                 l::SuspendKind::Yield(value) => {
+                    if value.is_none()
+                        && (!function.is_generator
+                            || function.return_type != Type::Generator(Box::new(Type::Void)))
+                    {
+                        errors.push(finding(
+                            function,
+                            format!(
+                                "block {} value-less yield requires a generator of void",
+                                block.id.0
+                            ),
+                        ));
+                    }
                     if let Some(value) = value {
                         if value_type(function, *value).is_none() {
                             errors.push(finding(

@@ -1322,7 +1322,8 @@ pub struct SwitchArm {
 /// Generator suspension keeps its own `.next()`-driven protocol.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SuspendKind {
-    /// Generator yield with an optional yielded value.
+    /// Generator suspension. `None` carries no value and requires a
+    /// generator of `void`. `Some` carries the yielded element.
     Yield(Option<ValueId>),
     /// Explicit async suspension: the frame waits for the next host
     /// checkpoint.

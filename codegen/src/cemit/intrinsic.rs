@@ -104,7 +104,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             ),
             l::BuiltinMethod::GeneratorNext => {
                 let destination = result.ok_or_else(|| internal("Generator.next has no result"))?;
-                let l::ValueType::Data(Type::IterResult(_)) = target
+                let l::ValueType::Data(Type::IterResult(value)) = target
                     .return_type
                     .as_ref()
                     .ok_or_else(|| internal("Generator.next has no result type"))?
@@ -117,7 +117,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     self.emitter
                         .value_ctype(target.return_type.as_ref().unwrap())?
                 );
-                let _ = writeln!(out, "    {destination}.done = ((SubCoroutinePrefix*)({}))->resume(ctx, {}, &{destination}.value);", operands[0], operands[0]);
+                let output = if **value == Type::Void {
+                    "NULL".to_string()
+                } else {
+                    format!("&{destination}.value")
+                };
+                let _ = writeln!(out, "    {destination}.done = ((SubCoroutinePrefix*)({}))->resume(ctx, {}, {output});", operands[0], operands[0]);
                 self.consume_runtime_traps(out, &instruction.traps, true, true)
             }
         }
