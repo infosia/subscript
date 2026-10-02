@@ -190,3 +190,4 @@ Every section, with its status:
 | §146 | A conditional joins its branch types | active; replaces the §45.2 no-context rule | [`s146-a-conditional-joins-its-branch-types.md`](compiler/s146-a-conditional-joins-its-branch-types.md) |
 | §147 | A field initializer reads earlier fields | active; amends C9 | [`s147-a-field-initializer-reads-earlier-fields.md`](compiler/s147-a-field-initializer-reads-earlier-fields.md) |
 | §148 | A namespace import is a static qualifier | active; amends C18 | [`s148-a-namespace-import-is-a-static-qualifier.md`](compiler/s148-a-namespace-import-is-a-static-qualifier.md) |
+| §149 | A generic call infers its type arguments | active | [`s149-a-generic-call-infers-its-type-arguments.md`](compiler/s149-a-generic-call-infers-its-type-arguments.md) |
