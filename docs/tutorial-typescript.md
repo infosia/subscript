@@ -210,8 +210,8 @@ it evaluates `b` only when `a` is `null`.
 
 `==` and `!=` mean `===` and `!==` here; `==` and `===` are one operator.
 No coercion happens: `tsc` rejects comparisons of unrelated types, and the language has no `undefined`.
-A miss of `Map.get` or `find` is `null` here and `undefined` in JavaScript, so test it with `== null`:
-that test gives the same result in both.
+Where JavaScript gives `undefined` (a miss of `Map.get` or `find`, a finished generator), this language gives `null`.
+Test such a value with `== null`, which gives the same result in both.
 See [`compiler.md` §144](../specs/blocks/compiler.md).
 
 ```ts

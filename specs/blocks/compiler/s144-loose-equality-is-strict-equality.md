@@ -29,11 +29,13 @@ each pair of different primitive kinds and each object-to-string pair,
 the type system has no `undefined` (S012), and there is no bigint (`i64`
 is `number` in `prelude/lang.d.ts`).
 
-Under `node`, one source of `undefined` reaches a checked program: a
-miss of `Map.get`, `find`, or `findLast` on a reference element is
-`undefined` there and `null` here (`stdlib.md` §10.5). For that value
-`node` gives `x == null` true and `x === null` false; both tiers give
-true for both. So `== null` agrees with `node` and `=== null` does not.
+Under `node`, a checked program can hold `undefined` where both tiers
+hold `null` (`collisions.md` C22). Measured sources: a miss of
+`Map.get`, `find`, or `findLast` on a reference element (`stdlib.md`
+§10.5), and the `value` of a finished generator of a nullable-capable
+type (C8). For each such value `node` gives `x == null` true and
+`x === null` false; both tiers give true for both. So `== null` agrees
+with `node` and `=== null` does not, whatever the source.
 *(Corrected 2026-10-02 after the Phase Review: the first text said that
 no checked program reaches a pair where the two operators differ under
 `node`.)*
@@ -45,8 +47,8 @@ no checked program reaches a pair where the two operators differ under
    `===` or `!==` gives for an operand pair, `==` or `!=` gives for the
    same pair, with the operator spelled as written.
 2. The premise of rule 1 is that the type system has no `undefined` and
-   no bigint. A section that adds either one, or a new value that is
-   `undefined` under `node`, must restate rule 1 first.
+   no bigint. A section that adds either one must restate rule 1 first.
+   A value that is `undefined` under `node` and `null` here follows C22.
 3. `collisions.md` C20 is deleted, with its `Divergence` variant. The
    reject entry `r294-loose-equality` retires
    (`retired:r294-loose-equality`).

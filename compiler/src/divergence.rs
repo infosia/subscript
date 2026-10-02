@@ -321,7 +321,7 @@ impl Divergence {
             Divergence::ReferenceSearchMiss => DivergenceEntry {
                 ts: "const missing = values.get(key); print(`${missing === undefined}`);",
                 subscript: "const missing = values.get(key); print(`${missing == null}`);",
-                why: "A reference-element Map.get, find, or findLast miss returns null. Use == null to test absence in both languages.",
+                why: "JavaScript undefined becomes null for reference search misses and finished nullable-reference generators. Use == null to test absence in both languages.",
                 collision: "C22",
             },
             Divergence::LoneSurrogateEscape => DivergenceEntry {

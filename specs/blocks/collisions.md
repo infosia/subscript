@@ -609,18 +609,21 @@ Measured with `tsc` 5.9.2 (`specs/tracking/s143-type-parameter-typing.md`):
 
 Reject: `r297`, `r298`, `r299`.
 
-### C22. A miss is `null`, not `undefined`
+### C22. A JavaScript `undefined` is `null` here
 
-A miss of `Map.get`, `find`, or `findLast` on a reference element is
-`null` on both tiers (`stdlib.md` §10.5). Under `node` it is
-`undefined`. So `m.get(k) === null` is true here and false under
-`node`, and `m.get(k) == null` is true in both (`compiler.md` §144).
-Teaching material tests a miss with `== null`.
+Where `node` gives `undefined` for a value that a checked program holds
+as a reference, both tiers give `null`. So `x === null` is true here and
+false under `node`, and `x == null` is true in both (`compiler.md`
+§144). Teaching material tests such a value with `== null`.
 
-Measured with `node` (2026-10-02): for a missed `get` and `find`,
-`x == null` prints `true` and `x === null` prints `false`.
+Measured with `node` (2026-10-02), for each source `x == null` prints
+`true` and `x === null` prints `false`:
 
-Accept: `a308`.
+- a miss of `Map.get`, `find`, or `findLast` on a reference element
+  (`stdlib.md` §10.5);
+- the `value` of a finished generator of `Box | null` (C8).
+
+Accept: `a308`, `a309`.
 
 ## 2. Q-register resolutions not covered above
 

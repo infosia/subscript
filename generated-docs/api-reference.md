@@ -910,8 +910,8 @@ class Box {
 
 export function main(): void {
   const values: Map<string, Box> = new Map<string, Box>();
-  const missing: Box | null = values.get("missing");
-  print(`${missing == null}`);
+  const missing = values.get("missing");
+  print(`${missing === null}`);
 }
 ```
 

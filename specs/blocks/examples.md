@@ -82,8 +82,9 @@ examples/
   `!==` (`compiler.md` §144: the two spellings are one operator). This
   applies to the examples, the host script, `README.md`, the tutorials
   in `docs/`, and the subscript code in generated reference examples. It
-  does not apply to `gate/`, to the corpus, or to JavaScript comparison
-  code. *(Owner decision 2026-10-02.)*
+  does not apply to `gate/`, to the corpus, to JavaScript comparison
+  code, or to a divergence witness, which uses the operator whose result
+  differs (`===`). *(Owner decision 2026-10-02.)*
 
 ### 2a. `gate/` is not part of the example set
 

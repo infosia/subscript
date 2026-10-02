@@ -76,3 +76,39 @@ The tree also held the teaching-material change (examples and docs write
 ```text
 gate full 6f435252053fee5b8601c20ea2c4e32359875408 dirty:24 debug 2183/0/3 release 2180/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```
+
+## Phase Review fix round 4
+
+The q24-map-get-miss witness uses an inferred binding and `=== null` on both sides.
+TypeScript 5.9.2 accepts its subscript source; the checker accepts it through the API-reference execution test.
+Dev JIT prints `true`; Node v24.18.0 prints `false`.
+a309 tests `done` and `value == null` after a `Generator<Box | null>` finishes.
+Node, dev JIT, and ship C AOT each match its 10-byte golden: `true\ntrue\n`.
+The C22 divergence reason includes finished nullable-reference generators.
+The generator refreshes the API reference and corpus index.
+The compiler suite passes, including all 362 library tests, measured tsc headers, JS corpus, and generated-docs checks.
+The tier corpus sweep compares 299 entries without skips; the API-reference test passes.
+`cargo fmt --check` and `git diff --check` pass. `tools/gate.sh` does not run. No commit occurs.
+
+Round 5: the LIR snapshot adds only a309 (12,363 bytes); 1,884,343 -> 1,896,706 bytes; the snapshot test passes in debug and release.
+
+## Verification review fix round landing gate
+
+The orchestrator restated the §144 premise and C22 as a rule with
+measured sources (a search miss, a finished generator's value), after a
+review found the generator source beside the search miss.
+`goldens-moved 1` is the LIR text snapshot: `a309` is a generator entry.
+
+```text
+gate full 406ea3520ae45ba5ff2c1a82f8a690adfc518143 dirty:12 debug 2183/0/3 release 2180/0/3 skips 2/0 clippy 2/18/13 goldens-moved 1 exit 0
+```
+
+## Open, outside §144
+
+A finished `Generator<Box>` read as `Box` crashes the dev tier
+(`subscript: program terminated abnormally (dev-JIT child signal 11)`);
+`node` gives a `TypeError`. Measured by the review with
+`const b: Box = r.value; print(\`${b.value}\`)` after two `next()`
+calls; `tsc` and `subscript check` accept it. C8 zero-initializes the
+done value for every `T`. A good-faith program reaches it; it needs its
+own section (a trap or a rejection at the read).
