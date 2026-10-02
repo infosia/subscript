@@ -38,8 +38,14 @@ surface". Measured at `bd065fcd`: a `main.ts` that imports `./math` as
 4. A namespace import loads the module as a named import does; the
    initialization order of §137 does not change. Module cycles and
    re-export chains resolve as they do for named imports.
-5. A local declaration named `ns` shadows the namespace in its scope, as
-   it shadows a named import.
+5. A local value named `ns` (a variable, a parameter, a binding)
+   shadows the namespace in value positions of its scope, as it shadows
+   a named import. It does not shadow `ns` in a type position: `ns.C`
+   in an annotation still names the module's `C`, as TypeScript keeps
+   values and types apart. Only a type parameter named `ns` shadows the
+   namespace in a type position. *(Clarified 2026-10-02 after the
+   verification review: a parameter `ns: i32` blocked `ns.C` in the same
+   signature.)*
 6. The entry-module rules of §129 do not change: a namespace import in
    the entry module exports nothing.
 6a. A namespace import of a module that a discovery check lists as

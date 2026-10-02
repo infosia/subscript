@@ -58,8 +58,10 @@ Measurements at the pin, on this host:
    pub struct PoisonedImport {
        /// The specifier as written in the import.
        pub module: String,
-       /// `(imported, local)` name pairs in source order.
+       /// Named-import `(imported, local)` pairs in source order.
        pub names: Vec<(String, String)>,
+       /// The namespace local of an `import * as` statement (§148 rule 6a).
+       pub namespace: Option<String>,
        pub pos: Pos,
    }
    ```
