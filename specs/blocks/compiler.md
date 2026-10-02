@@ -192,3 +192,4 @@ Every section, with its status:
 | §148 | A namespace import is a static qualifier | active; amends C18 | [`s148-a-namespace-import-is-a-static-qualifier.md`](compiler/s148-a-namespace-import-is-a-static-qualifier.md) |
 | §149 | A generic call infers its type arguments | active | [`s149-a-generic-call-infers-its-type-arguments.md`](compiler/s149-a-generic-call-infers-its-type-arguments.md) |
 | §150 | A postfix update yields the old value | active | [`s150-a-postfix-update-yields-the-old-value.md`](compiler/s150-a-postfix-update-yields-the-old-value.md) |
+| §151 | A void generator runs on every tier | active | [`s151-a-void-generator-runs-on-every-tier.md`](compiler/s151-a-void-generator-runs-on-every-tier.md) |
