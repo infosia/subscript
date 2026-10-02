@@ -188,3 +188,4 @@ Every section, with its status:
 | §144 | Loose equality is strict equality | active; deletes collision C20 | [`s144-loose-equality-is-strict-equality.md`](compiler/s144-loose-equality-is-strict-equality.md) |
 | §145 | A finished generator has no reference value | active | [`s145-a-finished-generator-has-no-reference-value.md`](compiler/s145-a-finished-generator-has-no-reference-value.md) |
 | §146 | A conditional joins its branch types | active; replaces the §45.2 no-context rule | [`s146-a-conditional-joins-its-branch-types.md`](compiler/s146-a-conditional-joins-its-branch-types.md) |
+| §147 | A field initializer reads earlier fields | active; amends C9 | [`s147-a-field-initializer-reads-earlier-fields.md`](compiler/s147-a-field-initializer-reads-earlier-fields.md) |
