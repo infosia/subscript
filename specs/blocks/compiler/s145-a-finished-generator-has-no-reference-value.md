@@ -30,13 +30,14 @@ crash comes later, at a use, or never.
    reference of a type that is not nullable, a null `string` handle, or
    the wire value 0 of a wire-mapped alias whose members exclude 0
    (§52.1). The function reads the alias table to decide the last case.
-   Every form that reads the field is a read: a member read `r.value`,
-   and a destructuring that binds `value`.
-1a. A field binding pattern (§107.1) accepts the `IterResult<T>` of
-   `.next()` as its source, with the fields `done` and `value`. Another
-   field name in that pattern is rejected. *(Added 2026-10-02 after the
-   Phase Review: the implementation accepted the source, and no rule
-   stated it.)*
+   A read is a member read `r.value`.
+1a. A binding pattern over the `IterResult<T>` of `.next()` is rejected,
+   as §107.3 rejects every non-array, non-class source; the diagnostic
+   names the form `const r = it.next(); if (r.done) ...`. *(Revised
+   2026-10-02, owner decision, after the verification review: a first
+   revision accepted that source, so `const { done, value } = it.next();
+   if (done) break;` trapped at the last step for every reference or
+   `string` `T`, where the pin rejected it at check time.)*
 2. For every other `T` the read is unchanged: a nullable `T` reads
    `null` (C22), and a scalar, `Date`, enum, plain string-literal alias
    (index 0 is a member), wire-mapped alias with a member of wire value
