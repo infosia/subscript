@@ -65,3 +65,10 @@ The orchestrator regenerated `generated-docs/corpus-index.md` through `generate-
 ```text
 gate full 39aba33830d40adfe37e46f5f4d8d4e9ad2be756 dirty:18 debug 2226/0/3 release 2223/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```
+
+## Phase Review result
+
+One review pass found CRITICAL 0, MAJOR 0, MINOR 3: a test that repeats
+the corpus tests, a missing cost line, and acceptance text that named a
+form C5 rejects. The text is corrected; the two test items are in
+§150.3. `tools/hygiene.sh` exits 0. §150 is COMPLETE.

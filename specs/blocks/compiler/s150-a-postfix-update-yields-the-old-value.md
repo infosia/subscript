@@ -55,3 +55,13 @@ differential gate cannot see it (core principle 12). Measured at
    postfix update in value position; each such golden that moves is
    listed with its old and new line and the `node` output that confirms
    the new line.
+
+### 150.3 Open
+
+These items are MINOR under CLAUDE.md invariant 6 (gate cost only).
+
+1. `codegen/src/postfix_update_tests.rs` `postfix_corpus_matches_all_three_forms`
+   runs `a326` again on all three forms; the golden and interpreter
+   corpus tests already run it (measured 0.35 s per gate profile).
+2. The same file runs the C compiler and states no cost (measured
+   0.49 s for its four tests).
