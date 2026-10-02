@@ -42,7 +42,20 @@ assignable to type 'number'"). That is a gap in invariant 5.
    the declared element type), as `tsc` rejects it.
 3. `for...of` over a `Generator<void>` runs its body once per
    suspension; the loop binding has type `void` and is not readable as
-   a value (C21).
+   a value (rule 5).
+5. A `void` value is never an operand (C21, total). An expression of type
+   `void` is accepted only as an expression statement. `void` is
+   accepted as a type only as a return type, as the element type of
+   `Generator<void>`, and as the result of `Promise<void>`. Every other
+   use is rejected with S100 and C21: a binding of type `void`
+   (annotated or inferred), a `void` parameter, `void` as an element or
+   type argument elsewhere (`void[]`), `return f()` and `yield f()` with
+   a `void` operand, a `void` argument, and a read of a `void` loop
+   binding or of a `void` `value`. *(Added 2026-10-02, owner decision,
+   after the Phase Review: the checker accepted these forms and the tiers
+   then failed or disagreed — `yield step("a")` failed lowering on every
+   tier; a `void` loop binding pushed into a `void[]` printed `0` on
+   dev, `2` on the interpreter, and failed the C compile on ship.)*
 4. The dev tier, the ship tier, and the reference interpreter give the
    same output for every program of rule 1; the LIR form that carries
    a value-less suspension is one form, consumed by all three.
@@ -58,3 +71,6 @@ assignable to type 'number'"). That is a gap in invariant 5.
    Red at the contract pin; its header records `tsc` TS2322.
 3. The new generator entry grows the LIR text snapshot; only its
    section is added. No existing `.expected` golden moves.
+4. Reject entries for each rule 5 form, each with its measured `tsc`
+   result; an existing accept entry that uses a rule 5 form is listed
+   and changed before the rule lands.
