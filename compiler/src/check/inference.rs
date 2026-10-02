@@ -88,7 +88,10 @@ impl<'p> Checker<'p> {
             checked[index] = Some(value);
         }
         // Defaults contribute only where no non-literal supplies a candidate.
-        let nonliteral: Vec<_> = candidates.iter().map(|values| !values.is_empty()).collect();
+        let nonliteral: Vec<_> = candidates
+            .iter()
+            .map(|values| values.iter().any(|value| *value != Type::Null))
+            .collect();
         for (index, argument) in call.args.iter().enumerate() {
             if argument.spread.is_some() || !deferred_literal(&argument.expr) {
                 continue;
@@ -103,8 +106,9 @@ impl<'p> Checker<'p> {
             {
                 continue;
             }
+            let diagnostics = self.diags.len();
             let value = self.check_expr(&argument.expr, None, fx);
-            if value.ty == Type::Error {
+            if value.ty == Type::Error || self.diags.len() != diagnostics {
                 return None;
             }
             let mut defaults = vec![Vec::new(); candidates.len()];
@@ -117,15 +121,15 @@ impl<'p> Checker<'p> {
                     candidates[index].extend(values);
                 }
             }
-            // Check the literal again with its final context. It has no runtime effect.
         }
         let mut types = Vec::new();
         for (parameter, values) in template.type_params.iter().zip(candidates) {
-            let mut values = values.into_iter();
+            let has_null = values.contains(&Type::Null);
+            let mut values = values.into_iter().filter(|value| *value != Type::Null);
             let Some(mut inferred) = values.next() else {
                 self.error_diverging(RuleCode::S100, format!(
                     "cannot infer type parameter `{parameter}` of `{}`: no candidate; use explicit type arguments",
-                    source_name(key)), pos.clone(), crate::divergence::Divergence::GenericInferenceCandidates);
+                    source_name(key)), pos.clone(), crate::divergence::Divergence::GenericInferenceMissing);
                 return None;
             };
             for candidate in values {
@@ -148,6 +152,10 @@ impl<'p> Checker<'p> {
                     return None;
                 };
                 inferred = joined;
+            }
+            if has_null && !matches!(inferred, Type::Nullable(_)) && self.allows_nullable(&inferred)
+            {
+                inferred = Type::nullable(inferred);
             }
             types.push(inferred);
         }
@@ -187,7 +195,7 @@ impl<'p> Checker<'p> {
         parameters: &[String],
         candidates: &mut [Vec<Type>],
     ) {
-        if matches!(actual, Type::Null | Type::Error) {
+        if *actual == Type::Error {
             return;
         }
         match pattern {
@@ -202,6 +210,9 @@ impl<'p> Checker<'p> {
             ast::TsType::TsUnionOrIntersectionType(
                 ast::TsUnionOrIntersectionType::TsUnionType(union),
             ) => {
+                if *actual == Type::Null {
+                    return;
+                }
                 let actual = if let Type::Nullable(inner) = actual {
                     inner.as_ref()
                 } else {

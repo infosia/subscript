@@ -477,6 +477,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r330-generic-inference-conflict.ts", RuleCode::S100, 11),
     ("r331-generic-inference-return-only.ts", RuleCode::S100, 9),
     ("r332-generic-inference-only-null.ts", RuleCode::S100, 9),
+    (
+        "r333-generic-inference-literal-conflict.ts",
+        RuleCode::S100,
+        9,
+    ),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

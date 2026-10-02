@@ -153,8 +153,10 @@ pub enum Divergence {
     EntryParameterType,
     /// A chain header copied out of its enclosing extension.
     EmbeddedHeaderCopy,
-    /// A generic function call with conflicting or missing inference candidates.
+    /// A generic function call with conflicting inference candidates.
     GenericInferenceCandidates,
+    /// A generic function call with no inference candidate for a parameter.
+    GenericInferenceMissing,
     /// A generic method call that supplies no type arguments.
     GenericMethodTypeArguments,
     /// A bodiless generic method in a `declare class` from a `.ts` source.
@@ -285,6 +287,7 @@ impl Divergence {
         Divergence::EntryParameterType,
         Divergence::EmbeddedHeaderCopy,
         Divergence::GenericInferenceCandidates,
+        Divergence::GenericInferenceMissing,
         Divergence::GenericMethodTypeArguments,
         Divergence::BodilessDeclareGenericMethod,
         Divergence::GenericMethodOnGenericClass,
@@ -867,7 +870,13 @@ impl Divergence {
             Divergence::GenericInferenceCandidates => DivergenceEntry {
                 ts: "function pair<T>(a: T, b: T): T { return a; }\nconst n: i32 = 1; const f: f64 = 2.5; pair(n, f);",
                 subscript: "function pair<T>(a: T, b: T): T { return a; }\nconst n: i32 = 1; const f: f64 = 2.5; pair<f64>(n as f64, f);",
-                why: "Inference needs one candidate type for each parameter. Supply explicit type arguments when candidates conflict or give no type.",
+                why: "Inference needs one candidate type for each parameter. Supply explicit type arguments when candidates conflict.",
+                collision: "compiler.md §149",
+            },
+            Divergence::GenericInferenceMissing => DivergenceEntry {
+                ts: "function empty<T>(): T | null { return null; }\nempty();",
+                subscript: "function empty<T>(): T | null { return null; }\nempty<i32>();",
+                why: "Inference needs an argument candidate for each type parameter. Supply explicit type arguments when no argument gives a candidate.",
                 collision: "compiler.md §149",
             },
             Divergence::GenericMethodTypeArguments => DivergenceEntry {
@@ -1310,6 +1319,22 @@ mod tests {
         assert_eq!(entry.collision, "compiler.md §149");
         assert!(entry.ts.contains("pair(n, f)"));
         assert!(entry.subscript.contains("pair<f64>(n as f64, f)"));
+        assert!(Divergence::ALL.contains(&divergence));
+    }
+
+    #[test]
+    fn missing_inference_candidate_has_its_own_example() {
+        let divergence = Divergence::GenericInferenceMissing;
+        let entry = divergence.entry();
+        assert_eq!(entry.collision, "compiler.md §149");
+        assert_eq!(
+            entry.ts,
+            "function empty<T>(): T | null { return null; }\nempty();"
+        );
+        assert_eq!(
+            entry.subscript,
+            "function empty<T>(): T | null { return null; }\nempty<i32>();"
+        );
         assert!(Divergence::ALL.contains(&divergence));
     }
 

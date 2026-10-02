@@ -538,8 +538,8 @@ const ALLOWLIST: &[AllowGroup] = &[
         name: "inferred-argument-identity",
         reason: "Inference compares declared candidate identities (§149 rules 2–4). Instance edges preserve symbolic parameter identity before constraint projection (§140 rule 1).",
         sites: &[
-            ("inference.rs", "infer_call_arguments", 0xf4775de56b99672f),
-            ("inference.rs", "match_inference_type", 0xdd89439ba5b76b72),
+            ("inference.rs", "infer_call_arguments", 0x0b4c4c7a745c0758),
+            ("inference.rs", "match_inference_type", 0x3c2a6e89afdb9ffd),
             ("inference.rs", "inferred_parameter_edges", 0x4f00984e9ee75837),
         ],
     },

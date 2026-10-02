@@ -12,7 +12,11 @@ fn reject(source: &str, message: &str) {
     assert_eq!(errors[0].message, message);
     assert_eq!(
         errors[0].divergence,
-        Some(subscript_compiler::divergence::Divergence::GenericInferenceCandidates)
+        Some(if message.contains("no candidate") {
+            subscript_compiler::divergence::Divergence::GenericInferenceMissing
+        } else {
+            subscript_compiler::divergence::Divergence::GenericInferenceCandidates
+        })
     );
 }
 
@@ -66,10 +70,14 @@ fn nullable_candidates_join_in_both_orders() {
         r#"
 class Box { value: i32 = 0; }
 function pair<T>(x: T, y: T): T { return x; }
+function nullablePair<T>(x: T | null): T | null { return pair(x, null); }
 export function main(): void {
     const b: Box | null = null;
     const a: Box | null = pair(b, new Box());
     const c: Box | null = pair(new Box(), b);
+    const d: Box | null = pair(null, new Box());
+    const e: Box | null = pair(new Box(), null);
+    const f: Box | null = nullablePair<Box>(b);
 }
 "#,
     );
@@ -238,4 +246,41 @@ export function main(): void { nest(new Box(), 3); }
         errors[0].message.contains("grows without bound"),
         "{errors:?}"
     );
+}
+
+#[test]
+fn literal_array_errors_report_once_at_each_call_site() {
+    let files = [
+        SourceFile::new("lib.ts", "export function id<T>(x: T): T { return x; }"),
+        SourceFile::entry(
+            "main.ts",
+            r#"
+import * as ns from "./lib";
+function first<T>(xs: T[]): T { return xs[0]; }
+function second<T, U>(x: T, y: U): U { return y; }
+async function af<T>(xs: T[]): Promise<T> { return xs[0]; }
+export async function main(): Promise<void> {
+    const n: i32 = 1;
+    first([1, 2.5]);
+    second(n, [1, 2.5]);
+    ns.id([1, 2.5]);
+    await af([1, 2.5]);
+}
+"#,
+        ),
+    ];
+    let errors = check_program(&files).expect_err("mixed literal defaults must reject");
+    assert_eq!(errors.len(), 4, "{errors:?}");
+    for (error, line) in errors.iter().zip(8..=11) {
+        assert_eq!(error.code, RuleCode::S008, "{error:?}");
+        assert_eq!(error.pos.line, line, "{error:?}");
+    }
+}
+
+#[test]
+fn conflicting_literal_defaults_reject() {
+    reject(r#"
+function pair<T>(x: T, y: T): T { return x; }
+export function main(): void { pair(1, 2.5); }
+"#, "cannot infer type parameter `T` of `pair`: conflicting candidates `i32` and `f64`; use explicit type arguments");
 }

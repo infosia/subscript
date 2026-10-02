@@ -226,7 +226,7 @@ fn violations(file: &str, source: &str) -> Vec<String> {
 }
 
 fn sources(directory: &Path, paths: &mut Vec<PathBuf>) {
-    // Include tracked and new source files. Exclude ignored build products and scratch checkouts.
+    // Include existing tracked and new sources. Exclude deleted files and ignored build products.
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(directory)
@@ -250,7 +250,8 @@ fn sources(directory: &Path, paths: &mut Vec<PathBuf>) {
             .stdout
             .split(|byte| *byte == 0)
             .filter(|path| !path.is_empty())
-            .map(|path| directory.join(std::str::from_utf8(path).expect("Rust source path"))),
+            .map(|path| directory.join(std::str::from_utf8(path).expect("Rust source path")))
+            .filter(|path| path.is_file()),
     );
 }
 

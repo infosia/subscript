@@ -63,3 +63,37 @@ Every existing LIR section remains byte-identical. No existing `.expected` file 
 ```text
 gate full 9e18bb3e75a99103ff131e6c1d8ab7fddf448104 dirty:23 debug 2219/0/3 release 2216/0/3 skips 2/0 clippy 2/18/13 goldens-moved 1 exit 0
 ```
+
+## Round 2 fixes and measurements
+
+The literal-default check now stops inference after a diagnostic. Four call sites each report one S008: direct, second-parameter, namespace, and awaited calls.
+The checker records null separately from candidate types. Null joins a candidate through the shared nullable acceptance rule.
+The new a325 entry covers both argument orders beside explicit calls. Every existing `.expected` file stays unchanged.
+The retained contract-pin CLI rejects a325 with two S100 diagnostics at 9:25 and 12:25.
+Node 24.18.0 prints `true true` and `7 7`, which equal the new golden.
+TypeScript 5.9.2 accepts a325 and r333 with the corpus options. The r333 entry pins conflicting literal defaults.
+Missing candidates use a separate divergence entry with `empty()` and `empty<i32>()`.
+The duplicate codegen inference test is deleted. The host-body source scan now excludes deleted tracked files.
+The source-shape test fingerprints match the new null identity checks; their existing justification stays unchanged.
+The §143 matrix passed 38,910 cells in 52.160 seconds. Every verdict matches the previous §149 verdict file; no cell changes.
+The document generator adds only the a325 and r333 corpus-index rows. No new async entry changes the LIR snapshot.
+
+A generic nullable candidate retains its existing nullable type when another argument is null. A unit test covers this inside a generic body.
+Final package suites passed with `cargo test --offline --locked`: compiler and codegen.
+The corpus sweeps passed interpreter, JIT, and C AOT, including a324 and a325. The JS corpus and measured tsc headers passed.
+`cargo fmt --check`, `git diff --check`, and `tools/hygiene.sh` passed. No commit was made.
+
+## Phase Review fix round landing gate
+
+```text
+gate full 6c8d3cdb936537d82b16fd9768de460a43d5d9be dirty:12 debug 2221/0/3 release 2218/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
+```
+
+## Phase Review result
+
+One review pass found no CRITICAL or MAJOR in §149 and MINOR 7. Five
+are fixed (a duplicate diagnostic, a `null` argument joins to
+`C | null`, the literal-only conflict pinned by `r333`, the
+no-candidate example, a duplicate test); two are in §149.3. Outside
+§149 the review found that a postfix update yields the new value; §150
+takes it. §149 is COMPLETE.
