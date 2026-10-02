@@ -146,6 +146,9 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t75-generator-done-value-member" | "t76-generator-done-value-store" => {
             (TrapKind::GeneratorDoneValue, 16, 20)
         }
+        "t77-generator-done-fixed-reference" => (TrapKind::GeneratorDoneValue, 15, 15),
+        "t78-generator-done-string" => (TrapKind::GeneratorDoneValue, 14, 23),
+        "t79-generator-done-destructuring" => (TrapKind::GeneratorDoneValue, 14, 18),
         "t72-narrowing-boundary-getter" => (TrapKind::SharedNullNarrowing, 13, 44),
         "t71-narrowing-destructuring-getter" => (TrapKind::SharedNullNarrowing, 16, 16),
         other => panic!("{other}: trap corpus entry has no exact expectation"),

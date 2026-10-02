@@ -830,6 +830,9 @@ const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 /// subset. Each entry proves both the trap kind/site and trap-stop stdout.
 #[cfg(debug_assertions)]
 const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
+    ("t77-generator-done-fixed-reference", "compiler.md §145 inline reference", "generator-done-value", 15, 15),
+    ("t78-generator-done-string", "compiler.md §145 null string", "generator-done-value", 14, 23),
+    ("t79-generator-done-destructuring", "compiler.md §145 field pattern", "generator-done-value", 14, 18),
     ("t75-generator-done-value-member", "compiler.md §145 reference read", "generator-done-value", 16, 20),
     ("t76-generator-done-value-store", "compiler.md §145 reference escape", "generator-done-value", 16, 20),
     ("t72-narrowing-boundary-getter", "getter clears the boundary box", "null-narrowing", 13, 44),

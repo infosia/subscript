@@ -118,6 +118,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         operand_types: &[l::ValueType],
         result: Option<String>,
     ) -> Result<(), String> {
+        self.emit_generator_done_guard(out, instruction, operands, operand_types)?;
         let result_id = instruction
             .result
             .ok_or_else(|| internal("field address has no result"))?;
@@ -151,8 +152,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     other => return Err(internal(format!("field base is invalid: {other:?}"))),
                 }
             }
-            l::FieldRef::IterDone => format!("&(({}).done)", operands[0]),
-            l::FieldRef::IterValue => format!("&(({}).value)", operands[0]),
+            l::FieldRef::IterDone => match &operand_types[0] {
+                l::ValueType::Address(_) => format!("&(({})->done)", operands[0]),
+                _ => format!("&(({}).done)", operands[0]),
+            },
+            l::FieldRef::IterValue => match &operand_types[0] {
+                l::ValueType::Address(_) => format!("&(({})->value)", operands[0]),
+                _ => format!("&(({}).value)", operands[0]),
+            },
         };
         let _ = writeln!(out, "    {destination} = {expression};");
         Ok(())
@@ -205,21 +212,51 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             return self.assign(out, result, &expression);
         }
+        self.emit_generator_done_guard(out, instruction, operands, operand_types)?;
+        let expression = match field {
+            l::FieldRef::IterDone => match &operand_types[0] {
+                l::ValueType::Address(_) => format!("({})->done", operands[0]),
+                _ => format!("({}).done", operands[0]),
+            },
+            l::FieldRef::IterValue => match &operand_types[0] {
+                l::ValueType::Address(_) => format!("({})->value", operands[0]),
+                _ => format!("({}).value", operands[0]),
+            },
+            l::FieldRef::Class(_) => unreachable!(),
+        };
+        self.assign(out, result, &expression)
+    }
+
+    fn emit_generator_done_guard(
+        &mut self,
+        out: &mut String,
+        instruction: &l::Instruction,
+        operands: &[String],
+        operand_types: &[l::ValueType],
+    ) -> Result<(), String> {
         for trap in &instruction.traps {
             if trap.kind == l::TrapKind::GeneratorDoneValue {
                 self.consume(trap);
                 let base = operands
                     .first()
                     .ok_or_else(|| internal("generator result is missing"))?;
-                self.emit_guard(out, &format!("!({base}).done"), trap)?;
+                let condition = match instruction.operands.first() {
+                    Some(l::Operand::Value(value)) if self.folded_addresses.contains(value) => {
+                        let expression = self.folded_address_expression(*value)?;
+                        format!("!({expression}).done")
+                    }
+                    _ => {
+                        let member = match operand_types.first() {
+                            Some(l::ValueType::Address(_)) => "->",
+                            _ => ".",
+                        };
+                        format!("!({base}){member}done")
+                    }
+                };
+                self.emit_guard(out, &condition, trap)?;
             }
         }
-        let expression = match field {
-            l::FieldRef::IterDone => format!("({}).done", operands[0]),
-            l::FieldRef::IterValue => format!("({}).value", operands[0]),
-            l::FieldRef::Class(_) => unreachable!(),
-        };
-        self.assign(out, result, &expression)
+        Ok(())
     }
 
     pub(super) fn emit_wire_validation(

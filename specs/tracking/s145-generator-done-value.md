@@ -54,3 +54,49 @@ No Rust file that received new lines exceeded 2,000 lines. No commit was made.
 ```text
 gate full 09de36d6915f5ab4457fc0ab7acfd351dd7a706d dirty:39 debug 2190/0/3 release 2187/0/3 skips 2/0 clippy 2/18/13 goldens-moved 1 exit 0
 ```
+
+## Phase Review fix round 3
+
+The contract is `compiler.md` §145 at `18d1b825`.
+`Type::zero_is_value` covers every `Type` variant without a default arm.
+It checks fixed-array elements and value-class fields recursively. A null string handle fails the check.
+HIR sites and the LIR verifier use the same function with their own complete class fields.
+Both member loads and field addresses require the guard. Both tiers and the interpreter consume it before the read.
+The dev lowering now accepts an iterator-result address; the ship guard also resolves folded addresses.
+
+A CLI and a three-form probe built from `9a28f076` measured the Red entries:
+
+| Entry | Interpreter | dev | ship |
+|---|---|---|---|
+| t77 | `1\n` | internal lowering error: `IterResult.value has invalid base type` | `1\n` |
+| t78 | `InvalidLir`: `null used as a string` | `false\n0\nend\n` | `false\n0\nend\n` |
+| t79 | `1\n` | `1\n` | `1\n` |
+
+`t77` reads through an inline field address. `t79` binds a fixed array through the iterator-result field pattern.
+All three forms now raise `generator-done-value` with empty stdout at `15:15`, `14:23`, and `14:18`, respectively.
+The new scalar value-class control `a312` prints `0:false\n0:false\n` on all three forms.
+Only its new section enters the LIR snapshot. No existing section or `.expected` file changes.
+
+`r300` cites `compiler.md §107.1` and §145 rule 1a.
+Stock `tsc` reports TS2339: `Property 'other' does not exist on type 'IteratorResult<number, any>'.`
+The checker reports S100 at `11:11`, with no follow-up diagnostic.
+The `PatternSourceShape` text now names the `IterResult<T>` source.
+The duplicate execution tests are removed. The retained test removes guards from valid LIR and tests verifier rejection.
+Its measured debug test-suite cost is 0.01 s. It compiles no native program and runs no execution form.
+
+The orchestrator must add `t77`–`t79` to C23, `a312` to C8, and `r300` to the §107.1 record.
+
+`cargo test --offline --locked` passed for the compiler, codegen, and runtime crates after the fixes.
+The three-form corpus checks, all 11 JS corpus tests, and the measured `tsc` corpus-header test passed.
+`tsc -p tsconfig.json`, `cargo fmt --check`, and `git diff --check` passed.
+The document generator produced byte-identical files on its second run.
+Every changed Rust file remains below 2,000 lines. No commit was made. `tools/gate.sh` was not run.
+`tools/hygiene.sh` passed.
+
+## Phase Review fix round landing gate
+
+`goldens-moved 1` is the LIR text snapshot (new generator entries).
+
+```text
+gate full 18d1b8254ef42e31511a4582b1906ae3bdea3aba dirty:26 debug 2189/0/3 release 2186/0/3 skips 2/0 clippy 2/18/13 goldens-moved 1 exit 0
+```

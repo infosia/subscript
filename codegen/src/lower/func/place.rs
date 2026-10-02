@@ -89,14 +89,23 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 Ok((address, ty))
             }
             l::FieldRef::IterDone => {
-                let address = self.expect_aggregate(base)?;
+                let address = match base_type {
+                    l::ValueType::Address(_) => self.expect_scalar(base)?,
+                    _ => self.expect_aggregate(base)?,
+                };
                 Ok((address, Type::Bool))
             }
             l::FieldRef::IterValue => {
-                let l::ValueType::Data(Type::IterResult(value)) = base_type else {
-                    return Err(internal("IterResult.value has invalid base type"));
+                let (value, address) = match base_type {
+                    l::ValueType::Data(Type::IterResult(value)) => {
+                        (value, self.expect_aggregate(base)?)
+                    }
+                    l::ValueType::Address(l::AddressType {
+                        pointee: Type::IterResult(value),
+                        ..
+                    }) => (value, self.expect_scalar(base)?),
+                    _ => return Err(internal("IterResult.value has invalid base type")),
                 };
-                let address = self.expect_aggregate(base)?;
                 let offset = self.ml.layouts.iter_result_value_offset(value)?;
                 Ok((
                     self.address_offset(address, i64::from(offset)),

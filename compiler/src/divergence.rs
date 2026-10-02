@@ -27,7 +27,7 @@ pub enum Divergence {
     VoidValue,
     /// A reference-element search miss uses `null` instead of `undefined`.
     ReferenceSearchMiss,
-    /// A finished generator non-null reference value traps at the read (compiler.md §145).
+    /// A finished generator value with an invalid zero traps at the read (compiler.md §145).
     GeneratorDoneValue,
     /// `any` in a declaration.
     AnyType,
@@ -324,7 +324,7 @@ impl Divergence {
             Divergence::GeneratorDoneValue => DivergenceEntry {
                 ts: "const b: Box = r.value; const xs: Box[] = [b]; print(`${xs.length}`);",
                 subscript: "if (!r.done) { const b: Box = r.value; const xs: Box[] = [b]; print(`${xs.length}`); }",
-                why: "A finished generator has no non-null reference value. Check done before a value read to prevent a null reference escape.",
+                why: "A finished generator traps when its zero value contains a non-nullable null reference or a null string handle. Check done before the read.",
                 collision: "C23",
             },
             Divergence::ReferenceSearchMiss => DivergenceEntry {
@@ -1023,8 +1023,8 @@ impl Divergence {
                 ts: "const text = \"ab\";\n\
                      const [first, second] = text;",
                 subscript: "no equivalent; a binding pattern reads a `T[]`, a \
-                            `FixedArray<T, N>`, or a class instance",
-                why: "A binding pattern reads an array by index or a class by field name, so \
+                            `FixedArray<T, N>`, a class instance, or the `IterResult<T>` of `.next()`",
+                why: "A binding pattern reads an array by index, or a class or `IterResult` by field name, so \
                       another source shape has no pattern.",
                 collision: "compiler.md §107.1",
             },

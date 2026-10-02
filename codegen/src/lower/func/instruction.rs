@@ -152,6 +152,19 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         };
         let operand_types = self.instruction_operand_types(instruction)?;
         let result_ty = self.result_type(instruction)?;
+        for trap in &instruction.traps {
+            if trap.kind == l::TrapKind::GeneratorDoneValue {
+                let base = *operands
+                    .first()
+                    .ok_or_else(|| internal("generator result is missing"))?;
+                let base_type = operand_types
+                    .first()
+                    .ok_or_else(|| internal("generator result type is missing"))?;
+                let (address, _) = self.field_address(l::FieldRef::IterDone, base, base_type)?;
+                let done = self.builder.ins().load(types::I8, flags(), address, 0);
+                self.emit_trap(trap, TrapOperand::Value(done))?;
+            }
+        }
         let result = match &instruction.kind {
             l::InstructionKind::Copy => Some(
                 self.clone_value(
@@ -466,20 +479,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 None
             }
             l::InstructionKind::LoadField(field) => {
-                for trap in &instruction.traps {
-                    if trap.kind == l::TrapKind::GeneratorDoneValue {
-                        let base = *operands
-                            .first()
-                            .ok_or_else(|| internal("generator result is missing"))?;
-                        let base_type = operand_types
-                            .first()
-                            .ok_or_else(|| internal("generator result type is missing"))?;
-                        let (address, _) =
-                            self.field_address(l::FieldRef::IterDone, base, base_type)?;
-                        let done = self.builder.ins().load(types::I8, flags(), address, 0);
-                        self.emit_trap(trap, TrapOperand::Value(done))?;
-                    }
-                }
                 let (address, ty) = self.field_address(
                     *field,
                     *operands

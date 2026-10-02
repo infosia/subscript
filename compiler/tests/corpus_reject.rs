@@ -447,6 +447,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r297-void-binding.ts", RuleCode::S100, 11),
     ("r298-void-map-callback.ts", RuleCode::S100, 10),
     ("r299-void-return-value.ts", RuleCode::S100, 9),
+    ("r300-generator-result-pattern-field.ts", RuleCode::S100, 11),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

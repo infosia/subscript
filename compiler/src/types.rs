@@ -672,13 +672,62 @@ impl Type {
         matches!(self, Type::F16 | Type::F32 | Type::F64)
     }
 
-    /// True when a finished generator zero is an invalid null reference (compiler.md §145).
+    /// True when the zero representation is a value of this type (compiler.md §145).
+    /// The class field source supplies all inline fields from the consumer's form.
     #[must_use]
-    pub fn traps_on_generator_done_value(&self, classes: &[HandleClass]) -> bool {
-        !matches!(self, Type::Nullable(_))
-            && self
-                .handle_kind(classes)
-                .is_some_and(|kind| kind != HandleKind::Str)
+    pub fn zero_is_value<'a, I>(
+        &self,
+        classes: &[HandleClass],
+        fields: &impl Fn(ClassId) -> I,
+    ) -> bool
+    where
+        I: IntoIterator<Item = &'a Type>,
+    {
+        match self {
+            Type::I8
+            | Type::U8
+            | Type::I16
+            | Type::U16
+            | Type::I32
+            | Type::U32
+            | Type::I64
+            | Type::U64
+            | Type::F16
+            | Type::F32
+            | Type::F64
+            | Type::Bool
+            | Type::Date
+            | Type::Null
+            | Type::Enum(_)
+            | Type::StringAlias(_)
+            | Type::Nullable(_) => true,
+            Type::Str
+            | Type::RegExp
+            | Type::Object
+            | Type::Array(_)
+            | Type::Map(_, _)
+            | Type::Set(_)
+            | Type::Worker(_, _)
+            | Type::Inbox(_)
+            | Type::Outbox(_)
+            | Type::Func(_)
+            | Type::Generator(_)
+            | Type::AsyncHandle(_) => false,
+            Type::Class(id) => match classes.get(id.0) {
+                Some(HandleClass::Value | HandleClass::BoundaryValue) => fields(*id)
+                    .into_iter()
+                    .all(|field| field.zero_is_value(classes, fields)),
+                Some(HandleClass::Reference) | None => false,
+            },
+            Type::FixedArray(element, len) => *len == 0 || element.zero_is_value(classes, fields),
+            Type::IterResult(value) => value.zero_is_value(classes, fields),
+            // These types have no executable zero representation.
+            Type::Void
+            | Type::TypeParameter(_)
+            | Type::GenericNumber
+            | Type::GenericUnion(_)
+            | Type::Error => false,
+        }
     }
 
     /// Acceptance filter (S011): can this type appear as the non-null member
@@ -847,14 +896,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn generator_done_value_uses_the_zero_reference_shape() {
+    fn generator_done_value_uses_every_inline_zero_component() {
         let classes = [
             HandleClass::Reference,
             HandleClass::Value,
             HandleClass::BoundaryValue,
         ];
+        let class_fields = [
+            vec![],
+            vec![Type::I32, Type::Bool],
+            vec![Type::Class(ClassId(0))],
+        ];
+        let fields = |id: ClassId| class_fields[id.0].iter();
         for ty in [
             Type::Class(ClassId(0)),
+            Type::Class(ClassId(2)),
+            Type::Str,
             Type::Object,
             Type::Array(Box::new(Type::I32)),
             Type::Generator(Box::new(Type::I32)),
@@ -865,20 +922,24 @@ mod tests {
                 params: vec![],
                 ret: Type::I32,
             })),
+            Type::FixedArray(Box::new(Type::Class(ClassId(0))), 2),
+            Type::FixedArray(Box::new(Type::Class(ClassId(2))), 2),
+            Type::IterResult(Box::new(Type::Str)),
         ] {
-            assert!(ty.traps_on_generator_done_value(&classes), "{ty:?}");
-            assert!(!Type::Nullable(Box::new(ty)).traps_on_generator_done_value(&classes));
+            assert!(!ty.zero_is_value(&classes, &fields), "{ty:?}");
+            assert!(Type::Nullable(Box::new(ty)).zero_is_value(&classes, &fields));
         }
         for ty in [
             Type::I32,
             Type::Bool,
-            Type::Str,
             Type::Date,
             Type::Enum(EnumId(0)),
             Type::Class(ClassId(1)),
-            Type::Class(ClassId(2)),
+            Type::FixedArray(Box::new(Type::Class(ClassId(1))), 2),
+            Type::FixedArray(Box::new(Type::Str), 0),
+            Type::FixedArray(Box::new(Type::Nullable(Box::new(Type::Str))), 2),
         ] {
-            assert!(!ty.traps_on_generator_done_value(&classes), "{ty:?}");
+            assert!(ty.zero_is_value(&classes, &fields), "{ty:?}");
         }
     }
 

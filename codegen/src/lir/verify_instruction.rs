@@ -32,8 +32,13 @@ pub(super) fn verify_instruction_contract(
     };
     let requires_done_guard = match (&instruction.kind, operand_types.as_slice()) {
         (
-            l::InstructionKind::LoadField(l::FieldRef::IterValue),
-            [l::ValueType::Data(Type::IterResult(value))],
+            l::InstructionKind::LoadField(l::FieldRef::IterValue)
+            | l::InstructionKind::AddressOfField(l::FieldRef::IterValue),
+            [l::ValueType::Data(Type::IterResult(value))]
+            | [l::ValueType::Address(l::AddressType {
+                pointee: Type::IterResult(value),
+                ..
+            })],
         ) => {
             let classes = module
                 .classes
@@ -48,7 +53,9 @@ pub(super) fn verify_instruction_contract(
                     }
                 })
                 .collect::<Vec<_>>();
-            value.traps_on_generator_done_value(&classes)
+            !value.zero_is_value(&classes, &|id| {
+                module.classes[id.0].fields.iter().map(|field| &field.ty)
+            })
         }
         _ => false,
     };
