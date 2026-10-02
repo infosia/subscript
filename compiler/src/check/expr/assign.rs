@@ -383,6 +383,7 @@ impl<'p> Checker<'p> {
         }
         let assigned = hir::Expr {
             kind: ExprKind::Assign {
+                update: None,
                 op,
                 target: Box::new(target),
                 value: Box::new(value),

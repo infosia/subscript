@@ -141,6 +141,7 @@ fn expr_children_yield_every_child() {
         ),
         (
             ExprKind::Assign {
+                update: None,
                 op: None,
                 target: Box::new(child_expr(1)),
                 value: Box::new(child_expr(2)),

@@ -703,6 +703,7 @@ impl Checker<'_> {
         };
         let step = hir::Expr {
             kind: ExprKind::Assign {
+                update: None,
                 op: Some(BinOp::Add),
                 target: Box::new(locals.index()),
                 value: Box::new(json_int(1, pos)),
@@ -1529,6 +1530,7 @@ fn json_field(obj: hir::Expr, name: &str, ty: Type, pos: &Pos) -> hir::Expr {
 fn json_assign(target: hir::Expr, value: hir::Expr, ty: Type, pos: &Pos) -> hir::Expr {
     hir::Expr {
         kind: ExprKind::Assign {
+            update: None,
             op: None,
             target: Box::new(target),
             value: Box::new(value),
@@ -1572,6 +1574,7 @@ fn json_return_false_unless(condition: hir::Expr, pos: &Pos) -> hir::Stmt {
 fn json_increment(index: hir::Expr, pos: &Pos) -> hir::Expr {
     hir::Expr {
         kind: ExprKind::Assign {
+            update: None,
             op: Some(BinOp::Add),
             target: Box::new(index),
             value: Box::new(json_int(1, pos)),

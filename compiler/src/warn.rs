@@ -616,7 +616,7 @@ impl WarningChecker<'_> {
                 }
                 return;
             }
-            ExprKind::Assign { op, target, value } => {
+            ExprKind::Assign { op, target, value, .. } => {
                 if op.is_some() || !matches!(target.kind, ExprKind::Local(..)) {
                     self.warn_w002_expr_uses(target, freed);
                 }

@@ -247,6 +247,7 @@ fn local(name: &str, ty: Type, init: ExprKind, pos: &Pos) -> Stmt {
 fn assign(name: &str, ty: Type, value: ExprKind, value_ty: Type, pos: &Pos) -> Stmt {
     Stmt::Expr(Expr {
         kind: ExprKind::Assign {
+            update: None,
             op: None,
             target: Box::new(Expr {
                 kind: ExprKind::Local(name.to_string(), ty.clone()),

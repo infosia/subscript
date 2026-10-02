@@ -272,6 +272,7 @@ impl Analyzer {
                 op: Some(hir::BinOp::Add),
                 target,
                 value,
+                ..
             } => match &target.kind {
                 K::Local(local, _) if *local == name => self.interval_of(value)?,
                 _ => return None,

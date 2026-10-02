@@ -82,6 +82,7 @@ fn local_expr(name: &str, ty: Type, pos: Pos) -> hir::Expr {
 fn this_field_store(class: ClassId, field: &str, ty: Type, pos: &Pos) -> hir::Stmt {
     hir::Stmt::Expr(hir::Expr {
         kind: ExprKind::Assign {
+            update: None,
             op: None,
             target: Box::new(hir::Expr {
                 kind: ExprKind::Field {

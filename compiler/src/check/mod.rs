@@ -605,6 +605,7 @@ fn prefix_this_violations(
             op: None,
             target,
             value,
+            ..
         } if matches!(&target.kind, hir::ExprKind::Field { obj, .. }
             if matches!(obj.kind, hir::ExprKind::This)) =>
         {

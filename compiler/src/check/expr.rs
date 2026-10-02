@@ -509,11 +509,50 @@ mod tests {
     }
 
     #[test]
+    fn updates_carry_prefix_and_postfix_in_value_and_statement_positions() {
+        for (spelling, kind) in [
+            ("++value", hir::UpdateKind::Prefix),
+            ("value++", hir::UpdateKind::Postfix),
+            ("--value", hir::UpdateKind::Prefix),
+            ("value--", hir::UpdateKind::Postfix),
+        ] {
+            for statement in [false, true] {
+                let body = if statement {
+                    format!("{spelling};")
+                } else {
+                    format!("print(`${{{spelling}}}`);")
+                };
+                let source =
+                    format!("export function main(): void {{ let value: i32 = 3; {body} }}");
+                let expression = normalized_main_expression(&source);
+                fn find(expression: &hir::Expr) -> Option<hir::UpdateKind> {
+                    if let hir::ExprKind::Assign { update, .. } = expression.kind {
+                        if update.is_some() {
+                            return update;
+                        }
+                    }
+                    expression
+                        .children()
+                        .into_iter()
+                        .find_map(|child| match child {
+                            hir::HirChild::Expr(expression) => find(expression),
+                            hir::HirChild::Stmt(_) => None,
+                        })
+                }
+                assert_eq!(find(&expression), Some(kind), "{source}");
+            }
+        }
+    }
+
+    #[test]
     fn compound_shift_preserves_the_count_and_operand_type() {
         let source = "export function main(): void { let value: u8 = 1; value <<= 8; }";
         let expression = normalized_main_expression(source);
         assert_eq!(expression.ty, crate::Type::U8);
-        let hir::ExprKind::Assign { op, target, value } = expression.kind else {
+        let hir::ExprKind::Assign {
+            op, target, value, ..
+        } = expression.kind
+        else {
             panic!("compound assignment");
         };
         assert_eq!(op, Some(hir::BinOp::Shl));

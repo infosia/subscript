@@ -1688,6 +1688,8 @@ pub enum ExprKind {
     /// Assignment (plain or compound). The target is a `Local`, `Global`,
     /// `Field`, or `Index` expression.
     Assign {
+        /// Prefix or postfix for an update; `None` for an assignment.
+        update: Option<UpdateKind>,
         /// Compound arithmetic operator, `None` for plain `=`.
         op: Option<BinOp>,
         /// Assignment target.
@@ -1869,3 +1871,13 @@ pub enum SpreadKind {
 
 #[cfg(test)]
 mod tests;
+
+/// The value that a numeric update returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum UpdateKind {
+    /// Return the value after the update.
+    Prefix,
+    /// Return the value before the update.
+    Postfix,
+}

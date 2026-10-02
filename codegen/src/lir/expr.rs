@@ -238,9 +238,12 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     expr.pos.clone(),
                 )?
             }
-            K::Assign { op, target, value } => {
-                Some(self.lower_assignment(*op, target, value, expr)?)
-            }
+            K::Assign {
+                op,
+                target,
+                value,
+                update,
+            } => Some(self.lower_assignment(*op, *update, target, value, expr)?),
             K::Cast(value) => {
                 let value = self.require_expr(value)?;
                 let kind = if matches!(self.operand_type(&value, &expr.pos)?,
@@ -626,6 +629,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
     fn lower_assignment(
         &mut self,
         op: Option<hir::BinOp>,
+        update: Option<hir::UpdateKind>,
         target_expr: &hir::Expr,
         value_expr: &hir::Expr,
         whole: &hir::Expr,
@@ -655,7 +659,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 let value = self.require_expr(value_expr)?;
                 self.emit(
                     l::InstructionKind::Binary(convert_binary(op)?),
-                    vec![old.expect("compound old value"), value],
+                    vec![old.clone().expect("compound old value"), value],
                     Some(l::ValueType::Data(target_expr.ty.clone())),
                     false,
                     binary_traps(),
@@ -666,7 +670,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 self.lower_stored_expr_at(&target_expr.ty, value_expr, &target_expr.pos)?
             };
             self.write_binding(binding, result.clone(), &target_expr.pos, Vec::new())?;
-            return Ok(result);
+            return Ok(if update == Some(hir::UpdateKind::Postfix) {
+                old.ok_or_else(|| self.error(&whole.pos, "postfix update has no previous value"))?
+            } else {
+                result
+            });
         }
         let mut place = self.prepare_place(target_expr)?;
         let direct_index = matches!(place.kind, PreparedPlaceKind::Index { .. });
@@ -688,7 +696,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             let value = self.require_expr(value_expr)?;
             self.emit(
                 l::InstructionKind::Binary(convert_binary(op)?),
-                vec![old.expect("compound old value"), value],
+                vec![old.clone().expect("compound old value"), value],
                 Some(l::ValueType::Data(target_expr.ty.clone())),
                 false,
                 binary_traps(),
@@ -699,7 +707,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             self.lower_stored_expr_at(&target_expr.ty, value_expr, &target_expr.pos)?
         };
         self.store_place(&place, result.clone(), &target_expr.pos)?;
-        Ok(result)
+        Ok(if update == Some(hir::UpdateKind::Postfix) {
+            old.ok_or_else(|| self.error(&whole.pos, "postfix update has no previous value"))?
+        } else {
+            result
+        })
     }
 }
 

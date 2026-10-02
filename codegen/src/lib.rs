@@ -839,3 +839,6 @@ export function main(): void {}
         );
     }
 }
+
+#[cfg(test)]
+mod postfix_update_tests;

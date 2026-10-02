@@ -415,6 +415,11 @@ impl<'p> Checker<'p> {
                 let target = place.into_read(self);
                 hir::Expr {
                     kind: ExprKind::Assign {
+                        update: Some(if u.prefix {
+                            hir::UpdateKind::Prefix
+                        } else {
+                            hir::UpdateKind::Postfix
+                        }),
                         op: Some(op),
                         target: Box::new(target),
                         value: Box::new(one),
@@ -893,6 +898,7 @@ impl<'p> Checker<'p> {
         };
         let assigned = hir::Expr {
             kind: ExprKind::Assign {
+                update: None,
                 op: None,
                 target: Box::new(target),
                 value: Box::new(operand),
