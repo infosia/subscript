@@ -1818,8 +1818,8 @@ fn a_shared_code_does_not_excuse_another_restriction() {
     let record = Divergence {
         code: RuleCode::S100,
         record: "C9",
-        token: "A field initializer must not read `this`.",
-        message: "`this` is only available in constructors and methods",
+        token: "a method call, a getter or setter, a write, `this` as a value, and",
+        message: "§147 rule 2:",
     };
     for source in [
         "function g(x: i32): i32 { return x ?? 1; }",
@@ -1844,7 +1844,7 @@ fn a_shared_code_does_not_excuse_another_restriction() {
             .iter()
             .all(|error| !diagnostic_matches(error, &record)));
     }
-    let source = "class Box { value: i32 = 1; other: i32 = this.value; }";
+    let source = "class Box { value: i32 = 1; other: i32 = this.read(); read(): i32 { return this.value; } }";
     let errors = check_program(&[SourceFile::new("right.ts", source)]).unwrap_err();
     assert!(errors
         .iter()

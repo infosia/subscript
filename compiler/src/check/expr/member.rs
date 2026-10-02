@@ -1,5 +1,6 @@
 //! Checks member reads and index reads.
 
+use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
 use crate::check::{Checker, FnCtx};
@@ -22,6 +23,48 @@ impl<'p> Checker<'p> {
         allow_absence_test: bool,
     ) -> hir::Expr {
         let pos = self.pos(m.span);
+        if let Some(initializer) = &fx.field_initializer {
+            if matches!(super::unparen_expr(&m.obj), ast::Expr::This(_))
+                && !initializer.write
+                && !fx.frames.last().is_some_and(|frame| frame.is_lambda)
+            {
+                if let ast::MemberProp::Ident(name) = &m.prop {
+                    if initializer.earlier.contains(name.sym.as_ref()) {
+                        let object = hir::Expr {
+                            kind: ExprKind::This,
+                            ty: initializer.class_type.clone(),
+                            pos: self.pos(m.obj.span()),
+                        };
+                        return self.member_on(
+                            object,
+                            name.sym.as_ref(),
+                            self.pos(name.span),
+                            false,
+                        );
+                    }
+                    let Type::Class(class) = self.apparent_type(&initializer.class_type) else {
+                        return self.err_expr(pos);
+                    };
+                    let is_field = self.classes[class.0]
+                        .fields
+                        .iter()
+                        .any(|field| field.name == name.sym.as_ref());
+                    let message = format!("§147 rule 2: `this.{}` must read an earlier instance field with an initializer; the current field, later fields, fields without initializers, methods, and accessors are forbidden", name.sym);
+                    let this_pos = self.pos(m.obj.span());
+                    if is_field {
+                        self.error(RuleCode::S100, message, this_pos);
+                    } else {
+                        self.error_diverging(
+                            RuleCode::S100,
+                            message,
+                            this_pos,
+                            Divergence::ThisInFieldInitializer,
+                        );
+                    }
+                    return self.err_expr(pos);
+                }
+            }
+        }
         match &m.prop {
             ast::MemberProp::Computed(c) => {
                 let obj = self.check_receiver(&m.obj, fx);
@@ -33,7 +76,18 @@ impl<'p> Checker<'p> {
                         .unwrap_or(Type::I32),
                     _ => Type::I32,
                 };
+                // The index is a read even when the receiver is a write target.
+                let previous = fx
+                    .field_initializer
+                    .as_ref()
+                    .is_some_and(|context| context.write);
+                if let Some(context) = &mut fx.field_initializer {
+                    context.write = false;
+                }
                 let index = self.check_expr(&c.expr, Some(&index_context), fx);
+                if let Some(context) = &mut fx.field_initializer {
+                    context.write = previous;
+                }
                 self.check_index(obj, index, pos)
             }
             ast::MemberProp::Ident(prop) => {

@@ -178,7 +178,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r123-wire-enum-out-of-range.ts", RuleCode::S100, 8),
     ("r124-u64-literal-overflow.ts", RuleCode::S008, 7),
     ("r125-i64-literal-underflow.ts", RuleCode::S008, 7),
-    ("r126-this-in-field-init.ts", RuleCode::S100, 9),
     ("r127-f32-frombits-f64-arg.ts", RuleCode::S007, 9),
     ("r128-readonly-index-write.ts", RuleCode::S100, 19),
     ("r129-index-signature-no-get.ts", RuleCode::S100, 8),
@@ -452,6 +451,13 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r303-conditional-scalar-null.ts", RuleCode::S100, 9),
     ("r304-conditional-numeric-widths.ts", RuleCode::S100, 10),
     ("r305-conditional-literal-range.ts", RuleCode::S008, 8),
+    ("r306-later-field.ts", RuleCode::S100, 7),
+    ("r307-current-field.ts", RuleCode::S100, 7),
+    ("r308-constructor-only-field.ts", RuleCode::S100, 7),
+    ("r309-method-field-initializer.ts", RuleCode::S100, 7),
+    ("r310-getter-field-initializer.ts", RuleCode::S100, 7),
+    ("r311-this-value-field-initializer.ts", RuleCode::S100, 7),
+    ("r312-lambda-field-initializer.ts", RuleCode::S100, 7),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -889,16 +895,53 @@ fn first_diagnostic(file: &str) -> subscript_compiler::Diagnostic {
 }
 
 #[test]
-fn this_in_field_initializer_is_s100_without_a_this_binding() {
-    let source = "class InvalidInitializer {\n  tag: i32 = 2;\n  value: i32 = this.tag + 1;\n}\nexport function main(): void {}\n";
+fn later_field_in_initializer_names_rule_two() {
+    let source = "class InvalidInitializer {\n  value: i32 = this.tag + 1;\n  tag: i32 = 2;\n}\nexport function main(): void {}\n";
     let diagnostics = check_program(&[SourceFile::new("field-init.ts", source)])
         .expect_err("this in a field initializer must be rejected");
     assert_eq!(diagnostics[0].code, RuleCode::S100);
-    assert_eq!(diagnostics[0].pos.line, 3);
-    assert_eq!(
-        diagnostics[0].message,
-        "`this` is only available in constructors and methods"
-    );
+    assert_eq!(diagnostics[0].pos.line, 2);
+    assert!(diagnostics[0].message.contains("§147 rule 2"));
+}
+
+#[test]
+fn field_initializers_reject_writes_and_partial_instance_uses() {
+    for expression in [
+        "this.x = 4",
+        "this.x += 1",
+        "++this.x",
+        "this.x++",
+        "this.inner.v = 4",
+        "(this.object as Inner).v = 4",
+        "this.g = 4",
+        "take(this)",
+        "((): i32 => this.x)()",
+    ] {
+        let source = format!(
+            "class Inner {{ v: i32 = 3; }} \
+            function take(a: A): i32 {{ return 0; }} \
+            class A {{ x: i32 = 3; inner: Inner = new Inner(); object: object = new Inner(); \
+            y: i32 = {expression}; set g(v: i32) {{ this.x = v; }} }}"
+        );
+        let errors = check_program(&[SourceFile::new("field-write.ts", source)])
+            .expect_err("partial instance use must fail");
+        assert!(
+            errors.iter().any(|error| error.code == RuleCode::S100
+                && error.message.contains("§147 rule 2")
+                && error.divergence
+                    == Some(subscript_compiler::divergence::Divergence::ThisInFieldInitializer)),
+            "{expression}: {errors:?}"
+        );
+    }
+}
+
+#[test]
+fn earlier_field_reads_in_write_indices_and_sources_are_accepted() {
+    let source = "const values: i32[] = [0];\nclass A { x: i32 = 0; \
+        y: i32 = (values[this.x] = this.x + 4); \
+        z: i32 = (this).y + 1; } export function main(): void {}";
+    check_program(&[SourceFile::new("field-read.ts", source)])
+        .expect("index and source reads satisfy rule one");
 }
 
 #[test]

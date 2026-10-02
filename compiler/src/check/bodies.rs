@@ -345,6 +345,7 @@ impl<'p> Checker<'p> {
             return;
         }
         let this_ty = Type::Class(id);
+        let mut earlier_initialized_fields = HashSet::new();
         let mut checked_read_accessors = HashSet::new();
         let mut checked_write_accessors = HashSet::new();
         for member in &class.body {
@@ -418,7 +419,11 @@ impl<'p> Checker<'p> {
                         .map(|f| f.ty.clone());
                     let Some(field_ty) = field_ty else { continue };
                     let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
-                    fx.frames[0].missing_this_divergence = Some(Divergence::ThisInFieldInitializer);
+                    fx.field_initializer = Some(super::field_initializer::FieldInitializer {
+                        class_type: this_ty.clone(),
+                        earlier: earlier_initialized_fields.clone(),
+                        write: false,
+                    });
                     let e = fx
                         .with_synthetic_owner(
                             SyntheticOwnerKind::Initializer(self.pos(value.span())),
@@ -440,6 +445,7 @@ impl<'p> Checker<'p> {
                         .find(|f| f.name == key.sym.as_ref())
                     {
                         field.init = Some(e);
+                        earlier_initialized_fields.insert(key.sym.to_string());
                     }
                 }
                 ast::ClassMember::Constructor(ctor) => {

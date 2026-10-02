@@ -26,6 +26,7 @@ pub(crate) mod exception;
 mod exports;
 mod expr;
 pub(crate) mod fallthrough;
+mod field_initializer;
 mod generics;
 mod instance_chain;
 use instance_chain::InstanceArguments;
@@ -723,6 +724,7 @@ pub(crate) struct Frame {
 #[derive(Debug)]
 pub(crate) struct FnCtx {
     pub frames: Vec<Frame>,
+    field_initializer: Option<field_initializer::FieldInitializer>,
     pub scopes: Vec<Scope>,
     pub narrowed: HashSet<String>,
     pub ended_shared_narrowing: HashSet<String>,
@@ -856,6 +858,7 @@ impl FnCtx {
         diagnostics: DiagnosticSink,
     ) -> Self {
         FnCtx {
+            field_initializer: None,
             frames: vec![Frame {
                 ret,
                 is_generator,

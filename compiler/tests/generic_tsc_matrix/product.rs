@@ -392,8 +392,8 @@ pub(super) fn cells() -> Vec<Cell> {
                     Some(Divergence {
                         code: RuleCode::S100,
                         record: "C9",
-                        message: "`this` is only available in constructors and methods",
-                        token: "A field initializer must not read `this`.",
+                        message: "§147 rule 2:",
+                        token: "a method call, a getter or setter, a write, `this` as a value, and",
                     })
                 } else if site.name == "throw" {
                     Some(Divergence {

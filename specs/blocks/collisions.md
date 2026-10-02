@@ -255,7 +255,7 @@ exception, this language traps at once; `node` lets a `catch` take
 the propagating exception first and reports the unhandled rejection
 after it (§116.1 rule 4b).
 
-### C9. Field initializers — every construction, no `this`
+### C9. Field initializers — every construction, earlier fields through `this`
 
 *(A field with no initializer and no unconditional constructor
 assignment is rejected since 2026-09-12: `compiler.md` §108. An
@@ -273,13 +273,17 @@ default of an absent argument evaluates after the initializers,
 with `this` bound to the instance (`compiler.md` §57.1 step 4;
 measured under `node` 2026-09-12: `5 5`).
 
-A field initializer must not read `this`. Stock `tsc` accepts
-`this` there, so this is a narrowing: the checker rejects it with
-S100. Before R27, no program with `this` in a field initializer
-ran on the dev tier (internal lowering error), so the narrowing
-retires no working program.
+A field initializer reads `this.f` only when `f` is an earlier
+instance field of the same class with an initializer (`compiler.md`
+§147). Every other `this` in a field initializer is rejected with S100:
+a method call, a getter or setter, a write, `this` as a value, and
+`this` in a lambda. Stock `tsc` accepts those four forms, so this is a
+narrowing; each one can expose the partial instance. A read of a later
+field, of the field itself, or of a field with no initializer is
+rejected by both (`tsc` TS2729).
 
-Accept: `a133`, `a134`. Reject: `r126-this-in-field-init`.
+Accept: `a133`, `a134`, `a316`. Reject: `r306`–`r312`;
+`retired:r126-this-in-field-init`.
 
 ### C10. Class index signatures — accessor sugar
 

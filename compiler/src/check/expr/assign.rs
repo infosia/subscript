@@ -400,6 +400,40 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         pos: &Pos,
     ) -> Place {
+        let previous = fx
+            .field_initializer
+            .as_ref()
+            .is_some_and(|context| context.write);
+        let writes_this = match &target {
+            PlaceSource::Member(member) => {
+                let mut object = super::unparen_expr(&member.obj);
+                loop {
+                    object = match object {
+                        ast::Expr::Member(member) => super::unparen_expr(&member.obj),
+                        ast::Expr::TsAs(cast) => super::unparen_expr(&cast.expr),
+                        _ => break,
+                    };
+                }
+                matches!(object, ast::Expr::This(_))
+            }
+            _ => false,
+        };
+        if let Some(context) = &mut fx.field_initializer {
+            context.write = writes_this;
+        }
+        let place = self.check_assign_target_inner(target, fx, pos);
+        if let Some(context) = &mut fx.field_initializer {
+            context.write = previous;
+        }
+        place
+    }
+
+    fn check_assign_target_inner(
+        &mut self,
+        target: PlaceSource<'_>,
+        fx: &mut FnCtx,
+        pos: &Pos,
+    ) -> Place {
         match target {
             PlaceSource::Ident(ident) => {
                 let name = ident.sym.to_string();
@@ -485,7 +519,18 @@ impl<'p> Checker<'p> {
                         .unwrap_or(Type::I32),
                     _ => Type::I32,
                 };
+                // The index is a read even when the receiver is a write target.
+                let previous = fx
+                    .field_initializer
+                    .as_ref()
+                    .is_some_and(|context| context.write);
+                if let Some(context) = &mut fx.field_initializer {
+                    context.write = false;
+                }
                 let index = self.check_expr(&c.expr, Some(&index_context), fx);
+                if let Some(context) = &mut fx.field_initializer {
+                    context.write = previous;
+                }
                 if let Type::Class(id) = &self.apparent_type(&obj.ty) {
                     if let Some(signature) = self.classes[id.0].index_signature.clone() {
                         self.require_assignable(

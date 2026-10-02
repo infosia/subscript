@@ -85,7 +85,7 @@ pub enum Divergence {
     AsyncFunctionShape,
     /// An async call whose handle no holder awaits.
     DroppedAsyncHandle,
-    /// `this` read from a field initializer.
+    /// A forbidden `this` form in a field initializer.
     ThisInFieldInitializer,
     /// A class index signature without its accessors, and a compound write.
     ClassIndexSignature,
@@ -563,11 +563,11 @@ impl Divergence {
                 collision: "compiler.md §70",
             },
             Divergence::ThisInFieldInitializer => DivergenceEntry {
-                ts: "class C { tag: i32 = 2; value: i32 = this.tag + 1; }",
-                subscript: "class C { tag: i32 = 2; value: i32 = 0; \
-                            constructor() { this.value = this.tag + 1; } }",
-                why: "A field initializer runs before the object is complete, so `this` is \
-                      available only in a constructor or a method.",
+                ts: "class C { value: i32 = this.read(); read(): i32 { return 3; } }",
+                subscript: "class C { value: i32 = 0; constructor() { this.value = this.read(); } \
+                            read(): i32 { return 3; } }",
+                why: "A field initializer can read only earlier initialized instance fields. \
+                      Other uses of `this` can expose the partial instance (§147 rule 2).",
                 collision: "C9",
             },
             Divergence::ClassIndexSignature => DivergenceEntry {

@@ -216,6 +216,22 @@ impl<'p> Checker<'p> {
             ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
             ast::Expr::Ident(id) => self.check_ident(id, ctx, fx),
             ast::Expr::This(_) => {
+                if let Some(initializer) = &fx.field_initializer {
+                    let reason = if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
+                        "`this` inside a lambda is forbidden"
+                    } else if initializer.write {
+                        "a write through `this` is forbidden"
+                    } else {
+                        "a method call or `this` as a value is forbidden"
+                    };
+                    self.error_diverging(
+                        RuleCode::S100,
+                        format!("§147 rule 2: {reason}"),
+                        pos.clone(),
+                        Divergence::ThisInFieldInitializer,
+                    );
+                    return self.err_expr(pos);
+                }
                 let this_ty = fx.frames.last().and_then(|f| f.this_ty.clone());
                 match this_ty {
                     Some(ty) => hir::Expr {
