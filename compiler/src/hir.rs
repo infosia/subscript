@@ -200,8 +200,10 @@ pub enum BuiltinMethod {
 pub struct PoisonedImport {
     /// The specifier as written in the import.
     pub module: String,
-    /// `(imported, local)` name pairs in source order.
+    /// Named-import `(imported, local)` pairs in source order.
     pub names: Vec<(String, String)>,
+    /// The namespace local for an `import * as` statement, if present.
+    pub namespace: Option<String>,
     /// Source position of the module specifier string.
     pub pos: Pos,
 }

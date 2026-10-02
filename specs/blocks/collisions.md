@@ -536,8 +536,10 @@ A module imports by a named import or by a namespace import
 (`import * as ns from "./m"`, `compiler.md` §148). A namespace is a
 static qualifier with no runtime value: `ns.x` resolves at check time
 to the declaration a named import of `x` binds, and `ns` alone, `ns[k]`,
-`typeof ns`, and a write through `ns` are rejected with S100, where
-`tsc` accepts the value forms. `import type * as ns` and a default
+`typeof ns`, and a write through `ns` are rejected with S100. `tsc`
+accepts `ns` stored, indexed, compared, interpolated, and under
+`typeof`, so these are narrowings; it rejects `ns` as an argument or a
+return value of a declared type (TS2345, TS2322) and a write (TS2540). `import type * as ns` and a default
 import stay outside the surface.
 
 A module exports a name only by an `export` declaration or a named
@@ -580,8 +582,8 @@ runs here and in native ESM, but not under the corpus runner. A
 `js-comparable` entry does not print from the initializer of a module
 that `node` or the corpus runner does not run.
 
-Accept: `a288`, `a289`, `a290`, `a291`, `a292`, `a299`, `a300`, `a301`, `a318`. Reject: `r273`,
-`r274`, `r275`, `r277`, `r278`, `r279`, `r316`–`r327`.
+Accept: `a288`, `a289`, `a290`, `a291`, `a292`, `a299`, `a300`, `a301`, `a318`–`a321`. Reject: `r273`,
+`r274`, `r275`, `r277`, `r278`, `r279`, `r316`–`r328`.
 
 ### C19. A generic instance chain that grows without bound is rejected
 

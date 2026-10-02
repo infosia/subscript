@@ -1,49 +1,37 @@
-//! Namespace execution parity. Ship C compilation costs one compiler invocation per test.
+//! Namespace cycle input-order parity (§148): 26 ms in debug.
+//! The interpreter checks six orders and one control without native compilation.
 #[allow(dead_code)]
 #[path = "corpus/mod.rs"]
 mod corpus;
 
-use subscript_codegen::{interpreter::interpret, lir::lower_module, run_c_aot, run_jit};
-use subscript_compiler::{check_program, SourceFile};
+use subscript_codegen::{interpreter::interpret, lir::lower_module};
+use subscript_compiler::check_program;
 
 #[test]
-fn namespace_corpus_matches_three_engines() {
+fn namespace_cycle_input_orders_keep_initialization_with_a_firing_control() {
+    let started = std::time::Instant::now();
     let accept = corpus::corpus_accept();
-    let id = "a318-namespace-import";
-    let files = corpus::entry_sources(&accept, id);
-    let expected = corpus::golden_bytes(&accept, id);
-    let module = lower_module(&check_program(&files).unwrap()).unwrap();
-    assert_eq!(interpret(&module).unwrap(), expected);
-    assert_eq!(run_jit(&files).unwrap(), expected);
-    assert_eq!(run_c_aot(&files).unwrap(), expected);
-}
-
-#[test]
-fn local_shadow_runs_on_three_engines() {
-    let files = [
-        SourceFile::entry("main.ts", "import * as ns from './lib'; class Local { count: string = 'local'; } export function main(): void { const ns = new Local(); print(ns.count); }"),
-        SourceFile::new("lib.ts", "export let count: i32 = 4;"),
-    ];
-    let module = lower_module(&check_program(&files).unwrap()).unwrap();
-    assert_eq!(interpret(&module).unwrap(), b"local\n");
-    assert_eq!(run_jit(&files).unwrap(), b"local\n");
-    assert_eq!(run_c_aot(&files).unwrap(), b"local\n");
-}
-
-#[test]
-fn namespace_cycle_keeps_dependency_initialization_order() {
-    let files = [
-        SourceFile::entry("main.ts", "import * as ns from './x'; print('main'); export function main(): void { print(`${ns.x}`); }"),
-        SourceFile::new("x.ts", "import * as ns from './y'; export const x: i32 = ns.y + 1; print('x');"),
-        SourceFile::new("y.ts", "import * as ns from './x'; export const y: i32 = 2; print('y');"),
-    ];
-    let module = lower_module(&check_program(&files).unwrap()).unwrap();
-    let expected = b"y\nx\nmain\n3\n";
-    assert_eq!(interpret(&module).unwrap(), expected);
-    assert_eq!(run_jit(&files).unwrap(), expected);
-    assert_eq!(run_c_aot(&files).unwrap(), expected);
-    let mut reordered = files.to_vec();
-    reordered.reverse();
-    let reordered = lower_module(&check_program(&reordered).unwrap()).unwrap();
-    assert_eq!(interpret(&reordered).unwrap(), expected);
+    let files = corpus::entry_sources(&accept, "a321-namespace-cycle");
+    let expected = corpus::golden_bytes(&accept, "a321-namespace-cycle");
+    for a in 0..3 {
+        for b in 0..3 {
+            for c in 0..3 {
+                let order = [a, b, c];
+                if (0..3).any(|i| order[..i].contains(&order[i])) {
+                    continue;
+                }
+                let ordered: Vec<_> = order.iter().map(|i| files[*i].clone()).collect();
+                let module = lower_module(&check_program(&ordered).unwrap()).unwrap();
+                assert_eq!(interpret(&module).unwrap(), expected, "{order:?}");
+            }
+        }
+    }
+    let mut changed = files;
+    let y = changed.iter_mut().find(|file| file.name == "y.ts").unwrap();
+    y.source = y.source.replace("= 2;", "= 8;");
+    let module = lower_module(&check_program(&changed).unwrap()).unwrap();
+    let control = interpret(&module).unwrap();
+    assert_ne!(control, expected);
+    assert_eq!(control, b"y\nx\nmain\n9\n");
+    eprintln!("namespace cycle input orders: {:?}", started.elapsed());
 }

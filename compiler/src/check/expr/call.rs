@@ -33,8 +33,6 @@ impl<'p> Checker<'p> {
         while let ast::Expr::Paren(p) = callee {
             callee = &p.expr;
         }
-        let resolved = self.resolve_namespace_expr(callee, fx);
-        let callee = resolved.as_ref().unwrap_or(callee);
         match callee {
             ast::Expr::Ident(id) => self.check_named_call(id, c, fx, pos, false),
             ast::Expr::Member(m) => self.check_method_call(m, c, ctx, fx, pos),
@@ -1276,8 +1274,6 @@ impl<'p> Checker<'p> {
         while let ast::Expr::Paren(p) = callee {
             callee = &p.expr;
         }
-        let resolved = self.resolve_namespace_expr(callee, fx);
-        let callee = resolved.as_ref().unwrap_or(callee);
         let ast::Expr::Ident(id) = callee else {
             self.error(RuleCode::S100, "`new` requires a class name", pos.clone());
             return self.err_expr(pos);

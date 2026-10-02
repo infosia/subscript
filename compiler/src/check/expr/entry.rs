@@ -230,8 +230,6 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
-        let resolved = self.resolve_namespace_expr(e, fx);
-        let e = resolved.as_ref().unwrap_or(e);
         let pos = self.pos(e.span());
         let mut checked = match e {
             ast::Expr::Paren(p) => self.check_expr_with_header_receiver(

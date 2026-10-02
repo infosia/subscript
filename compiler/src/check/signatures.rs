@@ -214,6 +214,7 @@ impl<'p> Checker<'p> {
                             continue;
                         }
                         let mut names = Vec::new();
+                        let mut namespace_local = None;
                         for spec in &import.specifiers {
                             if let ast::ImportSpecifier::Namespace(namespace) = spec {
                                 let local = namespace.local.sym.to_string();
@@ -226,7 +227,7 @@ impl<'p> Checker<'p> {
                                     self.pos(namespace.local.span),
                                     false,
                                 ));
-                                names.push(("*".to_string(), local));
+                                namespace_local = Some(local);
                                 continue;
                             }
                             let ast::ImportSpecifier::Named(named) = spec else {
@@ -250,10 +251,11 @@ impl<'p> Checker<'p> {
                             ));
                             names.push((imported, local));
                         }
-                        if !names.is_empty() {
+                        if !names.is_empty() || namespace_local.is_some() {
                             self.poisoned_imports.push(hir::PoisonedImport {
                                 module: raw,
                                 names,
+                                namespace: namespace_local,
                                 pos,
                             });
                         }

@@ -86,10 +86,8 @@ fn missing_namespace_module_has_one_origin_and_discovery_keeps_poison() {
     let mut options = CheckOptions::default();
     options.poison_missing_modules = vec!["./absent".to_string()];
     let module = check_program_with(&sources, &options).unwrap();
-    assert_eq!(
-        module.poisoned_imports[0].names,
-        [("*".to_string(), "ns".to_string())]
-    );
+    assert!(module.poisoned_imports[0].names.is_empty());
+    assert_eq!(module.poisoned_imports[0].namespace.as_deref(), Some("ns"));
     let sources = [SourceFile::entry(
         "main.ts",
         "import type * as ns from './absent'; export function main(): void {}",
@@ -99,5 +97,59 @@ fn missing_namespace_module_has_one_origin_and_discovery_keeps_poison() {
     assert_eq!(
         errors[0].message,
         "`import type * as` is outside the decided surface"
+    );
+}
+
+#[test]
+fn namespace_re_export_has_one_c18_origin() {
+    let errors = check_program(&[
+        SourceFile::entry("main.ts", "export { ns } from './bridge';"),
+        SourceFile::new("bridge.ts", "import * as ns from './lib'; export { ns };"),
+        SourceFile::new("lib.ts", "export function value(): void {}"),
+    ])
+    .unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, RuleCode::S100);
+    assert_eq!(errors[0].pos.file, "bridge.ts");
+    assert_eq!(
+        errors[0].divergence,
+        Some(subscript_compiler::divergence::Divergence::NamedModuleSurface)
+    );
+    check_program(&[
+        SourceFile::entry("main.ts", "export { value } from './bridge';"),
+        SourceFile::new(
+            "bridge.ts",
+            "import { value } from './lib'; export { value };",
+        ),
+        SourceFile::new("lib.ts", "export function value(): void {}"),
+    ])
+    .unwrap();
+}
+
+#[test]
+fn generic_templates_receive_resolved_namespace_members() {
+    check_program(&files("import * as ns from './lib'; function f<T>(x: T): i32 { return ns.get(); } class C<T> { get(x: T): i32 { return ns.get(); } } export function main(): void { print(`${f<i32>(1)} ${new C<i32>().get(1)}`); }")).unwrap();
+    let errors = check_program(&files(
+        "import * as ns from './lib'; function f<T>(x: T): i32 { return ns.nope(); }",
+    ))
+    .unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].code, RuleCode::S016);
+}
+
+#[test]
+fn named_discovery_poison_has_no_namespace_local() {
+    use subscript_compiler::{check_program_with, CheckOptions};
+    let mut options = CheckOptions::default();
+    options.poison_missing_modules = vec!["./absent".to_string()];
+    let sources = [SourceFile::entry(
+        "main.ts",
+        "import { value as local } from './absent'; export function main(): void { local(); }",
+    )];
+    let module = check_program_with(&sources, &options).unwrap();
+    assert_eq!(module.poisoned_imports[0].namespace, None);
+    assert_eq!(
+        module.poisoned_imports[0].names,
+        [("value".to_string(), "local".to_string())]
     );
 }

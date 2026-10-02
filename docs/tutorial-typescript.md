@@ -813,8 +813,8 @@ t(5)=15
 The surface is narrower than TypeScript's: named imports and
 namespace imports (`import * as math from "./math"`) from
 same-directory siblings (`./name`). A namespace is a static
-qualifier: `math.triangular(5)` and `math.Box` resolve at compile
-time, and `math` alone is not a value. There are no parent paths, no
+qualifier: `math.triangular(5)` resolves at compile time, and `math`
+alone is not a value. There are no parent paths, no
 nested paths, no packages, and no default imports. The CLI follows
 the imports from the entry file, so `subscript check main.ts` loads
 the whole program.

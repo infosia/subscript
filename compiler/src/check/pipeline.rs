@@ -179,6 +179,12 @@ fn run_with_effects(
     narrowing_analysis: Option<narrowing::Analysis>,
 ) -> Result<(hir::Module, narrowing::Analysis), Vec<Diagnostic>> {
     let provisional = narrowing_analysis.is_none();
+    let mut resolved_program = prog.files.iter().any(|file| {
+        file.module.body.iter().any(|item| {
+            matches!(item, ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import))
+                if import.specifiers.iter().any(|specifier| matches!(specifier, ast::ImportSpecifier::Namespace(_))))
+        })
+    }).then(|| prog.clone());
     let mut ck = Checker {
         narrowing_analysis,
         prog,
@@ -268,6 +274,10 @@ fn run_with_effects(
     }
     ck.resolve_exports();
     ck.resolve_imports();
+    if let Some(program) = &mut resolved_program {
+        ck.resolve_namespace_program(program);
+        ck.prog = program;
+    }
     // Pass B: signatures. Mirror files first, in a boundary context (so
     // the boundary null forms resolve), then program files.
     ck.in_boundary = true;

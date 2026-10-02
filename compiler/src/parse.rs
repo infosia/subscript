@@ -11,6 +11,7 @@ use crate::provenance;
 use crate::SourceFile;
 
 /// One parsed source file.
+#[derive(Clone)]
 pub(crate) struct ParsedFile {
     /// File name as supplied by the caller.
     pub name: String,
@@ -29,6 +30,7 @@ pub(crate) struct ParsedFile {
 }
 
 /// A parsed program: all files plus the shared source map.
+#[derive(Clone)]
 pub(crate) struct ParsedProgram {
     pub files: Vec<ParsedFile>,
     /// Total bytes of the source texts this program was parsed from.
@@ -36,7 +38,7 @@ pub(crate) struct ParsedProgram {
     /// derives its one reservation from it
     /// (`specs/blocks/compiler.md` §110 rule 3).
     pub source_bytes: usize,
-    source_map: SourceMap,
+    source_map: std::rc::Rc<SourceMap>,
 }
 
 impl ParsedProgram {
@@ -220,7 +222,7 @@ pub(crate) fn parse_program(sources: &[SourceFile]) -> Result<ParsedProgram, Vec
         Ok(ParsedProgram {
             files,
             source_bytes,
-            source_map,
+            source_map: std::rc::Rc::new(source_map),
         })
     } else {
         Err(diags)

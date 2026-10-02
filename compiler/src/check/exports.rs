@@ -214,6 +214,7 @@ impl Checker<'_> {
             self.poisoned_imports.push(hir::PoisonedImport {
                 module,
                 names,
+                namespace: None,
                 pos: self.pos(source.span),
             });
         }
@@ -303,7 +304,20 @@ impl Checker<'_> {
         let result = match &binding.target {
             ExportTarget::Declaration(item) => item.clone(),
             ExportTarget::Local(local) => {
-                if let Some(binding) = self.file_scopes[*file].get(local) {
+                let namespace = self.prog.files[*file].module.body.iter().any(|item| {
+                    matches!(item, ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import))
+                        if import.specifiers.iter().any(|specifier|
+                            matches!(specifier, ast::ImportSpecifier::Namespace(ns) if ns.local.sym.as_ref() == local)))
+                });
+                if namespace {
+                    self.error_diverging(
+                        RuleCode::S100,
+                        "the module surface requires named exports",
+                        binding.pos.clone(),
+                        Divergence::NamedModuleSurface,
+                    );
+                    ScopeItem::Poisoned
+                } else if let Some(binding) = self.file_scopes[*file].get(local) {
                     binding.item.clone()
                 } else if let Some((module, imported)) = imports.get(&(*file, local.clone())) {
                     self.resolve_export_source(module, imported, imports, path, resolved, None)
