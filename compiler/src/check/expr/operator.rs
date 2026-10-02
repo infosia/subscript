@@ -493,21 +493,16 @@ impl<'p> Checker<'p> {
             _ => {
                 let arith = matches!(b.op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
                 let outer: Option<Type> = if arith { ctx.cloned() } else { None };
-                let literal_ctx = |checker: &Self, t: &Type| -> Option<Type> {
-                    (checker.apparent_type(t).is_numeric()
-                        || matches!(checker.apparent_type(t), Type::StringAlias(_)))
-                    .then(|| t.clone())
-                };
                 let (left, right);
                 if literalish(&b.left) && !literalish(&b.right) {
                     let r = self.check_expr(&b.right, outer.as_ref(), fx);
-                    let c = literal_ctx(self, &r.ty).or(outer);
+                    let c = self.literal_context(&r.ty).or(outer);
                     left = self.check_expr(&b.left, c.as_ref(), fx);
                     right = r;
                 } else {
                     left = self.check_expr(&b.left, outer.as_ref(), fx);
                     let c = if literalish(&b.right) {
-                        literal_ctx(self, &left.ty).or(outer)
+                        self.literal_context(&left.ty).or(outer)
                     } else {
                         outer
                     };
@@ -1332,6 +1327,13 @@ impl<'p> Checker<'p> {
         right
     }
 
+    // C4 and Q32: a literal can adopt a numeric or string-alias context.
+    fn literal_context(&self, ty: &Type) -> Option<Type> {
+        (self.apparent_type(ty).is_numeric()
+            || matches!(self.apparent_type(ty), Type::StringAlias(_)))
+        .then(|| ty.clone())
+    }
+
     // §146: equal types and legal nullable pairs have a symmetric join.
     fn conditional_join(&self, left: &Type, right: &Type) -> Option<Type> {
         if matches!(left, Type::Error) || matches!(right, Type::Error) {
@@ -1343,16 +1345,12 @@ impl<'p> Checker<'p> {
         for (value, other) in [(left, right), (right, left)] {
             if let Type::Nullable(inner) = value {
                 if (other == inner.as_ref() || matches!(other, Type::Null))
-                    && inner.is_reference_shape(&self.type_handle_classes)
-                    && !self.is_value_class(inner)
+                    && self.allows_nullable(inner)
                 {
                     return Some(value.clone());
                 }
             }
-            if matches!(other, Type::Null)
-                && value.is_reference_shape(&self.type_handle_classes)
-                && !self.is_value_class(value)
-            {
+            if matches!(other, Type::Null) && self.allows_nullable(value) {
                 return Some(Type::nullable(value.clone()));
             }
         }
@@ -1383,14 +1381,31 @@ impl<'p> Checker<'p> {
         let (then_extra, else_extra) = self.narrowing_paths(&cond, fx);
         let mut base = fx.narrowed.clone();
 
-        fx.narrowed = base.iter().cloned().chain(then_extra.clone()).collect();
-        let then = self.check_expr(&c.cons, ctx, fx);
+        // Check the nonliteral arm first so either literal arm can take its context.
+        let reverse = ctx.is_none() && literalish(&c.cons) && !literalish(&c.alt);
+        let (first_ast, second_ast, first_extra, second_extra) = if reverse {
+            (&c.alt, &c.cons, else_extra, then_extra)
+        } else {
+            (&c.cons, &c.alt, then_extra, else_extra)
+        };
+        fx.narrowed = base.iter().cloned().chain(first_extra).collect();
+        let first = self.check_expr(first_ast, ctx, fx);
         // Keep kills: facts removed inside the arm stay removed.
         base.retain(|key| fx.narrowed.contains(key));
 
-        fx.narrowed = base.iter().cloned().chain(else_extra.clone()).collect();
-        let els = self.check_expr(&c.alt, ctx, fx);
+        let literal_ctx = if ctx.is_none() && literalish(second_ast) {
+            self.literal_context(&first.ty)
+        } else {
+            None
+        };
+        fx.narrowed = base.iter().cloned().chain(second_extra).collect();
+        let second = self.check_expr(second_ast, ctx.or(literal_ctx.as_ref()), fx);
         base.retain(|key| fx.narrowed.contains(key));
+        let (then, els) = if reverse {
+            (second, first)
+        } else {
+            (first, second)
+        };
         fx.narrowed = base;
         fx.finish_narrowing_join(&note_paths);
 

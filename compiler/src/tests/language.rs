@@ -990,6 +990,74 @@ fn conditional_without_context_joins_opaque_handles() {
 }
 
 #[test]
+fn conditional_without_context_joins_boundary_structs() {
+    let module = check_program(&[
+        SourceFile::ambient(
+            "interop.d.ts",
+            "// @subscript-c-header include=\"interop.h\"\ndeclare class Blend { value: i32; constructor(value: i32); }",
+        ),
+        SourceFile::new(
+            "test.ts",
+            "function test(blend: Blend, maybe: Blend | null, flag: boolean): void {
+               const a = flag ? blend : null;
+               const b = flag ? null : blend;
+               const c = flag ? blend : maybe;
+               const d = flag ? maybe : blend;
+               const e = flag ? maybe : null;
+               const f = flag ? null : maybe;
+             }",
+        ),
+    ]).expect("boundary structs have the same nullable joins as annotations");
+    let function = module.functions.iter().find(|f| f.name == "test").unwrap();
+    for statement in &function.body {
+        let hir::Stmt::Let { init, .. } = statement else {
+            panic!("conditional binding");
+        };
+        assert_eq!(init.ty, function.params[1].ty);
+    }
+}
+
+#[test]
+fn conditional_literals_take_the_other_branch_type() {
+    for (name, literal) in [
+        ("n", "0"),
+        ("f", "0"),
+        ("u", "0"),
+        ("mode", "\"a\""),
+        ("n", "(-1)"),
+    ] {
+        for (left, right) in [(name, literal), (literal, name)] {
+            let source = format!(
+                "type Mode = \"a\" | \"b\";
+                 function test(flag: boolean, n: i64, f: f64, u: u8, mode: Mode): void {{
+                   const value = flag ? {left} : {right};
+                 }}"
+            );
+            let module = check_one(&source).expect("the literal takes the other branch context");
+            let function = module.functions.iter().find(|f| f.name == "test").unwrap();
+            let expected = &function.params.iter().find(|p| p.name == name).unwrap().ty;
+            let hir::Stmt::Let { init, .. } = &function.body[0] else {
+                panic!("conditional binding");
+            };
+            assert_eq!(&init.ty, expected);
+        }
+    }
+}
+
+#[test]
+fn conditional_literals_keep_the_range_diagnostic() {
+    for expression in ["flag ? b : 300", "flag ? 300 : b"] {
+        let source =
+            format!("function test(flag: boolean, b: u8): void {{ const value = {expression}; }}");
+        let diagnostics =
+            check_one(&source).expect_err("the literal exceeds the other branch range");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, RuleCode::S008);
+        assert!(diagnostics[0].message.contains("300 out of range for `u8`"));
+    }
+}
+
+#[test]
 fn conditional_without_context_names_both_incompatible_types() {
     for (left, right, names) in [
         ("new A()", "new B()", ["A", "B"]),

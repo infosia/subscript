@@ -56,6 +56,10 @@ export function main(): void {
   print(`${subProbeSetBindGroupCheck(encoder, false ? null : group)}`);
 
   const blend: SGPUProbeBlendState = new SGPUProbeBlendState(31, 47);
+  const inferredBlend = true ? blend : null;
+  const inferredNull = true ? null : blend;
+  const inferredNullable = true ? blend : inferredNull;
+  const nullableFirst = false ? inferredNull : blend;
   const aggregateThenValue: SGPUProbeColorTargetState =
     new SGPUProbeColorTargetState(101, true ? blend : null, 1);
   const aggregateThenNull: SGPUProbeColorTargetState =
@@ -68,6 +72,11 @@ export function main(): void {
   reportBoundary("aggregate-then-null", aggregateThenNull);
   reportBoundary("null-then-null", nullThenNull);
   reportBoundary("null-then-value", nullThenValue);
+
+  reportBoundary("inferred-blend", new SGPUProbeColorTargetState(105, inferredBlend, 1));
+  reportBoundary("inferred-null", new SGPUProbeColorTargetState(106, inferredNull, 2));
+  reportBoundary("inferred-nullable", new SGPUProbeColorTargetState(107, inferredNullable, 4));
+  reportBoundary("nullable-first", new SGPUProbeColorTargetState(108, nullableFirst, 8));
 
   subDeviceRelease(encoder);
   subDeviceRelease(group);

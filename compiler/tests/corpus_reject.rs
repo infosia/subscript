@@ -451,6 +451,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r302-conditional-distinct-classes.ts", RuleCode::S100, 9),
     ("r303-conditional-scalar-null.ts", RuleCode::S100, 9),
     ("r304-conditional-numeric-widths.ts", RuleCode::S100, 10),
+    ("r305-conditional-literal-range.ts", RuleCode::S008, 8),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

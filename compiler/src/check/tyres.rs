@@ -537,6 +537,14 @@ impl<'p> Checker<'p> {
         }
     }
 
+    /// The shared acceptance rule for a written or inferred `T | null`.
+    pub(super) fn allows_nullable(&self, inner: &Type) -> bool {
+        self.instance_restriction(super::opaque::InstanceRestriction::NullableShape, inner)
+            || self
+                .apparent_type(inner)
+                .is_reference_shape(&self.type_handle_classes)
+    }
+
     fn resolve_union(&mut self, u: &ast::TsUnionOrIntersectionType) -> Type {
         let union = match u {
             ast::TsUnionOrIntersectionType::TsUnionType(union) => union,
@@ -589,13 +597,7 @@ impl<'p> Checker<'p> {
                 if self.in_assoc_key {
                     return Type::nullable(inner);
                 }
-                let ok = self.instance_restriction(
-                    super::opaque::InstanceRestriction::NullableShape,
-                    &inner,
-                ) || self
-                    .apparent_type(&inner)
-                    .is_reference_shape(&self.type_handle_classes);
-                if ok {
+                if self.allows_nullable(&inner) {
                     return Type::nullable(inner);
                 }
                 let pos = self.pos(base.span());

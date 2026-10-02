@@ -75,3 +75,72 @@ The fresh review reported zero CRITICAL, MAJOR, or MINOR findings after the fixe
 ```text
 gate full 3ad2a10f24d0460dcdc9f6a53372a21b71e2308d dirty:15 debug 2191/0/3 release 2188/0/3 skips 2/0 clippy 2/18/13 goldens-moved 0 exit 0
 ```
+
+## Phase Review fix round
+
+The join now calls the same nullable predicate as a written `T | null` annotation.
+Boundary-struct unit tests cover both branch orders and nullable operands.
+Numeric and string literals take the other branch type as context before the join.
+Binary operators and conditionals share the literal-context helper.
+The raw-type allowlist cites the §143 parameter route and pins the revised join sites.
+
+The fixture harness reaches boundary structs through `a124-contextual-conditional`.
+That entry now passes inferred nullable blends to the host in both branch orders, with nullable operands.
+Its golden does not change. Its native calls exclude it from the interpreter, as its existing header states.
+The dev JIT and ship C AOT produce the same a124 golden bytes.
+
+New entry a315 covers i64, f64, u8, and string-alias literals in both orders, plus negative parenthesized literals.
+Node v24.18.0, the interpreter, dev JIT, and ship C AOT produce its golden bytes.
+The three engines also reproduce the unchanged a314 golden.
+New reject r305 reports S008 for `flag ? b : 300`, with `b: u8`.
+The unit test also checks the reverse order and requires exactly one range diagnostic.
+TypeScript 5.9.2 accepts a124, a315, and r305 under strict mode with the project prelude and mirror.
+
+At contract pin `1771549a`, the revised a124 fails with three errors; a315 fails with ten errors.
+Before this fix, the round-1 CLI rejects the revised a124 with two errors and a315 with ten errors.
+The §143 matrix compares 38,910 cells before and after this fix. Zero verdicts change; the changed-cell list is empty.
+All 14 matrix tests and all 11 JS corpus tests pass.
+Generated documents were rebuilt through `generate-api-reference`; only the corpus index changes.
+No existing golden changes.
+
+The fresh Phase Review reports no CRITICAL or MAJOR findings.
+Its one MINOR finding was the absent fix-round note; this section closes it.
+
+The final compiler suite passes: 881 tests pass, zero fail, and one existing test is ignored.
+`cargo fmt --check`, `git diff --check`, and `tools/hygiene.sh` pass.
+The reviewer confirms zero open findings after this note. No files are staged or committed.
+`tools/gate.sh` was not run, as the handoff requires.
+
+## Phase Review witness fix round
+
+The four contextual boundary constructor calls in a124 match HEAD exactly.
+The four inferred locals remain additional forms, each with a separate printed host result.
+The golden grows from 12 lines to 16 lines. Its diff adds four lines and changes no existing line.
+A byte-prefix comparison also verifies that all original golden bytes remain unchanged.
+The dev JIT and ship C AOT each produce the complete 16-line golden.
+
+A direct interpreter run produces the first four reference lines, then stops at `subDeviceCreate`.
+The measured error is `unsupported: subDeviceCreate requires a native library`.
+The existing interpreter exclusion therefore still applies; three-engine output agreement cannot be measured for this native fixture entry.
+The temporary interpreter probe was removed after the measurement.
+
+`cargo test --offline --locked -p subscript-compiler` passes: 881 tests pass, zero fail, and one existing test is ignored.
+The focused a124 two-tier golden test passes.
+`cargo fmt --check` and `git diff --check` pass.
+`tools/gate.sh` was not run. No files are staged or committed.
+
+## Phase Review fix round landing gate
+
+`goldens-moved 1` is `a124`: four added lines for the inferred boundary
+forms; no existing line changed.
+
+```text
+gate full 164a960abe388d0d48b2bff49c7e670283d06905 dirty:12 debug 2194/0/3 release 2191/0/3 skips 2/0 clippy 2/18/13 goldens-moved 1 exit 0
+```
+
+## Phase Review result
+
+One review pass found MAJOR 1 (boundary structs excluded from the join:
+the join restated the nullable predicate) and MINOR 2 (a literal branch
+took no context; an allowlist reason cited the wrong section). All three
+are fixed; rules 1b and 1b2 state the fixes. §146 is COMPLETE.
