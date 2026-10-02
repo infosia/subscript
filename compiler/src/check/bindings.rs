@@ -93,8 +93,11 @@ impl<'p> Checker<'p> {
                 "an array binding pattern reads a `T[]` or a `FixedArray<T, N>`",
             ),
             pattern::Pattern::Fields { .. } => (
-                matches!(&self.apparent_type(ty), Type::Class(_)),
-                "a field binding pattern reads a reference or value class",
+                matches!(
+                    &self.apparent_type(ty),
+                    Type::Class(_) | Type::IterResult(_)
+                ),
+                "a field binding pattern reads a class or an iterator result",
             ),
             _ => return true,
         };

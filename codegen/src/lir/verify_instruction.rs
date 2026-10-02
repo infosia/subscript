@@ -30,6 +30,39 @@ pub(super) fn verify_instruction_contract(
             ),
         ));
     };
+    let requires_done_guard = match (&instruction.kind, operand_types.as_slice()) {
+        (
+            l::InstructionKind::LoadField(l::FieldRef::IterValue),
+            [l::ValueType::Data(Type::IterResult(value))],
+        ) => {
+            let classes = module
+                .classes
+                .iter()
+                .map(|class| {
+                    if !class.is_value {
+                        subscript_compiler::types::HandleClass::Reference
+                    } else if class.is_boundary {
+                        subscript_compiler::types::HandleClass::BoundaryValue
+                    } else {
+                        subscript_compiler::types::HandleClass::Value
+                    }
+                })
+                .collect::<Vec<_>>();
+            value.traps_on_generator_done_value(&classes)
+        }
+        _ => false,
+    };
+    let done_guards = instruction
+        .traps
+        .iter()
+        .filter(|trap| trap.kind == l::TrapKind::GeneratorDoneValue)
+        .count();
+    if done_guards != usize::from(requires_done_guard) {
+        bad(
+            "generator value guard disagrees with the zero reference shape",
+            errors,
+        );
+    }
     let nullable_conversion = super::verify_narrowing::is_conversion(&instruction.kind)
         && match (operand_types.as_slice(), result_type.as_ref()) {
             ([l::ValueType::Data(Type::Nullable(source))], Some(l::ValueType::Data(target))) => {

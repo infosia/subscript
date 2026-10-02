@@ -422,8 +422,16 @@ impl Expr {
             K::DescriptorLit { .. } => vec![allocation(&self.pos)],
             K::RawNew { .. } => vec![allocation(&self.pos)],
             K::Length(value) => value.statement_read_sites(module),
-            K::Field { obj, .. } => {
+            K::Field { obj, name } => {
                 let mut sites = Vec::new();
+                if name == "value"
+                    && matches!(&obj.ty, Type::IterResult(value)
+                    if value.traps_on_generator_done_value(&handle_classes))
+                {
+                    sites.push(TrapSite::GeneratorDoneValue {
+                        pos: self.pos.clone(),
+                    });
+                }
                 if reference_value(&obj.ty) {
                     sites.push(lifetime(&obj.pos));
                 }

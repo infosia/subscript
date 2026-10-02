@@ -830,6 +830,8 @@ const FULL_INTERPRETER_SWEEP_ENV: &str = "SUBSCRIPT_FULL_INTERPRETER_SWEEP";
 /// subset. Each entry proves both the trap kind/site and trap-stop stdout.
 #[cfg(debug_assertions)]
 const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
+    ("t75-generator-done-value-member", "compiler.md §145 reference read", "generator-done-value", 16, 20),
+    ("t76-generator-done-value-store", "compiler.md §145 reference escape", "generator-done-value", 16, 20),
     ("t72-narrowing-boundary-getter", "getter clears the boundary box", "null-narrowing", 13, 44),
     ("t68-narrowing-accessor-compound", "getter changes the narrowed field", "null-narrowing", 13, 34),
     ("t69-narrowing-static-accessor-compound", "static getter changes the narrowed field", "null-narrowing", 13, 34),

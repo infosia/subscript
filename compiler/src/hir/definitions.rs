@@ -224,6 +224,7 @@ impl TrapSite {
             | TrapSite::IndexRead { pos }
             | TrapSite::IndexWrite { pos }
             | TrapSite::NullNarrowing { pos }
+            | TrapSite::GeneratorDoneValue { pos }
             | TrapSite::ClassMismatch { pos, .. }
             | TrapSite::DevOnlyLifetime { pos, .. }
             | TrapSite::DevOnlyRelease { pos, .. }

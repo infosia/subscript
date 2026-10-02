@@ -169,7 +169,7 @@ fn scan_reference_tokens(text: &str) -> Vec<ScannedCorpusReference> {
         } else {
             (index, false)
         };
-        if name_start >= bytes.len() || !matches!(bytes[name_start], b'a' | b'r') {
+        if name_start >= bytes.len() || !matches!(bytes[name_start], b'a' | b'r' | b't') {
             index += 1;
             continue;
         }
@@ -241,7 +241,7 @@ fn scan_reference_tokens(text: &str) -> Vec<ScannedCorpusReference> {
 fn corpus_reference_number(name: &str) -> Option<(char, u32)> {
     let mut characters = name.chars();
     let kind = characters.next()?;
-    if !matches!(kind, 'a' | 'r') {
+    if !matches!(kind, 'a' | 'r' | 't') {
         return None;
     }
     let digits = characters.as_str();
@@ -318,7 +318,7 @@ impl CollisionIndex {
             let Some(rule_id) = &current_rule else {
                 continue;
             };
-            if line.contains("Accept:") || line.contains("Reject:") {
+            if line.contains("Accept:") || line.contains("Reject:") || line.contains("Trap:") {
                 pin_paragraph = true;
             }
             let rule = index
@@ -360,7 +360,7 @@ impl CollisionIndex {
                 .any(|name| !self.retired.contains(name) && corpus_contains(corpus, name))
             {
                 errors.push(format!(
-                    "{id} pins no corpus entry through its `Accept:`/`Reject:` paragraph"
+                    "{id} pins no corpus entry through its `Accept:`/`Reject:`/`Trap:` paragraph"
                 ));
             }
         }
@@ -450,7 +450,7 @@ fn entries(root: &Path) -> Result<Vec<Entry>, String> {
 
 fn corpus_entry_names(root: &Path) -> Result<BTreeSet<String>, String> {
     let mut names = BTreeSet::new();
-    for kind in ["accept", "reject"] {
+    for kind in ["accept", "reject", "trap"] {
         let directory = root.join("corpus").join(kind);
         for entry in fs::read_dir(&directory)
             .map_err(|error| format!("read {}: {error}", directory.display()))?
@@ -820,8 +820,21 @@ This paragraph cites absent `r04`, but it is not an evidence paragraph.
         vec![
             "C1 references absent corpus entry `r02` at collisions.md line 5".to_string(),
             "C2 references absent corpus entry `r04` at collisions.md line 9".to_string(),
-            "C2 pins no corpus entry through its `Accept:`/`Reject:` paragraph".to_string(),
+            "C2 pins no corpus entry through its `Accept:`/`Reject:`/`Trap:` paragraph".to_string(),
             "collision table marks `r03-old` retired, but that corpus entry exists".to_string(),
         ]
+    );
+}
+
+#[test]
+fn collision_index_checks_trap_evidence_and_missing_trap_entries() {
+    let source = "## 1. Collision rules\n\n### C23. Generator value\n\nTrap: `t75`, `t76`.\n";
+    let index = CollisionIndex::parse(source).unwrap();
+    let corpus = BTreeSet::from(["t75-member".to_string(), "t76-store".to_string()]);
+    assert!(index.consistency_errors(&corpus).is_empty());
+    let missing = BTreeSet::from(["t75-member".to_string()]);
+    assert_eq!(
+        index.consistency_errors(&missing),
+        ["C23 references absent corpus entry `t76` at collisions.md line 5"]
     );
 }

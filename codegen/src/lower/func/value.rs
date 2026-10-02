@@ -610,6 +610,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let false_value = self.iconst(types::I8, 0);
                 self.guard(false_value, direct_kind()?, &trap.pos)?;
             }
+            l::TrapKind::GeneratorDoneValue => {
+                let done =
+                    value.ok_or_else(|| internal("generator value trap has no done operand"))?;
+                let valid = self.builder.ins().icmp_imm(IntCC::Equal, done, 0);
+                self.guard(valid, direct_kind()?, &trap.pos)?;
+            }
             l::TrapKind::DivisionByZero => {
                 let divisor = value.ok_or_else(|| internal("division trap has no divisor"))?;
                 let nonzero = self.builder.ins().icmp_imm(IntCC::NotEqual, divisor, 0);

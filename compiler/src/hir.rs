@@ -725,6 +725,11 @@ pub enum TrapSite {
         /// Position of the assignment target.
         pos: Pos,
     },
+    /// A finished generator has no non-null reference value (compiler.md §145).
+    GeneratorDoneValue {
+        /// Position of the value read.
+        pos: Pos,
+    },
     /// Reference narrowing requires a non-null materialized pointer.
     NullNarrowing {
         /// Position of the `as` expression.

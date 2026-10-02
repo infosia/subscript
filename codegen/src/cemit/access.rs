@@ -205,6 +205,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             return self.assign(out, result, &expression);
         }
+        for trap in &instruction.traps {
+            if trap.kind == l::TrapKind::GeneratorDoneValue {
+                self.consume(trap);
+                let base = operands
+                    .first()
+                    .ok_or_else(|| internal("generator result is missing"))?;
+                self.emit_guard(out, &format!("!({base}).done"), trap)?;
+            }
+        }
         let expression = match field {
             l::FieldRef::IterDone => format!("({}).done", operands[0]),
             l::FieldRef::IterValue => format!("({}).value", operands[0]),

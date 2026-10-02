@@ -89,6 +89,8 @@ pub enum TrapKind {
     DisposeRaisedDuringExit = 30,
     /// A narrowed shared location is null (compiler.md §124).
     SharedNullNarrowing = 31,
+    /// Read of a finished generator non-null reference value (compiler.md §145).
+    GeneratorDoneValue = 32,
 }
 
 impl TrapKind {
@@ -123,6 +125,7 @@ impl TrapKind {
             29 => TrapKind::UncaughtException,
             30 => TrapKind::DisposeRaisedDuringExit,
             31 => TrapKind::SharedNullNarrowing,
+            32 => TrapKind::GeneratorDoneValue,
             _ => return None,
         })
     }
@@ -157,6 +160,7 @@ impl TrapKind {
             TrapKind::CallbackRegistrationEnded => "callback-registration-ended",
             TrapKind::UncaughtException => "uncaught-exception",
             TrapKind::DisposeRaisedDuringExit => "dispose-raised-during-exit",
+            TrapKind::GeneratorDoneValue => "generator-done-value",
         }
     }
 
@@ -229,13 +233,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn generator_done_value_has_a_stable_code_and_name() {
+        assert_eq!(TrapKind::GeneratorDoneValue as u32, 32);
+        assert_eq!(TrapKind::from_u32(32), Some(TrapKind::GeneratorDoneValue));
+        assert_eq!(TrapKind::GeneratorDoneValue.rule(), "generator-done-value");
+    }
+
+    #[test]
     fn kind_round_trips_through_u32() {
-        for v in (1..=17u32).chain(19..=24).chain([28, 29, 30, 31]) {
+        for v in (1..=17u32).chain(19..=24).chain([28, 29, 30, 31, 32]) {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }
         assert_eq!(TrapKind::from_u32(0), None);
-        assert_eq!(TrapKind::from_u32(32), None);
+        assert_eq!(TrapKind::from_u32(33), None);
         assert_eq!(TrapKind::from_u32(99), None);
     }
 

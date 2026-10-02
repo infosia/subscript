@@ -672,6 +672,15 @@ impl Type {
         matches!(self, Type::F16 | Type::F32 | Type::F64)
     }
 
+    /// True when a finished generator zero is an invalid null reference (compiler.md §145).
+    #[must_use]
+    pub fn traps_on_generator_done_value(&self, classes: &[HandleClass]) -> bool {
+        !matches!(self, Type::Nullable(_))
+            && self
+                .handle_kind(classes)
+                .is_some_and(|kind| kind != HandleKind::Str)
+    }
+
     /// Acceptance filter (S011): can this type appear as the non-null member
     /// of `Ref | null` under the corpus-recorded language surface?
     ///
@@ -836,6 +845,42 @@ impl fmt::Display for Type {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generator_done_value_uses_the_zero_reference_shape() {
+        let classes = [
+            HandleClass::Reference,
+            HandleClass::Value,
+            HandleClass::BoundaryValue,
+        ];
+        for ty in [
+            Type::Class(ClassId(0)),
+            Type::Object,
+            Type::Array(Box::new(Type::I32)),
+            Type::Generator(Box::new(Type::I32)),
+            Type::RegExp,
+            Type::Map(Box::new(Type::I32), Box::new(Type::I32)),
+            Type::Set(Box::new(Type::I32)),
+            Type::Func(Box::new(FuncType {
+                params: vec![],
+                ret: Type::I32,
+            })),
+        ] {
+            assert!(ty.traps_on_generator_done_value(&classes), "{ty:?}");
+            assert!(!Type::Nullable(Box::new(ty)).traps_on_generator_done_value(&classes));
+        }
+        for ty in [
+            Type::I32,
+            Type::Bool,
+            Type::Str,
+            Type::Date,
+            Type::Enum(EnumId(0)),
+            Type::Class(ClassId(1)),
+            Type::Class(ClassId(2)),
+        ] {
+            assert!(!ty.traps_on_generator_done_value(&classes), "{ty:?}");
+        }
+    }
 
     #[test]
     fn composite_constructors_absorb_the_error_type() {

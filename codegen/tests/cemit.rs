@@ -143,6 +143,9 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t70-narrowing-optional-getter" => (TrapKind::SharedNullNarrowing, 17, 16),
         "t73-boxed-local-narrowing-call" => (TrapKind::SharedNullNarrowing, 17, 18),
         "t74-boxed-local-narrowing-alias-store" => (TrapKind::SharedNullNarrowing, 21, 18),
+        "t75-generator-done-value-member" | "t76-generator-done-value-store" => {
+            (TrapKind::GeneratorDoneValue, 16, 20)
+        }
         "t72-narrowing-boundary-getter" => (TrapKind::SharedNullNarrowing, 13, 44),
         "t71-narrowing-destructuring-getter" => (TrapKind::SharedNullNarrowing, 16, 16),
         other => panic!("{other}: trap corpus entry has no exact expectation"),

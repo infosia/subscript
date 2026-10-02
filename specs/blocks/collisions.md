@@ -625,6 +625,20 @@ Measured with `node` (2026-10-02), for each source `x == null` prints
 
 Accept: `a308`, `a309`.
 
+### C23. A finished generator's reference value traps at the read
+
+A read of the `value` of a finished generator traps
+(`generator-done-value`) when `T` is a reference that is not nullable
+(`compiler.md` §145). `node` reads `undefined` there and throws only at a
+later use, or never: a program that stores the value and never uses it
+prints its output under `node` and traps here.
+
+Measured at `de41409f` (before §145): `const b: Box = r.value; print(\`${b.v}\`)`
+gives `TypeError: Cannot read properties of undefined` under `node`;
+storing `b` in a `Box[]` and printing its length prints `1`.
+
+Trap: `t75`, `t76`.
+
 ## 2. Q-register resolutions not covered above
 
 - **Q29 (the size limits)** — **two** limits, because two different

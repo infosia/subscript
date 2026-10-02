@@ -126,6 +126,7 @@ pub fn render() -> Result<String, String> {
         crate::TrapKind::NullNarrowing as u32,
         crate::TrapKind::SharedNullNarrowing as u32,
     ));
+    out.push_str(&format!("/* Generator value trap (compiler.md §145). */\n#define SUBSCRIPT_RT_TRAP_GENERATOR_DONE_VALUE {}u\n\n", crate::TrapKind::GeneratorDoneValue as u32));
     push_comment(&mut out, &observer_docs);
     out.push_str("typedef ");
     out.push_str(&c_fn_pointer("subscript_rt_trap_observer", &observer)?);
@@ -517,6 +518,12 @@ mod tests {
 typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
 "#
         ));
+    }
+
+    #[test]
+    fn generated_host_header_names_the_generator_value_trap() {
+        let header = render().expect("render host header");
+        assert!(header.contains("#define SUBSCRIPT_RT_TRAP_GENERATOR_DONE_VALUE 32u"));
     }
 
     #[test]

@@ -803,6 +803,23 @@ impl Interpreter<'_> {
                 // The instruction's own effect raises; the frame loop takes
                 // the edge (compiler.md §115.6 rule 5).
                 (l::TrapKind::Raise(_), _) => false,
+                (l::TrapKind::GeneratorDoneValue, TrapPhase::Before) => {
+                    let base = operands
+                        .first()
+                        .ok_or_else(|| self.missing_operand(instruction, 0))?;
+                    match base {
+                        Value::Blob(bytes) => self.unpack(&Type::Bool, bytes)?.as_bool()?,
+                        _ => {
+                            let address = self.address_field(
+                                base,
+                                l::FieldRef::IterDone,
+                                Some(&l::ValueType::Data(Type::Bool)),
+                                instruction,
+                            )?;
+                            self.load_address(&address)?.as_bool()?
+                        }
+                    }
+                }
                 (l::TrapKind::Unreachable, TrapPhase::Before) => true,
                 (l::TrapKind::DivisionByZero, TrapPhase::Before) => operands
                     .get(1)
@@ -868,6 +885,7 @@ impl Interpreter<'_> {
                     l::TrapKind::Allocation
                     | l::TrapKind::Call
                     | l::TrapKind::Unreachable
+                    | l::TrapKind::GeneratorDoneValue
                     | l::TrapKind::DivisionByZero
                     | l::TrapKind::IndexRead
                     | l::TrapKind::IndexWrite

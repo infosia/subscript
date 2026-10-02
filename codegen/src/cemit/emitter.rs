@@ -389,6 +389,7 @@ impl<'m> Emitter<'m> {
         for class in &self.module.classes {
             let _ = writeln!(out, "typedef struct SubC{} SubC{};", class.id.0, class.id.0);
         }
+        let mut iterator_results = std::collections::HashSet::new();
         for ty in self.ordered_aggregate_types()? {
             match ty {
                 Type::FixedArray(element, count) => {
@@ -403,6 +404,10 @@ impl<'m> Emitter<'m> {
                 }
                 Type::IterResult(value) => {
                     let name = self.iter_result_name(&value)?;
+                    // Reference and nullable-reference results share the C type (compiler.md §145).
+                    if !iterator_results.insert(name.clone()) {
+                        continue;
+                    }
                     let _ = writeln!(
                         out,
                         "typedef struct {{ int32_t done; {} value; }} {};",

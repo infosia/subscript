@@ -689,6 +689,7 @@ fn convert_traps(sites: &[hir::TrapSite]) -> Vec<l::Trap> {
                 hir::TrapSite::IndexRead { .. } => l::TrapKind::IndexRead,
                 hir::TrapSite::IndexWrite { .. } => l::TrapKind::IndexWrite,
                 hir::TrapSite::NullNarrowing { .. } => l::TrapKind::NullNarrowing,
+                hir::TrapSite::GeneratorDoneValue { .. } => l::TrapKind::GeneratorDoneValue,
                 hir::TrapSite::ClassMismatch { class, .. } => l::TrapKind::ClassMismatch(*class),
                 hir::TrapSite::DevOnlyLifetime { operand, .. } => {
                     l::TrapKind::DevOnlyLifetime(operand.evaluated_index(0))

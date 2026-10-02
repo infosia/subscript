@@ -18,6 +18,7 @@ pub(crate) fn runtime_trap_kind(kind: &l::TrapKind) -> Option<TrapKind> {
         l::TrapKind::DivisionByZero => TrapKind::DivisionByZero,
         l::TrapKind::IndexRead | l::TrapKind::IndexWrite => TrapKind::IndexOutOfBounds,
         l::TrapKind::NullNarrowing => TrapKind::NullNarrowing,
+        l::TrapKind::GeneratorDoneValue => TrapKind::GeneratorDoneValue,
         l::TrapKind::SharedNullNarrowing => TrapKind::SharedNullNarrowing,
         l::TrapKind::ClassMismatch(_) => TrapKind::ClassMismatch,
         l::TrapKind::DevOnlyLifetime(_) => TrapKind::UseAfterDelete,

@@ -171,6 +171,8 @@ impl Interpreter<'_> {
                     )
                 }
                 Type::IterResult(value) => {
+                    // The done guard reads the Boolean field (compiler.md §145).
+                    let _ = self.type_layout(&Type::Bool)?;
                     let value = self.type_layout(value)?;
                     let value_offset = align_up(1, value.align);
                     (

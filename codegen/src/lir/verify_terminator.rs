@@ -23,6 +23,7 @@ pub(super) fn verify_terminator_types(
             l::TrapKind::SharedNullNarrowing => {
                 "shared null narrowing requires a nullable-to-value conversion"
             }
+            l::TrapKind::GeneratorDoneValue => "generator value guard requires a value field read",
             l::TrapKind::NullNarrowing => "as null narrowing requires a checked cast",
             _ => continue,
         };

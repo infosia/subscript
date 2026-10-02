@@ -27,6 +27,8 @@ pub enum Divergence {
     VoidValue,
     /// A reference-element search miss uses `null` instead of `undefined`.
     ReferenceSearchMiss,
+    /// A finished generator non-null reference value traps at the read (compiler.md §145).
+    GeneratorDoneValue,
     /// `any` in a declaration.
     AnyType,
     /// `eval`, `new Function`, and a write through `.prototype`.
@@ -219,6 +221,7 @@ impl Divergence {
     pub const ALL: &'static [Divergence] = &[
         Divergence::VoidValue,
         Divergence::ReferenceSearchMiss,
+        Divergence::GeneratorDoneValue,
         Divergence::AnyType,
         Divergence::DynamicObjectModel,
         Divergence::NominalClassIdentity,
@@ -317,6 +320,12 @@ impl Divergence {
                 subscript: "function f(): void {} f();",
                 why: "Call a void function as a statement. Use a bare return in a void function. A map callback must return a value.",
                 collision: "C21",
+            },
+            Divergence::GeneratorDoneValue => DivergenceEntry {
+                ts: "const b: Box = r.value; const xs: Box[] = [b]; print(`${xs.length}`);",
+                subscript: "if (!r.done) { const b: Box = r.value; const xs: Box[] = [b]; print(`${xs.length}`); }",
+                why: "A finished generator has no non-null reference value. Check done before a value read to prevent a null reference escape.",
+                collision: "C23",
             },
             Divergence::ReferenceSearchMiss => DivergenceEntry {
                 ts: "const missing = values.get(key); print(`${missing === undefined}`);",
@@ -1258,6 +1267,14 @@ mod tests {
             missing.is_empty(),
             "collisions.md headings with no variant: {missing:?}"
         );
+    }
+
+    #[test]
+    fn generator_done_value_names_collision_c23() {
+        let entry = Divergence::GeneratorDoneValue.entry();
+        assert_eq!(entry.collision, "C23");
+        assert!(entry.subscript.contains("!r.done"));
+        assert!(Divergence::ALL.contains(&Divergence::GeneratorDoneValue));
     }
 
     #[test]

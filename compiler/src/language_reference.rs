@@ -38,7 +38,7 @@ const Q35_WORKERS: &str = "`Worker<In, Out>` runs one directly named, module-lev
 
 const MODULES: &str = "A program may import named exports from sibling source files with a relative `./name` specifier. The entry file and its imported siblings are checked as one program; exports are the host-visible entry surface.";
 
-const COROUTINES: &str = "A `function*` coroutine yields typed values and is driven explicitly through `Generator<T>.next()` or the accepted `for...of` generator path. Suspension is caller- or host-driven; the language does not schedule coroutine steps implicitly.";
+const COROUTINES: &str = "A `function*` coroutine yields typed values and is driven explicitly through `Generator<T>.next()` or the accepted `for...of` generator path. Suspension is caller- or host-driven; the language does not schedule coroutine steps implicitly. A finished generator traps with `generator-done-value` when a value read requires a non-null reference. Iterator results support field binding patterns. Nullable values and scalar zero values remain valid (compiler.md §145).";
 
 const MEMORY_MODEL: &str = "Reference allocations belong to a `Context`. `Context.free(value)` releases one allocation explicitly; `Context.collect()` performs an explicitly requested reachability collection. No collection runs implicitly. `Context.bytesOf<T>` returns zero-padded storage bytes for eligible `@ValueType` and `FixedArray` values. `bytesInto` writes that form, and `fromBytes` reconstructs storage without initialization. W001 flags unreleased loop allocations, W002 flags straight-line use after `Context.free`, and W003 flags fresh rooted callback userdata registered in a loop.";
 
@@ -236,6 +236,10 @@ const FEATURES: &[Feature] = &[
             "corpus/accept/a20-coroutine-generator.ts",
             "corpus/accept/a79-for-of-generator.ts",
             "corpus/accept/a180-for-of-generator-only.ts",
+            "corpus/accept/a310-generator-done-reference-controls.ts",
+            "corpus/accept/a311-generator-done-scalar-zero.ts",
+            "corpus/trap/t75-generator-done-value-member.ts",
+            "corpus/trap/t76-generator-done-value-store.ts",
         ],
     },
     Feature {
