@@ -166,6 +166,15 @@ impl<'p> Checker<'p> {
     }
 
     fn resolve_type_ref(&mut self, r: &ast::TsTypeRef) -> Type {
+        if let ast::TsEntityName::TsQualifiedName(qualified) = &r.type_name {
+            if let ast::TsEntityName::Ident(namespace) = &qualified.left {
+                if let Some(ident) = self.namespace_member_ident(namespace, &qualified.right) {
+                    let mut reference = r.clone();
+                    reference.type_name = ast::TsEntityName::Ident(ident);
+                    return self.resolve_type_ref(&reference);
+                }
+            }
+        }
         let ast::TsEntityName::Ident(ident) = &r.type_name else {
             let pos = self.pos(r.span);
             self.error(RuleCode::S100, "qualified type names are not decided", pos);

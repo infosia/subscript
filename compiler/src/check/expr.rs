@@ -211,7 +211,7 @@ fn is_undefined_ident(e: &ast::Expr) -> bool {
     }
 }
 
-fn unparen_expr(mut e: &ast::Expr) -> &ast::Expr {
+pub(super) fn unparen_expr(mut e: &ast::Expr) -> &ast::Expr {
     while let ast::Expr::Paren(paren) = e {
         e = &paren.expr;
     }

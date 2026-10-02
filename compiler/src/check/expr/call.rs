@@ -33,6 +33,8 @@ impl<'p> Checker<'p> {
         while let ast::Expr::Paren(p) = callee {
             callee = &p.expr;
         }
+        let resolved = self.resolve_namespace_expr(callee, fx);
+        let callee = resolved.as_ref().unwrap_or(callee);
         match callee {
             ast::Expr::Ident(id) => self.check_named_call(id, c, fx, pos, false),
             ast::Expr::Member(m) => self.check_method_call(m, c, ctx, fx, pos),
@@ -71,7 +73,7 @@ impl<'p> Checker<'p> {
             );
         }
         match item {
-            Some(ScopeItem::Poisoned) => {
+            Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. }) => {
                 self.check_poisoned_arguments(&c.args, fx);
                 self.err_expr(pos)
             }
@@ -1274,6 +1276,8 @@ impl<'p> Checker<'p> {
         while let ast::Expr::Paren(p) = callee {
             callee = &p.expr;
         }
+        let resolved = self.resolve_namespace_expr(callee, fx);
+        let callee = resolved.as_ref().unwrap_or(callee);
         let ast::Expr::Ident(id) = callee else {
             self.error(RuleCode::S100, "`new` requires a class name", pos.clone());
             return self.err_expr(pos);
@@ -1447,7 +1451,7 @@ impl<'p> Checker<'p> {
             };
         }
         let class_id = match self.scope_item(&name, &ident_pos) {
-            Some(ScopeItem::Poisoned) => {
+            Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. }) => {
                 if let Some(arguments) = &n.args {
                     self.check_poisoned_arguments(arguments, fx);
                 }

@@ -24,6 +24,25 @@ impl<'p> Checker<'p> {
                 pos.clone(),
             );
         }
+        if matches!(
+            self.type_scope_item(name),
+            Some(ScopeItem::Namespace { module: None, .. })
+        ) {
+            return Some(ScopeItem::Poisoned);
+        }
+        if matches!(
+            self.type_scope_item(name),
+            Some(ScopeItem::Namespace { .. })
+        ) {
+            self.error(
+                RuleCode::S100,
+                format!(
+                    "namespace import `{name}` is a static qualifier and cannot be used as a value"
+                ),
+                pos.clone(),
+            );
+            return Some(ScopeItem::Poisoned);
+        }
         self.peek_scope_item(name)
     }
 

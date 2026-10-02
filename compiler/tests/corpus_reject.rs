@@ -461,6 +461,18 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r313-descriptor-later-field.ts", RuleCode::S100, 7),
     ("r314-descriptor-this-value.ts", RuleCode::S100, 7),
     ("r315-descriptor-arithmetic-read.ts", RuleCode::S100, 7),
+    ("r316-namespace-argument/main.ts", RuleCode::S100, 10),
+    ("r317-namespace-stored/main.ts", RuleCode::S100, 9),
+    ("r318-namespace-indexed/main.ts", RuleCode::S100, 9),
+    ("r319-namespace-write/main.ts", RuleCode::S100, 9),
+    ("r320-namespace-missing/main.ts", RuleCode::S016, 9),
+    ("r321-namespace-export/main.ts", RuleCode::S100, 8),
+    ("r322-namespace-type-only/main.ts", RuleCode::S100, 8),
+    ("r323-namespace-returned/main.ts", RuleCode::S100, 9),
+    ("r324-namespace-comparison/main.ts", RuleCode::S100, 9),
+    ("r325-namespace-template/main.ts", RuleCode::S100, 9),
+    ("r326-namespace-typeof/main.ts", RuleCode::S100, 9),
+    ("r327-namespace-increment/main.ts", RuleCode::S100, 9),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

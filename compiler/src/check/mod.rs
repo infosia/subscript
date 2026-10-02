@@ -34,6 +34,7 @@ mod json;
 mod layout;
 mod lookup;
 mod mirror_provenance;
+mod namespace_import;
 mod narrowing;
 mod opaque;
 mod pipeline;
@@ -412,6 +413,12 @@ pub(crate) struct GenericClass {
 #[derive(Debug, Clone)]
 pub(crate) enum ScopeItem {
     Poisoned,
+    /// A static qualifier with its source module identity and import spelling.
+    Namespace {
+        /// A missing or rejected source keeps its member uses poisoned.
+        module: Option<usize>,
+        source: String,
+    },
     Func(String),
     GenericFunc(String),
     Class(ClassId),

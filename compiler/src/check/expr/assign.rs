@@ -508,6 +508,20 @@ impl<'p> Checker<'p> {
 
     fn check_member_place(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> Place {
         let pos = self.pos(m.span);
+        if let (ast::Expr::Ident(namespace), ast::MemberProp::Ident(member)) =
+            (super::unparen_expr(&m.obj), &m.prop)
+        {
+            if !fx.owns_local_name(namespace.sym.as_ref()) {
+                if let Some(ident) = self.namespace_member_ident(namespace, member) {
+                    return self.check_assign_target_inner(PlaceSource::Ident(&ident), fx, &pos);
+                }
+            }
+        }
+        if let Some(ast::Expr::Member(resolved)) =
+            self.resolve_namespace_expr(&ast::Expr::Member(m.clone()), fx)
+        {
+            return self.check_member_place(&resolved, fx);
+        }
         match &m.prop {
             ast::MemberProp::Computed(c) => {
                 let obj = self.check_receiver(&m.obj, fx);

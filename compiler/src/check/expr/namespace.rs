@@ -139,7 +139,9 @@ impl<'p> Checker<'p> {
         }
         let receiver_pos = self.pos(id.span);
         match self.scope_item(&name, &receiver_pos) {
-            Some(ScopeItem::Poisoned) => Some(self.err_expr(prop_pos)),
+            Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. }) => {
+                Some(self.err_expr(prop_pos))
+            }
             Some(ScopeItem::Class(id)) => {
                 if prop == "prototype" {
                     self.error_diverging(

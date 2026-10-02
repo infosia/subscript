@@ -179,6 +179,29 @@ impl<'p> Checker<'p> {
                 let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) = item else {
                     continue;
                 };
+                if import.type_only {
+                    if let Some(ast::ImportSpecifier::Namespace(namespace)) =
+                        import.specifiers.first()
+                    {
+                        let pos = self.pos(namespace.local.span);
+                        self.error_diverging(
+                            RuleCode::S100,
+                            "`import type * as` is outside the decided surface",
+                            pos.clone(),
+                            Divergence::NamedModuleSurface,
+                        );
+                        additions.push((
+                            namespace.local.sym.to_string(),
+                            ScopeItem::Namespace {
+                                module: None,
+                                source: import.src.value.to_string(),
+                            },
+                            pos,
+                            false,
+                        ));
+                        continue;
+                    }
+                }
                 let raw = import.src.value.to_string();
                 let stem = normalize_module_specifier(&raw);
                 let Some(target) = self.prog.files.iter().position(|f| f.stem == stem) else {
@@ -192,6 +215,20 @@ impl<'p> Checker<'p> {
                         }
                         let mut names = Vec::new();
                         for spec in &import.specifiers {
+                            if let ast::ImportSpecifier::Namespace(namespace) = spec {
+                                let local = namespace.local.sym.to_string();
+                                additions.push((
+                                    local.clone(),
+                                    ScopeItem::Namespace {
+                                        module: None,
+                                        source: raw.clone(),
+                                    },
+                                    self.pos(namespace.local.span),
+                                    false,
+                                ));
+                                names.push(("*".to_string(), local));
+                                continue;
+                            }
                             let ast::ImportSpecifier::Named(named) = spec else {
                                 self.error(
                                     RuleCode::S100,
@@ -223,6 +260,17 @@ impl<'p> Checker<'p> {
                     } else {
                         self.resolution_error(RuleCode::S100, missing_message, pos);
                         for spec in &import.specifiers {
+                            if let ast::ImportSpecifier::Namespace(namespace) = spec {
+                                additions.push((
+                                    namespace.local.sym.to_string(),
+                                    ScopeItem::Namespace {
+                                        module: None,
+                                        source: raw.clone(),
+                                    },
+                                    self.pos(namespace.local.span),
+                                    false,
+                                ));
+                            }
                             if let ast::ImportSpecifier::Named(named) = spec {
                                 additions.push((
                                     named.local.sym.to_string(),
@@ -236,6 +284,15 @@ impl<'p> Checker<'p> {
                     continue;
                 };
                 for spec in &import.specifiers {
+                    if let ast::ImportSpecifier::Namespace(namespace) = spec {
+                        let pos = self.pos(namespace.local.span);
+                        let item = ScopeItem::Namespace {
+                            module: Some(target),
+                            source: raw.clone(),
+                        };
+                        additions.push((namespace.local.sym.to_string(), item, pos, false));
+                        continue;
+                    }
                     let ast::ImportSpecifier::Named(named) = spec else {
                         let pos = self.pos(spec.span());
                         self.error(

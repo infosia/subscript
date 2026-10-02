@@ -3,7 +3,7 @@
 use swc_common::Spanned;
 use swc_ecma_ast as ast;
 
-use crate::check::{static_member_symbol, Checker, FnCtx};
+use crate::check::{static_member_symbol, Checker, FnCtx, ScopeItem};
 use crate::diag::{Pos, RuleCode};
 use crate::divergence::Divergence;
 use crate::hir::{self, BinOp, Callee, ExprKind, UnOp};
@@ -124,6 +124,12 @@ impl<'p> Checker<'p> {
                     ty,
                     pos,
                 }
+            }
+            ast::UnaryOp::TypeOf
+                if matches!(super::unparen_expr(&u.arg), ast::Expr::Ident(id)
+                    if !fx.owns_local_name(id.sym.as_ref()) && matches!(self.type_scope_item(id.sym.as_ref()), Some(ScopeItem::Namespace { .. }))) =>
+            {
+                self.check_expr(&u.arg, None, fx)
             }
             ast::UnaryOp::Delete => {
                 self.error(

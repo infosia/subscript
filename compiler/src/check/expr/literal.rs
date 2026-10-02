@@ -320,9 +320,31 @@ impl<'p> Checker<'p> {
             self.apply_narrowing(&mut expr, fx);
             return expr;
         }
+        if matches!(
+            self.type_scope_item(&name),
+            Some(ScopeItem::Namespace {
+                module: Some(_),
+                ..
+            })
+        ) {
+            let message = format!(
+                "namespace import `{name}` is a static qualifier and cannot be used as a value"
+            );
+            if ctx.is_none() {
+                self.error_diverging(
+                    RuleCode::S100,
+                    message,
+                    pos.clone(),
+                    Divergence::NamedModuleSurface,
+                );
+            } else {
+                self.error(RuleCode::S100, message, pos.clone());
+            }
+            return self.err_expr(pos);
+        }
         let item = self.scope_item(&name, &pos);
         match item {
-            Some(ScopeItem::Poisoned) => self.err_expr(pos),
+            Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. }) => self.err_expr(pos),
             Some(ScopeItem::Global(g)) => {
                 // A mirror flag member (§13.2) folds to its C value here, so
                 // both tiers emit an immediate rather than reading a global.
