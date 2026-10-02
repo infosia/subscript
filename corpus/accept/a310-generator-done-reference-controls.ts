@@ -1,6 +1,6 @@
 // corpus: accept/a310-generator-done-reference-controls
 // purpose: Nullable values and live reference iteration do not trap.
-// exercises: generator, iterator-result, nullable, destructuring, for-of
+// exercises: generator, iterator-result, nullable, member-read, for-of
 // questions: compiler.md §145, collisions.md C22
 // tsc: accepts; js-comparable: yes
 class Box { v: i32 = 7; }
@@ -11,12 +11,12 @@ export function main(): void {
   iterator.next();
   const r = iterator.next();
   print(`${r.value == null}`);
-  const { value } = r;
+  const value = r.value;
   print(`${value == null}`);
   const live = boxes();
   let item = live.next();
   while (!item.done) {
-    const { value: box } = item;
+    const box = item.value;
     print(`${box.v}`);
     item = live.next();
   }

@@ -148,7 +148,6 @@ fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         }
         "t77-generator-done-fixed-reference" => (TrapKind::GeneratorDoneValue, 15, 15),
         "t78-generator-done-string" => (TrapKind::GeneratorDoneValue, 14, 23),
-        "t79-generator-done-destructuring" => (TrapKind::GeneratorDoneValue, 14, 18),
         "t80-generator-done-wire-alias" => (TrapKind::GeneratorDoneValue, 21, 18),
         "t81-generator-done-fixed-wire-alias" => (TrapKind::GeneratorDoneValue, 15, 15),
         "t72-narrowing-boundary-getter" => (TrapKind::SharedNullNarrowing, 13, 44),

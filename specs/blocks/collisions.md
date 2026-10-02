@@ -639,7 +639,7 @@ Measured at `de41409f` (before §145): `const b: Box = r.value; print(\`${b.v}\`
 gives `TypeError: Cannot read properties of undefined` under `node`;
 storing `b` in a `Box[]` and printing its length prints `1`.
 
-Trap: `t75`–`t81`.
+Trap: `t75`–`t78`, `t80`, `t81`; `retired:t79-generator-done-destructuring`. Reject: `r301`.
 
 ## 2. Q-register resolutions not covered above
 

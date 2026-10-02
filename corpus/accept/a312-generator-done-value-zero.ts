@@ -1,6 +1,6 @@
 // corpus: accept/a312-generator-done-value-zero
 // purpose: A finished scalar value-class generator reads its zero fields.
-// exercises: generator, iterator-result, ValueType, fixed-array, destructuring
+// exercises: generator, iterator-result, ValueType, fixed-array, member-read
 // questions: compiler.md §145, collisions.md C8
 // tsc: accepts; js-comparable: no C8: A finished value-class generator returns zero instead of undefined.
 @ValueType
@@ -11,6 +11,6 @@ export function main(): void {
   iterator.next();
   const r = iterator.next();
   print(`${r.value[0].v}:${r.value[1].flag}`);
-  const { value } = r;
+  const value = r.value;
   print(`${value[1].v}:${value[0].flag}`);
 }

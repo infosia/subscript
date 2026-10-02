@@ -1023,8 +1023,8 @@ impl Divergence {
                 ts: "const text = \"ab\";\n\
                      const [first, second] = text;",
                 subscript: "no equivalent; a binding pattern reads a `T[]`, a \
-                            `FixedArray<T, N>`, a class instance, or the `IterResult<T>` of `.next()`",
-                why: "A binding pattern reads an array by index, or a class or `IterResult` by field name, so \
+                            `FixedArray<T, N>`, or a class instance",
+                why: "A binding pattern reads an array by index, or a class by field name, so \
                       another source shape has no pattern.",
                 collision: "compiler.md §107.1",
             },

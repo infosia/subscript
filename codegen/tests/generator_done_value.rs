@@ -1,5 +1,5 @@
 //! The verifier must reject missing guards when the checker accepts the sources.
-//! Corpus tests cover execution. This test verifies malformed member-read and field-pattern LIR.
+//! Corpus tests cover execution. This test verifies malformed member-read LIR.
 //! Measured debug test-suite cost: 0.01 s.
 
 use subscript_codegen::lir::{lower_module, verify_module};
@@ -11,10 +11,6 @@ fn finished_reference_reads_require_guards_in_lir() {
         (
             "t77.ts",
             include_str!("../../corpus/trap/t77-generator-done-fixed-reference.ts"),
-        ),
-        (
-            "t79.ts",
-            include_str!("../../corpus/trap/t79-generator-done-destructuring.ts"),
         ),
         (
             "t80.ts",

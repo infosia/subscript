@@ -22738,7 +22738,7 @@ fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b
     %4: Data(Bool) = Binary(Eq)(%3, Null:Null) @ a310-generator-done-reference-controls.ts:13:12
     %5: Data(Str) = Template([Operand { index: 0, format: Bool }])(%4) traps=[Trap { kind: Allocation, pos: Pos { file: "a310-generator-done-reference-controls.ts", line: 13, col: 12 } }] @ a310-generator-done-reference-controls.ts:13:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%5) @ a310-generator-done-reference-controls.ts:13:3
-    %6: Data(Nullable(Class(ClassId(1)))) = LoadField(IterValue)(%2) @ a310-generator-done-reference-controls.ts:14:11
+    %6: Data(Nullable(Class(ClassId(1)))) = LoadField(IterValue)(%2) @ a310-generator-done-reference-controls.ts:14:19
     %7: Data(Bool) = Binary(Eq)(%6, Null:Null) @ a310-generator-done-reference-controls.ts:15:12
     %8: Data(Str) = Template([Operand { index: 0, format: Bool }])(%7) traps=[Trap { kind: Allocation, pos: Pos { file: "a310-generator-done-reference-controls.ts", line: 15, col: 12 } }] @ a310-generator-done-reference-controls.ts:15:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%8) @ a310-generator-done-reference-controls.ts:15:3
@@ -22750,7 +22750,7 @@ fn f3 "main" kind=Free exported=true generator=false async=false -> Void entry=b
     %14: Data(Bool) = Unary(Not)(%13) @ a310-generator-done-reference-controls.ts:18:10
     -> ConditionalBranch { condition: Value(ValueId(14)), then_target: BlockTarget { block: BlockId(2), arguments: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [Value(ValueId(11))] } }
   b2 Some("while.body"):
-    %15: Data(Class(ClassId(1))) = LoadField(IterValue)(%11) traps=[Trap { kind: GeneratorDoneValue, pos: Pos { file: "a310-generator-done-reference-controls.ts", line: 19, col: 20 } }] @ a310-generator-done-reference-controls.ts:19:20
+    %15: Data(Class(ClassId(1))) = LoadField(IterValue)(%11) traps=[Trap { kind: GeneratorDoneValue, pos: Pos { file: "a310-generator-done-reference-controls.ts", line: 19, col: 22 } }] @ a310-generator-done-reference-controls.ts:19:22
     %16: Data(I32) = LoadField(Class(FieldId(3)))(%15) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a310-generator-done-reference-controls.ts", line: 20, col: 14 } }] @ a310-generator-done-reference-controls.ts:20:18
     %17: Data(Str) = Template([Operand { index: 0, format: I32 }])(%16) traps=[Trap { kind: Allocation, pos: Pos { file: "a310-generator-done-reference-controls.ts", line: 20, col: 18 } }] @ a310-generator-done-reference-controls.ts:20:11
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) @ a310-generator-done-reference-controls.ts:20:5
@@ -23031,7 +23031,7 @@ fn f2 "main" kind=Free exported=true generator=false async=false -> Void entry=b
     %3: Data(I32) = LoadField(IterValue)(%2) @ a311-generator-done-scalar-zero.ts:12:14
     %4: Data(Str) = Template([Operand { index: 0, format: I32 }])(%3) traps=[Trap { kind: Allocation, pos: Pos { file: "a311-generator-done-scalar-zero.ts", line: 12, col: 14 } }] @ a311-generator-done-scalar-zero.ts:12:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%4) @ a311-generator-done-scalar-zero.ts:12:3
-    %5: Data(I32) = LoadField(IterValue)(%2) @ a311-generator-done-scalar-zero.ts:13:11
+    %5: Data(I32) = LoadField(IterValue)(%2) @ a311-generator-done-scalar-zero.ts:13:19
     %6: Data(Str) = Template([Operand { index: 0, format: I32 }])(%5) traps=[Trap { kind: Allocation, pos: Pos { file: "a311-generator-done-scalar-zero.ts", line: 14, col: 12 } }] @ a311-generator-done-scalar-zero.ts:14:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a311-generator-done-scalar-zero.ts:14:3
     -> Return { value: None, pos: Pos { file: "a311-generator-done-scalar-zero.ts", line: 8, col: 17 } }
@@ -23299,7 +23299,7 @@ fn f1 "values" kind=Free exported=false generator=true async=false -> Generator(
     -> Return { value: None, pos: Pos { file: "a312-generator-done-value-zero.ts", line: 8, col: 11 } }
 fn f2 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a312-generator-done-value-zero.ts:9:17
   local l0 "r": Data(IterResult(FixedArray(Class(ClassId(1)), 2))) mutable=false @ a312-generator-done-value-zero.ts:12:9
-  local l1 "value": Data(FixedArray(Class(ClassId(1)), 2)) mutable=false @ a312-generator-done-value-zero.ts:14:11
+  local l1 "value": Data(FixedArray(Class(ClassId(1)), 2)) mutable=false @ a312-generator-done-value-zero.ts:14:9
   value %0: Data(Generator(FixedArray(Class(ClassId(1)), 2))) name=None
   value %1: Data(IterResult(FixedArray(Class(ClassId(1)), 2))) name=None
   value %2: Data(IterResult(FixedArray(Class(ClassId(1)), 2))) name=None
@@ -23342,9 +23342,9 @@ fn f2 "main" kind=Free exported=true generator=false async=false -> Void entry=b
     %12: Data(Bool) = LoadField(Class(FieldId(4)))(%11) @ a312-generator-done-value-zero.ts:13:39
     %13: Data(Str) = Template([Operand { index: 0, format: I32 }, Text(":"), Operand { index: 1, format: Bool }])(%7, %12) traps=[Trap { kind: Allocation, pos: Pos { file: "a312-generator-done-value-zero.ts", line: 13, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a312-generator-done-value-zero.ts", line: 13, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a312-generator-done-value-zero.ts", line: 13, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a312-generator-done-value-zero.ts", line: 13, col: 39 } }, Trap { kind: Allocation, pos: Pos { file: "a312-generator-done-value-zero.ts", line: 13, col: 9 } }] @ a312-generator-done-value-zero.ts:13:9
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%13) @ a312-generator-done-value-zero.ts:13:3
-    %14: Data(IterResult(FixedArray(Class(ClassId(1)), 2))) = LoadLocal(LocalId(0))() @ a312-generator-done-value-zero.ts:14:21
-    %15: Data(FixedArray(Class(ClassId(1)), 2)) = LoadField(IterValue)(%14) @ a312-generator-done-value-zero.ts:14:11
-    StoreLocal(LocalId(1))(%15) @ a312-generator-done-value-zero.ts:14:11
+    %14: Data(IterResult(FixedArray(Class(ClassId(1)), 2))) = LoadLocal(LocalId(0))() @ a312-generator-done-value-zero.ts:14:17
+    %15: Data(FixedArray(Class(ClassId(1)), 2)) = LoadField(IterValue)(%14) @ a312-generator-done-value-zero.ts:14:19
+    StoreLocal(LocalId(1))(%15) @ a312-generator-done-value-zero.ts:14:9
     %16: Address(AddressType { pointee: FixedArray(Class(ClassId(1)), 2), array_base: None }) = AddressOfLocal(LocalId(1))() @ a312-generator-done-value-zero.ts:15:12
     %17: Address(AddressType { pointee: Class(ClassId(1)), array_base: None }) = AddressOfIndex { checked: false }(%16, Integer(1):I32) @ a312-generator-done-value-zero.ts:15:12
     %18: Data(Class(ClassId(1))) = LoadAddress(%17) @ a312-generator-done-value-zero.ts:15:12
@@ -23614,7 +23614,7 @@ fn f3 "plain" kind=Free exported=false generator=true async=false -> Generator(S
   b1 Some("yield.resume"):
     -> Return { value: None, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 10, col: 11 } }
 fn f4 "main" kind=Free exported=true generator=false async=false -> Void entry=b0 @ a313-generator-done-wire-zero.ts:11:17
-  local l0 "value": Data(FixedArray(StringAlias(StringAliasId(0)), 2)) mutable=false @ a313-generator-done-wire-zero.ts:17:11
+  local l0 "value": Data(FixedArray(StringAlias(StringAliasId(0)), 2)) mutable=false @ a313-generator-done-wire-zero.ts:18:9
   value %0: Data(Generator(StringAlias(StringAliasId(0)))) name=None
   value %1: Data(IterResult(StringAlias(StringAliasId(0)))) name=None
   value %2: Data(StringAlias(StringAliasId(0))) name=None
@@ -23650,23 +23650,23 @@ fn f4 "main" kind=Free exported=true generator=false async=false -> Void entry=b
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a313-generator-done-wire-zero.ts:14:3
     %7: Data(Generator(FixedArray(StringAlias(StringAliasId(0)), 2))) = Call(CallTarget { kind: Function(FunctionId(2)), parameter_types: [], return_type: Some(Data(Generator(FixedArray(StringAlias(StringAliasId(0)), 2)))) })() traps=[Trap { kind: Call, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 15, col: 17 } }] @ a313-generator-done-wire-zero.ts:15:17
     %8: Data(IterResult(FixedArray(StringAlias(StringAliasId(0)), 2))) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(FixedArray(StringAlias(StringAliasId(0)), 2)))], return_type: Some(Data(IterResult(FixedArray(StringAlias(StringAliasId(0)), 2)))) })(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 16, col: 3 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 16, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 16, col: 3 } }] @ a313-generator-done-wire-zero.ts:16:3
-    %9: Data(IterResult(FixedArray(StringAlias(StringAliasId(0)), 2))) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(FixedArray(StringAlias(StringAliasId(0)), 2)))], return_type: Some(Data(IterResult(FixedArray(StringAlias(StringAliasId(0)), 2)))) })(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 17, col: 21 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 17, col: 21 } }, Trap { kind: Call, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 17, col: 21 } }] @ a313-generator-done-wire-zero.ts:17:21
-    %10: Data(FixedArray(StringAlias(StringAliasId(0)), 2)) = LoadField(IterValue)(%9) @ a313-generator-done-wire-zero.ts:17:11
-    StoreLocal(LocalId(0))(%10) @ a313-generator-done-wire-zero.ts:17:11
-    %11: Address(AddressType { pointee: FixedArray(StringAlias(StringAliasId(0)), 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a313-generator-done-wire-zero.ts:18:12
-    %12: Address(AddressType { pointee: StringAlias(StringAliasId(0)), array_base: None }) = AddressOfIndex { checked: false }(%11, Integer(0):I32) @ a313-generator-done-wire-zero.ts:18:12
-    %13: Data(StringAlias(StringAliasId(0))) = LoadAddress(%12) @ a313-generator-done-wire-zero.ts:18:12
-    %14: Address(AddressType { pointee: FixedArray(StringAlias(StringAliasId(0)), 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a313-generator-done-wire-zero.ts:18:24
-    %15: Address(AddressType { pointee: StringAlias(StringAliasId(0)), array_base: None }) = AddressOfIndex { checked: false }(%14, Integer(1):I32) @ a313-generator-done-wire-zero.ts:18:24
-    %16: Data(StringAlias(StringAliasId(0))) = LoadAddress(%15) @ a313-generator-done-wire-zero.ts:18:24
-    %17: Data(Str) = Template([Operand { index: 0, format: StringAlias(StringAliasId(0)) }, Text("|"), Operand { index: 1, format: StringAlias(StringAliasId(0)) }])(%13, %16) traps=[Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 18, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 18, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 18, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 18, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 18, col: 9 } }] @ a313-generator-done-wire-zero.ts:18:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) @ a313-generator-done-wire-zero.ts:18:3
-    %18: Data(Generator(StringAlias(StringAliasId(1)))) = Call(CallTarget { kind: Function(FunctionId(3)), parameter_types: [], return_type: Some(Data(Generator(StringAlias(StringAliasId(1))))) })() traps=[Trap { kind: Call, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 19, col: 17 } }] @ a313-generator-done-wire-zero.ts:19:17
-    %19: Data(IterResult(StringAlias(StringAliasId(1)))) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(StringAlias(StringAliasId(1))))], return_type: Some(Data(IterResult(StringAlias(StringAliasId(1))))) })(%18) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 20, col: 3 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 20, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 20, col: 3 } }] @ a313-generator-done-wire-zero.ts:20:3
-    %20: Data(IterResult(StringAlias(StringAliasId(1)))) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(StringAlias(StringAliasId(1))))], return_type: Some(Data(IterResult(StringAlias(StringAliasId(1))))) })(%18) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 21, col: 12 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 21, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 21, col: 12 } }] @ a313-generator-done-wire-zero.ts:21:12
-    %21: Data(StringAlias(StringAliasId(1))) = LoadField(IterValue)(%20) @ a313-generator-done-wire-zero.ts:21:25
-    %22: Data(Str) = Template([Operand { index: 0, format: StringAlias(StringAliasId(1)) }])(%21) traps=[Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 21, col: 25 } }] @ a313-generator-done-wire-zero.ts:21:9
-    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%22) @ a313-generator-done-wire-zero.ts:21:3
+    %9: Data(IterResult(FixedArray(StringAlias(StringAliasId(0)), 2))) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(FixedArray(StringAlias(StringAliasId(0)), 2)))], return_type: Some(Data(IterResult(FixedArray(StringAlias(StringAliasId(0)), 2)))) })(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 17, col: 13 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 17, col: 13 } }, Trap { kind: Call, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 17, col: 13 } }] @ a313-generator-done-wire-zero.ts:17:13
+    %10: Data(FixedArray(StringAlias(StringAliasId(0)), 2)) = LoadField(IterValue)(%9) @ a313-generator-done-wire-zero.ts:18:19
+    StoreLocal(LocalId(0))(%10) @ a313-generator-done-wire-zero.ts:18:9
+    %11: Address(AddressType { pointee: FixedArray(StringAlias(StringAliasId(0)), 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a313-generator-done-wire-zero.ts:19:12
+    %12: Address(AddressType { pointee: StringAlias(StringAliasId(0)), array_base: None }) = AddressOfIndex { checked: false }(%11, Integer(0):I32) @ a313-generator-done-wire-zero.ts:19:12
+    %13: Data(StringAlias(StringAliasId(0))) = LoadAddress(%12) @ a313-generator-done-wire-zero.ts:19:12
+    %14: Address(AddressType { pointee: FixedArray(StringAlias(StringAliasId(0)), 2), array_base: None }) = AddressOfLocal(LocalId(0))() @ a313-generator-done-wire-zero.ts:19:24
+    %15: Address(AddressType { pointee: StringAlias(StringAliasId(0)), array_base: None }) = AddressOfIndex { checked: false }(%14, Integer(1):I32) @ a313-generator-done-wire-zero.ts:19:24
+    %16: Data(StringAlias(StringAliasId(0))) = LoadAddress(%15) @ a313-generator-done-wire-zero.ts:19:24
+    %17: Data(Str) = Template([Operand { index: 0, format: StringAlias(StringAliasId(0)) }, Text("|"), Operand { index: 1, format: StringAlias(StringAliasId(0)) }])(%13, %16) traps=[Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 19, col: 12 } }, Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 19, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 19, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 19, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 19, col: 9 } }] @ a313-generator-done-wire-zero.ts:19:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%17) @ a313-generator-done-wire-zero.ts:19:3
+    %18: Data(Generator(StringAlias(StringAliasId(1)))) = Call(CallTarget { kind: Function(FunctionId(3)), parameter_types: [], return_type: Some(Data(Generator(StringAlias(StringAliasId(1))))) })() traps=[Trap { kind: Call, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 20, col: 17 } }] @ a313-generator-done-wire-zero.ts:20:17
+    %19: Data(IterResult(StringAlias(StringAliasId(1)))) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(StringAlias(StringAliasId(1))))], return_type: Some(Data(IterResult(StringAlias(StringAliasId(1))))) })(%18) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 21, col: 3 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 21, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 21, col: 3 } }] @ a313-generator-done-wire-zero.ts:21:3
+    %20: Data(IterResult(StringAlias(StringAliasId(1)))) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(StringAlias(StringAliasId(1))))], return_type: Some(Data(IterResult(StringAlias(StringAliasId(1))))) })(%18) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 22, col: 12 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 22, col: 12 } }, Trap { kind: Call, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 22, col: 12 } }] @ a313-generator-done-wire-zero.ts:22:12
+    %21: Data(StringAlias(StringAliasId(1))) = LoadField(IterValue)(%20) @ a313-generator-done-wire-zero.ts:22:25
+    %22: Data(Str) = Template([Operand { index: 0, format: StringAlias(StringAliasId(1)) }])(%21) traps=[Trap { kind: Allocation, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 22, col: 25 } }] @ a313-generator-done-wire-zero.ts:22:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%22) @ a313-generator-done-wire-zero.ts:22:3
     -> Return { value: None, pos: Pos { file: "a313-generator-done-wire-zero.ts", line: 11, col: 17 } }
 ===== a79-for-of-generator =====
 module initializer=None

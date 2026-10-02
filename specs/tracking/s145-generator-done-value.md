@@ -143,3 +143,77 @@ No commit was made. The existing C23 edit was preserved. `tools/gate.sh` was not
 ```text
 gate full da7aec5abbc36d5cca8c18792dc37d12284bb366 dirty:19 debug 2189/0/3 release 2186/0/3 skips 2/0 clippy 2/18/13 goldens-moved 1 exit 0
 ```
+
+## Phase Review fix round 5
+
+The contract is `compiler.md` §145 at `20e86b2a`.
+The checker rejects every iterator-result binding pattern with S100.
+The diagnostic names `const r = it.next(); if (r.done) ...`.
+`r300` retains its measured TS2339 header and receives the new diagnostic.
+`r301` records the review's loop with `tsc: accepts`.
+Before the fix, the reject test accepted `r301` at the contract pin and failed.
+The batched stock TypeScript test accepts `r301` and retains the recorded result for `r300`.
+
+`t79` is retired. The LIR trap-site table, ship trap table, and malformed-LIR verifier test remove its row.
+The checker uses the common field-read path for patterns and members. No separate pattern guard path exists.
+The member-read guard remains unchanged.
+The `PatternSourceShape` entry and coroutine reference generator reject iterator-result patterns.
+The coroutine reference replaces the retired `t79` link with `r301`.
+No generic matrix cell accepts iterator-result patterns; its type-kind table records that the source type has no name.
+
+The HEAD LIR snapshot contains no `t79` section.
+The existing accept entries `a310`–`a313` contain five iterator-result field patterns.
+The new checker rejects these entries. The snapshot capture stops at `a310`.
+The handoff limits corpus edits to its named files, so the accept-entry edits require scope approval.
+
+The reject corpus target passes all 40 tests.
+The compiler suite stops at `corpus_accept` because `a310`–`a313` now fail the source-shape check.
+The combined compiler/codegen suite stops at the codegen golden test for the same four entries.
+The generated documents come from `generate-api-reference`.
+`cargo fmt --check` and `git diff --check` pass.
+The existing collision edit remains unchanged. No commit was made. `tools/gate.sh` was not run.
+
+## Phase Review fix round 6
+
+The approved extension replaces the two iterator-result patterns in `a310` with member reads.
+The interpreter, dev, and ship forms match its unchanged golden bytes.
+The JS corpus passes all 11 tests. The reject corpus passes all 40 tests.
+The stock TypeScript corpus target passes all 11 tests, including the headers for `r300` and `r301`.
+The malformed-LIR member-read guard test passes.
+The document generator produces byte-identical files on its second run.
+`cargo fmt --check` and `git diff --check` pass.
+
+The LIR capture now stops at the iterator-result pattern in `a311` at 13:9.
+`a312` at 14:9 and `a313` at 17:9 also retain iterator-result patterns.
+The compiler accept test and two LIR corpus tests fail on these sources.
+These three entries remain outside the approved extension. They need member reads before the snapshot capture can finish.
+The snapshot remains unchanged; its HEAD version contains no `t79` section.
+The existing staged `t79` deletions and collision edit remain unchanged.
+No commit was made. `tools/gate.sh` was not run.
+
+## Phase Review fix round 7
+
+The accept entries `a310`–`a313` replace five iterator-result field patterns with member reads.
+Their `.expected` files remain unchanged. The dev, ship, and interpreter corpus sweeps match these outputs.
+The regenerated LIR snapshot changes only the `a310`–`a313` sections.
+No snapshot section is added or removed; HEAD contains no `t79` section.
+The generated documents come from `generate-api-reference`. A second run produces byte-identical files.
+The existing collision edit and staged `t79` deletions remain unchanged.
+No commit was made. `tools/gate.sh` was not run.
+
+`cargo test --offline --locked -p subscript-compiler -p subscript-codegen` passes.
+The compiler accept corpus and all 40 reject tests pass.
+The dev/ship and interpreter corpus sweeps pass, including `a310`–`a313`.
+The batched stock TypeScript header test and all 11 JS corpus tests pass.
+`cargo fmt --check`, `git diff --check`, and `tools/hygiene.sh` pass.
+Every changed Rust file remains below 2,000 lines.
+
+## Pattern-source revert landing gate
+
+An `IterResult` is not a pattern source (§145 rule 1a, owner decision);
+`t79` retires, `r301` pins the idiom, and `a310`–`a313` read `r.value`.
+`goldens-moved 2` is the LIR text snapshot and the deleted `t79` golden.
+
+```text
+gate full 20e86b2a778bb950be8e4d01a69ff544c546e520 dirty:20 debug 2189/0/3 release 2186/0/3 skips 2/0 clippy 2/18/13 goldens-moved 2 exit 0
+```

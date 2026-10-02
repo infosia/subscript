@@ -84,6 +84,20 @@ impl<'p> Checker<'p> {
         if matches!(&self.apparent_type(ty), Type::Error) {
             return false;
         }
+        if matches!(&self.apparent_type(ty), Type::IterResult(_)) {
+            let message = "an iterator result cannot supply a binding pattern; use `const r = it.next(); if (r.done) ...`";
+            let pos = self.pos(pattern.span());
+            // TypeScript rejects array patterns and unknown result fields.
+            let tsc_accepts = matches!(pattern, pattern::Pattern::Fields { bindings, .. }
+                if bindings.iter().all(|binding| matches!(&binding.source,
+                    pattern::BindingSource::Field(name) if name == "done" || name == "value")));
+            if tsc_accepts {
+                self.error_diverging(RuleCode::S100, message, pos, Divergence::PatternSourceShape);
+            } else {
+                self.error(RuleCode::S100, message, pos);
+            }
+            return false;
+        }
         let (fits, shape) = match pattern {
             pattern::Pattern::Array { .. } => (
                 matches!(
@@ -93,11 +107,8 @@ impl<'p> Checker<'p> {
                 "an array binding pattern reads a `T[]` or a `FixedArray<T, N>`",
             ),
             pattern::Pattern::Fields { .. } => (
-                matches!(
-                    &self.apparent_type(ty),
-                    Type::Class(_) | Type::IterResult(_)
-                ),
-                "a field binding pattern reads a class or an iterator result",
+                matches!(&self.apparent_type(ty), Type::Class(_)),
+                "a field binding pattern reads a class",
             ),
             _ => return true,
         };
