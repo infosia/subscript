@@ -280,9 +280,11 @@ a method call, a getter or setter, a write, `this` as a value, and
 `this` in a lambda. Stock `tsc` accepts those four forms, so this is a
 narrowing; each one can expose the partial instance. A read of a later
 field, of the field itself, or of a field with no initializer is
-rejected by both (`tsc` TS2729).
+rejected by both (`tsc` TS2729). A call of an earlier function field
+(`this.cb()`) is a read and a call. A `@Descriptor` member default reads
+no `this` (§147 rule 3a).
 
-Accept: `a133`, `a134`, `a316`. Reject: `r306`–`r312`;
+Accept: `a133`, `a134`, `a316`, `a317`. Reject: `r306`–`r315`;
 `retired:r126-this-in-field-init`.
 
 ### C10. Class index signatures — accessor sugar

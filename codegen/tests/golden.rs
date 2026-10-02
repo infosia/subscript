@@ -127,28 +127,6 @@ fn r27_field_initializer_entries_match_across_tiers() {
 }
 
 #[test]
-fn earlier_field_initializers_match_three_engines_and_golden() {
-    let accept = corpus::corpus_accept();
-    let id = "a316-field-initializer-earlier-fields";
-    let sources = corpus::entry_sources(&accept, id);
-    let expected = corpus::golden_bytes(&accept, id);
-    let hir = subscript_compiler::check_program(&sources).expect("field reads check");
-    let lir = subscript_codegen::lir::lower_module(&hir).expect("field reads lower");
-    assert_eq!(
-        subscript_codegen::interpreter::interpret(&lir).expect("field reads interpret"),
-        expected
-    );
-    assert_eq!(
-        run_dev_corpus_entry(id, &sources, &[]).expect("field reads run on dev"),
-        expected
-    );
-    assert_eq!(
-        run_ship_corpus_entry(id, &sources, &[]).expect("field reads run on ship"),
-        expected
-    );
-}
-
-#[test]
 fn r28_binary32_bit_access_matches_the_golden_across_tiers() {
     let accept = corpus::corpus_accept();
     let id = "a135-f32-bits";

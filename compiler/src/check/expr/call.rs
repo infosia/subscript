@@ -638,6 +638,12 @@ impl<'p> Checker<'p> {
             let value = self.check_member_read(m, fx);
             return self.check_indirect_call(value, c, fx, pos);
         };
+        if fx.field_initializer.is_some()
+            && matches!(super::unparen_expr(&m.obj), ast::Expr::This(_))
+        {
+            let value = self.check_member_read(m, fx);
+            return self.check_indirect_call(value, c, fx, pos);
+        }
         let name = prop.sym.to_string();
         let prop_pos = self.pos(prop.span);
         if matches!(name.as_str(), "then" | "catch" | "finally") {

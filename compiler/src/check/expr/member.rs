@@ -23,6 +23,24 @@ impl<'p> Checker<'p> {
         allow_absence_test: bool,
     ) -> hir::Expr {
         let pos = self.pos(m.span);
+        // TypeScript also rejects arithmetic on an optional descriptor member.
+        if let Some(default_type) = &fx.descriptor_default {
+            if let Type::Class(class) = self.apparent_type(default_type) {
+                if fx.descriptor_numeric_operand
+                    && matches!(super::unparen_expr(&m.obj), ast::Expr::This(_))
+                    && matches!(&m.prop, ast::MemberProp::Ident(name) if self.classes[class.0]
+                        .fields.iter().any(|field| field.name == name.sym.as_ref()
+                            && (field.is_defaulted || field.is_absence_capable)))
+                {
+                    self.error(
+                        RuleCode::S100,
+                        "§147 rule 3a: `this` is forbidden in a descriptor member default; arithmetic on an optional member also fails with TS2532",
+                        self.pos(m.obj.span()),
+                    );
+                    return self.err_expr(pos);
+                }
+            }
+        }
         if let Some(initializer) = &fx.field_initializer {
             if matches!(super::unparen_expr(&m.obj), ast::Expr::This(_))
                 && !initializer.write

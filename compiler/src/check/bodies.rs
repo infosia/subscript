@@ -52,7 +52,6 @@ impl<'p> Checker<'p> {
     }
 
     pub(super) fn check_descriptor_defaults(&mut self, id: ClassId, class: &ast::Class) {
-        let this_ty = Type::Class(id);
         for member in &class.body {
             let ast::ClassMember::ClassProp(prop) = member else {
                 continue;
@@ -71,7 +70,8 @@ impl<'p> Checker<'p> {
             let Some(field_ty) = field_ty else {
                 continue;
             };
-            let mut fx = FnCtx::new(Type::Void, false, Some(this_ty.clone()), self.diags.clone());
+            let mut fx = FnCtx::new(Type::Void, false, None, self.diags.clone());
+            fx.descriptor_default = Some(Type::Class(id));
             let checked = fx
                 .with_synthetic_owner(
                     SyntheticOwnerKind::Initializer(self.pos(value.span())),

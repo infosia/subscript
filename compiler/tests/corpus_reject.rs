@@ -458,6 +458,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r310-getter-field-initializer.ts", RuleCode::S100, 7),
     ("r311-this-value-field-initializer.ts", RuleCode::S100, 7),
     ("r312-lambda-field-initializer.ts", RuleCode::S100, 7),
+    ("r313-descriptor-later-field.ts", RuleCode::S100, 7),
+    ("r314-descriptor-this-value.ts", RuleCode::S100, 7),
+    ("r315-descriptor-arithmetic-read.ts", RuleCode::S100, 7),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -932,6 +935,31 @@ fn field_initializers_reject_writes_and_partial_instance_uses() {
                     == Some(subscript_compiler::divergence::Divergence::ThisInFieldInitializer)),
             "{expression}: {errors:?}"
         );
+    }
+}
+
+#[test]
+fn indirect_this_forms_name_the_value_rule() {
+    for expression in ["this?.x", "(this as A).x", "this[\"x\"]"] {
+        let source = format!("class A {{ x: i32 = 3; y: i32 = {expression}; }}");
+        let errors = check_program(&[SourceFile::new("field-value.ts", source)])
+            .expect_err("indirect instance access must fail");
+        assert!(
+            errors.iter().any(|error| error.code == RuleCode::S100
+                && error.message == "§147 rule 2: `this` as a value is forbidden"),
+            "{expression}: {errors:?}"
+        );
+    }
+}
+
+#[test]
+fn descriptor_defaults_reject_this_in_nested_forms() {
+    for expression in ["this", "((): D => this)()", "(this as D)"] {
+        let source = format!("@Descriptor class D {{ self?: D | null = {expression}; }}");
+        let errors = check_program(&[SourceFile::new("descriptor-this.ts", source)])
+            .expect_err("a descriptor default cannot expose the partial instance");
+        assert!(errors.iter().any(|error| error.code == RuleCode::S100
+            && error.message.contains("§147 rule 3a")), "{expression}: {errors:?}");
     }
 }
 

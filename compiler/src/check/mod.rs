@@ -725,6 +725,8 @@ pub(crate) struct Frame {
 pub(crate) struct FnCtx {
     pub frames: Vec<Frame>,
     field_initializer: Option<field_initializer::FieldInitializer>,
+    descriptor_default: Option<Type>,
+    descriptor_numeric_operand: bool,
     pub scopes: Vec<Scope>,
     pub narrowed: HashSet<String>,
     pub ended_shared_narrowing: HashSet<String>,
@@ -859,6 +861,8 @@ impl FnCtx {
     ) -> Self {
         FnCtx {
             field_initializer: None,
+            descriptor_default: None,
+            descriptor_numeric_operand: false,
             frames: vec![Frame {
                 ret,
                 is_generator,

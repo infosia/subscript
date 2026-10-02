@@ -566,8 +566,8 @@ impl Divergence {
                 ts: "class C { value: i32 = this.read(); read(): i32 { return 3; } }",
                 subscript: "class C { value: i32 = 0; constructor() { this.value = this.read(); } \
                             read(): i32 { return 3; } }",
-                why: "A field initializer can read only earlier initialized instance fields. \
-                      Other uses of `this` can expose the partial instance (§147 rule 2).",
+                why: "Initializers read only earlier initialized fields (§147 rule 2). \
+                      Descriptor defaults forbid `this` (§147 rule 3a). Other uses expose the partial instance.",
                 collision: "C9",
             },
             Divergence::ClassIndexSignature => DivergenceEntry {

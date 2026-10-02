@@ -204,6 +204,32 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
+        let previous_numeric = fx.descriptor_numeric_operand;
+        if fx.descriptor_default.is_some() {
+            if matches!(e, ast::Expr::Bin(b) if matches!(b.op,
+                ast::BinaryOp::Add | ast::BinaryOp::Sub | ast::BinaryOp::Mul |
+                ast::BinaryOp::Div | ast::BinaryOp::Mod | ast::BinaryOp::Exp |
+                ast::BinaryOp::LShift | ast::BinaryOp::RShift | ast::BinaryOp::ZeroFillRShift |
+                ast::BinaryOp::BitOr | ast::BinaryOp::BitXor | ast::BinaryOp::BitAnd))
+                || matches!(e, ast::Expr::Unary(u) if matches!(u.op, ast::UnaryOp::Minus | ast::UnaryOp::Plus | ast::UnaryOp::Tilde))
+            {
+                fx.descriptor_numeric_operand = true;
+            } else if matches!(e, ast::Expr::Call(_) | ast::Expr::Arrow(_)) {
+                fx.descriptor_numeric_operand = false;
+            }
+        }
+        let checked = self.check_expr_inner(e, ctx, fx, allow_embedded_header_receiver);
+        fx.descriptor_numeric_operand = previous_numeric;
+        checked
+    }
+
+    fn check_expr_inner(
+        &mut self,
+        e: &ast::Expr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx,
+        allow_embedded_header_receiver: bool,
+    ) -> hir::Expr {
         let pos = self.pos(e.span());
         let mut checked = match e {
             ast::Expr::Paren(p) => self.check_expr_with_header_receiver(
@@ -216,13 +242,22 @@ impl<'p> Checker<'p> {
             ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
             ast::Expr::Ident(id) => self.check_ident(id, ctx, fx),
             ast::Expr::This(_) => {
+                if fx.descriptor_default.is_some() {
+                    self.error_diverging(
+                        RuleCode::S100,
+                        "§147 rule 3a: `this` is forbidden in a descriptor member default",
+                        pos.clone(),
+                        Divergence::ThisInFieldInitializer,
+                    );
+                    return self.err_expr(pos);
+                }
                 if let Some(initializer) = &fx.field_initializer {
                     let reason = if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
                         "`this` inside a lambda is forbidden"
                     } else if initializer.write {
                         "a write through `this` is forbidden"
                     } else {
-                        "a method call or `this` as a value is forbidden"
+                        "`this` as a value is forbidden"
                     };
                     self.error_diverging(
                         RuleCode::S100,
