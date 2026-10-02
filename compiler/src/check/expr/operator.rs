@@ -1332,6 +1332,33 @@ impl<'p> Checker<'p> {
         right
     }
 
+    // §146: equal types and legal nullable pairs have a symmetric join.
+    fn conditional_join(&self, left: &Type, right: &Type) -> Option<Type> {
+        if matches!(left, Type::Error) || matches!(right, Type::Error) {
+            return Some(Type::Error);
+        }
+        if left == right {
+            return Some(left.clone());
+        }
+        for (value, other) in [(left, right), (right, left)] {
+            if let Type::Nullable(inner) = value {
+                if (other == inner.as_ref() || matches!(other, Type::Null))
+                    && inner.is_reference_shape(&self.type_handle_classes)
+                    && !self.is_value_class(inner)
+                {
+                    return Some(value.clone());
+                }
+            }
+            if matches!(other, Type::Null)
+                && value.is_reference_shape(&self.type_handle_classes)
+                && !self.is_value_class(value)
+            {
+                return Some(Type::nullable(value.clone()));
+            }
+        }
+        None
+    }
+
     pub(super) fn check_cond(
         &mut self,
         c: &ast::CondExpr,
@@ -1380,15 +1407,29 @@ impl<'p> Checker<'p> {
             self.require_assignable(&els.ty.clone(), context, els.pos.clone(), "the else branch");
             context.clone()
         } else {
-            let then_ty = then.ty.clone();
-            self.require_assignable_with(
-                &els.ty.clone(),
-                &then_ty,
-                els.pos.clone(),
-                "the else branch",
-                Some(Divergence::ConditionalWithoutContext),
-            );
-            then_ty
+            match self.conditional_join(&then.ty, &els.ty) {
+                Some(ty) => ty,
+                None => {
+                    let divergence = if self.apparent_type(&then.ty).is_numeric()
+                        && self.apparent_type(&els.ty).is_numeric()
+                    {
+                        Divergence::SizedOperandWidths
+                    } else {
+                        Divergence::GeneralUnionAndUndefined
+                    };
+                    self.error_diverging(
+                        RuleCode::S100,
+                        format!(
+                            "conditional branches have no common type: `{}` and `{}`",
+                            self.type_name(&then.ty),
+                            self.type_name(&els.ty),
+                        ),
+                        pos.clone(),
+                        divergence,
+                    );
+                    Type::Error
+                }
+            }
         };
         hir::Expr {
             kind: ExprKind::Cond {

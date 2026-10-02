@@ -936,20 +936,80 @@ fn nested_conditionals_inherit_the_outer_context() {
 }
 
 #[test]
-fn conditional_without_context_keeps_else_to_then_rule() {
-    let diagnostics = check_one(
-        "class C { value: i32; constructor(value: i32) { this.value = value; } }\n\
-         export function main(): void {\n\
-           const value = true ? new C(1) : null;\n\
-           print(`${value !== null}`);\n\
-         }\n",
-    )
-    .expect_err("an uncontextualized conditional keeps the directional branch rule");
-    assert_eq!(diagnostics[0].code, RuleCode::S100);
-    assert_eq!(diagnostics[0].pos.line, 3);
-    assert!(diagnostics[0]
-        .message
-        .contains("the else branch expects `C`, got `null`"));
+fn conditional_without_context_joins_nullable_branches_symmetrically() {
+    for (left, right) in [
+        ("new C(1)", "null"),
+        ("new C(1)", "maybe"),
+        ("maybe", "null"),
+        ("(true ? new C(1) : null)", "null"),
+        ("f", "null"),
+    ] {
+        for (left, right) in [(left, right), (right, left)] {
+            let source = format!(
+                "class C {{ value: i32; constructor(value: i32) {{ this.value = value; }} }}
+                 function test(maybe: C | null, f: () => i32): void {{
+                   const value = true ? {left} : {right};
+                 }}"
+            );
+            let module = check_one(&source).expect("the branches have a legal nullable join");
+            let function = module.functions.iter().find(|f| f.name == "test").unwrap();
+            let hir::Stmt::Let { init, .. } = &function.body[0] else {
+                panic!("conditional binding");
+            };
+            assert!(matches!(init.ty, Type::Nullable(_)), "{left} : {right}");
+        }
+    }
+}
+
+#[test]
+fn conditional_without_context_joins_opaque_handles() {
+    let module = check_program(&[
+        SourceFile::ambient(
+            "interop.d.ts",
+            "// @subscript-c-header include=\"interop.h\"\ninterface SubDevice { readonly __sub_handle_SubDevice: never; }",
+        ),
+        SourceFile::new(
+            "test.ts",
+            "function test(device: SubDevice, maybe: SubDevice | null, flag: boolean): void {
+               const a = flag ? device : null;
+               const b = flag ? null : device;
+               const c = flag ? device : maybe;
+               const d = flag ? maybe : device;
+               const e = flag ? maybe : null;
+               const f = flag ? null : maybe;
+             }",
+        ),
+    ]).expect("opaque handles have legal nullable joins");
+    let function = module.functions.iter().find(|f| f.name == "test").unwrap();
+    for statement in &function.body {
+        let hir::Stmt::Let { init, .. } = statement else {
+            panic!("conditional binding");
+        };
+        assert_eq!(init.ty, function.params[1].ty);
+    }
+}
+
+#[test]
+fn conditional_without_context_names_both_incompatible_types() {
+    for (left, right, names) in [
+        ("new A()", "new B()", ["A", "B"]),
+        ("integer", "null", ["i32", "null"]),
+        ("integer", "float", ["i32", "f64"]),
+    ] {
+        for (left, right) in [(left, right), (right, left)] {
+            let source = format!(
+                "class A {{ value: i32 = 1; }} class B {{ value: i32 = 2; }}
+                 function test(integer: i32, float: f64): void {{
+                   const value = true ? {left} : {right};
+                 }}"
+            );
+            let diagnostics = check_one(&source).expect_err("the branches have no join");
+            assert_eq!(diagnostics[0].code, RuleCode::S100);
+            for name in names {
+                assert!(diagnostics[0].message.contains(&format!("`{name}`")));
+            }
+        }
+    }
 }
 
 #[test]

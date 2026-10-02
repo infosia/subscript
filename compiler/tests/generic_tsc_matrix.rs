@@ -1592,6 +1592,24 @@ fn run_matrix(cells: Vec<Cell>, start: Instant) {
         rejected.insert(name);
     }
     assert!(output.status.success() || !rejected.is_empty(), "{text}");
+    if let Some(path) = std::env::var_os("SUBSCRIPT_MATRIX_VERDICTS") {
+        let verdicts = cells
+            .iter()
+            .zip(&checked)
+            .map(|(cell, (errors, _, _))| {
+                format!(
+                    "{}\t{}",
+                    cell.name,
+                    if errors.is_empty() {
+                        "accept"
+                    } else {
+                        "reject"
+                    }
+                )
+            })
+            .collect::<Vec<_>>();
+        fs::write(path, verdicts.join("\n")).unwrap();
+    }
     let mut failures = Vec::new();
     for (cell, result) in cells.iter().zip(checked) {
         if cell.name.starts_with("derived-") && rejected.contains(&cell.name) {

@@ -77,8 +77,6 @@ pub enum Divergence {
     OptionalDescriptorMember,
     /// The boundary-opaque `object` type in a general declaration.
     BoundaryOnlyObject,
-    /// A conditional expression with no contextual type.
-    ConditionalWithoutContext,
     /// `Promise` construction, statics, and combinators.
     PromiseObject,
     /// `await` in a synchronous function or at the top level.
@@ -245,7 +243,6 @@ impl Divergence {
         Divergence::LiteralUnionAlias,
         Divergence::OptionalDescriptorMember,
         Divergence::BoundaryOnlyObject,
-        Divergence::ConditionalWithoutContext,
         Divergence::PromiseObject,
         Divergence::AwaitOutsideAsync,
         Divergence::AsyncFunctionShape,
@@ -532,13 +529,6 @@ impl Divergence {
                 why: "`object` is the boundary-opaque handle with no field shape, so it is \
                       legal only at the C boundary.",
                 collision: "C7",
-            },
-            Divergence::ConditionalWithoutContext => DivergenceEntry {
-                ts: "const value = flag ? new BranchValue(7) : null;",
-                subscript: "const value: BranchValue | null = flag ? new BranchValue(7) : null;",
-                why: "The two arms have no common type without an annotation, and this \
-                      compiler never infers a union.",
-                collision: "compiler.md §45",
             },
             Divergence::PromiseObject => DivergenceEntry {
                 ts: "const pending = Promise.resolve(1);\n\

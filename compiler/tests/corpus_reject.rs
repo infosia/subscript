@@ -172,7 +172,6 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r116-object-literal-nullable-class.ts", RuleCode::S005, 11),
     ("r117-explicit-undefined-member.ts", RuleCode::S012, 16),
     ("r118-unnarrowed-absence-read.ts", RuleCode::S100, 17),
-    ("r119-conditional-without-context.ts", RuleCode::S100, 18),
     ("r120-narrowing-escapes-conditional.ts", RuleCode::S005, 22),
     ("r121-wire-enum-fractional.ts", RuleCode::S100, 8),
     ("r122-wire-enum-duplicate.ts", RuleCode::S100, 9),
@@ -449,6 +448,9 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r299-void-return-value.ts", RuleCode::S100, 9),
     ("r300-generator-result-pattern-field.ts", RuleCode::S100, 11),
     ("r301-generator-done-destructuring.ts", RuleCode::S100, 11),
+    ("r302-conditional-distinct-classes.ts", RuleCode::S100, 9),
+    ("r303-conditional-scalar-null.ts", RuleCode::S100, 9),
+    ("r304-conditional-numeric-widths.ts", RuleCode::S100, 10),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

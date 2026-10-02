@@ -95,10 +95,10 @@ pub(super) fn cells() -> Vec<Cell> {
                     })
                 } else if instance && name == "union-shared-member" {
                     Some(Divergence {
-                        code: RuleCode::S005,
-                        record: "C1",
-                        message: "nominal types are not interchangeable",
-                        token: "nominal",
+                        code: RuleCode::S100,
+                        record: "C7",
+                        message: "conditional branches have no common type",
+                        token: "General unions",
                     })
                 } else {
                     None

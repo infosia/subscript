@@ -535,6 +535,11 @@ struct AllowGroup {
 
 const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup {
+        name: "conditional-type-identity",
+        reason: "The conditional join compares declared concrete types; check_cond routes all type parameters to generic_union (§146 rule 1).",
+        sites: &[("expr/operator.rs", "conditional_join", 0xa1d63e69092caf3a)],
+    },
+    AllowGroup {
         name: "numeric-storage-constraint-identity",
         reason: "The numeric storage walk reads parameter identity to stop recursive constraints; each shape test uses the apparent type (§143 rule 1d).",
         sites: &[("opaque.rs", "instance_restriction", 0xf12696b35ade54b9)],
