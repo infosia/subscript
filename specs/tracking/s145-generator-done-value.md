@@ -100,3 +100,46 @@ Every changed Rust file remains below 2,000 lines. No commit was made. `tools/ga
 ```text
 gate full 18d1b8254ef42e31511a4582b1906ae3bdea3aba dirty:26 debug 2189/0/3 release 2186/0/3 skips 2/0 clippy 2/18/13 goldens-moved 1 exit 0
 ```
+
+## Phase Review fix round 4
+
+The contract is `compiler.md` §145 at `ee9e8fe6`. Collision C23 names the runtime divergence.
+A CLI and a three-form probe built from that pin measured the new entries before the change.
+
+| Entry | Interpreter | dev | ship |
+|---|---|---|---|
+| t80 | `InvalidLir`: `reached a structurally unreachable LIR block` at 11:3 | `done=true|tag=0|v=w3|end\n` | same |
+| t81 | `InvalidLir`: `string alias value has no member` | `v=w3|false false\n` | same |
+
+`Type::zero_is_value` now receives alias wire values from each consumer's form.
+A wire alias excludes zero when its wire table has no zero member.
+Plain aliases and wire aliases with a zero member pass the predicate.
+The recursive class-field, fixed-array, and iterator-result checks carry the same alias source.
+HIR sites and the LIR verifier read their own alias tables.
+The direct unit test covers both wire cases, plain aliases, fixed arrays, and nullable aliases.
+The verifier test removes required guards from the two new entries and checks rejection.
+The HIR, LIR, and runtime trap descriptions now state the rule 1 zero-value condition.
+The runtime header generator produces the same header bytes; the header does not include these descriptions.
+
+`t80` and `t81` now trap with empty stdout at 21:18 and 15:15 on all three execution forms.
+`a313` reads a wire zero member, a fixed array of that alias, and a plain alias after generator completion.
+It also reads a wire member before completion. All three forms match `w3\nw0\nw0|w0\nfirst\n`.
+Only the new `a313` section enters the LIR snapshot. Every existing section remains byte-identical.
+No existing `.expected` file changes.
+
+The orchestrator must add `t80` and `t81` to C23 and `a313` to C8.
+
+`cargo test --offline --locked` passed for the compiler, codegen, and runtime crates.
+The new entries passed all three execution forms. The JS corpus target passed all 11 tests.
+`cargo fmt --check`, `git diff --check`, and `tools/hygiene.sh` passed.
+A second generator run produced byte-identical runtime headers and reference documents.
+The corpus index adds only the three new entries. Every changed Rust file remains below 2,000 lines.
+No commit was made. The existing C23 edit was preserved. `tools/gate.sh` was not run.
+
+## Verification review fix round landing gate
+
+`goldens-moved 1` is the LIR text snapshot (new generator entries).
+
+```text
+gate full da7aec5abbc36d5cca8c18792dc37d12284bb366 dirty:19 debug 2189/0/3 release 2186/0/3 skips 2/0 clippy 2/18/13 goldens-moved 1 exit 0
+```

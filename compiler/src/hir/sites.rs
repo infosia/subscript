@@ -426,7 +426,7 @@ impl Expr {
                 let mut sites = Vec::new();
                 if name == "value"
                     && matches!(&obj.ty, Type::IterResult(value)
-                    if !value.zero_is_value(&handle_classes, &|id| module.classes[id.0].fields.iter().map(|field| &field.ty)))
+                    if !value.zero_is_value(&handle_classes, &|id| module.classes[id.0].fields.iter().map(|field| &field.ty), &|id| module.string_aliases[id.0].wire_values.as_deref()))
                 {
                     sites.push(TrapSite::GeneratorDoneValue {
                         pos: self.pos.clone(),

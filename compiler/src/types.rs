@@ -673,12 +673,13 @@ impl Type {
     }
 
     /// True when the zero representation is a value of this type (compiler.md §145).
-    /// The class field source supplies all inline fields from the consumer's form.
+    /// The consumer's form supplies all inline class fields and alias wire values.
     #[must_use]
     pub fn zero_is_value<'a, I>(
         &self,
         classes: &[HandleClass],
         fields: &impl Fn(ClassId) -> I,
+        aliases: &impl Fn(StringAliasId) -> Option<&'a [i32]>,
     ) -> bool
     where
         I: IntoIterator<Item = &'a Type>,
@@ -699,8 +700,8 @@ impl Type {
             | Type::Date
             | Type::Null
             | Type::Enum(_)
-            | Type::StringAlias(_)
             | Type::Nullable(_) => true,
+            Type::StringAlias(id) => aliases(*id).is_none_or(|values| values.contains(&0)),
             Type::Str
             | Type::RegExp
             | Type::Object
@@ -716,11 +717,13 @@ impl Type {
             Type::Class(id) => match classes.get(id.0) {
                 Some(HandleClass::Value | HandleClass::BoundaryValue) => fields(*id)
                     .into_iter()
-                    .all(|field| field.zero_is_value(classes, fields)),
+                    .all(|field| field.zero_is_value(classes, fields, aliases)),
                 Some(HandleClass::Reference) | None => false,
             },
-            Type::FixedArray(element, len) => *len == 0 || element.zero_is_value(classes, fields),
-            Type::IterResult(value) => value.zero_is_value(classes, fields),
+            Type::FixedArray(element, len) => {
+                *len == 0 || element.zero_is_value(classes, fields, aliases)
+            }
+            Type::IterResult(value) => value.zero_is_value(classes, fields, aliases),
             // These types have no executable zero representation.
             Type::Void
             | Type::TypeParameter(_)
@@ -908,6 +911,8 @@ mod tests {
             vec![Type::Class(ClassId(0))],
         ];
         let fields = |id: ClassId| class_fields[id.0].iter();
+        let wire_values = [None, Some(vec![3, 5]), Some(vec![3, 0])];
+        let aliases = |id: StringAliasId| wire_values[id.0].as_deref();
         for ty in [
             Type::Class(ClassId(0)),
             Type::Class(ClassId(2)),
@@ -925,21 +930,26 @@ mod tests {
             Type::FixedArray(Box::new(Type::Class(ClassId(0))), 2),
             Type::FixedArray(Box::new(Type::Class(ClassId(2))), 2),
             Type::IterResult(Box::new(Type::Str)),
+            Type::StringAlias(StringAliasId(1)),
+            Type::FixedArray(Box::new(Type::StringAlias(StringAliasId(1))), 2),
         ] {
-            assert!(!ty.zero_is_value(&classes, &fields), "{ty:?}");
-            assert!(Type::Nullable(Box::new(ty)).zero_is_value(&classes, &fields));
+            assert!(!ty.zero_is_value(&classes, &fields, &aliases), "{ty:?}");
+            assert!(Type::Nullable(Box::new(ty)).zero_is_value(&classes, &fields, &aliases));
         }
         for ty in [
             Type::I32,
             Type::Bool,
             Type::Date,
             Type::Enum(EnumId(0)),
+            Type::StringAlias(StringAliasId(0)),
+            Type::StringAlias(StringAliasId(2)),
+            Type::FixedArray(Box::new(Type::StringAlias(StringAliasId(2))), 2),
             Type::Class(ClassId(1)),
             Type::FixedArray(Box::new(Type::Class(ClassId(1))), 2),
             Type::FixedArray(Box::new(Type::Str), 0),
             Type::FixedArray(Box::new(Type::Nullable(Box::new(Type::Str))), 2),
         ] {
-            assert!(ty.zero_is_value(&classes, &fields), "{ty:?}");
+            assert!(ty.zero_is_value(&classes, &fields, &aliases), "{ty:?}");
         }
     }
 

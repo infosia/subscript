@@ -16,6 +16,14 @@ fn finished_reference_reads_require_guards_in_lir() {
             "t79.ts",
             include_str!("../../corpus/trap/t79-generator-done-destructuring.ts"),
         ),
+        (
+            "t80.ts",
+            include_str!("../../corpus/trap/t80-generator-done-wire-alias.ts"),
+        ),
+        (
+            "t81.ts",
+            include_str!("../../corpus/trap/t81-generator-done-fixed-wire-alias.ts"),
+        ),
     ] {
         let sources = [SourceFile::new(name, text)];
         let hir = check_program(&sources).unwrap();

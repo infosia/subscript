@@ -89,7 +89,7 @@ pub enum TrapKind {
     DisposeRaisedDuringExit = 30,
     /// A narrowed shared location is null (compiler.md §124).
     SharedNullNarrowing = 31,
-    /// Read of a finished generator non-null reference value (compiler.md §145).
+    /// A finished generator value read traps when the zero of `T` is not a value of `T` (compiler.md §145).
     GeneratorDoneValue = 32,
 }
 

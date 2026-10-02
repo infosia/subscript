@@ -53,9 +53,11 @@ pub(super) fn verify_instruction_contract(
                     }
                 })
                 .collect::<Vec<_>>();
-            !value.zero_is_value(&classes, &|id| {
-                module.classes[id.0].fields.iter().map(|field| &field.ty)
-            })
+            !value.zero_is_value(
+                &classes,
+                &|id| module.classes[id.0].fields.iter().map(|field| &field.ty),
+                &|id| module.string_aliases[id.0].wire_values.as_deref(),
+            )
         }
         _ => false,
     };
@@ -66,7 +68,7 @@ pub(super) fn verify_instruction_contract(
         .count();
     if done_guards != usize::from(requires_done_guard) {
         bad(
-            "generator value guard disagrees with the zero reference shape",
+            "generator value guard disagrees with whether the zero is a value",
             errors,
         );
     }

@@ -224,7 +224,7 @@ for coroutines. The model, lifetimes, and the retired entry
 `retired:r14-async` are Q34's; `Promise` construction and combinators stay rejected. Host
 async C APIs still surface as C-style callbacks plus poll functions
 (plan §4 pattern 4); `await` consumes them through script-level polling.
-Accept: `a20`, `a93`–`a95`, `a312` (a finished generator's zero, §145). Reject: `r96`–`r100` (Q34 boundaries;
+Accept: `a20`, `a93`–`a95`, `a312`, `a313` (a finished generator's zero, §145). Reject: `r96`–`r100` (Q34 boundaries;
 `retired:r14-async` by Q34 — the construct it pinned is now legal).
 *Revised 2026-08-02 (R13):* async instance methods on plain,
 non-generic reference classes join the surface —
@@ -625,19 +625,21 @@ Measured with `node` (2026-10-02), for each source `x == null` prints
 
 Accept: `a308`, `a309`.
 
-### C23. A finished generator's reference value traps at the read
+### C23. A finished generator's value traps when its zero is not a value
 
 A read of the `value` of a finished generator traps
-(`generator-done-value`) when `T` is a reference that is not nullable
-(`compiler.md` §145). `node` reads `undefined` there and throws only at a
-later use, or never: a program that stores the value and never uses it
-prints its output under `node` and traps here.
+(`generator-done-value`) when the zero of `T` is not a value of `T`: a
+non-nullable reference, a `string`, a wire-mapped alias whose members
+exclude 0, or an inline component of one (`compiler.md` §145). `node`
+reads `undefined` there and throws only at a later use, or never: a
+program that stores the value and never uses it prints its output under
+`node` and traps here.
 
 Measured at `de41409f` (before §145): `const b: Box = r.value; print(\`${b.v}\`)`
 gives `TypeError: Cannot read properties of undefined` under `node`;
 storing `b` in a `Box[]` and printing its length prints `1`.
 
-Trap: `t75`, `t76`, `t77`, `t78`, `t79`.
+Trap: `t75`–`t81`.
 
 ## 2. Q-register resolutions not covered above
 

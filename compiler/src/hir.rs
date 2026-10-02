@@ -725,7 +725,7 @@ pub enum TrapSite {
         /// Position of the assignment target.
         pos: Pos,
     },
-    /// A finished generator has no non-null reference value (compiler.md §145).
+    /// A finished generator value read traps when the zero of `T` is not a value of `T` (compiler.md §145).
     GeneratorDoneValue {
         /// Position of the value read.
         pos: Pos,

@@ -1383,7 +1383,7 @@ pub enum TrapKind {
     IndexRead,
     /// Bounds-checked index write.
     IndexWrite,
-    /// A finished generator value read requires a non-null reference (compiler.md §145).
+    /// A finished generator value read traps when the zero of `T` is not a value of `T` (compiler.md §145).
     GeneratorDoneValue,
     /// Failed null narrowing.
     NullNarrowing,
