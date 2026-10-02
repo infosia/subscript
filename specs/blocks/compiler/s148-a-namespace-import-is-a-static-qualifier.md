@@ -22,6 +22,12 @@ surface". Measured at `bd065fcd`: a `main.ts` that imports `./math` as
    live, as a named import reads it), a class (constructed, and named as
    a type `ns.C`, generic `ns.G<i32>` included), an enum (`ns.E.M`), and
    a string-literal alias (a type `ns.A`).
+1a. The checker resolves every `ns.x` once, scope-aware, before it
+   checks a body: each site then sees the declaration that `ns.x`
+   names, as if a named import bound it. No site reads an unresolved
+   `ns.x`. *(Added 2026-10-02 after the Phase Review: resolution ran at
+   a few expression sites, so `await ns.f()` and `Worker.spawn(ns.echo)`
+   were rejected as a value use of `ns`.)*
 2. A namespace import creates no runtime value. `ns` alone is rejected
    with S100 wherever it is a value: passed, stored, returned, compared,
    interpolated, indexed (`ns[k]`), or used with `typeof`. A write
@@ -36,6 +42,15 @@ surface". Measured at `bd065fcd`: a `main.ts` that imports `./math` as
    it shadows a named import.
 6. The entry-module rules of §129 do not change: a namespace import in
    the entry module exports nothing.
+6a. A namespace import of a module that a discovery check lists as
+   absent (§63) is poisoned as a named import of it is: every `ns.x`
+   types as `Type::Error` with no diagnostic. The poisoned-import record
+   carries the namespace as a field of its own, not as a sentinel name.
+   §63 rule 3 is amended to match. *(Added 2026-10-02 after the Phase
+   Review.)*
+6b. A re-export of a namespace binding (`export { ns }`) is the
+   `export * as ns` form of rule 7, and is rejected with S100 and C18,
+   not with S016.
 7. C18 is amended: `import * as ns` is in the surface; `export * as ns
    from`, `export *`, `import type * as ns`, and a namespace used as a
    value stay outside it.

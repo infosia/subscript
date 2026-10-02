@@ -47,7 +47,8 @@ Measurements at the pin, on this host:
    import binds its local name as poisoned, with no diagnostic. A
    poisoned name types as `Type::Error` in expression position and
    resolves to `Type::Error` in type position, with no diagnostic in
-   either. A default or namespace specifier keeps its S100.
+   either. A namespace specifier is poisoned the same way (§148 rule
+   6a). A default specifier keeps its S100.
 4. Every other rule is unchanged. A diagnostic elsewhere still fails
    the check.
 5. `hir::Module` gains `poisoned_imports: Vec<PoisonedImport>`, one
