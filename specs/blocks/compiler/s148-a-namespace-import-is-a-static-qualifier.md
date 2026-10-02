@@ -40,12 +40,13 @@ surface". Measured at `bd065fcd`: a `main.ts` that imports `./math` as
    re-export chains resolve as they do for named imports.
 5. A local value named `ns` (a variable, a parameter, a binding)
    shadows the namespace in value positions of its scope, as it shadows
-   a named import. It does not shadow `ns` in a type position: `ns.C`
-   in an annotation still names the module's `C`, as TypeScript keeps
-   values and types apart. Only a type parameter named `ns` shadows the
-   namespace in a type position. *(Clarified 2026-10-02 after the
-   verification review: a parameter `ns: i32` blocked `ns.C` in the same
-   signature.)*
+   a named import. A qualified type name `ns.C` always resolves through
+   the namespace: no value and no type parameter named `ns` shadows it,
+   as TypeScript looks up the qualifier of a type name as a namespace
+   only (measured: `tsc` 5.9.2 accepts `ns.C` beside a parameter
+   `ns: i32` and inside `function g<ns>()`). *(Clarified 2026-10-02 after
+   the verification review: a parameter `ns: i32` blocked `ns.C` in the
+   same signature.)*
 6. The entry-module rules of §129 do not change: a namespace import in
    the entry module exports nothing.
 6a. A namespace import of a module that a discovery check lists as
