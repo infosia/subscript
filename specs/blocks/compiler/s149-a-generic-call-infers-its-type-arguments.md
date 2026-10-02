@@ -43,12 +43,18 @@ check`; `tsc` 5.9.2 accepts every row:
    inferred type as its context (C4), as §146 rule 1b2 does for a
    conditional. If only literal arguments mention a type parameter, the
    C4 defaults decide it: an integer literal `i32`, a fractional literal
-   `f64`, a string literal `string`.
+   `f64`, a string literal `string`. Two literal-only defaults that
+   differ (`pair(1, 2.5)`) are rejected as conflicting candidates, as C4
+   rejects `[1, 2.5]`. *(Added 2026-10-02 after the Phase Review.)*
 4. Two non-literal candidates for one type parameter must be the same
    type, or one must be `C` and the other `C | null` (the result is
    `C | null`). Otherwise the call is rejected with S100 that names both
    candidates and the type parameter, and asks for explicit type
-   arguments.
+   arguments. A `null` argument beside a candidate `C` joins to
+   `C | null` when `C | null` is legal (`pair(null, new Box())` infers
+   `Box | null`), as the `C` and `C | null` pair does. *(Added 2026-10-02
+   after the Phase Review: the `null` argument was rejected as a plain
+   type mismatch.)*
 5. A type parameter with no candidate is rejected with S100 that names
    it and asks for explicit type arguments.
 6. Explicit type arguments override inference. Each argument is
@@ -73,3 +79,15 @@ check`; `tsc` 5.9.2 accepts every row:
 3. The §143 matrix: list each cell whose verdict changes; only cells
    that rule 1 accepts may change.
 4. No existing `.expected` golden moves.
+
+### 149.3 Open
+
+These items are MINOR under CLAUDE.md invariant 6.
+
+1. An argument made only of literals that is not itself a literal (a
+   conditional of literals, literal arithmetic) gives a non-literal
+   candidate with no context: `pair(n, c ? 1 : 2)` with `n: i64` is
+   rejected as conflicting `i64` and `i32`; `tsc` accepts it.
+2. A generic function used as a value (`apply(id, 3)`) asks for explicit
+   type arguments, but the explicit spelling `apply(id<i32>, 3)` is
+   outside the surface, so the message names a fix that does not exist.
